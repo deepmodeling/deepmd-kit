@@ -8,6 +8,7 @@ import paddle
 
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
+    warn_descriptor_config_differences,
 )
 
 log = logging.getLogger(__name__)
@@ -57,6 +58,12 @@ def get_finetune_rule_single(
         random_fitting=new_fitting,
     )
     if change_model_params:
+        if "descriptor" in single_config and "descriptor" in single_config_chosen:
+            warn_descriptor_config_differences(
+                single_config["descriptor"],
+                single_config_chosen["descriptor"],
+                model_branch_chosen,
+            )
         trainable_param = {
             "descriptor": single_config.get("descriptor", {}).get("trainable", True),
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),

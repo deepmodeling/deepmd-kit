@@ -252,6 +252,65 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize("prec", ["float64"])  # precision
+    def test_make_fx_graph(self, prec) -> None:
+        """make_fx (export-readiness) of the attn_layer=0 GRAPH forward.
+
+        For ``attn_layer == 0`` the dense ``forward`` routes through the
+        graph-native path (``from_dense_quartet -> call_graph``). This proves
+        that graph forward + ``autograd.grad`` is fx-traceable (full .pt2
+        export is PR-B).
+        """
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        dd0 = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            attn_layer=0,
+            precision=prec,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
+        dd0 = dd0.eval()
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+        # the attn_layer=0 graph adapter (from_dense_quartet) maps every ghost
+        # neighbor to its LOCAL owner via ``mapping``; the mixin's nall(4) > nloc(3)
+        # so a real mapping is required (identity mapping would index out of range).
+        mapping = torch.tensor(self.mapping, dtype=int, device=self.device)
+
+        def fn(coord_ext, atype_ext, nlist, mapping):
+            coord_ext = coord_ext.detach().requires_grad_(True)
+            rd = dd0(coord_ext, atype_ext, nlist, mapping)[0]
+            grad = torch.autograd.grad(rd.sum(), coord_ext, create_graph=False)[0]
+            return rd, grad
+
+        rd_eager, grad_eager = fn(coord_ext, atype_ext, nlist, mapping)
+        traced = make_fx(fn)(coord_ext, atype_ext, nlist, mapping)
+        rd_traced, grad_traced = traced(coord_ext, atype_ext, nlist, mapping)
+        np.testing.assert_allclose(
+            rd_eager.detach().cpu().numpy(),
+            rd_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        np.testing.assert_allclose(
+            grad_eager.detach().cpu().numpy(),
+            grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+
     @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
     def test_share_params(self, shared_level) -> None:
         """share_params level 0: share all; level 1: share type_embedding only."""

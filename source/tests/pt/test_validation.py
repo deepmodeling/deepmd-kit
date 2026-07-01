@@ -280,6 +280,43 @@ class TestValidationHelpers(unittest.TestCase):
                 ["best.ckpt-10.t-2.pt", "best.ckpt-20.t-1.pt"],
             )
 
+    def test_full_validator_writes_best_into_custom_checkpoint_dir(self) -> None:
+        train_infos = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                best_dir = Path("nested/best")
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": True,
+                        "max_best_ckpt": 1,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=_DummyModel(),
+                    state_store=train_infos,
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=False,
+                    checkpoint_dir=best_dir,
+                )
+                # The directory is created recursively at construction time.
+                self.assertTrue(best_dir.is_dir())
+                new_best_path = validator._update_best_state(
+                    display_step=1,
+                    selected_metric_value=2.0,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(new_best_path, str(best_dir / "best.ckpt-1.t-1.pt"))
+
     def test_full_validator_lmdb_full_validation_iterates_nloc_groups(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lmdb_path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")

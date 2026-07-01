@@ -31,6 +31,10 @@ from deepmd.pt.model.task import (
 )
 from deepmd.pt.model.task.sezm_ener import (
     SeZMEnergyFittingNet,
+    _resolve_auto_neuron,
+)
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -44,6 +48,8 @@ from .dos_model import (
 )
 from .dp_linear_model import (
     LinearEnergyModel,
+    normalize_linear_model_type_map,
+    validate_linear_shared_descriptor_type_maps,
 )
 from .dp_model import (
     DPModelCommon,
@@ -69,11 +75,17 @@ from .model import (
 from .polar_model import (
     PolarModel,
 )
+from .population_model import (
+    PopulationModel,
+)
 from .property_model import (
     PropertyModel,
 )
 from .sezm_model import (
     SeZMModel,
+)
+from .sezm_property_model import (
+    SeZMPropertyModel,
 )
 from .sezm_spin_model import (
     SeZMSpinModel,
@@ -155,19 +167,45 @@ def get_spin_model(model_params: dict) -> SpinModel:
 def get_linear_model(model_params: dict) -> LinearEnergyModel:
     model_params = copy.deepcopy(model_params)
     weights = model_params.get("weights", "mean")
+    shared_links = None
+    if "shared_dict" in model_params:
+        shared_config = {
+            "model_dict": {
+                f"model_{idx}": sub_model
+                for idx, sub_model in enumerate(model_params["models"])
+            },
+            "shared_dict": model_params.get("shared_dict", {}),
+        }
+        if "type_map" in model_params:
+            shared_config["type_map"] = copy.deepcopy(model_params["type_map"])
+        shared_config, shared_links = preprocess_shared_params(
+            shared_config,
+            require_shared_type_map=False,
+        )
+        model_params["models"] = list(shared_config["model_dict"].values())
+        normalize_linear_model_type_map(model_params)
+        validate_linear_shared_descriptor_type_maps(
+            model_params["models"],
+            shared_links,
+        )
+
     list_of_models = []
-    ntypes = len(model_params["type_map"])
     for sub_model_params in model_params["models"]:
         if "type_map" not in sub_model_params:
             sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
             # descriptor
-            sub_model_params["descriptor"]["ntypes"] = ntypes
+            sub_ntypes = len(sub_model_params["type_map"])
+            sub_model_params["descriptor"]["ntypes"] = sub_ntypes
             descriptor, fitting, _ = _get_standard_model_components(
-                sub_model_params, ntypes
+                sub_model_params, sub_ntypes
             )
             list_of_models.append(
-                DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
+                DPAtomicModel(
+                    descriptor,
+                    fitting,
+                    type_map=copy.deepcopy(sub_model_params["type_map"]),
+                )
             )
 
         else:  # must be pairtab
@@ -179,19 +217,23 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
                     sub_model_params["tab_file"],
                     sub_model_params["rcut"],
                     sub_model_params["sel"],
-                    type_map=model_params["type_map"],
+                    type_map=copy.deepcopy(sub_model_params["type_map"]),
                 )
             )
 
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return LinearEnergyModel(
+    model = LinearEnergyModel(
         models=list_of_models,
         type_map=model_params["type_map"],
         weights=weights,
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    model.shared_links = shared_links
+    if shared_links:
+        model.share_params(shared_links, resume=True)
+    return model
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:
@@ -284,6 +326,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
+    elif fitting_net_type == "population":
+        modelcls = PopulationModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
@@ -341,12 +385,37 @@ def get_sezm_model(model_params: dict) -> BaseModel:
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
     fitting_net = copy.deepcopy(model_params["fitting_net"])
-    fitting_net.pop("type", None)
+    fitting_net.setdefault("type", "dpa4_ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
     fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    fitting = SeZMEnergyFittingNet(**fitting_net)
+    if fitting_net["type"] in ("dpa4_ener", "sezm_ener"):
+        fitting = BaseFitting(**fitting_net)
+        modelcls = SeZMModel
+    elif fitting_net["type"] == "property":
+        if bridging_method != "NONE":
+            raise ValueError(
+                "DPA4/SeZM property fitting does not support analytical bridging "
+                "potentials; set `bridging_method` to `none`."
+            )
+        # Share the SeZM auto-width convention
+        fitting_net["neuron"] = _resolve_auto_neuron(
+            fitting_net.get("neuron"),
+            dim_descrpt=fitting_net["dim_descrpt"],
+            numb_fparam=fitting_net.get("numb_fparam", 0),
+            numb_aparam=fitting_net.get("numb_aparam", 0),
+            dim_case_embd=fitting_net.get("dim_case_embd", 0),
+            case_film_embd=fitting_net.get("case_film_embd", False),
+            use_aparam_as_mask=fitting_net.get("use_aparam_as_mask", False),
+        )
+        fitting = BaseFitting(**fitting_net)
+        modelcls = SeZMPropertyModel
+    else:
+        raise ValueError(
+            "DPA4/SeZM model supports `dpa4_ener`, `sezm_ener`, or `property` "
+            f"fitting, but got `{fitting_net['type']}`."
+        )
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
     preset_out_bias = _convert_preset_out_bias_to_array(
@@ -356,7 +425,7 @@ def get_sezm_model(model_params: dict) -> BaseModel:
     use_compile = bool(model_params.get("use_compile", False))
     enable_tf32 = bool(model_params.get("enable_tf32", True))
 
-    model = SeZMModel(
+    model = modelcls(
         descriptor=descriptor,
         fitting=fitting,
         type_map=model_params["type_map"],
@@ -416,6 +485,12 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
     fitting_net = copy.deepcopy(model_params["fitting_net"])
+    fitting_net_type = fitting_net.get("type", "dpa4_ener")
+    if fitting_net_type not in ("dpa4_ener", "sezm_ener"):
+        raise ValueError(
+            "Spin DPA4/SeZM currently supports only `dpa4_ener` or `sezm_ener` "
+            f"fitting, but got `{fitting_net_type}`."
+        )
     fitting_net.pop("type", None)
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
@@ -461,7 +536,7 @@ def get_model(model_params: dict) -> Any:
             return get_standard_model(model_params)
     elif model_type == "linear_ener":
         return get_linear_model(model_params)
-    elif model_type in ("SeZM", "sezm", "dpa4"):
+    elif model_type in ("SeZM", "sezm", "DPA4", "dpa4"):
         if "spin" in model_params:
             return get_sezm_spin_model(model_params)
         return get_sezm_model(model_params)
@@ -479,7 +554,9 @@ __all__ = [
     "FrozenModel",
     "LinearEnergyModel",
     "PolarModel",
+    "PopulationModel",
     "SeZMModel",
+    "SeZMPropertyModel",
     "SeZMSpinModel",
     "SpinEnergyModel",
     "SpinModel",

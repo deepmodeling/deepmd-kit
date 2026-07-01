@@ -149,6 +149,22 @@ class SeZMAtomicModel(DPAtomicModel):
         """Return the current SeZM execution mode."""
         return str(getattr(self, "_active_mode", "ener"))
 
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Return whether output statistics are type-resolved."""
+        active_fitting = self.get_active_fitting_net()
+        if active_fitting is not None and hasattr(
+            active_fitting, "get_distinguish_types"
+        ):
+            return bool(active_fitting.get_distinguish_types())
+        return super().get_compute_stats_distinguish_types()
+
+    def get_intensive(self) -> bool:
+        """Return whether the active reducible output is intensive."""
+        active_fitting = self.get_active_fitting_net()
+        if active_fitting is not None and hasattr(active_fitting, "get_intensive"):
+            return bool(active_fitting.get_intensive())
+        return super().get_intensive()
+
     def _compute_or_load_dens_force_stat(
         self,
         sampled_func: Any,
@@ -595,9 +611,16 @@ class SeZMAtomicModel(DPAtomicModel):
         dict[str, torch.Tensor]
             Outputs after SeZM output-stat post-processing.
         """
-        if "energy" in ret:
-            out_bias, _ = self._fetch_out_stat(["energy"])
-            ret["energy"] = ret["energy"] + out_bias["energy"][atype]
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for key in self.bias_keys:
+            if key not in ret:
+                continue
+            if key == "energy":
+                ret[key] = ret[key] + out_bias[key][atype]
+            elif self.get_compute_stats_distinguish_types():
+                ret[key] = ret[key] * out_std[key][atype] + out_bias[key][atype]
+            else:
+                ret[key] = ret[key] * out_std[key][0] + out_bias[key][0]
         return ret
 
     def get_dim_fparam(self) -> int:

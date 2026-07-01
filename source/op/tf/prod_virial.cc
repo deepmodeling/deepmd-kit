@@ -42,21 +42,24 @@ class ProdVirialOp : public OpKernel {
     const Tensor& natoms_tensor = context->input(5);
 
     // set size of the sample
-    OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
-    OP_REQUIRES(context, (in_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
+    OP_REQUIRES(
+        context, (net_deriv_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of net deriv should be 2"));
+    OP_REQUIRES(
+        context, (in_deriv_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (rij_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of rij should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of rij should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
     OP_REQUIRES(context, (axis_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of axis should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of axis should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -67,28 +70,35 @@ class ProdVirialOp : public OpKernel {
     int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == rij_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == axis_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == in_deriv_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == rij_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == axis_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
 
     OP_REQUIRES(context,
                 (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
                  in_deriv_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of descriptors should match"));
-    OP_REQUIRES(context,
-                (static_cast<int64_t>(nloc) * nnei * 3 ==
-                 rij_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("dim of rij should be nnei * 3"));
-    OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
-                errors::InvalidArgument("number of neighbors should match"));
+                deepmd::tf_compat::InvalidArgument(
+                    "number of descriptors should match"));
     OP_REQUIRES(
-        context, (nloc * 4 == axis_tensor.shape().dim_size(1)),
-        errors::InvalidArgument("number of axis type+id should be 2+2"));
+        context,
+        (static_cast<int64_t>(nloc) * nnei * 3 ==
+         rij_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("dim of rij should be nnei * 3"));
+    OP_REQUIRES(
+        context, (nnei == n_a_sel + n_r_sel),
+        deepmd::tf_compat::InvalidArgument("number of neighbors should match"));
+    OP_REQUIRES(context, (nloc * 4 == axis_tensor.shape().dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "number of axis type+id should be 2+2"));
 
     // Create an output tensor
     TensorShape virial_shape;

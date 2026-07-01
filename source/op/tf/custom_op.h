@@ -2,7 +2,15 @@
 #pragma once
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "tensorflow/core/public/version.h"
+
+#if (TF_MAJOR_VERSION > 2) || (TF_MAJOR_VERSION == 2 && TF_MINOR_VERSION >= 20)
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#endif
 
 #include "device.h"
 #include "neighbor_list.h"
@@ -26,6 +34,25 @@ namespace deepmd {
 void safe_compute(OpKernelContext* context,
                   std::function<void(OpKernelContext*)> ff);
 };
+
+namespace deepmd {
+namespace tf_compat {
+#if (TF_MAJOR_VERSION > 2) || (TF_MAJOR_VERSION == 2 && TF_MINOR_VERSION >= 20)
+using Status = absl::Status;
+#else
+using Status = tensorflow::Status;
+#endif
+
+template <typename... Args>
+inline Status InvalidArgument(Args&&... args) {
+#if (TF_MAJOR_VERSION > 2) || (TF_MAJOR_VERSION == 2 && TF_MINOR_VERSION >= 20)
+  return absl::InvalidArgumentError(absl::StrCat(std::forward<Args>(args)...));
+#else
+  return tensorflow::errors::InvalidArgument(std::forward<Args>(args)...);
+#endif
+}
+}  // namespace tf_compat
+}  // namespace deepmd
 
 template <typename FPTYPE>
 tensorflow::Status _prepare_coord_nlist_gpu(OpKernelContext* context,

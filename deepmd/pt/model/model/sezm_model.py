@@ -487,6 +487,7 @@ from deepmd.pt.model.model.model import (
 )
 from deepmd.pt.model.model.transform_output import (
     edge_energy_deriv,
+    fit_output_to_model_output,
 )
 from deepmd.pt.utils import (
     env,
@@ -1048,6 +1049,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         input_prec: torch.dtype | None = None,
@@ -1061,8 +1063,15 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor.  ``edge_scatter_index`` defines the force/virial scatter
         domain, which may be local atoms for Python inference or local-plus-ghost
         slots for LAMMPS.
+
+        ``comm_dict`` selects the parallel (LAMMPS multi-rank) path: the
+        descriptor runs on the extended node set and exchanges ghost features via
+        ``border_op`` between blocks. ``extended_atype`` (shape ``(nf, nall)``)
+        is then required so the descriptor can embed ghost atom types; ``atype``
+        stays local ``(nf, nloc)`` for fitting and the energy read-out. The
+        parallel path always runs eager: its compiled artifact is produced
+        separately by the ``.pt2`` with-comm export, not by the runtime cache.
         """
-        del comm_dict
         coord, _, fp, ap, inferred_input_prec = self._input_type_cast(
             coord,
             fparam=fparam,
@@ -1073,6 +1082,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if coord.ndim == 2:
             coord = coord.reshape(atype.shape[0], -1, 3)
         atype = atype.to(device=coord.device, dtype=torch.long)
+        if extended_atype is not None:
+            extended_atype = extended_atype.to(device=coord.device, dtype=torch.long)
         edge_index = edge_index.to(device=coord.device, dtype=torch.long)
         edge_vec = edge_vec.to(device=coord.device, dtype=coord.dtype)
         edge_scatter_index = edge_scatter_index.to(
@@ -1089,6 +1100,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         should_compile = (
             self.should_use_compile() if use_compile is None else use_compile
         )
+        if comm_dict is not None:
+            if extended_atype is None:
+                raise ValueError(
+                    "`extended_atype` (nf, nall) is required when `comm_dict` "
+                    "is provided."
+                )
+            should_compile = False
         charge_spin = self.convert_charge_spin(
             charge_spin,
             nf=nf,
@@ -1199,6 +1217,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         fparam=fp,
                         aparam=ap,
                         charge_spin=charge_spin,
+                        comm_dict=comm_dict,
+                        extended_atype=extended_atype,
                         extended_coord_corr=extended_coord_corr,
                         embedding_only=embedding_only,
                     )
@@ -1341,8 +1361,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
         embedding_only: bool = False,
+        conservative: bool = True,
     ) -> dict[str, torch.Tensor]:
         """
         Compute SeZM lower outputs from the unified edge-vector schema.
@@ -1373,13 +1395,24 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         charge_spin
             Frame-level charge and spin conditions with shape `(nf, 2)`.
         comm_dict
-            Communication data for parallel inference. Currently unused.
+            Border-exchange tensors for parallel (LAMMPS multi-rank) inference.
+            When provided, the descriptor runs on the extended node set and
+            exchanges ghost features via ``border_op`` between blocks.
+        extended_atype
+            Extended atom types with shape ``(nf, nall)``. Required when
+            ``comm_dict`` is provided so the descriptor can embed ghost types;
+            unused otherwise.
         extended_coord_corr
             Coordinates correction for virial with shape ``(nf, nscatter, 3)`` or
             ``None``.
         embedding_only
             When ``True``, return only the embedding outputs and skip the
             force/virial autograd entirely.
+        conservative
+            Whether to run the conservative energy derivative path. Energy
+            fitting keeps this enabled. Non-conservative property fitting
+            disables it, so fitting outputs are reduced by their output
+            definition without constructing edge-force gradients.
 
         Returns
         -------
@@ -1391,7 +1424,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ``descriptor`` (nf, nloc, d), ``atomic_feature`` (nf, nloc, h), and
             ``structural_feature`` (nf, h).
         """
-        del comm_dict
         nf, nloc = atype.shape[:2]
         nscatter = coord.shape[1]
         descriptor_model = self.atomic_model.descriptor
@@ -1403,19 +1435,28 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # This keeps coordinate gathering and shift application outside the
         # differentiated region while preserving conservative forces through the
         # scatter indices below.  The embedding path produces no force, so it
-        # keeps ``edge_vec`` detached and never allocates an autograd leaf.
-        if not embedding_only:
+        # keeps ``edge_vec`` detached and never allocates an autograd leaf. The
+        # same forward-only treatment is used by non-conservative property heads.
+        if conservative and not embedding_only:
             edge_vec = edge_vec.detach().requires_grad_(True)
 
         # === Step 2. Descriptor forward ===
+        # ``extended_atype`` spans the extended region on the parallel path and
+        # reduces to ``atype`` (owned atoms) on the single-domain path; the
+        # descriptor returns the per-owner descriptor ``(nf, nloc, channels)``
+        # either way. ``comm_dict`` (possibly ``None``) and ``nloc`` are
+        # forwarded unconditionally -- ``forward_with_edges`` ignores ``nloc``
+        # without ``comm_dict``, and ``extended_coord`` only supplies the device.
         with nvtx_range("SeZM/descriptor"):
             descriptor, _ = descriptor_model.forward_with_edges(
-                extended_coord=coord[:, :nloc, :],
-                extended_atype=atype,
+                extended_coord=coord,
+                extended_atype=extended_atype if comm_dict is not None else atype,
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
                 charge_spin=charge_spin,
+                comm_dict=comm_dict,
+                nloc=nloc,
             )
 
         # === Atom mask ===
@@ -1469,10 +1510,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
 
+        if not conservative:
+            return fit_output_to_model_output(
+                fit_ret,
+                self.atomic_output_def(),
+                coord,
+                create_graph=False,
+                mask=fit_ret["mask"],
+                extended_coord_corr=extended_coord_corr,
+            )
+
         # === Step 5. Inject analytical pair potential (edge form) ===
         # ZBL is evaluated from ``edge_vec`` (the autograd leaf) so its force
         # and virial flow through the same edge backward as the learned energy.
-        if self.inter_potential is not None:
+        if self.inter_potential is not None and "energy" in fit_ret:
             fit_ret["energy"] = fit_ret["energy"] + self.inter_potential(
                 edge_vec=edge_vec,
                 edge_index=edge_index,
@@ -1632,6 +1683,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
+        extended_atype: Int[Tensor, "nf nall"] | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Lower-level public forward using the compact-edge contract.
@@ -1658,9 +1710,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         do_atomic_virial
             Whether to compute atomic virial.
         comm_dict
-            Communication dict forwarded to `forward_common_lower()`.
+            Communication dict forwarded to `forward_common_lower()`. When
+            present, selects the parallel (LAMMPS multi-rank) path.
         charge_spin
             Frame-level charge and spin conditions with shape `(nf, 2)`.
+        extended_atype
+            Extended atom types with shape (nf, nall). Required on the parallel
+            path so ghost atom types can be embedded; ignored otherwise.
 
         Returns
         -------
@@ -1692,6 +1748,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            extended_atype=extended_atype,
             charge_spin=charge_spin,
         )
         if self.get_fitting_net() is not None:
@@ -2052,8 +2109,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             traced = rebuild_graph_module(traced)
 
         # The conservative Inductor option set that keeps the dynamic edge
-        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``.
-        compile_options = build_inductor_compile_options()
+        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``;
+        # subclasses may augment it via ``_inductor_compile_options``.
+        compile_options = self._inductor_compile_options()
 
         # NOTE: Store the compiled callable inside the plain-``dict``
         # cache ``compiled_core_compute_cache``.  The dict itself was installed
@@ -2236,6 +2294,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             return self.use_compile
         return bool(self._env_use_compile_infer)
 
+    def _inductor_compile_options(self) -> dict[str, Any]:
+        """Return the Inductor lowering options for this model's compiled core.
+
+        Subclasses may override this to augment the shared option set from
+        :func:`build_inductor_compile_options` with model-specific entries.
+        """
+        return build_inductor_compile_options()
+
     # =========================================================================
     # Export Utilities
     # =========================================================================
@@ -2374,6 +2440,130 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             fn,
             *trace_inputs,
         )
+
+    def forward_common_lower_exportable_with_comm(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        extended_atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_scatter_index: torch.Tensor,
+        edge_mask: torch.Tensor,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        send_list: torch.Tensor,
+        send_proc: torch.Tensor,
+        recv_proc: torch.Tensor,
+        send_num: torch.Tensor,
+        recv_num: torch.Tensor,
+        communicator: torch.Tensor,
+        nlocal: torch.Tensor,
+        nghost: torch.Tensor,
+    ) -> torch.nn.Module:
+        """Trace the parallel lower interface into an exportable FX ``GraphModule``.
+
+        This mirrors :meth:`forward_common_lower_exportable` but threads the
+        extended atom types and the eight ``border_op`` communication tensors as
+        explicit positional inputs, fixing the C++ ABI that ``DeepPotPTExpt``
+        uses for the multi-rank with-comm ``.pt2`` artifact. The opaque
+        ``deepmd_export::border_op`` is registered for tracing before
+        ``make_fx`` runs so its forward and reverse exchanges enter the graph as
+        external calls.
+        """
+        if self.get_active_mode() == "dens":
+            raise NotImplementedError(
+                "SeZM export supports only the conservative `ener` path."
+            )
+        # Imported lazily so plain pt inference never pulls the custom-op
+        # registration module onto its import path.
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
+        ensure_comm_registered()
+
+        model = self
+
+        def fn(
+            coord_: torch.Tensor,
+            atype_: torch.Tensor,
+            extended_atype_: torch.Tensor,
+            edge_index_: torch.Tensor,
+            edge_vec_: torch.Tensor,
+            edge_scatter_index_: torch.Tensor,
+            edge_mask_: torch.Tensor,
+            fparam_: torch.Tensor | None,
+            aparam_: torch.Tensor | None,
+            charge_spin_: torch.Tensor | None,
+            send_list_: torch.Tensor,
+            send_proc_: torch.Tensor,
+            recv_proc_: torch.Tensor,
+            send_num_: torch.Tensor,
+            recv_num_: torch.Tensor,
+            communicator_: torch.Tensor,
+            nlocal_: torch.Tensor,
+            nghost_: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            # Detach inside the closure so the exported graph roots at the
+            # per-edge ``edge_vec`` leaf created in ``core_compute``, never at
+            # the upstream LAMMPS coordinate tensor.
+            coord_ = coord_.detach()
+            edge_vec_ = edge_vec_.detach()
+            comm_dict = {
+                "send_list": send_list_,
+                "send_proc": send_proc_,
+                "recv_proc": recv_proc_,
+                "send_num": send_num_,
+                "recv_num": recv_num_,
+                "communicator": communicator_,
+                "nlocal": nlocal_,
+                "nghost": nghost_,
+            }
+            return model.forward_common_lower(
+                coord_,
+                atype_,
+                edge_index_,
+                edge_vec_,
+                edge_scatter_index_,
+                edge_mask_,
+                fparam=fparam_,
+                aparam=aparam_,
+                comm_dict=comm_dict,
+                extended_atype=extended_atype_,
+                charge_spin=charge_spin_,
+                use_compile=False,
+            )
+
+        if self.get_dim_chg_spin() > 0:
+            charge_spin = self.convert_charge_spin(
+                charge_spin,
+                nf=atype.shape[0],
+                dtype=coord.dtype,
+                device=coord.device,
+            )
+        trace_inputs = (
+            coord,
+            atype,
+            extended_atype,
+            edge_index,
+            edge_vec,
+            edge_scatter_index,
+            edge_mask,
+            fparam,
+            aparam,
+            charge_spin,
+            send_list,
+            send_proc,
+            recv_proc,
+            send_num,
+            recv_num,
+            communicator,
+            nlocal,
+            nghost,
+        )
+        return self._trace_lower_exportable(fn, *trace_inputs)
 
     # =========================================================================
     # Neighbor List Construction
@@ -2725,6 +2915,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def has_message_passing(self) -> bool:
         """Return whether the descriptor performs message passing."""
         return self.atomic_model.has_message_passing()
+
+    def supports_edge_parallel(self) -> bool:
+        """Whether the edge-based LAMMPS multi-rank with-comm artifact applies.
+
+        Cross-rank ghost-feature exchange is well-defined only for the
+        conservative non-bridging path: analytical ZBL bridging and its Source
+        Freeze Propagation gate fold each node's full outgoing-edge set, which a
+        single rank cannot observe for ghost owners. Spin models use the nlist
+        lower interface and are gated separately by the freeze entry point.
+        """
+        if self.inter_potential is not None:
+            return False
+        descriptor = self.atomic_model.descriptor
+        return bool(descriptor.has_message_passing_across_ranks())
 
     # =========================================================================
     # Mode Management

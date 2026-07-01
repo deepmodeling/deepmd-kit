@@ -19,10 +19,12 @@ jobs:
       fail-fast: false
       matrix:
         group: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        python: ["3.10", "3.13"]
+        # Pull requests only run the oldest supported Python version.
+        # Push and merge queue runs keep the full version matrix.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10"]' || '["3.10", "3.13"]') }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
@@ -47,7 +49,7 @@ jobs:
           CMAKE_POLICY_VERSION_MINIMUM: 3.5
       - run: dp --version
       - name: Get durations from cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .test_durations
           # the key must never match, even when restarting workflows, as that
@@ -63,12 +65,36 @@ jobs:
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
           FLAGS_use_stride_compute_kernel: 0
       - name: Test TF2 eager mode
-        run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
+        run: |
+          run_pytest_allow_no_tests() {
+            set +e
+            pytest "$@"
+            local status=$?
+            set -e
+            if [ "$status" -eq 5 ]; then
+              # pytest-split may leave an individual shard with no selected
+              # tests after path/-k filtering. Other shards still cover the
+              # selected tests, so do not fail the whole matrix for exit 5.
+              return 0
+            fi
+            return "$status"
+          }
+
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+            source/tests/consistent/io/test_io.py \
+            source/jax2tf_tests \
+            --splits 12 \
+            --group ${{ matrix.group }}
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+            source/tests/consistent \
+            -k tf2 \
+            --splits 12 \
+            --group ${{ matrix.group }}
         env:
           NUM_WORKERS: 0
           DP_TEST_TF2_ONLY: 1
           DP_DTYPE_PROMOTION_STRICT: 1
-        if: matrix.group == 1
+          DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
       - run: mv .test_durations .test_durations_${{ matrix.group }}
       - name: Upload partial durations
         uses: actions/upload-artifact@v7
@@ -89,11 +115,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.13"]
+        # Pull requests only run the oldest supported Python version.
+        # Push and merge queue runs keep the full version matrix.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10"]' || '["3.10", "3.13"]') }}
     needs: testpython
     steps:
       - name: Get durations from cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .test_durations
           # key won't match during the first run for the given commit, but

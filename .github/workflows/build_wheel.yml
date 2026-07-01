@@ -51,7 +51,7 @@ jobs:
             platform_id: manylinux_aarch64
             dp_variant: cpu
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
@@ -76,7 +76,7 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Build sdist
@@ -123,7 +123,7 @@ jobs:
           large-packages: true
           swap-storage: true
           docker-images: true
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: source/install/docker/dist

@@ -81,6 +81,9 @@ from deepmd.pd.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
+)
 from deepmd.utils.path import (
     DPH5Path,
 )
@@ -520,9 +523,8 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model = get_model_for_wrapper(
-                        state_dict["_extra_state"]["model_params"]
-                    )
+                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
                     pretrained_model_wrapper = ModelWrapper(pretrained_model)
                     pretrained_model_wrapper.set_state_dict(state_dict)
                     # update type related params
@@ -557,6 +559,25 @@ class Trainer:
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
+                        _input_model_params = (
+                            model_params["model_dict"][_model_key]
+                            if self.multi_task
+                            else model_params
+                        )
+                        _pretrained_model_params = (
+                            pretrained_model_params["model_dict"][_model_key_from]
+                            if "model_dict" in pretrained_model_params
+                            else pretrained_model_params
+                        )
+                        if (
+                            "descriptor" in _input_model_params
+                            and "descriptor" in _pretrained_model_params
+                        ):
+                            warn_configuration_mismatch_during_finetune(
+                                _input_model_params["descriptor"],
+                                _pretrained_model_params["descriptor"],
+                                _model_key_from,
+                            )
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()

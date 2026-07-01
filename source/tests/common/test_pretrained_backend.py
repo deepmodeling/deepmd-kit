@@ -35,6 +35,16 @@ class TestPretrainedBackend(unittest.TestCase):
         with self.assertRaises(ValueError):
             Backend.detect_backend_by_model("DPA-3.2-5M.pretrained")
 
+    def test_detect_savedmodel_suffix_split(self) -> None:
+        self.assertEqual(
+            Backend.detect_backend_by_model("model.savedmodel").name,
+            "JAX",
+        )
+        self.assertEqual(
+            Backend.detect_backend_by_model("model.savedmodeltf").name,
+            "TensorFlow2",
+        )
+
     def test_parse_pretrained_alias_plain_name(self) -> None:
         self.assertEqual(parse_pretrained_alias("DPA-3.2-5M"), "DPA-3.2-5M")
         self.assertEqual(parse_pretrained_alias("dpa-3.2-5m"), "DPA-3.2-5M")

@@ -1267,16 +1267,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         edge_mask: torch.Tensor,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        nloc: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute the descriptor from a sparse edge list.
 
+        Two node-set conventions share this path. In the single-domain path
+        (``comm_dict`` is ``None``) the nodes are exactly the local atoms and
+        ``edge_index`` source/destination both index ``[0, nf*nloc)``. In the
+        parallel (LAMMPS multi-rank) path the nodes span the extended region
+        (local owners followed by ghosts), ``edge_index`` indexes the extended
+        atoms directly, and each interaction block refreshes ghost-node features
+        from their owner ranks at the SO(2) convolution input (see
+        :func:`~deepmd.pt.model.descriptor.sezm_nn.block.exchange_ghost_features`).
+
         Parameters
         ----------
         extended_coord
-            Coordinates with shape (nf, nloc*3) or (nf, nloc, 3) in Å.
+            Coordinates with shape (nf, n*3) or (nf, n, 3) in Å, where ``n`` is
+            ``nloc`` in the single-domain path and ``nall`` in the parallel path.
         extended_atype
-            Atom types with shape (nf, nloc).
+            Atom types with shape (nf, n). In the parallel path this spans the
+            extended region so ghost type embeddings are available for the
+            edge-type and environment-seed features.
         edge_index
             Edge indices with shape (2, E).
         edge_vec
@@ -1290,6 +1304,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            node set spans the extended region and ghost features are exchanged
+            via ``deepmd_export::border_op`` between interaction blocks.
+        nloc
+            Number of owned (local) atoms per frame. Required when ``comm_dict``
+            is provided; the final scalar read-out is restricted to these atoms.
 
         Returns
         -------
@@ -1298,13 +1319,32 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
         """
         # === Step 1. Setup dimensions ===
+        # ``n_per_frame`` is the per-frame node count: ``nloc`` in the
+        # single-domain path and ``nall`` in the parallel path. ``out_nloc`` is
+        # the owned-atom count used for the final local read-out.
         extended_coord = extended_coord.to(self.compute_dtype)
-        nf, nloc = extended_atype.shape[:2]
+        nf, n_per_frame = extended_atype.shape[:2]
+        parallel = comm_dict is not None
+        if parallel:
+            # The border exchange and the owned-atom read-out assume one MPI
+            # rank's single-frame extended layout (LAMMPS, the with-comm export
+            # trace, and the parity tests all provide it). nf > 1 would silently
+            # mix frames into wrong forces, so it is rejected outright.
+            if nf != 1:
+                raise ValueError("parallel `comm_dict` inference requires nf == 1")
+            # Imported lazily so plain pt inference never pulls the custom-op
+            # registration module onto its import path.
+            from deepmd.pt_expt.utils.comm import (
+                ensure_comm_registered,
+            )
+
+            ensure_comm_registered()
+        out_nloc = nloc if parallel else n_per_frame
+        atype_flat = extended_atype.reshape(-1)  # (N,)
 
         # === Step 2. Type embedding (l=0) ===
         with nvtx_range("type_embedding"):
-            atype_loc = extended_atype[:, :nloc]  # (nf, nloc)
-            type_ebed = self.type_embedding(atype_loc).reshape(
+            type_ebed = self.type_embedding(extended_atype).reshape(
                 -1, self.channels
             )  # (N, C)
             if self.charge_spin_embedding is not None:
@@ -1312,7 +1352,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     type_ebed,
                     charge_spin,
                     nf=nf,
-                    nloc=nloc,
+                    nloc=n_per_frame,
                 )
             n_nodes = type_ebed.shape[0]
 
@@ -1320,7 +1360,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache_from_edges(
                 type_ebed=type_ebed,
-                atype_flat=atype_loc.reshape(-1),
+                atype_flat=atype_flat,
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
@@ -1359,7 +1399,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 5. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
             if self.use_env_seed:
-                atype_flat = atype_loc.reshape(-1)  # (N,)
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
@@ -1407,9 +1446,20 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 x = x + force_embedding.to(dtype=self.dtype)
             edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
             with self._compute_mode_ctx(extended_coord.device):
-                x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
+                x = self._forward_blocks(
+                    x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
+                )
 
-        # === Step 10. Final l=0 output mixing ===
+        # === Step 10. Keep the owned-atom rows for the read-out ===
+        # ``n_out_nodes`` is the owned-node count in the flattened layout
+        # (``nf * nloc``). Single-domain: ``out_nloc == n_per_frame``, so this
+        # equals the whole node set and the slice is a no-op. Parallel
+        # (single-frame): it drops the trailing ghost rows that only fed message
+        # passing -- LAMMPS orders owned atoms before ghosts, so they lead.
+        n_out_nodes = nf * out_nloc
+        x = x[:n_out_nodes]
+
+        # === Step 11. Final l=0 output mixing ===
         # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
         # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
         # residual is added on the full coefficient tensor before extracting
@@ -1418,7 +1468,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("output_ffn"):
             ffn_in = (
                 x[:, 0:1, :, :]
-                .reshape(n_nodes, 1, 1, self.channels)
+                .reshape(n_out_nodes, 1, 1, self.channels)
                 .to(dtype=self.compute_dtype)
                 if self.so3_readout == "none"
                 # truncate to the final node degree: the empty-edge path
@@ -1428,8 +1478,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
             x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
-        # === Step 11. Reshape to (nf, nloc, channels) and return ===
-        descriptor = x_scalar.reshape(nf, nloc, self.channels)  # (nf, nloc, C)
+        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
         return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
 
     def _forward_blocks(
@@ -1437,6 +1487,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat_per_block: list[torch.Tensor],
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Run the interaction blocks with optional depth attention.
@@ -1449,6 +1500,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Per-edge cache.
         radial_feat_per_block
             List of per-block radial features already truncated to l_schedule[i]+1.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to each
+            block. The block refreshes ghost rows at the SO(2) convolution
+            input — the descriptor's only cross-node operation — so message
+            passing always reads up-to-date neighbours regardless of the
+            (per-node) attention-residual history.
 
         Returns
         -------
@@ -1461,7 +1518,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 x = x[:, : self.node_ebed_dims[i], :, :]
                 blk_radial = radial_feat_per_block[i]
                 with nvtx_range(f"block_{i}"):
-                    x, _, _, _ = block(x, edge_cache, blk_radial)
+                    x, _, _, _ = block(
+                        x,
+                        edge_cache,
+                        blk_radial,
+                        comm_dict=self._block_comm(i, comm_dict),
+                    )
             return x
 
         n_node = x.shape[0]
@@ -1488,6 +1550,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                         edge_cache,
                         blk_radial,
                         unit_history=truncated_unit_history,
+                        comm_dict=self._block_comm(i, comm_dict),
                     )
                 unit_history.append(so2_unit_output)
                 unit_history.extend(ffn_unit_outputs)
@@ -1520,6 +1583,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     edge_cache,
                     blk_radial,
                     unit_history=truncated_block_history,
+                    comm_dict=self._block_comm(i, comm_dict),
                 )
             block_history.append(block_summary)
             x = block_output
@@ -1798,6 +1862,29 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             raise ValueError("`charge_spin` first dimension must match nframes.")
         return charge_spin
 
+    def _block_comm(
+        self,
+        block_idx: int,
+        comm_dict: dict[str, torch.Tensor] | None,
+    ) -> dict[str, torch.Tensor] | None:
+        """Return the border-exchange tensors block ``block_idx`` actually needs.
+
+        Only the SO(2) convolution reads neighbour features, so a block needs the
+        ghost exchange exactly when its neighbour rows cannot be rebuilt locally.
+        Block 0 reads the initial node state: a rank reproduces its ghost rows
+        from ``extended_atype`` (type embedding) unless env-seed / GIE folds
+        neighbour-environment information into them. Every later block reads a
+        previous block's output, which a rank cannot reproduce for ghosts (they
+        receive no messages locally). Returning ``None`` skips the exchange, so a
+        purely local model (``use_env_seed=False`` with a single block) runs
+        multi-rank with no communication at all.
+        """
+        if comm_dict is None:
+            return None
+        if block_idx == 0 and not self.use_env_seed:
+            return None
+        return comm_dict
+
     @contextmanager
     def _compute_mode_ctx(self, device: torch.device) -> Generator[None, None, None]:
         """
@@ -1884,7 +1971,22 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return True
 
     def has_message_passing(self) -> bool:
-        return bool(len(self.blocks) > 0 and self.lmax > 0)
+        # SeZM resolves ghost neighbours through the atom-map fold (single
+        # domain) or border_op exchange (parallel) instead of reading them
+        # directly, so its lower path always needs message-passing handling.
+        return True
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Whether multi-rank inference needs cross-rank ghost-feature exchange.
+
+        SeZM reads ghost-neighbour features at every interaction block, so a
+        domain-decomposed run must exchange them through ``border_op``. Source
+        Freeze Propagation bridging is excluded: its per-node gate folds a
+        node's entire outgoing-edge set, which a single rank cannot observe for
+        ghost owners, so the edge-based with-comm artifact is not exported for
+        bridging models and multi-rank inference fails fast instead.
+        """
+        return self.bridging_switch is None
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False

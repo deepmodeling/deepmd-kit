@@ -173,6 +173,11 @@ struct EdgeTensorPack {
  *   topology and compacts it on-device every step, so it passes ``false``.
  *   The returned edge_vec and edge_mask are left undefined in that case.
  * @param row_centers Optional center atom index for each neighbor-list row.
+ * @param fold_to_local Whether edge_index folds ghost neighbours onto their
+ *   local owners via ``mapping`` (single-domain message passing). When false,
+ *   edge_index indexes the extended atoms directly and coincides with
+ *   edge_index_ext; this is the multi-rank with-comm convention where ghost
+ *   node features are exchanged across ranks rather than gathered locally.
  */
 template <typename VALUETYPE>
 inline EdgeTensorPack createEdgeTensors(
@@ -183,7 +188,8 @@ inline EdgeTensorPack createEdgeTensors(
     const int nall,
     const torch::Device& device,
     const bool with_geometry = true,
-    const std::vector<int>* row_centers = nullptr) {
+    const std::vector<int>* row_centers = nullptr,
+    const bool fold_to_local = true) {
   std::vector<std::int64_t> src;
   std::vector<std::int64_t> dst;
   std::vector<std::int64_t> src_ext;
@@ -217,9 +223,18 @@ inline EdgeTensorPack createEdgeTensors(
       if (jj < 0 || jj >= nall) {
         continue;
       }
-      const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
-      if (src_local < 0 || src_local >= nloc) {
-        continue;
+      // edge_index source: the local owner (folded) for single-domain message
+      // passing, or the extended atom itself for the multi-rank with-comm
+      // convention where ghost features are exchanged across ranks.
+      std::int64_t src_node;
+      if (fold_to_local) {
+        const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        if (src_local < 0 || src_local >= nloc) {
+          continue;
+        }
+        src_node = src_local;
+      } else {
+        src_node = jj;
       }
       const size_t neighbor_offset = static_cast<size_t>(jj) * 3;
       const VALUETYPE dx = coord[neighbor_offset] - coord[center_offset];
@@ -231,7 +246,7 @@ inline EdgeTensorPack createEdgeTensors(
       if (rr <= static_cast<VALUETYPE>(1e-10)) {
         continue;
       }
-      src.push_back(src_local);
+      src.push_back(src_node);
       dst.push_back(center);
       src_ext.push_back(jj);
       dst_ext.push_back(center);

@@ -28,6 +28,7 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+    tabulate_fusion,
 )
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -43,6 +44,9 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.tabulate_math import (
+    DPTabulate,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -388,6 +392,106 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Enable descriptor compression by tabulating embedding networks."""
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        table = DPTabulate(
+            self,
+            self.neuron,
+            self.type_one_side,
+            self.exclude_types,
+            self.activation_function,
+        )
+        lower, upper = table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        self._store_compress_data(
+            table.data,
+            [table_extrapolate, table_stride_1, table_stride_2, check_frequency],
+            lower,
+            upper,
+        )
+        self.compress = True
+
+    def _store_compress_data(
+        self,
+        table_data: dict[str, Array],
+        table_config: list[int | float],
+        lower: dict[str, int],
+        upper: dict[str, int],
+    ) -> None:
+        """Store tabulated embedding-net data in the descriptor state."""
+        compress_data = []
+        compress_info = []
+        dtype = self.davg.dtype
+        ndim = 1 if self.type_one_side else 2
+        for embedding_idx in range(self.ntypes**ndim):
+            if self.type_one_side:
+                ii = embedding_idx
+                ti = -1
+            else:
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(ii)
+            else:
+                net = "filter_" + str(ti) + "_net_" + str(ii)
+            if net not in table_data:
+                compress_data.append(np.asarray([], dtype=dtype))
+                compress_info.append(np.asarray([], dtype=dtype))
+                continue
+            compress_data.append(np.asarray(table_data[net], dtype=dtype))
+            compress_info.append(
+                np.asarray(
+                    [
+                        lower[net],
+                        upper[net],
+                        upper[net] * table_config[0],
+                        table_config[1],
+                        table_config[2],
+                        table_config[3],
+                    ],
+                    dtype=dtype,
+                )
+            )
+        self.compress_data = compress_data
+        self.compress_info = compress_info
+
+    def _tabulate_fusion_se_a(
+        self,
+        table: Array,
+        table_info: Array,
+        em_x: Array,
+        em: Array,
+        last_layer_size: int,
+    ) -> Array:
+        """Pure Array API implementation of tabulate_fusion_se_a forward."""
+        xp = array_api_compat.array_namespace(em_x, em)
+        values = tabulate_fusion(
+            table,
+            table_info,
+            em_x,
+            last_layer_size,
+            reference=em,
+        )
+        return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
+
+    def _add_to_slice(self, array: Array, start: int, end: int, value: Array) -> Array:
+        """Return ``array`` with ``value`` added to ``array[start:end]``."""
+        xp = array_api_compat.array_namespace(array, value)
+        return xp.concat(
+            [array[:start], array[start:end] + value, array[end:]],
+            axis=0,
+        )
+
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
@@ -450,12 +554,22 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         sec = self.sel_cumsum
 
         ng = self.neuron[-1]
+        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        if self.compress:
+            gr = self._call_compressed(rr, atype_ext, nlist, exclude_mask)
+            gr = xp.astype(gr, input_dtype)
+            gr = xp.reshape(gr, (nf, nloc, ng, 4))
+            gr /= self.nnei
+            gr1 = gr[:, :, : self.axis_neuron, :]
+            grrg = xp.sum(gr[:, :, :, None, :] * gr1[:, :, None, :, :], axis=4)
+            grrg = xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron))
+            return grrg, gr[..., 1:], None, None, ww
+
         gr = xp.zeros(
             [nf * nloc, ng, 4],
             dtype=input_dtype,
             device=array_api_compat.device(coord_ext),
         )
-        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
@@ -499,8 +613,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                     tr = tr * xp.astype(mm[:, :, None], tr.dtype)
                     ss = tr[..., 0:1]
                     gg = self.cal_g(ss, (ti, tt))
-                    gr_s[s:e] = gr_s[s:e] + xp.sum(
-                        gg[:, :, :, None] * tr[:, :, None, :], axis=1
+                    gr_s = self._add_to_slice(
+                        gr_s,
+                        s,
+                        e,
+                        xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1),
                     )
             gr = xp.take(gr_s, unsort_idx, axis=0)
         gr = xp.reshape(gr, (nf, nloc, ng, 4))
@@ -512,6 +629,88 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # nf x nloc x (ng x ng1)
         grrg = xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron))
         return grrg, gr[..., 1:], None, None, ww
+
+    def _call_compressed(
+        self,
+        rr: Array,
+        atype_ext: Array,
+        nlist: Array,
+        exclude_mask: Array,
+    ) -> Array:
+        """Compressed forward path for the SE-A descriptor."""
+        xp = array_api_compat.array_namespace(rr, atype_ext, nlist)
+        nf, nloc, nnei, _ = rr.shape
+        sec = self.sel_cumsum
+        ng = self.neuron[-1]
+        nfnl = nf * nloc
+        gr = xp.zeros(
+            [nfnl, 4, ng],
+            dtype=rr.dtype,
+            device=array_api_compat.device(rr),
+        )
+        exclude_mask = xp.reshape(exclude_mask, (nfnl, nnei))
+        rr = xp.reshape(rr, (nfnl, nnei, 4))
+        rr = xp.astype(rr, self.dstd.dtype)
+
+        if self.type_one_side:
+            for embedding_idx, (compress_data_ii, compress_info_ii) in enumerate(
+                zip(self.compress_data, self.compress_info, strict=True)
+            ):
+                if array_api_compat.size(compress_data_ii) == 0:
+                    continue
+                mm = exclude_mask[:, sec[embedding_idx] : sec[embedding_idx + 1]]
+                rr_i = rr[:, sec[embedding_idx] : sec[embedding_idx + 1], :]
+                rr_i = rr_i * xp.astype(mm[:, :, None], rr_i.dtype)
+                ss = rr_i[:, :, :1]
+                gr += self._tabulate_fusion_se_a(
+                    compress_data_ii,
+                    compress_info_ii,
+                    ss,
+                    rr_i,
+                    ng,
+                )
+        else:
+            atype_loc = xp.reshape(atype_ext[:, :nloc], (nfnl,))
+            sort_idx = xp.argsort(atype_loc)
+            unsort_idx = xp.argsort(sort_idx)
+            rr_s = xp.take(rr, sort_idx, axis=0)
+            mask_s = xp.take(exclude_mask, sort_idx, axis=0)
+            dev = array_api_compat.device(rr)
+            gr_s = xp.zeros([nfnl, 4, ng], dtype=rr.dtype, device=dev)
+            type_ends = []
+            offset = 0
+            for ti in range(self.ntypes):
+                offset += int(xp.sum(xp.astype(atype_loc == ti, xp.int32)))
+                type_ends.append(offset)
+            type_starts = [0, *type_ends[:-1]]
+            for ti in range(self.ntypes):
+                s, e = type_starts[ti], type_ends[ti]
+                if s == e:
+                    continue
+                for tt in range(self.ntypes):
+                    embedding_idx = tt * self.ntypes + ti
+                    compress_data_ii = self.compress_data[embedding_idx]
+                    if array_api_compat.size(compress_data_ii) == 0:
+                        continue
+                    compress_info_ii = self.compress_info[embedding_idx]
+                    mm = mask_s[s:e, sec[tt] : sec[tt + 1]]
+                    rr_i = rr_s[s:e, sec[tt] : sec[tt + 1], :]
+                    rr_i = rr_i * xp.astype(mm[:, :, None], rr_i.dtype)
+                    ss = rr_i[:, :, :1]
+                    gr_s = self._add_to_slice(
+                        gr_s,
+                        s,
+                        e,
+                        self._tabulate_fusion_se_a(
+                            compress_data_ii,
+                            compress_info_ii,
+                            ss,
+                            rr_i,
+                            ng,
+                        ),
+                    )
+            gr = xp.take(gr_s, unsort_idx, axis=0)
+        return xp.permute_dims(gr, (0, 2, 1))
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
