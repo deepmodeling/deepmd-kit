@@ -1501,16 +1501,18 @@ class TestSO2LinearEquivariance(_SeZMTestCase):
             )
 
             dim_red = so2_linear.reduced_dim
+            # SO2Linear consumes the focus-major ``(F, E, D_m, C)`` contract, so
+            # the edge axis (the per-edge z-rotation batch) is axis 1.
             x = torch.randn(
-                batch, 1, dim_red, channels_in, device=self.device, dtype=dtype
+                1, batch, dim_red, channels_in, device=self.device, dtype=dtype
             )
 
             angles = torch.rand(batch, device=self.device, dtype=dtype) * 2 * 3.14159
             Z = self._build_m_major_z_rotation(angles, lmax, mmax)
 
-            x_rotated = torch.einsum("bij,bfjc->bfic", Z, x)
+            x_rotated = torch.einsum("eij,fejc->feic", Z, x)
             lhs = so2_linear(x_rotated)
-            rhs = torch.einsum("bij,bfjc->bfic", Z, so2_linear(x))
+            rhs = torch.einsum("eij,fejc->feic", Z, so2_linear(x))
 
             torch.testing.assert_close(
                 lhs,

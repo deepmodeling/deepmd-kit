@@ -1265,7 +1265,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x0_out = x0  # (N, C)
 
         # === Step 5. Compute radial features once (fp32+) ===
-        # Shape: (E, (node_lmax+1)*C) -> (E, node_lmax+1, C)
+        # Shape: (E, (node_init_lmax+1)*C) -> (E, node_init_lmax+1, C)
         radial_feat = None
         with nvtx_range("radial_embedding"):
             if edge_cache.src.numel() > 0:

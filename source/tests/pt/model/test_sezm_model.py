@@ -2479,9 +2479,10 @@ class TestLoRASO2Adapter(_LoRATestCase):
         return base, lora
 
     def _random_input(self, lora: LoRASO2) -> torch.Tensor:
+        # Focus-major ``(F, E, D_m, C)`` contract; E=3 edges.
         return torch.randn(
-            3,
             lora.n_focus,
+            3,
             lora.reduced_dim,
             lora.in_channels,
             device=self.device,
@@ -2514,8 +2515,8 @@ class TestLoRASO2Adapter(_LoRATestCase):
         batch = 8
         dtype = lora.dtype
         x = torch.randn(
-            batch,
             lora.n_focus,
+            batch,
             lora.reduced_dim,
             lora.in_channels,
             device=self.device,
@@ -2523,9 +2524,9 @@ class TestLoRASO2Adapter(_LoRATestCase):
         )
         angles = torch.rand(batch, device=self.device, dtype=dtype) * 2 * math.pi
         z_mat = _build_m_major_z_rotation(angles, lmax, mmax, self.device)
-        x_rot = torch.einsum("bij,bfjc->bfic", z_mat, x)
+        x_rot = torch.einsum("eij,fejc->feic", z_mat, x)
         lhs = lora(x_rot)
-        rhs = torch.einsum("bij,bfjc->bfic", z_mat, lora(x))
+        rhs = torch.einsum("eij,fejc->feic", z_mat, lora(x))
         torch.testing.assert_close(lhs, rhs, atol=1e-5, rtol=1e-5)
 
 
