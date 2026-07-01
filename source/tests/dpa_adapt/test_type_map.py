@@ -14,14 +14,14 @@ import pytest
 # pytest run (the stub wins the import race and stays session-wide), breaking
 # tests that do real tensor math.  Same guard as test_predictor.py.
 try:
-    import torch as _torch_for_test
+    import torch as _unused_torch_for_test
 except Exception:
     _mock_torch = MagicMock()
     _mock_torch.Tensor = type("Tensor", (), {})
-    _torch_for_test = _mock_torch
+    _unused_torch_for_test = _mock_torch
     sys.modules.setdefault("torch", _mock_torch)
 else:
-    _torch_for_test.set_default_device(None)
+    _unused_torch_for_test.set_default_device(None)
 
 from dpa_adapt.data.errors import (
     DPADataError,
