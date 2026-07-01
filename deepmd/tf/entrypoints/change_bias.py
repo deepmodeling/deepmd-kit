@@ -126,6 +126,23 @@ def change_bias(
             log_level,
         )
     else:
+        # Checkpoint directory, or a checkpoint prefix such as "model.ckpt-1000"
+        # that carries no recognized suffix. Route these to the checkpoint
+        # handler when a TensorFlow "checkpoint" state file is present.
+        input_path = Path(INPUT)
+        checkpoint_dir = input_path if input_path.is_dir() else input_path.parent
+        if (checkpoint_dir / "checkpoint").is_file():
+            return _change_bias_checkpoint_file(
+                INPUT,
+                mode,
+                bias_value,
+                datafile,
+                system,
+                numb_batch,
+                model_branch,
+                output,
+                log_level,
+            )
         raise RuntimeError(
             "The model provided must be a checkpoint file or frozen model file (.pb)"
         )
@@ -147,7 +164,9 @@ def _change_bias_checkpoint_file(
     tf.reset_default_graph()
 
     checkpoint_path = Path(checkpoint_prefix)
-    checkpoint_dir = checkpoint_path.parent
+    checkpoint_dir = (
+        checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+    )
 
     # Check for valid checkpoint and find the actual checkpoint path
     checkpoint_state_file = checkpoint_dir / "checkpoint"
