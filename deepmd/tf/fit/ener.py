@@ -1040,7 +1040,8 @@ def change_energy_bias_lower(
     for sys in data.data_systems:
         test_data = sys.get_test()
         nframes = test_data["box"].shape[0]
-        numb_test = min(nframes, ntest)
+        # ntest <= 0 means using all frames in the system
+        numb_test = nframes if ntest <= 0 else min(nframes, ntest)
         if mixed_type:
             atype = test_data["type"][:numb_test].reshape([numb_test, -1])
         else:
