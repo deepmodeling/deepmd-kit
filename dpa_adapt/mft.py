@@ -13,6 +13,9 @@ from dpa_adapt._backend import (
     resolve_dp_command,
     resolve_pretrained_path,
 )
+from dpa_adapt._validation import (
+    validate_fparam_dim,
+)
 from dpa_adapt.utils.dotdict import (
     DotDict,
 )
@@ -144,10 +147,7 @@ class MFTFineTuner:
                 )
             if not isinstance(task_dim, int) or task_dim < 1:
                 raise ValueError(f"task_dim must be an int >= 1; got {task_dim!r}.")
-        if not isinstance(fparam_dim, int) or fparam_dim < 0:
-            raise ValueError(
-                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
-            )
+        validate_fparam_dim(fparam_dim)
         try:
             aux_prob = float(aux_prob)
         except (TypeError, ValueError) as exc:

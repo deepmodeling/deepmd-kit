@@ -5,24 +5,15 @@
 # Thin layer on top of load_data() that additionally verifies every
 # system carries the requested label key (e.g. "energy", "homo").
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 import logging
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 import dpdata
 
-from dpa_adapt.data.errors import (
-    DPADataError,
-)
-from dpa_adapt.data.loader import (
-    _resolve_label_key,
-    load_data,
-)
+from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.loader import _resolve_label_key, load_data
 
 _LOG = logging.getLogger("dpa_adapt.data.dataset")
 
@@ -64,6 +55,8 @@ def load_dataset(
         *every* candidate was skipped, in which case a ``DPADataError``
         is raised (fail-fast for training workflows).
     """
+    from dpa_adapt.data.loader import _find_label_npys, _get_source
+
     systems = load_data(data)
 
     resolved_key = _resolve_label_key(label_key)
@@ -76,9 +69,18 @@ def load_dataset(
         # ``data`` dict; label_key (after alias resolution) presence is the litmus test.
         if resolved_key in system.data:
             validated.append(system)
-        else:
-            identifier = getattr(system, "_dpa_source", f"system[{i}]")
-            skipped.append(f"{identifier} (missing {resolved_key!r})")
+            continue
+
+        # Fallback: custom labels such as "homo.npy"/"bandgap.npy" under set.*/
+        # are not generally loaded into dpdata.System.data, so check for the
+        # label file directly (shared discovery with _load_labels()).
+        source = _get_source(system)
+        if source is not None and _find_label_npys(source, resolved_key):
+            validated.append(system)
+            continue
+
+        identifier = getattr(system, "_dpa_source", f"system[{i}]")
+        skipped.append(f"{identifier} (missing {resolved_key!r})")
 
     if skipped:
         _LOG.warning(

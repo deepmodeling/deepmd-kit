@@ -27,13 +27,19 @@ def _pickle_load(path, **kwargs):
         return pickle.load(f)
 
 
-_mock_torch = MagicMock()
-_mock_torch.save = _pickle_save
-_mock_torch.load = _pickle_load
-_mock_torch.cuda.is_available.return_value = False
-_mock_torch.Tensor = type("Tensor", (), {})
-
-sys.modules.setdefault("torch", _mock_torch)
+# Only stub torch when it is genuinely absent; injecting a MagicMock into
+# sys.modules unconditionally leaks into other test modules during a full
+# pytest run (the stub wins the import race and stays session-wide).  Same
+# guard as test_predictor.py.
+try:
+    import torch  # noqa: F401
+except Exception:
+    _mock_torch = MagicMock()
+    _mock_torch.save = _pickle_save
+    _mock_torch.load = _pickle_load
+    _mock_torch.cuda.is_available.return_value = False
+    _mock_torch.Tensor = type("Tensor", (), {})
+    sys.modules.setdefault("torch", _mock_torch)
 
 from dpa_adapt import (
     DPAFineTuner,

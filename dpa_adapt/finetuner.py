@@ -9,13 +9,8 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import (
-    Path,
-)
-from typing import (
-    Any,
-    ClassVar,
-)
+from pathlib import Path
+from typing import Any, ClassVar
 
 import dpdata
 import numpy as np
@@ -29,21 +24,17 @@ from dpa_adapt._backend import (
     resolve_model_branch,
     resolve_pretrained_path,
 )
-from dpa_adapt.conditions import (
-    ConditionManager,
-    DPAConditionError,
-)
-from dpa_adapt.data.errors import (
-    DPADataError,
-)
+from dpa_adapt._validation import validate_fparam_dim
+from dpa_adapt.conditions import ConditionManager, DPAConditionError
+from dpa_adapt.data.errors import DPADataError
 from dpa_adapt.data.loader import (
+    _find_label_npys,
     _get_source,
     _resolve_label_key,
     load_data,
 )
-from dpa_adapt.utils.dotdict import (
-    DotDict,
-)
+from dpa_adapt.data.type_map import _is_placeholder_type_map
+from dpa_adapt.utils.dotdict import DotDict
 
 _LOG = logging.getLogger("dpa_adapt")
 
@@ -81,18 +72,14 @@ def _load_labels(
                 all_labels.append(np.asarray(system.data[resolved]))
                 continue
 
-            # Fallback: load set.*/key.npy directly from the system directory.
+            # Fallback: load set.*/{key}.npy directly from the system directory.
             source = _get_source(system)
             if source is not None:
-                source_path = Path(source)
-                set_dirs = sorted(source_path.glob("set.*"))
-                npy_labels = []
-                for sd in set_dirs:
-                    npy_path = sd / f"{resolved}.npy"
-                    if npy_path.exists():
-                        npy_labels.append(np.load(npy_path))
-                if npy_labels:
-                    all_labels.append(np.concatenate(npy_labels, axis=0))
+                npy_paths = _find_label_npys(source, resolved)
+                if npy_paths:
+                    all_labels.append(
+                        np.concatenate([np.load(p) for p in npy_paths], axis=0)
+                    )
                     continue
 
             # Neither dpdata nor direct .npy found — build a clear error.
@@ -218,10 +205,7 @@ def _read_data_type_map(system: dpdata.System) -> list[str]:
     data had no ``type_map.raw``).
     """
     names = list(system.data.get("atom_names", []))
-    if not names:
-        return []
-    # dpdata generates "Type_0", "Type_1", ... when no type_map.raw was present.
-    if all(n.startswith("Type_") for n in names):
+    if not names or _is_placeholder_type_map(names):
         return []
     return names
 
@@ -296,10 +280,7 @@ def load_or_extract(
     -------
     np.ndarray, shape ``(n_frames_total, feat_dim)``
     """
-    from dpa_adapt.data.desc_cache import (
-        _cache_dir,
-        _cache_key,
-    )
+    from dpa_adapt.data.desc_cache import _cache_dir, _cache_key
 
     if cache:
         key = _cache_key(
@@ -346,9 +327,7 @@ def ensure_per_system_cache(
     Existing cache files are reused as-is.  Missing ones are extracted one
     system at a time for low peak memory.
     """
-    from dpa_adapt.data.desc_cache import (
-        _per_system_cache_path,
-    )
+    from dpa_adapt.data.desc_cache import _per_system_cache_path
 
     missing: list = []
     for system in systems:
@@ -898,6 +877,7 @@ class DPAFineTuner:
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
                 f"got {strategy!r}"
             )
+        validate_fparam_dim(fparam_dim)
 
         self.strategy = strategy
 
@@ -1023,10 +1003,7 @@ class DPAFineTuner:
         """
         try:
             # Lazy import to avoid circular dependency: finetuner → desc_cache → finetuner.
-            from dpa_adapt.data.desc_cache import (
-                _cache_dir,
-                _cache_key,
-            )
+            from dpa_adapt.data.desc_cache import _cache_dir, _cache_key
 
             key = _cache_key(
                 systems,
@@ -1099,9 +1076,10 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
-            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
+        else:
+            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 
@@ -1116,9 +1094,7 @@ class DPAFineTuner:
         type_map: list[str],
     ) -> str:
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
-        from dpa_adapt.trainer import (
-            DPATrainer,
-        )
+        from dpa_adapt.trainer import DPATrainer
 
         freeze = self.strategy == "frozen_head"
         trainer = DPATrainer(
@@ -1224,9 +1200,7 @@ class DPAFineTuner:
         self, data: str | list[str], fmt: str | None = None
     ) -> DotDict:
         """Run ``dp --pt test`` and parse property predictions from detail files."""
-        from dpa_adapt.trainer import (
-            DPATrainer,
-        )
+        from dpa_adapt.trainer import DPATrainer
 
         if fmt is not None:
             raise ValueError(
@@ -1405,9 +1379,7 @@ class DPAFineTuner:
 
     def _ensure_mft(self) -> Any:
         """Create the MFT delegate on first use."""
-        from dpa_adapt.mft import (
-            MFTFineTuner,
-        )
+        from dpa_adapt.mft import MFTFineTuner
 
         if self._mft is None:
             self._mft = MFTFineTuner(
@@ -1491,16 +1463,10 @@ class DPAFineTuner:
         self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
         y_flat = y.ravel() if self._task_dim == 1 else y
 
-        from sklearn.pipeline import (
-            make_pipeline,
-        )
-        from sklearn.preprocessing import (
-            StandardScaler,
-        )
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
 
-        from dpa_adapt.utils.sklearn_heads import (
-            build_sklearn_head,
-        )
+        from dpa_adapt.utils.sklearn_heads import build_sklearn_head
 
         head = build_sklearn_head(
             self._predictor_type,

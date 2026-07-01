@@ -4,9 +4,7 @@
 # Automatic type_map resolution: read from checkpoint, union from data,
 # validate subsets.  Users should never need to touch ``_extra_state``.
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 
 def read_checkpoint_type_map(
@@ -32,10 +30,7 @@ def read_checkpoint_type_map(
     list[str]
         Element symbols.
     """
-    from dpa_adapt._backend import (
-        load_torch_file,
-        resolve_pretrained_path,
-    )
+    from dpa_adapt._backend import load_torch_file, resolve_pretrained_path
 
     pretrained = resolve_pretrained_path(pretrained)
     sd = load_torch_file(pretrained)
@@ -76,6 +71,18 @@ def read_checkpoint_type_map(
     )
 
 
+def _is_placeholder_type_map(names: list[str] | tuple[str, ...]) -> bool:
+    """Return ``True`` if *names* is dpdata's all-``Type_N`` placeholder map.
+
+    dpdata invents ``Type_0``, ``Type_1``, ... when the source data had no
+    ``type_map.raw``.  Such a map carries no real element identity, so callers
+    treat it as "no atom_names" and fall back to raw atom indices.  Shared by
+    ``read_data_type_map_union`` here and ``_read_data_type_map`` in
+    ``finetuner`` so both apply the same rule.
+    """
+    return bool(names) and all(str(n).startswith("Type_") for n in names)
+
+
 def read_data_type_map_union(systems: list) -> list[str]:
     """Read ``atom_names`` from every system and return the union.
 
@@ -95,6 +102,11 @@ def read_data_type_map_union(systems: list) -> list[str]:
     elems: set[str] = set()
     for sys in systems:
         names = sys.data.get("atom_names", [])
+        # Skip dpdata's all-"Type_N" placeholder maps so callers fall back to
+        # raw atom indices instead of rejecting valid data as unsupported
+        # elements (consistent with _read_data_type_map in finetuner.py).
+        if _is_placeholder_type_map(names):
+            continue
         for name in names:
             if name:
                 elems.add(str(name))
