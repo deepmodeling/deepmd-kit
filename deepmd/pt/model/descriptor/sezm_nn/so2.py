@@ -344,6 +344,24 @@ class SO2Linear(nn.Module):
         # Each |m| group occupies a contiguous (in, out) block on the diagonal.
         self._block_diag_slices = self._build_block_diag_slices()
 
+        # Inference fast path (opt-in via ``DP_TRITON_INFER``): the per-|m|-block
+        # batched bmm + cat of _block_diagonal_matmul is replaced by a fused
+        # Triton BN=64 block-diagonal GEMM that consumes the strided operands
+        # without a contiguity copy. Bound only when Triton is available and every
+        # block width aligns to BN=64; otherwise the eager path is kept.
+        self._block_diag_gemm = None
+        if use_triton_infer():
+            from .triton.so2_block_gemm import (
+                SO2_BLOCK_GEMM_TRITON_AVAILABLE,
+                block_diag_gemm,
+                slices_supported,
+            )
+
+            if SO2_BLOCK_GEMM_TRITON_AVAILABLE and slices_supported(
+                self._block_diag_slices
+            ):
+                self._block_diag_gemm = block_diag_gemm
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Parameters
@@ -522,6 +540,8 @@ class SO2Linear(nn.Module):
             Flattened output with shape ``(F, E, D_m*Cout)``.
         """
         weight = weight.permute(1, 0, 2)  # (F, D_m*Cin, D_m*Cout)
+        if self._block_diag_gemm is not None and not self.training:
+            return self._block_diag_gemm(x_flat, weight, self._block_diag_slices)
         blocks = [
             torch.bmm(
                 x_flat[:, :, in0:in1],

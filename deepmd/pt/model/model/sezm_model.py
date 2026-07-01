@@ -502,6 +502,7 @@ from deepmd.pt.utils.compile_compat import (
     get_task_buffer_values,
     next_safe_prime,
     rebuild_graph_module,
+    relax_views_to_reshapes,
     strip_saved_tensor_detach,
     trace_pad_dim,
 )
@@ -2420,7 +2421,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             get_decompositions,
         )
 
-        return make_fx(
+        traced = make_fx(
             fn,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
@@ -2428,6 +2429,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 [torch.ops.aten.silu_backward.default]
             ),
         )(*sample_inputs)
+        # make_fx can lower a reshape to an unsound aten.view when the fake
+        # stride diverges from the eager stride; relax views back to reshapes.
+        relax_views_to_reshapes(traced)
+        return traced
 
     def forward_common_lower_exportable(
         self,

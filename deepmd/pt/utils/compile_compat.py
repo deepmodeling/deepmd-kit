@@ -45,6 +45,7 @@ __all__ = [
     "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
+    "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
 ]
@@ -298,6 +299,36 @@ def rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
     new_graph.lint()
     new_gm = torch.fx.GraphModule(gm, new_graph)
     return new_gm
+
+
+def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.view`` in a ``make_fx`` graph to ``aten.reshape``.
+
+    ``make_fx`` lowers ``Tensor.reshape`` to ``aten.view`` whenever the traced
+    ``FakeTensor`` is view-compatible. The lowering is unsound when the fake
+    stride differs from the eager stride -- a permuted tensor that ``FakeTensor``
+    keeps strided while eager materializes contiguous -- since the baked
+    ``aten.view`` is accepted during tracing yet rejected at runtime for
+    incompatible size and stride. ``aten.reshape`` coincides with ``aten.view``
+    on view-compatible strides (and is elided by Inductor in that case) and
+    copies only when a view is impossible; the rewrite is therefore
+    semantics-preserving and free on the fast path.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    view = torch.ops.aten.view.default
+    reshape = torch.ops.aten.reshape.default
+    relaxed = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is view:
+            node.target = reshape
+            relaxed = True
+    if relaxed:
+        gm.graph.lint()
+        gm.recompile()
 
 
 def build_inductor_compile_options() -> dict[str, Any]:
