@@ -416,6 +416,10 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
 
+    def serialize(self) -> dict[str, Any]:
+        model = self.dp
+        return model.serialize()
+
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics.
 

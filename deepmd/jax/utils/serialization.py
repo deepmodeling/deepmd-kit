@@ -359,5 +359,13 @@ def serialize_from_file(model_file: str) -> dict:
         data.pop("constants")
         data["@variables"].pop("stablehlo")
         return data
+    elif model_file.endswith(".savedmodel"):
+        raise ValueError(
+            "JAX SavedModel does not support lossless file serialization. "
+            "Use DeepEval.serialize() for a structure-only model tree."
+        )
     else:
-        raise ValueError("JAX backend only supports converting .jax directory")
+        raise ValueError(
+            "JAX backend only supports lossless file serialization for .jax "
+            "directory and .hlo."
+        )

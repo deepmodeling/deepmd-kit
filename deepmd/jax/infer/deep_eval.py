@@ -187,6 +187,31 @@ class DeepEval(DeepEvalBackend):
         """Get the number of spin atom types of this model."""
         return 0
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        JAX-native ``.jax``/``.hlo`` inputs return the lossless, weight-bearing
+        ``model`` subtree from the file payload. TensorFlow-wrapped
+        ``.savedmodel`` inputs cannot be converted back losslessly; for that
+        format this method reconstructs the model tree from the definition
+        script, so trained weights are not preserved.
+        """
+        if str(self.model_path).endswith(".savedmodel"):
+            from deepmd.jax.model.model import (
+                get_model,
+            )
+
+            return get_model(self.get_model_def_script()).serialize()
+
+        from deepmd.jax.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.model_path)
+        if "model" not in data:
+            raise RuntimeError("Serialized model data does not contain key 'model'.")
+        return data["model"]
+
     def eval(
         self,
         coords: np.ndarray,
