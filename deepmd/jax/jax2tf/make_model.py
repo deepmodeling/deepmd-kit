@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Compatibility wrappers for TensorFlow model-call helpers."""
+"""Outer TensorFlow call wrapper for the JAX/jax2tf SavedModel.
+
+The wrapper builds PBC ghosts, neighbor lists, and output communication around
+the lower JAX model. It deliberately uses the graph-safe helpers in this
+package instead of the TF2 eager helpers, because this code is traced by
+``tf.saved_model.save`` and must keep tensor-shape branches convertible by
+AutoGraph before it invokes the jax2tf-converted model body.
+"""
 
 from collections.abc import (
     Callable,
-)
-from typing import (
-    Any,
 )
 
 import tensorflow as tf
@@ -13,42 +17,31 @@ import tensorflow as tf
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
-from deepmd.tf2.common import (
-    to_tf_tensor,
-    unwrap_value,
-    wrap_value,
+from deepmd.jax.jax2tf.nlist import (
+    build_neighbor_list,
+    extend_coord_with_ghosts,
 )
-from deepmd.tf2.make_model import (
-    model_call_from_call_lower as tf2_model_call_from_call_lower,
+from deepmd.jax.jax2tf.region import (
+    normalize_coord,
 )
-
-__all__ = ["model_call_from_call_lower"]
-
-
-def _wrap_call_lower(call_lower: Callable[..., dict[str, Any]]) -> Callable:
-    def wrapped_call_lower(
-        extended_coord: Any,
-        extended_atype: Any,
-        nlist: Any,
-        mapping: Any,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        return wrap_value(
-            call_lower(
-                to_tf_tensor(extended_coord),
-                to_tf_tensor(extended_atype),
-                to_tf_tensor(nlist),
-                to_tf_tensor(mapping),
-                **{kk: to_tf_tensor(vv) for kk, vv in kwargs.items()},
-            )
-        )
-
-    return wrapped_call_lower
+from deepmd.jax.jax2tf.transform_output import (
+    communicate_extended_output,
+)
 
 
 def model_call_from_call_lower(
     *,  # enforce keyword-only arguments
-    call_lower: Callable[..., dict[str, Any]],
+    call_lower: Callable[
+        [
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            bool,
+        ],
+        dict[str, tf.Tensor],
+    ],
     rcut: float,
     sel: list[int],
     mixed_types: bool,
@@ -60,18 +53,44 @@ def model_call_from_call_lower(
     aparam: tf.Tensor,
     do_atomic_virial: bool = False,
 ) -> dict[str, tf.Tensor]:
-    return unwrap_value(
-        tf2_model_call_from_call_lower(
-            call_lower=_wrap_call_lower(call_lower),
-            rcut=rcut,
-            sel=sel,
-            mixed_types=mixed_types,
-            model_output_def=model_output_def,
-            coord=coord,
-            atype=atype,
-            box=box,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
+    """Return model prediction from lower interface."""
+    atype_shape = tf.shape(atype)
+    nframes, nloc = atype_shape[0], atype_shape[1]
+    cc, bb, fp, ap = coord, box, fparam, aparam
+    del coord, box, fparam, aparam
+    if tf.shape(bb)[-1] != 0:
+        coord_normalized = normalize_coord(
+            tf.reshape(cc, [nframes, nloc, 3]),
+            tf.reshape(bb, [nframes, 3, 3]),
         )
+    else:
+        coord_normalized = cc
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, bb, rcut
     )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        # types will be distinguished in the lower interface, so it doesn't
+        # need to be distinguished here
+        distinguish_types=False,
+    )
+    extended_coord = tf.reshape(extended_coord, [nframes, -1, 3])
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fparam=fp,
+        aparam=ap,
+    )
+    model_predict = communicate_extended_output(
+        model_predict_lower,
+        model_output_def,
+        mapping,
+        do_atomic_virial=do_atomic_virial,
+    )
+    return model_predict

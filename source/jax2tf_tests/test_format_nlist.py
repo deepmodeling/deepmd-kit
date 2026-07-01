@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 from deepmd.jax.jax2tf.format_nlist import (
     format_nlist,
@@ -11,6 +10,7 @@ from deepmd.jax.jax2tf.nlist import (
 )
 
 GLOBAL_SEED = 20241110
+DTYPE = tf.float64
 
 
 class TestFormatNlist(tf.test.TestCase):
@@ -19,14 +19,14 @@ class TestFormatNlist(tf.test.TestCase):
         self.nloc = 3
         self.ns = 5 * 5 * 3
         self.nall = self.ns * self.nloc
-        self.cell = tnp.array(
-            [[[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]]], dtype=tnp.float64
+        self.cell = tf.constant(
+            [[[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]]], dtype=DTYPE
         )
-        self.icoord = tnp.array(
+        self.icoord = tf.constant(
             [[[0.035, 0.062, 0.064], [0.085, 0.058, 0.021], [0.537, 0.553, 0.124]]],
-            dtype=tnp.float64,
+            dtype=DTYPE,
         )
-        self.atype = tnp.array([[1, 0, 1]], dtype=tnp.int32)
+        self.atype = tf.constant([[1, 0, 1]], dtype=tf.int32)
         self.nsel = [10, 10]
         self.rcut = 1.01
 
@@ -69,10 +69,10 @@ class TestFormatNlist(tf.test.TestCase):
         )
         # random shuffle
         shuffle_idx = tf.random.shuffle(tf.range(nlist.shape[2]))
-        nlist = tnp.take(nlist, shuffle_idx, axis=2)
+        nlist = tf.gather(nlist, shuffle_idx, axis=2)
         nlist = format_nlist(self.ecoord, nlist, sum(self.nsel), self.rcut)
         # we only need to ensure the result is correct, no need to check the order
-        self.assertAllEqual(tnp.sort(nlist, axis=-1), tnp.sort(self.nlist, axis=-1))
+        self.assertAllEqual(tf.sort(nlist, axis=-1), tf.sort(self.nlist, axis=-1))
 
     def test_format_nlist_larger_rcut(self) -> None:
         nlist = build_neighbor_list(
@@ -85,10 +85,10 @@ class TestFormatNlist(tf.test.TestCase):
         )
         # random shuffle
         shuffle_idx = tf.random.shuffle(tf.range(nlist.shape[2]))
-        nlist = tnp.take(nlist, shuffle_idx, axis=2)
+        nlist = tf.gather(nlist, shuffle_idx, axis=2)
         nlist = format_nlist(self.ecoord, nlist, sum(self.nsel), self.rcut)
         # we only need to ensure the result is correct, no need to check the order
-        self.assertAllEqual(tnp.sort(nlist, axis=-1), tnp.sort(self.nlist, axis=-1))
+        self.assertAllEqual(tf.sort(nlist, axis=-1), tf.sort(self.nlist, axis=-1))
 
     def test_format_nlist_dynamic_nnei_graph(self) -> None:
         @tf.function(
