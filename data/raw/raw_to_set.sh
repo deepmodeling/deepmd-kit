@@ -37,6 +37,8 @@ for ii in $(seq 0 $nset_1); do
 	test -f virial.raw$pi && mv virial.raw$pi set.$pi/virial.raw
 	test -f atom_ener.raw$pi && mv atom_ener.raw$pi set.$pi/atom_ener.raw
 	test -f fparam.raw$pi && mv fparam.raw$pi set.$pi/fparam.raw
+	test -f dipole.raw$pi && mv dipole.raw$pi set.$pi/dipole.raw
+	test -f polarizability.raw$pi && mv polarizability.raw$pi set.$pi/polarizability.raw
 	test -f atomic_dipole.raw$pi && mv atomic_dipole.raw$pi set.$pi/atomic_dipole.raw
 	test -f atomic_polarizability.raw$pi && mv atomic_polarizability.raw$pi set.$pi/atomic_polarizability.raw
 
