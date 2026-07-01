@@ -5495,6 +5495,9 @@ def resolve_full_validation_start_step(
 def validating_args() -> Argument:
     """Generate full validation arguments."""
     valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation_supported = (
+        "(Supported Backend: PyTorch, PyTorch Experimental, JAX) "
+    )
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
         "validation dataset during training. This flow is independent from the "
@@ -5566,7 +5569,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_full_validation,
+            doc=doc_full_validation_supported + doc_full_validation,
         ),
         Argument(
             "ema_full_validation",
@@ -5580,7 +5583,7 @@ def validating_args() -> Argument:
             int,
             optional=True,
             default=5000,
-            doc=doc_only_pt_supported + doc_validation_freq,
+            doc=doc_full_validation_supported + doc_validation_freq,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5589,21 +5592,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_save_best,
+            doc=doc_full_validation_supported + doc_save_best,
         ),
         Argument(
             "save_best_dir",
             [str, None],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_save_best_dir,
+            doc=doc_full_validation_supported + doc_save_best_dir,
         ),
         Argument(
             "max_best_ckpt",
             int,
             optional=True,
             default=1,
-            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            doc=doc_full_validation_supported + doc_max_best_ckpt,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5612,7 +5615,7 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="E:MAE",
-            doc=doc_only_pt_supported + doc_validation_metric,
+            doc=doc_full_validation_supported + doc_validation_metric,
             extra_check=is_valid_full_validation_metric,
             extra_check_errmsg=(
                 "must be one of "
@@ -5624,14 +5627,14 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="val.log",
-            doc=doc_only_pt_supported + doc_full_val_file,
+            doc=doc_full_validation_supported + doc_full_val_file,
         ),
         Argument(
             "full_val_start",
             [int, float],
             optional=True,
             default=0.5,
-            doc=doc_only_pt_supported + doc_full_val_start,
+            doc=doc_full_validation_supported + doc_full_val_start,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be greater than or equal to 0",
         ),
@@ -5657,7 +5660,7 @@ def validating_args() -> Argument:
         sub_variants=[],
         optional=True,
         default={},
-        doc=doc_only_pt_supported
+        doc=doc_full_validation_supported
         + "Independent full validation options for single-task energy training.",
     )
 

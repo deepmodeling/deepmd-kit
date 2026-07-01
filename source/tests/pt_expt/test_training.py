@@ -311,6 +311,52 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_loop(self, mocked_eval) -> None:
+        """Run pt_expt full validation and verify best-checkpoint outputs."""
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 0.5},
+        ]
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["training"]["save_freq"] = 100
+        config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_full_validation_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+                self.assertIsNotNone(trainer.full_validator)
+                trainer.run()
+
+                self.assertTrue(os.path.exists("best.ckpt-2.t-1.pt"))
+                self.assertFalse(os.path.exists("best.ckpt-1.t-1.pt"))
+                with open("val.log") as fp:
+                    val_lines = [
+                        line for line in fp.readlines() if not line.startswith("#")
+                    ]
+                self.assertEqual(len(val_lines), 2)
+                self.assertEqual(
+                    trainer._unwrapped.train_infos["full_validation_topk_records"],
+                    [{"metric": 0.5, "step": 2}],
+                )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_training_loop_dpa4(self) -> None:
         """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
         config = _make_config(self.data_dir, numb_steps=5)

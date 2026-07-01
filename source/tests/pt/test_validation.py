@@ -317,6 +317,60 @@ class TestValidationHelpers(unittest.TestCase):
 
             self.assertEqual(new_best_path, str(best_dir / "best.ckpt-1.t-1.pt"))
 
+    def test_full_validator_reconciles_directory_checkpoints(self) -> None:
+        train_infos = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": True,
+                        "max_best_ckpt": 2,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=_DummyModel(),
+                    state_store=train_infos,
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=False,
+                    best_checkpoint_suffix=".jax",
+                )
+                new_best_path = validator._update_best_state(
+                    display_step=1,
+                    selected_metric_value=2.0,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
+                    display_step=2,
+                    selected_metric_value=1.0,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
+                    display_step=3,
+                    selected_metric_value=1.5,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(new_best_path, "best.ckpt-3.t-2.jax")
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.jax")),
+                ["best.ckpt-2.t-1.jax", "best.ckpt-3.t-2.jax"],
+            )
+
     def test_full_validator_lmdb_full_validation_iterates_nloc_groups(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lmdb_path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")

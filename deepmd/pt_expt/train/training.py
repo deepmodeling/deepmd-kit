@@ -43,6 +43,13 @@ from deepmd.dpmodel.utils.batch import (
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
+from deepmd.pt.train.utils import (
+    resolve_best_checkpoint_dir,
+)
+from deepmd.pt.train.validation import (
+    FullValidator,
+    resolve_full_validation_start_step,
+)
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
@@ -831,6 +838,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        validating_params = config.get("validating", {}) or {}
 
         # Task normalization --------------------------------------------------
         self.multi_task = "model_dict" in model_params
@@ -1276,6 +1284,83 @@ class Trainer(AbstractTrainer):
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
         )
+        self.full_validator = self._create_full_validator(
+            validating_params=validating_params,
+            validation_data=self.validation_data if not self.multi_task else None,
+        )
+
+    def _create_full_validator(
+        self,
+        *,
+        validating_params: dict[str, Any],
+        validation_data: Any | None,
+    ) -> FullValidator | None:
+        """Create the runtime full validator when it is active."""
+        if not self._is_validation_requested(validating_params, "full_validation"):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        if validation_data is None:
+            raise RuntimeError(
+                "validation_data must be available after full validation checks."
+            )
+        return FullValidator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+            model=self.models[DEFAULT_TASK_KEY],
+            state_store=self._unwrapped.train_infos,
+            num_steps=self.num_steps,
+            rank=self.rank,
+            zero_stage=0,
+            restart_training=self.restart_training,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
+        )
+
+    def _is_validation_requested(
+        self,
+        validating_params: dict[str, Any],
+        flag_name: str,
+    ) -> bool:
+        """Check whether a full validation flow can trigger during this run."""
+        if not validating_params.get(flag_name, False):
+            return False
+        start_step = resolve_full_validation_start_step(
+            validating_params.get("full_val_start", 0.5),
+            self.num_steps,
+        )
+        return start_step is not None and start_step <= self.num_steps
+
+    def _raise_if_full_validation_unsupported(
+        self,
+        validation_data: Any | None,
+    ) -> None:
+        """Validate runtime full validation constraints."""
+        if self.multi_task:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; multi-task training is not supported."
+            )
+
+        has_spin = getattr(self.models[DEFAULT_TASK_KEY], "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin or isinstance(self.loss, EnergySpinLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; spin-energy training is not supported."
+            )
+
+        if not isinstance(self.loss, EnergyLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy training."
+            )
+
+        if validation_data is None:
+            raise ValueError(
+                "validating.full_validation requires `training.validation_data` "
+                "to be configured."
+            )
 
     # ------------------------------------------------------------------
     # torch.compile helpers
@@ -1494,6 +1579,25 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
 
     def save_checkpoint(self, step: int) -> None:
+        ckpt_path = Path(f"{self.save_ckpt}-{step}.pt")
+        self._save_checkpoint_to_path(ckpt_path, step=step)
+        latest = Path(f"{self.save_ckpt}.pt")
+        _replace_latest_checkpoint_link(latest, ckpt_path)
+        self._cleanup_old_checkpoints()
+        log.info(f"Saved checkpoint to {ckpt_path}")
+
+    def _save_full_validation_checkpoint(
+        self,
+        save_path: Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save a checkpoint selected by full validation."""
+        del lr
+        self._save_checkpoint_to_path(save_path, step=step)
+
+    def _save_checkpoint_to_path(self, ckpt_path: Path, *, step: int) -> None:
+        """Serialize the current trainer state to an explicit checkpoint path."""
         self._unwrapped.train_infos["step"] = step
         # When compiled, wrapper.model[key] is _CompiledModel whose state_dict
         # uses keys like "original_model.*".  Restart would load into a plain
@@ -1515,13 +1619,8 @@ class Trainer(AbstractTrainer):
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
-        ckpt_path = Path(f"{self.save_ckpt}-{step}.pt")
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
-        latest = Path(f"{self.save_ckpt}.pt")
-        _replace_latest_checkpoint_link(latest, ckpt_path)
-        self._cleanup_old_checkpoints()
-        log.info(f"Saved checkpoint to {ckpt_path}")
 
     def _cleanup_old_checkpoints(self) -> None:
         """Remove old step checkpoint files beyond the retention limit."""
@@ -1575,6 +1674,24 @@ class Trainer(AbstractTrainer):
         wall_start = time.time()
         super().run(self.training_tasks)
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def run_full_validation(
+        self,
+        *,
+        step: int,
+        display_step: int,
+        learning_rate: float,
+    ) -> None:
+        """Run optional full validation for one step."""
+        if self.full_validator is None:
+            return None
+        self.full_validator.run(
+            step_id=display_step,
+            display_step=display_step,
+            lr=learning_rate,
+            save_checkpoint=self._save_full_validation_checkpoint,
+        )
+        return None
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task using DeePMD's seeded random helper."""

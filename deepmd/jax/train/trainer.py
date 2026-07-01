@@ -42,6 +42,9 @@ from deepmd.dpmodel.train import (
     TrainingTaskCollection,
     TrainStepResult,
 )
+from deepmd.dpmodel.train.validation import (
+    resolve_best_checkpoint_dir,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
@@ -69,6 +72,9 @@ from deepmd.jax.model.model import (
 )
 from deepmd.jax.utils.serialization import (
     serialize_from_file,
+)
+from deepmd.utils.argcheck import (
+    resolve_full_validation_start_step,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -110,6 +116,7 @@ class DPTrainer(AbstractTrainer):
         self.finetune_links = finetune_links
         self.restart_training = restart is not None
         self.training_param = jdata["training"]
+        self.validating_param = jdata.get("validating", {}) or {}
         self.num_steps = self.training_param["numb_steps"]
         self.start_step = 0
 
@@ -141,11 +148,11 @@ class DPTrainer(AbstractTrainer):
                     "JAX init/restart checkpoint task keys do not match input config."
                 )
             self.models = self._deserialize_models(checkpoint_data)
-            self.model_def_script = checkpoint_data["model_def_script"]
-            self.model_params_by_task = self._model_params_by_task(
-                self.model_def_script
-            )
             if restart is not None:
+                self.model_def_script = checkpoint_data["model_def_script"]
+                self.model_params_by_task = self._model_params_by_task(
+                    self.model_def_script
+                )
                 self.start_step = int(
                     checkpoint_data.get("model_def_script", {}).get(
                         "current_step",
@@ -208,6 +215,7 @@ class DPTrainer(AbstractTrainer):
         self._loss_fn_more_loss: dict[str, Any] = {}
         self._sample_funcs: dict[str, Any] = {}
         self.model_prob: np.ndarray | None = None
+        self.full_validator: Any | None = None
 
         super().__init__(
             TrainerConfig.from_training_params(
@@ -283,6 +291,73 @@ class DPTrainer(AbstractTrainer):
                 valid_params = self.training_param.get("validation_data", {}) or {}
             result[model_key] = max(int(valid_params.get("numb_btch", 1)), 1)
         return result
+
+    def _create_full_validator(
+        self,
+        *,
+        validating_params: dict[str, Any],
+        validation_data: DeepmdDataSystem | None,
+    ) -> Any | None:
+        """Create the runtime full validator when it is active."""
+        if not self._is_validation_requested(validating_params, "full_validation"):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        if validation_data is None:
+            raise RuntimeError(
+                "validation_data must be available after full validation checks."
+            )
+        from deepmd.jax.train.validation import (
+            JAXFullValidator,
+        )
+
+        return JAXFullValidator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+            model=self.models[DEFAULT_TASK_KEY],
+            state_store=self.model_def_script,
+            num_steps=self.num_steps,
+            rank=int(jax.process_index()),
+            restart_training=self.restart_training,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
+        )
+
+    def _is_validation_requested(
+        self,
+        validating_params: dict[str, Any],
+        flag_name: str,
+    ) -> bool:
+        """Check whether a full validation flow can trigger during this run."""
+        if not validating_params.get(flag_name, False):
+            return False
+        start_step = resolve_full_validation_start_step(
+            validating_params.get("full_val_start", 0.5),
+            self.num_steps,
+        )
+        return start_step is not None and start_step <= self.num_steps
+
+    def _raise_if_full_validation_unsupported(
+        self,
+        validation_data: DeepmdDataSystem | None,
+    ) -> None:
+        """Validate runtime full validation constraints."""
+        if self.multi_task:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; multi-task training is not supported."
+            )
+
+        if not isinstance(self.loss, EnergyLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy training."
+            )
+
+        if validation_data is None:
+            raise ValueError(
+                "validating.full_validation requires `training.validation_data` "
+                "to be configured."
+            )
 
     @property
     def data_requirements(self) -> list[DataRequirementItem]:
@@ -401,6 +476,12 @@ class DPTrainer(AbstractTrainer):
             self.optimizers[DEFAULT_TASK_KEY] if not self.multi_task else None
         )
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
+        self.full_validator = self._create_full_validator(
+            validating_params=self.validating_param,
+            validation_data=valid_data_by_task[DEFAULT_TASK_KEY]
+            if not self.multi_task
+            else None,
+        )
 
     @staticmethod
     def _make_sample_func(
@@ -650,6 +731,24 @@ class DPTrainer(AbstractTrainer):
         """Persist a JAX checkpoint for a one-based step."""
         self._save_checkpoint(step)
 
+    def run_full_validation(
+        self,
+        *,
+        step: int,
+        display_step: int,
+        learning_rate: float,
+    ) -> None:
+        """Run optional full validation for one step."""
+        if self.full_validator is None:
+            return None
+        self.full_validator.run(
+            step_id=display_step,
+            display_step=display_step,
+            lr=learning_rate,
+            save_checkpoint=self._save_full_validation_checkpoint,
+        )
+        return None
+
     def _prepare_batch(
         self,
         batch_data: dict[str, np.ndarray | np.floating],
@@ -702,6 +801,26 @@ class DPTrainer(AbstractTrainer):
 
     def _save_checkpoint(self, step: int) -> None:
         """Save a JAX checkpoint and update the stable checkpoint pointer."""
+        ckpt_path = Path(f"{self.save_ckpt}-{step}.jax")
+        self._write_checkpoint(ckpt_path, step=step)
+        log.info(f"Trained model has been saved to: {ckpt_path!s}")
+        _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
+        self._cleanup_old_checkpoints()
+        with open("checkpoint", "w") as fp:
+            fp.write(f"{self.save_ckpt}.jax")
+
+    def _save_full_validation_checkpoint(
+        self,
+        save_path: Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save a full-validation-selected JAX checkpoint."""
+        del lr
+        self._write_checkpoint(save_path, step=step)
+
+    def _write_checkpoint(self, ckpt_path: Path, *, step: int) -> None:
+        """Write a JAX checkpoint directory to an explicit path."""
         if self.multi_task:
             state = {
                 "models": {
@@ -712,7 +831,6 @@ class DPTrainer(AbstractTrainer):
         else:
             _, single_state = nnx.split(self.models[DEFAULT_TASK_KEY])
             state = single_state.to_pure_dict()
-        ckpt_path = Path(f"{self.save_ckpt}-{step}.jax")
         if ckpt_path.is_dir():
             shutil.rmtree(ckpt_path)
         model_def_script_cpy = deepcopy(self.model_def_script)
@@ -727,11 +845,6 @@ class DPTrainer(AbstractTrainer):
                     model_def_script=ocp.args.JsonSave(model_def_script_cpy),
                 ),
             )
-        log.info(f"Trained model has been saved to: {ckpt_path!s}")
-        _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
-        self._cleanup_old_checkpoints()
-        with open("checkpoint", "w") as fp:
-            fp.write(f"{self.save_ckpt}.jax")
 
     def _cleanup_old_checkpoints(self) -> None:
         """Remove old checkpoint directories beyond the retention limit."""

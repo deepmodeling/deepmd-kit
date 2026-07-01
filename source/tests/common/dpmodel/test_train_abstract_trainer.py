@@ -189,6 +189,42 @@ def test_non_chief_rank_skips_user_visible_outputs(tmp_path: Path) -> None:
     assert not lcurve.exists()
 
 
+def test_abstract_trainer_runs_full_validation_before_checkpoint(
+    tmp_path: Path,
+) -> None:
+    class RecordingTrainer(DummyTrainer):
+        def __init__(self, trainer_config: TrainerConfig) -> None:
+            super().__init__(trainer_config)
+            self.events: list[str] = []
+
+        def run_full_validation(
+            self,
+            *,
+            step: int,
+            display_step: int,
+            learning_rate: float,
+        ) -> None:
+            self.events.append(f"full:{display_step}:{learning_rate:.2f}")
+
+        def save_checkpoint(self, step: int) -> None:
+            self.events.append(f"save:{step}")
+            super().save_checkpoint(step)
+
+    trainer = RecordingTrainer(
+        TrainerConfig(
+            num_steps=2,
+            disp_file=str(tmp_path / "lcurve.out"),
+            disp_freq=1,
+            save_freq=1,
+            display_in_training=False,
+        )
+    )
+
+    trainer.run(TrainingTaskCollection.single(DummyData([1.0, 2.0])))
+
+    assert trainer.events == ["full:1:0.10", "save:1", "full:2:0.05", "save:2"]
+
+
 def test_abstract_trainer_tears_down_when_lcurve_open_fails(tmp_path: Path) -> None:
     events: list[str] = []
 

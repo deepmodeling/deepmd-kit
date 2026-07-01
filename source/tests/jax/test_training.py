@@ -14,6 +14,9 @@ import unittest
 from pathlib import (
     Path,
 )
+from types import (
+    SimpleNamespace,
+)
 from unittest.mock import (
     patch,
 )
@@ -38,6 +41,7 @@ from deepmd.jax.env import (
     jnp,
 )
 from deepmd.jax.train.trainer import (
+    DPTrainer,
     _copy_matching_state_tree,
     _scale_by_global_learning_rate,
 )
@@ -135,6 +139,158 @@ def test_jax_finetune_load_model_params_accepts_loader_paths(
 
     assert _load_model_params("checkpoint") == model_params
     serialize_from_file.assert_called_once_with("checkpoint")
+
+
+def _minimal_jax_config(model_params: dict) -> dict:
+    return {
+        "model": model_params,
+        "training": {
+            "numb_steps": 1,
+        },
+        "learning_rate": {
+            "type": "exp",
+            "start_lr": 0.001,
+            "stop_lr": 1e-8,
+            "decay_steps": 1,
+        },
+        "loss": {},
+    }
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.DPTrainer._deserialize_models")
+@patch("deepmd.jax.train.trainer.serialize_from_file")
+def test_jax_init_model_preserves_input_model_script(
+    serialize_from_file,
+    deserialize_models,
+    build_losses,
+) -> None:
+    """init_model loads weights without replacing input model metadata."""
+    input_model = {"type_map": ["O"], "descriptor": {"input": True}}
+    checkpoint_model = {"type_map": ["O"], "descriptor": {"checkpoint": True}}
+    serialize_from_file.return_value = {
+        "model": {},
+        "model_def_script": checkpoint_model,
+    }
+    deserialize_models.return_value = {
+        "Default": SimpleNamespace(get_dim_fparam=lambda: 0)
+    }
+    build_losses.return_value = {"Default": SimpleNamespace(label_requirement=[])}
+
+    trainer = DPTrainer(_minimal_jax_config(input_model), init_model="model-1.jax")
+
+    assert trainer.model_def_script == input_model
+    assert trainer.model_params_by_task["Default"] == input_model
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.DPTrainer._deserialize_models")
+@patch("deepmd.jax.train.trainer.serialize_from_file")
+def test_jax_restart_uses_checkpoint_model_script(
+    serialize_from_file,
+    deserialize_models,
+    build_losses,
+) -> None:
+    """Restart keeps checkpoint metadata and resumed current_step."""
+    input_model = {"type_map": ["O"], "descriptor": {"input": True}}
+    checkpoint_model = {
+        "type_map": ["O"],
+        "descriptor": {"checkpoint": True},
+        "current_step": 7,
+    }
+    serialize_from_file.return_value = {
+        "model": {},
+        "model_def_script": checkpoint_model,
+    }
+    deserialize_models.return_value = {
+        "Default": SimpleNamespace(get_dim_fparam=lambda: 0)
+    }
+    build_losses.return_value = {"Default": SimpleNamespace(label_requirement=[])}
+
+    trainer = DPTrainer(_minimal_jax_config(input_model), restart="model-7.jax")
+
+    assert trainer.model_def_script == checkpoint_model
+    assert trainer.model_params_by_task["Default"] == checkpoint_model
+    assert trainer.start_step == 7
+
+
+def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> None:
+    """JAX full validation uses .jax directory checkpoints."""
+    from deepmd.jax.train.validation import (
+        JAXFullValidator,
+    )
+
+    state_store: dict = {}
+    validator = JAXFullValidator(
+        validating_params={
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": str(tmp_path / "val.log"),
+            "full_val_start": 0.0,
+        },
+        validation_data=SimpleNamespace(),
+        model=SimpleNamespace(),
+        state_store=state_store,
+        num_steps=2,
+        rank=0,
+        restart_training=False,
+        checkpoint_dir=tmp_path,
+    )
+
+    def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+        del lr, step
+        path.mkdir(parents=True)
+
+    with patch.object(
+        validator,
+        "evaluate_all_systems",
+        return_value={"mae_e_per_atom": 1.0},
+    ):
+        result = validator.run(
+            step_id=1,
+            display_step=1,
+            lr=0.001,
+            save_checkpoint=save_checkpoint,
+        )
+
+    assert result is not None
+    assert (tmp_path / "best.ckpt-1.t-1.jax").is_dir()
+    assert state_store["full_validation_topk_records"] == [{"metric": 1.0, "step": 1}]
+    assert "1000.0" in (tmp_path / "val.log").read_text()
+
+
+def test_jax_full_validation_hook_uses_display_step() -> None:
+    """JAX full-validation checkpoints carry one-based display steps."""
+    calls: list[dict] = []
+    save_calls: list[tuple[Path, float, int]] = []
+
+    class FakeValidator:
+        def run(self, **kwargs) -> None:
+            calls.append(kwargs)
+            kwargs["save_checkpoint"](Path("best.jax"), lr=kwargs["lr"], step=99)
+
+    trainer = DPTrainer.__new__(DPTrainer)
+    trainer.full_validator = FakeValidator()
+
+    def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+        save_calls.append((path, lr, step))
+
+    trainer._save_full_validation_checkpoint = save_checkpoint
+
+    DPTrainer.run_full_validation(
+        trainer,
+        step=0,
+        display_step=1,
+        learning_rate=0.25,
+    )
+
+    assert calls[0]["step_id"] == 1
+    assert calls[0]["display_step"] == 1
+    assert calls[0]["lr"] == 0.25
+    assert save_calls == [(Path("best.jax"), 0.25, 99)]
 
 
 class TestJAXTraining(unittest.TestCase):

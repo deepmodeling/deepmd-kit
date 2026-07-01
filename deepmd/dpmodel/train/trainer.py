@@ -524,6 +524,12 @@ class AbstractTrainer(ABC):
                         last_log_time = current_time
                         last_log_step = display_step
 
+                self.run_full_validation(
+                    step=step,
+                    display_step=display_step,
+                    learning_rate=self.learning_rate(step),
+                )
+
                 if (
                     self.rank_context.is_chief
                     and self.trainer_config.save_freq > 0
@@ -579,6 +585,16 @@ class AbstractTrainer(ABC):
 
     def on_train_end(self, tasks: TrainingTaskCollection) -> None:
         """Hook called after training resources have been closed."""
+        return None
+
+    def run_full_validation(
+        self,
+        *,
+        step: int,
+        display_step: int,
+        learning_rate: float,
+    ) -> None:
+        """Run optional backend-specific full validation for one step."""
         return None
 
     @abstractmethod
