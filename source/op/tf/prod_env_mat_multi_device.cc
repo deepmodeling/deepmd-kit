@@ -2128,12 +2128,11 @@ static tensorflow::Status _validate_mesh_neighbor_counts(
   return tensorflow::Status();
 }
 
-static tensorflow::Status _validate_mesh_indices(
-    const int* ilist_in,
-    const int* numneigh_in,
-    const int* neighbors_in,
-    const int nloc,
-    const int_64 neighbor_count) {
+static tensorflow::Status _validate_mesh_indices(const int* ilist_in,
+                                                 const int* numneigh_in,
+                                                 const int* neighbors_in,
+                                                 const int nloc,
+                                                 const int_64 neighbor_count) {
   std::vector<unsigned char> seen(static_cast<size_t>(nloc), 0);
   int_64 neighbor_offset = 0;
   for (int ii = 0; ii < nloc; ++ii) {
