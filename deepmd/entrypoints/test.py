@@ -307,8 +307,8 @@ def save_txt_file(
     append : bool, optional
         if true file will be appended instead of overwriting, by default False
     """
-    flags = "ab" if append else "w"
-    with fname.open(flags) as fp:
+    flags = "a" if append else "w"
+    with fname.open(flags, encoding="utf-8") as fp:
         np.savetxt(fp, data, header=header)
 
 
