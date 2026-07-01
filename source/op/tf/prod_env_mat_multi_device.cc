@@ -2128,6 +2128,34 @@ static tensorflow::Status _validate_mesh_neighbor_counts(
   return tensorflow::Status();
 }
 
+static tensorflow::Status _validate_mesh_indices(
+    const int* ilist_in,
+    const int* numneigh_in,
+    const int* neighbors_in,
+    const int nloc,
+    const int_64 neighbor_count) {
+  std::vector<unsigned char> seen(static_cast<size_t>(nloc), 0);
+  int_64 neighbor_offset = 0;
+  for (int ii = 0; ii < nloc; ++ii) {
+    const int i_idx = ilist_in[ii];
+    if (i_idx < 0 || i_idx >= nloc || seen[static_cast<size_t>(i_idx)]) {
+      return errors::InvalidArgument("invalid mesh tensor");
+    }
+    seen[static_cast<size_t>(i_idx)] = 1;
+
+    for (int jj = 0; jj < numneigh_in[ii]; ++jj) {
+      if (neighbors_in[neighbor_offset + jj] < 0) {
+        return errors::InvalidArgument("invalid mesh tensor");
+      }
+    }
+    neighbor_offset += numneigh_in[ii];
+  }
+  if (neighbor_offset != neighbor_count) {
+    return errors::InvalidArgument("invalid mesh tensor");
+  }
+  return tensorflow::Status();
+}
+
 static tensorflow::Status _prepare_mesh_nlist_cpu_batch(
     deepmd::InputNlist& inlist,
     std::vector<int>& ilist,
@@ -2155,6 +2183,12 @@ static tensorflow::Status _prepare_mesh_nlist_cpu_batch(
                                      mesh_tensor_size, header_size, nloc);
   if (!count_status.ok()) {
     return count_status;
+  }
+
+  tensorflow::Status index_status = _validate_mesh_indices(
+      ilist_in, numneigh_in, neighbors_in, nloc, neighbor_count);
+  if (!index_status.ok()) {
+    return index_status;
   }
 
   const int nrows = nframes * nloc;
@@ -2612,6 +2646,12 @@ static tensorflow::Status _prepare_mesh_nlist_gpu_batch(
         std::to_string(max_numneigh) + " is larger than " +
         std::to_string(GPU_MAX_NBOR_SIZE) +
         ", which currently is not supported by deepmd-kit.");
+  }
+
+  tensorflow::Status index_status = _validate_mesh_indices(
+      ilist_in, numneigh_in, neighbors_in, nloc, neighbor_count);
+  if (!index_status.ok()) {
+    return index_status;
   }
 
   if (max_numneigh <= 256) {

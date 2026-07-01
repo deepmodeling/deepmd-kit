@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "device.h"
