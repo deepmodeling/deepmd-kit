@@ -315,32 +315,57 @@ def _make_sample_inputs(
     return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
-def _make_graph_sample_inputs(
+def build_synthetic_graph_inputs(
     model: torch.nn.Module,
     e_max: int,
     nframes: int = 2,
     nloc: int = 7,
+    *,
+    dtype: torch.dtype,
+    device: torch.device | None = None,
+    want_fparam: bool = True,
+    want_aparam: bool = True,
+    want_charge_spin: bool = True,
 ) -> tuple[torch.Tensor | None, ...]:
-    """Create sample inputs for tracing ``forward_lower_graph``.
+    """Build a synthetic carry-all ``NeighborGraph`` for graph-lower tracing.
 
-    Builds a small random system, runs the carry-all
+    Single source of the trace-time graph inputs, shared by ``.pt2`` export
+    (:func:`_trace_and_export`) and compiled training
+    (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`), so the two
+    traces can never desync on the graph input schema.  Builds a small random
+    system, runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
-    STATIC ``GraphLayout(edge_capacity=e_max)`` (decision #16: the masked
-    static edge axis), and returns tensors in the positional order expected by
-    :meth:`forward_lower_graph_exportable`:
+    STATIC ``GraphLayout(edge_capacity=e_max)`` (decision #16: the masked static
+    edge axis), and returns tensors in the positional order expected by
+    ``forward_(common_)lower_graph``:
     ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
     charge_spin)``.
+
+    The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
+    i % ntypes``) is identical for both callers; the only two former differences
+    are now parameters.
 
     Parameters
     ----------
     model : torch.nn.Module
         The pt_expt energy model (must expose ``get_rcut``/``get_type_map``/...).
     e_max : int
-        Static edge capacity ``E`` to pad the edge axis to.
+        Static edge capacity ``E`` to pad the (masked) edge axis to.
     nframes : int
         Number of frames in the sample system.
     nloc : int
         Number of local atoms per frame (``N == nframes * nloc``).
+    dtype : torch.dtype
+        Float precision of ``coord``/``edge_vec``/``fparam``/... .  The exported
+        ``.pt2`` is float64-only (C++ ABI); training passes
+        ``GLOBAL_PT_FLOAT_PRECISION``.
+    device : torch.device, optional
+        Target device.  Defaults to ``deepmd.pt_expt.utils.env.DEVICE``; the
+        export path passes ``cpu`` explicitly (make_fx traces on CPU).
+    want_fparam, want_aparam, want_charge_spin : bool
+        Whether to emit the optional conditioning tensor when its ``dim > 0``.
+        Export passes the defaults (``True`` = include if present); training
+        passes ``x is not None`` so the traced branch matches the run-time call.
     """
     import deepmd.pt_expt.utils.env as _env
     from deepmd.dpmodel.utils.neighbor_graph import (
@@ -348,74 +373,53 @@ def _make_graph_sample_inputs(
         build_neighbor_graph,
     )
 
+    if device is None:
+        device = _env.DEVICE
+
     rcut = model.get_rcut()
     ntypes = len(model.get_type_map())
     dim_fparam = model.get_dim_fparam()
     dim_aparam = model.get_dim_aparam()
+    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
 
-    # Box large enough to avoid PBC degeneracy; mirrors _make_sample_inputs.
+    # Box large enough to avoid PBC degeneracy; centered coords.
     box_size = rcut * 3.0
-    box = np.eye(3, dtype=np.float64) * box_size
-    box_np = box.reshape(1, 9)
-
+    box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
     rng = np.random.default_rng(42)
-    coord_np = rng.random((nframes, nloc, 3), dtype=np.float64) * box_size * 0.5
-    coord_np += box_size * 0.25  # center in box
-
+    coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
     atype_np = np.zeros((nframes, nloc), dtype=np.int64)
     for i in range(nloc):
         atype_np[:, i] = i % ntypes
 
+    coord_t = torch.tensor(coord_np, dtype=dtype, device=device)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
+    box_t = torch.tensor(np.tile(box_np, (nframes, 1)), dtype=dtype, device=device)
     graph = build_neighbor_graph(
-        coord_np,
-        atype_np,
-        np.tile(box_np, (nframes, 1)),
-        rcut,
-        layout=GraphLayout(edge_capacity=e_max),
+        coord_t, atype_t, box_t, rcut, layout=GraphLayout(edge_capacity=e_max)
     )
 
-    atype_t = torch.tensor(atype_np.reshape(-1), dtype=torch.int64, device=_env.DEVICE)
-    n_node_t = torch.tensor(
-        np.asarray(graph.n_node), dtype=torch.int64, device=_env.DEVICE
+    fparam = (
+        torch.zeros(nframes, dim_fparam, dtype=dtype, device=device)
+        if (want_fparam and dim_fparam > 0)
+        else None
     )
-    edge_index_t = torch.tensor(
-        np.asarray(graph.edge_index), dtype=torch.int64, device=_env.DEVICE
+    aparam = (
+        torch.zeros(nframes, nloc, dim_aparam, dtype=dtype, device=device)
+        if (want_aparam and dim_aparam > 0)
+        else None
     )
-    edge_vec_t = torch.tensor(
-        np.asarray(graph.edge_vec), dtype=torch.float64, device=_env.DEVICE
+    charge_spin = (
+        torch.zeros(nframes, dim_chg_spin, dtype=dtype, device=device)
+        if (want_charge_spin and dim_chg_spin > 0)
+        else None
     )
-    edge_mask_t = torch.tensor(
-        np.asarray(graph.edge_mask), dtype=torch.bool, device=_env.DEVICE
-    )
-
-    if dim_fparam > 0:
-        fparam = torch.zeros(
-            nframes, dim_fparam, dtype=torch.float64, device=_env.DEVICE
-        )
-    else:
-        fparam = None
-
-    if dim_aparam > 0:
-        aparam = torch.zeros(
-            nframes, nloc, dim_aparam, dtype=torch.float64, device=_env.DEVICE
-        )
-    else:
-        aparam = None
-
-    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
-    if dim_chg_spin > 0:
-        charge_spin = torch.zeros(
-            nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
-        )
-    else:
-        charge_spin = None
 
     return (
-        atype_t,
-        n_node_t,
-        edge_index_t,
-        edge_vec_t,
-        edge_mask_t,
+        atype_t.reshape(-1),
+        graph.n_node,
+        graph.edge_index,
+        graph.edge_vec,
+        graph.edge_mask,
         fparam,
         aparam,
         charge_spin,
@@ -910,14 +914,16 @@ def _trace_and_export(
         nnei = sum(model.get_sel())
         e_sample = math.ceil(1.25 * nloc_sample * nnei)
 
-        _orig_device = _env.DEVICE
-        _env.DEVICE = torch.device("cpu")
-        try:
-            sample_inputs = _make_graph_sample_inputs(
-                model, e_max=e_sample, nframes=2, nloc=nloc_sample
-            )
-        finally:
-            _env.DEVICE = _orig_device
+        # make_fx traces on CPU; the .pt2 C++ ABI is float64-only.  Pass device
+        # and dtype explicitly instead of mutating the module-level env.DEVICE.
+        sample_inputs = build_synthetic_graph_inputs(
+            model,
+            e_max=e_sample,
+            nframes=2,
+            nloc=nloc_sample,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
 
         (
             atype_g,

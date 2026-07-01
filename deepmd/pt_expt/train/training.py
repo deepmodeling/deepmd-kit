@@ -274,6 +274,41 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 # ---------------------------------------------------------------------------
 
 
+def _forbidden_dims_from_model(
+    model: torch.nn.Module,
+    task_buf_vals: tuple[torch.Tensor, ...],
+) -> set[int]:
+    """Prime-collision set for trace-dim selection.
+
+    Collects every ``> 1`` dim of the model's parameters/buffers (so
+    ``_next_safe_prime`` never aliases an internal dim like ``g2_dim`` /
+    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
+    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the dense
+    :func:`_trace_and_compile` and the graph :func:`_trace_and_compile_graph`;
+    each caller adds its path-specific dims (nall/nloc/nsel for dense,
+    charge_spin for both) on top of this base set.
+    """
+    forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    for _getter in (model.get_dim_fparam, model.get_dim_aparam):
+        try:
+            _dim = _getter()
+            if _dim > 1:
+                forbidden.add(int(_dim))
+        except Exception:
+            pass  # best-effort: dim unavailable -> nothing to forbid
+    for _tbv in task_buf_vals:
+        for _d in _tbv.shape:
+            if _d > 1:
+                forbidden.add(int(_d))
+    return forbidden
+
+
 def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
@@ -397,17 +432,11 @@ def _trace_and_compile(
     # large to alias with any architecture dim and need no adjustment.
     #
     # The prime for nf is chosen by enumerating every dimension that appears
-    # in the model's parameters and buffers, then calling _next_safe_prime to
-    # find the first prime that doesn't collide with any of them.  This
-    # catches internal dims like g2_dim, axis_neuron, attn_head, etc.
-    # without requiring a hardcoded list.
-    _forbidden: set[int] = {
-        int(_d)
-        for _src in (model.parameters(), model.buffers())
-        for _p in _src
-        for _d in _p.shape
-        if _d > 1
-    }
+    # in the model's parameters and buffers (see _forbidden_dims_from_model),
+    # then calling _next_safe_prime to find the first prime that doesn't collide
+    # with any of them -- catching internal dims like g2_dim/axis_neuron/
+    # attn_head without a hardcoded list.  Add the dense-path dims on top.
+    _forbidden = _forbidden_dims_from_model(model, task_buf_vals_trace)
     # Also add the real nloc and nall so trace_nf never aliases them.
     _forbidden.add(int(ext_coord.shape[1]))  # nall
     _forbidden.add(int(ext_atype.shape[1]))  # nall (same tensor, defensive)
@@ -416,26 +445,10 @@ def _trace_and_compile(
     _nsel = int(nlist.shape[2])
     if _nsel > 1:
         _forbidden.add(_nsel)
-    try:
-        _dim_fp = model.get_dim_fparam()
-        if _dim_fp > 1:
-            _forbidden.add(_dim_fp)
-    except Exception:
-        pass  # best-effort: dim_fparam unavailable -> nothing to forbid
-    try:
-        _dim_ap = model.get_dim_aparam()
-        if _dim_ap > 1:
-            _forbidden.add(_dim_ap)
-    except Exception:
-        pass  # best-effort: dim_aparam unavailable -> nothing to forbid
     if charge_spin is not None:
         _dim_cs = int(charge_spin.shape[1])
         if _dim_cs > 1:
             _forbidden.add(_dim_cs)
-    for _tbv in task_buf_vals_trace:
-        for _d in _tbv.shape:
-            if _d > 1:
-                _forbidden.add(int(_d))
 
     trace_nf = _next_safe_prime(5, _forbidden)
 
@@ -653,33 +666,12 @@ def _trace_and_compile_graph(
     #   * nf  = n_node.shape[0]      (per-frame reductions)
     #   * N   = atype.shape[0]       (flat node axis = sum(n_node))
     #   * E   = edge_vec.shape[0]    (edge axis)
-    # They are chosen as collision-free primes vs every parameter/buffer dim.
+    # They are chosen as collision-free primes vs every parameter/buffer dim
+    # (see _forbidden_dims_from_model) plus charge_spin.
     # ------------------------------------------------------------------
-    _forbidden: set[int] = {
-        int(_d)
-        for _src in (model.parameters(), model.buffers())
-        for _p in _src
-        for _d in _p.shape
-        if _d > 1
-    }
-    try:
-        _dim_fp = model.get_dim_fparam()
-        if _dim_fp > 1:
-            _forbidden.add(_dim_fp)
-    except Exception:
-        pass  # best-effort: dim_fparam unavailable -> nothing to forbid
-    try:
-        _dim_ap = model.get_dim_aparam()
-        if _dim_ap > 1:
-            _forbidden.add(_dim_ap)
-    except Exception:
-        pass  # best-effort: dim_aparam unavailable -> nothing to forbid
+    _forbidden = _forbidden_dims_from_model(model, task_buf_vals_trace)
     if charge_spin is not None and charge_spin.shape[-1] > 1:
         _forbidden.add(int(charge_spin.shape[-1]))
-    for _tbv in task_buf_vals_trace:
-        for _d in _tbv.shape:
-            if _d > 1:
-                _forbidden.add(int(_d))
 
     trace_nf = _next_safe_prime(5, _forbidden)
     # nloc such that N = trace_nf * nloc is collision-free (and != trace_nf).
@@ -692,11 +684,18 @@ def _trace_and_compile_graph(
     e_max_base = max(math.ceil(1.25 * nloc_trace * nnei), 7)
     e_max = _next_safe_prime(e_max_base, _forbidden | {trace_nf, trace_N})
 
-    sample = _make_graph_trace_inputs(
+    # Shared with the .pt2 export trace (serialization.py) so the two graph
+    # traces can never desync on the input schema.  Training uses the run-time
+    # float precision and device; optional tensors match the actual call.
+    from deepmd.pt_expt.utils.serialization import build_synthetic_graph_inputs
+
+    sample = build_synthetic_graph_inputs(
         model,
         e_max=e_max,
         nframes=trace_nf,
         nloc=nloc_trace,
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=DEVICE,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -801,91 +800,6 @@ def _trace_and_compile_graph(
             extra_options={"cpp.simdlen": 0},
         ),
         task_buf_order,
-    )
-
-
-def _make_graph_trace_inputs(
-    model: torch.nn.Module,
-    e_max: int,
-    nframes: int,
-    nloc: int,
-    *,
-    want_fparam: bool,
-    want_aparam: bool,
-    want_charge_spin: bool,
-) -> tuple[torch.Tensor | None, ...]:
-    """Build a synthetic carry-all NeighborGraph for the graph-compile trace.
-
-    Returns positional tensors in the order
-    ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
-    charge_spin)`` matching ``forward_common_lower_graph``.  The edge axis is
-    padded to the STATIC ``e_max`` (masked) so its concrete value is a chosen
-    prime; ``fparam`` / ``aparam`` / ``charge_spin`` are emitted only when the
-    model+data path actually carries them (``want_*``), so the traced branch
-    matches the run-time call.
-    """
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        GraphLayout,
-        build_neighbor_graph,
-    )
-
-    rcut = model.get_rcut()
-    ntypes = len(model.get_type_map())
-    dim_fparam = model.get_dim_fparam()
-    dim_aparam = model.get_dim_aparam()
-
-    box_size = rcut * 3.0
-    box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
-    rng = np.random.default_rng(42)
-    coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
-    atype_np = np.zeros((nframes, nloc), dtype=np.int64)
-    for i in range(nloc):
-        atype_np[:, i] = i % ntypes
-
-    coord_t = torch.tensor(coord_np, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
-    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=DEVICE)
-    box_t = torch.tensor(
-        np.tile(box_np, (nframes, 1)), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-    )
-
-    graph = build_neighbor_graph(
-        coord_t, atype_t, box_t, rcut, layout=GraphLayout(edge_capacity=e_max)
-    )
-
-    s_atype = atype_t.reshape(-1)
-    s_n_node = graph.n_node
-    s_edge_index = graph.edge_index
-    s_edge_vec = graph.edge_vec
-    s_edge_mask = graph.edge_mask
-
-    s_fparam = (
-        torch.zeros(nframes, dim_fparam, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
-        if (want_fparam and dim_fparam > 0)
-        else None
-    )
-    s_aparam = (
-        torch.zeros(
-            nframes, nloc, dim_aparam, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-        )
-        if (want_aparam and dim_aparam > 0)
-        else None
-    )
-    dim_cs = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
-    s_charge_spin = (
-        torch.zeros(nframes, dim_cs, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
-        if (want_charge_spin and dim_cs > 0)
-        else None
-    )
-
-    return (
-        s_atype,
-        s_n_node,
-        s_edge_index,
-        s_edge_vec,
-        s_edge_mask,
-        s_fparam,
-        s_aparam,
-        s_charge_spin,
     )
 
 
