@@ -91,17 +91,29 @@ def edge_force_virial(
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    # Wrap node indices into ``[0, n_out)`` so every scatter address is in-bounds.
-    # Real edges already have index < n_out (modulo is a no-op). Out-of-range
-    # indices CAN appear in the CUDA-compiled kernel: under dynamic-edge
-    # ``torch.export`` the scatter bound ``ks0 == n_out`` binds to a SMALLER
-    # symbol than the live node count at AOTI runtime, so a valid index trips
-    # ``tl.device_assert(idx < ks0)`` (a hard device-side assert on CUDA; benign
-    # on CPU, which does not bounds-check the address). Such edges carry ~zero
-    # ``w_edge`` (masked ``g`` + tiny ``g_e``), so wrapping them to another node
-    # is numerically harmless. Modulo is pure arithmetic => torch.export-safe,
-    # unlike ``xp.clip`` (SymInt bound breaks array_api_compat) and unlike a
-    # mask-multiply (misses ``edge_mask == 1`` out-of-range indices).
+    # Wrap node indices into ``[0, n_out)`` so every scatter address is provably
+    # in-bounds. For a well-formed graph every real edge already has
+    # ``index < n_out`` (== ``atype.shape[0]``), so this modulo is the IDENTITY on
+    # real edges (pinned by test_modulo_clamp_leaves_real_edges_unchanged) -- a
+    # correctness-preserving guard, not a value fixup.
+    #
+    # Why it is needed (root cause, GPU-confirmed): under the dynamic-edge graph
+    # ``torch.export`` path the node count is traced as several equal-but-distinct
+    # symbols (``atype.shape[0]``, ``fit_ret.shape[0]``, ...), tied only by
+    # ``aten._assert_scalar(Eq(...))`` nodes. ``_strip_shape_assertions``
+    # (pt_expt/utils/serialization.py) neutralises ALL such asserts so export can
+    # trace -- which also drops those node-count equalities, so inductor can no
+    # longer prove the scatter index and its bound ``ks0 == n_out`` share a symbol
+    # and emits ``tl.device_assert(idx < ks0)`` (fatal on CUDA; unchecked on CPU,
+    # which is why all CPU dev/CI was green). ``% n_out`` discharges that guard
+    # unconditionally. This is the PERMANENT fix: the upstream alternative --
+    # making the SHARED, spin-export-critical ``_strip_shape_assertions``
+    # selective -- risks re-triggering the torch.export bugs it exists to bypass
+    # and the spin ``.pt2`` path, so it is deliberately NOT taken.
+    #
+    # Pure arithmetic => torch.export-safe, unlike ``xp.clip`` (SymInt bound
+    # breaks array_api_compat's clip) and unlike a mask-multiply (which misses the
+    # ``edge_mask == 1`` indices the stripped guard mis-bounds).
     src = edge_index[0] % n_out
     dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
