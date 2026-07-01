@@ -201,10 +201,11 @@ class GroupSpec:
 class AssemblyDatasetBuilder:
     """Build grouped DeepMD data plus an adapt manifest.
 
-    The current writer is intentionally conservative: each group is written as one
-    DeepMD system, and all components within a group must have identical atom
-    count and symbol order.  This matches the DeepMD MVP while keeping richer
-    assembly semantics in ``manifest.json``.
+    Each group is written as one DeepMD system.  Components within a group may
+    differ in size and composition: every frame is padded up to the group's max
+    atom count with virtual atoms (real type -1) and stored in the DeepMD
+    ``mixed_type`` layout, with padding atoms masked out of pooling.  Richer
+    assembly semantics live in ``manifest.json``.
     """
 
     def __init__(
@@ -328,20 +329,22 @@ def _write_group_system(
     for component in group.components:
         component.validate()
 
-    symbols = group.components[0].symbols
-    natoms = len(symbols)
-    for component in group.components[1:]:
-        if component.symbols != symbols:
-            raise DPADataError(
-                f"Group {group.key!r} components must have identical symbol order."
-            )
-
-    resolved_type_map = list(type_map) if type_map is not None else _stable_unique(symbols)
+    # Components in a group may differ in size and composition (e.g. OER
+    # O*/OH*/OOH*).  Pad every frame up to the group's max atom count with
+    # virtual atoms (real type -1) and emit the DeepMD ``mixed_type`` layout so
+    # one shared descriptor can consume the whole group in a single system.
+    # Padding atoms are excluded from pooling (``pool_mask`` = 0) and ignored by
+    # the neighbor list (type < 0), so they never affect real-atom embeddings.
+    natoms = max(len(c.symbols) for c in group.components)
+    all_symbols = [sym for c in group.components for sym in c.symbols]
+    resolved_type_map = (
+        list(type_map) if type_map is not None else _stable_unique(all_symbols)
+    )
     type_index = {el: ii for ii, el in enumerate(resolved_type_map)}
-    missing = [sym for sym in symbols if sym not in type_index]
+    missing = sorted({sym for sym in all_symbols if sym not in type_index})
     if missing:
         raise DPADataError(
-            f"type_map is missing symbols for group {group.key!r}: {sorted(set(missing))}"
+            f"type_map is missing symbols for group {group.key!r}: {missing}"
         )
 
     set_dir = system_path / "set.000"
@@ -349,21 +352,30 @@ def _write_group_system(
     (system_path / "type_map.raw").write_text(
         "".join(f"{el}\n" for el in resolved_type_map), encoding="utf-8"
     )
-    (system_path / "type.raw").write_text(
-        "".join(f"{type_index[sym]}\n" for sym in symbols), encoding="utf-8"
-    )
+    # ``mixed_type`` placeholder: a uniform (all-zero) ``type.raw`` makes
+    # DeepMD's per-atom sort a no-op, keeping coord/pool_mask/real_atom_types
+    # aligned in written order.  Real per-frame types live in real_atom_types.
+    (system_path / "type.raw").write_text("0\n" * natoms, encoding="utf-8")
 
     nframes = len(group.components)
-    coord = np.stack([c.coords.reshape(natoms * 3) for c in group.components])
+    coord = np.zeros((nframes, natoms * 3), dtype=np.float64)
+    real_atom_types = np.full((nframes, natoms), -1, dtype=np.int32)
+    pool_mask = np.zeros((nframes, natoms), dtype=np.float64)
+    for frame, component in enumerate(group.components):
+        n_i = len(component.symbols)
+        coord[frame, : n_i * 3] = component.coords.reshape(n_i * 3)
+        real_atom_types[frame, :n_i] = [type_index[sym] for sym in component.symbols]
+        pool_mask[frame, :n_i] = component.normalized_pool_mask()
+
     box = np.stack([c.normalized_box().reshape(9) for c in group.components])
     group_id = np.full((nframes,), int(group_idx), dtype=np.int64)
     weight = np.asarray([c.weight for c in group.components], dtype=np.float64)
-    pool_mask = np.stack([c.normalized_pool_mask() for c in group.components])
     label = np.asarray(group.label, dtype=np.float64).reshape(1, -1)
     label = np.repeat(label, nframes, axis=0)
 
     np.save(set_dir / "coord.npy", coord)
     np.save(set_dir / "box.npy", box)
+    np.save(set_dir / "real_atom_types.npy", real_atom_types)
     np.save(set_dir / f"{property_name}.npy", label)
     np.save(set_dir / f"{GROUP_ID_KEY}.npy", group_id)
     np.save(set_dir / f"{WEIGHT_KEY}.npy", weight)

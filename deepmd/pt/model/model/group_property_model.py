@@ -202,6 +202,12 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
                 descriptor.device, descriptor.dtype
             )
         denom = pool_mask.sum(dim=1).clamp_min(1.0)
+        # Zero out non-pooled atoms (padding/virtual atoms and excluded caps)
+        # before the weighted sum so a non-finite descriptor on those rows --
+        # e.g. a virtual padding atom -- cannot poison the frame embedding via
+        # ``0 * NaN``.  Kept atoms retain their (possibly fractional) weights.
+        keep = pool_mask[:, :, None] > 0
+        descriptor = torch.where(keep, descriptor, torch.zeros_like(descriptor))
         frame_embedding = (descriptor * pool_mask[:, :, None]).sum(dim=1) / denom[:, None]
 
         if group_id is None:

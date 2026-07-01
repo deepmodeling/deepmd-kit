@@ -54,6 +54,7 @@ def test_assembly_builder_writes_minimal_deepmd_tensors_and_manifest(tmp_path) -
             f"{GROUP_ID_KEY}.npy",
             "overpotential.npy",
             f"{POOL_MASK_KEY}.npy",
+            "real_atom_types.npy",
             f"{WEIGHT_KEY}.npy",
         ]
     )
@@ -67,7 +68,14 @@ def test_assembly_builder_writes_minimal_deepmd_tensors_and_manifest(tmp_path) -
         [1.0, 1.0, 0.0],
         [1.0, 1.0, 0.0],
     ]
-    assert (system / "type.raw").read_text().splitlines() == ["0", "1", "2"]
+    # mixed_type layout: real per-frame types live in real_atom_types.npy and
+    # type.raw is a uniform all-zero placeholder (Ni/O/H -> 0/1/2 in type_map).
+    assert np.load(set_dir / "real_atom_types.npy").tolist() == [
+        [0, 1, 2],
+        [0, 1, 2],
+        [0, 1, 2],
+    ]
+    assert (system / "type.raw").read_text().splitlines() == ["0", "0", "0"]
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["schema"] == "dpa_adapt.assembly.v1"
@@ -112,10 +120,45 @@ def test_conditions_write_fparam_but_schema_stays_in_manifest(tmp_path) -> None:
     assert manifest["groups"][0]["components"][0]["block"] == "repeat_units"
 
 
-def test_writer_rejects_mismatched_component_symbol_order(tmp_path) -> None:
-    builder = AssemblyDatasetBuilder(property_name="property")
+def test_writer_pads_heterogeneous_components_into_mixed_type(tmp_path) -> None:
+    builder = AssemblyDatasetBuilder(property_name="property", type_map=["C", "O", "H"])
+    group = builder.group(key="oer", label=1.0)
+    group.add_component(ComponentSpec.from_arrays([[0, 0, 0], [0, 0, 1]], ["C", "O"]))
+    group.add_component(
+        ComponentSpec.from_arrays(
+            [[0, 0, 0], [0, 0, 1], [0, 0, 2]],
+            ["C", "O", "H"],
+            pool_mask=PoolMask.exclude_indices([2]),
+        )
+    )
+
+    result = builder.write_deepmd_npy(tmp_path)
+    system = tmp_path / result["systems"][0]
+    set_dir = system / "set.000"
+
+    # every frame is padded to the group's max atom count (3)
+    assert (system / "type.raw").read_text().splitlines() == ["0", "0", "0"]
+    # the smaller component gets a trailing virtual atom (real type -1)
+    assert np.load(set_dir / "real_atom_types.npy").tolist() == [
+        [0, 1, -1],
+        [0, 1, 2],
+    ]
+    coord = np.load(set_dir / "coord.npy")
+    assert coord.shape == (2, 9)
+    assert coord[0, 6:].tolist() == [0.0, 0.0, 0.0]  # padding coords are zero
+    assert coord[1].tolist() == [0, 0, 0, 0, 0, 1, 0, 0, 2]
+    # padding atom and the excluded H cap are both masked out of pooling
+    assert np.load(set_dir / f"{POOL_MASK_KEY}.npy").tolist() == [
+        [1.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0],
+    ]
+    assert np.load(set_dir / f"{GROUP_ID_KEY}.npy").tolist() == [0, 0]
+    assert np.load(set_dir / "property.npy").shape == (2, 1)
+
+
+def test_writer_rejects_symbols_missing_from_type_map(tmp_path) -> None:
+    builder = AssemblyDatasetBuilder(property_name="property", type_map=["C"])
     group = builder.group(key="bad", label=1.0)
     group.add_component(ComponentSpec.from_arrays([[0, 0, 0], [0, 0, 1]], ["C", "H"]))
-    group.add_component(ComponentSpec.from_arrays([[0, 0, 0], [0, 0, 1]], ["H", "C"]))
-    with pytest.raises(DPADataError, match="identical symbol order"):
+    with pytest.raises(DPADataError, match="type_map is missing symbols"):
         builder.write_deepmd_npy(tmp_path)
