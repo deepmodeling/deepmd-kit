@@ -554,13 +554,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
 
-    // Rebuild mapping vector and tensor (cached as members).  ``mapping_tensor``
+    // Rebuild mapping vector and tensor (cached as members). ``mapping_tensor``
     // is consumed every step by the dense ``run_model`` (ghost-feature gather);
     // the ``mapping_`` vector is read only here at ago==0 -- to build that
     // tensor and, for the edge/graph paths, to fold ghost neighbours onto their
     // local owners inside ``createEdgeTensors``.  (The graph path used to read
-    // ``mapping_`` every step via a per-step ``buildGraphTensors``; it now caches
-    // the topology at ago==0 like the edge/dense paths, so no per-step read.)
+    // ``mapping_`` every step via a per-step ``buildGraphTensors``; it now
+    // caches the topology at ago==0 like the edge/dense paths, so no per-step
+    // read.)
     if (lmp_list.mapping) {
       mapping_.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
@@ -861,9 +862,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // the cached skin topology (edge_index[_ext]_tensor built at ago==0),
       // then assemble the cheap node tensors.  Mirrors the edge path -- no
       // per-step host rebuild / H2D copy.  Single-rank folds ghosts onto local
-      // owners (N == nloc); multi-rank (non-MP only — the fail-fast above blocks
-      // MP graph multi-rank) keeps the extended region (N == nall_real, node
-      // types from the real halo types) so LAMMPS reverse-comm folds ghost
+      // owners (N == nloc); multi-rank (non-MP only — the fail-fast above
+      // blocks MP graph multi-rank) keeps the extended region (N == nall_real,
+      // node types from the real halo types) so LAMMPS reverse-comm folds ghost
       // forces back.  The node types come from the on-device extended
       // atype_Tensor slice (== atype_ext[0:N]); n_node is a 1-element tensor.
       const auto edge_tensors =
@@ -874,10 +875,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           torch::full({1}, n_node_count, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      flat_outputs = run_model_graph(
-          node_atype, n_node_tensor, edge_tensors.edge_index,
-          edge_tensors.edge_vec, edge_tensors.edge_mask, fparam_tensor,
-          aparam_tensor, charge_spin_tensor);
+      flat_outputs =
+          run_model_graph(node_atype, n_node_tensor, edge_tensors.edge_index,
+                          edge_tensors.edge_vec, edge_tensors.edge_mask,
+                          fparam_tensor, aparam_tensor, charge_spin_tensor);
     } else {
       flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
                                mapping_tensor, fparam_tensor, aparam_tensor,

@@ -687,7 +687,9 @@ def _trace_and_compile_graph(
     # Shared with the .pt2 export trace (serialization.py) so the two graph
     # traces can never desync on the input schema.  Training uses the run-time
     # float precision and device; optional tensors match the actual call.
-    from deepmd.pt_expt.utils.serialization import build_synthetic_graph_inputs
+    from deepmd.pt_expt.utils.serialization import (
+        build_synthetic_graph_inputs,
+    )
 
     sample = build_synthetic_graph_inputs(
         model,
