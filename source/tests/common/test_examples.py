@@ -94,3 +94,26 @@ class TestExamples(unittest.TestCase):
                 if multi_task:
                     jdata["model"], _ = preprocess_shared_params(jdata["model"])
                 normalize(jdata, multi_task=multi_task)
+
+    def test_data_paths_exist(self) -> None:
+        """Each example's data ``systems`` must resolve relative to the example's
+        own directory, so the example is runnable from that directory.
+        """
+        for fn in input_files:
+            training = j_loader(str(fn)).get("training", {})
+            for key in ("training_data", "validation_data"):
+                data = training.get(key)
+                if not isinstance(data, dict):
+                    continue
+                systems = data.get("systems")
+                if systems is None:
+                    continue
+                if isinstance(systems, str):
+                    systems = [systems]
+                for system in systems:
+                    with self.subTest(fn=str(fn), key=key, system=system):
+                        self.assertTrue(
+                            (fn.parent / system).exists(),
+                            f"{system!r} in {fn} does not resolve relative to "
+                            f"the example directory {fn.parent}",
+                        )
