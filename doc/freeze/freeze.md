@@ -41,7 +41,7 @@ $ dp --pd freeze -o model
 
 in the folder where the model is trained. The output model is called `model.json` and `model.pdiparams`.
 
-In [multi-task mode](../train/multi-task-training-pd.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+In [multi-task mode](../train/multi-task-training.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
 to specify which model branch you want to freeze:
 
 ```bash
