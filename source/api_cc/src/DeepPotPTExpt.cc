@@ -554,8 +554,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
 
-    // Rebuild mapping vector and tensor (cached as members; graph branch reads
-    // mapping_ on every step, not just ago==0, so the vector must persist).
+    // Rebuild mapping vector and tensor (cached as members).  ``mapping_tensor``
+    // is consumed every step by the dense ``run_model`` (ghost-feature gather);
+    // the ``mapping_`` vector is read only here at ago==0 -- to build that
+    // tensor and, for the edge/graph paths, to fold ghost neighbours onto their
+    // local owners inside ``createEdgeTensors``.  (The graph path used to read
+    // ``mapping_`` every step via a per-step ``buildGraphTensors``; it now caches
+    // the topology at ago==0 like the edge/dense paths, so no per-step read.)
     if (lmp_list.mapping) {
       mapping_.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
@@ -602,10 +607,19 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else if (lower_input_is_graph_) {
-      // Graph schema rebuilds the edge topology on-device every step inside
-      // buildGraphTensors (from the raw, unpadded nlist_data.jlist +
-      // nlist_data.ilist centers), so nothing is cached here and the nlist is
-      // left unpadded (createEdgeTensors handles ragged rows and skips -1).
+      // Cache only the real skin topology, exactly like the edge path: the
+      // geometry (edge_vec) + rcut filter are recomputed on-device every step
+      // by compactEdgeTensors, so the O(E) host loop + H2D copy in
+      // createEdgeTensors runs ONLY on a LAMMPS nlist rebuild (ago==0), not
+      // every step.  Single-rank folds ghosts onto local owners
+      // (fold_to_local=true); non-MP multi-rank keeps the extended region
+      // (fold_to_local=false) so ghost forces reverse-comm to their owners.
+      const auto edge_tensors = createEdgeTensors(
+          nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
+          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
+          /*fold_to_local=*/!multi_rank);
+      edge_index_tensor = edge_tensors.edge_index;
+      edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {
       nlist_data.padding();
       firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
@@ -822,19 +836,47 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                           edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                           fparam_tensor, aparam_tensor, charge_spin_tensor);
     } else if (lower_input_is_graph_) {
-      // NeighborGraph schema: build (atype, n_node, edge_index, edge_vec,
-      // edge_mask) from the host nlist and run the (single-rank) graph
-      // artifact.  Single-rank folds ghosts onto local owners (N == nloc);
-      // multi-rank (non-MP only — the fail-fast above blocks MP graph
-      // multi-rank) keeps the extended region (N == nall_real, node types from
-      // the real halo types) so LAMMPS reverse-comm folds ghost forces back.
-      const auto graph_tensors = buildGraphTensors(
-          nlist_data.jlist, dcoord, datype, mapping_, nloc, nall_real,
-          static_cast<double>(rcut), device, &nlist_data.ilist,
-          /*fold_to_local=*/!multi_rank);
+      if (nall_real == 0) {
+        // Truly-empty rank (no local atoms AND no ghosts): the graph would emit
+        // N == 0 nodes, and edge_force_virial's ``edge_index % node_capacity``
+        // would divide by zero (SIGFPE) -- it also violates the exported
+        // ``Dim("n_node_total", min=1)``.  Such a rank contributes nothing, so
+        // fill zero outputs and return instead of running the model.  (The
+        // tested ``nloc == 0`` empty-subdomain case has ``nall_real > 0`` --
+        // ghosts within rcut -- so it still runs the model normally.)
+        ener.assign(nframes, static_cast<ENERGYTYPE>(0));
+        force.assign(static_cast<size_t>(nframes) * fwd_map.size() * 3,
+                     static_cast<VALUETYPE>(0));
+        virial.assign(static_cast<size_t>(nframes) * 9,
+                      static_cast<VALUETYPE>(0));
+        if (atomic) {
+          atom_energy.assign(static_cast<size_t>(nframes) * fwd_map.size(),
+                             static_cast<VALUETYPE>(0));
+          atom_virial.assign(static_cast<size_t>(nframes) * fwd_map.size() * 9,
+                             static_cast<VALUETYPE>(0));
+        }
+        return;
+      }
+      // NeighborGraph schema: recompute geometry + rcut filter on-device from
+      // the cached skin topology (edge_index[_ext]_tensor built at ago==0),
+      // then assemble the cheap node tensors.  Mirrors the edge path -- no
+      // per-step host rebuild / H2D copy.  Single-rank folds ghosts onto local
+      // owners (N == nloc); multi-rank (non-MP only — the fail-fast above blocks
+      // MP graph multi-rank) keeps the extended region (N == nall_real, node
+      // types from the real halo types) so LAMMPS reverse-comm folds ghost
+      // forces back.  The node types come from the on-device extended
+      // atype_Tensor slice (== atype_ext[0:N]); n_node is a 1-element tensor.
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      const std::int64_t n_node_count = multi_rank ? nall_real : nloc;
+      at::Tensor n_node_tensor =
+          torch::full({1}, n_node_count, int_option).to(device);
+      at::Tensor node_atype =
+          atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
       flat_outputs = run_model_graph(
-          graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
-          graph_tensors.edge_vec, graph_tensors.edge_mask, fparam_tensor,
+          node_atype, n_node_tensor, edge_tensors.edge_index,
+          edge_tensors.edge_vec, edge_tensors.edge_mask, fparam_tensor,
           aparam_tensor, charge_spin_tensor);
     } else {
       flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
