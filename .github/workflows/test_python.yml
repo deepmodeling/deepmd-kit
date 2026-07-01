@@ -19,7 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         group: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        python: ["3.10", "3.13"]
+        # Pull requests only run the oldest supported Python version.
+        # Push and merge queue runs keep the full version matrix.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10"]' || '["3.10", "3.13"]') }}
 
     steps:
       - uses: actions/checkout@v7
@@ -114,7 +116,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.13"]
+        # Pull requests only run the oldest supported Python version.
+        # Push and merge queue runs keep the full version matrix.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10"]' || '["3.10", "3.13"]') }}
     needs: testpython
     steps:
       - name: Get durations from cache
