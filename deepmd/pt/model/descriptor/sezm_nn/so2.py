@@ -81,6 +81,7 @@ from .utils import (
     np_safe,
     nvtx_range,
     safe_numpy_to_tensor,
+    use_cute_infer,
     use_triton_infer,
 )
 
@@ -1168,12 +1169,18 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        # Optional Triton inference kernels for the SO(2) convolution, enabled by
-        # ``DP_TRITON_INFER=1`` (default disabled, in which case the dense
-        # ``bmm`` rotation is used). The flag is read once at construction so it
-        # is a compile-time constant in the traced (``make_fx``) graph, and it
-        # only takes effect during inference.
+        # Opt-in inference fast paths, selected by ``DP_TRITON_INFER`` and
+        # ``DP_CUTE_INFER``. Each flag is read once at construction so it becomes a
+        # compile-time constant in the traced (``make_fx``) graph, and each only
+        # takes effect during inference. ``DP_TRITON_INFER`` replaces the dense
+        # ``bmm`` rotation with fused Triton kernels; ``DP_CUTE_INFER`` selects a
+        # fused CuTe value-path operator and is independent of the Triton flag. The
+        # CuTe value-path entry is bound at the end of construction (once every
+        # submodule exists) and stays ``None`` when the backend is unavailable or
+        # the block layout is unsupported.
         self.use_triton_infer = use_triton_infer()
+        self.use_cute_infer = use_cute_infer()
+        self._cute_value_path = None
 
         # === Step 1. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -1563,6 +1570,14 @@ class SO2Convolution(nn.Module):
             self._flash_atten_fn = flash_atten_aggregate
             self._build_row_ptr_fn = build_row_ptr
 
+        # === Step 13. Optional fused CuTe SO(2) value-path operator ===
+        if self.use_cute_infer:
+            from .cute import (
+                make_cute_value_path,
+            )
+
+            self._cute_value_path = make_cute_value_path(self)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -1907,176 +1922,185 @@ class SO2Convolution(nn.Module):
         src, dst = edge_cache.src, edge_cache.dst
         n_edge = src.numel()
 
-        # === Step 1. Rotate to edge-aligned local frame ===
-        with nvtx_range("SO2Conv/rotate_to_local"):
-            D_full = edge_cache.D_full
-            x_dst_local: torch.Tensor | None = None
-            if self.use_triton_infer and not self.training:
-                # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
-                # block kernel for the m-major ``mmax == 1`` layout, dense
-                # otherwise).
-                x_local = self._rotate_to_local_fn(x, src, D_full)  # (E, D_m, C_wide)
-                if self.node_wise_grid_product is not None:
-                    x_dst_local = self._rotate_to_local_fn(
-                        x, dst, D_full
+        if self._cute_value_path is not None and not self.training:
+            # === Steps 1-5 (fused CuTe operator). The operator folds
+            # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
+            # stack, and the focus competition into the bucketed kernels; the
+            # per-edge focus-major intermediates stay resident on chip. ===
+            x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
+        else:
+            # === Step 1. Rotate to edge-aligned local frame ===
+            with nvtx_range("SO2Conv/rotate_to_local"):
+                D_full = edge_cache.D_full
+                x_dst_local: torch.Tensor | None = None
+                if self.use_triton_infer and not self.training:
+                    # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
+                    # block kernel for the m-major ``mmax == 1`` layout, dense
+                    # otherwise).
+                    x_local = self._rotate_to_local_fn(
+                        x, src, D_full
                     )  # (E, D_m, C_wide)
-            else:
-                D_m_prime = project_D_to_m(
-                    D_full=D_full,
-                    coeff_index_m=self.coeff_index_m,
-                    ebed_dim_full=self.ebed_dim_full,
-                    cache=edge_cache.D_to_m_cache,
-                    key_lmax=self.lmax,
-                    key_mmax=self.mmax,
-                )
-                x_src = x.index_select(0, src)  # (E, D, C_wide)
-                x_local = torch.bmm(D_m_prime, x_src)  # (E, D_m, C_wide)
-                if self.node_wise_grid_product is not None:
-                    x_dst = x.index_select(0, dst)  # (E, D, C_wide)
-                    x_dst_local = torch.bmm(D_m_prime, x_dst)  # (E, D_m, C_wide)
-
-        # === Step 2. Select radial/type features for reduced layout ===
-        with nvtx_range("SO2Conv/radial_fuse"):
-            rad_feat = radial_feat[:, self.degree_index_m, :]  # (E, D_m, C)
-            if self.radial_hidden_proj is not None:
-                rad_feat = self.radial_hidden_proj(rad_feat)
-            if self.radial_degree_mixer is None:
-                x_local.mul_(rad_feat)
-            else:
-                x_local = self.radial_degree_mixer(x_local, rad_feat)
-            if self.node_wise_grid_product is not None:
-                x_local = x_local + self.node_wise_grid_product(
-                    x_local,
-                    x_dst_local,
-                )
-            rad_feat_l0_focus = rad_feat[:, 0, :].reshape(
-                n_edge, self.n_focus, self.so2_focus_dim
-            )  # (E, F, Cf)
-
-        # === Step 3. Cast to the focus-major SO(2) mixing layout (F, E, D_m, Cf) ===
-        # The mixing stack runs with the focus stream on the batch axis, the native
-        # layout of the block-diagonal batched matmul: the per-focus linear consumes
-        # it with no edge-axis transpose and writes each ``|m|`` block with no
-        # reassembly cost. This is a strided view of the reduced global buffer,
-        # materialized by the first linear's reshape exactly as any reduced-layout
-        # view would be.
-        focus_gate_src: torch.Tensor | None = None
-        with nvtx_range("SO2Conv/reshape_for_so2"):
-            x_local = x_local.reshape(
-                n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim
-            ).permute(2, 0, 1, 3)  # (F, E, D_m, Cf), strided view
-            if self.focus_compete and self.n_focus > 1:
-                focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
-
-        # === Step 4. Multi-layer SO(2) mixing (pre-norm + residual) ===
-        with nvtx_range("SO2Conv/so2_layers"):
-
-            def so2_l0_extractor(v: torch.Tensor) -> torch.Tensor:
-                """Extract scalar features from the edge-major layout (E, F, D_m, Cf)."""
-                return v[:, :, 0, :].reshape(v.shape[0], self.hidden_channels)
-
-            def apply_bias_correction(
-                x_local: torch.Tensor,
-                so2_linear: SO2Linear,
-                layer_idx: int,
-            ) -> None:
-                if layer_idx != 0 or so2_linear.bias0 is None:
-                    return
-                if so2_linear.out_channels == self.so2_focus_dim:
-                    radial_factor = rad_feat_l0_focus
-                elif so2_linear.out_channels == 2 * self.so2_focus_dim:
-                    radial_factor = torch.cat(
-                        [rad_feat_l0_focus, rad_feat_l0_focus], dim=-1
-                    )
+                    if self.node_wise_grid_product is not None:
+                        x_dst_local = self._rotate_to_local_fn(
+                            x, dst, D_full
+                        )  # (E, D_m, C_wide)
                 else:
-                    raise RuntimeError(
-                        "Unexpected SO2Linear output width in bias correction"
+                    D_m_prime = project_D_to_m(
+                        D_full=D_full,
+                        coeff_index_m=self.coeff_index_m,
+                        ebed_dim_full=self.ebed_dim_full,
+                        cache=edge_cache.D_to_m_cache,
+                        key_lmax=self.lmax,
+                        key_mmax=self.mmax,
                     )
-                # Focus-major broadcast: bias0 (F, Cout), the radial l=0 factor
-                # (E, F, .) transposed to (F, E, .), the per-edge envelope over the
-                # edge axis, applied to the l=0 scalar slice (F, E, Cout).
-                bias0 = so2_linear.bias0.view(self.n_focus, so2_linear.out_channels)
-                radial_factor = radial_factor.transpose(0, 1)  # (F, E, .)
-                bias_correction = bias0.unsqueeze(1) * (
-                    radial_factor * edge_cache.edge_env.reshape(1, -1, 1) - 1.0
-                )
-                x_local[:, :, 0, :].add_(bias_correction)
+                    x_src = x.index_select(0, src)  # (E, D, C_wide)
+                    x_local = torch.bmm(D_m_prime, x_src)  # (E, D_m, C_wide)
+                    if self.node_wise_grid_product is not None:
+                        x_dst = x.index_select(0, dst)  # (E, D, C_wide)
+                        x_dst_local = torch.bmm(D_m_prime, x_dst)  # (E, D_m, C_wide)
 
-            if self.use_so2_attn_res:
-                # The depth-attention residual is a per-edge reduction over the
-                # layer history (``DepthAttnRes`` batches on axis 0), so the history
-                # is kept in the edge-major orientation and each mixing step
-                # transposes into the focus-major layout for the linear.
-                so2_depth_sources = [x_local.transpose(0, 1)]  # (E, F, D_m, Cf)
-                for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                    zip(
-                        self.so2_linears,
-                        self.so2_inter_norms,
-                        self.non_linearities,
-                        strict=True,
+            # === Step 2. Select radial/type features for reduced layout ===
+            with nvtx_range("SO2Conv/radial_fuse"):
+                rad_feat = radial_feat[:, self.degree_index_m, :]  # (E, D_m, C)
+                if self.radial_hidden_proj is not None:
+                    rad_feat = self.radial_hidden_proj(rad_feat)
+                if self.radial_degree_mixer is None:
+                    x_local.mul_(rad_feat)
+                else:
+                    x_local = self.radial_degree_mixer(x_local, rad_feat)
+                if self.node_wise_grid_product is not None:
+                    x_local = x_local + self.node_wise_grid_product(
+                        x_local,
+                        x_dst_local,
                     )
-                ):
-                    x_edge: torch.Tensor = self.so2_layer_attn_res[layer_idx](
-                        sources=so2_depth_sources,
-                        scalar_extractor=so2_l0_extractor,
-                        current_x=x_local.transpose(0, 1),
-                    )
-                    x_local = x_edge.transpose(0, 1)  # (F, E, D_m, Cf)
-                    residual = x_local
-                    x_local = inter_norm(x_local)
-                    x_local = so2_linear(x_local)
-                    apply_bias_correction(x_local, so2_linear, layer_idx)
+                rad_feat_l0_focus = rad_feat[:, 0, :].reshape(
+                    n_edge, self.n_focus, self.so2_focus_dim
+                )  # (E, F, Cf)
 
-                    x_local = non_linear(x_local)
+            # === Step 3. Cast to the focus-major SO(2) mixing layout (F, E, D_m, Cf) ===
+            # The mixing stack runs with the focus stream on the batch axis, the native
+            # layout of the block-diagonal batched matmul: the per-focus linear consumes
+            # it with no edge-axis transpose and writes each ``|m|`` block with no
+            # reassembly cost. This is a strided view of the reduced global buffer,
+            # materialized by the first linear's reshape exactly as any reduced-layout
+            # view would be.
+            focus_gate_src: torch.Tensor | None = None
+            with nvtx_range("SO2Conv/reshape_for_so2"):
+                x_local = x_local.reshape(
+                    n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim
+                ).permute(2, 0, 1, 3)  # (F, E, D_m, Cf), strided view
+                if self.focus_compete and self.n_focus > 1:
+                    focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
 
-                    if self.layer_scale:
-                        scale: torch.Tensor = self.adam_so2_layer_scales[
-                            layer_idx
-                        ].reshape(self.n_focus, 1, 1, self.so2_focus_dim)
-                        x_local = residual + scale * x_local
-                    else:
-                        x_local = residual + x_local
-                    so2_depth_sources.append((x_local - residual).transpose(0, 1))
-            else:
-                for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                    zip(
-                        self.so2_linears,
-                        self.so2_inter_norms,
-                        self.non_linearities,
-                        strict=True,
-                    )
-                ):
-                    residual = x_local
-                    x_local = inter_norm(x_local)
-                    x_local = so2_linear(x_local)
-                    apply_bias_correction(x_local, so2_linear, layer_idx)
+            # === Step 4. Multi-layer SO(2) mixing (pre-norm + residual) ===
+            with nvtx_range("SO2Conv/so2_layers"):
 
-                    x_local = non_linear(x_local)
+                def so2_l0_extractor(v: torch.Tensor) -> torch.Tensor:
+                    """Extract scalar features from the edge-major layout (E, F, D_m, Cf)."""
+                    return v[:, :, 0, :].reshape(v.shape[0], self.hidden_channels)
 
-                    if self.layer_scale:
-                        scale = self.adam_so2_layer_scales[layer_idx].reshape(
-                            self.n_focus, 1, 1, self.so2_focus_dim
+                def apply_bias_correction(
+                    x_local: torch.Tensor,
+                    so2_linear: SO2Linear,
+                    layer_idx: int,
+                ) -> None:
+                    if layer_idx != 0 or so2_linear.bias0 is None:
+                        return
+                    if so2_linear.out_channels == self.so2_focus_dim:
+                        radial_factor = rad_feat_l0_focus
+                    elif so2_linear.out_channels == 2 * self.so2_focus_dim:
+                        radial_factor = torch.cat(
+                            [rad_feat_l0_focus, rad_feat_l0_focus], dim=-1
                         )
-                        x_local = residual + scale * x_local
                     else:
-                        x_local = residual + x_local
+                        raise RuntimeError(
+                            "Unexpected SO2Linear output width in bias correction"
+                        )
+                    # Focus-major broadcast: bias0 (F, Cout), the radial l=0 factor
+                    # (E, F, .) transposed to (F, E, .), the per-edge envelope over the
+                    # edge axis, applied to the l=0 scalar slice (F, E, Cout).
+                    bias0 = so2_linear.bias0.view(self.n_focus, so2_linear.out_channels)
+                    radial_factor = radial_factor.transpose(0, 1)  # (F, E, .)
+                    bias_correction = bias0.unsqueeze(1) * (
+                        radial_factor * edge_cache.edge_env.reshape(1, -1, 1) - 1.0
+                    )
+                    x_local[:, :, 0, :].add_(bias_correction)
 
-        # === Step 5. Cross-focus softmax competition ===
-        if self.focus_compete and self.n_focus > 1:
-            # ``_focus_alpha`` is shared with the rotation-free radial and Cartesian
-            # messages in the edge-major (E, F) orientation; feed it the transposed
-            # view of the focus-major scalar and broadcast the weights back over the
-            # focus-major activation.
-            alpha = self._focus_alpha(focus_gate_src.transpose(0, 1))  # (E, F)
-            x_local = x_local * alpha.transpose(0, 1).to(dtype=x_local.dtype).unsqueeze(
-                -1
-            ).unsqueeze(-1)
+                if self.use_so2_attn_res:
+                    # The depth-attention residual is a per-edge reduction over the
+                    # layer history (``DepthAttnRes`` batches on axis 0), so the history
+                    # is kept in the edge-major orientation and each mixing step
+                    # transposes into the focus-major layout for the linear.
+                    so2_depth_sources = [x_local.transpose(0, 1)]  # (E, F, D_m, Cf)
+                    for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                        zip(
+                            self.so2_linears,
+                            self.so2_inter_norms,
+                            self.non_linearities,
+                            strict=True,
+                        )
+                    ):
+                        x_edge: torch.Tensor = self.so2_layer_attn_res[layer_idx](
+                            sources=so2_depth_sources,
+                            scalar_extractor=so2_l0_extractor,
+                            current_x=x_local.transpose(0, 1),
+                        )
+                        x_local = x_edge.transpose(0, 1)  # (F, E, D_m, Cf)
+                        residual = x_local
+                        x_local = inter_norm(x_local)
+                        x_local = so2_linear(x_local)
+                        apply_bias_correction(x_local, so2_linear, layer_idx)
 
-        # === Exit. Restore the (E, F, D_m, Cf) orientation ===
-        # Both the fused flash-attention aggregation kernel and the rotate-back
-        # consume this orientation through explicit strides, so the focus-major
-        # buffer is handed back as a view with no copy.
-        x_local = x_local.permute(1, 0, 2, 3)  # (E, F, D_m, Cf), strided view
+                        x_local = non_linear(x_local)
+
+                        if self.layer_scale:
+                            scale: torch.Tensor = self.adam_so2_layer_scales[
+                                layer_idx
+                            ].reshape(self.n_focus, 1, 1, self.so2_focus_dim)
+                            x_local = residual + scale * x_local
+                        else:
+                            x_local = residual + x_local
+                        so2_depth_sources.append((x_local - residual).transpose(0, 1))
+                else:
+                    for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                        zip(
+                            self.so2_linears,
+                            self.so2_inter_norms,
+                            self.non_linearities,
+                            strict=True,
+                        )
+                    ):
+                        residual = x_local
+                        x_local = inter_norm(x_local)
+                        x_local = so2_linear(x_local)
+                        apply_bias_correction(x_local, so2_linear, layer_idx)
+
+                        x_local = non_linear(x_local)
+
+                        if self.layer_scale:
+                            scale = self.adam_so2_layer_scales[layer_idx].reshape(
+                                self.n_focus, 1, 1, self.so2_focus_dim
+                            )
+                            x_local = residual + scale * x_local
+                        else:
+                            x_local = residual + x_local
+
+            # === Step 5. Cross-focus softmax competition ===
+            if self.focus_compete and self.n_focus > 1:
+                # ``_focus_alpha`` is shared with the rotation-free radial and Cartesian
+                # messages in the edge-major (E, F) orientation; feed it the transposed
+                # view of the focus-major scalar and broadcast the weights back over the
+                # focus-major activation.
+                alpha = self._focus_alpha(focus_gate_src.transpose(0, 1))  # (E, F)
+                x_local = x_local * alpha.transpose(0, 1).to(
+                    dtype=x_local.dtype
+                ).unsqueeze(-1).unsqueeze(-1)
+
+            # === Exit. Restore the (E, F, D_m, Cf) orientation ===
+            # Both the fused flash-attention aggregation kernel and the rotate-back
+            # consume this orientation through explicit strides, so the focus-major
+            # buffer is handed back as a view with no copy.
+            x_local = x_local.permute(1, 0, 2, 3)  # (E, F, D_m, Cf), strided view
 
         # The fused flash-attention aggregation consumes the per-focus
         # ``(E, F, D_m, Cf)`` local layout directly and performs the rotate-back

@@ -54,6 +54,22 @@ def use_triton_infer() -> bool:
     return os.environ.get("DP_TRITON_INFER", "0").strip().lower() in _INFER_TRUE
 
 
+def use_cute_infer() -> bool:
+    """Return whether the opt-in CuTe inference operator is enabled.
+
+    The flag is controlled by the ``DP_CUTE_INFER`` environment variable and is
+    read at module construction time. It selects the fused CuTe SO(2) value-path
+    operator (an independent path from ``DP_TRITON_INFER``) and only takes effect
+    during inference; training always uses the dense reference path.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_CUTE_INFER`` is set to a truthy value.
+    """
+    return os.environ.get("DP_CUTE_INFER", "0").strip().lower() in _INFER_TRUE
+
+
 def use_amp_infer() -> bool:
     """Return whether bf16 autocast is enabled for inference.
 
