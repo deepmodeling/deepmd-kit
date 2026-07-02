@@ -6,8 +6,9 @@ water example dataset. The recommended model and descriptor type is `DPA4`;
 
 ## Model architecture variants
 
-The baseline `input.json` uses a DPA4-Neo configuration. To switch to a
-heavier or lighter variant, change only the following `descriptor` keys:
+The `input.json` uses a DPA4-Neo configuration. To switch to a
+heavier or lighter variant, recommended changes only involve the following 
+`descriptor` keys:
 
 | Key in `descriptor` | DPA4-Neo (default) | DPA4-Air | DPA4-Mini |
 | ------------------- | ------------------ | -------- | --------- |
