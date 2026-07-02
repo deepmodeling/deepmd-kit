@@ -461,9 +461,16 @@ def make_model(
                 ng = build_neighbor_graph(cc, atype, bb, rcut)
             elif method == "ase":
                 ng = build_neighbor_graph_ase(cc, atype, bb, rcut)
+            elif method == "vesin":
+                from deepmd.pt_expt.utils.vesin_graph_builder import (
+                    build_neighbor_graph_vesin,
+                )
+
+                ng = build_neighbor_graph_vesin(cc, atype, bb, rcut)
             else:
                 raise ValueError(
-                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                    f"unknown neighbor_graph_method {method!r}; "
+                    "use 'dense', 'ase', 'vesin', or 'nv'"
                 )
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
