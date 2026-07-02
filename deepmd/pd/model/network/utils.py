@@ -39,8 +39,9 @@ def aggregate(
     else:
         bin_count = None
 
-    # make sure this operation is done on the same device of data and owners
-    output = paddle.zeros([num_owner, data.shape[1]])
+    # make sure this operation is done on the same device of data and owners,
+    # and preserve the input dtype instead of falling back to the default float
+    output = paddle.zeros([num_owner, data.shape[1]], dtype=data.dtype)
     output = output.index_add_(owners, 0, data.astype(output.dtype))
     if average:
         assert bin_count is not None
