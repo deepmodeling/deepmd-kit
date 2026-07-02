@@ -1,0 +1,128 @@
+{
+  "_comment": "DPA4-Neo energy-training example for the water dataset.",
+  "model": {
+    "type": "DPA4",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "rcut": 6.0,
+      "channels": 32,
+      "n_radial": 16,
+      "use_env_seed": true,
+      "edge_cartesian": false,
+      "node_cartesian": "none",
+      "lmax": 3,
+      "mmax": 1,
+      "n_blocks": 2,
+      "mixing_layers": 3,
+      "radial_so2_mode": "degree_channel",
+      "radial_so2_rank": 1,
+      "n_focus": 2,
+      "focus_dim": 0,
+      "n_atten_head": 1,
+      "ffn_neurons": 0,
+      "ffn_so3_grid": true,
+      "so3_readout": "mlp",
+      "grid_mlp": [
+        false,
+        false,
+        false
+      ],
+      "grid_branch": [
+        1,
+        1,
+        1
+      ],
+      "ffn_blocks": 2,
+      "sandwich_norm": [
+        false,
+        true,
+        true,
+        false
+      ],
+      "message_node_so3": true,
+      "use_amp": true,
+      "precision": "float32",
+      "seed": 42
+    },
+    "fitting_net": {
+      "neuron": [
+        0
+      ],
+      "precision": "float32",
+      "seed": 42
+    },
+    "use_compile": false,
+    "enable_tf32": true
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 0.00045,
+    "stop_lr": 1e-06,
+    "warmup_steps": 5000,
+    "warmup_start_factor": 0.2,
+    "decay_phase_ratio": 0.65,
+    "decay_type": "cosine"
+  },
+  "loss": {
+    "type": "ener",
+    "loss_func": "mae",
+    "f_use_norm": true,
+    "start_pref_e": 20,
+    "limit_pref_e": 20,
+    "start_pref_f": 20,
+    "limit_pref_f": 20,
+    "start_pref_v": 5,
+    "limit_pref_v": 5
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "weight_decay": 0.001
+  },
+  "training": {
+    "stat_file": "./dpa4.hdf5",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "batch_size": 1
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "numb_batch": 1
+    },
+    "numb_steps": 2000000,
+    "gradient_max_norm": 5.0,
+    "save_freq": 2000,
+    "save_dir": "ckpt",
+    "max_ckpt_keep": 3,
+    "enable_ema": true,
+    "ema_decay": 0.999,
+    "ema_ckpt_keep": 3,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "disp_avg": true,
+    "disp_training": true,
+    "time_training": true,
+    "tensorboard": false,
+    "enable_profiler": false,
+    "tensorboard_freq": 1000,
+    "tensorboard_log_dir": "tb_log",
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "zero_stage": 1,
+    "seed": 42
+  },
+  "validating": {
+    "compiled_infer": false,
+    "tf32_infer": false,
+    "save_best_dir": "ckpt_best"
+  }
+}
