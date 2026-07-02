@@ -90,11 +90,8 @@ class TestDpa1BlockCallGraph:
             atol=1e-12,
         )
 
-    def test_attn_layer_gt0_raises(self) -> None:
-        """The graph block kernel fail-fasts for attn_layer > 0 (unsupported)."""
-        dd = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
-        with pytest.raises(NotImplementedError):
-            dd.se_atten.call_graph(None, np.array([0], dtype=np.int64))
+    # attn_layer > 0 is supported since NeighborGraph PR-D; parity is covered
+    # by test_dpa1_graph_attention_parity.py (the fail-fast test was removed).
 
     def test_exclude_types_raises(self) -> None:
         """The graph block kernel fail-fasts for exclude_types (not yet applied)."""
