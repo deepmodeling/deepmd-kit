@@ -33,7 +33,9 @@ from .graph import (
     pad_and_guard_edges,
 )
 from .segment import (
+    segment_max,
     segment_mean,
+    segment_softmax,
     segment_sum,
 )
 
@@ -49,6 +51,8 @@ __all__ = [
     "neighbor_graph_from_ijs",
     "node_validity_mask",
     "pad_and_guard_edges",
+    "segment_max",
     "segment_mean",
+    "segment_softmax",
     "segment_sum",
 ]
