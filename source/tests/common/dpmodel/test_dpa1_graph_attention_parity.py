@@ -225,3 +225,45 @@ class TestGraphEligibility:
 
         dd = DescrptSeAttenV2(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
         assert not dd.uses_graph_lower()
+
+
+class TestBindingSelDivergence:
+    """At BINDING sel the carry-all graph attends over MORE neighbors than the
+    sel-truncated dense path — outputs must differ (sanity, not parity;
+    spec decision #17).
+    """
+
+    def test_carry_all_attention_differs_at_binding_sel(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nloc = 6
+        coord = rng.random((1, nloc, 3)) * 2.0  # dense blob => binding sel=2
+        atype = np.array([[0, 1, 0, 1, 1, 0]], dtype=np.int64)
+        dd = _make(2, dotr=True, sel=(2,))
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord, atype, dd.get_rcut(), dd.get_sel(), mixed_types=True, box=None
+        )
+        assert (nlist >= 0).all(), "fixture must be sel-binding (all slots full)"
+        tebd = dd.type_embedding.call()
+        atype_embd_ext = np.reshape(
+            np.take(tebd, np.reshape(ext_atype, (-1,)), axis=0),
+            (1, ext_atype.shape[1], dd.tebd_dim),
+        )
+        dense_g, *_ = dd.se_atten.call(
+            nlist,
+            ext_coord,
+            ext_atype,
+            atype_embd_ext=atype_embd_ext,
+            mapping=None,
+            type_embedding=tebd,
+        )
+        graph = build_neighbor_graph(coord, atype, None, dd.get_rcut())
+        graph_g, _ = dd.se_atten.call_graph(
+            graph, atype.reshape(-1), type_embedding=tebd
+        )
+        assert np.max(np.abs(graph_g.reshape(dense_g.shape) - dense_g)) > 1e-6, (
+            "carry-all attention must diverge from sel-truncated dense"
+        )
