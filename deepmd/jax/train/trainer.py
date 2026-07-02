@@ -893,6 +893,17 @@ def _evaluate_model_dict(
     return model_dict
 
 
+def _init_empty_state(params: Any) -> optax.EmptyState:
+    """Initialize an empty Optax state without requiring optax.init_empty_state.
+
+    Older Optax releases expose ``EmptyState`` but not the convenience helper
+    ``init_empty_state``. Constructing the state locally keeps this transform
+    compatible with the Optax versions selected by the current JAX/Flax pins.
+    """
+    del params
+    return optax.EmptyState()
+
+
 def _scale_by_global_learning_rate() -> optax.GradientTransformationExtraArgs:
     """Scale optimizer updates by the learning rate from the global step."""
 
@@ -909,7 +920,7 @@ def _scale_by_global_learning_rate() -> optax.GradientTransformationExtraArgs:
         )
         return updates, state
 
-    return optax.GradientTransformationExtraArgs(optax.init_empty_state, update_fn)
+    return optax.GradientTransformationExtraArgs(_init_empty_state, update_fn)
 
 
 def _legacy_optimizer_update(optimizer: Any, grads: Any, lr: float) -> None:
