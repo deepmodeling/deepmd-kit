@@ -331,7 +331,7 @@ def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
         gm.recompile()
 
 
-def build_inductor_compile_options() -> dict[str, Any]:
+def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:
     """Return the conservative Inductor options used to lower the dynamic graph.
 
     The option set disables every Inductor and Triton feature that has
@@ -341,6 +341,22 @@ def build_inductor_compile_options() -> dict[str, Any]:
     some GPU/Triton combinations. Options absent from the running PyTorch's
     configuration registry are dropped so the returned dictionary stays valid
     across releases.
+
+    Parameters
+    ----------
+    inference : bool
+        Whether the options lower an inference graph (the ``make_fx`` +
+        ``aot_module_simplified`` path and the AOTInductor freeze) rather
+        than the ``torch.compile`` training graph.  Inference graphs enter
+        Inductor with hint-less data-dependent symbols, which breaks the
+        peak-memory reordering pass (see below); training graphs carry real
+        size hints from the first traced call and benefit from the pass.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keyword options accepted by ``torch.compile(options=...)`` and by
+        ``torch._inductor.config.patch``.
     """
     compile_options: dict[str, Any] = {
         "max_autotune": False,
@@ -361,6 +377,19 @@ def build_inductor_compile_options() -> dict[str, Any]:
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
     }
+    if inference:
+        # The peak-memory reordering pass sizes buffers through
+        # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
+        # lowered from ``make_fx`` fake placeholders whose edge-count symbols
+        # carry no hint, so every dynamically shaped buffer is costed as zero
+        # bytes, the candidate orders become indistinguishable to the cost
+        # model, and the pass rewrites the schedule into an order that hoists
+        # the dynamic allocations to the head of the generated ``call()`` --
+        # all forward/backward intermediates then coexist, more than doubling
+        # peak memory on the SeZM inference graph.  Training compiles through
+        # Dynamo with real hints from the first call and measurably benefits
+        # from the pass, so it keeps the upstream default.
+        compile_options["reorder_for_peak_memory"] = False
     try:
         from torch._inductor import config as inductor_config
 

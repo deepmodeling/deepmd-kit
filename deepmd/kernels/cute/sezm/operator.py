@@ -28,18 +28,19 @@ from typing import (
 
 import torch
 
-from ..indexing import (
+from deepmd.pt.model.descriptor.sezm_nn.indexing import (
     project_D_to_m,
 )
+
 from .forward import (
     SEZM_CUTE_AVAILABLE,
 )
 
 if TYPE_CHECKING:
-    from ..edge_cache import (
+    from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
         EdgeFeatureCache,
     )
-    from ..so2 import (
+    from deepmd.pt.model.descriptor.sezm_nn.so2 import (
         SO2Convolution,
     )
 

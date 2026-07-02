@@ -28,9 +28,9 @@ Deployment
     This is a Python-inference-only path. The ``cutlass.cute`` kernels are
     nvcc / NVRTC JIT-compiled at runtime and do not bake into the AOTInductor
     ``.pt2`` artifact, so the operator is unavailable to the LAMMPS / GPUMD C++
-    inference path. ``DP_CUTE_INFER`` is an independent path from
-    ``DP_TRITON_INFER``; it engages regardless of the Triton flag and reuses the
-    committed flash-attention aggregation kernel when it is active.
+    inference path. ``DP_CUTE_INFER`` and ``DP_TRITON_INFER`` both claim the
+    fused SO(2) value path and are mutually exclusive; enabling both is
+    rejected at construction.
 
 Correctness
     The force is bit-exact against the eager reference (energy relative error

@@ -51,6 +51,9 @@ from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.utils import (
+    use_amp_infer,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -101,7 +104,6 @@ from .sezm_nn import (
     nvtx_range,
     safe_norm,
     safe_numpy_to_tensor,
-    use_amp_infer,
 )
 
 if TYPE_CHECKING:

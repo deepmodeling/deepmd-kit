@@ -46,7 +46,11 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    SO2Convolution,
     SO2Linear,
 )
 from deepmd.pt.model.model import (
@@ -293,6 +297,70 @@ def _collect_metadata(
         metadata["ntypes_spin"] = int(model.spin.get_ntypes_spin())
         metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
     return metadata
+
+
+def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) -> None:
+    """Tune the shape-keyed Triton launch tables for this checkpoint's shapes.
+
+    At ``DP_TRITON_INFER >= 2`` the traced graph bakes launch configurations
+    resolved from the tables in ``deepmd.kernels.triton.sezm.tile_configs``.  Shape keys
+    absent from the built-in tables (an untuned GPU model, or an untuned
+    width/degree) are swept here on the local GPU -- the exact hardware the
+    ``.pt2`` will run on, since AOTInductor artifacts are not portable across
+    GPU models -- and registered for the current process before tracing.
+    Keys already covered cost nothing.
+
+    The fused value-path entries are then rebound: the mixing-stack operator
+    selection (fp32 versus fp16x3) is fixed at construction time, which
+    predates the registrations made here.
+    """
+    if triton_infer_level() < 2:
+        return
+    if target_device.type != "cuda" or not torch.cuda.is_available():
+        return
+    from deepmd.kernels.triton.sezm.so2_value_path import (
+        SO2_VALUE_PATH_TRITON_AVAILABLE,
+        make_triton_value_path,
+    )
+
+    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        return
+    from deepmd.kernels.triton.sezm.sweep_tile_configs import (
+        collect_model_shape_keys,
+        tune_missing_configs,
+    )
+    from deepmd.kernels.triton.sezm.tile_configs import (
+        _builtin_tables,
+    )
+
+    # The built-in tables and the sweep both resolve against the current
+    # device; pin it to the AOTI target so a freeze aimed at a secondary GPU
+    # tunes and looks up the right hardware (mixed-model hosts).
+    if target_device.index is not None:
+        torch.cuda.set_device(target_device)
+        _builtin_tables.cache_clear()
+
+    shape_keys = collect_model_shape_keys(model)
+    registered = tune_missing_configs(
+        shape_keys, level=triton_infer_level(), device=target_device
+    )
+    if registered:
+        log.info(
+            "Registered freshly tuned Triton launch configurations: %s",
+            {family: sorted(entries) for family, entries in registered.items()},
+        )
+    else:
+        log.info(
+            "Triton launch tables already cover this checkpoint's shapes on %s; "
+            "no tuning needed.",
+            torch.cuda.get_device_name(target_device),
+        )
+    # Rebind unconditionally: the fp32-versus-fp16x3 stack selection was made
+    # at construction time, possibly against a different current device's
+    # tables, and must reflect the target device and any fresh registrations.
+    for module in model.modules():
+        if isinstance(module, SO2Convolution) and module.triton_infer_level >= 2:
+            module._triton_value_path = make_triton_value_path(module)
 
 
 # The trace-time sendlist for the with-comm artifact embeds the address of a
@@ -819,6 +887,10 @@ def freeze_sezm_to_pt2(
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag
 
+    # Sweep any Triton launch-table keys this checkpoint needs that are not
+    # covered for the local GPU, so the traced graph bakes tuned launches.
+    _tune_triton_configs(model, target_device)
+
     _, sample_inputs_cpu = _resolve_nframes(
         model,
         nloc=7,
@@ -829,6 +901,7 @@ def freeze_sezm_to_pt2(
     # Each model's exportable signature matches its sample tuple positionally
     # (energy / native-spin edge ABI, or virtual-spin nlist ABI), so a single
     # splat covers all three contracts.
+    log.info("Tracing the lower graph on CPU (make_fx)...")
     traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
     # Output key order is taken from a concrete run; Python dict order
@@ -838,6 +911,7 @@ def freeze_sezm_to_pt2(
         sample_out = traced(*sample_inputs_cpu)
     output_keys = list(sample_out.keys())
 
+    log.info("Exporting the traced graph (torch.export)...")
     exported = torch.export.export(
         traced,
         sample_inputs_cpu,
@@ -857,10 +931,15 @@ def freeze_sezm_to_pt2(
         exported = move_to_device_pass(exported, target_device)
 
     out_path_str = str(out_path)
-    compile_options = build_inductor_compile_options()
+    compile_options = build_inductor_compile_options(inference=True)
     # Keep AOTInductor aligned with the eval compile path.  ``triton.max_tiles=1``
     # keeps data-dependent edge axes on Triton's x grid, whose bound is large
     # enough for production-scale neighbor lists.
+    log.info(
+        "Compiling the AOTInductor package for %s (the slowest freeze stage; "
+        "typically several minutes)...",
+        target_device,
+    )
     with inductor_config.patch({**compile_options, "triton.max_tiles": 1}):
         aoti_compile_and_package(exported, package_path=out_path_str)
 
@@ -875,6 +954,10 @@ def freeze_sezm_to_pt2(
     )
     with_comm_bytes: bytes | None = None
     if with_comm:
+        log.info(
+            "Compiling the parallel with-comm artifact (second AOTInductor "
+            "compilation)..."
+        )
         with_comm_bytes = _export_with_comm_artifact(
             model,
             target_device=target_device,

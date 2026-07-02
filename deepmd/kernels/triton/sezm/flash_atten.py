@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # pyright: reportMissingImports=false
-# ruff: noqa: ANN001, ANN202
+# ruff: noqa: ANN001, ANN202, RUF005
 """Fused flash-attention edge->node aggregation for the SeZM/DPA4 SO(2) attention.
 
 This module fuses the *entire* value-aggregation of the ``n_atten_head > 0``
@@ -52,16 +52,17 @@ reduction.
 
 Forward layout
 --------------
-One Triton program per edge, for full edge-level parallelism. Each program
-assembles the block-diagonal ``rotate_back`` from the three retained orders using
-per-degree register vectors (every reduced order is read exactly once, no
-redundant gather), scales it by the per-edge ``alpha`` and the rescale, and
-atomically accumulates the result into ``out[dst]``. A per-destination segmented
-(CSR, atomic-free) variant was prototyped but is occupancy-starved at these
-destination counts and does redundant reduced-order reads, so the per-edge
-atomic scatter is faster here; the destination reduction order is the only
-non-determinism and matches the eager ``index_add`` path (fp32). The forward
-works for any edge order (no ``dst`` sort required).
+One Triton program per destination node, reducing its edge segment through a
+destination-sorted CSR topology (``argsort`` + ``searchsorted`` built inside
+the op; the traced edge list carries masked padding edges in arbitrary
+destination order, so no sortedness invariant exists at this level): each
+edge's block-diagonal ``rotate_back`` is assembled from the three retained
+orders using per-degree register vectors (every reduced order is read exactly
+once, no redundant gather), weighted by ``alpha``, and accumulated into a
+``DIM``-row register tuple; the rescale is applied once per row at the final
+store.  The contention-free CSR reduction is both faster than a per-edge
+atomic scatter (which serializes on the colliding edges of each atom at
+typical neighbor counts) and deterministic.
 
 Backward layout
 ---------------
@@ -97,8 +98,12 @@ from torch.library import (
     wrap_triton,
 )
 
-from ..indexing import (
+from deepmd.pt.model.descriptor.sezm_nn.indexing import (
     build_m_major_index,
+)
+
+from .tile_configs import (
+    flash_bwd_block_config,
 )
 
 __all__ = [
@@ -183,7 +188,10 @@ def flash_atten_aggregate_reference(
 
     xl_std = x_local.transpose(1, 2).reshape(n_edge, reduced_dim, c_wide)
     dt_from_m = wigner_dt[:, :dim, :dim].index_select(2, coeff)  # (E, D, D_m)
-    rb = torch.bmm(dt_from_m, xl_std) * rescale.view(1, dim, 1)  # (E, D, C_wide)
+    # Cast the constant fp64 ``rescale`` to the feature dtype so the reduction
+    # stays in the caller's compute precision (no-op for fp64).
+    resc = rescale.view(1, dim, 1).to(x_local.dtype)
+    rb = torch.bmm(dt_from_m, xl_std) * resc  # (E, D, C_wide)
     # alpha (E, F, H) -> per-channel weight (E, C_wide) with c = f*Cf + h*head_dim + ch
     alpha_full = alpha.repeat_interleave(head_dim, dim=2).reshape(n_edge, c_wide)
     weighted = rb * alpha_full[:, None, :]
@@ -220,7 +228,8 @@ def _flash_atten_backward_reference(
     xl_std = x_local.transpose(1, 2).reshape(n_edge, reduced_dim, c_wide)
     dt_from_m = wigner_dt[:, :dim, :dim].index_select(2, coeff)  # (E, D, D_m)
     rb_pre = torch.bmm(dt_from_m, xl_std)  # (E, D, C_wide)
-    resc = rescale.view(1, dim, 1)
+    # Cast ``rescale`` to the feature dtype (see the forward reference).
+    resc = rescale.view(1, dim, 1).to(x_local.dtype)
     rb = rb_pre * resc
     alpha_full = alpha.repeat_interleave(head_dim, dim=2).reshape(n_edge, c_wide)
 
@@ -251,12 +260,15 @@ def _flash_atten_backward_reference(
 # Triton kernels (mmax == 1; LMAX / layout are constexpr; channels vectorized)
 # ======================================================================
 if FLASH_ATTEN_TRITON_AVAILABLE:
+    # The segmented forward carries a DIM-row register accumulator per
+    # program, so low warp counts dominate; higher counts only pay off for
+    # wide channel tiles.
     _FWD_CONFIGS = [
+        triton.Config({}, num_warps=1, num_stages=1),
+        triton.Config({}, num_warps=1, num_stages=2),
         triton.Config({}, num_warps=2, num_stages=1),
-        triton.Config({}, num_warps=4, num_stages=1),
-        triton.Config({}, num_warps=8, num_stages=1),
+        triton.Config({}, num_warps=2, num_stages=2),
         triton.Config({}, num_warps=4, num_stages=2),
-        triton.Config({}, num_warps=8, num_stages=2),
     ]
     _BWD_CONFIGS = [
         triton.Config({}, num_warps=1, num_stages=1),
@@ -266,16 +278,17 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         triton.Config({}, num_warps=4, num_stages=2),
     ]
 
-    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide"], reset_to_zero=["out_ptr"])
+    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide"])
     @triton.jit
     def _flash_fwd_kernel(
         xl_ptr,
         dt_ptr,
         resc_ptr,
         w_ptr,
-        dst_ptr,
+        order_ptr,
+        row_ptr_ptr,
         out_ptr,
-        n_edge,
+        n_node,
         C_wide,
         xl_se,
         xl_sf,
@@ -295,77 +308,98 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         HEAD_DIM: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
-        """One program per edge: rotate-back, alpha-weight, atomic scatter to dst.
+        """One program per node: indirect CSR segment reduction of the rotate-back.
 
-        The block-diagonal rotate-back is assembled per edge from the three
-        retained orders using per-degree register vectors (each reduced order is
-        read exactly once, no redundant gather), scaled by the per-edge attention
-        weight ``alpha`` and the inverse-rotation rescale, then atomically
-        accumulated into ``out[dst]``. Full edge-level parallelism, and neither
-        the rotate-back message nor the weighted value is ever materialized to
-        DRAM. Channels are the vectorized axis; ``c = f * Cf + cf`` decodes the
+        ``order`` lists edge ids sorted by destination and ``row_ptr`` holds
+        the segment offsets, so program ``n`` reduces the edges
+        ``order[row_ptr[n]..row_ptr[n+1]]`` -- an indirect, atomic-free and
+        deterministic destination reduction that replaces the per-edge atomic
+        scatter and accepts any edge order (the compiled SeZM graph keeps
+        masked padding edges, so no sortedness invariant exists).  Per edge,
+        each retained reduced order is read exactly once and neither the
+        rotate-back message nor the weighted value is materialized to DRAM.
+        Channels are the vectorized axis; ``c = f * Cf + cf`` decodes the
         per-focus ``x_local`` layout in place and the attention head is
-        ``h = cf // head_dim``. The result is the ungated aggregate; the
-        destination reduction order is atomic (fp32), matching the eager
-        ``index_add`` path it replaces.
+        ``h = cf // head_dim``.  The ``DIM``-row accumulator lives in a
+        loop-carried register tuple, so the rescale is applied once per row
+        at the final store.
         """
-        edge = tl.program_id(0).to(tl.int64)
-        dst_idx = tl.load(dst_ptr + edge).to(tl.int64)
+        DIM: tl.constexpr = (LMAX + 1) * (LMAX + 1)
+
+        node = tl.program_id(0).to(tl.int64)
         chan = tl.arange(0, BLOCK_C)
         cmask = chan < C_wide
+        beg = tl.load(row_ptr_ptr + node).to(tl.int64)
+        end = tl.load(row_ptr_ptr + node + 1).to(tl.int64)
 
-        # Channel decode c = f * Cf + cf, head h = cf // head_dim.
-        fv = chan // CF
+        # Channel decode c = f * Cf + cf, head h = cf // head_dim.  Masked
+        # lanes clamp the focus index so pointer arithmetic stays in range.
+        fv = tl.where(cmask, chan // CF, 0)
         cfv = chan % CF
         hv = cfv // HEAD_DIM
         xl_co = fv * xl_sf + cfv * xl_sc  # per-channel focus offset into x_local
         w_col = fv * w_sf + hv * w_sh  # per-channel (focus, head) offset into alpha
-        wv = tl.load(w_ptr + edge * w_se + w_col, mask=cmask, other=0.0).to(tl.float32)
 
-        for l in tl.static_range(0, LMAX + 1):
-            base = l * l
-            r0 = base + l  # packed column of order m=0
-            xl0 = tl.load(
-                xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
-            ).to(tl.float32)
-            if l >= 1:
-                xlm = tl.load(
-                    xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
-                    mask=cmask,
-                    other=0.0,
+        acc = ()
+        for _ in tl.static_range(DIM):
+            acc = acc + (tl.zeros((BLOCK_C,), dtype=tl.float32),)
+
+        for i in range(beg, end):
+            edge = tl.load(order_ptr + i).to(tl.int64)
+            wv = tl.load(w_ptr + edge * w_se + w_col, mask=cmask, other=0.0).to(
+                tl.float32
+            )
+            new_acc = ()
+            for l in tl.static_range(0, LMAX + 1):
+                base = l * l
+                r0 = base + l  # packed column of order m=0
+                xl0 = tl.load(
+                    xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
                 ).to(tl.float32)
-                xlp = tl.load(
-                    xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
-                    mask=cmask,
-                    other=0.0,
-                ).to(tl.float32)
-            for j in tl.static_range(0, 2 * l + 1):
-                d = base + j  # full packed output row
-                resc = tl.load(resc_ptr + d).to(tl.float32)
-                acc = (
-                    tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
-                        tl.float32
-                    )
-                    * xl0
-                )
                 if l >= 1:
-                    acc += (
-                        tl.load(
-                            dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
-                        ).to(tl.float32)
-                        * xlm
+                    xlm = tl.load(
+                        xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    xlp = tl.load(
+                        xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                for j in tl.static_range(0, 2 * l + 1):
+                    d = base + j  # full packed output row
+                    rb = (
+                        tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
+                            tl.float32
+                        )
+                        * xl0
                     )
-                    acc += (
-                        tl.load(
-                            dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
-                        ).to(tl.float32)
-                        * xlp
-                    )
-                tl.atomic_add(
-                    out_ptr + dst_idx * o_sn + d * o_sd + chan * o_sc,
-                    acc * wv * resc,
-                    mask=cmask,
-                )
+                    if l >= 1:
+                        rb += (
+                            tl.load(
+                                dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
+                            ).to(tl.float32)
+                            * xlm
+                        )
+                        rb += (
+                            tl.load(
+                                dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
+                            ).to(tl.float32)
+                            * xlp
+                        )
+                    # Loop-carried tuples require inline constexpr subscripts
+                    # (the Triton frontend rejects composite index variables).
+                    new_acc = new_acc + (acc[l * l + j] + rb * wv,)
+            acc = new_acc
+
+        for d in tl.static_range(DIM):
+            resc = tl.load(resc_ptr + d).to(tl.float32)
+            tl.store(
+                out_ptr + node * o_sn + d * o_sd + chan * o_sc,
+                acc[d] * resc,
+                mask=cmask,
+            )
 
     @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide"])
     @triton.jit
@@ -520,6 +554,141 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 val.to(gw_ptr.dtype.element_ty),
             )
 
+    @triton.jit
+    def _flash_bwd_block_kernel(
+        gp_ptr,  # (N, D, C) upstream gradient of the ungated aggregate
+        xl_ptr,  # (E, F, D_m, Cf) local features
+        dt_ptr,  # (E, D, D) transposed block-diagonal Wigner-D, contiguous
+        resc_ptr,  # (D,) inverse-rotation rescale
+        w_ptr,  # (E, F, H) attention weights, contiguous
+        dst_ptr,  # (E,)
+        gxl_ptr,  # (E, F, D_m, Cf) out
+        gdt_ptr,  # (E, D, D) out (pre-zeroed, structural non-zeros written)
+        gw_ptr,  # (E, F, H) out, contiguous
+        n_edge,
+        gp_sn,
+        gp_sd,
+        xl_se,
+        xl_sf,
+        xl_sr,
+        xl_sc,
+        gxl_se,
+        gxl_sf,
+        gxl_sr,
+        gxl_sc,
+        L: tl.constexpr,
+        CF: tl.constexpr,
+        CW: tl.constexpr,  # C_wide = F * Cf
+        CP: tl.constexpr,  # next power of two >= CW (vector lane count)
+        HEAD_DIM: tl.constexpr,
+        NHEAD: tl.constexpr,
+        BLOCK_E: tl.constexpr,
+    ):
+        """Edge-block variant of the flash-attention backward.
+
+        The per-edge kernel closes one cross-lane ``tl.sum`` per structural
+        Wigner non-zero -- serialized warp shuffle-reduction chains that
+        dominate its runtime on narrow hidden widths.  This variant processes
+        ``BLOCK_E`` edges per program with the channel axis kept as the
+        vector axis: every ``grad_Dt`` entry becomes one batched axis-1
+        reduction of a ``(BLOCK_E, CP)`` tile, every ``grad_x_local`` term is
+        a rank-1 vector FMA with the per-edge Wigner scalar broadcast over
+        channels, and the per-edge scalars are loaded as coalesced
+        ``(BLOCK_E,)`` vectors.  Channels are padded to the power-of-two lane
+        count ``CP`` with masked lanes (no memory traffic, only register
+        pressure, which the launch table absorbs with a smaller ``BLOCK_E``).
+
+        The schedule wins only where the reduction overhead of the per-edge
+        kernel dominates; :func:`~.tile_configs.flash_bwd_block_config` acts
+        as the win list.
+        """
+        DIM: tl.constexpr = (L + 1) * (L + 1)
+        NG: tl.constexpr = (CW // CF) * NHEAD  # flat (focus, head) group count
+        PADDED: tl.constexpr = CP != CW
+
+        pid = tl.program_id(0)
+        offs_e = (pid * BLOCK_E + tl.arange(0, BLOCK_E)).to(tl.int64)
+        e_mask = offs_e < n_edge
+        eq = tl.where(e_mask, offs_e, 0)
+        chan = tl.arange(0, CP)
+        if PADDED:
+            c_mask = chan < CW
+            em = e_mask[:, None] & c_mask[None, :]
+            # Masked lanes clamp their decode so pointer arithmetic stays valid.
+            fv = tl.where(c_mask, chan // CF, 0)
+            cfv = tl.where(c_mask, chan % CF, 0)
+        else:
+            em = e_mask[:, None]
+            fv = chan // CF
+            cfv = chan % CF
+        hv = cfv // HEAD_DIM
+        grp = fv * NHEAD + hv  # (CP,) flat (focus, head) group id
+
+        dst = tl.load(dst_ptr + eq, mask=e_mask, other=0).to(tl.int64)
+        # Attention weight broadcast to channels: w[e, f(c), h(c)].
+        wv = tl.load(w_ptr + (eq * NG)[:, None] + grp[None, :], mask=em, other=0.0)
+
+        xl_row = xl_ptr + (eq * xl_se)[:, None] + (fv * xl_sf + cfv * xl_sc)[None, :]
+        gxl_row = (
+            gxl_ptr + (eq * gxl_se)[:, None] + (fv * gxl_sf + cfv * gxl_sc)[None, :]
+        )
+        dt_base = dt_ptr + eq * DIM * DIM
+        gdt_base = gdt_ptr + eq * DIM * DIM
+        # The launcher passes a contiguous upstream gradient (channel stride 1).
+        gp_row = gp_ptr + (dst * gp_sn)[:, None] + chan[None, :]
+
+        gw_acc = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+
+        for l in tl.static_range(0, L + 1):
+            base = l * l
+            r0 = base + l  # packed reduced column of order m = 0
+            xl0 = tl.load(xl_row + l * xl_sr, mask=em, other=0.0)
+            gxl0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+            if l >= 1:
+                xlm = tl.load(xl_row + (L + l) * xl_sr, mask=em, other=0.0)
+                xlp = tl.load(xl_row + (2 * L + l) * xl_sr, mask=em, other=0.0)
+                gxlm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                gxlp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+            for j in tl.static_range(0, 2 * l + 1):
+                d = base + j
+                resc = tl.load(resc_ptr + d)
+                gpr = tl.load(gp_row + d * gp_sd, mask=em, other=0.0) * resc
+                grad_rb = gpr * wv
+                dt0 = tl.load(dt_base + d * DIM + r0, mask=e_mask, other=0.0)
+                gxl0 += dt0[:, None] * grad_rb
+                tl.store(
+                    gdt_base + d * DIM + r0,
+                    tl.sum(grad_rb * xl0, axis=1),
+                    mask=e_mask,
+                )
+                rb = dt0[:, None] * xl0
+                if l >= 1:
+                    dtm = tl.load(dt_base + d * DIM + (r0 - 1), mask=e_mask, other=0.0)
+                    dtp = tl.load(dt_base + d * DIM + (r0 + 1), mask=e_mask, other=0.0)
+                    gxlm += dtm[:, None] * grad_rb
+                    gxlp += dtp[:, None] * grad_rb
+                    tl.store(
+                        gdt_base + d * DIM + (r0 - 1),
+                        tl.sum(grad_rb * xlm, axis=1),
+                        mask=e_mask,
+                    )
+                    tl.store(
+                        gdt_base + d * DIM + (r0 + 1),
+                        tl.sum(grad_rb * xlp, axis=1),
+                        mask=e_mask,
+                    )
+                    rb += dtm[:, None] * xlm + dtp[:, None] * xlp
+                gw_acc += gpr * rb
+            tl.store(gxl_row + l * gxl_sr, gxl0, mask=em)
+            if l >= 1:
+                tl.store(gxl_row + (L + l) * gxl_sr, gxlm, mask=em)
+                tl.store(gxl_row + (2 * L + l) * gxl_sr, gxlp, mask=em)
+
+        # grad_alpha: reduce gw_acc over each (focus, head) channel group.
+        for g in tl.static_range(NG):
+            val = tl.sum(tl.where((grp == g)[None, :] & em, gw_acc, 0.0), axis=1)
+            tl.store(gw_ptr + eq * NG + g, val, mask=e_mask)
+
 
 # ======================================================================
 # Tile helper + zero-edge guard
@@ -553,22 +722,26 @@ def _launch_forward(
     n_edge, n_focus, _reduced_dim, focus_dim = x_local.shape
     dim = (int(lmax) + 1) ** 2
     c_wide = n_focus * focus_dim
-    # Accumulate the destination scatter in float32 regardless of the input
-    # precision: a low-precision (fp16/bf16) global atomic_add both loses
-    # accuracy over the many edges reduced per node and expands into a slow
-    # compare-and-swap loop. The result is cast back to the input dtype below.
-    out = torch.zeros(n_nodes, dim, c_wide, dtype=torch.float32, device=x_local.device)
+    # The segment reduction accumulates in float32 registers regardless of
+    # the input precision and writes each output row exactly once.
+    out = torch.empty(n_nodes, dim, c_wide, dtype=torch.float32, device=x_local.device)
     if _has_no_edges(n_edge):
-        return out.to(x_local.dtype)
-    grid = (n_edge,)
-    wrap_triton(_flash_fwd_kernel)[grid](
+        return out.zero_().to(x_local.dtype)
+    # Destination CSR topology built inside the op: the graph-level edge list
+    # carries masked padding edges in arbitrary destination order, so the
+    # segment reduction needs its own sorted order (integer ops, no gradient).
+    order = torch.argsort(dst)
+    boundaries = torch.arange(n_nodes + 1, device=dst.device, dtype=dst.dtype)
+    row_ptr = torch.searchsorted(dst.index_select(0, order), boundaries)
+    wrap_triton(_flash_fwd_kernel)[(n_nodes,)](
         x_local,
         wigner_dt,
         rescale,
         alpha,
-        dst,
+        order,
+        row_ptr,
         out,
-        n_edge,
+        n_nodes,
         c_wide,
         x_local.stride(0),
         x_local.stride(1),
@@ -604,9 +777,47 @@ def _launch_backward(
     n_edge, n_focus, _reduced_dim, focus_dim = x_local.shape
     c_wide = n_focus * focus_dim
     grad_x_local = torch.empty_like(x_local)
-    grad_wigner = torch.zeros_like(wigner_dt)
+    grad_wigner = torch.zeros_like(wigner_dt, memory_format=torch.contiguous_format)
     grad_alpha = torch.empty_like(alpha)
     if _has_no_edges(n_edge):
+        return grad_x_local, grad_wigner, grad_alpha
+    # The edge-block schedule engages on swept-and-winning (C_wide, lmax)
+    # keys; every other shape keeps the per-edge kernel.  The branch resolves
+    # at trace time, so exactly one kernel reaches the compiled graph.
+    block_cfg = flash_bwd_block_config(int(c_wide), int(lmax))
+    if block_cfg is not None:
+        block_e, warps, stages = block_cfg
+        wrap_triton(_flash_bwd_block_kernel)[(triton.cdiv(n_edge, block_e),)](
+            grad_pre_gate,
+            x_local,
+            wigner_dt.contiguous(),
+            rescale,
+            alpha,
+            dst,
+            grad_x_local,
+            grad_wigner,
+            grad_alpha,
+            n_edge,
+            grad_pre_gate.stride(0),
+            grad_pre_gate.stride(1),
+            x_local.stride(0),
+            x_local.stride(1),
+            x_local.stride(2),
+            x_local.stride(3),
+            grad_x_local.stride(0),
+            grad_x_local.stride(1),
+            grad_x_local.stride(2),
+            grad_x_local.stride(3),
+            L=int(lmax),
+            CF=focus_dim,
+            CW=c_wide,
+            CP=triton.next_power_of_2(c_wide),
+            HEAD_DIM=focus_dim // int(n_head),
+            NHEAD=int(n_head),
+            BLOCK_E=block_e,
+            num_warps=warps,
+            num_stages=stages,
+        )
         return grad_x_local, grad_wigner, grad_alpha
     wrap_triton(_flash_bwd_kernel)[(n_edge,)](
         grad_pre_gate,
@@ -834,13 +1045,14 @@ def flash_atten_aggregate(
     alpha : Tensor
         Envelope-gated softmax weight with shape ``(E, F, H)``.
     row_ptr : Tensor
-        Row offsets with shape ``(N + 1,)`` from :func:`build_row_ptr`; only its
-        length carries the (SymInt) node count ``N`` for the output allocation and
-        the fake kernel, so the ``natoms`` axis is never specialized. Its values
-        are unused (the per-edge forward atomically scatters to ``dst``), so no
-        ``dst`` sort is required.
+        Row offsets with shape ``(N + 1,)`` from :func:`build_row_ptr`; only
+        its length carries the (SymInt) node count ``N`` for the output
+        allocation and the fake kernel, so the ``natoms`` axis is never
+        specialized.  The forward builds its own destination-sorted CSR
+        topology from ``dst`` (the traced edge list carries masked padding
+        edges in arbitrary order), so no sortedness invariant is required.
     dst : Tensor
-        Destination node indices with shape ``(E,)`` (the forward scatter target
+        Destination node indices with shape ``(E,)`` (the forward segment key
         and the backward gather index).
     lmax : int
         Maximum degree.

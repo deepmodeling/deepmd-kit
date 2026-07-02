@@ -11,7 +11,6 @@ from __future__ import (
 )
 
 import math
-import os
 from contextlib import (
     contextmanager,
 )
@@ -34,56 +33,6 @@ if TYPE_CHECKING:
     )
 
 ATTN_RES_MODES = ("none", "independent", "dependent")
-
-_INFER_TRUE = ("1", "true", "yes", "on")
-
-
-def use_triton_infer() -> bool:
-    """Return whether the opt-in Triton inference kernels are enabled.
-
-    The flag is controlled by the ``DP_TRITON_INFER`` environment variable and
-    is read at module construction time so that it becomes a compile-time
-    constant in the traced (``make_fx``) graph. It only takes effect during
-    inference; training always uses the dense reference path.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``DP_TRITON_INFER`` is set to a truthy value.
-    """
-    return os.environ.get("DP_TRITON_INFER", "0").strip().lower() in _INFER_TRUE
-
-
-def use_cute_infer() -> bool:
-    """Return whether the opt-in CuTe inference operator is enabled.
-
-    The flag is controlled by the ``DP_CUTE_INFER`` environment variable and is
-    read at module construction time. It selects the fused CuTe SO(2) value-path
-    operator (an independent path from ``DP_TRITON_INFER``) and only takes effect
-    during inference; training always uses the dense reference path.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``DP_CUTE_INFER`` is set to a truthy value.
-    """
-    return os.environ.get("DP_CUTE_INFER", "0").strip().lower() in _INFER_TRUE
-
-
-def use_amp_infer() -> bool:
-    """Return whether bf16 autocast is enabled for inference.
-
-    The flag is controlled by the ``DP_AMP_INFER`` environment variable and is
-    read at module construction time. It only affects inference when the
-    descriptor's ``use_amp`` option is also enabled; training follows
-    ``use_amp`` regardless of this environment variable.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
-    """
-    return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
 
 
 def init_trunc_normal_fan_in_out(

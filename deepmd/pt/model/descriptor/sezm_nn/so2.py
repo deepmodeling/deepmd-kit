@@ -22,6 +22,10 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.utils import (
+    triton_infer_level,
+    use_cute_infer,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -81,8 +85,6 @@ from .utils import (
     np_safe,
     nvtx_range,
     safe_numpy_to_tensor,
-    use_cute_infer,
-    use_triton_infer,
 )
 
 if TYPE_CHECKING:
@@ -345,14 +347,14 @@ class SO2Linear(nn.Module):
         # Each |m| group occupies a contiguous (in, out) block on the diagonal.
         self._block_diag_slices = self._build_block_diag_slices()
 
-        # Inference fast path (opt-in via ``DP_TRITON_INFER``): the per-|m|-block
+        # Inference fast path (``DP_TRITON_INFER >= 1``): the per-|m|-block
         # batched bmm + cat of _block_diagonal_matmul is replaced by a fused
         # Triton BN=64 block-diagonal GEMM that consumes the strided operands
         # without a contiguity copy. Bound only when Triton is available and every
         # block width aligns to BN=64; otherwise the eager path is kept.
         self._block_diag_gemm = None
-        if use_triton_infer():
-            from .triton.so2_block_gemm import (
+        if triton_infer_level() >= 1:
+            from deepmd.kernels.triton.sezm.so2_block_gemm import (
                 SO2_BLOCK_GEMM_TRITON_AVAILABLE,
                 block_diag_gemm,
                 slices_supported,
@@ -687,10 +689,10 @@ class DynamicRadialDegreeMixer(nn.Module):
         for p in self.parameters():
             p.requires_grad = trainable
 
-        # Inference fast path (opt-in via ``DP_TRITON_INFER``): a fused Triton
+        # Inference fast path (``DP_TRITON_INFER >= 1``): a fused Triton
         # kernel replaces the dense scatter and the tiny batched matmul of the
         # ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
-        self.use_triton_infer = use_triton_infer()
+        self.use_triton_infer = triton_infer_level() >= 1
         self._radial_mix_block = None
         if (
             self.use_triton_infer
@@ -698,7 +700,7 @@ class DynamicRadialDegreeMixer(nn.Module):
             and self.rank > 0
             and self.mmax == 1
         ):
-            from .triton.radial_mix import (
+            from deepmd.kernels.triton.sezm.radial_mix import (
                 radial_mix_block,
             )
 
@@ -1169,18 +1171,32 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        # Opt-in inference fast paths, selected by ``DP_TRITON_INFER`` and
-        # ``DP_CUTE_INFER``. Each flag is read once at construction so it becomes a
-        # compile-time constant in the traced (``make_fx``) graph, and each only
-        # takes effect during inference. ``DP_TRITON_INFER`` replaces the dense
-        # ``bmm`` rotation with fused Triton kernels; ``DP_CUTE_INFER`` selects a
-        # fused CuTe value-path operator and is independent of the Triton flag. The
-        # CuTe value-path entry is bound at the end of construction (once every
-        # submodule exists) and stays ``None`` when the backend is unavailable or
-        # the block layout is unsupported.
-        self.use_triton_infer = use_triton_infer()
+        # Opt-in inference fast paths, selected by ``DP_TRITON_INFER`` (a
+        # cumulative level, see :func:`triton_infer_level`) and
+        # ``DP_CUTE_INFER``. Each is read once at construction so it becomes a
+        # compile-time constant in the traced (``make_fx``) graph, and each
+        # only takes effect during inference. Level 1 replaces the dense
+        # ``bmm`` rotation with universal Triton kernels; level 2 additionally
+        # binds the table-configured fused value path; level 3 routes the
+        # mixing stack through the fp16x3 tensor-core operator on swept
+        # shapes. ``DP_CUTE_INFER`` selects the experimental CuTe value-path
+        # operator instead; both gates claim the same ``so2_message`` value
+        # path, so enabling them together has no coherent meaning and is
+        # rejected at construction. The fused value-path entries are bound at
+        # the end of construction (once every submodule exists) and stay
+        # ``None`` when the backend is unavailable or the block layout is
+        # unsupported.
+        self.triton_infer_level = triton_infer_level()
+        self.use_triton_infer = self.triton_infer_level >= 1
         self.use_cute_infer = use_cute_infer()
+        if self.use_triton_infer and self.use_cute_infer:
+            raise ValueError(
+                "DP_TRITON_INFER and DP_CUTE_INFER are mutually exclusive: "
+                "both select the fused SO(2) value-path backend. Enable "
+                "exactly one of them."
+            )
         self._cute_value_path = None
+        self._triton_value_path = None
 
         # === Step 1. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -1562,7 +1578,7 @@ class SO2Convolution(nn.Module):
         self._flash_atten_fn = None
         self._build_row_ptr_fn = None
         if self.use_flash_atten:
-            from .triton.flash_atten import (
+            from deepmd.kernels.triton.sezm.flash_atten import (
                 build_row_ptr,
                 flash_atten_aggregate,
             )
@@ -1570,9 +1586,30 @@ class SO2Convolution(nn.Module):
             self._flash_atten_fn = flash_atten_aggregate
             self._build_row_ptr_fn = build_row_ptr
 
-        # === Step 13. Optional fused CuTe SO(2) value-path operator ===
+        # === Step 13. Optional fused Triton SO(2) value-path operators ===
+        # Fuses rotate-to-local, the radial degree mixing, the gated mixing
+        # stack, and the focus competition of ``so2_message`` into the
+        # ``sezm_triton::so2_rotate_mix`` / ``so2_mixing_stack`` operators.
+        # The factory validates the block layout (``mmax == 1``, gated stack
+        # with an identity final layer, supported focus widths) and returns
+        # ``None`` otherwise, leaving the reference path in charge. The value
+        # path resolves its launch configurations from the swept tables, so
+        # it engages at ``DP_TRITON_INFER >= 2``; at level 3 the factory
+        # additionally routes the mixing stack through the fp16x3 tensor-core
+        # operator on shapes whose configuration passed the fp64 validation
+        # sweep.
+        if self.triton_infer_level >= 2:
+            from deepmd.kernels.triton.sezm.so2_value_path import (
+                make_triton_value_path,
+            )
+
+            self._triton_value_path = make_triton_value_path(self)
+
+        # === Step 14. Optional fused CuTe SO(2) value-path operator ===
+        # Experimental alternative backend; mutually exclusive with the Triton
+        # flag (enforced above).
         if self.use_cute_infer:
-            from .cute import (
+            from deepmd.kernels.cute.sezm import (
                 make_cute_value_path,
             )
 
@@ -1922,7 +1959,15 @@ class SO2Convolution(nn.Module):
         src, dst = edge_cache.src, edge_cache.dst
         n_edge = src.numel()
 
-        if self._cute_value_path is not None and not self.training:
+        if self._triton_value_path is not None and not self.training:
+            # === Steps 1-5 (fused Triton operators). ``so2_rotate_mix`` folds
+            # the rotation and the radial degree mixing into one edge-parallel
+            # kernel writing the focus-major layout; ``so2_mixing_stack`` runs
+            # the whole gated stack with the competition weight fused into its
+            # final store, keeping the inter-layer activations off the traced
+            # graph. ===
+            x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
+        elif self._cute_value_path is not None and not self.training:
             # === Steps 1-5 (fused CuTe operator). The operator folds
             # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
             # stack, and the focus competition into the bucketed kernels; the
@@ -2278,7 +2323,7 @@ class SO2Convolution(nn.Module):
         self._rotate_to_local_fn = None
         self._rotate_back_fn = None
         if self.use_triton_infer:
-            from .triton.so2_rotation import (
+            from deepmd.kernels.triton.sezm.so2_rotation import (
                 rotate_back_block_so2,
                 rotate_back_dense,
                 rotate_to_local_block,
