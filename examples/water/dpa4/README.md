@@ -10,7 +10,7 @@ The baseline `input.json` uses a DPA4-Neo configuration. To switch to a
 heavier or lighter variant, change only the following `descriptor` keys:
 
 | Key in `descriptor` | DPA4-Neo (default) | DPA4-Air | DPA4-Mini |
-|---------------------|--------------------|----------|-----------|
+| ------------------- | ------------------ | -------- | --------- |
 | `channels`          | 32                 | 64       | 32        |
 | `lmax`              | 3                  | 3        | 2         |
 | `n_blocks`          | 2                  | 3        | 2         |
