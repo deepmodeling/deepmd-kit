@@ -224,3 +224,26 @@ class TestEwaldRecp(tf.test.TestCase):
         np.testing.assert_almost_equal(
             t_esti.ravel(), virial.ravel(), places, err_msg="virial component failed"
         )
+
+
+class TestEwaldRecpClose(tf.test.TestCase):
+    """EwaldRecp owns a TensorFlow session that must be closeable."""
+
+    coord = np.array([[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]])
+    charge = np.array([[1.0, -1.0]])
+    box = np.array([[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]])
+
+    def test_close_releases_session(self) -> None:
+        er = EwaldRecp(1.0, 1.0)
+        # a fresh evaluator works
+        er.eval(self.coord, self.charge, self.box)
+        er.close()
+        # after close the underlying session is unusable
+        with self.assertRaises(RuntimeError):
+            er.eval(self.coord, self.charge, self.box)
+
+    def test_context_manager_closes_session(self) -> None:
+        with EwaldRecp(1.0, 1.0) as er:
+            er.eval(self.coord, self.charge, self.box)
+        with self.assertRaises(RuntimeError):
+            er.eval(self.coord, self.charge, self.box)
