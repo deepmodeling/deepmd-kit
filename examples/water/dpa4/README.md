@@ -34,7 +34,7 @@ Ready-to-use input files for each variant are provided in
 - `arc_variants/`: input files for DPA4-Neo, DPA4-Air, and DPA4-Mini
   architectures.
 
-## Run
+- Run:
 
 ```bash
 cd examples/water/dpa4
