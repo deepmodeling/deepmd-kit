@@ -91,7 +91,7 @@ class TestDpa1GraphLower:
             [[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device
         )
 
-    def _make_model(self) -> EnergyModel:
+    def _make_model(self, attn_layer: int = 0, smooth: bool = False) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
@@ -100,9 +100,13 @@ class TestDpa1GraphLower:
             neuron=[3, 6],
             axis_neuron=2,
             attn=4,
-            attn_layer=0,  # graph lower only supports attn_layer == 0
+            attn_layer=attn_layer,
             attn_dotr=True,
             attn_mask=False,
+            # smooth attention keeps sel-padding in the dense softmax
+            # denominator; the carry-all graph drops it BY DESIGN (PR-D), so
+            # exact graph-vs-dense parity requires smooth=False here.
+            smooth_type_embedding=smooth,
             activation_function="tanh",
             set_davg_zero=False,
             type_one_side=True,
@@ -165,13 +169,16 @@ class TestDpa1GraphLower:
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
         return ext_coord, ext_atype, nlist_t, mapping_t
 
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
     @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
-    def test_force_virial_parity_vs_legacy(self, periodic, do_av) -> None:
+    def test_force_virial_parity_vs_legacy(self, periodic, do_av, attn_layer) -> None:
         """Graph lower energy/force/virial/atom_virial == legacy dense lower on
         the SAME neighbor set (regime-1 graph from from_dense_quartet).
+        attn_layer=2 exercises graph attention through model-level autograd
+        (smooth=False: exact carry-all parity regime, NeighborGraph PR-D).
         """
-        model = self._make_model()
+        model = self._make_model(attn_layer=attn_layer)
         model.eval()
         tol = (
             {"rtol": 1e-12, "atol": 1e-12}

@@ -208,3 +208,20 @@ class TestGraphAttentionParity:
             static_nnei=nlist.shape[2],
         )
         np.testing.assert_allclose(out.numpy(), ref, rtol=1e-12, atol=1e-12)
+
+
+class TestGraphEligibility:
+    def test_attention_concat_is_graph_eligible(self) -> None:
+        assert _make(2).uses_graph_lower()
+
+    def test_strip_mode_stays_dense(self) -> None:
+        """se_atten_v2 (tebd_input_mode='strip') is NOT graph-eligible yet:
+        strip-mode graph support is a later PR; it must keep the dense route
+        (the PR-D plan's 'se_atten_v2 inherits for free' did not hold).
+        """
+        from deepmd.dpmodel.descriptor.se_atten_v2 import (
+            DescrptSeAttenV2,
+        )
+
+        dd = DescrptSeAttenV2(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
+        assert not dd.uses_graph_lower()
