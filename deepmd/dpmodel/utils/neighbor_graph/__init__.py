@@ -32,6 +32,9 @@ from .graph import (
     node_validity_mask,
     pad_and_guard_edges,
 )
+from .pairs import (
+    center_edge_pairs,
+)
 from .segment import (
     segment_max,
     segment_mean,
@@ -44,6 +47,7 @@ __all__ = [
     "NeighborGraph",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",
+    "center_edge_pairs",
     "edge_env_mat",
     "edge_force_virial",
     "frame_id_from_n_node",
