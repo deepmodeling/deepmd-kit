@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from dpa_adapt import AssemblyDatasetBuilder, ComponentSpec, PoolMask
+from dpa_adapt import Assembly, ComponentSpec, PoolMask
 
 
 def _require_real_torch():
@@ -33,9 +33,9 @@ def _require_real_torch():
     return torch
 
 
-def _heterogeneous_builder() -> AssemblyDatasetBuilder:
-    builder = AssemblyDatasetBuilder(property_name="target", type_map=["C", "O", "H"])
-    group = builder.group(key="oer", label=1.5)
+def _heterogeneous_builder() -> Assembly:
+    builder = Assembly(target="target", type_map=["C", "O", "H"])
+    group = builder.sample(key="oer", label=1.5)
     # component with 2 atoms -> padded to 3 with one virtual atom
     group.add_component(
         ComponentSpec.from_arrays(
@@ -64,7 +64,7 @@ def test_writer_to_dataloader_preserves_padding_and_group(tmp_path) -> None:
         pytest.skip(f"deepmd backend unavailable: {exc}")
 
     builder = _heterogeneous_builder()
-    result = builder.write_deepmd_npy(tmp_path)
+    result = builder.write(tmp_path)
     system = str(tmp_path / result["systems"][0])
 
     data = DpLoaderSet([system], batch_size=8, type_map=["C", "O", "H"], shuffle=False)
@@ -276,3 +276,53 @@ def test_group_property_model_consumes_per_group_fparam() -> None:
     )
     assert out["y"].shape[0] == 1  # aggregates to one group prediction
     assert torch.isfinite(out["y"]).all()
+
+
+def test_group_property_model_rejects_inconsistent_group_fparam() -> None:
+    torch = _require_real_torch()
+    try:
+        from deepmd.pt.model.model.group_property_model import GroupPropertyModel
+        from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
+    except ImportError as exc:  # needs the compiled deepmd.lib extension
+        pytest.skip(f"deepmd backend unavailable: {exc}")
+
+    dim, fdim = 4, 2
+    fitting = GroupPropertyFittingNet(
+        ntypes=2,
+        dim_descrpt=dim,
+        property_name="y",
+        task_dim=1,
+        neuron=[4],
+        numb_fparam=fdim,
+    )
+
+    class _ConstDescriptor(torch.nn.Module):
+        def get_rcut(self) -> float:
+            return 6.0
+
+        def get_sel(self) -> list[int]:
+            return [8]
+
+        def mixed_types(self) -> bool:
+            return True
+
+        def forward(
+            self, extended_coord, extended_atype, nlist, mapping=None, charge_spin=None
+        ):
+            nframes, nall = extended_atype.shape
+            desc = torch.ones(nframes, nall, dim, dtype=extended_coord.dtype)
+            return desc, None, None, None, None
+
+    model = GroupPropertyModel(
+        descriptor=_ConstDescriptor(), fitting=fitting, type_map=["A", "B"]
+    )
+    with pytest.raises(ValueError, match="fparam must be constant"):
+        model(
+            torch.rand(2, 3, 3, dtype=torch.float64),
+            torch.tensor([[0, 1, 0], [0, 1, 1]]),
+            box=None,
+            fparam=torch.tensor([[1.0, 2.0], [9.0, 2.0]], dtype=torch.float64),
+            group_id=torch.tensor([[0], [0]]),
+            weight=torch.tensor([[0.5], [0.5]]),
+            pool_mask=torch.ones(2, 3),
+        )

@@ -5,12 +5,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from dpa_adapt.data.aggregation import (
-    aggregate_weighted_groups,
-)
-from dpa_adapt.data.grouped_dataset import (
-    GroupedDataset,
-)
+from dpa_adapt.grouped._aggregation import aggregate_weighted_groups
+from dpa_adapt.grouped._offline import GroupedDataset
 from dpa_adapt.finetuner import (
     DPAFineTuner,
 )
@@ -60,21 +56,18 @@ def test_aggregate_weighted_groups_core():
 
 def test_grouped_dataset_weighted_embedding(monkeypatch, tmp_path):
     parent = tmp_path / "data"
-    sys_a = _write_system(parent, "a", group_id=0, weight=[0.7])
-    sys_b = _write_system(parent, "b", group_id=0, weight=[0.3])
+    sys_a = _write_system(
+        parent, "a", group_id=0, weight=[0.7, 0.3], n_frames=2
+    )
     expected_rows = {
-        str(sys_a.resolve()): np.array([[1.0, 2.0, 3.0]]),
-        str(sys_b.resolve()): np.array([[10.0, 20.0, 30.0]]),
+        str(sys_a.resolve()): np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]]),
     }
 
     def fake_load_or_extract(systems, **kwargs):
-        rows = []
-        for system in systems:
-            rows.append(expected_rows[system._dpa_source])
-        return np.vstack(rows)
+        return np.vstack([expected_rows[system._dpa_source] for system in systems])
 
     monkeypatch.setattr(
-        "dpa_adapt.data.grouped_dataset.load_or_extract",
+        "dpa_adapt.grouped._offline.load_or_extract",
         fake_load_or_extract,
     )
 
@@ -87,13 +80,57 @@ def test_grouped_dataset_weighted_embedding(monkeypatch, tmp_path):
     np.testing.assert_allclose(dataset.get_labels(), np.array([2.5]))
 
 
+def test_grouped_dataset_group_ids_are_scoped_per_system(monkeypatch, tmp_path):
+    parent = tmp_path / "data"
+    sys_a = _write_system(parent, "a", label=1.0, group_id=0, weight=[0.7])
+    sys_b = _write_system(parent, "b", label=2.0, group_id=0, weight=[0.3])
+    rows = {
+        str(sys_a.resolve()): np.array([[1.0, 2.0]]),
+        str(sys_b.resolve()): np.array([[10.0, 20.0]]),
+    }
+
+    def fake_load_or_extract(systems, **kwargs):
+        return np.vstack([rows[system._dpa_source] for system in systems])
+
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        fake_load_or_extract,
+    )
+
+    dataset = GroupedDataset(str(parent), pretrained="fake.pt")
+
+    np.testing.assert_allclose(dataset.get_embeddings(), [[0.7, 1.4], [3.0, 6.0]])
+    np.testing.assert_allclose(dataset.get_labels(), [1.0, 2.0])
+
+
+def test_grouped_dataset_missing_weight_defaults_to_one(monkeypatch, tmp_path):
+    parent = tmp_path / "data"
+    sys_a = _write_system(parent, "a", group_id=0, weight=None, n_frames=2)
+    rows = {
+        str(sys_a.resolve()): np.array([[1.0, 2.0], [10.0, 20.0]]),
+    }
+
+    def fake_load_or_extract(systems, **kwargs):
+        return np.vstack([rows[system._dpa_source] for system in systems])
+
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        fake_load_or_extract,
+    )
+
+    dataset = GroupedDataset(str(parent), pretrained="fake.pt")
+
+    np.testing.assert_allclose(dataset.get_embeddings(), [[11.0, 22.0]])
+    np.testing.assert_allclose(dataset.get_labels(), [2.5])
+
+
 def test_grouped_fit_and_predict(monkeypatch, tmp_path):
     parent = tmp_path / "data"
-    sys_a = _write_system(parent, "a", label=4.0, group_id=0, weight=[0.7])
-    sys_b = _write_system(parent, "b", label=4.0, group_id=0, weight=[0.3])
+    sys_a = _write_system(
+        parent, "a", label=4.0, group_id=0, weight=[0.7, 0.3], n_frames=2
+    )
     rows = {
-        str(sys_a.resolve()): np.array([[2.0, 0.0]]),
-        str(sys_b.resolve()): np.array([[0.0, 8.0]]),
+        str(sys_a.resolve()): np.array([[2.0, 0.0], [0.0, 8.0]]),
     }
     calls = []
 
@@ -102,7 +139,7 @@ def test_grouped_fit_and_predict(monkeypatch, tmp_path):
         return np.vstack([rows[system._dpa_source] for system in systems])
 
     monkeypatch.setattr(
-        "dpa_adapt.data.grouped_dataset.load_or_extract",
+        "dpa_adapt.grouped._offline.load_or_extract",
         fake_load_or_extract,
     )
 

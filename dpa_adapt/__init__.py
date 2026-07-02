@@ -10,15 +10,12 @@ a specific class or function.
 __version__ = "0.1.0"
 
 _LAZY = {
-    "AssemblyDatasetBuilder": (".data", "AssemblyDatasetBuilder"),
-    "ComponentSpec": (".data", "ComponentSpec"),
-    "GroupSpec": (".data", "GroupSpec"),
-    "PoolMask": (".data", "PoolMask"),
-    "SiteSelector": (".data", "SiteSelector"),
-    "SubstitutionSpec": (".data", "SubstitutionSpec"),
-    "write_grouped_deepmd": (".data", "write_grouped_deepmd"),
-    "add_group_markers": (".data", "add_group_markers"),
-    "PolymerBuilder": (".data", "PolymerBuilder"),
+    "Assembly": (".grouped", "Assembly"),
+    "ComponentSpec": (".grouped", "ComponentSpec"),
+    "SampleSpec": (".grouped", "SampleSpec"),
+    "PoolMask": (".grouped", "PoolMask"),
+    "SiteSelector": (".grouped", "SiteSelector"),
+    "SubstitutionSpec": (".grouped", "SubstitutionSpec"),
     "ConditionManager": (".conditions", "ConditionManager"),
     "DPAConditionError": (".conditions", "DPAConditionError"),
     "cross_validate": (".cv", "cross_validate"),

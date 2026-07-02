@@ -12,4 +12,5 @@ force-field task.
 
    overview
    input_formats
+   assembly_scenarios
    cli

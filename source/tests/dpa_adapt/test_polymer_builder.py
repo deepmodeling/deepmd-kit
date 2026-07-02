@@ -12,7 +12,8 @@ import pytest
 
 pytest.importorskip("rdkit")
 
-from dpa_adapt.data.polymer import PolymerBuilder
+from dpa_adapt import Assembly
+from dpa_adapt.grouped._polymer import PolymerBuilder
 
 _CSV = """\
 reference;SMILES_start_group;SMILES_end_group;SMILES_repeating_unitA;molpercent_repeating_unitA;SMILES_repeating_unitB;molpercent_repeating_unitB;Mn;polymer_concentration_wpercent;additive1;additive1_concentration_molar;pH;cloud_point
@@ -30,7 +31,7 @@ def _write_csv(tmp_path):
 def test_from_csv_writes_grouped_polymer_systems(tmp_path):
     csv = _write_csv(tmp_path)
     out = tmp_path / "data"
-    result = PolymerBuilder.from_csv(csv, target="cloud_point", decimal=".").write(out)
+    result = Assembly.from_polymer_csv(csv, target="cloud_point", decimal=".").write(out)
 
     assert result["n_groups"] == 2
     F = result["fparam_dim"]
@@ -83,11 +84,11 @@ def test_from_csv_writes_grouped_polymer_systems(tmp_path):
 
 def test_valid_split_reuses_training_scaler(tmp_path):
     csv = _write_csv(tmp_path)
-    train = PolymerBuilder.from_csv(csv, target="cloud_point", decimal=".")
+    train = Assembly.from_polymer_csv(csv, target="cloud_point", decimal=".")
     res_train = train.write(tmp_path / "train")
 
     # a second builder standardized with the training scaler
-    valid = PolymerBuilder.from_csv(csv, target="cloud_point", decimal=".")
+    valid = Assembly.from_polymer_csv(csv, target="cloud_point", decimal=".")
     res_valid = valid.write(tmp_path / "valid", scaler=res_train["scaler"])
 
     assert res_valid["fparam_dim"] == res_train["fparam_dim"]

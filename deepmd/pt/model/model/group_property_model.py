@@ -241,12 +241,17 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             fparam = fparam.reshape(nframes, -1).to(
                 group_embedding.device, group_embedding.dtype
             )
-            group_fparam = torch.zeros(
-                (group_order.shape[0], fparam.shape[1]),
-                dtype=group_embedding.dtype,
-                device=group_embedding.device,
-            )
-            group_fparam[inverse] = fparam
+            grouped_fparam: list[torch.Tensor] = []
+            for group_index, group_value in enumerate(group_order):
+                values = fparam[inverse == group_index]
+                first = values[0]
+                if not torch.allclose(values, first.expand_as(values), atol=1e-8):
+                    raise ValueError(
+                        "fparam must be constant within each assembly sample; "
+                        f"group_id {int(group_value)} has inconsistent rows."
+                    )
+                grouped_fparam.append(first)
+            group_fparam = torch.stack(grouped_fparam, dim=0)
             group_embedding = torch.cat([group_embedding, group_fparam], dim=-1)
         prediction = self.fitting_net(group_embedding)
         return {

@@ -1406,7 +1406,7 @@ class DPAFineTuner:
         if train_data is None:
             raise ValueError("train_data (or train=) is required.")
 
-        from dpa_adapt.data.grouped_dataset import (
+        from dpa_adapt.grouped._offline import (
             has_grouped_markers,
         )
 
@@ -1455,7 +1455,7 @@ class DPAFineTuner:
         fmt: str | None = None,
     ) -> None:
         if isinstance(target_key, list):
-            raise ValueError("Grouped input supports one target key.")
+            raise ValueError("Assembly input supports one target key.")
         target = target_key or "property"
 
         from sklearn.pipeline import (
@@ -1465,7 +1465,7 @@ class DPAFineTuner:
             StandardScaler,
         )
 
-        from dpa_adapt.data.grouped_dataset import (
+        from dpa_adapt.grouped._offline import (
             GroupedDataset,
         )
         from dpa_adapt.utils.sklearn_heads import (
@@ -1669,7 +1669,7 @@ class DPAFineTuner:
                 "predict() was called before fit(). Train the model with fit() first."
             )
 
-        from dpa_adapt.data.grouped_dataset import (
+        from dpa_adapt.grouped._offline import (
             GroupedDataset,
             has_grouped_markers,
         )
@@ -1754,7 +1754,7 @@ class DPAFineTuner:
         result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
-        from dpa_adapt.data.grouped_dataset import (
+        from dpa_adapt.grouped._offline import (
             GroupedDataset,
             has_grouped_markers,
         )

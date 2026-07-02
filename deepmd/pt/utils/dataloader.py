@@ -186,7 +186,14 @@ class DpLoaderSet(Dataset):
             else:
                 system_sampler = None
             batch_sampler = None
-            if self._group_complete_batches and system_sampler is None:
+            if self._group_complete_batches:
+                if system_sampler is not None:
+                    raise RuntimeError(
+                        "Grouped assembly training requires batches that never split "
+                        "a sample. DistributedSampler can split group_id sets; run "
+                        "without distributed data parallel or add a group-aware "
+                        "distributed sampler before enabling DDP."
+                    )
                 group_ids = load_group_ids_for_system(system.system)
                 if group_ids is not None:
                     batch_sampler = GroupCompleteBatchSampler(

@@ -7,16 +7,6 @@ dpdata, torch, or rdkit.
 """
 
 _LAZY = {
-    "AssemblyDatasetBuilder": (".assemblies", "AssemblyDatasetBuilder"),
-    "ComponentSpec": (".assemblies", "ComponentSpec"),
-    "GroupSpec": (".assemblies", "GroupSpec"),
-    "PoolMask": (".assemblies", "PoolMask"),
-    "SiteSelector": (".assemblies", "SiteSelector"),
-    "SubstitutionSpec": (".assemblies", "SubstitutionSpec"),
-    "write_grouped_deepmd": (".assemblies", "write_grouped_deepmd"),
-    "add_group_markers": (".grouped_convert", "add_group_markers"),
-    "GroupMarkerResult": (".grouped_convert", "GroupMarkerResult"),
-    "PolymerBuilder": (".polymer", "PolymerBuilder"),
     "load_data": (".loader", "load_data"),
     "load_dataset": (".dataset", "load_dataset"),
     "read_checkpoint_type_map": (".type_map", "read_checkpoint_type_map"),
