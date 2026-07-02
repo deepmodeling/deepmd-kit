@@ -25,6 +25,31 @@ from deepmd.jax.model.model import (
 )
 
 
+def _convert_str_to_int_key(item: dict) -> None:
+    """Convert Orbax-restored numeric index keys from strings back to ints."""
+    for key, value in item.copy().items():
+        if isinstance(value, dict):
+            _convert_str_to_int_key(value)
+        if isinstance(key, str) and key.isdigit():
+            item[int(key)] = item.pop(key)
+
+
+def _normalize_restored_state_keys(
+    state: dict,
+    model_def_script: dict,
+) -> None:
+    """Normalize restored state keys while preserving multi-task branch names."""
+    if "model_dict" in model_def_script:
+        state_by_model = state.get("models", state)
+        for model_key in model_def_script["model_dict"]:
+            if model_key in state_by_model and isinstance(
+                state_by_model[model_key], dict
+            ):
+                _convert_str_to_int_key(state_by_model[model_key])
+        return
+    _convert_str_to_int_key(state)
+
+
 def _state_sequence_to_numpy_list(state_value: Any) -> list[np.ndarray]:
     """Convert an Orbax-restored list/dict sequence to NumPy arrays."""
     if isinstance(state_value, dict):
@@ -171,7 +196,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The dictionary to be deserialized.
     """
     if model_file.endswith(".jax"):
-        model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"].copy()
         min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
         if min_nbor_dist is None:
@@ -180,14 +204,28 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             )
         if min_nbor_dist is not None:
             model_def_script["_min_nbor_dist"] = min_nbor_dist
-        _, state = nnx.split(model)
+        if "model_dict" in model_def_script:
+            models = {
+                model_key: BaseModel.deserialize(data["model"]["model_dict"][model_key])
+                for model_key in model_def_script["model_dict"]
+            }
+            state = {
+                "models": {
+                    model_key: nnx.split(model)[1].to_pure_dict()
+                    for model_key, model in models.items()
+                }
+            }
+        else:
+            model = BaseModel.deserialize(data["model"])
+            _, state = nnx.split(model)
+            state = state.to_pure_dict()
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
             checkpointer.save(
                 Path(model_file).absolute(),
                 ocp.args.Composite(
-                    state=ocp.args.StandardSave(state.to_pure_dict()),
+                    state=ocp.args.StandardSave(state),
                     model_def_script=ocp.args.JsonSave(model_def_script),
                 ),
             )
@@ -323,27 +361,31 @@ def serialize_from_file(model_file: str) -> dict:
                 ),
             )
         state = data.state
-
-        # convert str "1" to int 1 key
-        def convert_str_to_int_key(item: dict) -> None:
-            for key, value in item.copy().items():
-                if isinstance(value, dict):
-                    convert_str_to_int_key(value)
-                if key.isdigit():
-                    item[int(key)] = item.pop(key)
-
-        convert_str_to_int_key(state)
-
         model_def_script = data.model_def_script
-        abstract_model = get_model(model_def_script)
-        _restore_compression_slots_from_state(abstract_model, state)
-        graphdef, abstract_state = nnx.split(abstract_model)
-        abstract_state.replace_by_pure_dict(state)
-        model = nnx.merge(graphdef, abstract_state)
-        model_dict = model.serialize()
-        min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
-        if min_nbor_dist is None:
-            min_nbor_dist = _to_optional_float(model_def_script.get("_min_nbor_dist"))
+        _normalize_restored_state_keys(state, model_def_script)
+        min_nbor_dist = None
+
+        def restore_model(model_params: dict, model_state: dict) -> BaseModel:
+            abstract_model = get_model(model_params)
+            _restore_compression_slots_from_state(abstract_model, model_state)
+            graphdef, abstract_state = nnx.split(abstract_model)
+            abstract_state.replace_by_pure_dict(model_state)
+            return nnx.merge(graphdef, abstract_state)
+
+        if "model_dict" in model_def_script:
+            state_by_model = state.get("models", state)
+            model_dict = {"model_dict": {}}
+            for model_key, model_params in model_def_script["model_dict"].items():
+                model = restore_model(model_params, state_by_model[model_key])
+                model_dict["model_dict"][model_key] = model.serialize()
+        else:
+            model = restore_model(model_def_script, state)
+            model_dict = model.serialize()
+            min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
+            if min_nbor_dist is None:
+                min_nbor_dist = _to_optional_float(
+                    model_def_script.get("_min_nbor_dist")
+                )
         data = {
             "backend": "JAX",
             "jax_version": jax.__version__,
