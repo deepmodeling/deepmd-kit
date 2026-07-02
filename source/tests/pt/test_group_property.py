@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 
+pytest.importorskip("deepmd.lib")
+
 from deepmd.pt.loss.group_property import GroupPropertyLoss
-from deepmd.pt.utils.dataloader import DpLoaderSet, GroupCompleteBatchSampler
+from deepmd.pt.utils.dataloader import (
+    DpLoaderSet,
+    GroupCompleteBatchSampler,
+    GroupDistributedBatchSampler,
+)
 from deepmd.pt.utils.grouped import (
     GROUP_ID_KEY,
     GROUP_WEIGHT_KEY,
     POOL_MASK_KEY,
+    distributed_grouped_frame_batches,
     group_data_requirements,
     normalize_group_id_tensor,
     normalize_pool_mask_tensor,
@@ -136,6 +144,51 @@ def test_group_complete_batch_sampler_keeps_groups_intact() -> None:
     )
     assert list(sampler) == [[0, 1], [2, 3], [4]]
 
+
+
+def test_distributed_group_batches_assign_whole_groups_to_one_rank() -> None:
+    group_ids = np.array([0, 0, 1, 1, 2, 3, 3, 4])
+    rank0 = distributed_grouped_frame_batches(
+        group_ids, max_frames=3, num_replicas=2, rank=0, shuffle=False
+    )
+    rank1 = distributed_grouped_frame_batches(
+        group_ids, max_frames=3, num_replicas=2, rank=1, shuffle=False
+    )
+
+    rank_frames = [set(sum(rank0, [])), set(sum(rank1, []))]
+    assert rank_frames[0].isdisjoint(rank_frames[1])
+    assert rank_frames[0] | rank_frames[1] == set(range(len(group_ids)))
+
+    owner_by_group = {}
+    for rank, frames in enumerate(rank_frames):
+        for frame in frames:
+            group = int(group_ids[frame])
+            owner_by_group.setdefault(group, rank)
+            assert owner_by_group[group] == rank
+
+
+def test_group_distributed_batch_sampler_keeps_groups_intact_per_rank() -> None:
+    group_ids = np.array([0, 0, 1, 1, 2, 3, 3, 4])
+    samplers = [
+        GroupDistributedBatchSampler(
+            group_ids,
+            max_frames=3,
+            num_replicas=2,
+            rank=rank,
+            shuffle=False,
+        )
+        for rank in range(2)
+    ]
+    batches_by_rank = [list(sampler) for sampler in samplers]
+    frames_by_rank = [set(sum(batches, [])) for batches in batches_by_rank]
+
+    assert frames_by_rank[0].isdisjoint(frames_by_rank[1])
+    assert frames_by_rank[0] | frames_by_rank[1] == set(range(len(group_ids)))
+    for rank, frames in enumerate(frames_by_rank):
+        for group in set(group_ids):
+            group_frames = {ii for ii, gid in enumerate(group_ids) if gid == group}
+            if frames & group_frames:
+                assert group_frames <= frames
 
 def test_dploaderset_enables_group_batches_for_group_requirements(tmp_path) -> None:
     system = tmp_path / "sys"

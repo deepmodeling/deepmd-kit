@@ -107,25 +107,32 @@ def load_group_ids_for_system(system: str | Path) -> np.ndarray | None:
     return np.concatenate(chunks) if chunks else None
 
 
-def grouped_frame_batches(
-    group_ids: np.ndarray,
-    max_frames: int,
-    shuffle: bool = True,
-    rng: np.random.Generator | None = None,
-) -> list[list[int]]:
-    """Pack complete groups into batches without splitting a group."""
+def _group_frame_indices(group_ids: np.ndarray) -> list[list[int]]:
+    """Return frame indices grouped by first-seen group id."""
     if group_ids.ndim != 1:
         raise ValueError(f"{GROUP_ID_KEY} must be 1D; got shape {group_ids.shape}.")
     groups: dict[int, list[int]] = {}
     for frame_idx, group_id in enumerate(group_ids.astype(np.int64, copy=False)):
         groups.setdefault(int(group_id), []).append(frame_idx)
+    return list(groups.values())
 
-    group_items = list(groups.values())
-    if shuffle:
-        rng = rng or np.random.default_rng()
-        order = rng.permutation(len(group_items))
-        group_items = [group_items[int(ii)] for ii in order]
 
+def _shuffle_group_items(
+    group_items: list[list[int]],
+    shuffle: bool,
+    rng: np.random.Generator | None,
+) -> list[list[int]]:
+    if not shuffle:
+        return list(group_items)
+    rng = rng or np.random.default_rng()
+    order = rng.permutation(len(group_items))
+    return [group_items[int(ii)] for ii in order]
+
+
+def _pack_group_items(
+    group_items: list[list[int]],
+    max_frames: int,
+) -> list[list[int]]:
     batches: list[list[int]] = []
     current: list[int] = []
     limit = max(int(max_frames), 1)
@@ -140,3 +147,44 @@ def grouped_frame_batches(
     if current:
         batches.append(current)
     return batches
+
+
+def grouped_frame_batches(
+    group_ids: np.ndarray,
+    max_frames: int,
+    shuffle: bool = True,
+    rng: np.random.Generator | None = None,
+) -> list[list[int]]:
+    """Pack complete groups into batches without splitting a group."""
+    group_items = _shuffle_group_items(
+        _group_frame_indices(group_ids), shuffle=shuffle, rng=rng
+    )
+    return _pack_group_items(group_items, max_frames)
+
+
+def distributed_grouped_frame_batches(
+    group_ids: np.ndarray,
+    max_frames: int,
+    num_replicas: int,
+    rank: int,
+    shuffle: bool = True,
+    rng: np.random.Generator | None = None,
+) -> list[list[int]]:
+    """Pack complete groups for one distributed rank.
+
+    Groups, not frames, are assigned to ranks.  Therefore every frame with the
+    same ``group_id`` is consumed by exactly one rank/GPU for the epoch.
+    """
+    num_replicas = int(num_replicas)
+    rank = int(rank)
+    if num_replicas < 1:
+        raise ValueError(f"num_replicas must be >= 1; got {num_replicas}.")
+    if rank < 0 or rank >= num_replicas:
+        raise ValueError(
+            f"rank must be in [0, {num_replicas}); got rank={rank}."
+        )
+    group_items = _shuffle_group_items(
+        _group_frame_indices(group_ids), shuffle=shuffle, rng=rng
+    )
+    rank_items = group_items[rank::num_replicas]
+    return _pack_group_items(rank_items, max_frames)

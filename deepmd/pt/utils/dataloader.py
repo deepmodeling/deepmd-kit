@@ -37,6 +37,7 @@ from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
 from deepmd.pt.utils.grouped import (
+    distributed_grouped_frame_batches,
     grouped_frame_batches,
     has_group_requirement,
     load_group_ids_for_system,
@@ -180,28 +181,35 @@ class DpLoaderSet(Dataset):
         self.index = []
         self.total_batch = 0
         for system, batch_size in zip(self.systems, self.batch_sizes):
-            if dist.is_available() and dist.is_initialized():
-                system_sampler = DistributedSampler(system)
-                self.sampler_list.append(system_sampler)
-            else:
-                system_sampler = None
+            distributed = dist.is_available() and dist.is_initialized()
+            system_sampler = None
             batch_sampler = None
             if self._group_complete_batches:
-                if system_sampler is not None:
-                    raise RuntimeError(
-                        "Grouped assembly training requires batches that never split "
-                        "a sample. DistributedSampler can split group_id sets; run "
-                        "without distributed data parallel or add a group-aware "
-                        "distributed sampler before enabling DDP."
-                    )
                 group_ids = load_group_ids_for_system(system.system)
-                if group_ids is not None:
+                if group_ids is None:
+                    # group_id is an optional data requirement with default 0.
+                    # The sampler must mirror that default, otherwise DDP would
+                    # split the implicit single group across ranks.
+                    group_ids = np.zeros((len(system),), dtype=np.int64)
+                if distributed:
+                    batch_sampler = GroupDistributedBatchSampler(
+                        group_ids,
+                        max_frames=int(batch_size),
+                        num_replicas=dist.get_world_size(),
+                        rank=dist.get_rank(),
+                        shuffle=self._shuffle,
+                        seed=self._seed,
+                    )
+                else:
                     batch_sampler = GroupCompleteBatchSampler(
                         group_ids,
                         max_frames=int(batch_size),
                         shuffle=self._shuffle,
                         seed=self._seed,
                     )
+            elif distributed:
+                system_sampler = DistributedSampler(system)
+                self.sampler_list.append(system_sampler)
             if batch_sampler is None:
                 system_dataloader = DataLoader(
                     dataset=system,
@@ -258,7 +266,7 @@ class DpLoaderSet(Dataset):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
-        if has_group_requirement(data_requirement) and not dist.is_initialized():
+        if has_group_requirement(data_requirement):
             self._group_complete_batches = True
             self._build_dataloaders()
 
@@ -306,6 +314,50 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                     [torch.as_tensor(d[key]) for d in batch]
                 )
     return result
+
+
+
+class GroupDistributedBatchSampler(Sampler[list[int]]):
+    """Yield group-complete frame batches for one distributed rank."""
+
+    def __init__(
+        self,
+        group_ids: np.ndarray,
+        max_frames: int,
+        num_replicas: int,
+        rank: int,
+        shuffle: bool = True,
+        seed: int | None = None,
+    ) -> None:
+        self.group_ids = np.asarray(group_ids, dtype=np.int64)
+        self.max_frames = max(int(max_frames), 1)
+        self.num_replicas = int(num_replicas)
+        self.rank = int(rank)
+        self.shuffle = shuffle
+        self.seed = seed
+        self._epoch = 0
+        self._batches = self._make_batches()
+
+    def _make_batches(self) -> list[list[int]]:
+        rng = np.random.default_rng(
+            None if self.seed is None else self.seed + self._epoch
+        )
+        return distributed_grouped_frame_batches(
+            self.group_ids,
+            self.max_frames,
+            num_replicas=self.num_replicas,
+            rank=self.rank,
+            shuffle=self.shuffle,
+            rng=rng,
+        )
+
+    def __iter__(self):
+        self._batches = self._make_batches()
+        self._epoch += 1
+        yield from self._batches
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 class GroupCompleteBatchSampler(Sampler[list[int]]):
