@@ -50,6 +50,7 @@ class GroupPropertyFittingNet(Fitting):
         precision: str = DEFAULT_PRECISION,
         trainable: bool | list[bool] = True,
         type_map: list[str] | None = None,
+        numb_fparam: int = 0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -66,8 +67,11 @@ class GroupPropertyFittingNet(Fitting):
         self.trainable = (
             all(trainable) if isinstance(trainable, list) else bool(trainable)
         )
+        self.numb_fparam = int(numb_fparam)
 
-        dims = [dim_descrpt, *self.neuron, task_dim]
+        # Per-group side features (fparam) are concatenated to the aggregated
+        # group embedding, so the fitting input widens by ``numb_fparam``.
+        dims = [dim_descrpt + self.numb_fparam, *self.neuron, task_dim]
         layers: list[torch.nn.Module] = []
         for ii in range(len(dims) - 1):
             layers.append(torch.nn.Linear(dims[ii], dims[ii + 1], dtype=self.prec))
@@ -95,7 +99,7 @@ class GroupPropertyFittingNet(Fitting):
         )
 
     def get_dim_fparam(self) -> int:
-        return 0
+        return self.numb_fparam
 
     def has_default_fparam(self) -> bool:
         return False
@@ -124,6 +128,7 @@ class GroupPropertyFittingNet(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "property_name": self.var_name,
             "task_dim": self.task_dim,
+            "numb_fparam": self.numb_fparam,
             "neuron": self.neuron,
             "activation_function": self.activation_function,
             "precision": self.precision,

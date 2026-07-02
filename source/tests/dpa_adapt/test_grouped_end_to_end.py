@@ -211,3 +211,68 @@ def test_masked_mean_pool_is_nan_safe() -> None:
     frame_embedding.sum().backward()
     assert torch.isfinite(descriptor.grad).all()
     assert torch.equal(descriptor.grad[0, 2], torch.zeros(2))
+
+
+def test_group_property_model_consumes_per_group_fparam() -> None:
+    """numb_fparam widens the fitting input; the model concats the per-group
+    fparam AFTER aggregation, so it bypasses the weighted sum over frames.
+    """
+    torch = _require_real_torch()
+    try:
+        from deepmd.pt.model.model.group_property_model import GroupPropertyModel
+        from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
+    except ImportError as exc:  # needs the compiled deepmd.lib extension
+        pytest.skip(f"deepmd backend unavailable: {exc}")
+
+    dim, fdim = 4, 2
+
+    fitting = GroupPropertyFittingNet(
+        ntypes=2,
+        dim_descrpt=dim,
+        property_name="y",
+        task_dim=1,
+        neuron=[4],
+        numb_fparam=fdim,
+    )
+    assert fitting.get_dim_fparam() == fdim
+    first_linear = next(m for m in fitting.network if isinstance(m, torch.nn.Linear))
+    assert first_linear.in_features == dim + fdim  # descriptor dim + fparam dim
+
+    class _ConstDescriptor(torch.nn.Module):
+        def get_rcut(self) -> float:
+            return 6.0
+
+        def get_sel(self) -> list[int]:
+            return [8]
+
+        def mixed_types(self) -> bool:
+            return True
+
+        def forward(
+            self, extended_coord, extended_atype, nlist, mapping=None, charge_spin=None
+        ):
+            nframes, nall = extended_atype.shape
+            desc = torch.ones(nframes, nall, dim, dtype=extended_coord.dtype)
+            return desc, None, None, None, None
+
+    model = GroupPropertyModel(
+        descriptor=_ConstDescriptor(), fitting=fitting, type_map=["A", "B"]
+    )
+    coord = torch.rand(2, 3, 3, dtype=torch.float64)
+    atype = torch.tensor([[0, 1, 0], [0, 1, 1]])
+    group_id = torch.tensor([[0], [0]])  # both frames -> one group
+    weight = torch.tensor([[0.5], [0.5]])
+    pool_mask = torch.ones(2, 3)
+    fparam = torch.tensor([[1.0, 2.0], [1.0, 2.0]], dtype=torch.float64)  # per-group
+
+    out = model(
+        coord,
+        atype,
+        box=None,
+        fparam=fparam,
+        group_id=group_id,
+        weight=weight,
+        pool_mask=pool_mask,
+    )
+    assert out["y"].shape[0] == 1  # aggregates to one group prediction
+    assert torch.isfinite(out["y"]).all()

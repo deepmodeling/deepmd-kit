@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import torch
 
@@ -24,7 +27,6 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.grouped import (
-    GROUP_ID_KEY,
     GROUP_WEIGHT_KEY,
     POOL_MASK_KEY,
     normalize_group_id_tensor,
@@ -34,9 +36,12 @@ from deepmd.pt.utils.grouped import (
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from deepmd.dpmodel import OutputVariableDef
+    from deepmd.utils.path import DPPath
 
 
 @BaseModel.register("group_property")
@@ -166,7 +171,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         weight: torch.Tensor | None = None,
         pool_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        del fparam, aparam, do_atomic_virial
+        del aparam, do_atomic_virial
         coord = coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
         if coord.dim() == 2:
             coord = coord.view(coord.shape[0], -1, 3)
@@ -229,6 +234,20 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             device=frame_embedding.device,
         )
         group_embedding.index_add_(0, inverse, frame_embedding * weight[:, None])
+        if self.fitting_net.get_dim_fparam() > 0 and fparam is not None:
+            # fparam is a per-group side feature (constant within a group).  Take
+            # each group's value and concat AFTER aggregation, so it never passes
+            # through the weighted sum over frames.
+            fparam = fparam.reshape(nframes, -1).to(
+                group_embedding.device, group_embedding.dtype
+            )
+            group_fparam = torch.zeros(
+                (group_order.shape[0], fparam.shape[1]),
+                dtype=group_embedding.dtype,
+                device=group_embedding.device,
+            )
+            group_fparam[inverse] = fparam
+            group_embedding = torch.cat([group_embedding, group_fparam], dim=-1)
         prediction = self.fitting_net(group_embedding)
         return {
             self.get_var_name(): prediction,

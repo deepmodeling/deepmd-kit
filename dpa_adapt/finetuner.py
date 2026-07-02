@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import subprocess
-import warnings
 from pathlib import (
     Path,
 )
@@ -134,6 +133,24 @@ def _set_nframes(set_dir: Path) -> int | None:
     if not coord.is_file():
         return None
     return int(np.load(str(coord), mmap_mode="r").shape[0])
+
+
+def _infer_fparam_dim(data: str | list[str]) -> int:
+    """Best-effort fparam width from the first ``set.*/fparam.npy`` found.
+
+    Auto-enables per-group side features for grouped training when the data
+    carries ``fparam.npy`` but ``fparam_dim`` was left at 0.  Returns 0 when no
+    fparam file is found.
+    """
+    import glob as _glob
+
+    patterns = [data] if isinstance(data, str) else list(data)
+    for pattern in patterns:
+        for match in sorted(_glob.glob(str(pattern))):
+            for fp in sorted(Path(match).glob("set.*/fparam.npy")):
+                arr = np.load(str(fp), mmap_mode="r")
+                return int(arr.shape[1]) if arr.ndim == 2 else 0
+    return 0
 
 
 def _read_fparam_from_systems(
@@ -867,6 +884,7 @@ class DPAFineTuner:
         # ---- training paradigms ----
         strategy: str = "frozen_sklearn",
         property_name: str = "property",
+        target: str | None = None,
         task_dim: int = 1,
         intensive: bool = True,
         init_branch: str = "SPICE2",
@@ -910,7 +928,8 @@ class DPAFineTuner:
         self.seed = seed
 
         # Training-paradigm params (unused by frozen_sklearn).
-        self.property_name = property_name
+        # ``target`` is a clearer alias for ``property_name`` and wins if given.
+        self.property_name = target if target is not None else property_name
         self.task_dim = task_dim
         self.intensive = intensive
         self.init_branch = init_branch
@@ -1128,9 +1147,14 @@ class DPAFineTuner:
         freeze = self.strategy == "frozen_head"
         fitting_net_params = dict(self.fitting_net_params or {})
         loss_type = "property"
+        fparam_dim = self.fparam_dim
         if grouped:
             fitting_net_params["type"] = "group_property"
             loss_type = "group_property"
+            # Auto-enable per-group side features when the data ships fparam.npy
+            # but the user did not set fparam_dim explicitly.
+            if fparam_dim == 0:
+                fparam_dim = _infer_fparam_dim(train_data)
         trainer = DPATrainer(
             pretrained=self.pretrained,
             init_branch=self.init_branch,
@@ -1150,7 +1174,7 @@ class DPAFineTuner:
             max_steps=self.max_steps,
             batch_size=self.batch_size,
             loss_function=self.loss_function,
-            fparam_dim=self.fparam_dim,
+            fparam_dim=fparam_dim,
             seed=self.seed,
             output_dir=self.output_dir,
             save_freq=self.save_freq,
@@ -1340,13 +1364,16 @@ class DPAFineTuner:
 
     def fit(
         self,
-        train_data: str | list[str],
+        train_data: str | list[str] | None = None,
         valid_data: str | list[str] | None = None,
         type_map: list[str] | None = None,
         target_key: str | list[str] | None = None,
         labels: np.ndarray | None = None,
         fmt: str | None = None,
         aux_data: str | list[str] | None = None,
+        *,
+        train: str | list[str] | None = None,
+        valid: str | list[str] | None = None,
     ) -> str | None:
         """Train the model.
 
@@ -1374,6 +1401,11 @@ class DPAFineTuner:
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
+        train_data = train_data if train_data is not None else train
+        valid_data = valid_data if valid_data is not None else valid
+        if train_data is None:
+            raise ValueError("train_data (or train=) is required.")
+
         from dpa_adapt.data.grouped_dataset import (
             has_grouped_markers,
         )

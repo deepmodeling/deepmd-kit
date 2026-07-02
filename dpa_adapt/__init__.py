@@ -17,6 +17,8 @@ _LAZY = {
     "SiteSelector": (".data", "SiteSelector"),
     "SubstitutionSpec": (".data", "SubstitutionSpec"),
     "write_grouped_deepmd": (".data", "write_grouped_deepmd"),
+    "add_group_markers": (".data", "add_group_markers"),
+    "PolymerBuilder": (".data", "PolymerBuilder"),
     "ConditionManager": (".conditions", "ConditionManager"),
     "DPAConditionError": (".conditions", "DPAConditionError"),
     "cross_validate": (".cv", "cross_validate"),
