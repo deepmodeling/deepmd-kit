@@ -19,6 +19,9 @@ from deepmd.pt_expt.fitting.invar_fitting import (
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
+from deepmd.pt.utils.nv_nlist import (
+    is_nv_available,
+)
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
 )
@@ -79,6 +82,20 @@ def test_vesin_matches_dense_energy_force():
     tol = 1e-12 if env.DEVICE.type == "cpu" else 1e-10
     torch.testing.assert_close(e_v, e_d, rtol=tol, atol=tol)
     torch.testing.assert_close(f_v, f_d, rtol=tol, atol=tol)
+
+
+@pytest.mark.skipif(
+    not (torch.cuda.is_available() and is_nv_available()),
+    reason="nvalchemiops requires CUDA + nvalchemi-toolkit-ops",
+)
+def test_nv_matches_dense_energy_force():
+    torch.manual_seed(0)
+    model = _make_model()
+    e_d, f_d = _eval(model, "dense")
+    e_n, f_n = _eval(model, "nv")
+    tol = 1e-10  # CUDA fp64: absorbs scatter-atomic / index_add nondeterminism
+    torch.testing.assert_close(e_n, e_d, rtol=tol, atol=tol)
+    torch.testing.assert_close(f_n, f_d, rtol=tol, atol=tol)
 
 
 def test_dpmodel_backend_rejects_vesin():

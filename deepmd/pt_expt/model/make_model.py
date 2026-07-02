@@ -467,6 +467,12 @@ def make_model(
                 )
 
                 ng = build_neighbor_graph_vesin(cc, atype, bb, rcut)
+            elif method == "nv":
+                from deepmd.pt_expt.utils.nv_graph_builder import (
+                    build_neighbor_graph_nv,
+                )
+
+                ng = build_neighbor_graph_nv(cc, atype, bb, rcut)
             else:
                 raise ValueError(
                     f"unknown neighbor_graph_method {method!r}; "
