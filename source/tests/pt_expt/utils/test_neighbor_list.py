@@ -113,6 +113,11 @@ model_dpa1 = {
         "temperature": 1.0,
         "set_davg_zero": True,
         "type_one_side": True,
+        # smooth attention diverges between the carry-all graph default
+        # (neighbor_list=None) and the explicit World-1 builders by design
+        # (NeighborGraph PR-D: dense keeps sel-padding in the attention
+        # softmax denominator); pin smooth off so all routes are exact.
+        "smooth_type_embedding": False,
         "seed": 1,
     },
     "fitting_net": {"neuron": [8, 8], "resnet_dt": True, "seed": 1},
