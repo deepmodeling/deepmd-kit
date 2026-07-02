@@ -6,13 +6,18 @@ if(USE_CUDA_TOOLKIT)
   project(deepmd_op_cuda)
   set(GPU_LIB_NAME deepmd_op_cuda)
 
+  find_package(CUDAToolkit REQUIRED)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES all)
+    # CUDA 12.9 CCCL fails to compile CUB/Thrust with -arch=all.
+    if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9" AND CUDAToolkit_VERSION
+                                                            VERSION_LESS "13.0")
+      set(CMAKE_CUDA_ARCHITECTURES all-major)
+    else()
+      set(CMAKE_CUDA_ARCHITECTURES all)
+    endif()
   endif()
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 11)
-
-  find_package(CUDAToolkit REQUIRED)
 
   # take dynamic open cudart library replace of static one so it's not required
   # when using CPUs
