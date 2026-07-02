@@ -24,7 +24,9 @@ A global ``(E, E)`` same-center boolean is deliberately NOT used: with
 ``E ~ N * nnei`` it costs ``O(N**2 * nnei**2)`` memory.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from typing import (
     Any,
