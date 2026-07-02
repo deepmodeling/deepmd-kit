@@ -10,6 +10,9 @@ import torch
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.nv_nlist import (
+    is_nv_available,
+)
 from deepmd.pt_expt.descriptor.dpa1 import (
     DescrptDPA1,
 )
@@ -18,9 +21,6 @@ from deepmd.pt_expt.fitting.invar_fitting import (
 )
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
-)
-from deepmd.pt.utils.nv_nlist import (
-    is_nv_available,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
@@ -100,15 +100,9 @@ def test_nv_matches_dense_energy_force():
 
 def test_dpmodel_backend_rejects_vesin():
     """dpmodel/jax fail-fast names vesin/nv as pt_expt-only."""
-    from deepmd.dpmodel.descriptor.dpa1 import (
-        DescrptDPA1 as DPDescrptDPA1,
-    )
-    from deepmd.dpmodel.fitting.invar_fitting import (
-        InvarFitting as DPInvarFitting,
-    )
-    from deepmd.dpmodel.model.ener_model import (
-        EnergyModel as DPEnergyModel,
-    )
+    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DPDescrptDPA1
+    from deepmd.dpmodel.fitting.invar_fitting import InvarFitting as DPInvarFitting
+    from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 
     rcut, rcut_smth, sel, nt = 6.0, 2.0, 20, 2
     ds = DPDescrptDPA1(

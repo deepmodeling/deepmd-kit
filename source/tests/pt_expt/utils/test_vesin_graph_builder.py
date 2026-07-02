@@ -3,10 +3,14 @@ import numpy as np
 import pytest
 import torch
 
-from deepmd.dpmodel.utils.neighbor_graph import build_neighbor_graph
+from deepmd.dpmodel.utils.neighbor_graph import (
+    build_neighbor_graph,
+)
 
 vesin_builder = pytest.importorskip("deepmd.pt_expt.utils.vesin_graph_builder")
-from deepmd.pt_expt.utils.vesin_neighbor_list import is_vesin_torch_available
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    is_vesin_torch_available,
+)
 
 pytestmark = pytest.mark.skipif(
     not is_vesin_torch_available(), reason="vesin[torch] not installed"
