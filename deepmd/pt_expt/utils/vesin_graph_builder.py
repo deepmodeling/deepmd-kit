@@ -87,10 +87,27 @@ def build_neighbor_graph_vesin(
         S_parts.append(ss)
         nf_parts.append(torch.full((ii.shape[0],), f, dtype=torch.int64, device=dev))
 
-    i_all = torch.cat(i_parts)
-    j_all = torch.cat(j_parts)
-    S_all = torch.cat(S_parts)
-    nf_all = torch.cat(nf_parts)
+    # guard torch.cat against empty part lists (nf == 0), mirroring ase_builder
+    i_all = (
+        torch.cat(i_parts)
+        if i_parts
+        else torch.zeros((0,), dtype=torch.int64, device=dev)
+    )
+    j_all = (
+        torch.cat(j_parts)
+        if j_parts
+        else torch.zeros((0,), dtype=torch.int64, device=dev)
+    )
+    S_all = (
+        torch.cat(S_parts)
+        if S_parts
+        else torch.zeros((0, 3), dtype=torch.int64, device=dev)
+    )
+    nf_all = (
+        torch.cat(nf_parts)
+        if nf_parts
+        else torch.zeros((0,), dtype=torch.int64, device=dev)
+    )
 
     # i = center (dst), j = neighbor (src); pass ORIGINAL coord/box (grad-carrying).
     return neighbor_graph_from_ijs(

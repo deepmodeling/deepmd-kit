@@ -143,3 +143,5 @@ def test_dpmodel_backend_rejects_vesin():
     box = (np.eye(3) * 6.0).reshape(1, 3, 3)
     with pytest.raises(ValueError, match="pt_expt backend"):
         model.call_common(coord, atype, box, neighbor_graph_method="vesin")
+    with pytest.raises(ValueError, match="pt_expt backend"):
+        model.call_common(coord, atype, box, neighbor_graph_method="nv")
