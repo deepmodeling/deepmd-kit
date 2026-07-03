@@ -3,11 +3,13 @@ import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
+    angle_padding_fraction,
     angle_to_edge_sum,
     angle_to_node_sum,
     attach_angles,
     build_angle_index,
     build_neighbor_graph,
+    edge_force_virial,
     pad_and_guard_angles,
 )
 
@@ -358,3 +360,75 @@ def test_angle_aggregation_torch_namespace():
     # compare
     np.testing.assert_allclose(np.asarray(e_t), e_np)
     np.testing.assert_allclose(np.asarray(n_t), n_np)
+
+
+# ---------------------------------------------------------------------------
+# Task 6: angle-force invariance + angle_padding_fraction
+# ---------------------------------------------------------------------------
+
+
+def _small_graph_with_angles(a_rcut: float, layout: GraphLayout | None = None):
+    """Return (graph_no_angles, graph_with_angles) for a 3-atom, 1-frame system."""
+    # 3 atoms: 0,1,2 in a line along x; shape (nf=1, nloc=3, 3) / (nf=1, nloc=3)
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]])
+    atype = np.array([[0, 1, 0]], dtype=np.int64)
+    box = np.array([[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]]])
+    g = build_neighbor_graph(coord, atype, box, rcut=3.0)
+    g_with = attach_angles(g, a_rcut, layout=layout)
+    return g, g_with
+
+
+def test_edge_force_virial_ignores_angles():
+    """edge_force_virial output must be bit-identical with or without angles.
+
+    Angles add topology (angle_index/angle_mask) to the NeighborGraph but do
+    NOT change edge_vec, edge_index, or edge_mask — the only inputs to
+    edge_force_virial.  This test proves that the angle fields are truly
+    transparent to the force/virial assembly.
+    """
+    g_bare, g_with_angles = _small_graph_with_angles(a_rcut=1.5)
+
+    # Manufacture a fake per-edge gradient (same shape as edge_vec)
+    rng = np.random.default_rng(42)
+    n_edges = int(g_bare.edge_index.shape[1])
+    g_e = rng.standard_normal((n_edges, 3))
+
+    def run(graph):
+        return edge_force_virial(
+            g_e,
+            graph.edge_vec,
+            graph.edge_index,
+            graph.edge_mask,
+            graph.n_node,
+        )
+
+    force_bare, av_bare, vir_bare = run(g_bare)
+    force_with, av_with, vir_with = run(g_with_angles)
+
+    # Exact equality: same inputs → same computation → identical bits
+    np.testing.assert_array_equal(force_bare, force_with)
+    np.testing.assert_array_equal(av_bare, av_with)
+    np.testing.assert_array_equal(vir_bare, vir_with)
+
+
+def test_angle_padding_fraction():
+    """angle_padding_fraction returns 1 - A_real/A_max for a static layout.
+
+    We build with a fixed angle_capacity=A_max so the fraction is deterministic
+    (not influenced by the dynamic min_angles guard of pad_and_guard_angles).
+    """
+    A_max = 20  # static capacity, larger than any real angle count
+    layout = GraphLayout(angle_capacity=A_max)
+    g_bare, g_with = _small_graph_with_angles(a_rcut=1.5, layout=layout)
+
+    # Confirm angles are present
+    assert g_with.angle_mask is not None
+    A_real = int(np.sum(g_with.angle_mask))
+    assert 0 < A_real <= A_max, f"Expected 0 < A_real <= {A_max}, got {A_real}"
+
+    expected = 1.0 - A_real / A_max
+    got = angle_padding_fraction(g_with)
+    assert got == pytest.approx(expected), f"got {got}, expected {expected}"
+
+    # No angles → fraction is 0.0
+    assert angle_padding_fraction(g_bare) == 0.0

@@ -214,3 +214,29 @@ def angle_to_node_sum(
     xp = array_api_compat.array_namespace(data)
     center = xp.take(edge_index[1, :], angle_index[0, :], axis=0)
     return segment_sum(data, center, num_nodes)
+
+
+def angle_padding_fraction(graph: NeighborGraph) -> float:
+    """Return the fraction of angle slots that are padding (guard entries).
+
+    Parameters
+    ----------
+    graph : NeighborGraph
+        A graph with ``angle_mask`` set (i.e., after :func:`attach_angles`
+        with a static ``GraphLayout.angle_capacity``).
+
+    Returns
+    -------
+    float
+        ``1 - A_real / A_max`` where ``A_real`` is the count of valid angles
+        and ``A_max`` is ``angle_mask.shape[0]``.  Returns ``0.0`` when the
+        mask is empty.
+    """
+    if graph.angle_mask is None:
+        return 0.0
+    xp = array_api_compat.array_namespace(graph.angle_mask)
+    total = graph.angle_mask.shape[0]
+    if total == 0:
+        return 0.0
+    real = int(xp.sum(xp.astype(graph.angle_mask, xp.int64)))
+    return 1.0 - real / total

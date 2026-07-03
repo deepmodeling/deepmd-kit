@@ -10,6 +10,7 @@ See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
 from .angles import (
+    angle_padding_fraction,
     angle_to_edge_sum,
     angle_to_node_sum,
     attach_angles,
@@ -53,6 +54,7 @@ from .segment import (
 __all__ = [
     "GraphLayout",
     "NeighborGraph",
+    "angle_padding_fraction",
     "angle_to_edge_sum",
     "angle_to_node_sum",
     "attach_angles",
