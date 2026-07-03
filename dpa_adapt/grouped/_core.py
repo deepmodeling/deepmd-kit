@@ -323,6 +323,8 @@ class Assembly:
         systems_root = out_path / system_dir
         systems_root.mkdir(parents=True, exist_ok=True)
 
+        resolved_type_map = self._resolved_type_map()
+
         manifest_groups = []
         systems: list[str] = []
         for group_idx, group in enumerate(self.groups):
@@ -332,7 +334,7 @@ class Assembly:
                 group_idx=group_idx,
                 system_path=system_path,
                 property_name=self.property_name,
-                type_map=self.type_map,
+                type_map=resolved_type_map,
             )
             systems.append(str(system_path.relative_to(out_path)))
             manifest_groups.append(
@@ -350,7 +352,7 @@ class Assembly:
                 "label": self.property_name,
                 "conditions": "fparam" if self._has_conditions() else None,
             },
-            "type_map": self.type_map,
+            "type_map": resolved_type_map,
             "condition_schema": self.condition_schema,
             "groups": manifest_groups,
         }
@@ -362,6 +364,17 @@ class Assembly:
             "systems": systems,
             "n_groups": len(self.groups),
         }
+
+    def _resolved_type_map(self) -> list[str] | None:
+        if self.type_map is not None:
+            return list(self.type_map)
+        symbols = [
+            sym
+            for group in self.groups
+            for component in group.components
+            for sym in component.symbols
+        ]
+        return _stable_unique(symbols) if symbols else None
 
     def _has_conditions(self) -> bool:
         return any(group.conditions for group in self.groups)

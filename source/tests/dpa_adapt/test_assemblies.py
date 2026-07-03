@@ -156,6 +156,28 @@ def test_writer_pads_heterogeneous_components_into_mixed_type(tmp_path) -> None:
     assert np.load(set_dir / "property.npy").shape == (2, 1)
 
 
+def test_writer_infers_global_type_map_across_samples(tmp_path) -> None:
+    builder = Assembly(target="property")
+    g0 = builder.sample(key="only_c", label=1.0)
+    g0.add_component(ComponentSpec.from_arrays([[0, 0, 0]], ["C"]))
+    g1 = builder.sample(key="o_h", label=2.0)
+    g1.add_component(ComponentSpec.from_arrays([[0, 0, 0], [0, 0, 1]], ["O", "H"]))
+
+    result = builder.write(tmp_path)
+    expected = ["C", "O", "H"]
+    for system in result["systems"]:
+        assert (tmp_path / system / "type_map.raw").read_text().splitlines() == expected
+
+    assert np.load(
+        tmp_path / "systems" / "only_c" / "set.000" / "real_atom_types.npy"
+    ).tolist() == [[0]]
+    assert np.load(
+        tmp_path / "systems" / "o_h" / "set.000" / "real_atom_types.npy"
+    ).tolist() == [[1, 2]]
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["type_map"] == expected
+
 def test_writer_rejects_symbols_missing_from_type_map(tmp_path) -> None:
     builder = Assembly(target="property", type_map=["C"])
     group = builder.sample(key="bad", label=1.0)

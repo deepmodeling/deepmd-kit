@@ -7,11 +7,13 @@ Core shape:
 ```python
 from dpa_adapt import Assembly
 
-a = Assembly(target="property_name", type_map=[...])
+a = Assembly(target="property_name")
 s = a.sample(key="sample_id", label=y, conditions={...})
 s.add(coords, symbols, weight=w, pool_mask=..., role="...")
 a.write("deepmd_data")
 ```
+
+`Assembly.write()` infers one global `type_map.raw` from all sample components when `type_map` is not provided. Training-side `DPAFineTuner` reads the checkpoint global `type_map` and validates that data elements are a subset, so ordinary users do not need to pass `type_map` manually.
 
 Each `sample` becomes one labeled training example.  Each component is one DeepMD frame.  The model computes frame embeddings, applies `pool_mask`, sums `weight * frame_embedding` within the sample, concatenates per-sample `conditions` as `fparam`, and predicts the target.
 
