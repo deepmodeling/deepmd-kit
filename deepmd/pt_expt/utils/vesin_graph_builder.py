@@ -5,6 +5,13 @@ World-2 counterpart of vesin_neighbor_list.py: instead of building the dense
 quartet, it returns per-frame local (i, j, S), then delegates to the array-API
 ``neighbor_graph_from_ijs`` (which recomputes ``edge_vec`` differentiably from
 the ORIGINAL grad-carrying coords). torch-only => lives in pt_expt.
+
+Scope note: ``vesin.torch``'s API is single-system, so this builder LOOPS over
+frames in Python (~1 ms/frame call overhead measured on GPU). It is intended
+for ``nf == 1`` inference and CPU use. It is never on a default hot path:
+``neighbor_graph_method=None`` resolves to the ``"dense"`` converter, and
+vesin is explicit opt-in only. For batched multi-frame GPU work prefer
+``nv`` (:mod:`.nv_graph_builder`), which batches all frames in one kernel.
 """
 
 from __future__ import (
@@ -109,7 +116,10 @@ def build_neighbor_graph_vesin(
         else torch.zeros((0,), dtype=torch.int64, device=dev)
     )
 
-    # i = center (dst), j = neighbor (src); pass ORIGINAL coord/box (grad-carrying).
+    # i = center (dst), j = neighbor (src); pass ORIGINAL coord/box
+    # (grad-carrying). Unlike the nv builder, vesin's cell list handles
+    # out-of-cell (unwrapped) positions natively, so no normalize_coord is
+    # needed and S is consistent with the original coords as searched.
     return neighbor_graph_from_ijs(
         i_all, j_all, S_all, coord, box, nf_all, nloc, layout=layout
     )

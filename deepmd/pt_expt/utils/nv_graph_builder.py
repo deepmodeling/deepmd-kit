@@ -46,6 +46,60 @@ def _grow_search_capacity(capacity: int) -> int:
     return (capacity * 5 + 3) // 4
 
 
+def nv_matrix_to_ijs(
+    neighbor_matrix: torch.Tensor,
+    num_neighbors: torch.Tensor,
+    shifts: torch.Tensor,
+    nloc: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Decode nvalchemiops' dense neighbor matrix to a sparse edge list.
+
+    Pure torch and device-agnostic (CPU-runnable), so the regression-prone
+    index arithmetic is unit-testable on the default CI without CUDA — the
+    GPU ``neighbor_list`` search itself stays behind the opt-in CUDA suite.
+    Step 1 of :func:`deepmd.pt.utils.nv_nlist._matrix_to_extended_inputs`.
+
+    Parameters
+    ----------
+    neighbor_matrix
+        (total_atoms, max_neighbors) int; ``neighbor_matrix[dst, slot] = src``,
+        both flattened batch indices in ``[0, total_atoms)``. Frames are
+        batch-isolated: a neighbor always shares its center's frame.
+    num_neighbors
+        (total_atoms,) int, valid slot count per center.
+    shifts
+        (total_atoms, max_neighbors, 3) int periodic image shifts per slot.
+    nloc
+        Atoms per frame (``total_atoms = nf * nloc``).
+
+    Returns
+    -------
+    center_local
+        (E,) int64 per-frame local center index ``i`` (``dst % nloc``).
+    src_local
+        (E,) int64 per-frame local neighbor index ``j`` (``src % nloc``).
+    shift
+        (E, 3) int64 periodic image shift ``S``.
+    frame_idx
+        (E,) int64 frame of each edge (``dst // nloc``).
+    """
+    device = neighbor_matrix.device
+    total_atoms, max_neighbors = neighbor_matrix.shape
+    slot = torch.arange(max_neighbors, dtype=torch.long, device=device).expand(
+        total_atoms, max_neighbors
+    )
+    valid = (slot < num_neighbors.unsqueeze(1)).reshape(-1)
+    edge_idx = torch.nonzero(valid, as_tuple=False).flatten()
+
+    dst = edge_idx // max_neighbors  # flattened center
+    src = neighbor_matrix.reshape(-1).index_select(0, edge_idx).to(torch.int64)
+    shift = shifts.reshape(-1, 3).index_select(0, edge_idx).to(torch.int64)
+    frame_idx = (dst // nloc).to(torch.int64)  # frame of the edge
+    center_local = (dst % nloc).to(torch.int64)  # i = center
+    src_local = (src % nloc).to(torch.int64)  # j = neighbor
+    return center_local, src_local, shift, frame_idx
+
+
 def build_neighbor_graph_nv(
     coord: Any,
     atype: Any,
@@ -105,6 +159,10 @@ def build_neighbor_graph_nv(
     # Mirror nv_nlist.build's search setup: normalize periodic coords (a
     # differentiable lattice translation, identity gradient), flatten the batch,
     # and search all frames in ONE kernel via batch_idx/batch_ptr.
+    # NOTE: unlike the vesin builder (which searches the ORIGINAL coords --
+    # vesin handles unwrapped positions natively), nvalchemiops requires
+    # in-cell positions, so BOTH the search and the edge_vec recomputation use
+    # the normalized coords; S then matches the coords the search actually saw.
     if periodic:
         cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
         coord = normalize_coord(coord, cell)
@@ -153,23 +211,11 @@ def build_neighbor_graph_nv(
             break
         search_capacity = max(max_found, _grow_search_capacity(search_capacity))
 
-    # Decode the dense matrix to a sparse (i, j, S) edge list -- Step 1 of
-    # nv_nlist._matrix_to_extended_inputs. neighbor_matrix[dst, slot] = src, both
-    # flattened indices in [0, total_atoms); frames are batch-isolated so a
-    # neighbor shares the center's frame.
-    max_neighbors = neighbor_matrix.shape[1]
-    slot = torch.arange(max_neighbors, dtype=torch.long, device=device).expand(
-        total_atoms, max_neighbors
+    # Decode the dense matrix to a sparse (i, j, S) edge list (CPU-testable
+    # helper; see nv_matrix_to_ijs).
+    center_local, src_local, shift, frame_idx = nv_matrix_to_ijs(
+        neighbor_matrix, num_neighbors, shifts, nloc
     )
-    valid = (slot < num_neighbors.unsqueeze(1)).reshape(-1)
-    edge_idx = torch.nonzero(valid, as_tuple=False).flatten()
-
-    dst = edge_idx // max_neighbors  # flattened center
-    src = neighbor_matrix.reshape(-1).index_select(0, edge_idx).to(torch.int64)
-    shift = shifts.reshape(-1, 3).index_select(0, edge_idx).to(torch.int64)
-    frame_idx = (dst // nloc).to(torch.int64)  # frame of the edge
-    center_local = (dst % nloc).to(torch.int64)  # i = center
-    src_local = (src % nloc).to(torch.int64)  # j = neighbor
 
     return neighbor_graph_from_ijs(
         center_local, src_local, shift, coord, box_out, frame_idx, nloc, layout=layout
