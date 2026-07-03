@@ -290,3 +290,60 @@ class TestDpa1GraphLower:
         torch.testing.assert_close(
             out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
         )
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_graph_route_float32(self, attn_layer) -> None:
+        """A float32 model runs the graph route and matches the dense route.
+
+        The descriptor-level ``call_graph`` casts ``edge_vec`` to the
+        descriptor precision manually (``@cast_precision`` cannot see inside
+        the NeighborGraph dataclass); without it, fp32 models crash with a
+        double-vs-float matmul on the graph route while the dense route works.
+        fp32 accumulation-order differences bound the tolerance (1e-6/1e-5),
+        per the fp32-computation guidance.
+        """
+        from deepmd.pt_expt.descriptor.dpa1 import DescrptDPA1 as _D
+        from deepmd.pt_expt.fitting import InvarFitting as _F
+
+        ds = _D(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.nt,
+            neuron=[3, 6],
+            axis_neuron=2,
+            attn=4,
+            attn_layer=attn_layer,
+            attn_dotr=True,
+            smooth_type_embedding=False,
+            precision="float32",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        ft = _F(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=True,
+            precision="float32",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        model = EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+        model.eval()
+        graph = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.cell.reshape(1, 9),
+            neighbor_graph_method="dense",
+        )
+        dense = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.cell.reshape(1, 9),
+            neighbor_graph_method="legacy",
+        )
+        tol = {"rtol": 1e-5, "atol": 1e-6}
+        torch.testing.assert_close(graph["energy_redu"], dense["energy_redu"], **tol)
+        torch.testing.assert_close(
+            graph["energy_derv_r"], dense["energy_derv_r"], **tol
+        )

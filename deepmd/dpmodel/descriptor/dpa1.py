@@ -26,6 +26,7 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     cast_precision,
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -760,8 +761,19 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (N, ng, 3) equivariant single-particle representation, flat node
             axis.
         """
+        import dataclasses
+
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
+        # manual @cast_precision: the decorator casts array ARGUMENTS, but the
+        # graph's only float input (edge_vec) is inside the NeighborGraph
+        # dataclass, invisible to it. Cast edge_vec down to the descriptor
+        # precision on entry and the outputs back to the caller's dtype on
+        # exit (differentiable: grad still flows to the caller's edge_vec leaf).
+        in_dtype = graph.edge_vec.dtype
+        prec = get_xp_precision(xp, self.precision)
+        if in_dtype != prec:
+            graph = dataclasses.replace(graph, edge_vec=xp.astype(graph.edge_vec, prec))
         grrg, rot_mat = self.se_atten.call_graph(
             graph, atype, type_embedding=type_embedding, static_nnei=static_nnei
         )
@@ -775,6 +787,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             atype_local = xp.asarray(atype, device=dev)
             atype_embd = xp.take(type_embedding, atype_local, axis=0)  # (N, tebd_dim)
             grrg = xp.concat([grrg, atype_embd], axis=-1)
+        if in_dtype != prec:
+            grrg = xp.astype(grrg, in_dtype)
+            rot_mat = xp.astype(rot_mat, in_dtype)
         return grrg, rot_mat
 
     def enable_compression(
