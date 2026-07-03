@@ -432,3 +432,24 @@ def test_angle_padding_fraction():
 
     # No angles → fraction is 0.0
     assert angle_padding_fraction(g_bare) == 0.0
+
+
+def test_angle_padding_fraction_total_zero():
+    """angle_padding_fraction returns 0.0 when angle_mask.shape[0] == 0.
+
+    This exercises the `if total == 0: return 0.0` branch in angle_padding_fraction.
+    A graph with angle_capacity=0 and a_rcut too small for any angles produces
+    angle_mask with shape (0,).
+    """
+    # Create a layout with angle_capacity=0 and use a_rcut=0.01 (too small
+    # for any edge in the fixture to pass the distance gate)
+    layout = GraphLayout(angle_capacity=0)
+    g_bare, g_with = _small_graph_with_angles(a_rcut=0.01, layout=layout)
+
+    # Verify angle_mask exists and has shape (0,)
+    assert g_with.angle_mask is not None
+    assert g_with.angle_mask.shape[0] == 0
+
+    # angle_padding_fraction must return 0.0 for empty mask
+    result = angle_padding_fraction(g_with)
+    assert result == 0.0
