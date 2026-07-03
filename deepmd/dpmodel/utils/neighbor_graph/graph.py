@@ -123,6 +123,57 @@ def pad_and_guard_edges(
     return ei, ev, edge_mask
 
 
+def pad_and_guard_angles(
+    angle_index: Array,
+    angle_capacity: int | None = None,
+    min_angles: int = 2,
+    pad_value: int = 0,
+) -> tuple[Array, Array]:
+    """Append padding/guard angles as a contiguous suffix and build angle_mask.
+
+    Real angles (``angle_index``) stay at the front (compact layout).
+    Dummy angles point at edge ``pad_value`` (in-range).
+
+    Parameters
+    ----------
+    angle_index
+        (2, A_real) ``[edge_a, edge_b]`` edge endpoints of the real angles.
+    angle_capacity
+        Target angle-axis length ``A_max``. ``None`` (torch dynamic) appends
+        exactly ``min_angles`` masked dummy angles so the axis has a known lower
+        bound and shape-stable guards for export; an int (jax static) pads to
+        ``A_max = angle_capacity`` and raises ``ValueError`` on overflow.
+    min_angles
+        Number of dummy angles appended when ``angle_capacity is None``.
+    pad_value
+        Edge index the dummy angles point at (must be in range).
+
+    Returns
+    -------
+    angle_index
+        (2, target) padded angle endpoints.
+    angle_mask
+        (target,) boolean mask, ``True`` for the real-angle prefix.
+    """
+    xp = array_api_compat.array_namespace(angle_index)
+    dev = array_api_compat.device(angle_index)
+    a_real = angle_index.shape[1]
+    if angle_capacity is None:
+        target = a_real + min_angles
+    else:
+        if a_real > angle_capacity:
+            raise ValueError(
+                f"angle overflow: {a_real} real angles > angle_capacity {angle_capacity}"
+            )
+        target = angle_capacity
+    n_pad = target - a_real
+    pad_idx = xp.full((2, n_pad), pad_value, dtype=angle_index.dtype, device=dev)
+    ai = xp.concat([angle_index, pad_idx], axis=1)
+    arange = xp.arange(target, dtype=angle_index.dtype, device=dev)
+    angle_mask = arange < a_real
+    return ai, angle_mask
+
+
 def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     """Node->frame map for a flat node axis: ``repeat(arange(nf), n_node)``.
 

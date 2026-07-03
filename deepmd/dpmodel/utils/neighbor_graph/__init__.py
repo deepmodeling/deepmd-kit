@@ -30,6 +30,7 @@ from .graph import (
     NeighborGraph,
     frame_id_from_n_node,
     node_validity_mask,
+    pad_and_guard_angles,
     pad_and_guard_edges,
 )
 from .pairs import (
@@ -54,6 +55,7 @@ __all__ = [
     "from_dense_quartet",
     "neighbor_graph_from_ijs",
     "node_validity_mask",
+    "pad_and_guard_angles",
     "pad_and_guard_edges",
     "segment_max",
     "segment_mean",
