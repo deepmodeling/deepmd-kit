@@ -79,9 +79,16 @@ def segment_softmax(
     seg_max = segment_max(data_for_max, segment_ids, num_segments)
     # guard -inf (empty / fully-masked segments) so gather doesn't yield inf-inf
     seg_max = xp.where(xp.isinf(seg_max), xp.zeros_like(seg_max), seg_max)
-    shifted = data - xp.take(seg_max, segment_ids, axis=0)
+    # shift data_for_max (masked entries already -inf), NOT the raw data:
+    # a masked entry whose raw value exceeds the unmasked per-segment max by
+    # more than the exp overflow threshold (~709 fp64 / ~88 fp32) would give
+    # exp(+big) = inf, and the post-hoc inf * 0 mask multiply = nan, poisoning
+    # the WHOLE segment through the denominator. exp(-inf) = 0 exactly.
+    shifted = data_for_max - xp.take(seg_max, segment_ids, axis=0)
     ex = xp.exp(shifted)
     if mask is not None:
+        # defensive no-op after the -inf shift (exp(-inf) == 0); kept so the
+        # zero-weight guarantee never depends on the shift implementation
         ex = ex * xp.astype(mask, ex.dtype)
     denom = segment_sum(ex, segment_ids, num_segments)
     denom_e = xp.take(denom, segment_ids, axis=0)

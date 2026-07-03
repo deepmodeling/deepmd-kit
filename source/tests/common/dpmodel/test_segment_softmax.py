@@ -92,3 +92,21 @@ class TestSegmentSoftmax:
             mask=torch.from_numpy(mask),
         )
         np.testing.assert_allclose(out.numpy(), ref, atol=1e-12)
+
+
+def test_masked_entry_larger_than_unmasked_max_no_nan() -> None:
+    """A masked entry FAR ABOVE the unmasked max must not poison the segment.
+
+    Regression (CodeRabbit #5715): shifting the raw data let a huge masked
+    logit overflow exp() to inf, and inf * 0 (mask multiply) = nan summed into
+    the denominator, contaminating every entry of the segment. The shift must
+    use the masked (-inf) values so masked entries exp() to exactly zero.
+    """
+    data = np.array([1.0, 2.0, 1e5], dtype=np.float64)  # 1e5 - 2 >> 709
+    ids = np.zeros(3, dtype=np.int64)
+    mask = np.array([True, True, False])
+    out = segment_softmax(data, ids, 1, mask=mask)
+    assert np.all(np.isfinite(out))
+    ref = np.exp([1.0, 2.0]) / np.exp([1.0, 2.0]).sum()
+    np.testing.assert_allclose(out[:2], ref, rtol=1e-12)
+    assert out[2] == 0.0
