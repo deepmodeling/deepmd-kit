@@ -456,6 +456,17 @@ def make_model(
                 build_neighbor_graph_ase,
             )
 
+            # mirror the dpmodel guard: _resolve_graph_method's eligibility
+            # check only protects the default (None) path; an EXPLICIT
+            # neighbor_graph_method would otherwise reach the builders for
+            # descriptors without a graph lower.
+            descriptor = getattr(self.atomic_model, "descriptor", None)
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if not (self.mixed_types() and uses_graph_lower()):
+                raise NotImplementedError(
+                    "neighbor_graph_method requires a mixed_types descriptor with a "
+                    "graph lower (e.g. dpa1 attn_layer=0)"
+                )
             rcut = self.get_rcut()
             if method == "dense":
                 ng = build_neighbor_graph(cc, atype, bb, rcut)

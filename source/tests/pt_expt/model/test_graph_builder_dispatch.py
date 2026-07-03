@@ -139,3 +139,41 @@ def test_dpmodel_backend_rejects_vesin():
         model.call_common(coord, atype, box, neighbor_graph_method="vesin")
     with pytest.raises(ValueError, match="pt_expt backend"):
         model.call_common(coord, atype, box, neighbor_graph_method="nv")
+
+
+def test_explicit_method_fails_fast_for_ineligible_descriptor():
+    """An EXPLICIT neighbor_graph_method must fail fast when the descriptor
+    has no graph lower (mirrors the dpmodel guard; the default-path check in
+    _resolve_graph_method does not protect explicit methods). Regression for
+    OutisLi review on #5714.
+    """
+    from deepmd.pt_expt.descriptor.se_e2_a import (
+        DescrptSeA,
+    )
+
+    # se_e2_a: mixed_types() is False and there is no graph lower
+    ds = DescrptSeA(
+        6.0,
+        2.0,
+        [10, 10],
+        neuron=[3, 6],
+        axis_neuron=2,
+        precision="float64",
+        seed=GLOBAL_SEED,
+    ).to(env.DEVICE)
+    ft = InvarFitting(
+        "energy",
+        2,
+        ds.get_dim_out(),
+        1,
+        mixed_types=ds.mixed_types(),
+        precision="float64",
+        seed=GLOBAL_SEED,
+    ).to(env.DEVICE)
+    model = EnergyModel(ds, ft, type_map=["O", "H"]).to(env.DEVICE)
+    coord = torch.rand(1, 4, 3, dtype=torch.float64, device=env.DEVICE) * 3
+    atype = torch.zeros(1, 4, dtype=torch.int64, device=env.DEVICE)
+    box = (torch.eye(3, dtype=torch.float64, device=env.DEVICE) * 6).reshape(1, 9)
+    for method in ("dense", "ase", "vesin", "nv"):
+        with pytest.raises(NotImplementedError, match="graph lower"):
+            model.call_common(coord, atype, box, neighbor_graph_method=method)
