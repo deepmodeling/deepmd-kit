@@ -14,6 +14,7 @@ from .angles import (
     angle_to_node_sum,
     attach_angles,
     build_angle_index,
+    graph_angle_cos,
 )
 from .ase_builder import (
     build_neighbor_graph_ase,
@@ -63,6 +64,7 @@ __all__ = [
     "edge_force_virial",
     "frame_id_from_n_node",
     "from_dense_quartet",
+    "graph_angle_cos",
     "neighbor_graph_from_ijs",
     "node_validity_mask",
     "pad_and_guard_angles",

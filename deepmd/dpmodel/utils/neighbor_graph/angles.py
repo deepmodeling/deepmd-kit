@@ -141,6 +141,35 @@ def attach_angles(
     return dataclasses.replace(graph, angle_index=ai, angle_mask=am)
 
 
+def graph_angle_cos(angle_index: Array, edge_vec: Array, eps: float = 1e-6) -> Array:
+    """Per-angle cosine, mirroring dpa3 ``cosine_ij`` (repflows.py:632-644).
+
+    Parameters
+    ----------
+    angle_index : Array
+        Shape (2, A) index pairs into edge list. ``angle_index[0, a]`` is
+        edge_a and ``angle_index[1, a]`` is edge_b for angle ``a``.
+    edge_vec : Array
+        Shape (E, 3) edge vectors (r_src - r_dst, i.e. neighbor - center).
+    eps : float, optional
+        Numerical stabiliser: norm denominators use ``||v|| + eps`` and the
+        dot product is scaled by ``(1 - eps)``.  Mirrors the dpa3 dense
+        channel exactly (repflows.py:643-649).
+
+    Returns
+    -------
+    Array
+        Shape (A,) cosine values, one per angle slot (valid and padding).
+        Padding slots carry arbitrary values; mask with angle_mask before use.
+    """
+    xp = array_api_compat.array_namespace(edge_vec)
+    va = xp.take(edge_vec, angle_index[0, :], axis=0)  # (A, 3)
+    vb = xp.take(edge_vec, angle_index[1, :], axis=0)  # (A, 3)
+    na = va / (xp.linalg.vector_norm(va, axis=-1, keepdims=True) + eps)
+    nb = vb / (xp.linalg.vector_norm(vb, axis=-1, keepdims=True) + eps)
+    return xp.sum(na * nb, axis=-1) * (1.0 - eps)
+
+
 def angle_to_edge_sum(data: Array, angle_index: Array, num_edges: int) -> Array:
     """Aggregate per-angle data to the angle's query edge (edge_a).
 
