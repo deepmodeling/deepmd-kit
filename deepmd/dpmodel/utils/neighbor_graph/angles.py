@@ -19,6 +19,7 @@ import dataclasses
 
 from .graph import GraphLayout, NeighborGraph, pad_and_guard_angles
 from .pairs import center_edge_pairs
+from .segment import segment_sum
 
 
 def build_angle_index(
@@ -138,3 +139,49 @@ def attach_angles(
         layout=layout,
     )
     return dataclasses.replace(graph, angle_index=ai, angle_mask=am)
+
+
+def angle_to_edge_sum(data: Array, angle_index: Array, num_edges: int) -> Array:
+    """Aggregate per-angle data to the angle's query edge (edge_a).
+
+    Parameters
+    ----------
+    data : Array
+        Shape (A,) or (A, ...) per-angle data to aggregate.
+    angle_index : Array
+        Shape (2, A) angle index pairs into edges.
+    num_edges : int
+        Total number of edges (E).
+
+    Returns
+    -------
+    Array
+        Shape (E,) or (E, ...) aggregated per-edge data.
+    """
+    return segment_sum(data, angle_index[0, :], num_edges)
+
+
+def angle_to_node_sum(
+    data: Array, angle_index: Array, edge_index: Array, num_nodes: int
+) -> Array:
+    """Aggregate per-angle data to the shared center (dst of edge_a).
+
+    Parameters
+    ----------
+    data : Array
+        Shape (A,) or (A, ...) per-angle data to aggregate.
+    angle_index : Array
+        Shape (2, A) angle index pairs into edges.
+    edge_index : Array
+        Shape (2, E) edge indices [src, dst].
+    num_nodes : int
+        Total number of nodes (N).
+
+    Returns
+    -------
+    Array
+        Shape (N,) or (N, ...) aggregated per-node data.
+    """
+    xp = array_api_compat.array_namespace(data)
+    center = xp.take(edge_index[1, :], angle_index[0, :], axis=0)
+    return segment_sum(data, center, num_nodes)

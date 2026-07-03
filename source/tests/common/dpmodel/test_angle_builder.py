@@ -3,6 +3,8 @@ import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
+    angle_to_edge_sum,
+    angle_to_node_sum,
     attach_angles,
     build_angle_index,
     build_neighbor_graph,
@@ -311,3 +313,48 @@ def test_attach_angles_with_layout_node_capacity():
         if ng3.angle_mask[p]
     }
     assert got == ref
+
+
+# ---------------------------------------------------------------------------
+# Task 4: angle aggregation (angle_to_edge_sum / angle_to_node_sum)
+# ---------------------------------------------------------------------------
+
+
+def test_angle_aggregation():
+    """Test angle->edge and angle->node aggregation."""
+    # edges: dst=[0,0]; angles: (a=0,b=0),(a=0,b=1),(a=1,b=0)
+    edge_index = np.array([[5, 5], [0, 0]], dtype=np.int64)
+    angle_index = np.array([[0, 0, 1], [0, 1, 0]], dtype=np.int64)
+    data = np.array([1.0, 2.0, 4.0])  # per-angle
+    # angle->edge (group by edge_a): edge0 gets angles 0,1 => 3; edge1 gets angle2 => 4
+    e = angle_to_edge_sum(data, angle_index, 2)
+    np.testing.assert_allclose(e, [3.0, 4.0])
+    # angle->node (center of edge_a): all 3 angles share center 0 => 7
+    n = angle_to_node_sum(data, angle_index, edge_index, 1)
+    np.testing.assert_allclose(n, [7.0])
+
+
+def test_angle_aggregation_torch_namespace():
+    """Step 4b: torch-namespace smoke test for angle aggregation."""
+    import torch
+
+    # edges: dst=[0,0]; angles: (a=0,b=0),(a=0,b=1),(a=1,b=0)
+    edge_index = np.array([[5, 5], [0, 0]], dtype=np.int64)
+    angle_index = np.array([[0, 0, 1], [0, 1, 0]], dtype=np.int64)
+    data = np.array([1.0, 2.0, 4.0])  # per-angle
+
+    # numpy reference
+    e_np = angle_to_edge_sum(data, angle_index, 2)
+    n_np = angle_to_node_sum(data, angle_index, edge_index, 1)
+
+    # torch version
+    t_edge_index = torch.from_numpy(edge_index)
+    t_angle_index = torch.from_numpy(angle_index)
+    t_data = torch.from_numpy(data)
+
+    e_t = angle_to_edge_sum(t_data, t_angle_index, 2)
+    n_t = angle_to_node_sum(t_data, t_angle_index, t_edge_index, 1)
+
+    # compare
+    np.testing.assert_allclose(np.asarray(e_t), e_np)
+    np.testing.assert_allclose(np.asarray(n_t), n_np)

@@ -10,6 +10,8 @@ See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
 from .angles import (
+    angle_to_edge_sum,
+    angle_to_node_sum,
     attach_angles,
     build_angle_index,
 )
@@ -50,6 +52,8 @@ from .segment import (
 __all__ = [
     "GraphLayout",
     "NeighborGraph",
+    "angle_to_edge_sum",
+    "angle_to_node_sum",
     "attach_angles",
     "build_angle_index",
     "build_neighbor_graph",
