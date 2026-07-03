@@ -124,12 +124,13 @@ class DeepDOS(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        # energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
-        atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
-        # not same as dos_redu... why?
-        energy = np.sum(atomic_energy, axis=1)
+        # Use the reduced global DOS. The atomic `dos` output is only requested
+        # (and thus only present) when atomic=True; the dpmodel and JAX backends
+        # omit it otherwise, so reading it unconditionally would KeyError.
+        energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
 
         if atomic:
+            atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
             return (
                 energy,
                 atomic_energy,
