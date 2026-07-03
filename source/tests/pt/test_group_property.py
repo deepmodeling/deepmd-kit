@@ -64,7 +64,12 @@ class ToyGroupedModel(torch.nn.Module):
             group_order.shape[0], frame_embedding.shape[1], dtype=frame_embedding.dtype
         )
         group_embedding.index_add_(0, inverse, frame_embedding * weight[:, None])
-        return {"target": self.head(group_embedding), "group_id": group_order}
+        return {
+            "target": self.head(group_embedding),
+            "group_id": group_order,
+            "unique_group_ids": group_order,
+            "group_inverse": inverse,
+        }
 
 
 def test_group_property_loss_trains_backbone_and_detaches_weight() -> None:

@@ -114,6 +114,27 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
     def get_sel(self) -> list[int]:
         return self.descriptor.get_sel()
 
+    @torch.jit.export
+    def get_sel_type(self) -> list[int]:
+        get_sel_type = getattr(self.descriptor, "get_sel_type", None)
+        return [] if get_sel_type is None else get_sel_type()
+
+    @torch.jit.export
+    def is_aparam_nall(self) -> bool:
+        return False
+
+    @torch.jit.export
+    def model_output_type(self) -> list[str]:
+        return [self.get_var_name()]
+
+    @torch.jit.export
+    def get_nsel(self) -> int:
+        return int(sum(self.get_sel()))
+
+    @torch.jit.export
+    def get_nnei(self) -> int:
+        return self.get_nsel()
+
     def mixed_types(self) -> bool:
         mixed_types = getattr(self.descriptor, "mixed_types", None)
         return True if mixed_types is None else mixed_types()
@@ -206,7 +227,14 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             pool_mask = normalize_pool_mask_tensor(pool_mask, nframes, natoms).to(
                 descriptor.device, descriptor.dtype
             )
-        denom = pool_mask.sum(dim=1).clamp_min(1.0)
+        mask_sum = pool_mask.sum(dim=1)
+        if bool((mask_sum == 0).any()):
+            bad = torch.nonzero(mask_sum == 0, as_tuple=False).flatten().tolist()
+            raise ValueError(
+                f"frames {bad} have an all-zero pool_mask (every atom masked out); "
+                "an all-masked frame is a data bug, not a numerical edge case."
+            )
+        denom = mask_sum.clamp_min(1.0)
         # Zero out non-pooled atoms (padding/virtual atoms and excluded caps)
         # before the weighted sum so a non-finite descriptor on those rows --
         # e.g. a virtual padding atom -- cannot poison the frame embedding via
@@ -228,12 +256,23 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         weight = weight.detach()
 
         group_order, inverse = torch.unique(group_id, sorted=True, return_inverse=True)
+        n_groups = group_order.shape[0]
         group_embedding = torch.zeros(
-            (group_order.shape[0], frame_embedding.shape[1]),
+            (n_groups, frame_embedding.shape[1]),
             dtype=frame_embedding.dtype,
             device=frame_embedding.device,
         )
         group_embedding.index_add_(0, inverse, frame_embedding * weight[:, None])
+        if self.fitting_net.group_reduce == "mean":
+            # weighted mean over frames: divide by the per-group weight sum so the
+            # embedding scale is independent of group size (see group_reduce doc).
+            weight_sum = torch.zeros(
+                (n_groups, 1),
+                dtype=frame_embedding.dtype,
+                device=frame_embedding.device,
+            )
+            weight_sum.index_add_(0, inverse, weight[:, None])
+            group_embedding = group_embedding / weight_sum.clamp_min(1e-12)
         if self.fitting_net.get_dim_fparam() > 0 and fparam is not None:
             # fparam is a per-group side feature (constant within a group).  Take
             # each group's value and concat AFTER aggregation, so it never passes
@@ -247,7 +286,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
                 first = values[0]
                 if not torch.allclose(values, first.expand_as(values), atol=1e-8):
                     raise ValueError(
-                        "fparam must be constant within each assembly sample; "
+                        "fparam must be constant within each assembly group; "
                         f"group_id {int(group_value)} has inconsistent rows."
                     )
                 grouped_fparam.append(first)
@@ -257,9 +296,19 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         return {
             self.get_var_name(): prediction,
             "group_id": group_order,
+            "unique_group_ids": group_order,
             "frame_group_id": group_id,
             "group_inverse": inverse,
             "frame_embedding": frame_embedding,
             GROUP_WEIGHT_KEY: weight,
             POOL_MASK_KEY: pool_mask,
+        }
+
+    def serialize(self) -> dict[str, Any]:
+        serialize_descriptor = getattr(self.descriptor, "serialize", None)
+        return {
+            "type": self.model_type,
+            "descriptor": serialize_descriptor() if serialize_descriptor else {},
+            "fitting": self.fitting_net.serialize(),
+            "type_map": self.type_map,
         }

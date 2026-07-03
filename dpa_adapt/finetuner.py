@@ -47,6 +47,64 @@ from dpa_adapt.utils.dotdict import (
 
 _LOG = logging.getLogger("dpa_adapt")
 
+# Pooling primitives in canonical column order.  A pooling spec is any
+# "+"-joined combination (or list) of these; the output feature layout always
+# follows this order regardless of input order, so columns are deterministic.
+POOLING_PRIMITIVES: tuple[str, ...] = ("mean", "sum", "std", "max", "min")
+
+
+def parse_pooling(spec: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Parse a pooling spec into ordered, deduplicated primitives.
+
+    Accepts ``"mean"``, ``"mean+std"``, ``["mean", "std"]``, etc.  Output order
+    follows :data:`POOLING_PRIMITIVES` regardless of input order, so the feature
+    column layout is deterministic.  ``mean+sum`` is legal and not redundant --
+    ``sum`` carries the atom-count (extensive) information that ``mean``
+    normalizes away.  Raises ``ValueError`` listing valid primitives on an
+    unknown token.
+    """
+    if isinstance(spec, str):
+        tokens = [t.strip() for t in spec.split("+") if t.strip()]
+    else:
+        tokens = [str(t).strip() for t in spec]
+    if not tokens:
+        raise ValueError(
+            f"empty pooling spec; use a '+'-combination of {list(POOLING_PRIMITIVES)}."
+        )
+    unknown = [t for t in tokens if t not in POOLING_PRIMITIVES]
+    if unknown:
+        raise ValueError(
+            f"unknown pooling primitive(s) {unknown}; valid primitives are "
+            f"{list(POOLING_PRIMITIVES)} (combine with '+', e.g. 'mean+std')."
+        )
+    present = set(tokens)
+    return tuple(p for p in POOLING_PRIMITIVES if p in present)
+
+
+def _pool_descriptor(descrpt: Any, primitives: tuple[str, ...]) -> Any:
+    """Reduce a per-atom descriptor ``(nframes, natoms, feat)`` to per-frame
+    features by concatenating ``primitives`` in canonical order.
+
+    Each primitive reproduces the exact legacy expression so the 4 historical
+    pooling strings yield byte-identical feature layouts.
+    """
+    import torch
+
+    parts = []
+    for primitive in primitives:
+        if primitive == "mean":
+            parts.append(descrpt.mean(dim=1))
+        elif primitive == "sum":
+            parts.append(descrpt.sum(dim=1))
+        elif primitive == "std":
+            parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
+        elif primitive == "max":
+            parts.append(descrpt.max(dim=1).values)
+        elif primitive == "min":
+            parts.append(descrpt.min(dim=1).values)
+    return parts[0] if len(parts) == 1 else torch.cat(parts, dim=-1)
+
+
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
@@ -736,26 +794,7 @@ class _FrozenSklearnPipeline:
 
             # Shape: (n_frames, n_atoms, feat_dim)
             descrpt = extractor._run_forward(coord_t, atype_t, box_t)
-            if self.pooling == "mean":
-                feat = descrpt.mean(dim=1)
-            elif self.pooling == "sum":
-                feat = descrpt.sum(dim=1)
-            elif self.pooling == "mean+std":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat([mean, std], dim=-1)
-            elif self.pooling == "mean+std+max+min":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat(
-                    [
-                        mean,
-                        std,
-                        descrpt.max(dim=1).values,
-                        descrpt.min(dim=1).values,
-                    ],
-                    dim=-1,
-                )
+            feat = _pool_descriptor(descrpt, parse_pooling(self.pooling))
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.detach().cpu().numpy())
 
@@ -909,9 +948,13 @@ class DPAFineTuner:
         aux_batch_size: str | int | None = None,
         downstream_batch_size: str | int | None = None,
     ) -> None:
-        if pooling not in self._VALID_POOLING:
+        parsed_pooling = parse_pooling(pooling)  # validates; raises on unknown token
+        if strategy in {"frozen_head", "finetune", "mft"} and parsed_pooling != ("mean",):
             raise ValueError(
-                f"pooling must be one of {sorted(self._VALID_POOLING)}, got {pooling!r}"
+                f"pooling={pooling!r} only applies to strategy='frozen_sklearn' and "
+                f"extract_descriptors. For strategy={strategy!r}, the atom->frame "
+                f"reduction is controlled by `intensive` (True=mean, False=sum), not "
+                f"`pooling`."
             )
         if strategy not in self._VALID_STRATEGIES:
             raise ValueError(

@@ -12,7 +12,7 @@ __version__ = "0.1.0"
 _LAZY = {
     "Assembly": (".grouped", "Assembly"),
     "ComponentSpec": (".grouped", "ComponentSpec"),
-    "SampleSpec": (".grouped", "SampleSpec"),
+    "GroupSpec": (".grouped", "GroupSpec"),
     "PoolMask": (".grouped", "PoolMask"),
     "SiteSelector": (".grouped", "SiteSelector"),
     "SubstitutionSpec": (".grouped", "SubstitutionSpec"),

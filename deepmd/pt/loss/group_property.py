@@ -11,9 +11,6 @@ import torch.nn.functional as F
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.grouped import (
     GROUP_ID_KEY,
     GROUP_WEIGHT_KEY,
@@ -83,7 +80,13 @@ class GroupPropertyLoss(TaskLoss):
             pool_mask=label.get(POOL_MASK_KEY),
         )
         pred = model_pred[var_name]
-        group_label = self._group_labels(frame_label, group_id, model_pred["group_id"])
+        # Reuse the model's group ordering (group_inverse) as the single source of
+        # truth -- do NOT call torch.unique here, or ordering could silently drift.
+        group_label = self._group_labels(
+            frame_label,
+            model_pred["group_inverse"],
+            model_pred["group_id"].shape[0],
+        ).to(device=pred.device, dtype=pred.dtype)
         if pred.shape != group_label.shape:
             raise ValueError(
                 f"Prediction shape {pred.shape} does not match grouped labels "
@@ -116,19 +119,25 @@ class GroupPropertyLoss(TaskLoss):
     def _group_labels(
         self,
         frame_label: torch.Tensor,
-        group_id: torch.Tensor,
-        group_order: torch.Tensor,
+        group_inverse: torch.Tensor,
+        n_groups: int,
     ) -> torch.Tensor:
-        grouped: list[torch.Tensor] = []
-        for gid in group_order:
-            values = frame_label[group_id == gid]
-            first = values[0]
-            if not torch.allclose(values, first.expand_as(values), atol=self.label_tol):
-                raise ValueError(
-                    f"Inconsistent {self.var_name} labels within group {int(gid)}."
-                )
-            grouped.append(first)
-        return torch.stack(grouped, dim=0).to(env.GLOBAL_PT_FLOAT_PRECISION)
+        # Aggregate frame labels into group labels using the model's group_inverse
+        # (shared ordering).  Scatter each frame's label into its group row, then
+        # gather back to verify every frame in a group carried the same label.
+        group_label = frame_label.new_zeros((n_groups, self.task_dim))
+        group_label[group_inverse] = frame_label
+        gathered = group_label[group_inverse]
+        if not torch.allclose(gathered, frame_label, atol=self.label_tol):
+            mismatch = (
+                ~torch.isclose(gathered, frame_label, atol=self.label_tol)
+            ).any(dim=1)
+            bad_frame = int(torch.nonzero(mismatch, as_tuple=False).flatten()[0])
+            raise ValueError(
+                f"Inconsistent {self.var_name} labels within a group "
+                f"(frame {bad_frame}, group_inverse={int(group_inverse[bad_frame])})."
+            )
+        return group_label
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:

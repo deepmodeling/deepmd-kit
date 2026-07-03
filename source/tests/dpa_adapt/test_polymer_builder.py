@@ -104,7 +104,7 @@ def test_add_api_direct(tmp_path):
         units={"[CH2][CH](C(=O)NC(C)C)": 0.7, "[CH2][CH](C(=O)O)": 0.3},
         ends=["[C](C)(C)C#N"],
         mol_weight=12000,
-        conditions={"pH": 7, "salts": {"KCl": 0.05}},
+        fparam={"pH": 7, "salts": {"KCl": 0.05}},
         target=28.0,
     )
     result = builder.write(tmp_path / "d")

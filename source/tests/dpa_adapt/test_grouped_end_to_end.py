@@ -35,7 +35,7 @@ def _require_real_torch():
 
 def _heterogeneous_builder() -> Assembly:
     builder = Assembly(target="target", type_map=["C", "O", "H"])
-    group = builder.sample(key="oer", label=1.5)
+    group = builder.group(key="oer", label=1.5)
     # component with 2 atoms -> padded to 3 with one virtual atom
     group.add_component(
         ComponentSpec.from_arrays(
@@ -86,8 +86,9 @@ def test_writer_to_dataloader_preserves_padding_and_group(tmp_path) -> None:
         [1.0, 1.0, 0.0],
         [1.0, 1.0, 0.0],
     ]
-    # padding atom coordinates are the written zeros
-    assert batch["coord"].reshape(2, 3, 3)[0, 2].tolist() == [0.0, 0.0, 0.0]
+    # padding atom coords are the large non-physical Task-D offset (not 0,0,0)
+    pad_coord = batch["coord"].reshape(2, 3, 3)[0, 2]
+    assert (pad_coord.abs() > 20.0).all()
 
 
 def test_group_property_model_pool_is_nan_safe_for_virtual_atoms() -> None:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import torch
@@ -21,6 +22,8 @@ from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _activation(name: str) -> torch.nn.Module:
@@ -51,6 +54,7 @@ class GroupPropertyFittingNet(Fitting):
         trainable: bool | list[bool] = True,
         type_map: list[str] | None = None,
         numb_fparam: int = 0,
+        group_reduce: str = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -68,6 +72,16 @@ class GroupPropertyFittingNet(Fitting):
             all(trainable) if isinstance(trainable, list) else bool(trainable)
         )
         self.numb_fparam = int(numb_fparam)
+        if group_reduce not in ("mean", "sum"):
+            raise ValueError(
+                f"group_reduce must be 'mean' or 'sum'; got {group_reduce!r}."
+            )
+        # frame->group reduction (executed in GroupPropertyModel.forward):
+        #   "mean": group_emb = index_add(w_i*e_i) / index_add(w_i) -- weighted
+        #           mean; embedding scale independent of group size. (default)
+        #   "sum" : group_emb = index_add(w_i*e_i) -- norm grows with group size;
+        #           for additive-property semantics only.
+        self.group_reduce = group_reduce
 
         # Per-group side features (fparam) are concatenated to the aggregated
         # group embedding, so the fitting input widens by ``numb_fparam``.
@@ -78,6 +92,18 @@ class GroupPropertyFittingNet(Fitting):
             if ii < len(dims) - 2:
                 layers.append(_activation(self.activation_function))
         self.network = torch.nn.Sequential(*layers).to(env.DEVICE)
+        # Task E (route 3): group_property does NOT init the output bias from
+        # label statistics.  The property path's frame-level stat would count each
+        # group's replicated label once per component (biasing toward large groups)
+        # and is computed at frame level while this net operates at group level.
+        # Zero-init the output bias explicitly; training learns the offset.
+        last = self.network[-1]
+        if isinstance(last, torch.nn.Linear) and last.bias is not None:
+            torch.nn.init.zeros_(last.bias)
+            _log.warning(
+                "group_property output bias is zero-initialized (label-stat bias "
+                "init is disabled for grouped labels); training may need more steps."
+            )
         for param in self.parameters():
             param.requires_grad = self.trainable
 
@@ -129,6 +155,7 @@ class GroupPropertyFittingNet(Fitting):
             "property_name": self.var_name,
             "task_dim": self.task_dim,
             "numb_fparam": self.numb_fparam,
+            "group_reduce": self.group_reduce,
             "neuron": self.neuron,
             "activation_function": self.activation_function,
             "precision": self.precision,

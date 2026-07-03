@@ -96,7 +96,7 @@ class PolymerBuilder:
         target: float,
         ends: Sequence[str] | None = None,
         mol_weight: float | None = None,
-        conditions: Mapping[str, Any] | None = None,
+        fparam: Mapping[str, Any] | None = None,
         key: str | None = None,
     ) -> PolymerBuilder:
         """Add one polymer (becomes one group).
@@ -113,13 +113,13 @@ class PolymerBuilder:
         mol_weight
             Number-average molar mass (Mn): used for the end share and, as
             ``log10(Mn)``, as a side feature.
-        conditions
+        fparam
             Per-polymer context.  Scalar entries become fparam columns; a nested
             ``"salts": {name: molar_conc}`` becomes one-hot concentration columns.
         key
             Optional system name; defaults to ``polymer_{i}``.
         """
-        conds = dict(conditions or {})
+        conds = dict(fparam or {})
         salts_raw = conds.pop("salts", None) or {}
         scalars = {
             str(k): float(v) for k, v in conds.items() if v is not None and not _isnan(v)
@@ -195,11 +195,11 @@ class PolymerBuilder:
             if _isnan(conc):
                 conc = cell(row, "polymer_concentration_mass_conc")
             pH = cell(row, "pH")
-            conditions: dict[str, Any] = {
+            fparam: dict[str, Any] = {
                 "pH": 7.0 if _isnan(pH) else float(pH),
             }
             if not _isnan(conc):
-                conditions["conc"] = float(conc)
+                fparam["conc"] = float(conc)
 
             salts: dict[str, float] = {}
             for name_col, conc_col in (
@@ -211,13 +211,13 @@ class PolymerBuilder:
                 if name is not None and not _isnan(name) and not _isnan(c):
                     salts[str(name)] = salts.get(str(name), 0.0) + float(c)
             if salts:
-                conditions["salts"] = salts
+                fparam["salts"] = salts
 
             builder.add(
                 units=units,
                 ends=ends,
                 mol_weight=float(cell(row, "Mn")),
-                conditions=conditions,
+                fparam=fparam,
                 target=float(cell(row, target)),
                 key=f"row_{idx}",
             )
@@ -257,8 +257,8 @@ class PolymerBuilder:
 
         builder = Assembly(target=self.target, type_map=type_map)
         for row in self._rows:
-            cond_vec = self._standardized_conditions(row, schema, stats)
-            group = builder.sample(key=row.key, label=row.target, conditions=cond_vec)
+            fparam_vec = self._standardized_fparam(row, schema, stats)
+            group = builder.group(key=row.key, label=row.target, fparam=fparam_vec)
             end_w = _end_share(row.ends, row.units, row.mol_weight, coords_by_smiles)
             for smiles, frac in row.units:
                 symbols, xyz = coords_by_smiles[smiles]
@@ -311,7 +311,7 @@ class PolymerBuilder:
         return list(seen)
 
     def _build_schema(self) -> list[str]:
-        """Ordered fparam column names: mn_log, scalar conditions, salt one-hots."""
+        """Ordered fparam column names: mn_log, scalar fparam fields, salt one-hots."""
         columns: list[str] = [MN_KEY]
         scalar_keys: set[str] = set()
         salt_names: set[str] = set()
@@ -340,7 +340,7 @@ class PolymerBuilder:
         std[std == 0] = 1.0
         return {"mean": mean.tolist(), "std": std.tolist()}
 
-    def _standardized_conditions(
+    def _standardized_fparam(
         self,
         row: _PolymerRow,
         schema: Sequence[str],

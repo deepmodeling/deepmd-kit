@@ -8,8 +8,8 @@ from dpa_adapt.grouped._core import (  # noqa: F401
     WEIGHT_KEY,
     Assembly,
     ComponentSpec,
+    GroupSpec,
     PoolMask,
-    SampleSpec,
     SiteSelector,
     SubstitutionSpec,
 )

@@ -2,7 +2,7 @@
 """High-level assembly dataset writer for grouped property training.
 
 The DeepMD system stores only tensors needed at train time.  Scientific
-semantics, generation provenance, source paths, roles, blocks, and condition
+semantics, generation provenance, source paths, roles, blocks, and fparam
 schemas live in the adapt manifest so the user-facing API can evolve without
 turning a DeepMD ``set.*`` directory into a metadata dump.
 """
@@ -179,17 +179,23 @@ class ComponentSpec:
                 f"({len(self.symbols)}, 3)."
             )
         self.normalized_box()
-        self.normalized_pool_mask()
+        mask = self.normalized_pool_mask()
+        if float(mask.sum()) == 0.0:
+            raise DPADataError(
+                "pool_mask is all-zero: every atom of this component is excluded "
+                "from pooling, giving an undefined frame embedding. An all-masked "
+                "frame is a data bug, not a numerical edge case."
+            )
 
 
 @dataclass
-class SampleSpec:
-    """A group-level labeled sample made of one or more components."""
+class GroupSpec:
+    """A labeled group made of one or more component frames."""
 
     key: str
     label: float | Sequence[float]
     components: list[ComponentSpec] = field(default_factory=list)
-    conditions: dict[str, float] = field(default_factory=dict)
+    fparam: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_component(self, component: ComponentSpec, **overrides: Any) -> ComponentSpec:
@@ -248,8 +254,8 @@ class Assembly:
         self.property_name = str(target)
         self.type_map = [str(t) for t in type_map] if type_map is not None else None
         self.schema = schema
-        self.groups: list[SampleSpec] = []
-        self.condition_schema: list[dict[str, Any]] = []
+        self.groups: list[GroupSpec] = []
+        self.fparam_schema: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # scenario constructors (facade)
@@ -289,25 +295,25 @@ class Assembly:
 
         return add_group_markers(data, group_by=group_by, property_name=target, **kwargs)
 
-    def sample(
+    def group(
         self,
         *,
         key: str | None = None,
         label: float | Sequence[float],
-        conditions: Mapping[str, float] | None = None,
+        fparam: Mapping[str, float] | None = None,
         metadata: Mapping[str, Any] | None = None,
-    ) -> SampleSpec:
-        sample = SampleSpec(
-            key=str(key if key is not None else f"sample_{len(self.groups)}"),
+    ) -> GroupSpec:
+        group = GroupSpec(
+            key=str(key if key is not None else f"group_{len(self.groups)}"),
             label=label,
-            conditions={str(k): float(v) for k, v in (conditions or {}).items()},
+            fparam={str(k): float(v) for k, v in (fparam or {}).items()},
             metadata=dict(metadata or {}),
         )
-        self.groups.append(sample)
-        return sample
+        self.groups.append(group)
+        return group
 
-    def set_condition_schema(self, schema: Sequence[Mapping[str, Any]]) -> None:
-        self.condition_schema = [dict(item) for item in schema]
+    def set_fparam_schema(self, schema: Sequence[Mapping[str, Any]]) -> None:
+        self.fparam_schema = [dict(item) for item in schema]
 
     def write(
         self,
@@ -350,10 +356,10 @@ class Assembly:
                 "weight": WEIGHT_KEY,
                 "pool_mask": POOL_MASK_KEY,
                 "label": self.property_name,
-                "conditions": "fparam" if self._has_conditions() else None,
+                "fparam": "fparam" if self._has_fparam() else None,
             },
             "type_map": resolved_type_map,
-            "condition_schema": self.condition_schema,
+            "fparam_schema": self.fparam_schema,
             "groups": manifest_groups,
         }
         manifest_path = out_path / MANIFEST_NAME
@@ -376,29 +382,29 @@ class Assembly:
         ]
         return _stable_unique(symbols) if symbols else None
 
-    def _has_conditions(self) -> bool:
-        return any(group.conditions for group in self.groups)
+    def _has_fparam(self) -> bool:
+        return any(group.fparam for group in self.groups)
 
 
 def write_grouped_deepmd(
-    groups: Iterable[SampleSpec],
+    groups: Iterable[GroupSpec],
     out: str | Path,
     *,
     target: str = "property",
     type_map: Sequence[str] | None = None,
-    condition_schema: Sequence[Mapping[str, Any]] | None = None,
+    fparam_schema: Sequence[Mapping[str, Any]] | None = None,
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Write assembly data from pre-built :class:`SampleSpec` objects."""
+    """Write assembly data from pre-built :class:`GroupSpec` objects."""
     builder = Assembly(target=target, type_map=type_map)
     builder.groups.extend(groups)
-    if condition_schema is not None:
-        builder.set_condition_schema(condition_schema)
+    if fparam_schema is not None:
+        builder.set_fparam_schema(fparam_schema)
     return builder.write(out, overwrite=overwrite)
 
 
 def _write_group_system(
-    group: SampleSpec,
+    group: GroupSpec,
     *,
     group_idx: int,
     system_path: Path,
@@ -447,6 +453,16 @@ def _write_group_system(
         coord[frame, : n_i * 3] = component.coords.reshape(n_i * 3)
         real_atom_types[frame, :n_i] = [type_index[sym] for sym in component.symbols]
         pool_mask[frame, :n_i] = component.normalized_pool_mask()
+        # Task D: place padding (virtual, real_atom_types == -1) atoms at a large,
+        # spread-out non-physical offset so they lie outside every real atom's
+        # cutoff -- and each other's -- even on a backend whose neighbor list does
+        # NOT relocate atype<0.  (The pt backend also masks atype<0 in nlist, so
+        # for the pt/PBC path this is defensive; see the data-format note below.)
+        box_diag = float(np.linalg.norm(component.normalized_box().sum(axis=0)))
+        for pad_index in range(natoms - n_i):
+            offset = box_diag + 100.0 * (pad_index + 1)
+            start = (n_i + pad_index) * 3
+            coord[frame, start : start + 3] = offset
 
     box = np.stack([c.normalized_box().reshape(9) for c in group.components])
     group_id = np.full((nframes,), int(group_idx), dtype=np.int64)
@@ -454,6 +470,15 @@ def _write_group_system(
     label = np.asarray(group.label, dtype=np.float64).reshape(1, -1)
     label = np.repeat(label, nframes, axis=0)
 
+    # Data-format notes:
+    #  - ``role`` (e.g. repeat_unit, solvent) is CONSTRUCTION-TIME metadata: it
+    #    informs weight/pool_mask generation in Assembly readers and is NOT
+    #    serialized to npy or consumed by the model (only kept in the manifest).
+    #  - Padding atoms (real_atom_types == -1) carry non-physical coords by
+    #    construction (large offset above).  On the pt backend the nlist also
+    #    relocates atype<0, so for periodic systems -- where the offset may wrap
+    #    back into the cell -- that nlist masking is the guarantee; the offset is
+    #    the fallback for PBC-off / other backends.
     np.save(set_dir / "coord.npy", coord)
     np.save(set_dir / "box.npy", box)
     np.save(set_dir / "real_atom_types.npy", real_atom_types)
@@ -461,13 +486,13 @@ def _write_group_system(
     np.save(set_dir / f"{GROUP_ID_KEY}.npy", group_id)
     np.save(set_dir / f"{WEIGHT_KEY}.npy", weight)
     np.save(set_dir / f"{POOL_MASK_KEY}.npy", pool_mask)
-    if group.conditions:
-        keys = sorted(group.conditions)
-        fparam = np.asarray([[group.conditions[k] for k in keys]], dtype=np.float64)
+    if group.fparam:
+        keys = sorted(group.fparam)
+        fparam = np.asarray([[group.fparam[k] for k in keys]], dtype=np.float64)
         np.save(set_dir / "fparam.npy", np.repeat(fparam, nframes, axis=0))
 
 
-def _group_manifest(group: SampleSpec, group_idx: int, system: str) -> dict[str, Any]:
+def _group_manifest(group: GroupSpec, group_idx: int, system: str) -> dict[str, Any]:
     components = []
     for frame, component in enumerate(group.components):
         item = {
@@ -485,7 +510,7 @@ def _group_manifest(group: SampleSpec, group_idx: int, system: str) -> dict[str,
         "key": group.key,
         "label": np.asarray(group.label, dtype=float).reshape(-1).tolist(),
         "system": system,
-        "conditions": group.conditions,
+        "fparam": group.fparam,
         "metadata": group.metadata,
         "components": components,
     }

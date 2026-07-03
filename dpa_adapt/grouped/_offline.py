@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class GroupedDataset:
-    """Aggregate per-frame descriptors into one sample per group id."""
+    """Aggregate per-frame descriptors into one row per group id."""
 
     def __init__(
         self,
