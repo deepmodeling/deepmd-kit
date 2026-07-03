@@ -15,7 +15,9 @@ import array_api_compat
 if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import Array
 
-from .graph import GraphLayout, pad_and_guard_angles
+import dataclasses
+
+from .graph import GraphLayout, NeighborGraph, pad_and_guard_angles
 from .pairs import center_edge_pairs
 
 
@@ -89,3 +91,50 @@ def build_angle_index(
         axis=0,
     )
     return ai, am & pm_padded
+
+
+def attach_angles(
+    graph: NeighborGraph,
+    a_rcut: float,
+    *,
+    ordered: bool = False,
+    include_self: bool = False,
+    layout: GraphLayout | None = None,
+) -> NeighborGraph:
+    """Attach angle_index/angle_mask to an existing edge-only NeighborGraph.
+
+    Parameters
+    ----------
+    graph : NeighborGraph
+        Input graph (edge fields must be populated).
+    a_rcut : float
+        Angle cutoff radius. Only edges with norm < a_rcut participate.
+    ordered : bool, optional
+        If True, include both (a, b) and (b, a) angle pairs.
+    include_self : bool, optional
+        If True, include self-angle pairs (a, a).
+    layout : GraphLayout or None, optional
+        If provided, uses layout.angle_capacity and layout.node_capacity.
+
+    Returns
+    -------
+    NeighborGraph
+        A new NeighborGraph with angle_index and angle_mask populated;
+        all edge/node fields are unchanged.
+    """
+    xp = array_api_compat.array_namespace(graph.edge_index)
+    if layout is not None and layout.node_capacity is not None:
+        n_total = layout.node_capacity
+    else:
+        n_total = int(xp.sum(graph.n_node))
+    ai, am = build_angle_index(
+        graph.edge_index,
+        graph.edge_vec,
+        graph.edge_mask,
+        n_total,
+        a_rcut,
+        ordered=ordered,
+        include_self=include_self,
+        layout=layout,
+    )
+    return dataclasses.replace(graph, angle_index=ai, angle_mask=am)

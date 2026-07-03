@@ -10,6 +10,7 @@ See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
 from .angles import (
+    attach_angles,
     build_angle_index,
 )
 from .ase_builder import (
@@ -49,6 +50,7 @@ from .segment import (
 __all__ = [
     "GraphLayout",
     "NeighborGraph",
+    "attach_angles",
     "build_angle_index",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",

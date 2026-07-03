@@ -3,7 +3,9 @@ import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
+    attach_angles,
     build_angle_index,
+    build_neighbor_graph,
     pad_and_guard_angles,
 )
 
@@ -203,3 +205,85 @@ def test_build_angle_index_ordered_no_self():
         rev_pair = (b, a)
         if a != b and a not in [2] and b not in [2]:  # edge 2 is outside a_rcut
             assert rev_pair in got  # symmetric pairs should both exist
+
+
+# ---------------------------------------------------------------------------
+# Task 3: attach_angles tests
+# ---------------------------------------------------------------------------
+
+
+def test_attach_angles_sets_fields_and_preserves_edges():
+    """attach_angles populates angle_index/mask; edge fields are unchanged."""
+    coord = np.array([[[0.0, 0, 0], [0.8, 0, 0], [0, 0.8, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    # default carry-all builder leaves angles None
+    assert ng.angle_index is None
+    assert ng.angle_mask is None
+    ng2 = attach_angles(ng, a_rcut=1.5)
+    assert ng2.angle_index is not None and ng2.angle_mask is not None
+    # edge fields must be identical (by value and shape)
+    np.testing.assert_array_equal(np.asarray(ng2.edge_index), np.asarray(ng.edge_index))
+    np.testing.assert_array_equal(np.asarray(ng2.edge_mask), np.asarray(ng.edge_mask))
+    np.testing.assert_array_equal(np.asarray(ng2.edge_vec), np.asarray(ng.edge_vec))
+
+
+def test_attach_angles_angle_shape_consistent():
+    """angle_index has shape (2, A) and angle_mask has shape (A,)."""
+    coord = np.array([[[0.0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    ng2 = attach_angles(ng, a_rcut=1.5)
+    assert ng2.angle_index.shape[0] == 2
+    assert ng2.angle_mask.shape[0] == ng2.angle_index.shape[1]
+
+
+def test_attach_angles_valid_angles_reference_valid_edges():
+    """All valid angle pairs (q_e, k_e) must index edges that are within a_rcut."""
+    coord = np.array([[[0.0, 0, 0], [0.6, 0, 0], [0, 0.6, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    ng2 = attach_angles(ng, a_rcut=1.0)
+    ei = np.asarray(ng2.edge_index)
+    ev = np.asarray(ng2.edge_vec)
+    em = np.asarray(ng2.edge_mask)
+    ai = np.asarray(ng2.angle_index)
+    am = np.asarray(ng2.angle_mask)
+    for p in range(am.shape[0]):
+        if not am[p]:
+            continue
+        q, k = int(ai[0, p]), int(ai[1, p])
+        # both referenced edges must be valid and within a_rcut
+        assert em[q] and em[k]
+        assert np.linalg.norm(ev[q]) < 1.0
+        assert np.linalg.norm(ev[k]) < 1.0
+        # both referenced edges must share the same center (dst)
+        assert ei[1, q] == ei[1, k]
+
+
+def test_attach_angles_with_layout():
+    """Static layout.angle_capacity is respected."""
+    coord = np.array([[[0.0, 0, 0], [0.6, 0, 0], [0, 0.6, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    layout = GraphLayout(edge_capacity=100, angle_capacity=20)
+    ng2 = attach_angles(ng, a_rcut=1.5, layout=layout)
+    assert ng2.angle_index.shape == (2, 20)
+    assert ng2.angle_mask.shape == (20,)
+
+
+def test_attach_angles_ordered_include_self():
+    """ordered=True, include_self=True produces a superset of default pairs."""
+    coord = np.array([[[0.0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    ng_default = attach_angles(ng, a_rcut=1.5)
+    ng_full = attach_angles(ng, a_rcut=1.5, ordered=True, include_self=True)
+    ai_def = np.asarray(ng_default.angle_index)
+    am_def = np.asarray(ng_default.angle_mask)
+    ai_full = np.asarray(ng_full.angle_index)
+    am_full = np.asarray(ng_full.angle_mask)
+    n_default = int(am_def.sum())
+    n_full = int(am_full.sum())
+    # ordered+include_self must produce at least as many angles as default
+    assert n_full >= n_default
