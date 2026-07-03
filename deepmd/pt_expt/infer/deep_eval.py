@@ -129,6 +129,19 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    nlist_backend : str, default: "auto"
+        Neighbor-list builder for the NLIST/extended lower path (``.pte`` and
+        nlist-form ``.pt2``): ``"auto"`` / ``"vesin"`` / ``"native"``. Not
+        used by graph-form ``.pt2`` artifacts.
+    neighbor_graph_method : str, default: "dense"
+        Carry-all graph builder for GRAPH-FORM ``.pt2`` artifacts ONLY
+        (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
+        (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
+        non-default value on any other artifact raises at construction — the
+        knob would silently do nothing there; use ``nlist_backend`` for the
+        nlist path instead. All builders emit the same neighbor set, so the
+        choice is performance-only. Consolidating the two knobs into a single
+        backend-selection API is deferred to the dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
     """
@@ -163,6 +176,20 @@ class DeepEval(DeepEvalBackend):
                 f"Unsupported model file '{model_file}' for the pt_expt "
                 "backend: expected `.pt2` / `.pte` (deployable archives) or "
                 "`.pt` (training checkpoint)."
+            )
+
+        # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
+        # (_eval_model_graph); fail fast instead of silently ignoring it on
+        # nlist-form artifacts (there, the builder knob is nlist_backend).
+        if (
+            neighbor_graph_method != "dense"
+            and getattr(self, "metadata", {}).get("lower_input_kind") != "graph"
+        ):
+            raise ValueError(
+                f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
+                "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
+                f"model is not graph-form. Use nlist_backend to select the "
+                "neighbor-list builder for the nlist path."
             )
 
         self._setup_nlist_backend(nlist_backend)
