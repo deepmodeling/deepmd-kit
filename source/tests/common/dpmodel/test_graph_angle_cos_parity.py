@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Parity tests for graph_angle_cos vs dpa3 dense cosine_ij and se_t dot form."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 
@@ -10,7 +12,6 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     build_neighbor_graph,
     graph_angle_cos,
 )
-
 
 # ---------------------------------------------------------------------------
 # Step 1/4: explicit geometry sanity

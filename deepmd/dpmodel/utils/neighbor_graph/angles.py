@@ -6,9 +6,13 @@ geometry leaf. a_sel is normalization-only (not a truncation). Reuses PR-D's
 center_edge_pairs; a_rcut filters the participating edges.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+)
 
 import array_api_compat
 
@@ -17,9 +21,17 @@ if TYPE_CHECKING:
 
 import dataclasses
 
-from .graph import GraphLayout, NeighborGraph, pad_and_guard_angles
-from .pairs import center_edge_pairs
-from .segment import segment_sum
+from .graph import (
+    GraphLayout,
+    NeighborGraph,
+    pad_and_guard_angles,
+)
+from .pairs import (
+    center_edge_pairs,
+)
+from .segment import (
+    segment_sum,
+)
 
 
 def build_angle_index(
