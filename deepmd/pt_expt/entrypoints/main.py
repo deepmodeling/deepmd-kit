@@ -563,10 +563,12 @@ def freeze(
 
     m.eval()
 
-    # The graph lower is opt-in and only valid for graph-eligible models (dpa1
-    # attn_layer==0 today). Fail fast with a clear message rather than emitting a
-    # broken .pt2. Enable the per-atom virial for the graph form -- it is
-    # near-free there (one extra scatter off the single shared backward).
+    # The graph lower is opt-in and only valid for graph-eligible models
+    # (dpa1 with concat tebd and no type exclusion; attention layers included
+    # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
+    # fast with a clear message rather than emitting a broken .pt2. Enable the
+    # per-atom virial for the graph form -- it is near-free there (one extra
+    # scatter off the single shared backward).
     do_atomic_virial = False
     if lower_kind == "graph":
         from deepmd.pt_expt.train.training import (
@@ -577,8 +579,8 @@ def freeze(
             raise ValueError(
                 "lower_kind='graph' requires a graph-eligible model "
                 "(mixed_types and a descriptor exposing uses_graph_lower()==True, "
-                "currently dpa1 with attn_layer==0). Use lower_kind='nlist' for "
-                "this model."
+                "currently dpa1 with tebd_input_mode='concat' and no "
+                "exclude_types). Use lower_kind='nlist' for this model."
             )
         do_atomic_virial = True
 

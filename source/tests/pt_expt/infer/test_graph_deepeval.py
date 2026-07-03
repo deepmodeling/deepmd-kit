@@ -153,11 +153,18 @@ def _eager_dense_reference(
     return {k: v.detach().cpu().numpy() for k, v in out.items()}
 
 
-@pytest.fixture(scope="module")
-def graph_pt2():
-    """Build a dpa1(attn_layer=0) model and export it to a graph-form ``.pt2``.
+@pytest.fixture(scope="module", params=[0, 2], ids=["attn0", "attn2"])
+def graph_pt2(request):
+    """Build a dpa1 model and export it to a graph-form ``.pt2``.
 
-    The AOTI compile is slow (~90 s), so it is done once per module.  The eager
+    Parametrized over ``attn_layer``: 0 exercises the factorizable graph lower;
+    2 exercises the carry-all ATTENTION graph lower, whose compact pair
+    enumeration exports via unbacked SymInts (``xp_hint_dynamic_size``).
+    ``smooth_type_embedding`` stays False: the smooth dense reference keeps
+    sel-padding in its softmax denominator, so dense==carry-all parity holds
+    only for the non-smooth branch (PR-D divergence decision).
+
+    The AOTI compile is slow (~90 s), so it is done once per param.  The eager
     pt_expt model is returned alongside the archive path to serve as the dense
     parity reference.
     """
@@ -165,7 +172,10 @@ def graph_pt2():
         get_model,
     )
 
-    model = get_model(copy.deepcopy(DPA1_CONFIG)).to(torch.float64)
+    config = copy.deepcopy(DPA1_CONFIG)
+    config["descriptor"]["attn_layer"] = request.param
+    config["descriptor"]["smooth_type_embedding"] = False
+    model = get_model(config).to(torch.float64)
     model.eval()
     data = {"model": model.serialize()}
 
@@ -264,3 +274,24 @@ def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
     np.testing.assert_allclose(e_v, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
     np.testing.assert_allclose(f_v, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
     np.testing.assert_allclose(v_v, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")
+
+
+def test_graph_pt2_single_atom_no_edges(graph_pt2) -> None:
+    """A single isolated atom (zero real edges) evaluates through the ``.pt2``.
+
+    The graph builder emits only masked guard edges here, so at runtime the
+    compact pair enumeration sees ``R == 0`` real edges — the empty extreme of
+    the unbacked-SymInt sizes the attention export carries.  Energy must match
+    the eager dense reference and the force must be (numerically) zero.
+    """
+    pt2_path, model = graph_pt2
+    coords = np.array([[[9.0, 9.0, 9.0]]])
+    atype = np.array([0], dtype=np.int32)
+
+    dp = DeepPot(pt2_path)
+    e, f, v = dp.eval(coords, None, atype)[:3]
+    ref = _eager_dense_reference(model, coords, None, atype)
+    np.testing.assert_allclose(
+        e.reshape(-1), ref["energy"].reshape(-1), rtol=1e-10, atol=1e-10
+    )
+    np.testing.assert_allclose(f.reshape(-1), 0.0, atol=1e-12)

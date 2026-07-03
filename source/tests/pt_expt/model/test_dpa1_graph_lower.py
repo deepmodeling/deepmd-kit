@@ -237,3 +237,56 @@ class TestDpa1GraphLower:
             )
             graph_av = graph["energy_derv_c"].reshape(nf, nloc, 1, 9)
             torch.testing.assert_close(graph_av, legacy_av_local, **tol)
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_graph_lower_symbolic_trace(self, attn_layer) -> None:
+        """``forward_lower_graph_exportable`` traces symbolically for BOTH the
+        factorizable (attn_layer=0) and attention (attn_layer=2) graph lowers,
+        and the traced module reproduces the eager graph lower bit-tight.
+
+        attn_layer > 0 exercises the carry-all compact pair enumeration
+        (``center_edge_pairs`` with ``static_nnei=None``) under make_fx
+        symbolic tracing: its ``nonzero``/tensor-``repeat`` output sizes are
+        UNBACKED SymInts, registered via ``xp_hint_dynamic_size`` — the
+        mechanism that makes the attention graph lower ``.pt2``-exportable.
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = self._make_model(attn_layer=attn_layer)
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            ei,
+            ev,
+            em,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+        )
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
