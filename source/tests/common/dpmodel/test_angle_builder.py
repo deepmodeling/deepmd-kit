@@ -287,3 +287,27 @@ def test_attach_angles_ordered_include_self():
     n_full = int(am_full.sum())
     # ordered+include_self must produce at least as many angles as default
     assert n_full >= n_default
+
+
+def test_attach_angles_with_layout_node_capacity():
+    """layout.node_capacity branch: node_capacity is used as n_total."""
+    coord = np.array([[[0.0, 0, 0], [0.6, 0, 0], [0, 0.6, 0]]])
+    atype = np.array([[0, 0, 0]])  # (nf, nloc)
+    ng = build_neighbor_graph(coord, atype, None, 2.0)
+    layout = GraphLayout(edge_capacity=100, angle_capacity=20, node_capacity=10)
+    ng2 = attach_angles(ng, a_rcut=1.5, layout=layout)
+    assert ng2.angle_index is not None
+    assert ng2.angle_mask.shape == (20,)
+    # same real-angle set as the dynamic path (node_capacity only oversizes n_total)
+    ng3 = attach_angles(ng, a_rcut=1.5)
+    got = {
+        (int(ng2.angle_index[0, p]), int(ng2.angle_index[1, p]))
+        for p in range(ng2.angle_index.shape[1])
+        if ng2.angle_mask[p]
+    }
+    ref = {
+        (int(ng3.angle_index[0, p]), int(ng3.angle_index[1, p]))
+        for p in range(ng3.angle_index.shape[1])
+        if ng3.angle_mask[p]
+    }
+    assert got == ref
