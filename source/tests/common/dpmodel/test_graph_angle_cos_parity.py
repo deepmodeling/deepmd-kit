@@ -36,14 +36,15 @@ def test_graph_angle_cos_matches_normalized_dot():
     np.testing.assert_allclose(vals, [0.0], atol=1e-6)
 
 
-def test_graph_angle_cos_parallel():
-    """Two neighbors in the SAME direction as seen from center: cos ~(1-eps).
+def test_graph_angle_cos_antiparallel():
+    """Two neighbors in ANTIPARALLEL directions as seen from the center: cos ≈ -1.
 
-    Use rcut=1.5 so only center→neighbor1 (dist=1) and center→neighbor2 (dist=2)
-    but atom1→atom2 (dist=1) is NOT seen from atom2 as a second neighbor.
-    Actually place center at 1.0, so neighbors at 0.0 and 2.0 are collinear.
-    rcut=1.1 => center (at 1.0) sees atoms at 0.0 (dist=1.0) and 2.0 (dist=1.0),
-    but those two atoms don't see each other (dist=2.0 > 1.1).
+    Center is placed at (1,0,0) with one neighbor at (0,0,0) and another at
+    (2,0,0).  The edge vectors from center are (-1,0,0) and (+1,0,0), which
+    point in opposite directions => cos ≈ -(1-eps).
+
+    rcut=1.1: center sees both neighbors (dist=1.0 each); the two neighbors
+    do not see each other (dist=2.0 > 1.1), so exactly ONE angle is formed.
     """
     coord = np.array([[[1.0, 0, 0], [0.0, 0, 0], [2.0, 0, 0]]])
     atype = np.array([[0, 0, 0]])
@@ -52,12 +53,8 @@ def test_graph_angle_cos_parallel():
     real = np.asarray(ng.angle_mask)
     vals = np.asarray(cos)[real]
     assert int(real.sum()) == 1
-    # edge_vec = neighbor - center; both neighbors are in opposite x-directions
-    # from the center: edge to atom1=(0,0,0) is (-1,0,0); edge to atom2=(2,0,0) is (+1,0,0)
-    # For unit-norm vectors (norm=1.0):
-    #   na = va / (1 + eps),  nb = vb / (1 + eps)
-    #   dot(na, nb) = -1 / (1+eps)^2
-    #   cos = -1 / (1+eps)^2 * (1 - eps)
+    # edge_vec = neighbor - center; edge to (0,0,0) is (-1,0,0); edge to (2,0,0) is (+1,0,0).
+    # Antiparallel unit vectors: dot(na, nb) = -1 / (1+eps)^2, scaled by (1-eps).
     eps = 1e-6
     expected = -1.0 / (1 + eps) ** 2 * (1 - eps)
     np.testing.assert_allclose(vals, [expected], rtol=1e-6)
@@ -243,49 +240,89 @@ def test_graph_angle_cos_parity_vs_dpa3_dense():
 
 
 def test_matches_se_t_dot_form():
-    """Cos * |va| * |vb| ≈ va·vb (the se_t unnormalized inner product).
+    """Cross-check graph_angle_cos against an independent coordinate-based oracle.
 
-    se_t.py:428-437 uses `rr_i·rr_j` (unnormalized 3D vectors = edge_vec
-    without smoothing weights).  graph_angle_cos(eps=1e-6) satisfies:
+    se_t.py:428-437 computes ``env_ij = sum(rr_i * rr_j, -1)`` where
+    ``rr_i = sw * diff / r^2`` (the 3-D columns of the env-mat).  The raw
+    unnormalized dot product ``va · vb`` (with ``va = r_a - r_center``) is the
+    numerator that graph_angle_cos normalizes:
 
-        cos ≈ (va/‖va‖) · (vb/‖vb‖) * (1-eps)
+        graph_angle_cos = (1 - eps) * (va · vb) / ((|va| + eps) * (|vb| + eps))
 
-    So:
-        va·vb ≈ cos * (‖va‖ + eps) * (‖vb‖ + eps) / (1 - eps)
+    Inverting:
 
-    We verify this identity up to the eps rounding (atol~1e-6 * ‖va‖*‖vb‖).
+        graph_angle_cos * (|va| + eps) * (|vb| + eps) / (1 - eps) = va · vb
+
+    **Why sw is factored out**: sw scales each env-mat vector by a scalar.
+    When all neighbor distances are *below* ``rcut_smth``, the smooth switch
+    function equals 1 exactly (``sw == 1``), so the sw factor contributes
+    nothing and ``env_ij`` reduces to the plain geometry.
+
+    **Why this test is not tautological**: the reference ``va``, ``vb``, and
+    ``env_ij = va · vb`` are computed DIRECTLY FROM COORDINATES in plain numpy,
+    independent of the graph code path.  The |va| and |vb| norms used to unwind
+    ``cos`` are also recomputed from coordinates, NOT read from ``edge_vec``.
+    This verifies that the graph stores ``edge_vec = neighbor - center``
+    correctly and that ``graph_angle_cos`` faithfully encodes the geometry.
+    With distances well below ``rcut_smth`` the identity holds to ``rtol=1e-12``
+    because it is exact algebra over fp64; eps-induced rounding is negligible
+    compared to fp64 relative precision.
     """
-    coord = np.array([[[0.0, 0, 0], [1.0, 0.5, 0.3], [0.2, 1.0, 0.8]]])
+    # All atoms within distance 0.5 of center; rcut_smth = 1.0 so sw == 1 for all.
+    rng = np.random.default_rng(7)
+    center = np.array([0.0, 0.0, 0.0])
+    r_a = rng.uniform(0.1, 0.4, 3)  # distance from center < rcut_smth=1.0
+    r_b = rng.uniform(0.1, 0.4, 3)
+    coord = np.array([[[*center], [*r_a], [*r_b]]])  # (1, 3, 3), single frame
     atype = np.array([[0, 0, 0]])
-    ng = attach_angles(build_neighbor_graph(coord, atype, None, 5.0), a_rcut=5.0)
+
+    rcut = 2.0
+    a_rcut = 2.0
+    ng = attach_angles(build_neighbor_graph(coord, atype, None, rcut), a_rcut=a_rcut)
     ai = np.asarray(ng.angle_index)
     am = np.asarray(ng.angle_mask)
-    ev = np.asarray(ng.edge_vec)
+    ei = np.asarray(ng.edge_index)
     cos = np.asarray(graph_angle_cos(ng.angle_index, ng.edge_vec))
 
     eps = 1e-6
-    for p in range(am.shape[0]):
-        if not am[p]:
-            continue
+
+    # At least one valid angle must exist (atom 0 is the only center with ≥2 nei)
+    valid_angles = [p for p in range(am.shape[0]) if am[p]]
+    assert len(valid_angles) >= 1, "No valid angles found — geometry problem"
+
+    for p in valid_angles:
         ea = int(ai[0, p])
         eb = int(ai[1, p])
-        va = ev[ea]
-        vb = ev[eb]
-        # unnormalized dot product (se_t convention)
-        dot_se_t = float(np.dot(va, vb))
-        # reconstruct from graph cos
-        na_norm = np.linalg.norm(va)
-        nb_norm = np.linalg.norm(vb)
-        dot_reconstructed = (
-            float(cos[p]) * (na_norm + eps) * (nb_norm + eps) / (1 - eps)
-        )
-        # tolerance: eps * ‖va‖*‖vb‖ dominates
-        tol = eps * max(na_norm * nb_norm, 1e-12)
+        center_node = int(ei[1, ea])
+        na_node = int(ei[0, ea])
+        nb_node = int(ei[0, eb])
+
+        # Reference: compute difference vectors FROM COORDINATES (independent of graph)
+        r_center = coord[0, center_node]
+        r_na = coord[0, na_node]
+        r_nb = coord[0, nb_node]
+        va_ref = r_na - r_center  # (3,)
+        vb_ref = r_nb - r_center  # (3,)
+
+        # Reference: unnormalized dot product from coordinates (se_t convention)
+        env_ij_ref = float(np.dot(va_ref, vb_ref))
+
+        # Reference norms — from coordinates, NOT from edge_vec
+        na_norm = float(np.linalg.norm(va_ref))
+        nb_norm = float(np.linalg.norm(vb_ref))
+
+        # Graph: unwind graph_angle_cos back to the unnormalized dot product
+        env_ij_graph = float(cos[p]) * (na_norm + eps) * (nb_norm + eps) / (1 - eps)
+
         np.testing.assert_allclose(
-            dot_reconstructed,
-            dot_se_t,
-            atol=tol,
-            err_msg=f"se_t dot mismatch for angle {p}: va={va}, vb={vb}",
+            env_ij_graph,
+            env_ij_ref,
+            rtol=1e-12,
+            err_msg=(
+                f"se_t dot mismatch at angle {p}: "
+                f"center={center_node}, na={na_node}, nb={nb_node}, "
+                f"va={va_ref}, vb={vb_ref}"
+            ),
         )
 
 
