@@ -9,6 +9,9 @@ segment-reduction toolkit), and ``derivatives`` (edge force/virial assembly).
 See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
+from .angles import (
+    build_angle_index,
+)
 from .ase_builder import (
     build_neighbor_graph_ase,
 )
@@ -46,6 +49,7 @@ from .segment import (
 __all__ = [
     "GraphLayout",
     "NeighborGraph",
+    "build_angle_index",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",
     "center_edge_pairs",
