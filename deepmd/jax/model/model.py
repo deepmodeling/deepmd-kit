@@ -42,7 +42,10 @@ def get_standard_model(data: dict) -> BaseModel:
     descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
     data["descriptor"]["ntypes"] = len(data["type_map"])
-    fitting_type = data["fitting_net"].pop("type")
+    # Default the fitting type to energy and tolerate a missing fitting_net
+    # block, matching the dpmodel and TF2 standard-model factories.
+    data["fitting_net"] = data.get("fitting_net", {})
+    fitting_type = data["fitting_net"].pop("type", "ener")
     data["fitting_net"]["type_map"] = data["type_map"]
     descriptor = BaseDescriptor.get_class_by_type(descriptor_type)(
         **data["descriptor"],
