@@ -217,6 +217,14 @@ def build_neighbor_graph_nv(
         neighbor_matrix, num_neighbors, shifts, nloc
     )
 
+    # virtual atoms (atype < 0) are excluded as centers AND neighbors — the
+    # World-2 builder contract shared with the dense reference builder; the
+    # geometric search above cannot know about them.
+    at = torch.as_tensor(atype, device=device).reshape(nf, nloc)
+    keep = (at[frame_idx, center_local] >= 0) & (at[frame_idx, src_local] >= 0)
+    center_local, src_local = center_local[keep], src_local[keep]
+    shift, frame_idx = shift[keep], frame_idx[keep]
+
     return neighbor_graph_from_ijs(
         center_local, src_local, shift, coord, box_out, frame_idx, nloc, layout=layout
     )

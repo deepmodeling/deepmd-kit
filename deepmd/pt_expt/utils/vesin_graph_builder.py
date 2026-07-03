@@ -116,6 +116,14 @@ def build_neighbor_graph_vesin(
         else torch.zeros((0,), dtype=torch.int64, device=dev)
     )
 
+    # virtual atoms (atype < 0) are excluded as centers AND neighbors — the
+    # World-2 builder contract shared with the dense reference builder; the
+    # geometric search above cannot know about them.
+    at = torch.as_tensor(atype, device=dev).reshape(nf, nloc)
+    keep = (at[nf_all, i_all] >= 0) & (at[nf_all, j_all] >= 0)
+    i_all, j_all, nf_all = i_all[keep], j_all[keep], nf_all[keep]
+    S_all = S_all[keep]
+
     # i = center (dst), j = neighbor (src); pass ORIGINAL coord/box
     # (grad-carrying). Unlike the nv builder, vesin's cell list handles
     # out-of-cell (unwrapped) positions natively, so no normalize_coord is

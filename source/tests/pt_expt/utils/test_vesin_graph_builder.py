@@ -88,3 +88,20 @@ def test_vesin_edge_vec_is_differentiable():
     # loss is asymmetric and gives a non-trivial, non-cancelling gradient.
     (ng.edge_vec**2).sum().backward()
     assert coord.grad is not None and torch.any(coord.grad != 0)
+
+
+def test_vesin_excludes_virtual_atoms_like_dense():
+    """Virtual atoms (atype < 0) excluded as center AND neighbor (dense contract)."""
+    coord, _, box = _system(periodic=True)
+    atype = torch.tensor([[0, -1, 0, 1]], dtype=torch.int64)  # atom 1 virtual
+    rcut = 2.0
+    ng_ref = build_neighbor_graph(
+        coord.reshape(1, 4, 3), atype, box.reshape(1, 3, 3), rcut
+    )
+    ng = vesin_builder.build_neighbor_graph_vesin(
+        coord.reshape(1, 4, 3), atype, box.reshape(1, 3, 3), rcut
+    )
+    assert _sets(ng, 4) == _sets(ng_ref, 4)
+    ei = np.asarray(ng.edge_index)[:, np.asarray(ng.edge_mask)]
+    at = atype.reshape(-1).numpy()
+    assert np.all(at[ei[0]] >= 0) and np.all(at[ei[1]] >= 0)

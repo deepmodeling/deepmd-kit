@@ -104,3 +104,21 @@ def test_nv_edge_vec_is_differentiable():
     ng = nv_builder.build_neighbor_graph_nv(coord, atype, box, 2.0)
     (ng.edge_vec**2).sum().backward()
     assert coord.grad is not None and torch.any(coord.grad != 0)
+
+
+def test_nv_excludes_virtual_atoms_like_dense():
+    """Virtual atoms (atype < 0) excluded as center AND neighbor (dense contract)."""
+    dev = torch.device("cuda")
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [0.9, 0.0, 0.0], [0.0, 1.1, 0.0], [1.8, 1.8, 0.0]]],
+        dtype=torch.float64,
+        device=dev,
+    )
+    box = (torch.eye(3, dtype=torch.float64, device=dev) * 3.0).reshape(1, 3, 3)
+    atype = torch.tensor([[0, -1, 0, 1]], dtype=torch.int64, device=dev)  # 1 virtual
+    ng_ref = build_neighbor_graph(coord, atype, box, 2.0)
+    ng = nv_builder.build_neighbor_graph_nv(coord, atype, box, 2.0)
+    assert _sets(ng, 4) == _sets(ng_ref, 4)
+    ei = np.asarray(ng.edge_index.cpu())[:, np.asarray(ng.edge_mask.cpu())]
+    at = atype.reshape(-1).cpu().numpy()
+    assert np.all(at[ei[0]] >= 0) and np.all(at[ei[1]] >= 0)
