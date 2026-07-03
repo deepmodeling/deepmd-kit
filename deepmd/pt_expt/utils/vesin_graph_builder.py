@@ -35,6 +35,54 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 )
 
 
+def vesin_search_ijs(
+    positions: torch.Tensor,
+    cell: torch.Tensor | None,
+    periodic: bool,
+    rcut: float,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Raw ``vesin.torch`` neighbor search returning ``(ii, jj, ss)`` as int64.
+
+    The caller is responsible for ensuring ``vesin.torch`` is importable (check
+    :func:`~deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available`
+    before calling).  ``positions`` must be detached (the search is
+    non-differentiable).
+
+    Parameters
+    ----------
+    positions : (nloc, 3) local-frame coordinates, already detached.
+    cell : (3, 3) box matrix for periodic systems, or ``None`` for non-periodic.
+        For non-periodic systems a zero box is constructed internally.
+    periodic : whether the system is periodic.
+    rcut : neighbor cutoff radius.
+    device : device to pin as the ambient default.  ``vesin.torch`` allocates
+        some internal tensors on the ambient default device, which may be a
+        fake/other device in some test contexts (e.g. a placeholder CUDA
+        default); pinning it here prevents spurious CUDA initializations.
+
+    Returns
+    -------
+    ii : (E,) int64 center local indices.
+    jj : (E,) int64 neighbor local indices.
+    ss : (E, 3) int64 periodic image shifts.
+    """
+    import vesin.torch as _vesin_torch
+
+    box = (
+        cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
+    )
+    nl = _vesin_torch.NeighborList(cutoff=float(rcut), full_list=True)
+    with torch.device(device):
+        ii, jj, ss = nl.compute(
+            points=positions,
+            box=box,
+            periodic=periodic,
+            quantities="ijS",
+        )
+    return ii.to(torch.int64), jj.to(torch.int64), ss.to(torch.int64).reshape(-1, 3)
+
+
 def build_neighbor_graph_vesin(
     coord: Any,
     atype: Any,
@@ -52,7 +100,6 @@ def build_neighbor_graph_vesin(
             "build_neighbor_graph_vesin requires vesin[torch]; "
             "install with `pip install vesin[torch]` or use neighbor_graph_method='dense'."
         )
-    import vesin.torch
 
     xp = array_api_compat.array_namespace(coord)
     dev = array_api_compat.device(coord)
@@ -72,23 +119,10 @@ def build_neighbor_graph_vesin(
         )
 
     i_parts, j_parts, S_parts, nf_parts = [], [], [], []
-    nl = vesin.torch.NeighborList(cutoff=float(rcut), full_list=True)
     for f in range(nf):
         pts = coord[f].detach()
-        with torch.device(dev):
-            ii, jj, ss = nl.compute(
-                points=pts,
-                box=(
-                    box[f].detach()
-                    if periodic
-                    else torch.zeros((3, 3), dtype=pts.dtype, device=dev)
-                ),
-                periodic=periodic,
-                quantities="ijS",
-            )
-        ii = ii.to(torch.int64)
-        jj = jj.to(torch.int64)
-        ss = ss.to(torch.int64).reshape(-1, 3)
+        cell_f = box[f].detach() if periodic else None
+        ii, jj, ss = vesin_search_ijs(pts, cell_f, periodic, rcut, dev)
         i_parts.append(ii)
         j_parts.append(jj)
         S_parts.append(ss)

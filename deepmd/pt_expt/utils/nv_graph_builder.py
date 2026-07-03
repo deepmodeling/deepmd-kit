@@ -33,6 +33,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     neighbor_graph_from_ijs,
 )
 from deepmd.pt.utils.nv_nlist import (
+    _input_device_context,
     choose_nv_nlist_method,
     is_nv_available,
 )
@@ -100,6 +101,103 @@ def nv_matrix_to_ijs(
     return center_local, src_local, shift, frame_idx
 
 
+def nv_search_matrix(
+    coord: torch.Tensor,
+    box: torch.Tensor | None,
+    rcut: float,
+    start_capacity: int,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor | None,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    """Run the nvalchemiops neighbor search and return the raw matrix output.
+
+    Encapsulates the full search pipeline: ``_input_device_context`` pinning,
+    periodic coordinate normalization, batch tensor construction, and the
+    grow-until-fit capacity loop.  This is the single authoritative nv search;
+    :class:`~deepmd.pt.utils.nv_nlist.NvNeighborList` delegates here so the
+    search logic is maintained in exactly one place.
+
+    Parameters
+    ----------
+    coord : (nf, nloc, 3) local coordinates (already reshaped).
+    box : (nf, 3, 3) simulation cell, or ``None`` for non-periodic.
+    rcut : cutoff radius.
+    start_capacity : initial max-neighbor capacity; grown automatically when
+        any atom has more neighbors than the current capacity.
+
+    Returns
+    -------
+    coord : (nf, nloc, 3) coordinates, normalized in-cell if periodic.
+    cell : (nf, 3, 3) float box, or ``None`` for non-periodic.
+    neighbor_matrix : (total_atoms, capacity) int neighbor matrix.
+    num_neighbors : (total_atoms,) valid neighbor count per center.
+    shifts : (total_atoms, capacity, 3) int periodic image shifts.
+    """
+    from nvalchemiops.torch.neighbors import (
+        neighbor_list,
+    )
+
+    device = coord.device
+    nf = coord.shape[0]
+    nloc = coord.shape[1]
+    periodic = box is not None
+
+    with _input_device_context(device):
+        if periodic:
+            cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
+            coord = normalize_coord(coord, cell)
+            pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
+        else:
+            cell = None
+            pbc = None
+
+        total_atoms = nf * nloc
+        positions = coord.reshape(total_atoms, 3).detach()
+        batch_idx = torch.arange(
+            nf, dtype=torch.int32, device=device
+        ).repeat_interleave(nloc)
+        batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
+        method = choose_nv_nlist_method(nloc, periodic=periodic, device=device)
+        extra_nl_kwargs: dict[str, Any] = {}
+        if method == "batch_naive":
+            extra_nl_kwargs["max_atoms_per_system"] = int(nloc)
+
+        search_capacity = start_capacity
+        while True:
+            nlist_result = neighbor_list(
+                positions,
+                float(rcut),
+                cell=cell,
+                pbc=pbc,
+                batch_idx=batch_idx,
+                batch_ptr=batch_ptr,
+                method=method,
+                max_neighbors=int(search_capacity),
+                return_neighbor_list=False,
+                wrap_positions=False,
+                **extra_nl_kwargs,
+            )
+            if len(nlist_result) == 2:
+                neighbor_matrix, num_neighbors = nlist_result
+                shifts = torch.zeros(
+                    (*neighbor_matrix.shape, 3), dtype=torch.int32, device=device
+                )
+            else:
+                neighbor_matrix, num_neighbors, shifts = nlist_result
+            max_found = (
+                int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
+            )
+            if max_found <= search_capacity:
+                break
+            search_capacity = max(max_found, _grow_search_capacity(search_capacity))
+
+    return coord, cell, neighbor_matrix, num_neighbors, shifts
+
+
 def build_neighbor_graph_nv(
     coord: Any,
     atype: Any,
@@ -139,9 +237,6 @@ def build_neighbor_graph_nv(
             "install with `pip install nvalchemi-toolkit-ops` or use "
             "neighbor_graph_method='dense'."
         )
-    from nvalchemiops.torch.neighbors import (
-        neighbor_list,
-    )
 
     device = coord.device
     nf = coord.shape[0] if coord.ndim == 3 else 1
@@ -156,60 +251,15 @@ def build_neighbor_graph_nv(
             empty_i, empty_i, empty_S, coord, box, empty_i, nloc, layout=layout
         )
 
-    # Mirror nv_nlist.build's search setup: normalize periodic coords (a
-    # differentiable lattice translation, identity gradient), flatten the batch,
-    # and search all frames in ONE kernel via batch_idx/batch_ptr.
+    # Carry-all: grow capacity until every neighbor fits (no sel cap).
     # NOTE: unlike the vesin builder (which searches the ORIGINAL coords --
     # vesin handles unwrapped positions natively), nvalchemiops requires
     # in-cell positions, so BOTH the search and the edge_vec recomputation use
     # the normalized coords; S then matches the coords the search actually saw.
-    if periodic:
-        cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
-        coord = normalize_coord(coord, cell)
-        pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
-    else:
-        cell = None
-        pbc = None
-    box_out = cell  # edge_vec is recomputed from these (normalized) coords
-
-    total_atoms = nf * nloc
-    positions = coord.reshape(total_atoms, 3).detach()
-    batch_idx = torch.arange(nf, dtype=torch.int32, device=device).repeat_interleave(
-        nloc
+    coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
+        coord, box, rcut, start_capacity=max(64, nloc)
     )
-    batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
-    method = choose_nv_nlist_method(nloc, periodic=periodic, device=device)
-    extra_nl_kwargs: dict[str, Any] = {}
-    if method == "batch_naive":
-        extra_nl_kwargs["max_atoms_per_system"] = int(nloc)
-
-    # Carry-all: grow capacity until every neighbor fits (no sel cap).
-    search_capacity = max(64, nloc)
-    while True:
-        nlist_result = neighbor_list(
-            positions,
-            float(rcut),
-            cell=cell,
-            pbc=pbc,
-            batch_idx=batch_idx,
-            batch_ptr=batch_ptr,
-            method=method,
-            max_neighbors=int(search_capacity),
-            return_neighbor_list=False,
-            wrap_positions=False,
-            **extra_nl_kwargs,
-        )
-        if len(nlist_result) == 2:
-            neighbor_matrix, num_neighbors = nlist_result
-            shifts = torch.zeros(
-                (*neighbor_matrix.shape, 3), dtype=torch.int32, device=device
-            )
-        else:
-            neighbor_matrix, num_neighbors, shifts = nlist_result
-        max_found = int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
-        if max_found <= search_capacity:
-            break
-        search_capacity = max(max_found, _grow_search_capacity(search_capacity))
+    box_out = cell  # edge_vec is recomputed from these (normalized) coords
 
     # Decode the dense matrix to a sparse (i, j, S) edge list (CPU-testable
     # helper; see nv_matrix_to_ijs).
