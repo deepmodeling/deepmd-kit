@@ -50,8 +50,14 @@ def test_pt_expt_loads_plugin_entry_points(monkeypatch):
         ]:
             sys.modules.pop(k, None)
         sys.modules.update(saved)
-        if deepmd_pkg is not None and "deepmd.pt_expt" in saved:
-            deepmd_pkg.pt_expt = saved["deepmd.pt_expt"]
+        if deepmd_pkg is not None:
+            if "deepmd.pt_expt" in saved:
+                deepmd_pkg.pt_expt = saved["deepmd.pt_expt"]
+            elif hasattr(deepmd_pkg, "pt_expt"):
+                # deepmd.pt_expt was not imported before this test; the fresh
+                # import bound it onto the parent package, so drop that stale
+                # attribute to leave the parent exactly as we found it.
+                delattr(deepmd_pkg, "pt_expt")
 
     assert groups == ["deepmd.pt_expt"]
     assert calls == ["load"]
