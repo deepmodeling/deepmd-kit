@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -460,6 +462,145 @@ inline GraphTensorPack buildGraphTensors(
                    .clone()
                    .to(device);
   return pack;
+}
+
+/**
+ * @brief Build the flat ``(ntypes+1)^2`` pair-type keep table.
+ *
+ * Inference-path mirror of the Python ``PairExcludeMask`` constructor
+ * (``deepmd/dpmodel/utils/exclude_mask.py``).  The table is row-major over
+ * ``[tj][ti]`` (flat index ``tj * (ntypes+1) + ti``); an entry is ``0`` when the
+ * ordered pair ``(ti, tj)`` is excluded and ``1`` otherwise.  Both ``(ti, tj)``
+ * and ``(tj, ti)`` are inserted into the exclude set, so the table is
+ * symmetric.  Type ``ntypes`` is the reserved virtual-atom row/column.
+ *
+ * Returns an empty vector when ``exclude_types`` is empty, so callers can treat
+ * an empty table as "no exclusion" (identity) just like the Python
+ * ``pair_excl is None`` early-exit.
+ *
+ * @param ntypes Number of real atom types.
+ * @param exclude_types List of excluded ``(ti, tj)`` type pairs.
+ */
+inline std::vector<int> buildPairExcludeTable(
+    const int ntypes, const std::vector<std::pair<int, int>>& exclude_types) {
+  if (exclude_types.empty()) {
+    return {};
+  }
+  const int n1 = ntypes + 1;
+  std::set<std::pair<int, int>> excl;
+  for (const auto& tt : exclude_types) {
+    excl.insert({tt.first, tt.second});
+    excl.insert({tt.second, tt.first});
+  }
+  // type_mask[tj][ti] == 0 iff (ti, tj) is excluded (mirrors the Python
+  // list comprehension in PairExcludeMask.__init__, reshape(-1)).
+  std::vector<int> type_mask(static_cast<size_t>(n1) * n1, 1);
+  for (int tj = 0; tj < n1; ++tj) {
+    for (int ti = 0; ti < n1; ++ti) {
+      if (excl.count({ti, tj})) {
+        type_mask[static_cast<size_t>(tj) * n1 + ti] = 0;
+      }
+    }
+  }
+  return type_mask;
+}
+
+/**
+ * @brief Graph pair-type exclusion: AND the per-edge keep-mask into
+ *        ``edge_mask``.
+ *
+ * Inference-path twin of Python ``apply_pair_exclusion`` (mask-only mode) in
+ * ``deepmd/dpmodel/utils/neighbor_graph/graph.py`` +
+ * ``PairExcludeMask.build_edge_exclude_mask``.  Kept side-by-side reviewable:
+ * same argument order (edge_index, edge_mask, atype, ...) and same variable
+ * names (``type_ij``, ``keep``).
+ *
+ * The compiled ``.pt2`` graph already applies this exclusion internally (the
+ * seam transform is traced into the exported forward), so this call is an
+ * idempotent backstop at the C++ ingestion seam.
+ *
+ * @param edge_index (2, E) int64 ``[src, dst]``; src = neighbor, dst = center.
+ * @param edge_mask (E,) bool real-vs-padding mask to be ANDed in place.
+ * @param atype (N,) int64 flat node types (clamped >= 0).
+ * @param type_mask_table Flat ``(ntypes+1)^2`` table from
+ *   ``buildPairExcludeTable``.  Empty => identity (returns ``edge_mask``).
+ * @param ntypes Number of real atom types.
+ * @return New ``edge_mask`` with excluded edges cleared.
+ */
+inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
+                                        const torch::Tensor& edge_mask,
+                                        const torch::Tensor& atype,
+                                        const std::vector<int>& type_mask_table,
+                                        const int ntypes) {
+  if (type_mask_table.empty()) {
+    return edge_mask;
+  }
+  const auto device = edge_mask.device();
+  const auto src = edge_index.index({0});  // (E,) neighbour
+  const auto dst = edge_index.index({1});  // (E,) center
+  const auto src_t = atype.index_select(0, src);
+  const auto dst_t = atype.index_select(0, dst);
+  // type_ij = atype[dst] * (ntypes + 1) + atype[src]  (matches Python)
+  const auto type_ij = dst_t * (ntypes + 1) + src_t;
+  const auto table =
+      torch::from_blob(const_cast<int*>(type_mask_table.data()),
+                       {static_cast<std::int64_t>(type_mask_table.size())},
+                       torch::TensorOptions().dtype(torch::kInt32))
+          .clone()
+          .to(device);
+  const auto keep = table.index_select(0, type_ij).to(torch::kBool);
+  return torch::logical_and(edge_mask, keep);
+}
+
+/**
+ * @brief Dense-nlist pair-type exclusion: erase excluded neighbours to ``-1``.
+ *
+ * Inference-path twin of Python ``apply_pair_exclusion_nlist`` in
+ * ``deepmd/dpmodel/utils/nlist.py`` + ``PairExcludeMask.build_type_exclude_mask``.
+ * Same argument order (nlist, atype_ext, ...) and same variable names
+ * (``type_ij``, ``keep``).  Idempotent: erasing ``-1`` a second time is a no-op.
+ *
+ * @param nlist (nf, nloc, nnei) int64 neighbour list; ``-1`` == empty slot.
+ * @param atype_ext (nf, nall) int64 extended atom types.
+ * @param type_mask_table Flat ``(ntypes+1)^2`` table from
+ *   ``buildPairExcludeTable``.  Empty => identity (returns ``nlist``).
+ * @param ntypes Number of real atom types.
+ * @return New neighbour list with excluded entries set to ``-1``.
+ */
+inline torch::Tensor applyPairExclusionNlist(
+    const torch::Tensor& nlist,
+    const torch::Tensor& atype_ext,
+    const std::vector<int>& type_mask_table,
+    const int ntypes) {
+  if (type_mask_table.empty()) {
+    return nlist;
+  }
+  const auto device = nlist.device();
+  const std::int64_t nf = nlist.size(0);
+  const std::int64_t nloc = nlist.size(1);
+  const std::int64_t nnei = nlist.size(2);
+  const std::int64_t nall = atype_ext.size(1);
+  // center types: first nloc extended atoms.  type_i = atype * (ntypes + 1).
+  const auto type_i = atype_ext.slice(1, 0, nloc) * (ntypes + 1);  // (nf, nloc)
+  // append virtual atom of type ntypes; map -1 neighbours to it.
+  const auto ae = torch::cat(
+      {atype_ext, torch::full({nf, 1}, ntypes, atype_ext.options())}, 1);
+  const auto nlist_for_type =
+      torch::where(nlist == -1, torch::full_like(nlist, nall), nlist);
+  const auto type_j = torch::gather(
+      ae.unsqueeze(1).expand({nf, nloc, nall + 1}), 2, nlist_for_type);
+  // type_ij = type_i * (ntypes + 1) + type_j  (matches Python: type_i already
+  // scaled above; here just add the neighbour type).
+  const auto type_ij = type_i.unsqueeze(2) + type_j;  // (nf, nloc, nnei)
+  const auto table =
+      torch::from_blob(const_cast<int*>(type_mask_table.data()),
+                       {static_cast<std::int64_t>(type_mask_table.size())},
+                       torch::TensorOptions().dtype(torch::kInt32))
+          .clone()
+          .to(device);
+  const auto keep =
+      table.index_select(0, type_ij.reshape({-1})).reshape({nf, nloc, nnei});
+  return torch::where(keep == 1, nlist, torch::full_like(nlist, -1));
 }
 
 /**

@@ -331,6 +331,13 @@ class DeepPotPTExpt : public DeepPotBackend {
   // continue to work; GNN archives must be regenerated to opt into
   // the fail-fast guard against the silent-corruption bug.
   bool has_message_passing_ = false;
+  // Flat (ntypes+1)^2 model-level pair-type keep table, rebuilt in ``init`` from
+  // the ``pair_exclude_types`` metadata field (see
+  // ``deepmd::buildPairExcludeTable``).  Empty => no model-level exclusion.
+  // Applied at the C++ ingestion seam (``applyPairExclusion`` graph /
+  // ``applyPairExclusionNlist`` dense) as an idempotent backstop; the compiled
+  // .pt2 graph already applies the same transform internally.
+  std::vector<int> pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

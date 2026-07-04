@@ -200,6 +200,21 @@ void DeepPotPTExpt::init(const std::string& model,
   // scripts and carry the explicit value.
   has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
                          metadata["has_message_passing"].as_bool();
+
+  // Model-level pair-type exclusion table.  ``pair_exclude_types`` is a list of
+  // [ti, tj] pairs; rebuild the flat (ntypes+1)^2 keep table exactly like the
+  // Python ``PairExcludeMask`` ctor so the ingestion seam can re-apply the same
+  // exclusion (idempotent backstop; the compiled graph already applies it).
+  {
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    if (metadata.obj_val.count("pair_exclude_types")) {
+      for (const auto& v : metadata["pair_exclude_types"].as_array()) {
+        pair_exclude_types.emplace_back(v[0].as_int(), v[1].as_int());
+      }
+    }
+    pair_exclude_table_ = deepmd::buildPairExcludeTable(ntypes,
+                                                        pair_exclude_types);
+  }
   if (has_comm_artifact_) {
     try {
       // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
@@ -875,12 +890,22 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           torch::full({1}, n_node_count, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
+      // Model-level pair exclusion at the ingestion seam (idempotent backstop;
+      // the compiled graph already applies the same transform internally).
+      const at::Tensor graph_edge_mask =
+          deepmd::applyPairExclusion(edge_tensors.edge_index,
+                                     edge_tensors.edge_mask, node_atype,
+                                     pair_exclude_table_, ntypes);
       flat_outputs =
           run_model_graph(node_atype, n_node_tensor, edge_tensors.edge_index,
-                          edge_tensors.edge_vec, edge_tensors.edge_mask,
-                          fparam_tensor, aparam_tensor, charge_spin_tensor);
+                          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
+                          aparam_tensor, charge_spin_tensor);
     } else {
-      flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
+      // Model-level pair exclusion at the dense ingestion seam (idempotent
+      // backstop; the compiled dense forward already applies the same erase).
+      const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+          firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
+      flat_outputs = run_model(coord_Tensor, atype_Tensor, excl_nlist,
                                mapping_tensor, fparam_tensor, aparam_tensor,
                                charge_spin_tensor);
     }
@@ -1238,13 +1263,22 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                         edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                         fparam_tensor, aparam_tensor, charge_spin_tensor);
   } else if (lower_input_is_graph_) {
+    // Model-level pair exclusion at the ingestion seam (idempotent backstop;
+    // the compiled graph already applies the same transform internally).
+    const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
+        graph_tensors.edge_index, graph_tensors.edge_mask, graph_tensors.atype,
+        pair_exclude_table_, ntypes);
     flat_outputs = run_model_graph(
         graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
-        graph_tensors.edge_vec, graph_tensors.edge_mask, fparam_tensor,
-        aparam_tensor, charge_spin_tensor);
+        graph_tensors.edge_vec, graph_edge_mask, fparam_tensor, aparam_tensor,
+        charge_spin_tensor);
   } else {
+    // Model-level pair exclusion at the dense ingestion seam (idempotent
+    // backstop; the compiled dense forward already applies the same erase).
+    const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+        nlist_tensor, atype_Tensor, pair_exclude_table_, ntypes);
     flat_outputs =
-        run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,
+        run_model(coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
                   fparam_tensor, aparam_tensor, charge_spin_tensor);
   }
 
