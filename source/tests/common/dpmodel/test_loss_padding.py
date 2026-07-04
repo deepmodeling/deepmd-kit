@@ -18,6 +18,9 @@ import numpy as np
 from deepmd.dpmodel.loss.dos import (
     DOSLoss,
 )
+from deepmd.dpmodel.loss.ener import (
+    EnergyLoss,
+)
 from deepmd.dpmodel.loss.tensor import (
     TensorLoss,
 )
@@ -427,4 +430,672 @@ class TestTensorLossGlobalGradAccum:
         loss_nm, _ = self._make_loss().call(1.0, NB, without_mask, label_dict)
         assert np.isclose(float(loss_m), float(loss_nm)), (
             f"all-ones mask must be no-op: {float(loss_m)} vs {float(loss_nm)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: EnergyLoss -- energy, force, virial, atom_ener, atom_pref
+# ---------------------------------------------------------------------------
+
+
+def _full_ener_dicts(nf, nloc, energy_pred, energy_label, mask=None, **overrides):
+    """Build complete model_pred and label_dict for EnergyLoss.call.
+
+    EnergyLoss.call fetches energy/force/virial/atom_energy unconditionally,
+    so all keys must be present regardless of which term is under test.
+    """
+    model_pred = {
+        "energy": energy_pred,  # [nf, 1]
+        "force": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "virial": np.zeros((nf, 9), dtype=np.float64),
+        "atom_energy": np.zeros((nf, nloc, 1), dtype=np.float64),
+    }
+    label_dict = {
+        "energy": energy_label,  # [nf, 1]
+        "force": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "virial": np.zeros((nf, 9), dtype=np.float64),
+        "atom_ener": np.zeros((nf, nloc, 1), dtype=np.float64),
+        "atom_pref": np.zeros((nf, nloc * 3), dtype=np.float64),
+        "find_energy": 1.0,
+        "find_force": 0.0,
+        "find_virial": 0.0,
+        "find_atom_ener": 0.0,
+        "find_atom_pref": 0.0,
+    }
+    if mask is not None:
+        model_pred["mask"] = mask
+    model_pred.update({k: v for k, v in overrides.items() if k in model_pred})
+    label_dict.update({k: v for k, v in overrides.items() if k in label_dict})
+    return model_pred, label_dict
+
+
+def _padded_force(f_A, f_B):
+    """Stack force arrays for a 2-frame padded batch (NA<=NP, NB==NP)."""
+    f_A_pad = np.zeros((NP, 3), dtype=np.float64)
+    f_A_pad[:NA] = f_A
+    return np.stack([f_A_pad, f_B], axis=0)  # [2, NP, 3]
+
+
+def _padded_atom(arr_A, arr_B, ncomp):
+    """Pad arr_A from [NA, ncomp] to [NP, ncomp] with zeros, stack with arr_B."""
+    pad = np.zeros((NP, ncomp), dtype=np.float64)
+    pad[:NA] = arr_A
+    return np.stack([pad, arr_B], axis=0)  # [2, NP, ncomp]
+
+
+def _padded_atom_flat(arr_A, arr_B, ncomp):
+    """Pad then reshape to [2, NP*ncomp] (for atom_pref shape)."""
+    return _padded_atom(arr_A, arr_B, ncomp).reshape(2, NP * ncomp)
+
+
+_MASK_PAD = np.array(
+    [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64
+)  # [2, NP]
+
+
+class TestDPModelEnergyLossEnerGradAccum:
+    """Idiom 2 (extensive) for the energy (has_e) term in EnergyLoss.
+
+    Covers: mse (norm_exp=1 and 2), mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", intensive=False, use_huber=False):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            loss_func=loss_func,
+            intensive_ener_virial=intensive,
+            use_huber=use_huber,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, e_A, e_A_hat, e_B, e_B_hat):
+        def make_A():
+            p, l = _full_ener_dicts(
+                1, NA, e_A, e_A_hat, mask=np.ones((1, NA), dtype=np.float64)
+            )
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1, NB, e_B, e_B_hat, mask=np.ones((1, NB), dtype=np.float64)
+            )
+            return p, l, NB
+
+        def make_padded():
+            e_pad = np.concatenate([e_A, e_B], axis=0)  # [2, 1]
+            e_hat_pad = np.concatenate([e_A_hat, e_B_hat], axis=0)
+            p, l = _full_ener_dicts(2, NP, e_pad, e_hat_pad, mask=_MASK_PAD)
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Energy MSE norm_exp=1 meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(
+            self._make_loss(loss_func="mse", intensive=False),
+            e_A,
+            e_A_hat,
+            e_B,
+            e_B_hat,
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Energy MSE norm_exp=2 meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(
+            self._make_loss(loss_func="mse", intensive=True),
+            e_A,
+            e_A_hat,
+            e_B,
+            e_B_hat,
+        )
+
+    def test_mae_grad_accum(self):
+        """Energy MAE meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(
+            self._make_loss(loss_func="mae"),
+            e_A,
+            e_A_hat,
+            e_B,
+            e_B_hat,
+        )
+
+    def test_huber_grad_accum(self):
+        """Energy Huber meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(
+            self._make_loss(loss_func="mse", use_huber=True),
+            e_A,
+            e_A_hat,
+            e_B,
+            e_B_hat,
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same energy loss as no mask."""
+        e = _rnd(1, 1)
+        e_hat = _rnd(1, 1)
+        loss_obj = self._make_loss()
+        p_mask, l_mask = _full_ener_dicts(
+            1, NP, e, e_hat, mask=np.ones((1, NP), dtype=np.float64)
+        )
+        p_nomask, l_nomask = _full_ener_dicts(1, NP, e, e_hat)
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nomask, l_nomask, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnergyLossForceGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=3) for the force (has_f) term.
+
+    Covers: mse, mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", use_huber=False, f_use_norm=False):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            loss_func=loss_func,
+            use_huber=use_huber,
+            f_use_norm=f_use_norm,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
+        def make_A():
+            p, l = _full_ener_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            p["force"] = f_A[None]  # [1, NA, 3]
+            l["force"] = f_A_hat[None]
+            l["find_force"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            p["force"] = f_B[None]
+            l["force"] = f_B_hat[None]
+            l["find_force"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            f_pad = _padded_force(f_A, f_B)  # [2, NP, 3]
+            f_hat_pad = _padded_force(f_A_hat, f_B_hat)
+            p, l = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            p["force"] = f_pad
+            l["force"] = f_hat_pad
+            l["find_force"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Force MSE meets the grad-accum invariant."""
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        self._run_invariant(self._make_loss("mse"), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Force MAE meets the grad-accum invariant."""
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        self._run_invariant(self._make_loss("mae"), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_huber_grad_accum(self):
+        """Force Huber meets the grad-accum invariant."""
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        self._run_invariant(
+            self._make_loss("mse", use_huber=True), f_A, f_A_hat, f_B, f_B_hat
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same force loss as no mask."""
+        f = _rnd(NP, 3)
+        f_hat = _rnd(NP, 3)
+        loss_obj = self._make_loss()
+
+        p_mask, l_mask = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NP))
+        )
+        p_mask["force"] = f[None]
+        l_mask["force"] = f_hat[None]
+        l_mask["find_force"] = 1.0
+
+        p_nm, l_nm = _full_ener_dicts(1, NP, np.zeros((1, 1)), np.zeros((1, 1)))
+        p_nm["force"] = f[None]
+        l_nm["force"] = f_hat[None]
+        l_nm["find_force"] = 1.0
+
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnergyLossVirialGradAccum:
+    """Idiom 2 (extensive, k=9) for the virial (has_v) term.
+
+    Covers: mse (norm_exp=1 and 2), mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", intensive=False, use_huber=False):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            loss_func=loss_func,
+            intensive_ener_virial=intensive,
+            use_huber=use_huber,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, v_A, v_A_hat, v_B, v_B_hat):
+        def make_A():
+            p, l = _full_ener_dicts(
+                1, NA, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NA))
+            )
+            p["virial"] = v_A[None]  # [1, 9]
+            l["virial"] = v_A_hat[None]
+            l["find_virial"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1, NB, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NB))
+            )
+            p["virial"] = v_B[None]
+            l["virial"] = v_B_hat[None]
+            l["find_virial"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            v_pad = np.stack([v_A, v_B], axis=0)  # [2, 9]
+            v_hat_pad = np.stack([v_A_hat, v_B_hat], axis=0)
+            p, l = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            p["virial"] = v_pad
+            l["virial"] = v_hat_pad
+            l["find_virial"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Virial MSE norm_exp=1 meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(
+            self._make_loss("mse", intensive=False), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Virial MSE norm_exp=2 meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(
+            self._make_loss("mse", intensive=True), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mae_grad_accum(self):
+        """Virial MAE meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(self._make_loss("mae"), v_A, v_A_hat, v_B, v_B_hat)
+
+    def test_huber_grad_accum(self):
+        """Virial Huber meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(
+            self._make_loss("mse", use_huber=True), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same virial loss as no mask."""
+        v = _rnd(9)
+        v_hat = _rnd(9)
+        loss_obj = self._make_loss()
+
+        p_mask, l_mask = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NP))
+        )
+        p_mask["virial"] = v[None]
+        l_mask["virial"] = v_hat[None]
+        l_mask["find_virial"] = 1.0
+
+        p_nm, l_nm = _full_ener_dicts(1, NP, np.zeros((1, 1)), np.zeros((1, 1)))
+        p_nm["virial"] = v[None]
+        l_nm["virial"] = v_hat[None]
+        l_nm["find_virial"] = 1.0
+
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnergyLossAtomEnerGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=1) for the atom_ener (has_ae) term.
+
+    Covers: mse, mae; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            loss_func=loss_func,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, ae_A, ae_A_hat, ae_B, ae_B_hat):
+        def make_A():
+            p, l = _full_ener_dicts(
+                1, NA, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NA))
+            )
+            p["atom_energy"] = ae_A[None]  # [1, NA, 1]
+            l["atom_ener"] = ae_A_hat[None]
+            l["find_atom_ener"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1, NB, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NB))
+            )
+            p["atom_energy"] = ae_B[None]
+            l["atom_ener"] = ae_B_hat[None]
+            l["find_atom_ener"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            ae_pad = _padded_atom(ae_A, ae_B, 1)  # [2, NP, 1]
+            ae_hat_pad = _padded_atom(ae_A_hat, ae_B_hat, 1)
+            p, l = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            p["atom_energy"] = ae_pad
+            l["atom_ener"] = ae_hat_pad
+            l["find_atom_ener"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Atom energy MSE meets the grad-accum invariant."""
+        ae_A = _rnd(NA, 1)
+        ae_A_hat = _rnd(NA, 1)
+        ae_B = _rnd(NB, 1)
+        ae_B_hat = _rnd(NB, 1)
+        self._run_invariant(self._make_loss("mse"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Atom energy MAE meets the grad-accum invariant."""
+        ae_A = _rnd(NA, 1)
+        ae_A_hat = _rnd(NA, 1)
+        ae_B = _rnd(NB, 1)
+        ae_B_hat = _rnd(NB, 1)
+        self._run_invariant(self._make_loss("mae"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom-energy loss as no mask."""
+        ae = _rnd(NP, 1)
+        ae_hat = _rnd(NP, 1)
+        loss_obj = self._make_loss()
+
+        p_mask, l_mask = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NP))
+        )
+        p_mask["atom_energy"] = ae[None]
+        l_mask["atom_ener"] = ae_hat[None]
+        l_mask["find_atom_ener"] = 1.0
+
+        p_nm, l_nm = _full_ener_dicts(1, NP, np.zeros((1, 1)), np.zeros((1, 1)))
+        p_nm["atom_energy"] = ae[None]
+        l_nm["atom_ener"] = ae_hat[None]
+        l_nm["find_atom_ener"] = 1.0
+
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnergyLossAtomPrefGradAccum:
+    """Idiom 1 with pref weight (ncomp=3) for the atom_pref (has_pf) term.
+
+    Covers: mse, mae; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            loss_func=loss_func,
+        )
+
+    def _loss_fn_pf_only(self, loss_obj, model_pred, label, natoms):
+        """Return the atom_pref contribution to the loss (subtract force loss)."""
+        # Both pref_f and pref_pf are 1.0 here, but we want ONLY the pf term.
+        # Use a loss with pref_pf=1 and pref_f=0 to isolate it.
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _make_pf_only_loss(self, loss_func="mse"):
+        """Loss with pref_f=0 and pref_pf=1 to isolate atom_pref term."""
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            loss_func=loss_func,
+        )
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B):
+        """Invariant for atom_pref using force diff weighted by pref."""
+
+        def make_A():
+            p, l = _full_ener_dicts(
+                1, NA, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NA))
+            )
+            p["force"] = f_A[None]
+            l["force"] = f_A_hat[None]
+            l["atom_pref"] = pf_A.reshape(1, NA * 3)
+            l["find_force"] = 1.0
+            l["find_atom_pref"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1, NB, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NB))
+            )
+            p["force"] = f_B[None]
+            l["force"] = f_B_hat[None]
+            l["atom_pref"] = pf_B.reshape(1, NB * 3)
+            l["find_force"] = 1.0
+            l["find_atom_pref"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            f_pad = _padded_force(f_A, f_B)
+            f_hat_pad = _padded_force(f_A_hat, f_B_hat)
+            pf_pad = _padded_atom_flat(pf_A, pf_B, 3)  # [2, NP*3]
+            p, l = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            p["force"] = f_pad
+            l["force"] = f_hat_pad
+            l["atom_pref"] = pf_pad
+            l["find_force"] = 1.0
+            l["find_atom_pref"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: float(loss_obj.call(1.0, na, mp, lb)[0]),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Atom-pref MSE meets the grad-accum invariant."""
+        f_A, f_A_hat = _rnd(NA, 3), _rnd(NA, 3)
+        pf_A = np.abs(_rnd(NA, 3)) + 0.1  # positive pref
+        f_B, f_B_hat = _rnd(NB, 3), _rnd(NB, 3)
+        pf_B = np.abs(_rnd(NB, 3)) + 0.1
+        self._run_invariant(
+            self._make_pf_only_loss("mse"), f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B
+        )
+
+    def test_mae_grad_accum(self):
+        """Atom-pref MAE meets the grad-accum invariant."""
+        f_A, f_A_hat = _rnd(NA, 3), _rnd(NA, 3)
+        pf_A = np.abs(_rnd(NA, 3)) + 0.1
+        f_B, f_B_hat = _rnd(NB, 3), _rnd(NB, 3)
+        pf_B = np.abs(_rnd(NB, 3)) + 0.1
+        self._run_invariant(
+            self._make_pf_only_loss("mae"), f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom-pref loss as no mask."""
+        f = _rnd(NP, 3)
+        f_hat = _rnd(NP, 3)
+        pf = np.abs(_rnd(NP, 3)) + 0.1
+        loss_obj = self._make_pf_only_loss("mse")
+
+        p_mask, l_mask = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NP))
+        )
+        p_mask["force"] = f[None]
+        l_mask["force"] = f_hat[None]
+        l_mask["atom_pref"] = pf.reshape(1, NP * 3)
+        l_mask["find_force"] = 1.0
+        l_mask["find_atom_pref"] = 1.0
+
+        p_nm, l_nm = _full_ener_dicts(1, NP, np.zeros((1, 1)), np.zeros((1, 1)))
+        p_nm["force"] = f[None]
+        l_nm["force"] = f_hat[None]
+        l_nm["atom_pref"] = pf.reshape(1, NP * 3)
+        l_nm["find_force"] = 1.0
+        l_nm["find_atom_pref"] = 1.0
+
+        loss_m = float(loss_obj.call(1.0, NP, p_mask, l_mask)[0])
+        loss_nm = float(loss_obj.call(1.0, NP, p_nm, l_nm)[0])
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
         )

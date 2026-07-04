@@ -18,6 +18,9 @@ import torch
 from deepmd.pt.loss.dos import (
     DOSLoss,
 )
+from deepmd.pt.loss.ener import (
+    EnergyStdLoss,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -581,4 +584,587 @@ class TestInjectAtomMask:
 
         assert torch.all(result["mask"] == 1.0), (
             "all-real atoms must give all-ones mask"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: EnergyStdLoss -- energy, force, virial, atom_ener, atom_pref
+# ---------------------------------------------------------------------------
+
+# Re-use same constants from Task 2 harness (NA=3, NB=5, NP=5).
+
+_MASK_PAD_PT = torch.tensor(
+    [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+    dtype=torch.float64,
+    device="cpu",
+)  # [2, NP]
+
+
+def _t(*shape, val=None):
+    """Random float64 CPU tensor."""
+    if val is not None:
+        return torch.full(shape, val, dtype=torch.float64, device="cpu")
+    return torch.tensor(RNG.standard_normal(shape), dtype=torch.float64, device="cpu")
+
+
+def _padded_force_t(f_A, f_B):
+    """Stack force tensors for 2-frame padded batch."""
+    pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+    pad[:NA] = f_A
+    return torch.stack([pad, f_B], dim=0)  # [2, NP, 3]
+
+
+def _padded_atom_t(a_A, a_B, ncomp):
+    """Pad arr_A from [NA, ncomp] to [NP, ncomp], stack with arr_B."""
+    pad = torch.zeros(NP, ncomp, dtype=torch.float64, device="cpu")
+    pad[:NA] = a_A
+    return torch.stack([pad, a_B], dim=0)  # [2, NP, ncomp]
+
+
+class _EnerLossMockModel:
+    """Callable returning a fixed model_pred dict (mask pre-populated)."""
+
+    def __init__(self, pred: dict):
+        self._pred = pred
+
+    def __call__(self, **kwargs):
+        return dict(self._pred)
+
+
+def _ener_loss_fn(loss_obj, model_pred, label, natoms):
+    """Call EnergyStdLoss.forward via mock model; return scalar loss tensor."""
+    _, loss, _ = loss_obj.forward(
+        input_dict={},
+        model=_EnerLossMockModel(model_pred),
+        label=label,
+        natoms=natoms,
+        learning_rate=1.0,
+    )
+    return loss
+
+
+class TestPTEnergyLossEnerGradAccum:
+    """Idiom 2 (extensive) for the energy term in EnergyStdLoss.
+
+    Covers: mse (norm_exp=1 and 2), mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", intensive=False, use_huber=False):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func=loss_func,
+            intensive_ener_virial=intensive,
+            use_huber=use_huber,
+        )
+
+    def _run_invariant(self, loss_obj, e_A, e_A_hat, e_B, e_B_hat):
+        def make_A():
+            mp = {
+                "energy": e_A,
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"energy": e_A_hat, "find_energy": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "energy": e_B,
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"energy": e_B_hat, "find_energy": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "energy": torch.cat([e_A, e_B], dim=0),
+                "mask": _MASK_PAD_PT,
+            }
+            lb = {
+                "energy": torch.cat([e_A_hat, e_B_hat], dim=0),
+                "find_energy": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Energy MSE norm_exp=1 meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(
+            self._make_loss("mse", intensive=False), e_A, e_A_hat, e_B, e_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Energy MSE norm_exp=2 meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(
+            self._make_loss("mse", intensive=True), e_A, e_A_hat, e_B, e_B_hat
+        )
+
+    def test_mae_grad_accum(self):
+        """Energy MAE meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(self._make_loss("mae"), e_A, e_A_hat, e_B, e_B_hat)
+
+    def test_huber_grad_accum(self):
+        """Energy Huber meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(
+            self._make_loss("mse", use_huber=True), e_A, e_A_hat, e_B, e_B_hat
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same energy loss as no mask."""
+        e = _t(1, 1)
+        e_hat = _t(1, 1)
+        loss_obj = self._make_loss()
+
+        mp_mask = {
+            "energy": e,
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"energy": e}
+        lb = {"energy": e_hat, "find_energy": 1.0}
+
+        loss_m = _ener_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnergyLossForceGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=3) for the force term.
+
+    Covers: mse, mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", use_huber=False, f_use_norm=False):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func=loss_func,
+            use_huber=use_huber,
+            f_use_norm=f_use_norm,
+        )
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
+        def make_A():
+            mp = {
+                "force": f_A.unsqueeze(0),  # [1, NA, 3]
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"force": f_A_hat.unsqueeze(0), "find_force": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "force": f_B.unsqueeze(0),
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"force": f_B_hat.unsqueeze(0), "find_force": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "force": _padded_force_t(f_A, f_B),  # [2, NP, 3]
+                "mask": _MASK_PAD_PT,
+            }
+            lb = {
+                "force": _padded_force_t(f_A_hat, f_B_hat),
+                "find_force": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Force MSE meets the grad-accum invariant."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        self._run_invariant(self._make_loss("mse"), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Force MAE meets the grad-accum invariant."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        self._run_invariant(self._make_loss("mae"), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_huber_grad_accum(self):
+        """Force Huber meets the grad-accum invariant."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        self._run_invariant(
+            self._make_loss("mse", use_huber=True), f_A, f_A_hat, f_B, f_B_hat
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same force loss as no mask."""
+        f = _t(NP, 3)
+        f_hat = _t(NP, 3)
+        loss_obj = self._make_loss()
+
+        mp_mask = {
+            "force": f.unsqueeze(0),
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"force": f.unsqueeze(0)}
+        lb = {"force": f_hat.unsqueeze(0), "find_force": 1.0}
+
+        loss_m = _ener_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnergyLossVirialGradAccum:
+    """Idiom 2 (extensive, k=9) for the virial term.
+
+    Covers: mse (norm_exp=1 and 2), mae, huber; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse", intensive=False, use_huber=False):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            loss_func=loss_func,
+            intensive_ener_virial=intensive,
+            use_huber=use_huber,
+        )
+
+    def _run_invariant(self, loss_obj, v_A, v_A_hat, v_B, v_B_hat):
+        def make_A():
+            mp = {
+                "virial": v_A.unsqueeze(0),  # [1, 9]
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"virial": v_A_hat.unsqueeze(0), "find_virial": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "virial": v_B.unsqueeze(0),
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"virial": v_B_hat.unsqueeze(0), "find_virial": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "virial": torch.stack([v_A, v_B], dim=0),  # [2, 9]
+                "mask": _MASK_PAD_PT,
+            }
+            lb = {
+                "virial": torch.stack([v_A_hat, v_B_hat], dim=0),
+                "find_virial": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Virial MSE norm_exp=1 meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(
+            self._make_loss("mse", intensive=False), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Virial MSE norm_exp=2 meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(
+            self._make_loss("mse", intensive=True), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mae_grad_accum(self):
+        """Virial MAE meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(self._make_loss("mae"), v_A, v_A_hat, v_B, v_B_hat)
+
+    def test_huber_grad_accum(self):
+        """Virial Huber meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(
+            self._make_loss("mse", use_huber=True), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same virial loss as no mask."""
+        v = _t(9)
+        v_hat = _t(9)
+        loss_obj = self._make_loss()
+
+        mp_mask = {
+            "virial": v.unsqueeze(0),
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"virial": v.unsqueeze(0)}
+        lb = {"virial": v_hat.unsqueeze(0), "find_virial": 1.0}
+
+        loss_m = _ener_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnergyLossAtomEnerGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=1) for the atom_ener term.
+
+    Covers: mse, mae; plus non-mixed no-op.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            loss_func=loss_func,
+        )
+
+    def _run_invariant(self, loss_obj, ae_A, ae_A_hat, ae_B, ae_B_hat):
+        def make_A():
+            mp = {
+                "atom_energy": ae_A.unsqueeze(0),  # [1, NA, 1]
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"atom_ener": ae_A_hat.unsqueeze(0), "find_atom_ener": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "atom_energy": ae_B.unsqueeze(0),
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"atom_ener": ae_B_hat.unsqueeze(0), "find_atom_ener": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            ae_pad = _padded_atom_t(ae_A, ae_B, 1)  # [2, NP, 1]
+            ae_hat_pad = _padded_atom_t(ae_A_hat, ae_B_hat, 1)
+            mp = {"atom_energy": ae_pad, "mask": _MASK_PAD_PT}
+            lb = {"atom_ener": ae_hat_pad, "find_atom_ener": 1.0}
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Atom-energy MSE meets the grad-accum invariant."""
+        ae_A = _t(NA, 1)
+        ae_A_hat = _t(NA, 1)
+        ae_B = _t(NB, 1)
+        ae_B_hat = _t(NB, 1)
+        self._run_invariant(self._make_loss("mse"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Atom-energy MAE meets the grad-accum invariant."""
+        ae_A = _t(NA, 1)
+        ae_A_hat = _t(NA, 1)
+        ae_B = _t(NB, 1)
+        ae_B_hat = _t(NB, 1)
+        self._run_invariant(self._make_loss("mae"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom-energy loss as no mask."""
+        ae = _t(NP, 1)
+        ae_hat = _t(NP, 1)
+        loss_obj = self._make_loss()
+
+        mp_mask = {
+            "atom_energy": ae.unsqueeze(0),
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"atom_energy": ae.unsqueeze(0)}
+        lb = {"atom_ener": ae_hat.unsqueeze(0), "find_atom_ener": 1.0}
+
+        loss_m = _ener_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnergyLossAtomPrefGradAccum:
+    """Idiom 1 with pref weight (ncomp=3) for the atom_pref term.
+
+    Covers: mse, mae; plus non-mixed no-op.
+    """
+
+    def _make_pf_only_loss(self, loss_func="mse"):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            loss_func=loss_func,
+        )
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B):
+        def make_A():
+            mp = {
+                "force": f_A.unsqueeze(0),
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {
+                "force": f_A_hat.unsqueeze(0),
+                "atom_pref": pf_A.unsqueeze(0),
+                "find_force": 1.0,
+                "find_atom_pref": 1.0,
+            }
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "force": f_B.unsqueeze(0),
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {
+                "force": f_B_hat.unsqueeze(0),
+                "atom_pref": pf_B.unsqueeze(0),
+                "find_force": 1.0,
+                "find_atom_pref": 1.0,
+            }
+            return mp, lb, NB
+
+        def make_padded():
+            f_pad = _padded_force_t(f_A, f_B)
+            f_hat_pad = _padded_force_t(f_A_hat, f_B_hat)
+            pf_pad = _padded_atom_t(pf_A, pf_B, 3)  # [2, NP, 3]
+            mp = {"force": f_pad, "mask": _MASK_PAD_PT}
+            lb = {
+                "force": f_hat_pad,
+                "atom_pref": pf_pad,
+                "find_force": 1.0,
+                "find_atom_pref": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Atom-pref MSE meets the grad-accum invariant."""
+        f_A, f_A_hat = _t(NA, 3), _t(NA, 3)
+        pf_A = torch.abs(_t(NA, 3)) + 0.1
+        f_B, f_B_hat = _t(NB, 3), _t(NB, 3)
+        pf_B = torch.abs(_t(NB, 3)) + 0.1
+        self._run_invariant(
+            self._make_pf_only_loss("mse"), f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B
+        )
+
+    def test_mae_grad_accum(self):
+        """Atom-pref MAE meets the grad-accum invariant."""
+        f_A, f_A_hat = _t(NA, 3), _t(NA, 3)
+        pf_A = torch.abs(_t(NA, 3)) + 0.1
+        f_B, f_B_hat = _t(NB, 3), _t(NB, 3)
+        pf_B = torch.abs(_t(NB, 3)) + 0.1
+        self._run_invariant(
+            self._make_pf_only_loss("mae"), f_A, f_A_hat, pf_A, f_B, f_B_hat, pf_B
+        )
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom-pref loss as no mask."""
+        f = _t(NP, 3)
+        f_hat = _t(NP, 3)
+        pf = torch.abs(_t(NP, 3)) + 0.1
+        loss_obj = self._make_pf_only_loss("mse")
+
+        mp_mask = {
+            "force": f.unsqueeze(0),
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"force": f.unsqueeze(0)}
+        lb = {
+            "force": f_hat.unsqueeze(0),
+            "atom_pref": pf.unsqueeze(0),
+            "find_force": 1.0,
+            "find_atom_pref": 1.0,
+        }
+
+        loss_m = _ener_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
         )

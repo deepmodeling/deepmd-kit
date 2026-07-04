@@ -239,6 +239,19 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
+
+        # Per-frame mask: recover real-atom count per frame when mask is provided.
+        if "mask" in model_pred:
+            maskf = model_pred["mask"]  # [nf, nloc], float
+            real_natoms_f = torch.sum(maskf, dim=-1)  # [nf]
+            inv = (1.0 / real_natoms_f).reshape(-1)  # [nf]
+            _nf = maskf.shape[0]
+            _nloc = maskf.shape[1]
+        else:
+            maskf = None
+            inv = None
+            _nf = None
+            _nloc = None
         # Normalization exponent controls loss scaling with system size:
         # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
         # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
@@ -267,19 +280,38 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                if not self.use_huber:
-                    loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
-                else:
-                    l_huber_loss = custom_huber_loss(
-                        atom_norm * energy_pred,
-                        atom_norm * energy_label,
-                        delta=self._huber_delta_energy,
+                if maskf is not None:
+                    # Idiom 2 (extensive): per-frame normalization.
+                    se = torch.square(energy_pred - energy_label)  # [nf, k]
+                    per_frame = torch.mean(se.reshape(_nf, -1), dim=-1)  # [nf]
+                    if not self.use_huber:
+                        loss += pref_e * torch.mean(per_frame * inv**norm_exp)
+                    else:
+                        inv_col = inv.reshape(_nf, 1)
+                        l_huber_loss = custom_huber_loss(
+                            inv_col * energy_pred,
+                            inv_col * energy_label,
+                            delta=self._huber_delta_energy,
+                        )
+                        loss += pref_e * l_huber_loss
+                    rmse_e = torch.sqrt(torch.mean(per_frame * inv**2))
+                    more_loss["rmse_e"] = self.display_if_exist(
+                        rmse_e.detach(), find_energy
                     )
-                    loss += pref_e * l_huber_loss
-                rmse_e = l2_ener_loss.sqrt() * atom_norm
-                more_loss["rmse_e"] = self.display_if_exist(
-                    rmse_e.detach(), find_energy
-                )
+                else:
+                    if not self.use_huber:
+                        loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
+                    else:
+                        l_huber_loss = custom_huber_loss(
+                            atom_norm * energy_pred,
+                            atom_norm * energy_label,
+                            delta=self._huber_delta_energy,
+                        )
+                        loss += pref_e * l_huber_loss
+                    rmse_e = l2_ener_loss.sqrt() * atom_norm
+                    more_loss["rmse_e"] = self.display_if_exist(
+                        rmse_e.detach(), find_energy
+                    )
                 # more_loss['log_keys'].append('rmse_e')
             elif self.loss_func == "mae":
                 l1_ener_loss = F.l1_loss(
@@ -287,18 +319,34 @@ class EnergyStdLoss(TaskLoss):
                     energy_label.reshape(-1),
                     reduction="mean",
                 )
-                loss += atom_norm * (pref_e * l1_ener_loss)
-                more_loss["mae_e"] = self.display_if_exist(
-                    l1_ener_loss.detach() * atom_norm,
-                    find_energy,
-                )
+                if maskf is not None:
+                    abs_e = torch.abs(energy_pred - energy_label)
+                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    l1_ener_masked = torch.mean(per_frame_ae * inv)
+                    loss += pref_e * l1_ener_masked
+                    more_loss["mae_e"] = self.display_if_exist(
+                        l1_ener_masked.detach(), find_energy
+                    )
+                else:
+                    loss += atom_norm * (pref_e * l1_ener_loss)
+                    more_loss["mae_e"] = self.display_if_exist(
+                        l1_ener_loss.detach() * atom_norm,
+                        find_energy,
+                    )
                 # more_loss['log_keys'].append('rmse_e')
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for energy loss."
                 )
             if mae:
-                mae_e = torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
+                if maskf is not None:
+                    abs_e = torch.abs(energy_pred - energy_label)
+                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    mae_e = torch.mean(per_frame_ae * inv)
+                else:
+                    mae_e = (
+                        torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
+                    )
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
                 mae_e_all = torch.mean(torch.abs(energy_pred - energy_label))
                 more_loss["mae_e_all"] = self.display_if_exist(
@@ -330,56 +378,131 @@ class EnergyStdLoss(TaskLoss):
                         more_loss["l2_force_loss"] = self.display_if_exist(
                             l2_force_loss.detach(), find_force
                         )
-                    if not self.use_huber:
-                        loss += (pref_f * l2_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    if maskf is not None:
+                        # Idiom 1 (per-atom masked mean, ncomp=3).
+                        diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
+                        maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        if not self.use_huber:
+                            sq_f = torch.square(diff_f_3d) * maskf_col
+                            per_frame_sum = sq_f.reshape(_nf, -1).sum(dim=-1)
+                            per_frame_dof = maskf.sum(dim=-1) * 3
+                            l2_f_masked = torch.mean(per_frame_sum / per_frame_dof)
+                            loss += (pref_f * l2_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
+                        else:
+                            if not self.f_use_norm:
+                                abs_e = torch.abs(diff_f_3d)
+                                quad = 0.5 * torch.square(diff_f_3d)
+                                lin = self._huber_delta_force * (
+                                    abs_e - 0.5 * self._huber_delta_force
+                                )
+                                huber_elem = torch.where(
+                                    abs_e <= self._huber_delta_force, quad, lin
+                                )
+                                huber_masked = huber_elem * maskf_col
+                                per_frame_dof = maskf.sum(dim=-1) * 3
+                            else:
+                                diff_3 = (force_label - force_pred).reshape(
+                                    _nf, _nloc, 3
+                                )
+                                norm_2d = torch.linalg.vector_norm(
+                                    diff_3.reshape(-1, 3), ord=2, dim=1
+                                ).reshape(_nf, _nloc)
+                                abs_n = norm_2d
+                                quad_n = 0.5 * torch.square(norm_2d)
+                                lin_n = self._huber_delta_force * (
+                                    abs_n - 0.5 * self._huber_delta_force
+                                )
+                                huber_n = torch.where(
+                                    abs_n <= self._huber_delta_force, quad_n, lin_n
+                                )
+                                huber_masked = (huber_n * maskf).reshape(_nf, _nloc, 1)
+                                per_frame_dof = maskf.sum(dim=-1)
+                            per_frame_sum = huber_masked.reshape(_nf, -1).sum(dim=-1)
+                            l_huber_masked = torch.mean(per_frame_sum / per_frame_dof)
+                            loss += pref_f * l_huber_masked
                     else:
-                        if not self.f_use_norm:
-                            l_huber_loss = custom_huber_loss(
-                                force_pred.reshape(-1),
-                                force_label.reshape(-1),
-                                delta=self._huber_delta_force,
+                        if not self.use_huber:
+                            loss += (pref_f * l2_force_loss).to(
+                                GLOBAL_PT_FLOAT_PRECISION
                             )
                         else:
-                            force_diff_norm = torch.linalg.vector_norm(
-                                (force_label - force_pred).reshape(-1, 3),
-                                ord=2,
-                                dim=1,
-                                keepdim=True,
-                            )
-                            l_huber_loss = custom_huber_loss(
-                                force_diff_norm,
-                                torch.zeros_like(force_diff_norm),
-                                delta=self._huber_delta_force,
-                            )
-                        loss += pref_f * l_huber_loss
+                            if not self.f_use_norm:
+                                l_huber_loss = custom_huber_loss(
+                                    force_pred.reshape(-1),
+                                    force_label.reshape(-1),
+                                    delta=self._huber_delta_force,
+                                )
+                            else:
+                                force_diff_norm = torch.linalg.vector_norm(
+                                    (force_label - force_pred).reshape(-1, 3),
+                                    ord=2,
+                                    dim=1,
+                                    keepdim=True,
+                                )
+                                l_huber_loss = custom_huber_loss(
+                                    force_diff_norm,
+                                    torch.zeros_like(force_diff_norm),
+                                    delta=self._huber_delta_force,
+                                )
+                            loss += pref_f * l_huber_loss
                     rmse_f = l2_force_loss.sqrt()
                     more_loss["rmse_f"] = self.display_if_exist(
                         rmse_f.detach(), find_force
                     )
                 elif self.loss_func == "mae":
-                    if not self.f_use_norm:
-                        l1_force_loss = F.l1_loss(
-                            force_label.reshape(-1),
-                            force_pred.reshape(-1),
-                            reduction="mean",
+                    if maskf is not None:
+                        diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
+                        maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        if not self.f_use_norm:
+                            abs_f = torch.abs(diff_f_3d) * maskf_col
+                            per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
+                            per_frame_dof = maskf.sum(dim=-1) * 3
+                            l1_f_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        else:
+                            diff_3 = (force_label - force_pred).reshape(_nf, _nloc, 3)
+                            norm_2d = torch.linalg.vector_norm(
+                                diff_3.reshape(-1, 3), ord=2, dim=1
+                            ).reshape(_nf, _nloc)
+                            masked_norm = norm_2d * maskf
+                            per_frame_sum = masked_norm.sum(dim=-1)
+                            per_frame_dof = maskf.sum(dim=-1)
+                            l1_f_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        more_loss["mae_f"] = self.display_if_exist(
+                            l1_f_masked.detach(), find_force
                         )
+                        loss += (pref_f * l1_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     else:
-                        l1_force_loss = torch.linalg.vector_norm(
-                            (force_label - force_pred).reshape(-1, 3),
-                            ord=2,
-                            dim=1,
-                            keepdim=True,
-                        ).mean()
-                    more_loss["mae_f"] = self.display_if_exist(
-                        l1_force_loss.detach(), find_force
-                    )
-                    loss += (pref_f * l1_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                        if not self.f_use_norm:
+                            l1_force_loss = F.l1_loss(
+                                force_label.reshape(-1),
+                                force_pred.reshape(-1),
+                                reduction="mean",
+                            )
+                        else:
+                            l1_force_loss = torch.linalg.vector_norm(
+                                (force_label - force_pred).reshape(-1, 3),
+                                ord=2,
+                                dim=1,
+                                keepdim=True,
+                            ).mean()
+                        more_loss["mae_f"] = self.display_if_exist(
+                            l1_force_loss.detach(), find_force
+                        )
+                        loss += (pref_f * l1_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 else:
                     raise NotImplementedError(
                         f"Loss type {self.loss_func} is not implemented for force loss."
                     )
                 if mae:
-                    mae_f = torch.mean(torch.abs(diff_f))
+                    if maskf is not None:
+                        diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
+                        maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        abs_f = torch.abs(diff_f_3d) * maskf_col
+                        per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
+                        per_frame_dof = maskf.sum(dim=-1) * 3
+                        mae_f = torch.mean(per_frame_sum / per_frame_dof)
+                    else:
+                        mae_f = torch.mean(torch.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
                         mae_f.detach(), find_force
                     )
@@ -400,17 +523,49 @@ class EnergyStdLoss(TaskLoss):
                         more_loss["l2_pref_force_loss"] = self.display_if_exist(
                             l2_pref_force_loss.detach(), find_atom_pref
                         )
-                    loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                    rmse_pf = l2_pref_force_loss.sqrt()
-                    more_loss["rmse_pf"] = self.display_if_exist(
-                        rmse_pf.detach(), find_atom_pref
-                    )
+                    if maskf is not None:
+                        # Idiom 1 with pref weight (ncomp=3).
+                        diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
+                        pf_3d = atom_pref.reshape(_nf, _nloc, 3)
+                        maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        sq_pf = torch.square(diff_f_3d) * pf_3d * maskf_col
+                        per_frame_sum = sq_pf.reshape(_nf, -1).sum(dim=-1)
+                        per_frame_dof = maskf.sum(dim=-1) * 3
+                        l2_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        loss += (pref_pf * l2_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
+                        rmse_pf = l2_pf_masked.sqrt()
+                        more_loss["rmse_pf"] = self.display_if_exist(
+                            rmse_pf.detach(), find_atom_pref
+                        )
+                    else:
+                        loss += (pref_pf * l2_pref_force_loss).to(
+                            GLOBAL_PT_FLOAT_PRECISION
+                        )
+                        rmse_pf = l2_pref_force_loss.sqrt()
+                        more_loss["rmse_pf"] = self.display_if_exist(
+                            rmse_pf.detach(), find_atom_pref
+                        )
                 elif self.loss_func == "mae":
                     l1_pref_force_loss = (torch.abs(diff_f) * atom_pref_reshape).mean()
-                    loss += (pref_pf * l1_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                    more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pref_force_loss.detach(), find_atom_pref
-                    )
+                    if maskf is not None:
+                        diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
+                        pf_3d = atom_pref.reshape(_nf, _nloc, 3)
+                        maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        abs_pf = torch.abs(diff_f_3d) * pf_3d * maskf_col
+                        per_frame_sum = abs_pf.reshape(_nf, -1).sum(dim=-1)
+                        per_frame_dof = maskf.sum(dim=-1) * 3
+                        l1_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        loss += (pref_pf * l1_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
+                        more_loss["mae_pf"] = self.display_if_exist(
+                            l1_pf_masked.detach(), find_atom_pref
+                        )
+                    else:
+                        loss += (pref_pf * l1_pref_force_loss).to(
+                            GLOBAL_PT_FLOAT_PRECISION
+                        )
+                        more_loss["mae_pf"] = self.display_if_exist(
+                            l1_pref_force_loss.detach(), find_atom_pref
+                        )
                 else:
                     raise NotImplementedError(
                         f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
@@ -420,15 +575,35 @@ class EnergyStdLoss(TaskLoss):
                 drdq = label["drdq"]
                 find_drdq = label.get("find_drdq", 0.0)
                 pref_gf = pref_gf * find_drdq
-                force_reshape_nframes = force_pred.reshape(-1, natoms * 3)
-                force_label_reshape_nframes = force_label.reshape(-1, natoms * 3)
-                drdq_reshape = drdq.reshape(-1, natoms * 3, self.numb_generalized_coord)
-                gen_force_label = torch.einsum(
-                    "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
-                )
-                gen_force = torch.einsum(
-                    "bij,bi->bj", drdq_reshape, force_reshape_nframes
-                )
+                if maskf is not None:
+                    # Mask per-atom forces before projecting onto generalized coords.
+                    f_3d = force_pred.reshape(_nf, _nloc, 3) * maskf.reshape(
+                        _nf, _nloc, 1
+                    )
+                    f_hat_3d = force_label.reshape(_nf, _nloc, 3) * maskf.reshape(
+                        _nf, _nloc, 1
+                    )
+                    f_flat = f_3d.reshape(_nf, _nloc * 3)
+                    f_hat_flat = f_hat_3d.reshape(_nf, _nloc * 3)
+                    drdq_reshape = drdq.reshape(
+                        _nf, _nloc * 3, self.numb_generalized_coord
+                    )
+                    gen_force = torch.einsum("bij,bi->bj", drdq_reshape, f_flat)
+                    gen_force_label = torch.einsum(
+                        "bij,bi->bj", drdq_reshape, f_hat_flat
+                    )
+                else:
+                    force_reshape_nframes = force_pred.reshape(-1, natoms * 3)
+                    force_label_reshape_nframes = force_label.reshape(-1, natoms * 3)
+                    drdq_reshape = drdq.reshape(
+                        -1, natoms * 3, self.numb_generalized_coord
+                    )
+                    gen_force_label = torch.einsum(
+                        "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
+                    )
+                    gen_force = torch.einsum(
+                        "bij,bi->bj", drdq_reshape, force_reshape_nframes
+                    )
                 diff_gen_force = gen_force_label - gen_force
                 l2_gen_force_loss = torch.square(diff_gen_force).mean()
                 if not self.inference:
@@ -444,43 +619,78 @@ class EnergyStdLoss(TaskLoss):
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
-            diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
+            v2d = model_pred["virial"].reshape(-1, 9)
+            v_hat_2d = label["virial"].reshape(-1, 9)
+            diff_v = v_hat_2d - v2d
             if self.loss_func == "mse":
                 l2_virial_loss = torch.mean(torch.square(diff_v))
                 if not self.inference:
                     more_loss["l2_virial_loss"] = self.display_if_exist(
                         l2_virial_loss.detach(), find_virial
                     )
-                if not self.use_huber:
-                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
-                else:
-                    l_huber_loss = custom_huber_loss(
-                        atom_norm * model_pred["virial"].reshape(-1),
-                        atom_norm * label["virial"].reshape(-1),
-                        delta=self._huber_delta_virial,
+                if maskf is not None:
+                    # Idiom 2 (extensive, k=9): per-frame normalization.
+                    se_v = torch.square(diff_v)  # [nf, 9]
+                    per_frame_v = torch.mean(se_v, dim=-1)  # [nf]
+                    if not self.use_huber:
+                        loss += pref_v * torch.mean(per_frame_v * inv**norm_exp)
+                    else:
+                        inv_col = inv.reshape(_nf, 1)
+                        l_huber_v = custom_huber_loss(
+                            inv_col * v2d,
+                            inv_col * v_hat_2d,
+                            delta=self._huber_delta_virial,
+                        )
+                        loss += pref_v * l_huber_v
+                    rmse_v = torch.sqrt(torch.mean(per_frame_v * inv**2))
+                    more_loss["rmse_v"] = self.display_if_exist(
+                        rmse_v.detach(), find_virial
                     )
-                    loss += pref_v * l_huber_loss
-                rmse_v = l2_virial_loss.sqrt() * atom_norm
-                more_loss["rmse_v"] = self.display_if_exist(
-                    rmse_v.detach(), find_virial
-                )
+                else:
+                    if not self.use_huber:
+                        loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                    else:
+                        l_huber_loss = custom_huber_loss(
+                            atom_norm * v2d.reshape(-1),
+                            atom_norm * v_hat_2d.reshape(-1),
+                            delta=self._huber_delta_virial,
+                        )
+                        loss += pref_v * l_huber_loss
+                    rmse_v = l2_virial_loss.sqrt() * atom_norm
+                    more_loss["rmse_v"] = self.display_if_exist(
+                        rmse_v.detach(), find_virial
+                    )
             elif self.loss_func == "mae":
                 l1_virial_loss = F.l1_loss(
-                    label["virial"].reshape(-1),
-                    model_pred["virial"].reshape(-1),
+                    v_hat_2d.reshape(-1),
+                    v2d.reshape(-1),
                     reduction="mean",
                 )
-                loss += atom_norm * (pref_v * l1_virial_loss)
-                more_loss["mae_v"] = self.display_if_exist(
-                    l1_virial_loss.detach() * atom_norm,
-                    find_virial,
-                )
+                if maskf is not None:
+                    abs_v = torch.abs(diff_v)  # [nf, 9]
+                    per_frame_v = torch.mean(abs_v, dim=-1)  # [nf]
+                    l1_v_masked = torch.mean(per_frame_v * inv)
+                    loss += pref_v * l1_v_masked
+                    more_loss["mae_v"] = self.display_if_exist(
+                        l1_v_masked.detach(), find_virial
+                    )
+                else:
+                    loss += atom_norm * (pref_v * l1_virial_loss)
+                    more_loss["mae_v"] = self.display_if_exist(
+                        l1_virial_loss.detach() * atom_norm,
+                        find_virial,
+                    )
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
             if mae:
-                mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
+                if maskf is not None:
+                    abs_v = torch.abs(diff_v)
+                    per_frame_v = torch.mean(abs_v, dim=-1)
+                    mae_v = torch.mean(per_frame_v * inv)
+                else:
+                    mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
                 more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
 
         if self.has_ae and "atom_energy" in model_pred and "atom_ener" in label:
@@ -499,29 +709,71 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["l2_atom_ener_loss"] = self.display_if_exist(
                         l2_atom_ener_loss.detach(), find_atom_ener
                     )
-                if not self.use_huber:
-                    loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                else:
-                    l_huber_loss = custom_huber_loss(
-                        atom_ener_reshape,
-                        atom_ener_label_reshape,
-                        delta=self._huber_delta_energy,
+                if maskf is not None:
+                    # Idiom 1 (per-atom masked mean, ncomp=1).
+                    ae_2d = atom_ener.reshape(_nf, _nloc)
+                    ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
+                    sq_ae = torch.square(ae_hat_2d - ae_2d) * maskf  # [nf, nloc]
+                    per_frame_sum = sq_ae.sum(dim=-1)  # [nf]
+                    per_frame_dof = maskf.sum(dim=-1)  # [nf]
+                    l2_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    if not self.use_huber:
+                        loss += (pref_ae * l2_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
+                    else:
+                        diff_ae = ae_hat_2d - ae_2d
+                        abs_ae = torch.abs(diff_ae)
+                        quad_ae = 0.5 * torch.square(diff_ae)
+                        lin_ae = self._huber_delta_energy * (
+                            abs_ae - 0.5 * self._huber_delta_energy
+                        )
+                        huber_ae = torch.where(
+                            abs_ae <= self._huber_delta_energy, quad_ae, lin_ae
+                        )
+                        huber_ae_m = huber_ae * maskf
+                        l_huber_ae = torch.mean(huber_ae_m.sum(dim=-1) / per_frame_dof)
+                        loss += pref_ae * l_huber_ae
+                    rmse_ae = l2_ae_masked.sqrt()
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        rmse_ae.detach(), find_atom_ener
                     )
-                    loss += pref_ae * l_huber_loss
-                rmse_ae = l2_atom_ener_loss.sqrt()
-                more_loss["rmse_ae"] = self.display_if_exist(
-                    rmse_ae.detach(), find_atom_ener
-                )
+                else:
+                    if not self.use_huber:
+                        loss += (pref_ae * l2_atom_ener_loss).to(
+                            GLOBAL_PT_FLOAT_PRECISION
+                        )
+                    else:
+                        l_huber_loss = custom_huber_loss(
+                            atom_ener_reshape,
+                            atom_ener_label_reshape,
+                            delta=self._huber_delta_energy,
+                        )
+                        loss += pref_ae * l_huber_loss
+                    rmse_ae = l2_atom_ener_loss.sqrt()
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        rmse_ae.detach(), find_atom_ener
+                    )
             elif self.loss_func == "mae":
                 l1_atom_ener_loss = F.l1_loss(
                     atom_ener_reshape,
                     atom_ener_label_reshape,
                     reduction="mean",
                 )
-                loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                more_loss["mae_ae"] = self.display_if_exist(
-                    l1_atom_ener_loss.detach(), find_atom_ener
-                )
+                if maskf is not None:
+                    ae_2d = atom_ener.reshape(_nf, _nloc)
+                    ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
+                    abs_ae = torch.abs(ae_hat_2d - ae_2d) * maskf
+                    per_frame_sum = abs_ae.sum(dim=-1)
+                    per_frame_dof = maskf.sum(dim=-1)
+                    l1_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    loss += (pref_ae * l1_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_ae_masked.detach(), find_atom_ener
+                    )
+                else:
+                    loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_atom_ener_loss.detach(), find_atom_ener
+                    )
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for atomic energy loss."
