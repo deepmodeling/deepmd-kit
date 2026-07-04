@@ -106,8 +106,18 @@ class PropertyLoss(TaskLoss):
         assert model_pred[var_name].shape == (nbz, self.task_dim)
         assert label[var_name].shape == (nbz, self.task_dim)
         if not self.intensive:
-            model_pred[var_name] = model_pred[var_name] / natoms
-            label[var_name] = label[var_name] / natoms
+            if "mask" in model_pred:
+                # Per-frame real atom count: shape [nf] → broadcast over [nf, task_dim].
+                real_natoms = (
+                    torch.sum(model_pred["mask"], dim=-1)
+                    .to(dtype=model_pred[var_name].dtype)
+                    .reshape(-1, 1)
+                )
+                model_pred[var_name] = model_pred[var_name] / real_natoms
+                label[var_name] = label[var_name] / real_natoms
+            else:
+                model_pred[var_name] = model_pred[var_name] / natoms
+                label[var_name] = label[var_name] / natoms
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]

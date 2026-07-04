@@ -85,8 +85,17 @@ class PropertyLoss(Loss):
 
         # Normalize by natoms for extensive properties (without mutating input)
         if not self.intensive:
-            pred = pred / natoms
-            label = label / natoms
+            if "mask" in model_dict:
+                # Per-frame real atom count: shape [nf] → broadcast over [nf, task_dim].
+                real_natoms = xp.reshape(
+                    xp.astype(xp.sum(model_dict["mask"], -1), pred.dtype),
+                    (-1,) + (1,) * (pred.ndim - 1),
+                )
+                pred = pred / real_natoms
+                label = label / real_natoms
+            else:
+                pred = pred / natoms
+                label = label / natoms
 
         # Get out_std and out_bias
         if self.out_std is not None:

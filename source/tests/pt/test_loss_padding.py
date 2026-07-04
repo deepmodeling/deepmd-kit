@@ -24,6 +24,9 @@ from deepmd.pt.loss.ener import (
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
+from deepmd.pt.loss.property import (
+    PropertyLoss,
+)
 from deepmd.pt.loss.tensor import (
     TensorLoss,
 )
@@ -1187,4 +1190,165 @@ class TestPTEnergyLossAtomPrefGradAccum:
         loss_nm = _ener_loss_fn(loss_obj, mp_nm, lb, NP)
         assert torch.isclose(loss_m, loss_nm), (
             f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 4: PropertyLoss -- extensive (not intensive) property
+# ---------------------------------------------------------------------------
+
+PROP_TASK_DIM = 2
+PROP_VAR = "test_prop"
+
+
+class TestPTPropertyLossExtensiveGradAccum:
+    """Idiom 2 (per-frame real-natoms normalization) for extensive pt PropertyLoss.
+
+    _loss_fn wraps the raw loss with /nf so the per-frame average matches the
+    separate-frame reference (pt PropertyLoss uses reduction='sum' over frames).
+    The mask is pre-populated in model_pred so _inject_atom_mask leaves it alone.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return PropertyLoss(
+            task_dim=PROP_TASK_DIM,
+            var_name=PROP_VAR,
+            loss_func=loss_func,
+            intensive=False,
+            # Provide explicit out_std/out_bias to avoid accessing model.atomic_model.
+            out_std=[1.0] * PROP_TASK_DIM,
+            out_bias=[0.0] * PROP_TASK_DIM,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        """Return per-frame-averaged loss (raw loss / nf)."""
+        nf = model_pred[PROP_VAR].shape[0]
+        _, loss, _ = loss_obj.forward(
+            input_dict={},  # no atype; mask already in model_pred
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss / nf
+
+    def _run_invariant(self, loss_obj, p_A, l_A, p_B, l_B):
+        def make_A():
+            return (
+                {
+                    PROP_VAR: p_A,
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                },
+                {PROP_VAR: l_A.clone()},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {
+                    PROP_VAR: p_B,
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                },
+                {PROP_VAR: l_B.clone()},
+                NB,
+            )
+
+        def make_padded():
+            return (
+                {
+                    PROP_VAR: torch.cat([p_A, p_B], dim=0),  # [2, task_dim]
+                    "mask": _MASK_PAD_PT,
+                },
+                {PROP_VAR: torch.cat([l_A, l_B], dim=0)},
+                NP,
+            )
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """MSE extensive property meets the grad-accum invariant."""
+        p_A = _rnd_t(1, PROP_TASK_DIM)
+        l_A = _rnd_t(1, PROP_TASK_DIM)
+        p_B = _rnd_t(1, PROP_TASK_DIM)
+        l_B = _rnd_t(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("mse"), p_A, l_A, p_B, l_B)
+
+    def test_mae_grad_accum(self):
+        """MAE extensive property meets the grad-accum invariant."""
+        p_A = _rnd_t(1, PROP_TASK_DIM)
+        l_A = _rnd_t(1, PROP_TASK_DIM)
+        p_B = _rnd_t(1, PROP_TASK_DIM)
+        l_B = _rnd_t(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("mae"), p_A, l_A, p_B, l_B)
+
+    def test_smooth_mae_grad_accum(self):
+        """smooth_mae extensive property meets the grad-accum invariant."""
+        p_A = _rnd_t(1, PROP_TASK_DIM)
+        l_A = _rnd_t(1, PROP_TASK_DIM)
+        p_B = _rnd_t(1, PROP_TASK_DIM)
+        l_B = _rnd_t(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("smooth_mae"), p_A, l_A, p_B, l_B)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same extensive-property loss as no mask."""
+        p = _rnd_t(2, PROP_TASK_DIM)
+        l = _rnd_t(2, PROP_TASK_DIM)
+        loss_obj = self._make_loss("mse")
+        mp_mask = {
+            PROP_VAR: p,
+            "mask": torch.ones(2, NB, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {PROP_VAR: p}
+        # pt forward mutates label[var_name]; use separate dicts for each call.
+        lb_m = {PROP_VAR: l.clone()}
+        lb_nm = {PROP_VAR: l.clone()}
+        loss_m = self._loss_fn(loss_obj, mp_mask, lb_m, NB)
+        loss_nm = self._loss_fn(loss_obj, mp_nm, lb_nm, NB)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTPropertyLossIntensiveUnaffectedByMask:
+    """Intensive property loss must be unchanged whether or not mask is present."""
+
+    def _make_loss(self):
+        return PropertyLoss(
+            task_dim=PROP_TASK_DIM,
+            var_name=PROP_VAR,
+            loss_func="mse",
+            intensive=True,
+            out_std=[1.0] * PROP_TASK_DIM,
+            out_bias=[0.0] * PROP_TASK_DIM,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        _, loss, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss
+
+    def test_intensive_ignores_mask(self):
+        """Intensive property: masked batch == unmasked batch."""
+        p = _rnd_t(2, PROP_TASK_DIM)
+        l = _rnd_t(2, PROP_TASK_DIM)
+        loss_obj = self._make_loss()
+        mp_mask = {PROP_VAR: p, "mask": _MASK_PAD_PT}
+        mp_nm = {PROP_VAR: p}
+        # Use separate label dicts since pt forward mutates label[var_name].
+        lb_m = {PROP_VAR: l.clone()}
+        lb_nm = {PROP_VAR: l.clone()}
+        loss_m = self._loss_fn(loss_obj, mp_mask, lb_m, NP)
+        loss_nm = self._loss_fn(loss_obj, mp_nm, lb_nm, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"intensive property must ignore mask: {loss_m.item()} vs {loss_nm.item()}"
         )

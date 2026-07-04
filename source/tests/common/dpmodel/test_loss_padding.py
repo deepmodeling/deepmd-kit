@@ -21,6 +21,9 @@ from deepmd.dpmodel.loss.dos import (
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
 )
+from deepmd.dpmodel.loss.property import (
+    PropertyLoss,
+)
 from deepmd.dpmodel.loss.tensor import (
     TensorLoss,
 )
@@ -1120,4 +1123,129 @@ class TestDPModelEnergyLossAtomPrefGradAccum:
         loss_nm = float(loss_obj.call(1.0, NP, p_nm, l_nm)[0])
         assert np.isclose(loss_m, loss_nm), (
             f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 4: PropertyLoss -- extensive (not intensive) property
+# ---------------------------------------------------------------------------
+
+PROP_TASK_DIM = 2
+PROP_VAR = "test_prop"
+
+
+class TestPropertyLossExtensiveGradAccum:
+    """Idiom 2 (per-frame real-natoms normalization) for extensive PropertyLoss.
+
+    The _loss_fn wrapper divides by nf so that the per-frame average matches
+    the separate-frame reference (property loss uses sum, not mean, over frames).
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return PropertyLoss(
+            task_dim=PROP_TASK_DIM,
+            var_name=PROP_VAR,
+            loss_func=loss_func,
+            intensive=False,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        """Return per-frame-averaged loss (raw loss / nf)."""
+        nf = model_pred[PROP_VAR].shape[0]
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss) / nf
+
+    def _run_invariant(self, loss_obj, p_A, l_A, p_B, l_B):
+        def make_A():
+            return (
+                {PROP_VAR: p_A, "mask": np.ones((1, NA), dtype=np.float64)},
+                {PROP_VAR: l_A},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {PROP_VAR: p_B, "mask": np.ones((1, NB), dtype=np.float64)},
+                {PROP_VAR: l_B},
+                NB,
+            )
+
+        def make_padded():
+            return (
+                {
+                    PROP_VAR: np.concatenate([p_A, p_B], axis=0),  # [2, task_dim]
+                    "mask": _MASK_PAD,
+                },
+                {PROP_VAR: np.concatenate([l_A, l_B], axis=0)},
+                NP,
+            )
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """MSE extensive property meets the grad-accum invariant."""
+        p_A = _rnd(1, PROP_TASK_DIM)
+        l_A = _rnd(1, PROP_TASK_DIM)
+        p_B = _rnd(1, PROP_TASK_DIM)
+        l_B = _rnd(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("mse"), p_A, l_A, p_B, l_B)
+
+    def test_mae_grad_accum(self):
+        """MAE extensive property meets the grad-accum invariant."""
+        p_A = _rnd(1, PROP_TASK_DIM)
+        l_A = _rnd(1, PROP_TASK_DIM)
+        p_B = _rnd(1, PROP_TASK_DIM)
+        l_B = _rnd(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("mae"), p_A, l_A, p_B, l_B)
+
+    def test_smooth_mae_grad_accum(self):
+        """smooth_mae extensive property meets the grad-accum invariant."""
+        p_A = _rnd(1, PROP_TASK_DIM)
+        l_A = _rnd(1, PROP_TASK_DIM)
+        p_B = _rnd(1, PROP_TASK_DIM)
+        l_B = _rnd(1, PROP_TASK_DIM)
+        self._run_invariant(self._make_loss("smooth_mae"), p_A, l_A, p_B, l_B)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same extensive-property loss as no mask."""
+        p = _rnd(2, PROP_TASK_DIM)
+        l = _rnd(2, PROP_TASK_DIM)
+        loss_obj = self._make_loss("mse")
+        # PropertyLoss.call rebinds local `label` (no in-place mutation) so l is safe to reuse.
+        with_mask = {PROP_VAR: p, "mask": np.ones((2, NB), dtype=np.float64)}
+        without_mask = {PROP_VAR: p}
+        loss_m, _ = loss_obj.call(1.0, NB, with_mask, {PROP_VAR: l})
+        loss_nm, _ = loss_obj.call(1.0, NB, without_mask, {PROP_VAR: l})
+        assert np.isclose(float(loss_m), float(loss_nm)), (
+            f"all-ones mask must be no-op: {float(loss_m)} vs {float(loss_nm)}"
+        )
+
+
+class TestPropertyLossIntensiveUnaffectedByMask:
+    """Intensive property loss must be unchanged whether or not mask is present."""
+
+    def _make_loss(self):
+        return PropertyLoss(
+            task_dim=PROP_TASK_DIM,
+            var_name=PROP_VAR,
+            loss_func="mse",
+            intensive=True,
+        )
+
+    def test_intensive_ignores_mask(self):
+        """Intensive property: padded-batch loss == unmasked-batch loss."""
+        p = _rnd(2, PROP_TASK_DIM)
+        l = _rnd(2, PROP_TASK_DIM)
+        loss_obj = self._make_loss()
+        with_mask = {PROP_VAR: p, "mask": _MASK_PAD}
+        without_mask = {PROP_VAR: p}
+        loss_m, _ = loss_obj.call(1.0, NP, with_mask, {PROP_VAR: l})
+        loss_nm, _ = loss_obj.call(1.0, NP, without_mask, {PROP_VAR: l})
+        assert np.isclose(float(loss_m), float(loss_nm)), (
+            f"intensive property must ignore mask: {float(loss_m)} vs {float(loss_nm)}"
         )
