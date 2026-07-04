@@ -166,3 +166,50 @@ def test_compact_invariance_vs_mask_only() -> None:
         result_compact[ei] += v
 
     np.testing.assert_allclose(result_mask, result_compact)
+
+
+# ---------------------------------------------------------------------------
+# compact=True with angle fields — must raise NotImplementedError
+# ---------------------------------------------------------------------------
+
+
+def _toy_graph_with_angles():
+    """Same base graph as _toy_graph but with angle_index/angle_mask populated."""
+    g = _toy_graph()
+    import dataclasses
+
+    # Two toy angles (pairs of edges sharing a center)
+    angle_index = np.array([[0, 1], [1, 2]], dtype=np.int64)
+    angle_mask = np.array([1, 1], dtype=np.int32)
+    return dataclasses.replace(g, angle_index=angle_index, angle_mask=angle_mask)
+
+
+def test_compact_raises_when_angle_index_present() -> None:
+    """compact=True must raise NotImplementedError when angle_index is set."""
+    g = _toy_graph_with_angles()
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    with pytest.raises(NotImplementedError, match="angle"):
+        apply_pair_exclusion(g, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+
+
+def test_compact_raises_when_only_angle_mask_present() -> None:
+    """compact=True must raise even when only angle_mask (not angle_index) is set."""
+    import dataclasses
+
+    g = _toy_graph()
+    angle_mask = np.array([1], dtype=np.int32)
+    g_with_mask = dataclasses.replace(g, angle_mask=angle_mask)
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    with pytest.raises(NotImplementedError, match="angle"):
+        apply_pair_exclusion(
+            g_with_mask, atype, PairExcludeMask(2, [(0, 1)]), compact=True
+        )
+
+
+def test_compact_works_when_angle_fields_are_none() -> None:
+    """compact=True must NOT raise when angle_index and angle_mask are both None."""
+    g = _toy_graph()  # angle_index=None, angle_mask=None by default
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    # Should succeed; reuse the existing compact assertion
+    out = apply_pair_exclusion(g, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    assert out.edge_index.shape[1] == 2

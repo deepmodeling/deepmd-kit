@@ -222,6 +222,14 @@ def apply_pair_exclusion(
         edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
     )
     if compact:
+        if graph.angle_index is not None or graph.angle_mask is not None:
+            raise NotImplementedError(
+                "apply_pair_exclusion(compact=True) is not supported when the "
+                "NeighborGraph carries angle fields (angle_index / angle_mask). "
+                "Angle indices reference pre-compaction edge positions and would "
+                "become silently wrong after edge compaction. Either use "
+                "compact=False (mask-only mode) or strip the angle fields first."
+            )
         (keep_idx,) = xp.nonzero(out.edge_mask)
         out = dataclasses.replace(
             out,
