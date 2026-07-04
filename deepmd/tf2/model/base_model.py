@@ -56,6 +56,22 @@ def _collect_model_predict(
     return model_predict, reduced_output_tensors
 
 
+def _negative_coordinate_derivative(
+    tape: tf.GradientTape,
+    reduced_output_tensor: tf.Tensor,
+    coord_tensor: tf.Tensor,
+    output_size: int,
+) -> tf.Tensor:
+    if output_size == 1:
+        grad = tape.gradient(
+            reduced_output_tensor,
+            coord_tensor,
+            unconnected_gradients=tf.UnconnectedGradients.ZERO,
+        )
+        return -grad[:, tf.newaxis, :, :]
+    return -tape.batch_jacobian(reduced_output_tensor, coord_tensor)
+
+
 def forward_common_atomic(
     self: "BaseModel",
     extended_coord: xp.ndarray,
@@ -65,6 +81,7 @@ def forward_common_atomic(
     fparam: xp.ndarray | None = None,
     aparam: xp.ndarray | None = None,
     do_atomic_virial: bool = False,
+    do_deriv_c: bool = True,
     extended_coord_corr: xp.ndarray | None = None,
     comm_dict: dict | None = None,
     charge_spin: xp.ndarray | None = None,
@@ -113,7 +130,12 @@ def forward_common_atomic(
         kk_derv_r, kk_derv_c = get_deriv_name(kk)
         assert tape is not None
         reduced_output_tensor = reduced_output_tensors[kk]
-        ff_tensor = -tape.batch_jacobian(reduced_output_tensor, coord_tensor)
+        ff_tensor = _negative_coordinate_derivative(
+            tape,
+            reduced_output_tensor,
+            coord_tensor,
+            vdef.output_size,
+        )
         ff = wrap_tensor(ff_tensor)
 
         # extended_force: [nf, nall, *def, 3]
@@ -127,6 +149,10 @@ def forward_common_atomic(
 
         if vdef.c_differentiable:
             assert vdef.r_differentiable
+            if not do_deriv_c:
+                model_predict[kk_derv_c] = None
+                model_predict[kk_derv_c + "_redu"] = None
+                continue
             # avr: [nf, *def, nall, 3, 3]
             avr = xp.einsum("f...ai,faj->f...aij", ff, extended_coord)
             if extended_coord_corr is not None:

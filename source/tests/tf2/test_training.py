@@ -13,8 +13,12 @@ from typing import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.loss import (
+    EnergyLoss,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
+    ModelOutputDef,
     OutputVariableDef,
 )
 from deepmd.dpmodel.train import (
@@ -118,6 +122,21 @@ class _FakeEnergyModel:
         )
 
 
+class _FakeVirialEnergyModel(_FakeEnergyModel):
+    def atomic_output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    "energy",
+                    [1],
+                    reducible=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                )
+            ]
+        )
+
+
 def _make_minimal_trainer() -> tuple[Trainer, _LinearModel]:
     trainer = object.__new__(Trainer)
     model = _LinearModel()
@@ -159,6 +178,216 @@ def test_forward_common_atomic_reuses_taped_atomic_forward() -> None:
     )
 
 
+def test_forward_common_atomic_scalar_output_avoids_batch_jacobian(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _FakeEnergyModel()
+    coord = tf.constant(
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]],
+        dtype=tf.float64,
+    )
+
+    def fail_batch_jacobian(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise AssertionError("scalar output should use tape.gradient")
+
+    monkeypatch.setattr(tf.GradientTape, "batch_jacobian", fail_batch_jacobian)
+
+    result = forward_common_atomic(
+        model,
+        wrap_tensor(coord),
+        tf.constant([[0, 1]], dtype=tf.int32),
+        tf.constant([[[0], [1]]], dtype=tf.int32),
+    )
+
+    np.testing.assert_allclose(
+        to_tf_tensor(result["energy_derv_r"]).numpy(),
+        (-2.0 * coord[:, :, tf.newaxis, :]).numpy(),
+    )
+
+
+def test_forward_common_atomic_can_skip_virial_derivative() -> None:
+    model = _FakeVirialEnergyModel()
+    coord = tf.constant(
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]],
+        dtype=tf.float64,
+    )
+
+    result = forward_common_atomic(
+        model,
+        wrap_tensor(coord),
+        tf.constant([[0, 1]], dtype=tf.int32),
+        tf.constant([[[0], [1]]], dtype=tf.int32),
+        do_deriv_c=False,
+    )
+
+    np.testing.assert_allclose(
+        to_tf_tensor(result["energy_derv_r"]).numpy(),
+        (-2.0 * coord[:, :, tf.newaxis, :]).numpy(),
+    )
+    assert result["energy_derv_c"] is None
+    assert result["energy_derv_c_redu"] is None
+
+
+def test_model_call_from_call_lower_uses_tf2_native_communicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    captured: dict[str, Any] = {}
+
+    def fake_communicate(
+        model_ret: dict[str, Any],
+        model_output_def: ModelOutputDef,
+        mapping: Any,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, Any]:
+        captured["model_ret_is_tensor"] = all(
+            value is None or isinstance(value, tf.Tensor)
+            for value in model_ret.values()
+        )
+        captured["mapping_is_tensor"] = isinstance(mapping, tf.Tensor)
+        captured["do_atomic_virial"] = do_atomic_virial
+        captured["model_output_def"] = model_output_def
+        return {
+            "energy": model_ret["energy"],
+            "energy_redu": tf.reduce_sum(model_ret["energy"], axis=1),
+        }
+
+    monkeypatch.setattr(
+        make_model_module,
+        "communicate_extended_output",
+        fake_communicate,
+    )
+
+    def call_lower(
+        extended_coord: Any,
+        extended_atype: Any,
+        nlist: Any,
+        mapping: Any,
+        *,
+        fparam: Any = None,
+        aparam: Any = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del extended_coord, nlist, mapping, fparam, aparam
+        captured["lower_kwargs"] = kwargs
+        atype = to_tf_tensor(extended_atype)
+        assert atype is not None
+        return {
+            "energy": tf.ones(
+                tf.concat([tf.shape(atype), tf.constant([1], dtype=tf.int32)], axis=0),
+                dtype=tf.float64,
+            )
+        }
+
+    model_output_def = ModelOutputDef(
+        FittingOutputDef(
+            [
+                OutputVariableDef(
+                    "energy",
+                    [1],
+                    reducible=True,
+                    r_differentiable=True,
+                )
+            ]
+        )
+    )
+
+    result = make_model_module.model_call_from_call_lower(
+        call_lower=call_lower,
+        rcut=1.0,
+        sel=[1],
+        mixed_types=False,
+        model_output_def=model_output_def,
+        coord=tf.constant([[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]], dtype=tf.float64),
+        atype=tf.constant([[0, 0]], dtype=tf.int32),
+        box=None,
+        fparam=None,
+        aparam=None,
+        pass_lower_kwargs=True,
+    )
+
+    assert captured == {
+        "model_ret_is_tensor": True,
+        "mapping_is_tensor": True,
+        "do_atomic_virial": False,
+        "model_output_def": model_output_def,
+        "lower_kwargs": {
+            "nlist_is_formatted": True,
+            "do_atomic_virial": False,
+            "do_deriv_c": True,
+            "charge_spin": None,
+        },
+    }
+    assert isinstance(to_tf_tensor(result["energy_redu"]), tf.Tensor)
+
+
+def test_tf2_dp_model_call_common_uses_tf2_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
+    captured: dict[str, Any] = {}
+
+    class FakeDPModel:
+        def call_common(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            del args, kwargs
+            raise AssertionError("generic dpmodel call_common should not be used")
+
+        def call_common_lower(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            del args, kwargs
+            return {}
+
+        def _input_type_cast(
+            self,
+            coord: Any,
+            *,
+            box: Any = None,
+            fparam: Any = None,
+            aparam: Any = None,
+            charge_spin: Any = None,
+        ) -> tuple[Any, Any, Any, Any, Any, Any]:
+            return coord, box, fparam, aparam, charge_spin, coord.dtype
+
+        def _output_type_cast(
+            self,
+            model_ret: dict[str, Any],
+            input_prec: Any,
+        ) -> dict[str, Any]:
+            captured["input_prec"] = input_prec
+            return model_ret
+
+        def get_rcut(self) -> float:
+            return 1.0
+
+        def get_sel(self) -> list[int]:
+            return [1]
+
+        def mixed_types(self) -> bool:
+            return False
+
+        def model_output_def(self) -> str:
+            return "output_def"
+
+    def fake_helper(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"energy": tf.constant([[[1.0]]], dtype=tf.float64)}
+
+    monkeypatch.setattr(dp_model_module, "tf2_model_call_from_call_lower", fake_helper)
+    model_class = dp_model_module.make_tf2_dp_model_from_dpmodel(FakeDPModel, object)
+    model = model_class()
+
+    result = model.call_common(
+        tf.constant([[[0.0, 0.0, 0.0]]], dtype=tf.float64),
+        tf.constant([[0]], dtype=tf.int32),
+    )
+
+    assert result["energy"].shape == (1, 1, 1)
+    assert captured["model_output_def"] == "output_def"
+    assert captured["pass_lower_kwargs"] is True
+    assert captured["call_lower"] == model.call_common_lower
+    assert isinstance(to_tf_tensor(captured["coord"]), tf.Tensor)
+
+
 def test_compiled_train_step_is_tf_function_and_updates_model() -> None:
     trainer, model = _make_minimal_trainer()
     compiled = trainer._make_compiled_train_step(DEFAULT_TASK_KEY)
@@ -173,6 +402,7 @@ def test_compiled_train_step_is_tf_function_and_updates_model() -> None:
         tf.constant(1.0, dtype=tf.float64),
         tf.constant(0.1, dtype=tf.float64),
         tf.constant(1, dtype=tf.int64),
+        True,
     )
 
     np.testing.assert_allclose(model.weight.numpy(), 1.6)
@@ -192,6 +422,7 @@ def test_compiled_eval_step_returns_python_floats_without_l2_terms() -> None:
         {"target": tf.constant([[1.0]], dtype=tf.float64)},
         tf.constant(3.0, dtype=tf.float64),
         tf.constant(0.1, dtype=tf.float64),
+        True,
     )
 
     np.testing.assert_allclose(model.weight.numpy(), 2.0)
@@ -214,9 +445,9 @@ def test_compiled_train_step_is_cached_per_task() -> None:
 
     trainer._make_compiled_train_step = make_compiled_step
 
-    assert trainer._compiled_train_step("a", {}, {}, 1.0, 0.1, 1)["task"] == "a"
-    assert trainer._compiled_train_step("a", {}, {}, 1.0, 0.1, 2)["task"] == "a"
-    assert trainer._compiled_train_step("b", {}, {}, 1.0, 0.1, 1)["task"] == "b"
+    assert trainer._compiled_train_step("a", {}, {}, 1.0, 0.1, 1, True)["task"] == "a"
+    assert trainer._compiled_train_step("a", {}, {}, 1.0, 0.1, 2, True)["task"] == "a"
+    assert trainer._compiled_train_step("b", {}, {}, 1.0, 0.1, 1, True)["task"] == "b"
     assert calls == ["a", "b"]
 
 
@@ -234,11 +465,13 @@ def test_train_step_passes_float_natoms_to_compiled_step() -> None:
         natoms: Any,
         cur_lr: Any,
         next_step: Any,
+        do_virial: bool,
     ) -> dict[str, Any]:
         del task_key, input_dict, label_dict
         captured["natoms"] = natoms
         captured["cur_lr"] = cur_lr
         captured["next_step"] = next_step
+        captured["do_virial"] = do_virial
         return {"rmse": tf.constant(1.0, dtype=tf.float64)}
 
     trainer._compiled_train_step = compiled_train_step
@@ -255,6 +488,35 @@ def test_train_step_passes_float_natoms_to_compiled_step() -> None:
     assert captured["cur_lr"].dtype == tf.float64
     assert captured["next_step"].dtype == tf.int64
     assert captured["next_step"].numpy() == 5
+    assert captured["do_virial"] is True
+
+
+def test_batch_needs_virial_handles_numpy_find_flags() -> None:
+    trainer = object.__new__(Trainer)
+    trainer.losses = {
+        DEFAULT_TASK_KEY: EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+        )
+    }
+
+    assert (
+        Trainer._batch_needs_virial(
+            trainer,
+            DEFAULT_TASK_KEY,
+            {"find_virial": np.asarray([False, True])},
+        )
+        is True
+    )
+    assert (
+        Trainer._batch_needs_virial(
+            trainer,
+            DEFAULT_TASK_KEY,
+            {"find_virial": np.asarray([False])},
+        )
+        is False
+    )
 
 
 def test_tensorboard_step_writes_tensors_without_float_sync(

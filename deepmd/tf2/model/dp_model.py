@@ -16,6 +16,9 @@ from deepmd.tf2.env import (
     stop_gradient,
     xp,
 )
+from deepmd.tf2.make_model import (
+    model_call_from_call_lower as tf2_model_call_from_call_lower,
+)
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
 )
@@ -49,21 +52,37 @@ def make_tf2_dp_model_from_dpmodel(
             fparam: xp.ndarray | None = None,
             aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
+            do_deriv_c: bool = True,
             coord_corr_for_virial: xp.ndarray | None = None,
             charge_spin: xp.ndarray | None = None,
             neighbor_list: NeighborList | None = None,
         ) -> dict[str, xp.ndarray]:
-            return super().call_common(
+            cc, bb, fp, ap, cs, input_prec = self._input_type_cast(
                 to_tensorflow_array(coord),
-                to_tensorflow_array(atype),
                 box=to_tensorflow_array(box),
                 fparam=to_tensorflow_array(fparam),
                 aparam=to_tensorflow_array(aparam),
-                do_atomic_virial=do_atomic_virial,
-                coord_corr_for_virial=to_tensorflow_array(coord_corr_for_virial),
                 charge_spin=to_tensorflow_array(charge_spin),
-                neighbor_list=neighbor_list,
             )
+            model_predict = tf2_model_call_from_call_lower(
+                call_lower=self.call_common_lower,
+                rcut=self.get_rcut(),
+                sel=self.get_sel(),
+                mixed_types=self.mixed_types(),
+                model_output_def=self.model_output_def(),
+                coord=cc,
+                atype=to_tensorflow_array(atype),
+                box=bb,
+                fparam=fp,
+                aparam=ap,
+                do_atomic_virial=do_atomic_virial,
+                do_deriv_c=do_deriv_c,
+                coord_corr_for_virial=to_tensorflow_array(coord_corr_for_virial),
+                charge_spin=cs,
+                neighbor_list=neighbor_list,
+                pass_lower_kwargs=True,
+            )
+            return self._output_type_cast(model_predict, input_prec)
 
         def call_common_lower(
             self,
@@ -74,10 +93,38 @@ def make_tf2_dp_model_from_dpmodel(
             fparam: xp.ndarray | None = None,
             aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
+            do_deriv_c: bool = True,
             extended_coord_corr: xp.ndarray | None = None,
             comm_dict: dict | None = None,
             charge_spin: xp.ndarray | None = None,
+            nlist_is_formatted: bool = False,
         ) -> dict[str, xp.ndarray]:
+            if nlist_is_formatted:
+                del comm_dict  # tf2 path has no MPI ghost exchange
+                extended_coord = to_tensorflow_array(extended_coord)
+                extended_atype = to_tensorflow_array(extended_atype)
+                nlist = to_tensorflow_array(nlist)
+                nframes, _nall = extended_atype.shape[:2]
+                extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
+                cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+                    extended_coord,
+                    fparam=to_tensorflow_array(fparam),
+                    aparam=to_tensorflow_array(aparam),
+                    charge_spin=to_tensorflow_array(charge_spin),
+                )
+                model_predict = self.forward_common_atomic(
+                    cc_ext,
+                    extended_atype,
+                    nlist,
+                    mapping=to_tensorflow_array(mapping),
+                    fparam=fp,
+                    aparam=ap,
+                    do_atomic_virial=do_atomic_virial,
+                    do_deriv_c=do_deriv_c,
+                    extended_coord_corr=to_tensorflow_array(extended_coord_corr),
+                    charge_spin=cs,
+                )
+                return self._output_type_cast(model_predict, input_prec)
             return super().call_common_lower(
                 to_tensorflow_array(extended_coord),
                 to_tensorflow_array(extended_atype),
@@ -100,6 +147,7 @@ def make_tf2_dp_model_from_dpmodel(
             fparam: xp.ndarray | None = None,
             aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
+            do_deriv_c: bool = True,
             extended_coord_corr: xp.ndarray | None = None,
             comm_dict: dict | None = None,
             charge_spin: xp.ndarray | None = None,
@@ -114,6 +162,7 @@ def make_tf2_dp_model_from_dpmodel(
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                do_deriv_c=do_deriv_c,
                 extended_coord_corr=extended_coord_corr,
                 charge_spin=charge_spin,
             )

@@ -11,19 +11,26 @@ import tensorflow as tf
 from deepmd.dpmodel.array_api import (
     Array,
 )
-from deepmd.dpmodel.model.transform_output import (
-    communicate_extended_output,
-)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+)
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
+from deepmd.dpmodel.utils.nlist import (
+    nlist_distinguish_types,
 )
 from deepmd.tf2.common import (
     to_tensorflow_array,
     to_tf_tensor,
+    unwrap_value,
     wrap_value,
 )
 from deepmd.tf2.env import (
     xp,
+)
+from deepmd.tf2.transform_output import (
+    communicate_extended_output,
 )
 from deepmd.tf2.utils._dpmodel import (
     build_neighbor_list,
@@ -56,6 +63,11 @@ def model_call_from_call_lower(
     fparam: Array | None,
     aparam: Array | None,
     do_atomic_virial: bool = False,
+    do_deriv_c: bool = True,
+    coord_corr_for_virial: Array | None = None,
+    charge_spin: Array | None = None,
+    neighbor_list: NeighborList | None = None,
+    pass_lower_kwargs: bool = False,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -74,6 +86,13 @@ def model_call_from_call_lower(
         atomic parameter. nf x nloc x nda
     do_atomic_virial
         If calculate the atomic virial.
+    neighbor_list
+        Optional dense-neighbor-list strategy. ``None`` uses the native TF2
+        all-pairs builder.
+    pass_lower_kwargs
+        Pass optional lower-interface keyword arguments. SavedModel export wraps
+        the lower with fixed signatures and keeps this disabled; direct TF2 model
+        calls enable it.
 
     Returns
     -------
@@ -87,60 +106,112 @@ def model_call_from_call_lower(
     bb = to_tensorflow_array(box)
     fp = to_tensorflow_array(fparam)
     ap = to_tensorflow_array(aparam)
-    del coord, box, fparam, aparam
+    cs = to_tensorflow_array(charge_spin)
+    coord_corr = to_tensorflow_array(coord_corr_for_virial)
+    del coord, box, fparam, aparam, charge_spin, coord_corr_for_virial
     nframes, nloc = atype.shape[:2]
 
-    def with_pbc() -> tuple[Array, Array, Array]:
+    def with_pbc() -> tuple[Array, Array, Array, Array]:
         assert bb is not None
         coord_normalized = normalize_coord(
             xp.reshape(cc, (nframes, nloc, 3)),
             xp.reshape(bb, (nframes, 3, 3)),
         )
-        return extend_coord_with_ghosts(coord_normalized, atype, bb, rcut)
-
-    def no_pbc() -> tuple[Array, Array, Array]:
-        return extend_coord_with_ghosts(cc, atype, None, rcut)
-
-    has_pbc = _box_has_pbc(bb)
-    if has_pbc is True:
-        extended_coord, extended_atype, mapping = with_pbc()
-    elif has_pbc is False:
-        extended_coord, extended_atype, mapping = no_pbc()
-    else:
-        assert bb is not None
-        extended_coord_tensor, extended_atype_tensor, mapping_tensor = tf.cond(
-            tf.shape(to_tf_tensor(bb))[-1] != 0,
-            lambda: _unwrap_tuple(with_pbc()),
-            lambda: _unwrap_tuple(no_pbc()),
+        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+            coord_normalized, atype, bb, rcut
         )
-        extended_coord = to_tensorflow_array(extended_coord_tensor)
-        extended_atype = to_tensorflow_array(extended_atype_tensor)
-        mapping = to_tensorflow_array(mapping_tensor)
-    nlist = build_neighbor_list(
-        extended_coord,
-        extended_atype,
-        nloc,
-        rcut,
-        sel,
-        # types will be distinguished in the lower interface,
-        # so it doesn't need to be distinguished here
-        distinguish_types=False,
-    )
-    extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
-    model_predict_lower = wrap_value(
-        call_lower(
+        nlist = build_neighbor_list(
             extended_coord,
             extended_atype,
-            nlist,
-            mapping,
-            fparam=fp,
-            aparam=ap,
+            nloc,
+            rcut,
+            sel,
+            # types will be distinguished in the lower interface,
+            # so it doesn't need to be distinguished here
+            distinguish_types=False,
         )
-    )
-    model_predict = communicate_extended_output(
-        model_predict_lower,
-        model_output_def,
+        return extended_coord, extended_atype, nlist, mapping
+
+    def no_pbc() -> tuple[Array, Array, Array, Array]:
+        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+            cc, atype, None, rcut
+        )
+        nlist = build_neighbor_list(
+            extended_coord,
+            extended_atype,
+            nloc,
+            rcut,
+            sel,
+            # types will be distinguished in the lower interface,
+            # so it doesn't need to be distinguished here
+            distinguish_types=False,
+        )
+        return extended_coord, extended_atype, nlist, mapping
+
+    uses_native_nlist_builder = neighbor_list is None
+    if neighbor_list is not None:
+        extended_coord, extended_atype, nlist, mapping = neighbor_list.build(
+            cc, atype, bb, rcut, sel
+        )
+    else:
+        has_pbc = _box_has_pbc(bb)
+        if has_pbc is True:
+            extended_coord, extended_atype, nlist, mapping = with_pbc()
+        elif has_pbc is False:
+            extended_coord, extended_atype, nlist, mapping = no_pbc()
+        else:
+            assert bb is not None
+            (
+                extended_coord_tensor,
+                extended_atype_tensor,
+                nlist_tensor,
+                mapping_tensor,
+            ) = tf.cond(
+                tf.shape(to_tf_tensor(bb))[-1] != 0,
+                lambda: _unwrap_tuple(with_pbc()),
+                lambda: _unwrap_tuple(no_pbc()),
+            )
+            extended_coord = to_tensorflow_array(extended_coord_tensor)
+            extended_atype = to_tensorflow_array(extended_atype_tensor)
+            nlist = to_tensorflow_array(nlist_tensor)
+            mapping = to_tensorflow_array(mapping_tensor)
+    extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
+    if coord_corr is not None:
+        mapping_idx = xp.tile(
+            xp.reshape(mapping, (nframes, -1, 1)),
+            (1, 1, 3),
+        )
+        extended_coord_corr = xp.take_along_axis(coord_corr, mapping_idx, axis=1)
+    else:
+        extended_coord_corr = None
+    lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
+    if pass_lower_kwargs:
+        if uses_native_nlist_builder:
+            if not mixed_types:
+                nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+            lower_kwargs["nlist_is_formatted"] = True
+        lower_kwargs.update(
+            {
+                "do_atomic_virial": do_atomic_virial,
+                "do_deriv_c": do_deriv_c,
+                "charge_spin": cs,
+            }
+        )
+        if extended_coord_corr is not None:
+            lower_kwargs["extended_coord_corr"] = extended_coord_corr
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
         mapping,
-        do_atomic_virial=do_atomic_virial,
+        **lower_kwargs,
+    )
+    model_predict = wrap_value(
+        communicate_extended_output(
+            unwrap_value(model_predict_lower),
+            model_output_def,
+            to_tf_tensor(mapping),
+            do_atomic_virial=do_atomic_virial,
+        )
     )
     return model_predict

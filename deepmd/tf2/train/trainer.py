@@ -758,6 +758,7 @@ class Trainer(AbstractTrainer):
         task_key = task.key
         cur_lr = float(self.lr_schedule.value(step))
         input_dict, label_dict, natoms = self.get_data(is_train=True, task_key=task_key)
+        do_virial = bool(label_dict.pop("_do_virial", True))
         more_loss = self._compiled_train_step(
             task_key,
             input_dict,
@@ -765,6 +766,7 @@ class Trainer(AbstractTrainer):
             tf.constant(float(natoms), dtype=tf.float64),
             tf.constant(cur_lr, dtype=tf.float64),
             tf.constant(step + 1, dtype=tf.int64),
+            do_virial,
         )
         self._write_tensorboard_step(
             task_key,
@@ -789,6 +791,7 @@ class Trainer(AbstractTrainer):
         natoms: Any,
         cur_lr: Any,
         next_step: Any,
+        do_virial: bool,
     ) -> dict[str, Any]:
         if task_key not in self._compiled_train_steps:
             self._compiled_train_steps[task_key] = self._make_compiled_train_step(
@@ -800,6 +803,7 @@ class Trainer(AbstractTrainer):
             natoms,
             cur_lr,
             next_step,
+            do_virial,
         )
 
     def _make_compiled_train_step(self, task_key: str) -> Any:
@@ -812,10 +816,16 @@ class Trainer(AbstractTrainer):
             natoms: Any,
             cur_lr: Any,
             next_step: Any,
+            do_virial: bool,
         ) -> dict[str, Any]:
             self._assign_learning_rate(cur_lr)
             with tf.GradientTape() as tape:
-                model_pred = self._call_model(task_key, input_dict)
+                model_pred = self._call_model(
+                    task_key,
+                    input_dict,
+                    label_dict=label_dict,
+                    do_virial=do_virial,
+                )
                 loss, more_loss = self.losses[task_key](
                     learning_rate=cur_lr,
                     natoms=natoms,
@@ -848,7 +858,15 @@ class Trainer(AbstractTrainer):
         if step_result is not None and step_result.task_key == task.key:
             return self._more_loss_to_float(step_result.payload["more_loss"])
         input_dict, label_dict, natoms = self.get_data(is_train=True, task_key=task.key)
-        return self._evaluate_batch(task.key, step, input_dict, label_dict, natoms)
+        do_virial = bool(label_dict.pop("_do_virial", True))
+        return self._evaluate_batch(
+            task.key,
+            step,
+            input_dict,
+            label_dict,
+            natoms,
+            do_virial=do_virial,
+        )
 
     def evaluate_validation(
         self,
@@ -865,12 +883,14 @@ class Trainer(AbstractTrainer):
                 is_train=False,
                 task_key=task.key,
             )
+            do_virial = bool(label_dict.pop("_do_virial", True))
             results = self._evaluate_batch(
                 task.key,
                 step,
                 input_dict,
                 label_dict,
                 natoms,
+                do_virial=do_virial,
             )
             sum_natoms += natoms
             for key, value in results.items():
@@ -886,6 +906,7 @@ class Trainer(AbstractTrainer):
         input_dict: dict[str, Any],
         label_dict: dict[str, Any],
         natoms: int,
+        do_virial: bool = True,
     ) -> dict[str, float]:
         cur_lr = float(self.lr_schedule.value(step))
         return self._compiled_eval_step(
@@ -894,6 +915,7 @@ class Trainer(AbstractTrainer):
             label_dict,
             tf.constant(float(natoms), dtype=tf.float64),
             tf.constant(cur_lr, dtype=tf.float64),
+            do_virial,
         )
 
     def _compiled_eval_step(
@@ -903,6 +925,7 @@ class Trainer(AbstractTrainer):
         label_dict: dict[str, Any],
         natoms: Any,
         cur_lr: Any,
+        do_virial: bool,
     ) -> dict[str, float]:
         if task_key not in self._compiled_eval_steps:
             self._compiled_eval_steps[task_key] = self._make_compiled_eval_step(
@@ -913,6 +936,7 @@ class Trainer(AbstractTrainer):
             label_dict,
             natoms,
             cur_lr,
+            do_virial,
         )
         return self._more_loss_to_float(more_loss)
 
@@ -923,8 +947,14 @@ class Trainer(AbstractTrainer):
             label_dict: dict[str, Any],
             natoms: Any,
             cur_lr: Any,
+            do_virial: bool,
         ) -> dict[str, Any]:
-            model_pred = self._call_model(task_key, input_dict)
+            model_pred = self._call_model(
+                task_key,
+                input_dict,
+                label_dict=label_dict,
+                do_virial=do_virial,
+            )
             _, more_loss = self.losses[task_key](
                 learning_rate=cur_lr,
                 natoms=natoms,
@@ -1072,19 +1102,45 @@ class Trainer(AbstractTrainer):
                 input_dict.pop(opt_key)
         natoms = int(input_dict["atype"].shape[1])
         label_dict["type"] = input_dict["atype"]
+        do_virial = self._batch_needs_virial(task_key, label_dict)
         input_tf = {
             key: self._to_input_tensor(key, value) for key, value in input_dict.items()
         }
         label_tf = {
             key: self._to_label_array(key, value) for key, value in label_dict.items()
         }
+        label_tf["_do_virial"] = do_virial
         return input_tf, label_tf, natoms
 
     def _call_model(
         self,
         task_key: str,
         input_dict: dict[str, Any],
+        *,
+        label_dict: dict[str, Any] | None = None,
+        do_virial: bool = True,
     ) -> dict[str, Any]:
+        if isinstance(self.losses[task_key], EnergyLoss) and not do_virial:
+            model_ret = self.models[task_key].call_common(
+                input_dict["coord"],
+                input_dict["atype"],
+                box=input_dict.get("box"),
+                fparam=input_dict.get("fparam"),
+                aparam=input_dict.get("aparam"),
+                charge_spin=input_dict.get("charge_spin"),
+                do_deriv_c=False,
+            )
+            model_pred = {
+                "atom_energy": model_ret["energy"],
+                "energy": model_ret["energy_redu"],
+            }
+            if model_ret.get("energy_derv_r") is not None:
+                model_pred["force"] = model_ret["energy_derv_r"].squeeze(-2)
+            if label_dict is not None and "virial" in label_dict:
+                model_pred["virial"] = label_dict["virial"]
+            if "mask" in model_ret:
+                model_pred["mask"] = model_ret["mask"]
+            return model_pred
         return self.models[task_key].call(
             input_dict["coord"],
             input_dict["atype"],
@@ -1093,6 +1149,16 @@ class Trainer(AbstractTrainer):
             aparam=input_dict.get("aparam"),
             charge_spin=input_dict.get("charge_spin"),
         )
+
+    def _batch_needs_virial(
+        self,
+        task_key: str,
+        label_dict: dict[str, Any],
+    ) -> bool:
+        loss = self.losses[task_key]
+        if not isinstance(loss, EnergyLoss) or not loss.has_v:
+            return False
+        return bool(np.asarray(label_dict.get("find_virial", False)).any())
 
     @staticmethod
     def _to_input_tensor(key: str, value: Any) -> Any:
