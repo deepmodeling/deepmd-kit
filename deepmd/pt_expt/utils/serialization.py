@@ -155,6 +155,20 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
     ``training._trace_and_compile_graph``) call this guard first. Factorizable
     models (``attn_layer == 0``) trace with backed symbols only and are not
     restricted.
+
+    Parameters
+    ----------
+    model
+        The graph-eligible model about to be traced. The attention depth is
+        read from ``model.atomic_model.descriptor.get_numb_attn_layer()``;
+        models without a single descriptor (linear/zbl/frozen) pass the
+        check (they take the dense route anyway).
+
+    Raises
+    ------
+    RuntimeError
+        If the descriptor has ``attn_layer > 0`` and the running torch is
+        older than 2.6.
     """
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
     get_n_attn = getattr(desc, "get_numb_attn_layer", None)
