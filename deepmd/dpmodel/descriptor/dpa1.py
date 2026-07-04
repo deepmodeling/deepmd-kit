@@ -27,6 +27,7 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.common import (
     cast_precision,
     to_numpy_array,
+    to_numpy_dtype,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -1409,7 +1410,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     ) -> None:
         """Store tabulated geometric embedding-net data."""
         net = "filter_net"
-        dtype = self.mean.dtype
+        dtype = to_numpy_dtype(self.mean.dtype)
         self.compress_info = [
             np.asarray(
                 [

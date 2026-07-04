@@ -5549,7 +5549,7 @@ def validating_args() -> Argument:
     """Generate full validation arguments."""
     valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
     doc_full_validation_supported = (
-        "(Supported Backend: PyTorch, PyTorch Experimental, JAX) "
+        "(Supported Backend: PyTorch, PyTorch Experimental, JAX, TensorFlow2) "
     )
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
