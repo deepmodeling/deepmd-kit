@@ -219,7 +219,7 @@ def apply_pair_exclusion(
     keep = pair_excl.build_edge_exclude_mask(graph.edge_index, atype)
     out = dataclasses.replace(
         graph,
-        edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
+        edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
     )
     if compact:
         if graph.angle_index is not None or graph.angle_mask is not None:
