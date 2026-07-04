@@ -13,16 +13,27 @@ from typing import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     TrainEntrypointOptions,
     TrainingTask,
+)
+from deepmd.tf2.common import (
+    to_tf_tensor,
+    wrap_tensor,
 )
 from deepmd.tf2.entrypoints.train import (
     TF2TrainEntrypoint,
 )
 from deepmd.tf2.env import (
     tf,
+)
+from deepmd.tf2.model.base_model import (
+    forward_common_atomic,
 )
 from deepmd.tf2.train.trainer import (
     Trainer,
@@ -73,6 +84,40 @@ class _SquaredLoss:
         }
 
 
+class _CountingAtomicModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def forward_common_atomic(
+        self,
+        extended_coord: Any,
+        extended_atype: Any,
+        nlist: Any,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del extended_atype, nlist, kwargs
+        self.calls += 1
+        coord = to_tf_tensor(extended_coord)
+        return {"energy": wrap_tensor(tf.reduce_sum(coord * coord, axis=-1)[..., None])}
+
+
+class _FakeEnergyModel:
+    def __init__(self) -> None:
+        self.atomic_model = _CountingAtomicModel()
+
+    def atomic_output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    "energy",
+                    [1],
+                    reducible=True,
+                    r_differentiable=True,
+                )
+            ]
+        )
+
+
 def _make_minimal_trainer() -> tuple[Trainer, _LinearModel]:
     trainer = object.__new__(Trainer)
     model = _LinearModel()
@@ -87,6 +132,31 @@ def _make_minimal_trainer() -> tuple[Trainer, _LinearModel]:
     trainer._compiled_train_steps = {}
     trainer._compiled_eval_steps = {}
     return trainer, model
+
+
+def test_forward_common_atomic_reuses_taped_atomic_forward() -> None:
+    model = _FakeEnergyModel()
+    coord = tf.constant(
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]],
+        dtype=tf.float64,
+    )
+
+    result = forward_common_atomic(
+        model,
+        wrap_tensor(coord),
+        tf.constant([[0, 1]], dtype=tf.int32),
+        tf.constant([[[0], [1]]], dtype=tf.int32),
+    )
+
+    assert model.atomic_model.calls == 1
+    np.testing.assert_allclose(
+        to_tf_tensor(result["energy_redu"]).numpy(),
+        [[91.0]],
+    )
+    np.testing.assert_allclose(
+        to_tf_tensor(result["energy_derv_r"]).numpy(),
+        (-2.0 * coord[:, :, tf.newaxis, :]).numpy(),
+    )
 
 
 def test_compiled_train_step_is_tf_function_and_updates_model() -> None:
