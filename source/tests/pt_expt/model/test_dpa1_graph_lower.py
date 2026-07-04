@@ -91,7 +91,12 @@ class TestDpa1GraphLower:
             [[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device
         )
 
-    def _make_model(self, attn_layer: int = 0, smooth: bool = False) -> EnergyModel:
+    def _make_model(
+        self,
+        attn_layer: int = 0,
+        smooth: bool = False,
+        pair_excl_types: list | None = None,
+    ) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
@@ -122,7 +127,12 @@ class TestDpa1GraphLower:
             precision="float64",
             seed=GLOBAL_SEED,
         ).to(self.device)
-        return EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+        return EnergyModel(
+            ds,
+            ft,
+            type_map=self.type_map,
+            pair_exclude_types=pair_excl_types or [],
+        ).to(self.device)
 
     def _prepare_lower_inputs(self, periodic: bool):
         """Build extended coords, atype, nlist, mapping as torch tensors."""
@@ -172,13 +182,20 @@ class TestDpa1GraphLower:
     @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
     @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
-    def test_force_virial_parity_vs_legacy(self, periodic, do_av, attn_layer) -> None:
+    @pytest.mark.parametrize(
+        "excl_types", [[], [(0, 1)]]
+    )  # no exclusion / type-0-1 pair exclusion
+    def test_force_virial_parity_vs_legacy(
+        self, periodic, do_av, attn_layer, excl_types
+    ) -> None:
         """Graph lower energy/force/virial/atom_virial == legacy dense lower on
         the SAME neighbor set (regime-1 graph from from_dense_quartet).
         attn_layer=2 exercises graph attention through model-level autograd
         (smooth=False: exact carry-all parity regime, NeighborGraph PR-D).
+        Parametrized over exclude_types: empty list (no exclusion) and
+        [(0,1)] (model-level pair exclusion applied identically on both routes).
         """
-        model = self._make_model(attn_layer=attn_layer)
+        model = self._make_model(attn_layer=attn_layer, pair_excl_types=excl_types)
         model.eval()
         tol = (
             {"rtol": 1e-12, "atol": 1e-12}

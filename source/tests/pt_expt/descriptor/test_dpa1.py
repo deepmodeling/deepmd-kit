@@ -252,14 +252,19 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize(
+        "excl_types", [[], [(0, 1)]]
+    )  # no exclusion / type-0-1 pair exclusion
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph(self, prec) -> None:
+    def test_make_fx_graph(self, prec, excl_types) -> None:
         """make_fx (export-readiness) of the attn_layer=0 GRAPH forward.
 
         For ``attn_layer == 0`` the dense ``forward`` routes through the
         graph-native path (``from_dense_quartet -> call_graph``). This proves
         that graph forward + ``autograd.grad`` is fx-traceable (full .pt2
-        export is PR-B).
+        export is PR-B).  Parametrized over ``excl_types``: with non-empty
+        exclusion the ``build_edge_exclude_mask`` (mask-only, shape-static)
+        path is exercised — a tracing failure here would be a bug.
         """
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
@@ -276,6 +281,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             self.nt,
             attn_layer=0,
             precision=prec,
+            exclude_types=excl_types,
             seed=GLOBAL_SEED,
         ).to(self.device)
         dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
@@ -311,9 +317,12 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize(
+        "excl_types", [[], [(0, 1)]]
+    )  # no exclusion / type-0-1 pair exclusion
     @pytest.mark.parametrize("smooth", [False, True])  # smooth attention branch
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph_attn(self, prec, smooth) -> None:
+    def test_make_fx_graph_attn(self, prec, smooth, excl_types) -> None:
         """make_fx (export-readiness) of the GRAPH forward with attention.
 
         MERGE BLOCKER (NeighborGraph PR-D): pt_expt compiled training routes
@@ -321,6 +330,9 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         (``attn_layer > 0``) must be fx-traceable — the shape-static
         ``center_edge_pairs`` form keeps the pair enumeration ``nonzero``-free.
         Covers both the smooth and non-smooth attention branches.
+        Parametrized over ``excl_types``: with non-empty exclusion the
+        ``build_edge_exclude_mask`` (mask-only, shape-static) path is exercised
+        concurrently with attention — a tracing failure here would be a bug.
         """
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
@@ -338,6 +350,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             attn_dotr=True,
             smooth_type_embedding=smooth,
             precision=prec,
+            exclude_types=excl_types,
             seed=GLOBAL_SEED,
         ).to(self.device)
         dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
