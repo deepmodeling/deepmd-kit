@@ -15,6 +15,8 @@ identical to ``communicate_extended_output``).  Energy, reduced energy and the
 reduced (per-frame) virial are frame/local quantities and compare directly.
 """
 
+import copy
+
 import numpy as np
 import pytest
 import torch
@@ -419,8 +421,6 @@ class TestDpa1GraphLower:
         model pair_exclude_types).  Uses identical weights across both routes;
         also checks exclusion is non-vacuous vs a no-exclude baseline.
         """
-        import copy
-
         # 1. no-exclude model (graph route = reference)
         model_ref = self._make_model(attn_layer=attn_layer)
         model_ref.eval()
@@ -457,6 +457,9 @@ class TestDpa1GraphLower:
         )
         torch.testing.assert_close(
             graph_out["energy_derv_r"], legacy_out["energy_derv_r"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_c_redu"], legacy_out["energy_derv_c_redu"], **tol
         )
 
         # 5. exclusion must be non-vacuous
