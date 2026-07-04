@@ -333,7 +333,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ``self.pair_excl is not None``, an edge-keep mask is ANDed into
         ``graph.edge_mask`` before the descriptor forward, so excluded type-pairs
         contribute zero to the segment_sum. Descriptor-level ``exclude_types`` is
-        gated by ``uses_graph_lower()==False``.
+        handled inside the descriptor's ``call_graph`` (graph-native).
 
         Parameters
         ----------

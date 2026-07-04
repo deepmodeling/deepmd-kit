@@ -685,8 +685,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
     ) -> Array:
-        """Legacy dense descriptor body (the ineligible ``call`` path: attention,
-        strip tebd, exclude_types, or the no-mapping ghost case).
+        """Legacy dense descriptor body (the ineligible ``call`` path:
+        strip tebd or the no-mapping ghost case).
 
         Parameters
         ----------
