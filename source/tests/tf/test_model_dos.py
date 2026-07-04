@@ -335,3 +335,67 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(pred_dos, ref_dos, places)
         np.testing.assert_almost_equal(np.sum(pred_atom_dos, axis=0), ref_dos, places)
         np.testing.assert_almost_equal(pred_atom_dos[0], ref_ados_1, places)
+
+    def test_multiframe_global_equals_atomic_sum(self) -> None:
+        # The global DOS must equal the per-frame sum of the atomic DOS. The
+        # reduction used to reshape/reduce over the wrong axis, mixing frames
+        # together, so this only held for a single frame.
+        jdata = j_loader("train_dos.json")
+        systems = jdata["training"]["systems"]
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        data = DataSystem(systems, "set", 1, 1, rcut, run_opt=None)
+        test_data = data.get_test()
+        numb_dos = 20
+        natoms = test_data["type"].shape[1]
+
+        jdata["model"]["fitting_net"]["numb_dos"] = numb_dos
+        jdata["model"]["descriptor"]["neuron"] = [5, 5, 5]
+        jdata["model"]["descriptor"]["axis_neuron"] = 2
+        jdata["model"]["descriptor"].pop("type", None)
+        descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
+        jdata["model"]["fitting_net"].pop("type", None)
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
+        fitting = DOSFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
+        model = DOSModel(descrpt, fitting)
+
+        model._compute_input_stat(
+            {
+                "coord": [test_data["coord"]],
+                "box": [test_data["box"]],
+                "type": [test_data["type"]],
+                "natoms_vec": [test_data["natoms_vec"]],
+                "default_mesh": [test_data["default_mesh"]],
+            }
+        )
+
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord_mf")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type_mf")
+        t_natoms = tf.placeholder(tf.int32, [model.ntypes + 2], name="i_natoms_mf")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box_mf")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh_mf")
+
+        model_pred = model.build(
+            t_coord, t_type, t_natoms, t_box, t_mesh, None, suffix="dos_mf", reuse=False
+        )
+        dos = model_pred["dos"]
+        atom_dos = model_pred["atom_dos"]
+
+        nframes = 2
+        feed_dict_test = {
+            t_coord: np.tile(np.reshape(test_data["coord"][:1, :], [-1]), nframes),
+            t_type: np.tile(np.reshape(test_data["type"][:1, :], [-1]), nframes),
+            t_natoms: test_data["natoms_vec"],
+            t_box: np.tile(test_data["box"][:1, :], (nframes, 1)),
+            t_mesh: test_data["default_mesh"],
+        }
+
+        with self.cached_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            pred_dos, pred_atom_dos = sess.run(
+                [dos, atom_dos], feed_dict=feed_dict_test
+            )
+
+        pred_dos = np.reshape(pred_dos, [nframes, numb_dos])
+        pred_atom_dos = np.reshape(pred_atom_dos, [nframes, natoms, numb_dos])
+        np.testing.assert_almost_equal(pred_dos, np.sum(pred_atom_dos, axis=1), 6)
