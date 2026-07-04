@@ -165,7 +165,6 @@ class NvNeighborList(NeighborList):
         nf, nloc = atype.shape[:2]
         target_neighbors = int(sum(sel))
         coord = coord.reshape(nf, nloc, 3)
-        periodic = box is not None
 
         # Delegate the raw search to the shared helper in nv_graph_builder.
         # Function-level import avoids a module-level pt -> pt_expt cycle while

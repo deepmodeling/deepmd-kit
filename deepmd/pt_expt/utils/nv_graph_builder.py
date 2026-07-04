@@ -242,7 +242,6 @@ def build_neighbor_graph_nv(
     nf = coord.shape[0] if coord.ndim == 3 else 1
     coord = coord.reshape(nf, -1, 3)
     nloc = coord.shape[1]
-    periodic = box is not None
 
     if nloc == 0:
         empty_i = torch.zeros((0,), dtype=torch.int64, device=device)
