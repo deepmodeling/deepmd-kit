@@ -1469,6 +1469,26 @@ class TestPTEnerSpinLossEnerGradAccum:
         e_B_hat = _t(1, 1)
         self._run_invariant(self._make_loss(intensive=True), e_A, e_A_hat, e_B, e_B_hat)
 
+    def test_mae_grad_accum(self):
+        """Spin energy MAE meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        loss_obj = EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func="mae",
+        )
+        self._run_invariant(loss_obj, e_A, e_A_hat, e_B, e_B_hat)
+
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same energy loss as no mask."""
         e = _t(1, 1)
@@ -1552,6 +1572,26 @@ class TestPTEnerSpinLossForceRealGradAccum:
         f_B = _t(NB, 3)
         f_B_hat = _t(NB, 3)
         self._run_invariant(self._make_loss(), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Force_real MAE meets the grad-accum invariant."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        loss_obj = EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func="mae",
+        )
+        self._run_invariant(loss_obj, f_A, f_A_hat, f_B, f_B_hat)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same force_real loss as no mask."""
@@ -1647,6 +1687,26 @@ class TestPTEnerSpinLossVirialGradAccum:
         v_B = _t(9)
         v_B_hat = _t(9)
         self._run_invariant(self._make_loss(intensive=True), v_A, v_A_hat, v_B, v_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Spin virial MAE meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        loss_obj = EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            loss_func="mae",
+        )
+        self._run_invariant(loss_obj, v_A, v_A_hat, v_B, v_B_hat)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same virial loss as no mask."""
