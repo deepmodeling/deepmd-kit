@@ -738,6 +738,29 @@ def _collect_metadata(
     #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = "graph" if lower_kind == "graph" else "nlist"
+
+    # Model-level pair-type exclusion (``pair_exclude_types``): a list of
+    # ``[ti, tj]`` type pairs whose interaction is dropped.  The compiled AOTI
+    # forward ALREADY applies this exclusion internally (the graph seam
+    # ``apply_pair_exclusion`` / dense seam ``apply_pair_exclusion_nlist`` is
+    # traced into the exported artifact), so this field is redundant for the
+    # compiled math.  It is serialized so that the C++ loaders
+    # (``DeepPotPTExpt::init``) can rebuild the flat ``(ntypes+1)^2`` keep table
+    # and re-apply the SAME transform (``applyPairExclusion`` /
+    # ``applyPairExclusionNlist`` in ``commonPT.h``) at the ingestion seam as an
+    # idempotent backstop, keeping the C++ ingestion path side-by-side
+    # reviewable with the Python transforms.  Descriptor-level ``exclude_types``
+    # needs NO metadata: it is fully inside the compiled graph.
+    pair_exclude_types: list[list[int]] = []
+    for obj in (
+        getattr(model, "atomic_model", None),
+        model,
+    ):
+        pet = getattr(obj, "pair_exclude_types", None)
+        if pet:
+            pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
+            break
+    meta["pair_exclude_types"] = pair_exclude_types
     return meta
 
 

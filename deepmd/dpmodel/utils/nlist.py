@@ -90,6 +90,14 @@ def apply_pair_exclusion_nlist(
     This is the nlist-representation counterpart of
     :func:`deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
 
+    See Also
+    --------
+    C++ twin ``applyPairExclusionNlist`` in ``source/api_cc/include/commonPT.h``
+        The inference-path mirror. Same argument order (nlist, atype_ext, ...),
+        same variable names (``type_ij``, ``keep``): it computes ``type_ij``
+        from the center/neighbor types via the flat ``(ntypes+1)^2`` table and
+        replaces excluded entries with ``-1``.
+
     Parameters
     ----------
     nlist : Array
