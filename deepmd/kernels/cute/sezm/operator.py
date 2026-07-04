@@ -299,7 +299,11 @@ def _is_supported(conv: SO2Convolution) -> bool:
     non_linears = conv.non_linearities
     if any(
         type(non_linears[layer]).__name__ != "GatedActivation"
-        or non_linears[layer].scalar_act.activation != "silu"
+        or (
+            getattr(non_linears[layer].scalar_act, "activation", None)
+            or getattr(non_linears[layer], "activation_function", None)
+        )
+        != "silu"
         for layer in range(_SUPPORTED_LAYERS - 1)
     ):
         return False
