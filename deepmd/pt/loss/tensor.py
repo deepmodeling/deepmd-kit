@@ -101,7 +101,7 @@ class TensorLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-        model_pred = model(**input_dict)
+        model_pred = self._inject_atom_mask(model(**input_dict), input_dict)
         del learning_rate, mae
 
         if self.enable_atomic_weight:

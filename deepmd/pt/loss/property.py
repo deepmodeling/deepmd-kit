@@ -100,7 +100,7 @@ class PropertyLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-        model_pred = model(**input_dict)
+        model_pred = self._inject_atom_mask(model(**input_dict), input_dict)
         var_name = self.var_name
         nbz = model_pred[var_name].shape[0]
         assert model_pred[var_name].shape == (nbz, self.task_dim)
