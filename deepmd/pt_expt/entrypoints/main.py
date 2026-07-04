@@ -498,10 +498,16 @@ def freeze(
     lower_kind : str
         Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
         or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
-        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``,
-        currently dpa1 with ``attn_layer == 0``) and selects the C++ graph
-        inference path; the per-atom virial is enabled for it (near-free in the
-        graph path: one extra scatter off the shared single backward).
+        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``:
+        dpa1/se_atten with concat type embedding and no ``exclude_types``,
+        attention layers included) and selects the C++ graph inference path;
+        the per-atom virial is enabled for it (near-free in the graph path:
+        one extra scatter off the shared single backward). NOTE: for
+        ``smooth_type_embedding=True`` the carry-all graph attention
+        intentionally drops the dense layout's sel-padding terms from the
+        softmax denominator, so graph-form results are sel-independent and
+        differ from the legacy dense lower by up to ~1e-4 (see
+        ``DescrptDPA1.call_graph``).
     """
     import torch
 

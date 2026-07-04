@@ -434,6 +434,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         with concat type-embedding and no type exclusion. Remaining ineligible
         configs (``tebd_input_mode == "strip"``, ``exclude_types``) fall back
         to the legacy dense path, so those models keep working unchanged.
+
+        Eligibility does NOT imply numerical interchangeability with the
+        dense route for every config: with ``smooth_type_embedding=True``
+        the carry-all graph attention is sel-independent by design and
+        differs from the dense lower by up to ~1e-4 (see the Notes of
+        :meth:`call_graph`).
         """
         return (
             self.se_atten.tebd_input_mode == "concat"
@@ -743,6 +749,21 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         This method is graph-native: it takes no dense quartet inputs and does
         not produce the dense ``sw`` (that lives in the dense :meth:`call`
         adapter, which has the ``nlist``/``coord_ext`` needed to build it).
+
+        Notes
+        -----
+        **Smooth attention is intentionally sel-independent on the graph
+        path.** For ``smooth_type_embedding=True`` the legacy dense attention
+        keeps the sel-padding slots in its softmax DENOMINATOR (phantom
+        ``exp(-attnw_shift)`` terms), which makes dense output depend on the
+        ``sel`` setting by up to ~1e-4 even for identical physical neighbors.
+        A carry-all graph has no padding slots, so its softmax runs over the
+        real neighbor pairs only: cleaner, sel-independent semantics that
+        deliberately DIFFER from the dense route for smooth models. The two
+        routes agree bit-tight only for ``smooth_type_embedding=False`` (at
+        non-binding ``sel``), or when this kernel is realized on a dense
+        layout via ``static_nnei`` (the dense :meth:`call` adapter), which
+        reproduces the phantom terms for exact backward compatibility.
 
         Parameters
         ----------
