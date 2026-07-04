@@ -159,6 +159,21 @@ class EnergySpinLoss(TaskLoss):
         # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
         # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
         norm_exp = 2 if self.intensive_ener_virial else 1
+
+        # Per-frame mask: recover real-atom count per frame when mask is provided.
+        # maskf[nf, nloc] = 1.0 for real atoms, 0.0 for ghost padding atoms.
+        if "mask" in model_pred:
+            maskf = model_pred["mask"]  # [nf, nloc], float
+            real_natoms_f = torch.sum(maskf, dim=-1)  # [nf]
+            inv = (1.0 / real_natoms_f).reshape(-1)  # [nf]
+            _nf = maskf.shape[0]
+            _nloc = maskf.shape[1]
+        else:
+            maskf = None
+            inv = None
+            _nf = None
+            _nloc = None
+
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -178,16 +193,30 @@ class EnergySpinLoss(TaskLoss):
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
             if self.loss_func == "mse":
-                l2_ener_loss = torch.mean(torch.square(energy_pred - energy_label))
-                if not self.inference:
-                    more_loss["l2_ener_loss"] = self.display_if_exist(
-                        l2_ener_loss.detach(), find_energy
+                se_e = torch.square(energy_pred - energy_label)  # [nf, k]
+                if maskf is not None:
+                    # Idiom 2 (extensive): per-frame normalization by real-atom count.
+                    per_frame_e = torch.mean(se_e.reshape(_nf, -1), dim=-1)  # [nf]
+                    if not self.inference:
+                        more_loss["l2_ener_loss"] = self.display_if_exist(
+                            torch.mean(per_frame_e).detach(), find_energy
+                        )
+                    loss += pref_e * torch.mean(per_frame_e * inv**norm_exp)
+                    rmse_e = torch.sqrt(torch.mean(per_frame_e * inv**2))
+                    more_loss["rmse_e"] = self.display_if_exist(
+                        rmse_e.detach(), find_energy
                     )
-                loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
-                rmse_e = l2_ener_loss.sqrt() * atom_norm
-                more_loss["rmse_e"] = self.display_if_exist(
-                    rmse_e.detach(), find_energy
-                )
+                else:
+                    l2_ener_loss = torch.mean(se_e)
+                    if not self.inference:
+                        more_loss["l2_ener_loss"] = self.display_if_exist(
+                            l2_ener_loss.detach(), find_energy
+                        )
+                    loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
+                    rmse_e = l2_ener_loss.sqrt() * atom_norm
+                    more_loss["rmse_e"] = self.display_if_exist(
+                        rmse_e.detach(), find_energy
+                    )
                 # more_loss['log_keys'].append('rmse_e')
             elif self.loss_func == "mae":
                 l1_ener_loss = F.l1_loss(
@@ -221,22 +250,46 @@ class EnergySpinLoss(TaskLoss):
             find_force_r = label.get("find_force", 0.0)
             pref_fr = pref_fr * find_force_r
             if self.loss_func == "mse":
-                diff_fr = label["force"] - model_pred["force"]
-                l2_force_real_loss = torch.mean(torch.square(diff_fr))
-                if not self.inference:
-                    more_loss["l2_force_r_loss"] = self.display_if_exist(
-                        l2_force_real_loss.detach(), find_force_r
+                diff_fr = label["force"] - model_pred["force"]  # [nf, nloc, 3]
+                if maskf is not None:
+                    # Idiom 1 (per-atom masked mean, ncomp=3).
+                    maskf_col = maskf.reshape(_nf, _nloc, 1)  # [nf, nloc, 1]
+                    sq_fr = torch.square(diff_fr) * maskf_col  # [nf, nloc, 3]
+                    per_frame_fr_sum = sq_fr.reshape(_nf, -1).sum(dim=-1)  # [nf]
+                    per_frame_fr_dof = maskf.sum(dim=-1) * 3  # [nf]
+                    l2_force_real_loss = torch.mean(per_frame_fr_sum / per_frame_fr_dof)
+                    if not self.inference:
+                        more_loss["l2_force_r_loss"] = self.display_if_exist(
+                            l2_force_real_loss.detach(), find_force_r
+                        )
+                    loss += (pref_fr * l2_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    rmse_fr = l2_force_real_loss.sqrt()
+                    more_loss["rmse_fr"] = self.display_if_exist(
+                        rmse_fr.detach(), find_force_r
                     )
-                loss += (pref_fr * l2_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                rmse_fr = l2_force_real_loss.sqrt()
-                more_loss["rmse_fr"] = self.display_if_exist(
-                    rmse_fr.detach(), find_force_r
-                )
-                if mae:
-                    mae_fr = torch.mean(torch.abs(diff_fr))
-                    more_loss["mae_fr"] = self.display_if_exist(
-                        mae_fr.detach(), find_force_r
+                    if mae:
+                        abs_fr = torch.abs(diff_fr) * maskf_col
+                        per_frame_mae_sum = abs_fr.reshape(_nf, -1).sum(dim=-1)
+                        mae_fr = torch.mean(per_frame_mae_sum / per_frame_fr_dof)
+                        more_loss["mae_fr"] = self.display_if_exist(
+                            mae_fr.detach(), find_force_r
+                        )
+                else:
+                    l2_force_real_loss = torch.mean(torch.square(diff_fr))
+                    if not self.inference:
+                        more_loss["l2_force_r_loss"] = self.display_if_exist(
+                            l2_force_real_loss.detach(), find_force_r
+                        )
+                    loss += (pref_fr * l2_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    rmse_fr = l2_force_real_loss.sqrt()
+                    more_loss["rmse_fr"] = self.display_if_exist(
+                        rmse_fr.detach(), find_force_r
                     )
+                    if mae:
+                        mae_fr = torch.mean(torch.abs(diff_fr))
+                        more_loss["mae_fr"] = self.display_if_exist(
+                            mae_fr.detach(), find_force_r
+                        )
             elif self.loss_func == "mae":
                 l1_force_real_loss = F.l1_loss(
                     label["force"], model_pred["force"], reduction="none"
@@ -338,24 +391,45 @@ class EnergySpinLoss(TaskLoss):
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
-            diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
+            diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)  # [nf, 9]
 
             if self.loss_func == "mse":
-                l2_virial_loss = torch.mean(torch.square(diff_v))
-                if not self.inference:
-                    more_loss["l2_virial_loss"] = self.display_if_exist(
-                        l2_virial_loss.detach(), find_virial
+                if maskf is not None:
+                    # Idiom 2 (extensive, k=9): per-frame normalization by real-atom count.
+                    se_v = torch.square(diff_v)  # [nf, 9]
+                    per_frame_v = torch.mean(se_v, dim=-1)  # [nf]
+                    if not self.inference:
+                        more_loss["l2_virial_loss"] = self.display_if_exist(
+                            torch.mean(per_frame_v).detach(), find_virial
+                        )
+                    loss += pref_v * torch.mean(per_frame_v * inv**norm_exp)
+                    rmse_v = torch.sqrt(torch.mean(per_frame_v * inv**2))
+                    more_loss["rmse_v"] = self.display_if_exist(
+                        rmse_v.detach(), find_virial
                     )
-                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
-                rmse_v = l2_virial_loss.sqrt() * atom_norm
-                more_loss["rmse_v"] = self.display_if_exist(
-                    rmse_v.detach(), find_virial
-                )
-                if mae:
-                    mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
-                    more_loss["mae_v"] = self.display_if_exist(
-                        mae_v.detach(), find_virial
+                    if mae:
+                        abs_v = torch.abs(diff_v)  # [nf, 9]
+                        per_frame_mae_v = torch.mean(abs_v, dim=-1)  # [nf]
+                        mae_v = torch.mean(per_frame_mae_v * inv)
+                        more_loss["mae_v"] = self.display_if_exist(
+                            mae_v.detach(), find_virial
+                        )
+                else:
+                    l2_virial_loss = torch.mean(torch.square(diff_v))
+                    if not self.inference:
+                        more_loss["l2_virial_loss"] = self.display_if_exist(
+                            l2_virial_loss.detach(), find_virial
+                        )
+                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                    rmse_v = l2_virial_loss.sqrt() * atom_norm
+                    more_loss["rmse_v"] = self.display_if_exist(
+                        rmse_v.detach(), find_virial
                     )
+                    if mae:
+                        mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
+                        more_loss["mae_v"] = self.display_if_exist(
+                            mae_v.detach(), find_virial
+                        )
             elif self.loss_func == "mae":
                 l1_virial_loss = F.l1_loss(
                     label["virial"].reshape(-1),

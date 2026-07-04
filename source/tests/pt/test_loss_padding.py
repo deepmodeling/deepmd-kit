@@ -21,6 +21,7 @@ from deepmd.pt.loss.dos import (
 from deepmd.pt.loss.ener import (
     EnergyStdLoss,
 )
+from deepmd.pt.loss.ener_spin import EnergySpinLoss as EnergySpinLossPT
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -1351,4 +1352,365 @@ class TestPTPropertyLossIntensiveUnaffectedByMask:
         loss_nm = self._loss_fn(loss_obj, mp_nm, lb_nm, NP)
         assert torch.isclose(loss_m, loss_nm), (
             f"intensive property must ignore mask: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 5: EnergySpinLoss (pt) -- energy (has_e), force_real (has_fr),
+# virial (has_v).  Leave force_mag / mask_mag (has_fm) COMPLETELY UNTOUCHED.
+# ---------------------------------------------------------------------------
+
+# Spin-specific test constants: NM magnetic atoms per frame (same count in
+# both frames so that .view(nframes,-1,3) in the pt force_mag path is valid).
+_NM_PT = 2
+
+_MASK_MAG_A_PT = torch.zeros(1, NA, 1, dtype=torch.bool, device="cpu")
+_MASK_MAG_A_PT[0, :_NM_PT, 0] = True  # first NM_PT atoms of frame A magnetic
+
+_MASK_MAG_B_PT = torch.zeros(1, NB, 1, dtype=torch.bool, device="cpu")
+_MASK_MAG_B_PT[0, :_NM_PT, 0] = True  # first NM_PT atoms of frame B magnetic
+
+_MASK_MAG_PAD_SPIN_PT = torch.zeros(2, NP, 1, dtype=torch.bool, device="cpu")
+_MASK_MAG_PAD_SPIN_PT[0, :_NM_PT, 0] = True  # frame A
+_MASK_MAG_PAD_SPIN_PT[1, :_NM_PT, 0] = True  # frame B
+
+_MASK_PAD_SPIN_PT = torch.tensor(
+    [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+    dtype=torch.float64,
+    device="cpu",
+)  # [2, NP]
+
+
+def _spin_loss_fn(loss_obj, model_pred, label, natoms):
+    """Call EnergySpinLoss.forward via mock model; return scalar loss tensor."""
+    _, loss, _ = loss_obj.forward(
+        input_dict={},  # mask already in model_pred; no re-injection needed
+        model=_MockModel(model_pred),
+        label=label,
+        natoms=natoms,
+        learning_rate=1.0,
+    )
+    return loss
+
+
+class TestPTEnerSpinLossEnerGradAccum:
+    """Idiom 2 (extensive) for the energy term in pt EnergySpinLoss.
+
+    Covers: mse (norm_exp=1 and 2); plus non-mixed no-op.
+    """
+
+    def _make_loss(self, intensive=False):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            intensive_ener_virial=intensive,
+        )
+
+    def _run_invariant(self, loss_obj, e_A, e_A_hat, e_B, e_B_hat):
+        def make_A():
+            mp = {
+                "energy": e_A,
+                "mask_mag": _MASK_MAG_A_PT,
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"energy": e_A_hat, "find_energy": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "energy": e_B,
+                "mask_mag": _MASK_MAG_B_PT,
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"energy": e_B_hat, "find_energy": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "energy": torch.cat([e_A, e_B], dim=0),  # [2, 1]
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {
+                "energy": torch.cat([e_A_hat, e_B_hat], dim=0),
+                "find_energy": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Spin energy MSE norm_exp=1 meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(
+            self._make_loss(intensive=False), e_A, e_A_hat, e_B, e_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Spin energy MSE norm_exp=2 meets the grad-accum invariant."""
+        e_A = _t(1, 1)
+        e_A_hat = _t(1, 1)
+        e_B = _t(1, 1)
+        e_B_hat = _t(1, 1)
+        self._run_invariant(self._make_loss(intensive=True), e_A, e_A_hat, e_B, e_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same energy loss as no mask."""
+        e = _t(1, 1)
+        e_hat = _t(1, 1)
+        loss_obj = self._make_loss()
+        mp_mask = {
+            "energy": e,
+            "mask_mag": _MASK_MAG_B_PT,
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"energy": e, "mask_mag": _MASK_MAG_B_PT}
+        lb = {"energy": e_hat, "find_energy": 1.0}
+        loss_m = _spin_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _spin_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnerSpinLossForceRealGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=3) for force_real in pt EnergySpinLoss.
+
+    Covers: mse; plus non-mixed no-op.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
+        def make_A():
+            mp = {
+                "force": f_A.unsqueeze(0),  # [1, NA, 3]
+                "mask_mag": _MASK_MAG_A_PT,
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"force": f_A_hat.unsqueeze(0), "find_force": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "force": f_B.unsqueeze(0),
+                "mask_mag": _MASK_MAG_B_PT,
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"force": f_B_hat.unsqueeze(0), "find_force": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "force": _padded_force_t(f_A, f_B),  # [2, NP, 3]
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {
+                "force": _padded_force_t(f_A_hat, f_B_hat),
+                "find_force": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Force_real MSE meets the grad-accum invariant."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        self._run_invariant(self._make_loss(), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same force_real loss as no mask."""
+        f = _t(NP, 3)
+        f_hat = _t(NP, 3)
+        loss_obj = self._make_loss()
+        mp_mask = {
+            "force": f.unsqueeze(0),
+            "mask_mag": _MASK_MAG_B_PT,
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"force": f.unsqueeze(0), "mask_mag": _MASK_MAG_B_PT}
+        lb = {"force": f_hat.unsqueeze(0), "find_force": 1.0}
+        loss_m = _spin_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _spin_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnerSpinLossVirialGradAccum:
+    """Idiom 2 (extensive, k=9) for virial in pt EnergySpinLoss.
+
+    Covers: mse (norm_exp=1 and 2); plus non-mixed no-op.
+    """
+
+    def _make_loss(self, intensive=False):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            intensive_ener_virial=intensive,
+        )
+
+    def _run_invariant(self, loss_obj, v_A, v_A_hat, v_B, v_B_hat):
+        def make_A():
+            mp = {
+                "virial": v_A.unsqueeze(0),  # [1, 9]
+                "mask_mag": _MASK_MAG_A_PT,
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"virial": v_A_hat.unsqueeze(0), "find_virial": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "virial": v_B.unsqueeze(0),
+                "mask_mag": _MASK_MAG_B_PT,
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"virial": v_B_hat.unsqueeze(0), "find_virial": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            mp = {
+                "virial": torch.stack([v_A, v_B], dim=0),  # [2, 9]
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {
+                "virial": torch.stack([v_A_hat, v_B_hat], dim=0),
+                "find_virial": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Spin virial MSE norm_exp=1 meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(
+            self._make_loss(intensive=False), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Spin virial MSE norm_exp=2 meets the grad-accum invariant."""
+        v_A = _t(9)
+        v_A_hat = _t(9)
+        v_B = _t(9)
+        v_B_hat = _t(9)
+        self._run_invariant(self._make_loss(intensive=True), v_A, v_A_hat, v_B, v_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same virial loss as no mask."""
+        v = _t(9)
+        v_hat = _t(9)
+        loss_obj = self._make_loss()
+        mp_mask = {
+            "virial": v.unsqueeze(0),
+            "mask_mag": _MASK_MAG_B_PT,
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {"virial": v.unsqueeze(0), "mask_mag": _MASK_MAG_B_PT}
+        lb = {"virial": v_hat.unsqueeze(0), "find_virial": 1.0}
+        loss_m = _spin_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _spin_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTEnerSpinLossForceMagUnchanged:
+    """Guard: the padding mask must NOT affect the force_mag / mask_mag term.
+
+    The force_mag path uses mask_mag (spin virtual-atom mask), which is a
+    completely separate concept from the padding mask model_pred["mask"].
+    After the Task-5 implementation, presenting a padding mask must leave
+    the force_mag loss bit-identical.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def test_padding_mask_does_not_affect_force_mag(self):
+        """force_mag loss is bit-identical with and without padding mask."""
+        fm = _rnd_t(2, NP, 3)
+        fm_hat = _rnd_t(2, NP, 3)
+        loss_obj = self._make_loss()
+
+        def _run(with_mask):
+            mp = {
+                "force_mag": fm,
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+            }
+            lb = {
+                "force_mag": fm_hat,
+                "find_force_mag": 1.0,
+            }
+            if with_mask:
+                mp["mask"] = _MASK_PAD_SPIN_PT
+            return _spin_loss_fn(loss_obj, mp, lb, NP)
+
+        loss_with = _run(True)
+        loss_without = _run(False)
+        assert torch.isclose(loss_with, loss_without), (
+            f"force_mag loss must be unchanged by padding mask: "
+            f"{loss_with.item()} vs {loss_without.item()}"
         )

@@ -21,6 +21,7 @@ from deepmd.dpmodel.loss.dos import (
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
 )
+from deepmd.dpmodel.loss.ener_spin import EnergySpinLoss as EnergySpinLossDPModel
 from deepmd.dpmodel.loss.property import (
     PropertyLoss,
 )
@@ -1248,4 +1249,442 @@ class TestPropertyLossIntensiveUnaffectedByMask:
         loss_nm, _ = loss_obj.call(1.0, NP, without_mask, {PROP_VAR: l})
         assert np.isclose(float(loss_m), float(loss_nm)), (
             f"intensive property must ignore mask: {float(loss_m)} vs {float(loss_nm)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 5: EnergySpinLoss -- energy (has_e), force_real (has_fr), virial (has_v)
+# Leave force_mag / mask_mag (has_fm) COMPLETELY UNTOUCHED.
+# ---------------------------------------------------------------------------
+
+# Spin-specific test constants: NM magnetic atoms per frame (same count in
+# both frames so that the pt fancy-index .view(nframes,-1,3) stays valid).
+_NM = 2
+
+_MASK_MAG_A = np.zeros((1, NA, 1), dtype=bool)  # [1, NA, 1]
+_MASK_MAG_A[0, :_NM, 0] = True  # first NM atoms of frame A are magnetic
+
+_MASK_MAG_B = np.zeros((1, NB, 1), dtype=bool)  # [1, NB, 1]
+_MASK_MAG_B[0, :_NM, 0] = True  # first NM atoms of frame B are magnetic
+
+# Padded batch (nf=2, nloc=NP): frame A padding slots are not magnetic.
+_MASK_MAG_PAD_SPIN = np.zeros((2, NP, 1), dtype=bool)  # [2, NP, 1]
+_MASK_MAG_PAD_SPIN[0, :_NM, 0] = True  # frame A: first NM real atoms are magnetic
+_MASK_MAG_PAD_SPIN[1, :_NM, 0] = True  # frame B: first NM real atoms are magnetic
+
+_MASK_PAD_SPIN = np.array(
+    [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64
+)  # [2, NP]
+
+
+def _full_spin_dicts(
+    nf, nloc, energy_pred, energy_label, mask_mag, mask=None, **overrides
+):
+    """Build complete model_pred and label_dict for EnergySpinLoss.call.
+
+    EnergySpinLoss.call accesses "energy" unconditionally (for xp namespace),
+    so it must always be present.  All other keys are guarded by has_* flags.
+    """
+    model_pred = {
+        "energy": energy_pred,  # [nf, 1]
+        "force": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "force_mag": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "mask_mag": mask_mag,  # [nf, nloc, 1]
+        "virial": np.zeros((nf, 9), dtype=np.float64),
+    }
+    label_dict = {
+        "energy": energy_label,  # [nf, 1]
+        "force": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "force_mag": np.zeros((nf, nloc, 3), dtype=np.float64),
+        "virial": np.zeros((nf, 9), dtype=np.float64),
+        "find_energy": 1.0,
+        "find_force": 0.0,
+        "find_force_mag": 0.0,
+        "find_virial": 0.0,
+    }
+    if mask is not None:
+        model_pred["mask"] = mask
+    model_pred.update({k: v for k, v in overrides.items() if k in model_pred})
+    label_dict.update({k: v for k, v in overrides.items() if k in label_dict})
+    return model_pred, label_dict
+
+
+class TestDPModelEnerSpinLossEnerGradAccum:
+    """Idiom 2 (extensive) for the energy term in EnergySpinLoss.
+
+    Covers: mse (norm_exp=1 and 2); plus non-mixed no-op.
+    """
+
+    def _make_loss(self, intensive=False):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            intensive_ener_virial=intensive,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, e_A, e_A_hat, e_B, e_B_hat):
+        def make_A():
+            p, l = _full_spin_dicts(
+                1,
+                NA,
+                e_A,
+                e_A_hat,
+                _MASK_MAG_A,
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_spin_dicts(
+                1,
+                NB,
+                e_B,
+                e_B_hat,
+                _MASK_MAG_B,
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            return p, l, NB
+
+        def make_padded():
+            e_pad = np.concatenate([e_A, e_B], axis=0)  # [2, 1]
+            e_hat_pad = np.concatenate([e_A_hat, e_B_hat], axis=0)
+            p, l = _full_spin_dicts(
+                2, NP, e_pad, e_hat_pad, _MASK_MAG_PAD_SPIN, mask=_MASK_PAD_SPIN
+            )
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Spin energy MSE norm_exp=1 meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(
+            self._make_loss(intensive=False), e_A, e_A_hat, e_B, e_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Spin energy MSE norm_exp=2 meets the grad-accum invariant."""
+        e_A, e_B = _rnd(1, 1), _rnd(1, 1)
+        e_A_hat, e_B_hat = _rnd(1, 1), _rnd(1, 1)
+        self._run_invariant(self._make_loss(intensive=True), e_A, e_A_hat, e_B, e_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same energy loss as no mask."""
+        e = _rnd(1, 1)
+        e_hat = _rnd(1, 1)
+        loss_obj = self._make_loss()
+        p_mask, l_mask = _full_spin_dicts(
+            1, NP, e, e_hat, _MASK_MAG_B, mask=np.ones((1, NP), dtype=np.float64)
+        )
+        p_nm, l_nm = _full_spin_dicts(1, NP, e, e_hat, _MASK_MAG_B)
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnerSpinLossForceRealGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=3) for force_real in EnergySpinLoss.
+
+    Covers: mse; plus non-mixed no-op.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
+        def make_A():
+            p, l = _full_spin_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_A,
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            p["force"] = f_A[None]  # [1, NA, 3]
+            l["force"] = f_A_hat[None]
+            l["find_force"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_spin_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_B,
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            p["force"] = f_B[None]
+            l["force"] = f_B_hat[None]
+            l["find_force"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            f_A_pad = np.zeros((NP, 3), dtype=np.float64)
+            f_A_pad[:NA] = f_A
+            f_A_hat_pad = np.zeros((NP, 3), dtype=np.float64)
+            f_A_hat_pad[:NA] = f_A_hat
+            f_pad = np.stack([f_A_pad, f_B], axis=0)  # [2, NP, 3]
+            f_hat_pad = np.stack([f_A_hat_pad, f_B_hat], axis=0)
+            p, l = _full_spin_dicts(
+                2,
+                NP,
+                np.zeros((2, 1)),
+                np.zeros((2, 1)),
+                _MASK_MAG_PAD_SPIN,
+                mask=_MASK_PAD_SPIN,
+            )
+            p["force"] = f_pad
+            l["force"] = f_hat_pad
+            l["find_force"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Force_real MSE meets the grad-accum invariant."""
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        self._run_invariant(self._make_loss(), f_A, f_A_hat, f_B, f_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same force_real loss as no mask."""
+        f = _rnd(NP, 3)
+        f_hat = _rnd(NP, 3)
+        loss_obj = self._make_loss()
+        p_mask, l_mask = _full_spin_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            _MASK_MAG_B,
+            mask=np.ones((1, NP), dtype=np.float64),
+        )
+        p_mask["force"] = f[None]
+        l_mask["force"] = f_hat[None]
+        l_mask["find_force"] = 1.0
+        p_nm, l_nm = _full_spin_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), _MASK_MAG_B
+        )
+        p_nm["force"] = f[None]
+        l_nm["force"] = f_hat[None]
+        l_nm["find_force"] = 1.0
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnerSpinLossVirialGradAccum:
+    """Idiom 2 (extensive, k=9) for virial in EnergySpinLoss.
+
+    Covers: mse (norm_exp=1 and 2); plus non-mixed no-op.
+    """
+
+    def _make_loss(self, intensive=False):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            intensive_ener_virial=intensive,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, v_A, v_A_hat, v_B, v_B_hat):
+        def make_A():
+            p, l = _full_spin_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_A,
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            p["virial"] = v_A[None]  # [1, 9]
+            l["virial"] = v_A_hat[None]
+            l["find_virial"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_spin_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_B,
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            p["virial"] = v_B[None]
+            l["virial"] = v_B_hat[None]
+            l["find_virial"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            v_pad = np.stack([v_A, v_B], axis=0)  # [2, 9]
+            v_hat_pad = np.stack([v_A_hat, v_B_hat], axis=0)
+            p, l = _full_spin_dicts(
+                2,
+                NP,
+                np.zeros((2, 1)),
+                np.zeros((2, 1)),
+                _MASK_MAG_PAD_SPIN,
+                mask=_MASK_PAD_SPIN,
+            )
+            p["virial"] = v_pad
+            l["virial"] = v_hat_pad
+            l["find_virial"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_non_intensive_grad_accum(self):
+        """Spin virial MSE norm_exp=1 meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(
+            self._make_loss(intensive=False), v_A, v_A_hat, v_B, v_B_hat
+        )
+
+    def test_mse_intensive_grad_accum(self):
+        """Spin virial MSE norm_exp=2 meets the grad-accum invariant."""
+        v_A, v_B = _rnd(9), _rnd(9)
+        v_A_hat, v_B_hat = _rnd(9), _rnd(9)
+        self._run_invariant(self._make_loss(intensive=True), v_A, v_A_hat, v_B, v_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same virial loss as no mask."""
+        v = _rnd(9)
+        v_hat = _rnd(9)
+        loss_obj = self._make_loss()
+        p_mask, l_mask = _full_spin_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            _MASK_MAG_B,
+            mask=np.ones((1, NP), dtype=np.float64),
+        )
+        p_mask["virial"] = v[None]
+        l_mask["virial"] = v_hat[None]
+        l_mask["find_virial"] = 1.0
+        p_nm, l_nm = _full_spin_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), _MASK_MAG_B
+        )
+        p_nm["virial"] = v[None]
+        l_nm["virial"] = v_hat[None]
+        l_nm["find_virial"] = 1.0
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+class TestDPModelEnerSpinLossForceMagUnchanged:
+    """Guard: the padding mask must NOT affect the force_mag / mask_mag term.
+
+    The force_mag path uses mask_mag (spin virtual-atom mask), which is a
+    completely separate concept from the padding mask model_dict["mask"].
+    After the Task-5 implementation, presenting a padding mask must leave
+    the force_mag loss bit-identical.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def test_padding_mask_does_not_affect_force_mag(self):
+        """force_mag loss is bit-identical with and without padding mask."""
+        fm = _rnd(2, NP, 3)
+        fm_hat = _rnd(2, NP, 3)
+        loss_obj = self._make_loss()
+
+        def _run(with_mask):
+            pred = {
+                "energy": np.zeros((2, 1), dtype=np.float64),
+                "force_mag": fm,
+                "mask_mag": _MASK_MAG_PAD_SPIN,
+            }
+            lbl = {
+                "force_mag": fm_hat,
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            if with_mask:
+                pred["mask"] = _MASK_PAD_SPIN
+            loss, _ = loss_obj.call(1.0, NP, pred, lbl)
+            return float(loss)
+
+        loss_with = _run(True)
+        loss_without = _run(False)
+        assert np.isclose(loss_with, loss_without), (
+            f"force_mag loss must be unchanged by padding mask: "
+            f"{loss_with} vs {loss_without}"
         )
