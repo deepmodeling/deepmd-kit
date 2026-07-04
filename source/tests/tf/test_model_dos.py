@@ -329,6 +329,9 @@ class TestModel(tf.test.TestCase):
         )
 
         places = 4
+        # o_dos is now [nframes, numb_dos] and o_atom_dos [nframes, natoms, numb_dos]
+        pred_dos = np.reshape(pred_dos, [-1])
+        pred_atom_dos = np.reshape(pred_atom_dos, [natoms, numb_dos])
         np.testing.assert_almost_equal(pred_dos, ref_dos, places)
         np.testing.assert_almost_equal(np.sum(pred_atom_dos, axis=0), ref_dos, places)
         np.testing.assert_almost_equal(pred_atom_dos[0], ref_ados_1, places)
