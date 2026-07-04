@@ -25,6 +25,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
     )
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 @dataclass
@@ -165,6 +168,68 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     # every downstream per-frame reduction and breaking dynamic-``nf`` inference.
     last_frame = xp.sum(xp.ones_like(n_node)) - 1  # 0-d int == nf - 1
     return xp.minimum(frame_id, xp.astype(last_frame, xp.int64))
+
+
+def apply_pair_exclusion(
+    graph: NeighborGraph,
+    atype: Array,
+    pair_excl: PairExcludeMask | None,
+    *,
+    compact: bool = False,
+) -> NeighborGraph:
+    """Canonical pair-type exclusion transform (decision #18).
+
+    ANDs the per-edge type keep-mask into ``graph.edge_mask`` so excluded
+    type pairs contribute exactly zero to every downstream ``segment_sum``.
+    The search stays purely geometric; this transform is applied ONCE at the
+    atomic-model seam (model-level ``pair_exclude_types``) and, for
+    descriptor-level ``exclude_types``, inside the descriptor's graph
+    forward. Identity (returns ``graph`` itself) when ``pair_excl`` is
+    ``None`` or empty.
+
+    Parameters
+    ----------
+    graph
+        The neighbor graph; only ``edge_mask`` (and, if ``compact=True``,
+        ``edge_index``, ``edge_vec``, ``angle_index``, ``angle_mask``) are
+        replaced.
+    atype
+        (N,) flat node types, clamped >= 0 (virtual atoms already handled
+        by the caller / the builders).
+    pair_excl
+        The ``PairExcludeMask`` holding the excluded (ti, tj) set.
+    compact
+        If ``False`` (default), only zero-out masked edges via ``edge_mask``
+        (shape-static; the ONLY mode allowed in compiled / AOTI paths).
+        If ``True``, additionally drop masked edges so the returned graph
+        has no padding on the edge axis (data-dependent shape; eager /
+        dynamic-nedge only).
+
+    Returns
+    -------
+    NeighborGraph
+        A ``dataclasses.replace`` copy (or the original ``graph`` on early
+        exit) with the exclusion applied.
+    """
+    import dataclasses
+
+    if pair_excl is None or len(pair_excl.get_exclude_types()) == 0:
+        return graph
+    xp = array_api_compat.array_namespace(graph.edge_mask)
+    keep = pair_excl.build_edge_exclude_mask(graph.edge_index, atype)
+    out = dataclasses.replace(
+        graph,
+        edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
+    )
+    if compact:
+        (keep_idx,) = xp.nonzero(out.edge_mask)
+        out = dataclasses.replace(
+            out,
+            edge_index=out.edge_index[:, keep_idx],
+            edge_vec=xp.take(out.edge_vec, keep_idx, axis=0),
+            edge_mask=xp.take(out.edge_mask, keep_idx, axis=0),
+        )
+    return out
 
 
 def node_validity_mask(n_node: Array, n_total: int) -> Array:

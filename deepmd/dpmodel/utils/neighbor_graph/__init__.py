@@ -28,6 +28,7 @@ from .from_ijs import (
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     frame_id_from_n_node,
     node_validity_mask,
     pad_and_guard_edges,
@@ -45,6 +46,7 @@ from .segment import (
 __all__ = [
     "GraphLayout",
     "NeighborGraph",
+    "apply_pair_exclusion",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",
     "center_edge_pairs",
