@@ -42,12 +42,17 @@ import array_api_compat
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     pad_and_guard_edges,
 )
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
+    )
+
+    from .graph import (
+        PairExcludeMask,
     )
 
 
@@ -203,6 +208,9 @@ def build_neighbor_graph(
     box: Array | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph DIRECTLY from coordinates (``dense`` search).
 
@@ -221,6 +229,11 @@ def build_neighbor_graph(
     ``method`` key. Edges map every neighbor to its LOCAL owner
     (``src = mapping[neighbor]``), so the graph is ghost-free.
 
+    When ``pair_excl`` is given, :func:`apply_pair_exclusion` is called as a
+    post-process after the geometric search (the default path). A builder MAY
+    natively fuse the exclusion into its search in a future PR; the contract is
+    set-equality of valid-edge sets with the default post-process path.
+
     Parameters
     ----------
     coord
@@ -236,6 +249,14 @@ def build_neighbor_graph(
         at non-binding ``sel``).
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
     """
     from deepmd.dpmodel.utils.nlist import (
         extend_coord_with_ghosts,
@@ -298,9 +319,13 @@ def build_neighbor_graph(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
     n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    return NeighborGraph(
+    graph = NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
         edge_vec=edge_vec,
         edge_mask=edge_mask,
     )
+    if pair_excl is not None:
+        atype_flat = xp.reshape(atype, (-1,))
+        graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    return graph

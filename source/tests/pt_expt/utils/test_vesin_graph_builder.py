@@ -3,7 +3,11 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
     build_neighbor_graph,
 )
 
@@ -105,3 +109,52 @@ def test_vesin_excludes_virtual_atoms_like_dense():
     ei = np.asarray(ng.edge_index)[:, np.asarray(ng.edge_mask)]
     at = atype.reshape(-1).numpy()
     assert np.all(at[ei[0]] >= 0) and np.all(at[ei[1]] >= 0)
+
+
+def _valid_edge_set(ng):
+    """Return the set of (src, dst, rounded edge_vec) for all real edges."""
+    ei = np.asarray(ng.edge_index)
+    ev = np.asarray(ng.edge_vec)
+    em = np.asarray(ng.edge_mask)
+    return {
+        (int(ei[0, k]), int(ei[1, k]), tuple(np.round(ev[k], 6)))
+        for k in range(ei.shape[1])
+        if em[k]
+    }
+
+
+@pytest.mark.parametrize("periodic", [False, True])  # non-PBC and PBC
+def test_vesin_pair_excl_none_identity(periodic):
+    """pair_excl=None: vesin builder output is unchanged (identity)."""
+    coord, atype, box = _system(periodic)
+    coord = coord.reshape(1, 4, 3)
+    box_3d = None if box is None else box.reshape(1, 3, 3)
+    ng_ref = vesin_builder.build_neighbor_graph_vesin(coord, atype, box_3d, 2.0)
+    ng_excl = vesin_builder.build_neighbor_graph_vesin(
+        coord, atype, box_3d, 2.0, pair_excl=None
+    )
+    assert _valid_edge_set(ng_ref) == _valid_edge_set(ng_excl)
+
+
+@pytest.mark.parametrize("periodic", [False, True])  # non-PBC and PBC
+def test_vesin_pair_excl_oracle_set_equality(periodic):
+    """Vesin builder(pair_excl=X) == dense ref + apply_pair_exclusion(X)."""
+    coord, atype, box = _system(periodic)
+    coord = coord.reshape(1, 4, 3)
+    box_3d = None if box is None else box.reshape(1, 3, 3)
+    rcut = 2.0
+    pe = PairExcludeMask(2, [(0, 1), (1, 0)])
+    # dense reference + separate post-process
+    ng_dense = build_neighbor_graph(coord, atype, box_3d, rcut)
+    atype_flat = atype.reshape(-1)
+    ng_ref = apply_pair_exclusion(ng_dense, atype_flat, pe)
+    # vesin builder with fused post-process
+    ng_vesin = vesin_builder.build_neighbor_graph_vesin(
+        coord, atype, box_3d, rcut, pair_excl=pe
+    )
+    assert _valid_edge_set(ng_ref) == _valid_edge_set(ng_vesin)
+    # exclusion actually removed edges
+    ng_plain = vesin_builder.build_neighbor_graph_vesin(coord, atype, box_3d, rcut)
+    assert int(np.asarray(ng_vesin.edge_mask).sum()) < int(
+        np.asarray(ng_plain.edge_mask).sum()
+    )

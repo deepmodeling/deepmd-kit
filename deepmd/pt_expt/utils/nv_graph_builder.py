@@ -22,14 +22,21 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     neighbor_graph_from_ijs,
 )
 from deepmd.pt.utils.nv_nlist import (
@@ -204,6 +211,9 @@ def build_neighbor_graph_nv(
     box: Any | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using nvalchemiops' GPU cell list.
 
@@ -219,6 +229,14 @@ def build_neighbor_graph_nv(
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic with ``min_edges`` guards.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
 
     Returns
     -------
@@ -275,6 +293,10 @@ def build_neighbor_graph_nv(
     center_local, src_local = center_local[keep], src_local[keep]
     shift, frame_idx = shift[keep], frame_idx[keep]
 
-    return neighbor_graph_from_ijs(
+    graph = neighbor_graph_from_ijs(
         center_local, src_local, shift, coord, box_out, frame_idx, nloc, layout=layout
     )
+    if pair_excl is not None:
+        at_flat = torch.as_tensor(atype, device=device).reshape(-1)
+        graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
+    return graph
