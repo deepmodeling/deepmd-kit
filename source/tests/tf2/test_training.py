@@ -257,6 +257,33 @@ def test_train_step_passes_float_natoms_to_compiled_step() -> None:
     assert captured["next_step"].numpy() == 5
 
 
+def test_tensorboard_step_writes_tensors_without_float_sync(
+    tmp_path: Any,
+) -> None:
+    trainer = object.__new__(Trainer)
+    trainer.summary_writer = tf.summary.create_file_writer(str(tmp_path))
+    trainer.tensorboard_freq = 1
+    trainer.multi_task = False
+
+    def fail_if_float_sync_is_used(more_loss: dict[str, Any]) -> dict[str, float]:
+        del more_loss
+        raise AssertionError("tensorboard path should not convert tensors to floats")
+
+    trainer._more_loss_to_float = fail_if_float_sync_is_used
+
+    Trainer._write_tensorboard_step(
+        trainer,
+        DEFAULT_TASK_KEY,
+        display_step=1,
+        learning_rate=0.1,
+        more_loss={
+            "rmse": tf.constant(1.0, dtype=tf.float64),
+            "l2_regularization": tf.constant(2.0, dtype=tf.float64),
+        },
+    )
+    trainer.summary_writer.close()
+
+
 def test_train_entrypoint_builds_data_without_descriptor_rcut(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1025,9 +1025,17 @@ class Trainer(AbstractTrainer):
             return
         prefix = f"train/{task_key}" if self.multi_task else "train"
         with self.summary_writer.as_default():
-            tf.summary.scalar("learning_rate", learning_rate, step=display_step)
-            for key, value in self._more_loss_to_float(more_loss).items():
-                tf.summary.scalar(f"{prefix}/{key}", value, step=display_step)
+            tf.summary.scalar(
+                "learning_rate",
+                tf.convert_to_tensor(learning_rate, dtype=tf.float64),
+                step=display_step,
+            )
+            for key, value in more_loss.items():
+                if "l2_" in key:
+                    continue
+                tf.summary.scalar(
+                    f"{prefix}/{key}", to_tf_tensor(value), step=display_step
+                )
             self.summary_writer.flush()
 
     def _change_bias_after_training(self) -> None:
