@@ -125,10 +125,10 @@ def test_graph_matches_dense_over_flags(virtual, type_one_side, nf):
         assert int(np.asarray(g["mask"])[0, -1]) == 0  # virtual atom masked
 
 
-def test_pair_exclude_types_falls_back_to_dense():
-    """Pair exclude_types is unsupported on the graph -> uses_graph_lower False."""
+def test_descriptor_exclude_types_is_graph_eligible():
+    """Descriptor-level exclude_types (Task 3): uses_graph_lower() is True."""
     m = _ener_model([30], exclude_types=[(0, 1)])
-    assert m.atomic_model.descriptor.uses_graph_lower() is False
+    assert m.atomic_model.descriptor.uses_graph_lower() is True
 
 
 def test_model_pair_exclude_types_graph_matches_dense():

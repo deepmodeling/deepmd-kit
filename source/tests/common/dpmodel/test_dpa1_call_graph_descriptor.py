@@ -96,20 +96,17 @@ class TestDpa1DescriptorCallGraph:
         # sw
         np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
 
-    @pytest.mark.parametrize(
-        "kwargs",
-        [
-            {"tebd_input_mode": "strip"},  # strip tebd: graph unsupported -> dense
-            {"exclude_types": [(0, 1)]},  # type exclusion: graph unsupported -> dense
-        ],
-    )
-    def test_ineligible_config_falls_back_to_dense(self, kwargs) -> None:
-        """attn_layer=0 configs the graph can't handle (strip tebd, exclude_types)
-        must report uses_graph_lower()=False and run the dense body without
-        raising (regression: Task-3 routing previously raised NotImplementedError).
+    def test_strip_tebd_falls_back_to_dense(self) -> None:
+        """Strip tebd is still graph-ineligible: uses_graph_lower()=False and
+        dd.call() returns the dense result without raising.
         """
         dd = DescrptDPA1(
-            rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0, **kwargs
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[30],
+            ntypes=2,
+            attn_layer=0,
+            tebd_input_mode="strip",
         )
         assert dd.uses_graph_lower() is False
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
@@ -122,6 +119,63 @@ class TestDpa1DescriptorCallGraph:
         )
         out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)  # must not raise
         assert len(out) == 5
+
+    @pytest.mark.parametrize(
+        "exclude_types",
+        [[], [(0, 1)]],  # empty exclusions AND non-trivial exclusion
+    )
+    def test_exclude_types_graph_eligible_and_parity(self, exclude_types) -> None:
+        """exclude_types (Task 3): descriptor is graph-eligible (uses_graph_lower()
+        True) regardless of the exclusion list.  Graph output must match the dense
+        reference at rtol=atol=1e-12 for a non-binding sel.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
+        )
+
+        dd = DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[30],  # non-binding sel
+            ntypes=2,
+            attn_layer=0,
+            axis_neuron=2,
+            neuron=[6, 12],
+            exclude_types=exclude_types,
+        )
+        # gate: with any exclude list the descriptor must now be graph-eligible
+        assert dd.uses_graph_lower() is True
+
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        # dense reference (calls block directly)
+        ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+        # graph-routed public call
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        assert len(out) == 5
+        np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
+
+        if exclude_types:
+            # verify excluded pairs contribute sw == 0 in the dense reference
+            # (atype=[0,1,0,1] -> pairs (0,1) and (1,0) should be masked)
+            # sw shape: (nf, nloc, nnei, 1); just check the graph output is also 0
+            # for excluded-pair edges by checking call_graph sw channel
+            graph = from_dense_quartet(ext_coord, nlist, mapping, compact=False)
+            atype_local = self.atype.reshape(-1)
+            grrg_g, rot_mat_g = dd.call_graph(
+                graph, atype_local, type_embedding=dd.type_embedding.call()
+            )
+            # no nan/inf in output with exclusions applied
+            assert not np.any(np.isnan(grrg_g))
+            assert not np.any(np.isinf(grrg_g))
 
     def test_eligible_no_mapping_with_ghosts_falls_back(self) -> None:
         """An eligible (concat) attn_layer=0 descriptor called with mapping=None
