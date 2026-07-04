@@ -362,13 +362,12 @@ class EnergyLoss(Loss):
                     # Idiom 1 (per-atom masked mean, ncomp=3).
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))  # [nf, nloc, 3]
                     maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
+                    # Masked MSE computed for rmse_f display regardless of use_huber.
+                    sq_f = xp.square(diff_f_3d) * maskf_col  # [nf, nloc, 3]
+                    _pfs = xp.sum(xp.reshape(sq_f, (_nf, -1)), axis=-1)  # [nf]
+                    _pfd = xp.sum(maskf, axis=-1) * 3  # [nf]
+                    l2_force_masked = xp.mean(_pfs / _pfd)
                     if not self.use_huber:
-                        sq_f = xp.square(diff_f_3d) * maskf_col  # [nf, nloc, 3]
-                        per_frame_sum = xp.sum(
-                            xp.reshape(sq_f, (_nf, -1)), axis=-1
-                        )  # [nf]
-                        per_frame_dof = xp.sum(maskf, axis=-1) * 3  # [nf]
-                        l2_force_masked = xp.mean(per_frame_sum / per_frame_dof)
                         loss += pref_f * l2_force_masked
                     else:
                         if not self.f_use_norm:
@@ -408,7 +407,7 @@ class EnergyLoss(Loss):
                         l_huber_masked = xp.mean(per_frame_sum / per_frame_dof)
                         loss += pref_f * l_huber_masked
                     more_loss["rmse_f"] = self.display_if_exist(
-                        xp.sqrt(l2_force_loss), find_force
+                        xp.sqrt(l2_force_masked), find_force
                     )
                 else:
                     if not self.use_huber:

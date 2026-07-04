@@ -382,11 +382,12 @@ class EnergyStdLoss(TaskLoss):
                         # Idiom 1 (per-atom masked mean, ncomp=3).
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         maskf_col = maskf.reshape(_nf, _nloc, 1)
+                        # Masked MSE computed for rmse_f display regardless of use_huber.
+                        sq_f = torch.square(diff_f_3d) * maskf_col
+                        _pfs = sq_f.reshape(_nf, -1).sum(dim=-1)
+                        _pfd = maskf.sum(dim=-1) * 3
+                        l2_f_masked = torch.mean(_pfs / _pfd)
                         if not self.use_huber:
-                            sq_f = torch.square(diff_f_3d) * maskf_col
-                            per_frame_sum = sq_f.reshape(_nf, -1).sum(dim=-1)
-                            per_frame_dof = maskf.sum(dim=-1) * 3
-                            l2_f_masked = torch.mean(per_frame_sum / per_frame_dof)
                             loss += (pref_f * l2_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         else:
                             if not self.f_use_norm:
@@ -445,7 +446,11 @@ class EnergyStdLoss(TaskLoss):
                                     delta=self._huber_delta_force,
                                 )
                             loss += pref_f * l_huber_loss
-                    rmse_f = l2_force_loss.sqrt()
+                    rmse_f = (
+                        l2_f_masked.sqrt()
+                        if maskf is not None
+                        else l2_force_loss.sqrt()
+                    )
                     more_loss["rmse_f"] = self.display_if_exist(
                         rmse_f.detach(), find_force
                     )

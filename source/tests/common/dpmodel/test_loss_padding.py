@@ -934,6 +934,28 @@ class TestDPModelEnergyLossAtomEnerGradAccum:
         ae_B_hat = _rnd(NB, 1)
         self._run_invariant(self._make_loss("mae"), ae_A, ae_A_hat, ae_B, ae_B_hat)
 
+    def test_huber_grad_accum(self):
+        """Atom energy Huber (use_huber=True) meets the grad-accum invariant."""
+        ae_A = _rnd(NA, 1)
+        ae_A_hat = _rnd(NA, 1)
+        ae_B = _rnd(NB, 1)
+        ae_B_hat = _rnd(NB, 1)
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            use_huber=True,
+        )
+        self._run_invariant(loss_obj, ae_A, ae_A_hat, ae_B, ae_B_hat)
+
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same atom-energy loss as no mask."""
         ae = _rnd(NP, 1)
