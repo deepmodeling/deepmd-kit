@@ -330,6 +330,69 @@ class TestDpa1GraphLower:
         assert e_diff < 1e-3, f"smooth divergence too large: {e_diff:.3e}"
         assert f_diff < 1e-3, f"smooth force divergence too large: {f_diff:.3e}"
 
+    def test_pair_exclude_types_graph_vs_legacy(self) -> None:
+        """Model-level pair_exclude_types: graph route and legacy dense agree
+        bit-tight (fp64, 1e-12), AND the excluded model output differs from the
+        no-exclude baseline (exclusion is not vacuous).
+
+        Strategy: build the no-exclude model, serialize it, inject
+        ``pair_exclude_types=[[0,1]]`` into the serialized dict, deserialize
+        to get an exclude model with IDENTICAL weights, then run both routes.
+        """
+        import copy
+
+        # 1. build the reference (no-exclude) model
+        model_ref = self._make_model(attn_layer=0)
+        model_ref.eval()
+
+        # 2. derive the exclude model by patching the serialized dict
+        data = copy.deepcopy(model_ref.serialize())
+        data["pair_exclude_types"] = [[0, 1]]
+        model_excl = EnergyModel.deserialize(data).to(self.device)
+        model_excl.eval()
+
+        tol = (
+            {"rtol": 1e-12, "atol": 1e-12}
+            if self.device.type == "cpu"
+            else {"rtol": 1e-10, "atol": 1e-10}
+        )
+        box = self.cell.reshape(1, 9)
+
+        # 3. graph route (build-time pair exclusion)
+        graph_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # 4. legacy dense route (seam backstop in forward_atomic_graph)
+        legacy_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        # parity: graph == legacy
+        torch.testing.assert_close(
+            graph_out["energy_redu"], legacy_out["energy_redu"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_r"], legacy_out["energy_derv_r"], **tol
+        )
+
+        # 5. reference (no-exclude) via graph route
+        ref_out = model_ref.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # exclusion must have an effect
+        e_diff = (graph_out["energy_redu"] - ref_out["energy_redu"]).abs().max().item()
+        assert e_diff > 1e-10, (
+            f"pair_exclude_types had no effect on energy; diff={e_diff:.3e}"
+        )
+
     @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     def test_graph_route_float32(self, attn_layer) -> None:
         """A float32 model runs the graph route and matches the dense route.
