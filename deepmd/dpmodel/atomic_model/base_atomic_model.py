@@ -36,6 +36,7 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
+    apply_pair_exclusion_nlist,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -297,10 +298,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
-        if self.pair_excl is not None:
-            pair_mask = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)
-            # exclude neighbors in the nlist
-            nlist = xp.where(pair_mask == 1, nlist, -1)
+        # idempotent backstop: externally-supplied nlists (C++/LAMMPS, call_lower
+        # users) bypass the in-tree builders and land here still unfiltered.
+        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, self.pair_excl)
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(

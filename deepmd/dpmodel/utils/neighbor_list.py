@@ -14,12 +14,16 @@ from dataclasses import (
     dataclass,
 )
 from typing import (
+    TYPE_CHECKING,
     Literal,
 )
 
 from deepmd.dpmodel.array_api import (
     Array,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
 
 
 @dataclass
@@ -69,6 +73,7 @@ class NeighborList:
         rcut: float,
         sel: list[int],
         return_mode: Literal["extended", "edges"] = "extended",
+        pair_excl: "PairExcludeMask | None" = None,
     ) -> tuple[Array, Array, Array, Array] | EdgeNeighborList:
         """Build the extended system and a candidate neighbor list.
 
@@ -88,6 +93,12 @@ class NeighborList:
             ``"extended"`` returns the historical extended-coordinate quartet.
             ``"edges"`` returns :class:`EdgeNeighborList`, where ``edge_vec`` is
             the only geometric displacement consumed by the model.
+        pair_excl : PairExcludeMask or None, optional
+            When provided, excluded type pairs are erased from the returned
+            neighbor list (entries set to ``-1``) by calling
+            :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
+            Implementations that do not override this parameter fall back to
+            the default post-build application in the base interface.
 
         Returns
         -------

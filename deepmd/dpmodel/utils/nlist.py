@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -16,6 +17,9 @@ from .region import (
     normalize_coord,
     to_face_distance,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
 
 
 def _is_ndtensorflow_namespace(xp: Any) -> bool:
@@ -71,6 +75,44 @@ def extend_input_and_build_neighbor_list(
     return extended_coord, extended_atype, mapping, nlist
 
 
+def apply_pair_exclusion_nlist(
+    nlist: Array,
+    atype_ext: Array,
+    pair_excl: "PairExcludeMask | None",
+) -> Array:
+    """Apply model-level pair-type exclusion to a dense neighbor list.
+
+    Replaces excluded neighbor entries with ``-1`` so that downstream
+    descriptors see them as empty slots.  Identity (returns ``nlist``
+    unchanged) when *pair_excl* is ``None`` or its exclude-types list is
+    empty.
+
+    This is the nlist-representation counterpart of
+    :func:`deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
+
+    Parameters
+    ----------
+    nlist : Array
+        Dense neighbor list of shape ``(nf, nloc, nnei)``.  Entries equal
+        to ``-1`` indicate empty / padding slots.
+    atype_ext : Array
+        Extended atom types of shape ``(nf, nall)``.
+    pair_excl : PairExcludeMask or None
+        Exclusion mask object, or ``None`` / empty to skip.
+
+    Returns
+    -------
+    Array
+        Neighbor list of the same shape with excluded entries set to ``-1``.
+        Erasing ``-1`` entries a second time is a no-op (idempotent).
+    """
+    if pair_excl is None or len(pair_excl.exclude_types) == 0:
+        return nlist
+    xp = array_api_compat.array_namespace(nlist, atype_ext)
+    pair_mask = pair_excl.build_type_exclude_mask(nlist, atype_ext)
+    return xp.where(pair_mask == 1, nlist, xp.full_like(nlist, -1))
+
+
 ## translated from torch implementation by chatgpt
 def build_neighbor_list(
     coord: Array,
@@ -79,6 +121,7 @@ def build_neighbor_list(
     rcut: float,
     sel: int | list[int],
     distinguish_types: bool = True,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
@@ -100,6 +143,12 @@ def build_neighbor_list(
         types.
     distinguish_types : bool
         distinguish different types.
+    pair_excl : PairExcludeMask or None, optional
+        When provided, excluded type pairs are erased from the returned
+        neighbor list (entries set to ``-1``) immediately after the
+        geometric search.  This is a convenience shortcut for calling
+        :func:`apply_pair_exclusion_nlist` separately.  ``None`` (default)
+        leaves the list unchanged.
 
     Returns
     -------
@@ -195,9 +244,8 @@ def build_neighbor_list(
     )
 
     if distinguish_types:
-        return nlist_distinguish_types(nlist, atype, sel)
-    else:
-        return nlist
+        nlist = nlist_distinguish_types(nlist, atype, sel)
+    return apply_pair_exclusion_nlist(nlist, atype, pair_excl)
 
 
 def nlist_distinguish_types(

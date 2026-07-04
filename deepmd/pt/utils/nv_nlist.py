@@ -51,6 +51,8 @@ if TYPE_CHECKING:
         Iterator,
     )
 
+    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+
 
 @contextlib.contextmanager
 def _suppress_native_stderr() -> Iterator[None]:
@@ -155,11 +157,22 @@ class NvNeighborList(NeighborList):
         rcut: float,
         sel: list[int],
         return_mode: str = "extended",
+        pair_excl: PairExcludeMask | None = None,
     ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         """Build the extended system and neighbor list.
 
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`. The
         returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``.
+
+        Parameters
+        ----------
+        pair_excl : PairExcludeMask or None, optional
+            When provided, excluded type pairs are erased from the returned
+            neighbor list (entries set to ``-1``) by
+            :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
+            ``NvNeighborList`` is CUDA-only; the ``pair_excl`` parameter is
+            accepted for API parity with the other strategies but cannot be
+            validated on a CPU-only machine.
         """
         device = coord.device
         nf, nloc = atype.shape[:2]
@@ -207,6 +220,12 @@ class NvNeighborList(NeighborList):
             nlist = _truncate_to_sel_compiled(
                 extended_coord, nlist, target_neighbors, float(rcut)
             )
+            if pair_excl is not None:
+                from deepmd.dpmodel.utils.nlist import (
+                    apply_pair_exclusion_nlist,
+                )
+
+                nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
             return extended_coord, extended_atype, nlist, mapping
 
 
