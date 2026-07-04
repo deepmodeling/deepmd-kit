@@ -587,8 +587,8 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
     :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
     for ``neighbor_graph_method is None`` (the training default): a model is
     graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding
-    and no ``exclude_types``; attention layers included).
+    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding;
+    attention layers included).
 
     When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
     so the compiled path matches eager training (which already default-flips to

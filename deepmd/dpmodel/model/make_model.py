@@ -313,9 +313,8 @@ def make_model(
 
                 The graph routes (``"dense"``/``"ase"``, and the pt_expt
                 default-flip) require a ``mixed_types`` descriptor with a graph
-                lower (dpa1/se_atten with concat type embedding and no
-                ``exclude_types``; attention layers included).  At non-binding
-                ``sel`` the graph matches the dense path exactly for the
+                lower (dpa1/se_atten with concat type embedding; attention layers included).
+                At non-binding ``sel`` the graph matches the dense path exactly for the
                 non-smooth branch; at binding ``sel`` the carry-all graph keeps
                 neighbors the dense path truncates, and for
                 ``smooth_type_embedding=True`` the graph drops the dense
