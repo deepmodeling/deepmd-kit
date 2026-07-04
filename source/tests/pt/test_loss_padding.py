@@ -12,10 +12,17 @@ assert_grad_accum_invariant  -- reusable by Tasks 2-5 to check the
     mean_over_frames(per_frame_loss).
 """
 
+import numpy as np
 import torch
 
+from deepmd.pt.loss.dos import (
+    DOSLoss,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
+)
+from deepmd.pt.loss.tensor import (
+    TensorLoss,
 )
 
 # ---------------------------------------------------------------------------
@@ -76,6 +83,410 @@ def assert_grad_accum_invariant(
         f"Grad-accum invariant violated: padded_loss={loss_pad.item():.8f}, "
         f"ref={ref.item():.8f}, diff={abs(loss_pad.item() - ref.item()):.2e}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+RNG = np.random.default_rng(42)
+NUMB_DOS = 4
+TENSOR_SIZE = 3
+
+
+def _rnd_t(*shape):
+    """Create a random CPU tensor (device must be explicit to avoid default-device trap)."""
+    return torch.tensor(RNG.standard_normal(shape), dtype=torch.float64, device="cpu")
+
+
+class _MockModel:
+    """Callable that ignores inputs and returns a fixed model_pred dict.
+
+    Used in pt loss tests to bypass the actual model forward pass while still
+    exercising the loss computation code inside DOSLoss.forward / TensorLoss.forward.
+    The mask is pre-populated in ``pred`` so ``_inject_atom_mask`` leaves it alone.
+    """
+
+    def __init__(self, pred: dict):
+        self._pred = pred
+
+    def __call__(self, **kwargs):
+        return dict(self._pred)  # shallow copy; _inject_atom_mask may mutate it
+
+
+# ---------------------------------------------------------------------------
+# Task 2: DOSLoss -- atomic (ados / acdf) and global (dos / cdf)
+# ---------------------------------------------------------------------------
+
+
+class TestPTDOSLossAtomicGradAccum:
+    """Per-frame masked mean (idiom 1) for atomic dos / acdf terms.
+
+    _loss_fn calls the ACTUAL pt DOSLoss.forward() via a mock model so that
+    RED/GREEN transitions directly reflect changes to deepmd/pt/loss/dos.py.
+    """
+
+    def _make_loss(self):
+        return DOSLoss(
+            starter_learning_rate=1.0,
+            numb_dos=NUMB_DOS,
+            start_pref_dos=0.0,
+            limit_pref_dos=0.0,
+            start_pref_cdf=0.0,
+            limit_pref_cdf=0.0,
+            start_pref_ados=1.0,
+            limit_pref_ados=1.0,
+            start_pref_acdf=1.0,
+            limit_pref_acdf=1.0,
+        )
+
+    def _loss_fn(self, model_pred, label, natoms):
+        loss_obj = self._make_loss()
+        _, loss, _ = loss_obj.forward(
+            input_dict={},  # no atype; mask already in model_pred → not re-injected
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss
+
+    def test_ados_grad_accum_invariant(self):
+        """Atomic dos per-frame masked mean meets the grad-accum invariant."""
+        pred_A = _rnd_t(NA, NUMB_DOS)
+        label_A = _rnd_t(NA, NUMB_DOS)
+        pred_B = _rnd_t(NB, NUMB_DOS)
+        label_B = _rnd_t(NB, NUMB_DOS)
+
+        def make_A():
+            return (
+                {
+                    "atom_dos": pred_A,
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                },
+                {"atom_dos": label_A, "find_atom_dos": 1.0},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {
+                    "atom_dos": pred_B,
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                },
+                {"atom_dos": label_B, "find_atom_dos": 1.0},
+                NB,
+            )
+
+        def make_padded():
+            pred_A_pad = torch.zeros(NP, NUMB_DOS, dtype=torch.float64, device="cpu")
+            pred_A_pad[:NA] = pred_A
+            label_A_pad = torch.zeros(NP, NUMB_DOS, dtype=torch.float64, device="cpu")
+            label_A_pad[:NA] = label_A
+            mask_A = torch.tensor(
+                [[1.0] * NA + [0.0] * (NP - NA)], dtype=torch.float64, device="cpu"
+            )
+            mask_B = torch.ones(1, NB, dtype=torch.float64, device="cpu")
+            atom_dos_pad = torch.cat([pred_A_pad, pred_B], dim=0)
+            atom_dos_label = torch.cat([label_A_pad, label_B], dim=0)
+            mask_pad = torch.cat([mask_A, mask_B], dim=0)
+            return (
+                {"atom_dos": atom_dos_pad, "mask": mask_pad},
+                {"atom_dos": atom_dos_label, "find_atom_dos": 1.0},
+                NP,
+            )
+
+        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same loss as no mask (non-mixed batch)."""
+        pred = _rnd_t(NB, NUMB_DOS)
+        label = _rnd_t(NB, NUMB_DOS)
+        with_mask = {
+            "atom_dos": pred,
+            "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+        }
+        without_mask = {"atom_dos": pred}
+        label_dict = {"atom_dos": label, "find_atom_dos": 1.0}
+        loss_m = self._loss_fn(with_mask, label_dict, NB)
+        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTDOSLossGlobalGradAccum:
+    """Plain mean (idiom 3) for global dos / cdf terms.
+
+    _loss_fn calls the ACTUAL pt DOSLoss.forward() via a mock model.
+    """
+
+    def _make_loss(self):
+        return DOSLoss(
+            starter_learning_rate=1.0,
+            numb_dos=NUMB_DOS,
+            start_pref_dos=1.0,
+            limit_pref_dos=1.0,
+            start_pref_cdf=1.0,
+            limit_pref_cdf=1.0,
+            start_pref_ados=0.0,
+            limit_pref_ados=0.0,
+            start_pref_acdf=0.0,
+            limit_pref_acdf=0.0,
+        )
+
+    def _loss_fn(self, model_pred, label, natoms):
+        loss_obj = self._make_loss()
+        _, loss, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss
+
+    def test_dos_grad_accum_invariant(self):
+        """Global dos plain mean meets the grad-accum invariant."""
+        pred_A = _rnd_t(1, NUMB_DOS)
+        label_A = _rnd_t(1, NUMB_DOS)
+        pred_B = _rnd_t(1, NUMB_DOS)
+        label_B = _rnd_t(1, NUMB_DOS)
+
+        def make_A():
+            return (
+                {
+                    "dos": pred_A,
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                },
+                {"dos": label_A, "find_dos": 1.0},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {
+                    "dos": pred_B,
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                },
+                {"dos": label_B, "find_dos": 1.0},
+                NB,
+            )
+
+        def make_padded():
+            pred_pad = torch.cat([pred_A, pred_B], dim=0)
+            label_pad = torch.cat([label_A, label_B], dim=0)
+            mask_pad = torch.tensor(
+                [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+                dtype=torch.float64,
+                device="cpu",
+            )
+            return (
+                {"dos": pred_pad, "mask": mask_pad},
+                {"dos": label_pad, "find_dos": 1.0},
+                NP,
+            )
+
+        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same loss as no mask (non-mixed batch)."""
+        pred = _rnd_t(2, NUMB_DOS)
+        label = _rnd_t(2, NUMB_DOS)
+        with_mask = {
+            "dos": pred,
+            "mask": torch.ones(2, NB, dtype=torch.float64, device="cpu"),
+        }
+        without_mask = {"dos": pred}
+        label_dict = {"dos": label, "find_dos": 1.0}
+        loss_m = self._loss_fn(with_mask, label_dict, NB)
+        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 2: TensorLoss -- local and global tensor
+# ---------------------------------------------------------------------------
+
+
+class TestPTTensorLossLocalGradAccum:
+    """Per-frame masked mean (idiom 1) for local tensor term.
+
+    _loss_fn calls the ACTUAL pt TensorLoss.forward() via a mock model.
+    """
+
+    def _make_loss(self):
+        return TensorLoss(
+            tensor_name="dipole",
+            tensor_size=TENSOR_SIZE,
+            label_name="dipole",
+            pref_atomic=1.0,
+            pref=0.0,
+        )
+
+    def _loss_fn(self, model_pred, label, natoms):
+        loss_obj = self._make_loss()
+        _, loss, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss
+
+    def test_local_grad_accum_invariant(self):
+        """Local tensor per-frame masked mean meets the grad-accum invariant."""
+        pred_A = _rnd_t(NA, TENSOR_SIZE)
+        label_A = _rnd_t(NA, TENSOR_SIZE)
+        pred_B = _rnd_t(NB, TENSOR_SIZE)
+        label_B = _rnd_t(NB, TENSOR_SIZE)
+
+        def make_A():
+            return (
+                {
+                    "dipole": pred_A,
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                },
+                {"atom_dipole": label_A, "find_atom_dipole": 1.0},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {
+                    "dipole": pred_B,
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                },
+                {"atom_dipole": label_B, "find_atom_dipole": 1.0},
+                NB,
+            )
+
+        def make_padded():
+            pred_A_pad = torch.zeros(NP, TENSOR_SIZE, dtype=torch.float64, device="cpu")
+            pred_A_pad[:NA] = pred_A
+            label_A_pad = torch.zeros(
+                NP, TENSOR_SIZE, dtype=torch.float64, device="cpu"
+            )
+            label_A_pad[:NA] = label_A
+            mask_A = torch.tensor(
+                [[1.0] * NA + [0.0] * (NP - NA)], dtype=torch.float64, device="cpu"
+            )
+            mask_B = torch.ones(1, NB, dtype=torch.float64, device="cpu")
+            dipole_pad = torch.cat([pred_A_pad, pred_B], dim=0)
+            label_pad = torch.cat([label_A_pad, label_B], dim=0)
+            mask_pad = torch.cat([mask_A, mask_B], dim=0)
+            return (
+                {"dipole": dipole_pad, "mask": mask_pad},
+                {"atom_dipole": label_pad, "find_atom_dipole": 1.0},
+                NP,
+            )
+
+        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same loss as no mask (non-mixed batch)."""
+        pred = _rnd_t(NB, TENSOR_SIZE)
+        label = _rnd_t(NB, TENSOR_SIZE)
+        with_mask = {
+            "dipole": pred,
+            "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+        }
+        without_mask = {"dipole": pred}
+        label_dict = {"atom_dipole": label, "find_atom_dipole": 1.0}
+        loss_m = self._loss_fn(with_mask, label_dict, NB)
+        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+class TestPTTensorLossGlobalGradAccum:
+    """Plain mean (idiom 3) for global tensor term.
+
+    _loss_fn calls the ACTUAL pt TensorLoss.forward() via a mock model.
+    """
+
+    def _make_loss(self):
+        return TensorLoss(
+            tensor_name="dipole",
+            tensor_size=TENSOR_SIZE,
+            label_name="dipole",
+            pref_atomic=0.0,
+            pref=1.0,
+        )
+
+    def _loss_fn(self, model_pred, label, natoms):
+        loss_obj = self._make_loss()
+        _, loss, _ = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return loss
+
+    def test_global_grad_accum_invariant(self):
+        """Global tensor plain mean meets the grad-accum invariant."""
+        pred_A = _rnd_t(1, TENSOR_SIZE)
+        label_A = _rnd_t(1, TENSOR_SIZE)
+        pred_B = _rnd_t(1, TENSOR_SIZE)
+        label_B = _rnd_t(1, TENSOR_SIZE)
+
+        def make_A():
+            return (
+                {
+                    "global_dipole": pred_A,
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                },
+                {"dipole": label_A, "find_dipole": 1.0},
+                NA,
+            )
+
+        def make_B():
+            return (
+                {
+                    "global_dipole": pred_B,
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                },
+                {"dipole": label_B, "find_dipole": 1.0},
+                NB,
+            )
+
+        def make_padded():
+            pred_pad = torch.cat([pred_A, pred_B], dim=0)
+            label_pad = torch.cat([label_A, label_B], dim=0)
+            mask_pad = torch.tensor(
+                [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+                dtype=torch.float64,
+                device="cpu",
+            )
+            return (
+                {"global_dipole": pred_pad, "mask": mask_pad},
+                {"dipole": label_pad, "find_dipole": 1.0},
+                NP,
+            )
+
+        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same loss as no mask (non-mixed batch)."""
+        pred = _rnd_t(2, TENSOR_SIZE)
+        label = _rnd_t(2, TENSOR_SIZE)
+        with_mask = {
+            "global_dipole": pred,
+            "mask": torch.ones(2, NB, dtype=torch.float64, device="cpu"),
+        }
+        without_mask = {"global_dipole": pred}
+        label_dict = {"dipole": label, "find_dipole": 1.0}
+        loss_m = self._loss_fn(with_mask, label_dict, NB)
+        loss_nm = self._loss_fn(without_mask, label_dict, NB)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
 
 
 # ---------------------------------------------------------------------------

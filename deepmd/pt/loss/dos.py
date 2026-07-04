@@ -149,12 +149,19 @@ class DOSLoss(TaskLoss):
             local_tensor_label_dos = label["atom_dos"].reshape(
                 [-1, natoms, self.numb_dos]
             )
-            diff = (local_tensor_pred_dos - local_tensor_label_dos).reshape(
-                [-1, self.numb_dos]
-            )
+            diff = (
+                local_tensor_pred_dos - local_tensor_label_dos
+            )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
-            l2_local_loss_dos = torch.mean(torch.square(diff))
+                # idiom 1: per-frame masked mean, then average over frames
+                nf = diff.shape[0]
+                maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
+                sq = torch.square(diff) * maskf.reshape(nf, natoms, 1)
+                per_frame_sum = sq.reshape(nf, -1).sum(dim=-1)  # [nf]
+                per_frame_dof = maskf.sum(dim=-1) * self.numb_dos  # [nf]
+                l2_local_loss_dos = (per_frame_sum / per_frame_dof).mean()
+            else:
+                l2_local_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
                 more_loss["l2_local_dos_loss"] = self.display_if_exist(
                     l2_local_loss_dos.detach(), find_local
@@ -173,12 +180,19 @@ class DOSLoss(TaskLoss):
             local_tensor_label_cdf = torch.cumsum(
                 label["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
             )
-            diff = (local_tensor_pred_cdf - local_tensor_label_cdf).reshape(
-                [-1, self.numb_dos]
-            )
+            diff = (
+                local_tensor_pred_cdf - local_tensor_label_cdf
+            )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
-            l2_local_loss_cdf = torch.mean(torch.square(diff))
+                # idiom 1: per-frame masked mean, then average over frames
+                nf = diff.shape[0]
+                maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
+                sq = torch.square(diff) * maskf.reshape(nf, natoms, 1)
+                per_frame_sum = sq.reshape(nf, -1).sum(dim=-1)  # [nf]
+                per_frame_dof = maskf.sum(dim=-1) * self.numb_dos  # [nf]
+                l2_local_loss_cdf = (per_frame_sum / per_frame_dof).mean()
+            else:
+                l2_local_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
                 more_loss["l2_local_cdf_loss"] = self.display_if_exist(
                     l2_local_loss_cdf.detach(), find_local
@@ -194,15 +208,12 @@ class DOSLoss(TaskLoss):
             global_tensor_pred_dos = model_pred["dos"].reshape([-1, self.numb_dos])
             global_tensor_label_dos = label["dos"].reshape([-1, self.numb_dos])
             diff = global_tensor_pred_dos - global_tensor_label_dos
+            # idiom 3: global dos is already padding-invariant; plain mean suffices
+            l2_global_loss_dos = torch.mean(torch.square(diff))
             if "mask" in model_pred:
-                atom_num = model_pred["mask"].sum(-1, keepdim=True)
-                l2_global_loss_dos = torch.mean(
-                    torch.sum(torch.square(diff) * atom_num, dim=0) / atom_num.sum()
-                )
-                atom_num = torch.mean(atom_num.float())
+                atom_num = model_pred["mask"].sum(-1).float().mean()
             else:
                 atom_num = natoms
-                l2_global_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
                 more_loss["l2_global_dos_loss"] = self.display_if_exist(
                     l2_global_loss_dos.detach(), find_global
@@ -222,15 +233,12 @@ class DOSLoss(TaskLoss):
                 label["dos"].reshape([-1, self.numb_dos]), dim=-1
             )
             diff = global_tensor_pred_cdf - global_tensor_label_cdf
+            # idiom 3: global cdf is already padding-invariant; plain mean suffices
+            l2_global_loss_cdf = torch.mean(torch.square(diff))
             if "mask" in model_pred:
-                atom_num = model_pred["mask"].sum(-1, keepdim=True)
-                l2_global_loss_cdf = torch.mean(
-                    torch.sum(torch.square(diff) * atom_num, dim=0) / atom_num.sum()
-                )
-                atom_num = torch.mean(atom_num.float())
+                atom_num = model_pred["mask"].sum(-1).float().mean()
             else:
                 atom_num = natoms
-                l2_global_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
                 more_loss["l2_global_cdf_loss"] = self.display_if_exist(
                     l2_global_loss_cdf.detach(), find_global

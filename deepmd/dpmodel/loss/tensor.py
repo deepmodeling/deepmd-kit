@@ -103,11 +103,14 @@ class TensorLoss(Loss):
             diff = xp.reshape(local_pred - local_label, (-1, self.tensor_size))
             diff = diff * atomic_weight
             if "mask" in model_dict:
-                mask = xp.reshape(model_dict["mask"], (-1,))
-                mask_float = xp.astype(mask, diff.dtype)
-                diff = diff * mask_float[:, None]
-                n_valid = xp.sum(mask_float)
-                l2_local_loss = xp.sum(xp.square(diff)) / (n_valid * self.tensor_size)
+                # idiom 1: per-frame masked mean, then average over frames
+                maskf = xp.astype(model_dict["mask"], diff.dtype)  # [nf, natoms]
+                nf = local_pred.shape[0]
+                diff3d = xp.reshape(diff, (nf, natoms, self.tensor_size))
+                sq = xp.square(diff3d) * xp.reshape(maskf, (nf, natoms, 1))
+                per_frame_sum = xp.sum(xp.reshape(sq, (nf, -1)), axis=-1)  # [nf]
+                per_frame_dof = xp.sum(maskf, axis=-1) * self.tensor_size  # [nf]
+                l2_local_loss = xp.mean(per_frame_sum / per_frame_dof)
             else:
                 l2_local_loss = xp.mean(xp.square(diff))
             loss += local_weight * l2_local_loss
@@ -129,15 +132,14 @@ class TensorLoss(Loss):
                 label_dict[self.label_name], (-1, self.tensor_size)
             )
             diff = global_pred - global_label
+            # idiom 3: global tensor is already padding-invariant; plain mean suffices
+            l2_global_loss = xp.mean(xp.square(diff))
             if "mask" in model_dict:
-                atom_num = xp.sum(model_dict["mask"], axis=-1, keepdims=True)
-                l2_global_loss = xp.mean(
-                    xp.sum(xp.square(diff) * atom_num, axis=0) / xp.sum(atom_num)
+                atom_num = xp.mean(
+                    xp.astype(xp.sum(model_dict["mask"], axis=-1), diff.dtype)
                 )
-                atom_num = xp.mean(xp.astype(atom_num, diff.dtype))
             else:
                 atom_num = natoms
-                l2_global_loss = xp.mean(xp.square(diff))
             loss += global_weight * l2_global_loss
             more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
                 xp.sqrt(l2_global_loss) / atom_num, find_global
