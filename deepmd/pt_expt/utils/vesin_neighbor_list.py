@@ -82,7 +82,14 @@ class VesinNeighborList(NeighborList):
             The atomic-model seam applies the same filter as an idempotent
             backstop, so passing ``pair_excl`` here is a build-time
             optimization that avoids re-scanning per forward call.
+            ``return_mode='edges'`` does not support ``pair_excl``; a
+            :class:`NotImplementedError` is raised in that combination.
         """
+        if return_mode == "edges" and pair_excl is not None:
+            raise NotImplementedError(
+                "pair_excl is not supported with return_mode='edges'; "
+                "use apply_pair_exclusion (graph variant) on the returned EdgeNeighborList."
+            )
         is_numpy = not isinstance(coord, torch.Tensor)
         # vesin runs on the device of the inputs: numpy (the dpmodel backend) is
         # bridged through CPU torch; torch tensors stay on their own device.  Pin

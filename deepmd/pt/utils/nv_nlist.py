@@ -173,7 +173,14 @@ class NvNeighborList(NeighborList):
             ``NvNeighborList`` is CUDA-only; the ``pair_excl`` parameter is
             accepted for API parity with the other strategies but cannot be
             validated on a CPU-only machine.
+            ``return_mode='edges'`` does not support ``pair_excl``; a
+            :class:`NotImplementedError` is raised in that combination.
         """
+        if return_mode == "edges" and pair_excl is not None:
+            raise NotImplementedError(
+                "pair_excl is not supported with return_mode='edges'; "
+                "use apply_pair_exclusion (graph variant) on the returned EdgeNeighborList."
+            )
         device = coord.device
         nf, nloc = atype.shape[:2]
         target_neighbors = int(sum(sel))

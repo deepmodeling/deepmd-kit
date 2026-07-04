@@ -97,8 +97,7 @@ class NeighborList:
             When provided, excluded type pairs are erased from the returned
             neighbor list (entries set to ``-1``) by calling
             :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
-            Implementations that do not override this parameter fall back to
-            the default post-build application in the base interface.
+            Subclasses are expected to apply this filter before returning.
 
         Returns
         -------

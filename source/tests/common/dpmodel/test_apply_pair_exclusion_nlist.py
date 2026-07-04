@@ -266,3 +266,28 @@ def test_vesin_neighbor_list_pair_excl_equals_seam() -> None:
         coord, atype, box=None, rcut=rcut, sel=sel, pair_excl=excl
     )
     np.testing.assert_array_equal(nlist_builtin.numpy(), nlist_manual.numpy())
+
+
+# ---------------------------------------------------------------------------
+# NvNeighborList.build: edges + pair_excl raises
+# ---------------------------------------------------------------------------
+
+
+def test_nv_nlist_edges_pair_excl_raises():
+    """NvNeighborList.build raises NotImplementedError for edges+pair_excl.
+
+    The guard fires before any CUDA search, so this test runs on CPU.
+    NvNeighborList requires CUDA to produce results, but the early-exit
+    raise is device-independent.
+    """
+    import torch
+
+    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.pt.utils.nv_nlist import NvNeighborList
+
+    coord = torch.zeros((1, 4, 3), dtype=torch.float64)
+    atype = torch.zeros((1, 4), dtype=torch.int64)
+    pe = PairExcludeMask(2, [(0, 1)])
+    nl = NvNeighborList()
+    with pytest.raises(NotImplementedError, match="return_mode='edges'"):
+        nl.build(coord, atype, None, 2.0, [4], return_mode="edges", pair_excl=pe)

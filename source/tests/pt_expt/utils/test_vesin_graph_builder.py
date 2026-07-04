@@ -158,3 +158,15 @@ def test_vesin_pair_excl_oracle_set_equality(periodic):
     assert int(np.asarray(ng_vesin.edge_mask).sum()) < int(
         np.asarray(ng_plain.edge_mask).sum()
     )
+
+
+def test_vesin_nlist_edges_pair_excl_raises():
+    """VesinNeighborList.build with return_mode='edges' and pair_excl raises NotImplementedError."""
+    from deepmd.pt_expt.utils.vesin_neighbor_list import VesinNeighborList
+
+    coord = torch.zeros((1, 4, 3), dtype=torch.float64)
+    atype = torch.zeros((1, 4), dtype=torch.int64)
+    pe = PairExcludeMask(2, [(0, 1)])
+    nl = VesinNeighborList()
+    with pytest.raises(NotImplementedError, match="return_mode='edges'"):
+        nl.build(coord, atype, None, 2.0, [4], return_mode="edges", pair_excl=pe)
