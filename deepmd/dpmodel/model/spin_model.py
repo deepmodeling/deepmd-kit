@@ -628,6 +628,11 @@ class SpinModel(NativeOP):
             charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             coord_corr_for_virial=coord_corr_for_virial,
+            # Spin graph support is not yet implemented; the carry-all graph
+            # route diverges on sel-binding spin systems (virtual atoms double
+            # the density).  Force the legacy dense-nlist path until spin-graph
+            # support lands.
+            neighbor_graph_method="legacy",
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
