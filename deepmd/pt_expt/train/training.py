@@ -722,8 +722,10 @@ def _trace_and_compile_graph(
     # float precision and device; optional tensors match the actual call.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
+        check_graph_trace_torch_version,
     )
 
+    check_graph_trace_torch_version(model)
     sample = build_synthetic_graph_inputs(
         model,
         e_max=e_max,

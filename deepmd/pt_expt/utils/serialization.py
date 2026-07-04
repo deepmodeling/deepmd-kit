@@ -141,6 +141,37 @@ def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
         return False
 
 
+def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
+    """Fail fast when the graph trace needs unbacked-SymInt support torch lacks.
+
+    The compact ``center_edge_pairs`` realization used by graph attention
+    (``attn_layer > 0``) relies on unbacked-SymInt tracing
+    (``torch._check_is_size`` hints on ``nonzero`` / tensor-``repeat`` outputs,
+    see ``deepmd/dpmodel/utils/neighbor_graph/pairs.py``), which is only solid
+    from torch >= 2.6. On older torch the trace dies deep inside
+    ``make_fx``/AOTI with an obscure ``GuardOnDataDependentSymNode`` (or an
+    ``AttributeError`` on ``_check_is_size``), so both graph trace sites (the
+    ``.pt2`` export below and the training compile in
+    ``training._trace_and_compile_graph``) call this guard first. Factorizable
+    models (``attn_layer == 0``) trace with backed symbols only and are not
+    restricted.
+    """
+    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    get_n_attn = getattr(desc, "get_numb_attn_layer", None)
+    n_attn = get_n_attn() if get_n_attn is not None else 0
+    if n_attn <= 0:
+        return
+    version = torch.__version__.split("+")[0]
+    major_minor = tuple(int(p) for p in version.split(".")[:2] if p.isdigit())
+    if len(major_minor) == 2 and major_minor < (2, 6):
+        raise RuntimeError(
+            f"graph-form tracing of attention layers (attn_layer={n_attn}) "
+            f"requires torch >= 2.6 (unbacked-SymInt support for the compact "
+            f"center_edge_pairs realization); found torch {torch.__version__}. "
+            "Upgrade torch, set 'attn_layer: 0', or use the dense (nlist) path."
+        )
+
+
 # Module-level cache for the trace-time sendlist buffer. The pointer
 # value embedded in ``send_list_tensor`` references this numpy array's
 # data; the array must outlive the trace + export call.  Caching here
@@ -889,6 +920,7 @@ def _trace_and_export(
     if lower_kind == "graph":
         import math
 
+        check_graph_trace_torch_version(model)
         if is_spin:
             raise NotImplementedError(
                 "graph-form .pt2 export is not supported for spin models"
