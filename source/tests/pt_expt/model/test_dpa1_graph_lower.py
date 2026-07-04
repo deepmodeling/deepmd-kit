@@ -291,6 +291,40 @@ class TestDpa1GraphLower:
             out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
         )
 
+    def test_smooth_attention_divergence_pinned(self) -> None:
+        """End-to-end: the pt_expt DEFAULT route (carry-all graph) diverges
+        from the dense route for ``smooth_type_embedding=True`` + attention —
+        nonzero and bounded by the documented ~1e-4 magnitude.
+
+        The carry-all graph drops sel-padding phantom terms from the smooth
+        attention softmax denominator BY DESIGN (NeighborGraph PR-D), while
+        the dense path keeps them, so dense output is sel-dependent.  This
+        test pins that divergence at the public model forward so a future
+        refactor cannot silently change the carry-all smooth semantics.
+        ``neighbor_graph_method="legacy"`` is the escape hatch restoring the
+        dense numbers; the parity tests above cover the smooth=False regime
+        where the two routes agree bit-tight.
+        """
+        model = self._make_model(attn_layer=2, smooth=True)
+        model.eval()
+        coord = self.coord.clone().requires_grad_(True)
+        box = self.cell.reshape(1, 9)
+        # None = the default flip: graph-eligible mixed_types -> carry-all graph
+        graph = model.call_common(coord, self.atype, box, neighbor_graph_method=None)
+        dense = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        e_diff = (graph["energy_redu"] - dense["energy_redu"]).abs().max().item()
+        f_diff = (graph["energy_derv_r"] - dense["energy_derv_r"]).abs().max().item()
+        # nonzero: well above fp64 accumulation noise of a bit-tight parity
+        assert e_diff > 1e-10, f"expected smooth divergence, got {e_diff:.3e}"
+        # bounded: the documented magnitude is ~1e-4; 1e-3 leaves headroom
+        assert e_diff < 1e-3, f"smooth divergence too large: {e_diff:.3e}"
+        assert f_diff < 1e-3, f"smooth force divergence too large: {f_diff:.3e}"
+
     @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     def test_graph_route_float32(self, attn_layer) -> None:
         """A float32 model runs the graph route and matches the dense route.

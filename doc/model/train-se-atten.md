@@ -157,6 +157,11 @@ In other backends, type embedding is within this descriptor with the {ref}`tebd_
 TensorFlow and other backends have different implementations for {ref}`smooth_type_embedding <model[standard]/descriptor[se_atten_v2]/smooth_type_embedding>`.
 The results are inconsistent when `smooth_type_embedding` is `true`.
 
+In the pt_expt backend, graph-eligible descriptors (mixed types, `tebd_input_mode` `"concat"`, no descriptor-level `exclude_types` or compression) are evaluated by default through the carry-all neighbor-graph path instead of the legacy dense neighbor list.
+The graph path considers all neighbors within the cutoff, so its result does not depend on {ref}`sel <model[standard]/descriptor[se_atten]/sel>`.
+When `smooth_type_embedding` is `true` and {ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` is larger than 0 (the defaults), the dense path keeps `sel`-padding phantom terms in the attention softmax denominator while the graph path drops them, so checkpoints trained under the dense semantics shift by up to about 1e-4 in energy when evaluated on the graph path.
+Passing `neighbor_graph_method="legacy"` to the model forward (or the corresponding evaluation option) restores the dense-path numbers exactly.
+
 In the TensorFlow backend, {ref}`scaling_factor <model[standard]/descriptor[se_atten]/scaling_factor>` cannot set to a value other than `1.0`;
 {ref}`normalize <model[standard]/descriptor[se_atten]/normalize>` cannot be set to `false`;
 {ref}`temperature <model[standard]/descriptor[se_atten]/temperature>` cannot be set;
