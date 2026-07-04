@@ -89,11 +89,37 @@ def build_neighbor_graph_vesin(
     box: Any | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using vesin.torch's O(N) cell list.
 
     Mirrors :func:`deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`
     but runs on the input tensor's device via ``vesin.torch``.
+
+    Parameters
+    ----------
+    coord : torch.Tensor
+        Coordinates with shape ``(nf, nloc, 3)``.
+    atype : torch.Tensor
+        Atom types with shape ``(nf, nloc)``.
+    box : torch.Tensor or None
+        Simulation cells with shape ``(nf, 3, 3)``.
+    rcut : float
+        Cutoff radius.
+    layout : GraphLayout or None
+        Edge-axis length policy.
+    with_csr : bool
+        Whether to construct destination/source CSR views.
+    canonicalize : bool
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
+
+    Returns
+    -------
+    NeighborGraph
+        The carry-all local-atom graph.
     """
     if not is_vesin_torch_available():
         raise ImportError(
@@ -115,7 +141,16 @@ def build_neighbor_graph_vesin(
         empty_S = torch.zeros((0, 3), dtype=torch.int64, device=dev)
         empty_nf = torch.zeros((0,), dtype=torch.int64, device=dev)
         return neighbor_graph_from_ijs(
-            empty_i, empty_i, empty_S, coord, box, empty_nf, nloc, layout=layout
+            empty_i,
+            empty_i,
+            empty_S,
+            coord,
+            box,
+            empty_nf,
+            nloc,
+            layout=layout,
+            with_csr=with_csr,
+            canonicalize=canonicalize,
         )
 
     i_parts, j_parts, S_parts, nf_parts = [], [], [], []
@@ -163,5 +198,14 @@ def build_neighbor_graph_vesin(
     # out-of-cell (unwrapped) positions natively, so no normalize_coord is
     # needed and S is consistent with the original coords as searched.
     return neighbor_graph_from_ijs(
-        i_all, j_all, S_all, coord, box, nf_all, nloc, layout=layout
+        i_all,
+        j_all,
+        S_all,
+        coord,
+        box,
+        nf_all,
+        nloc,
+        layout=layout,
+        with_csr=with_csr,
+        canonicalize=canonicalize,
     )

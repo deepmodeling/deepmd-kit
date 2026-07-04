@@ -204,6 +204,9 @@ def build_neighbor_graph_nv(
     box: Any | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using nvalchemiops' GPU cell list.
 
@@ -219,6 +222,12 @@ def build_neighbor_graph_nv(
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
 
     Returns
     -------
@@ -237,6 +246,9 @@ def build_neighbor_graph_nv(
             "install with `pip install nvalchemi-toolkit-ops` or use "
             "neighbor_graph_method='dense'."
         )
+    from nvalchemiops.neighbors.neighbor_utils import (
+        estimate_max_neighbors,
+    )
 
     device = coord.device
     nf = coord.shape[0] if coord.ndim == 3 else 1
@@ -248,7 +260,16 @@ def build_neighbor_graph_nv(
         empty_i = torch.zeros((0,), dtype=torch.int64, device=device)
         empty_S = torch.zeros((0, 3), dtype=torch.int64, device=device)
         return neighbor_graph_from_ijs(
-            empty_i, empty_i, empty_S, coord, box, empty_i, nloc, layout=layout
+            empty_i,
+            empty_i,
+            empty_S,
+            coord,
+            box,
+            empty_i,
+            nloc,
+            layout=layout,
+            with_csr=with_csr,
+            canonicalize=canonicalize,
         )
 
     # Carry-all: grow capacity until every neighbor fits (no sel cap).
@@ -256,8 +277,12 @@ def build_neighbor_graph_nv(
     # vesin handles unwrapped positions natively), nvalchemiops requires
     # in-cell positions, so BOTH the search and the edge_vec recomputation use
     # the normalized coords; S then matches the coords the search actually saw.
+    initial_capacity = max(
+        64,
+        estimate_max_neighbors(float(rcut), safety_factor=1.25),
+    )
     coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
-        coord, box, rcut, start_capacity=max(64, nloc)
+        coord, box, rcut, start_capacity=initial_capacity
     )
     box_out = cell  # edge_vec is recomputed from these (normalized) coords
 
@@ -276,5 +301,14 @@ def build_neighbor_graph_nv(
     shift, frame_idx = shift[keep], frame_idx[keep]
 
     return neighbor_graph_from_ijs(
-        center_local, src_local, shift, coord, box_out, frame_idx, nloc, layout=layout
+        center_local,
+        src_local,
+        shift,
+        coord,
+        box_out,
+        frame_idx,
+        nloc,
+        layout=layout,
+        with_csr=with_csr,
+        canonicalize=canonicalize,
     )

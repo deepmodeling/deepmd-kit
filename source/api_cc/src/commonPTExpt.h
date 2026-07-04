@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Shared utilities for pt_expt (.pt2 / AOTInductor) backend classes.
 // Provides: JSON parser, ZIP archive reader, type-sorted nlist builder,
-// and helpers for the with-comm dual-artifact layout (Phase 4 of the
-// GNN MPI plumbing).
+// and helpers for the with-comm dual-artifact layout.
 #pragma once
 
 #include <torch/torch.h>
@@ -470,7 +469,7 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// With-comm artifact extraction (Phase 4)
+// With-comm artifact extraction
 //
 // GNN .pt2 archives carry a nested ``extra/forward_lower_with_comm.pt2``
 // alongside the regular forward_lower artifact.  AOTInductor's
@@ -559,7 +558,7 @@ class TempFile {
 };
 
 // ============================================================================
-// comm_dict tensor packing for the with-comm artifact (Phase 4)
+// Communication tensor packing for the with-comm artifact
 //
 // The with-comm AOTInductor artifact accepts comm tensors as 8 additional
 // positional inputs (after the regular 4-6 inputs) in this canonical order:
@@ -576,9 +575,7 @@ class TempFile {
 // ============================================================================
 
 /**
- * @brief Build the 8 comm-tensor positional inputs from LAMMPS data
- * (Phase 5 working signature, restored after the consolidation
- * attempt regressed).
+ * @brief Build the 8 comm-tensor positional inputs from LAMMPS data.
  */
 inline std::vector<at::Tensor> build_comm_tensors_positional(
     const InputNlist& lmp_list,

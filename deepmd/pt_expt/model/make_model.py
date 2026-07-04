@@ -16,12 +16,21 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    get_xp_precision,
+)
 from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
+from deepmd.kernels.utils import (
+    cuda_infer_level,
+)
 from deepmd.pt_expt.common import (
     torch_module,
+)
+from deepmd.pt_expt.utils.graph_csr import (
+    validate_graph_csr_for_export,
 )
 
 from .edge_transform_output import (
@@ -30,6 +39,58 @@ from .edge_transform_output import (
 from .transform_output import (
     fit_output_to_model_output,
 )
+
+
+def _fused_energy_force_graph(
+    model: Any,
+    graph: Any,
+    atype: torch.Tensor,
+    do_atomic_virial: bool,
+) -> dict[str, torch.Tensor] | None:
+    """End-to-end energy / force / virial via fused inference operators.
+
+    At ``DP_CUDA_INFER >= 2``, a descriptor that exposes
+    ``fused_energy_force_graph`` (the DPA1 ``se_atten``, attention-free family)
+    emits descriptor, fitting, analytic descriptor-backward, and CSR
+    force/virial custom operators. Force is returned as a value, so the graph
+    carries no autograd tape. The descriptor owns backend eligibility and kernel
+    dispatch (embedding-MLP vs tabulated); this routine only assembles the flat
+    model dict. Returns the same keys as
+    :func:`fit_output_to_model_output_graph`, or ``None`` when no descriptor
+    fused path applies -- the caller then uses the level-1 autograd lower.
+    """
+    am = model.atomic_model
+    desc = getattr(am, "descriptor", None)
+    fit = getattr(am, "fitting_net", None)
+    fused = getattr(desc, "fused_energy_force_graph", None)
+    if fused is None or fit is None:
+        return None
+    graph, atype, output_mask = am._prepare_graph_inputs(graph, atype)
+    atom_bias = fit.bias_atom_e[:, 0] + am.out_bias[0, :, 0]
+    out = fused(
+        fit,
+        graph,
+        atype,
+        output_mask,
+        atom_bias,
+        do_atomic_virial,
+    )
+    if out is None:
+        return None
+    energy, atom_energy, force, virial, atom_virial = out
+    n = atype.shape[0]
+    nf = graph.n_node.shape[0]
+    var = fit.var_name
+    ret = {
+        var: atom_energy,
+        var + "_redu": energy,
+        var + "_derv_r": force.reshape(n, 1, 3),
+        var + "_derv_c_redu": virial.reshape(nf, 1, 9),
+        "mask": output_mask.to(torch.int32),
+    }
+    if do_atomic_virial:
+        ret[var + "_derv_c"] = atom_virial.reshape(n, 1, 9)
+    return ret
 
 
 def _pad_nlist_for_export(nlist: torch.Tensor) -> torch.Tensor:
@@ -284,9 +345,15 @@ def make_model(
             self,
             atype: torch.Tensor,
             n_node: torch.Tensor,
+            n_local: torch.Tensor,
             edge_index: torch.Tensor,
             edge_vec: torch.Tensor,
             edge_mask: torch.Tensor,
+            destination_order: torch.Tensor | None = None,
+            destination_row_ptr: torch.Tensor | None = None,
+            source_row_ptr: torch.Tensor | None = None,
+            source_order: torch.Tensor | None = None,
+            destination_sorted: bool = False,
             do_atomic_virial: bool = False,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
@@ -314,15 +381,28 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts, including halo nodes.
+            n_local
+                (nf,) per-frame owned node counts.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
                 (E, 3) neighbor-minus-center edge vectors.
             edge_mask
                 (E,) valid-edge mask.
+            destination_order
+                (E,) destination-grouped edge permutation.
+            destination_row_ptr
+                (N + 1,) destination CSR offsets into ``destination_order``.
+            source_row_ptr
+                (N + 1,) source CSR offsets into ``source_order``.
+            source_order
+                (E,) edge permutation grouped by source node.
+            destination_sorted
+                Whether the payload is destination-major and
+                ``destination_order`` is the identity permutation.
             do_atomic_virial
                 Whether to also return the per-atom virial ``<var>_derv_c``.
             fparam
@@ -330,8 +410,8 @@ def make_model(
             aparam
                 Atomic parameter, ``(nf, nloc, nda)``.
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Charge/spin conditioning. Accepted for descriptors that expose
+                this input.
 
             Returns
             -------
@@ -353,7 +433,19 @@ def make_model(
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                n_local=n_local,
+                destination_order=destination_order,
+                destination_row_ptr=destination_row_ptr,
+                source_row_ptr=source_row_ptr,
+                source_order=source_order,
+                destination_sorted=destination_sorted,
             )
+            # Level 2 emits force as a value through the inference-only custom
+            # operator pipeline. Ineligible models use the autograd lower.
+            if not self.training and cuda_infer_level() >= 2:
+                fused = _fused_energy_force_graph(self, graph, atype, do_atomic_virial)
+                if fused is not None:
+                    return fused
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
                 graph,
                 atype,
@@ -370,6 +462,13 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                # Assemble force / virial in the descriptor compute precision
+                # (fp32 for an fp32 model) rather than the fp64 edge_vec leaf;
+                # the gradient content is only that precision, so the coarser
+                # scatter halves the atomic traffic at no accuracy cost.
+                force_precision=get_xp_precision(
+                    torch, self.atomic_model.descriptor.precision
+                ),
                 # Bound the per-node scatter by the INPUT node axis (the symbol
                 # ``edge_index`` indexes into), not the re-derived fitting-output
                 # shape -- avoids a CUDA out-of-bounds device-assert under
@@ -468,22 +567,51 @@ def make_model(
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             rcut = self.get_rcut()
+            with_csr = (
+                not self.training
+                and cuda_infer_level() >= 1
+                and bool(getattr(descriptor, "geo_compress", False))
+            )
             if method == "dense":
-                ng = build_neighbor_graph(cc, atype, bb, rcut)
+                ng = build_neighbor_graph(
+                    cc,
+                    atype,
+                    bb,
+                    rcut,
+                    with_csr=with_csr,
+                )
             elif method == "ase":
-                ng = build_neighbor_graph_ase(cc, atype, bb, rcut)
+                ng = build_neighbor_graph_ase(
+                    cc,
+                    atype,
+                    bb,
+                    rcut,
+                    with_csr=with_csr,
+                )
             elif method == "vesin":
                 from deepmd.pt_expt.utils.vesin_graph_builder import (
                     build_neighbor_graph_vesin,
                 )
 
-                ng = build_neighbor_graph_vesin(cc, atype, bb, rcut)
+                ng = build_neighbor_graph_vesin(
+                    cc,
+                    atype,
+                    bb,
+                    rcut,
+                    with_csr=with_csr,
+                )
             elif method == "nv":
                 from deepmd.pt_expt.utils.nv_graph_builder import (
                     build_neighbor_graph_nv,
                 )
 
-                ng = build_neighbor_graph_nv(cc, atype, bb, rcut)
+                ng = build_neighbor_graph_nv(
+                    cc,
+                    atype,
+                    bb,
+                    rcut,
+                    with_csr=with_csr,
+                )
             else:
                 raise ValueError(
                     f"unknown neighbor_graph_method {method!r}; "
@@ -494,9 +622,15 @@ def make_model(
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
+                ng.n_node,
                 ng.edge_index,
                 ng.edge_vec,
                 ng.edge_mask,
+                ng.destination_order,
+                ng.destination_row_ptr,
+                ng.source_row_ptr,
+                ng.source_order,
+                destination_sorted=ng.destination_sorted,
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
@@ -663,13 +797,19 @@ def make_model(
             self,
             atype: torch.Tensor,
             n_node: torch.Tensor,
+            n_local: torch.Tensor,
             edge_index: torch.Tensor,
             edge_vec: torch.Tensor,
             edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            destination_sorted: bool = False,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
             """make_fx trace of ``forward_common_lower_graph`` with ``edge_vec``
@@ -678,15 +818,27 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat local atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts.
+            n_local
+                (nf,) per-frame owned node counts.
             edge_index
-                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+                (2, E) destination-major ``[src, dst]`` endpoints.
             edge_vec
                 (E, 3) neighbor-minus-center edge vectors (sample for tracing).
             edge_mask
                 (E,) valid-edge mask (sample for tracing).
+            destination_order
+                (E,) identity destination permutation. The exported ABI
+                requires this canonical layout.
+            destination_row_ptr, source_row_ptr
+                (N + 1,) destination/source CSR offsets.
+            source_order
+                (E,) source-grouped edge permutation.
+            destination_sorted
+                Static export-time assertion that the payload is
+                destination-major and ``destination_order`` is identity.
             fparam, aparam, do_atomic_virial, charge_spin
                 As in ``forward_common_lower_graph``.
             **make_fx_kwargs
@@ -697,18 +849,35 @@ def make_model(
             -------
             torch.nn.Module
                 A traced module whose ``forward`` accepts
-                ``(atype, n_node, edge_index, edge_vec, edge_mask,
-                fparam, aparam, charge_spin)`` and returns a dict with the
-                same internal keys as ``forward_common_lower_graph``.
+                ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+                destination_order, destination_row_ptr, source_row_ptr,
+                source_order, fparam, aparam, charge_spin)`` and returns a
+                dict with the same internal keys as
+                ``forward_common_lower_graph``.
             """
+            validate_graph_csr_for_export(
+                edge_index,
+                edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                atype.shape[0],
+                destination_sorted=destination_sorted,
+            )
             model = self
 
             def fn(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
+                n_local: torch.Tensor,
                 edge_index: torch.Tensor,
                 edge_vec: torch.Tensor,
                 edge_mask: torch.Tensor,
+                destination_order: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
@@ -719,9 +888,15 @@ def make_model(
                 return model.forward_common_lower_graph(
                     atype,
                     n_node,
+                    n_local,
                     edge_index,
                     edge_vec,
                     edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_row_ptr,
+                    source_order,
+                    destination_sorted=destination_sorted,
                     do_atomic_virial=do_atomic_virial,
                     fparam=fparam,
                     aparam=aparam,
@@ -731,9 +906,14 @@ def make_model(
             return make_fx(fn, **make_fx_kwargs)(
                 atype,
                 n_node,
+                n_local,
                 edge_index,
                 edge_vec,
                 edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
                 fparam,
                 aparam,
                 charge_spin,
@@ -766,13 +946,10 @@ def make_model(
             for GNN descriptors via the opaque
             ``deepmd_export::border_op`` wrapper. The comm tensors enter
             the exported program as 8 additional positional inputs after
-            the usual (coord, atype, nlist, mapping, fparam, aparam) —
-            this fixes the C++ ABI for ``DeepPotPTExpt`` (Phase 4).
+            the usual (coord, atype, nlist, mapping, fparam, aparam).
 
-            Tracing requires ``nswap >= 1`` (Phase 0 finding); with
-            ``nswap == 0`` the dim specializes and the artifact would
-            only run for that exact value. The C++ caller must always
-            provide ``nswap >= 1``.
+            Tracing requires ``nswap >= 1``; zero specializes the dimension.
+            The C++ caller must always provide ``nswap >= 1``.
             """
             model = self
 

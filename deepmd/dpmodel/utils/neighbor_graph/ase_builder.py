@@ -42,6 +42,9 @@ def build_neighbor_graph_ase(
     box: Array | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using ASE's O(N) cell-list search.
 
@@ -66,6 +69,12 @@ def build_neighbor_graph_ase(
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
 
     Returns
     -------
@@ -137,5 +146,14 @@ def build_neighbor_graph_ase(
     S_all, nframe_all = S_all[keep], nframe_all[keep]
 
     return neighbor_graph_from_ijs(
-        i_all, j_all, S_all, coord, box, nframe_all, nloc, layout=layout
+        i_all,
+        j_all,
+        S_all,
+        coord,
+        box,
+        nframe_all,
+        nloc,
+        layout=layout,
+        with_csr=with_csr,
+        canonicalize=canonicalize,
     )

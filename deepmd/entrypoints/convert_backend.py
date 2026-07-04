@@ -36,19 +36,23 @@ def convert_backend(
     inp_hook = inp_backend.serialize_hook
     out_hook = out_backend.deserialize_hook
     data = inp_hook(INPUT)
-    # Forward atomic_virial to pt_expt deserialize_to_file if applicable;
-    # warn and skip the flag for backends that don't accept it so that
-    # scripts passing --atomic-virial indiscriminately don't break.
+    # Pass the optional flags a backend's deserialize hook accepts, probed by
+    # signature so scripts stay backend-agnostic. ``lower_kind="auto"`` lets the
+    # pt_expt hook pick the deploy-optimal lowering (the graph lower with its
+    # fused operator for a graph-eligible .pt2, the dense nlist lower otherwise);
+    # ``do_atomic_virial`` forwards ``--atomic-virial``.
     import inspect
 
     sig = inspect.signature(out_hook)
+    hook_kwargs: dict[str, Any] = {}
+    if "lower_kind" in sig.parameters:
+        hook_kwargs["lower_kind"] = "auto"
     if "do_atomic_virial" in sig.parameters:
-        out_hook(OUTPUT, data, do_atomic_virial=atomic_virial)
-    else:
-        if atomic_virial:
-            log.warning(
-                "--atomic-virial is only meaningful for pt_expt .pt2/.pte "
-                "outputs; ignoring it for output backend %s",
-                out_backend.name,
-            )
-        out_hook(OUTPUT, data)
+        hook_kwargs["do_atomic_virial"] = atomic_virial
+    elif atomic_virial:
+        log.warning(
+            "--atomic-virial is only meaningful for pt_expt .pt2/.pte "
+            "outputs; ignoring it for output backend %s",
+            out_backend.name,
+        )
+    out_hook(OUTPUT, data, **hook_kwargs)

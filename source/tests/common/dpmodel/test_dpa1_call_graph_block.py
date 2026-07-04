@@ -90,9 +90,6 @@ class TestDpa1BlockCallGraph:
             atol=1e-12,
         )
 
-    # attn_layer > 0 is supported since NeighborGraph PR-D; parity is covered
-    # by test_dpa1_graph_attention_parity.py (the fail-fast test was removed).
-
     def test_exclude_types_raises(self) -> None:
         """The graph block kernel fail-fasts for exclude_types (not yet applied)."""
         # the graph path does not yet apply type exclusion; it must fail-fast

@@ -358,13 +358,11 @@ PairDeepBaseModel::PairDeepBaseModel(
   force_unit_cvt_factor = ener_unit_cvt_factor / dist_unit_cvt_factor;
 
   restartinfo = 1;
+  // Enable the compute centroid/stress/atom interface for the atomic virial.
 #if LAMMPS_VERSION_NUMBER >= 20201130
-  centroidstressflag =
-      CENTROID_AVAIL;  // set centroidstressflag = CENTROID_AVAIL to allow the
-                       // use of the centroid/stress/atom. Added by Davide Tisi
+  centroidstressflag = CENTROID_AVAIL;
 #else
-  centroidstressflag = 2;  // set centroidstressflag = 2 to allow the use of the
-                           // centroid/stress/atom. Added by Davide Tisi
+  centroidstressflag = 2;
 #endif
   pppmflag = 1;
   respa_enable = 0;
@@ -397,7 +395,8 @@ PairDeepBaseModel::PairDeepBaseModel(
   // set comm size needed by this Pair
   comm_reverse = 1;
 
-  print_summary("  ");
+  // The model summary is emitted by the derived constructor: the referenced
+  // model members are not yet constructed during base construction.
 }
 
 void PairDeepBaseModel::print_summary(const string pre) const {
@@ -464,7 +463,8 @@ void PairDeepBaseModel::allocate() {
 void PairDeepBaseModel::read_restart(FILE*) { is_restart = true; }
 
 void PairDeepBaseModel::write_restart(FILE*) {
-  // pass
+  // No pair state is stored in the restart; the model is reloaded from its
+  // path.
 }
 
 void PairDeepBaseModel::init_style() {

@@ -68,7 +68,23 @@ target_sources(
           ${LAMMPS_SOURCE_DIR}/KSPACE/remap_wrap.cpp
           ${LAMMPS_SOURCE_DIR}/EXTRA-FIX/fix_ttm.cpp # for ttm
 )
-target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
+if(PKG_KOKKOS)
+  # The Kokkos device pair style (pair_style deepmd/kk) calls
+  # DeepPot::compute_edges_gpu, which is exposed only by the C++ API; link the
+  # C++ library and select the C++ API headers in pair_deepmd.h / pair_base.h.
+  target_link_libraries(lammps PUBLIC DeePMD::deepmd_cc)
+  target_compile_definitions(lammps PRIVATE DP_USE_CXX_API)
+  # deepmd_cc exports an interface precompiled header (common.h/device.h) that
+  # lives under <prefix>/include/deepmd; expose that directory (PUBLIC, so the
+  # dependent lmp executable inherits it) to resolve the PCH.
+  get_target_property(_deepmd_inc DeePMD::deepmd_cc
+                      INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(_inc IN LISTS _deepmd_inc)
+    target_include_directories(lammps PUBLIC "${_inc}/deepmd")
+  endforeach()
+else()
+  target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
+endif()
 target_include_directories(
   lammps PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_LIST_DIR}
                  ${LAMMPS_SOURCE_DIR}/KSPACE ${LAMMPS_SOURCE_DIR}/EXTRA-FIX)

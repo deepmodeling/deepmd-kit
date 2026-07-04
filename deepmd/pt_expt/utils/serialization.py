@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import ctypes
 import json
+import logging
+import os
+from collections.abc import (
+    Iterator,
+)
 from typing import (
     Any,
 )
@@ -12,6 +18,8 @@ from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
 )
+
+log = logging.getLogger(__name__)
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
@@ -50,22 +58,19 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     (erasing can disturb the FX graph and yield NaN gradients on some torch
     versions).
 
-    Called from TWO export paths in ``_trace_and_export``:
+    Called from two export paths in ``_trace_and_export``:
 
     * **spin (dense) models** — atom-doubling slice patterns depend on
       ``(nall - nloc)``, producing spurious guards like ``Ne(nall, nloc)``; the
       model is correct even when ``nall == nloc`` (NoPBC, no ghosts).
-    * **graph models** — the DYNAMIC edge axis (``Dim("nedge")``) produces guards
-      of the ``nloc_min``/SIGFPE family on the edge count ``E``.  These are the
-      shape-specialization guards the static-``edge_capacity`` path was designed
-      to avoid; neutralising them is what makes one artifact eval any edge count.
+    * **graph models** — the dynamic edge axis (``Dim("nedge")``) produces
+      shape-specialization guards on the edge count ``E``.
 
-    **Safety:** in both contexts every input is constructed well-formed by the
+    In both contexts every input is constructed well-formed by the
     builder (spin: valid atom doubling; graph: ``build_neighbor_graph`` /
     ``buildGraphTensors`` always emit ``E >= min_edges == 2`` with in-range,
-    masked edges), so the neutralised guards would never legitimately fire.  The
-    only cost is that a MALFORMED runtime tensor no longer throws cleanly — the
-    documented AOTI trade-off (CLAUDE.md), accepted identically on both paths.
+    masked edges). Malformed runtime tensors are outside this exported ABI and
+    are not guaranteed to trigger these shape assertions.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -203,8 +208,8 @@ def _make_comm_sample_inputs(
 ) -> tuple[torch.Tensor, ...]:
     """Build trivial-but-valid comm tensors for tracing the with-comm variant.
 
-    Phase 0 finding: tracing with ``nswap == 0`` causes the dim to
-    specialize, so we must use ``nswap >= 1``.  We use ``nswap == 1``
+    Tracing with ``nswap == 0`` specializes the dimension, so the sample uses
+    ``nswap == 1``
     with a single self-send swap whose sendlist points to ``nghost``
     local atoms (the actual indices don't matter for the trace — only
     the validity of the pointer matters; ``border_op`` is opaque to
@@ -367,6 +372,7 @@ def build_synthetic_graph_inputs(
     nloc: int = 7,
     *,
     dtype: torch.dtype,
+    edge_dtype: torch.dtype | None = None,
     device: torch.device | None = None,
     want_fparam: bool = True,
     want_aparam: bool = True,
@@ -380,10 +386,13 @@ def build_synthetic_graph_inputs(
     traces can never desync on the graph input schema.  Builds a small random
     system, runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
-    STATIC ``GraphLayout(edge_capacity=e_max)`` (decision #16: the masked static
-    edge axis), and returns tensors in the positional order expected by
+    padded ``GraphLayout(edge_capacity=e_max)`` trace sample, then canonicalizes
+    it to the destination-major deployment ABI. The exported edge axis remains
+    dynamic; the concrete capacity only supplies representative tensors to
+    ``make_fx``. Inputs follow the positional order expected by
     ``forward_(common_)lower_graph``:
-    ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+    ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
+    destination_row_ptr, source_row_ptr, source_order, fparam, aparam,
     charge_spin)``.
 
     The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
@@ -395,15 +404,18 @@ def build_synthetic_graph_inputs(
     model : torch.nn.Module
         The pt_expt energy model (must expose ``get_rcut``/``get_type_map``/...).
     e_max : int
-        Static edge capacity ``E`` to pad the (masked) edge axis to.
+        Concrete edge-axis size used by the trace sample.
     nframes : int
         Number of frames in the sample system.
     nloc : int
         Number of local atoms per frame (``N == nframes * nloc``).
     dtype : torch.dtype
-        Float precision of ``coord``/``edge_vec``/``fparam``/... .  The exported
-        ``.pt2`` is float64-only (C++ ABI); training passes
-        ``GLOBAL_PT_FLOAT_PRECISION``.
+        Float precision of ``coord``/``fparam`` and other conditioning inputs.
+    edge_dtype : torch.dtype, optional
+        Precision of ``edge_vec``. Defaults to ``dtype``. A compressed DPA1
+        graph artifact uses float32 because its descriptor and analytical
+        backward both compute in float32; generic graph artifacts preserve the
+        model input precision.
     device : torch.device, optional
         Target device.  Defaults to ``deepmd.pt_expt.utils.env.DEVICE``; the
         export path passes ``cpu`` explicitly (make_fx traces on CPU).
@@ -420,6 +432,8 @@ def build_synthetic_graph_inputs(
 
     if device is None:
         device = _env.DEVICE
+    if edge_dtype is None:
+        edge_dtype = dtype
 
     rcut = model.get_rcut()
     ntypes = len(model.get_type_map())
@@ -440,7 +454,12 @@ def build_synthetic_graph_inputs(
     atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
     box_t = torch.tensor(np.tile(box_np, (nframes, 1)), dtype=dtype, device=device)
     graph = build_neighbor_graph(
-        coord_t, atype_t, box_t, rcut, layout=GraphLayout(edge_capacity=e_max)
+        coord_t,
+        atype_t,
+        box_t,
+        rcut,
+        layout=GraphLayout(edge_capacity=e_max),
+        canonicalize=True,
     )
 
     fparam = (
@@ -458,13 +477,21 @@ def build_synthetic_graph_inputs(
         if (want_charge_spin and dim_chg_spin > 0)
         else None
     )
+    # Keep total and owned counts value-distinct during tracing so export does
+    # not specialize the multi-rank ownership relation to ``n_local == n_node``.
+    n_local = torch.clamp(graph.n_node - 1, min=1)
 
     return (
         atype_t.reshape(-1),
         graph.n_node,
+        n_local,
         graph.edge_index,
-        graph.edge_vec,
+        graph.edge_vec.to(edge_dtype),
         graph.edge_mask,
+        graph.destination_order,
+        graph.destination_row_ptr,
+        graph.source_row_ptr,
+        graph.source_order,
         fparam,
         aparam,
         charge_spin,
@@ -476,23 +503,25 @@ def _build_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic-shape specifications for the graph-form forward_lower export.
 
-    ``nframes`` (the ``n_node`` axis), ``N`` (the flat node axis) AND the edge
-    axis ``E`` are all dynamic dims (B2.0: the dynamic edge axis replaces the
-    static ``edge_capacity`` of B1).  ``E`` is marked ``Dim("nedge", min=2)`` so
-    the AOTI artifact accepts any system size with no capacity ceiling — the
-    ``min=2`` lower bound mirrors the dense path's ``Dim("nnei", min=...)`` (a
-    dynamic, SIGFPE-tamed axis) and matches the carry-all builder's
+    ``nframes`` (the ``n_node`` axis), ``N`` (the flat node axis), and the edge
+    axis ``E`` are all dynamic dimensions. ``E`` is marked
+    ``Dim("nedge", min=2)`` so
+    the AOTI artifact accepts any system size with no capacity ceiling. The
+    ``min=2`` lower bound mirrors the dense path's ``Dim("nnei", min=...)`` and
+    matches the carry-all builder's
     ``min_edges=2`` guard (every dynamic graph carries >=2 edges).
 
     Parameters
     ----------
     *sample_inputs : torch.Tensor | None
-        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
-        charge_spin)`` — 8 entries matching ``forward_lower_graph_exportable``.
+        ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+        destination_order, destination_row_ptr, source_row_ptr, source_order,
+        fparam, aparam, charge_spin)`` — 13 entries matching
+        ``forward_lower_graph_exportable``.
     """
-    fparam = sample_inputs[5]
-    aparam = sample_inputs[6]
-    charge_spin = sample_inputs[7]
+    fparam = sample_inputs[10]
+    aparam = sample_inputs[11]
+    charge_spin = sample_inputs[12]
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
@@ -500,9 +529,14 @@ def _build_graph_dynamic_shapes(
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
+        {0: nframes_dim},  # n_local: (nf,)
         {1: nedge_dim},  # edge_index: (2, E) — E dynamic
         {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
         {0: nedge_dim},  # edge_mask: (E,) — E dynamic
+        {0: nedge_dim},  # destination_order: (E,)
+        {0: n_node_total_dim + 1},  # destination_row_ptr: (N + 1,)
+        {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
+        {0: nedge_dim},  # source_order: (E,)
         {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
         # aparam: (nf, nloc, nda) — both the frame AND atom axes are dynamic,
         # matching the dense ``_build_dynamic_shapes`` (otherwise a dim_aparam>0
@@ -616,6 +650,42 @@ def _build_dynamic_shapes(
     # it to the sample value (1) downstream of border_op anyway —
     # there is no graph variation across nswap values.
     return (*base, None, None, None, None, None, None, None, None)
+
+
+def _graph_edge_dtype(model: torch.nn.Module, lower_kind: str) -> str:
+    """Return the graph edge-vector dtype encoded by the deployment artifact.
+
+    Geometrically compressed DPA1 with float32 descriptor statistics evaluates
+    both descriptor directions in float32 and therefore accepts float32
+    geometry directly. Other graph descriptors retain the model-agnostic
+    float64 geometry ABI.
+    """
+    atomic_model = getattr(model, "atomic_model", None)
+    descriptor = getattr(atomic_model, "descriptor", None)
+    descriptor_block = getattr(descriptor, "se_atten", None)
+    statistics = getattr(descriptor_block, "mean", None)
+    if (
+        lower_kind == "graph"
+        and bool(getattr(descriptor, "geo_compress", False))
+        and isinstance(statistics, torch.Tensor)
+        and statistics.dtype == torch.float32
+    ):
+        return "float32"
+    return "float64"
+
+
+def _supports_graph_export(model: torch.nn.Module) -> bool:
+    """Whether the model has an exportable graph-lower implementation.
+
+    A compressed descriptor must use its opaque graph operator during export;
+    tracing through the reference tabulation kernel is unsupported.
+    """
+    atomic_model = getattr(model, "atomic_model", None)
+    descriptor = getattr(atomic_model, "descriptor", None)
+    if not bool(getattr(descriptor, "geo_compress", False)):
+        return True
+    eligible = getattr(descriptor, "_fused_eligible", None)
+    return callable(eligible) and bool(eligible("cuda"))
 
 
 def _collect_metadata(
@@ -738,6 +808,7 @@ def _collect_metadata(
     #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = "graph" if lower_kind == "graph" else "nlist"
+    meta["graph_edge_dtype"] = _graph_edge_dtype(model, lower_kind)
     return meta
 
 
@@ -804,6 +875,61 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     return model_dict
 
 
+@contextlib.contextmanager
+def _cuda_infer_at_least_2() -> Iterator[None]:
+    """Pin ``DP_CUDA_INFER`` to at least 2 for the duration of a trace.
+
+    Level 2 emits the inference pipeline as explicit descriptor, fitting,
+    descriptor-backward, and CSR force/virial custom operators. These operators
+    remain opaque through ``torch.export``. The level-1 autograd lower can
+    decompose the analytic backward to aten, while level 0 selects the
+    untraceable reference tabulation. Level 2 degrades internally when an
+    operator is unavailable or ineligible, so it is a safe floor for graph
+    export.
+    """
+    from deepmd.kernels.utils import (
+        cuda_infer_level,
+    )
+
+    saved = os.environ.get("DP_CUDA_INFER")
+    if cuda_infer_level() < 2:
+        os.environ["DP_CUDA_INFER"] = "2"
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("DP_CUDA_INFER", None)
+        else:
+            os.environ["DP_CUDA_INFER"] = saved
+
+
+def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
+    """Resolve ``lower_kind="auto"`` to a concrete lower-forward schema.
+
+    ``"auto"`` selects the graph lower for a graph-lower model whose graph
+    implementation is exportable to ``.pt2`` and the dense nlist lower for
+    everything else. An explicit ``"nlist"`` / ``"graph"`` is returned
+    unchanged.
+    """
+    if lower_kind != "auto":
+        return lower_kind
+    if not model_file.endswith(".pt2") or data["model"].get("type") == "spin_ener":
+        return "nlist"
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+    from deepmd.pt_expt.train.training import (
+        _model_uses_graph_lower,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    return (
+        "graph"
+        if _model_uses_graph_lower(model) and _supports_graph_export(model)
+        else "nlist"
+    )
+
+
 def deserialize_to_file(
     model_file: str,
     data: dict,
@@ -832,25 +958,43 @@ def deserialize_to_file(
         tracing the uncompressed model (make_fx cannot trace custom ops).
     do_atomic_virial : bool
         If True, export with per-atom virial correction (3 extra backward
-        passes, ~2.5x slower).  Default False for best performance.
+        passes, ~2.5x slower).  Default False for best performance. Forced True
+        for a graph lower, whose LAMMPS Kokkos consumer always reads it.
     lower_kind : str
         Which lower-forward schema the compiled AOTI graph consumes:
         ``"nlist"`` (default) traces the dense quartet
         (``extended_coord``/``extended_atype``/``nlist``/``mapping``);
         ``"graph"`` traces the NeighborGraph schema
-        (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask``) with a
-        DYNAMIC edge axis ``E`` (``Dim("nedge", min=2)``), so the artifact
-        accepts any system size.  The selected schema is recorded as
-        ``lower_input_kind`` in ``metadata.json``.
+        (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
+        the destination/source CSR views) with a DYNAMIC edge axis ``E``
+        (``Dim("nedge", min=2)``), so the artifact accepts any system size.
+        ``"auto"`` (used by ``convert-backend``)
+        resolves to ``"graph"`` for an exportable graph-lower ``.pt2`` and
+        ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`). A graph lower always
+        preserves the fused inference operators (``DP_CUDA_INFER >= 2``) and
+        the per-atom virial.
+        The selected schema is recorded as ``lower_input_kind`` in
+        ``metadata.json``.
     """
-    if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(
-            model_file, data, model_json_override, do_atomic_virial, lower_kind
-        )
+    lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
+    # A graph lower deploys the fused inference pipeline. The trace runs at
+    # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
+    # operators, while the per-atom virial is mandatory for the LAMMPS Kokkos
+    # consumer.
+    if lower_kind == "graph":
+        do_atomic_virial = True
+        ctx: contextlib.AbstractContextManager = _cuda_infer_at_least_2()
     else:
-        _deserialize_to_file_pte(
-            model_file, data, model_json_override, do_atomic_virial, lower_kind
-        )
+        ctx = contextlib.nullcontext()
+    with ctx:
+        if model_file.endswith(".pt2"):
+            _deserialize_to_file_pt2(
+                model_file, data, model_json_override, do_atomic_virial, lower_kind
+            )
+        else:
+            _deserialize_to_file_pte(
+                model_file, data, model_json_override, do_atomic_virial, lower_kind
+            )
 
 
 def _trace_and_export(
@@ -923,14 +1067,25 @@ def _trace_and_export(
         model = BaseModel.deserialize(data["model"])
     model.to("cpu")
     model.eval()
+    if lower_kind == "graph" and not _supports_graph_export(model):
+        raise NotImplementedError(
+            "graph-form export of a compressed descriptor requires its "
+            "float32 fused graph operator; use lower_kind='nlist' for this model"
+        )
+
+    # Autotune checkpoint-specific custom-kernel launch tables on the target
+    # GPU before tracing. The model itself remains on CPU for tracing.
+    from deepmd.kernels.autotune import (
+        run_autotune,
+    )
+
+    run_autotune(model, target_device)
 
     # 2. Collect metadata
     metadata = _collect_metadata(model, is_spin=is_spin, lower_kind=lower_kind)
 
-    # 2b. Graph-form export branch (NeighborGraph schema). The graph path is
-    # LOCAL-only (no ghosts), single-rank, energy-model only in PR-A/PR-B; it
-    # traces ``forward_lower_graph_exportable`` with a DYNAMIC edge axis (B2.0).
-    # The dense (nlist) path below is left byte-unchanged.
+    # Graph-form export uses the ghost-free NeighborGraph schema with a dynamic
+    # edge axis and an energy-model output contract.
     if lower_kind == "graph":
         import math
 
@@ -942,7 +1097,7 @@ def _trace_and_export(
         if with_comm_dict:
             raise NotImplementedError(
                 "graph-form .pt2 export does not support the with-comm artifact "
-                "(multi-rank graph message passing is a later PR)"
+                "required for multi-rank message passing"
             )
         if not hasattr(model, "forward_lower_graph_exportable"):
             raise NotImplementedError(
@@ -951,7 +1106,7 @@ def _trace_and_export(
                 "requires an energy model"
             )
 
-        # The edge axis is DYNAMIC (B2.0): the AOTI artifact accepts any edge
+        # The AOTI artifact accepts any edge
         # count, so there is no capacity to bake. The trace sample is built at a
         # concrete, padded edge size only to keep the trace tensors distinct
         # from the other dynamic dims (nframes=2, N=14) under torch.export's
@@ -960,23 +1115,35 @@ def _trace_and_export(
         nnei = sum(model.get_sel())
         e_sample = math.ceil(1.25 * nloc_sample * nnei)
 
-        # make_fx traces on CPU; the .pt2 C++ ABI is float64-only.  Pass device
-        # and dtype explicitly instead of mutating the module-level env.DEVICE.
+        # make_fx traces on CPU. Conditioning inputs retain the model-agnostic
+        # float64 ABI; compressed DPA1 graph geometry enters directly in its
+        # float32 compute precision, as recorded in metadata.
+        edge_dtype = (
+            torch.float32
+            if metadata["graph_edge_dtype"] == "float32"
+            else torch.float64
+        )
         sample_inputs = build_synthetic_graph_inputs(
             model,
             e_max=e_sample,
             nframes=2,
             nloc=nloc_sample,
             dtype=torch.float64,
+            edge_dtype=edge_dtype,
             device=torch.device("cpu"),
         )
 
         (
             atype_g,
             n_node_g,
+            n_local_g,
             edge_index_g,
             edge_vec_g,
             edge_mask_g,
+            destination_order_g,
+            destination_row_ptr_g,
+            source_row_ptr_g,
+            source_order_g,
             fparam_g,
             aparam_g,
             charge_spin_g,
@@ -986,22 +1153,33 @@ def _trace_and_export(
         traced = model.forward_lower_graph_exportable(
             atype_g,
             n_node_g,
+            n_local_g,
             edge_index_g,
             edge_vec_g,
             edge_mask_g,
+            destination_order_g,
+            destination_row_ptr_g,
+            source_row_ptr_g,
+            source_order_g,
             fparam=fparam_g,
             aparam=aparam_g,
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin_g,
+            destination_sorted=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
         sample_out = traced(
             atype_g,
             n_node_g,
+            n_local_g,
             edge_index_g,
             edge_vec_g,
             edge_mask_g,
+            destination_order_g,
+            destination_row_ptr_g,
+            source_row_ptr_g,
+            source_order_g,
             fparam_g,
             aparam_g,
             charge_spin_g,
@@ -1020,11 +1198,9 @@ def _trace_and_export(
         # Neutralise shape-guard assertion nodes on the dynamic edge axis.
         # ``prefer_deferred_runtime_asserts_over_guards=True`` converts the
         # symbolic-shape guards discovered while tracing into deferred
-        # ``aten._assert_scalar`` nodes; on the dynamic ``E`` axis these are the
-        # SIGFPE-prone ``nloc_min``-family checks (CLAUDE.md AOTI pitfalls) that
-        # the dense spin path already strips. Replacing each condition with
-        # ``True`` (not erasing the node) keeps the graph well-formed while
-        # letting the AOTI artifact generalise across edge counts.
+        # ``aten._assert_scalar`` nodes. Replacing each condition with ``True``
+        # preserves graph structure while allowing the AOTI artifact to
+        # generalise across edge counts.
         _strip_shape_assertions(exported.graph_module)
 
         if target_device.type != "cpu":
@@ -1035,7 +1211,7 @@ def _trace_and_export(
             exported = move_to_device_pass(exported, target_device)
 
         metadata["do_atomic_virial"] = do_atomic_virial
-        # The edge axis is DYNAMIC (B2.0): the AOTI forward accepts any edge
+        # The AOTI forward accepts any edge
         # count, so there is no ``edge_capacity`` to persist. The C++ / Python
         # conversion hub builds the carry-all graph at its exact (tight) edge
         # count and feeds it straight through.
@@ -1143,6 +1319,7 @@ def _trace_and_export(
     # 4. Trace via make_fx on CPU.
     # This decomposes torch.autograd.grad into aten ops so the resulting
     # GraphModule no longer contains autograd calls.
+    log.info("Tracing the lower graph on CPU (make_fx)...")
     if is_spin:
         if with_comm_dict:
             traced = model.forward_common_lower_exportable_with_comm(
@@ -1213,6 +1390,7 @@ def _trace_and_export(
     # graph.  Exporting on CPU keeps devices consistent; we move the
     # ExportedProgram to the target device afterwards via the official
     # move_to_device_pass (avoids FakeTensor device-propagation errors).
+    log.info("Exporting the traced graph (torch.export)...")
     dynamic_shapes = _build_dynamic_shapes(
         *sample_inputs,
         has_spin=is_spin,
@@ -1353,21 +1531,36 @@ def _deserialize_to_file_pt2(
     # compilations from multiple threads would race on this global. Callers
     # must serialise ``.pt2`` exports if running under a thread pool.
     # Processes are fine (each has its own inductor config).
-    import torch._inductor.config as _inductor_config
-
     import deepmd.pt_expt.utils.env as _env
+    from deepmd.pt.utils.compile_compat import (
+        build_inductor_compile_options,
+        patch_inductor_force_int64_indexing,
+    )
 
     is_cuda = _env.DEVICE.type == "cuda"
-    saved_threshold = _inductor_config.realize_opcount_threshold
-    saved_assert_indexing = _inductor_config.assert_indirect_indexing
+    # Force int64 tensor indexing so the flattened index of a large
+    # data-dependent tensor never wraps past 2**31 into an illegal address.
+    patch_inductor_force_int64_indexing()
+    # The AOTInductor freeze must use the same Inductor lockdown as the
+    # pt-backend compile -- most importantly ``triton.max_tiles = 1``, which
+    # keeps the data-dependent edge / node axis on the x launch dimension
+    # (limit 2**31-1) rather than a 2-D y/z tile (limit 65535). Without it a
+    # compressed graph .pt2 (its level-1 lower carries an aten glue over the
+    # ``(n_node, NG * axis)`` descriptor) launches an out-of-range grid and
+    # fails at runtime with a CUDA "invalid argument" once that tensor exceeds
+    # 2**22 elements. The two deepmd-specific relaxations layer on top.
+    aoti_configs = build_inductor_compile_options(inference=True)
+    aoti_configs["assert_indirect_indexing"] = False
     if is_cuda:
-        _inductor_config.realize_opcount_threshold = 0
-    _inductor_config.assert_indirect_indexing = False
-    try:
-        aoti_compile_and_package(exported, package_path=model_file)
-    finally:
-        _inductor_config.realize_opcount_threshold = saved_threshold
-        _inductor_config.assert_indirect_indexing = saved_assert_indexing
+        aoti_configs["realize_opcount_threshold"] = 0
+    log.info(
+        "Compiling the AOTInductor package for %s (the slowest freeze stage; "
+        "typically several minutes)...",
+        _env.DEVICE,
+    )
+    aoti_compile_and_package(
+        exported, package_path=model_file, inductor_configs=aoti_configs
+    )
 
     # Second artifact: with-comm. Only for descriptors whose message
     # passing extends across rank boundaries. The flag was computed
@@ -1385,16 +1578,9 @@ def _deserialize_to_file_pt2(
         )
         with tempfile.TemporaryDirectory() as td:
             wc_path = os.path.join(td, "forward_lower_with_comm.pt2")
-            saved_threshold = _inductor_config.realize_opcount_threshold
-            saved_assert_indexing = _inductor_config.assert_indirect_indexing
-            if is_cuda:
-                _inductor_config.realize_opcount_threshold = 0
-            _inductor_config.assert_indirect_indexing = False
-            try:
-                aoti_compile_and_package(exported_wc, package_path=wc_path)
-            finally:
-                _inductor_config.realize_opcount_threshold = saved_threshold
-                _inductor_config.assert_indirect_indexing = saved_assert_indexing
+            aoti_compile_and_package(
+                exported_wc, package_path=wc_path, inductor_configs=aoti_configs
+            )
             with open(wc_path, "rb") as f:
                 with_comm_bytes = f.read()
         # The output keys are identical between the two artifacts (same

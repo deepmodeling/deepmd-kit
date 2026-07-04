@@ -291,24 +291,33 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const bool atomic) override;
 
   /**
-   * @brief Fully device-resident edge inference for single-domain SeZM/DPA4.
+   * @brief Fully device-resident inference for exported edge-input or
+   * graph-input .pt2 models.
    *
    * Runs the exported model directly on a GPU-built compact edge schema,
    * keeping coordinates, the edge graph and the outputs on the device.  All
    * pointers reference GPU memory on the model's device.  ``edge_index`` is the
-   * flattened [2, nedge] local edge graph (row 0 = neighbor/source, row 1 =
+   * flattened [2, nedge] edge graph (row 0 = neighbor/source, row 1 =
    * center/destination); ``edge_vec`` is the matching minimum-image bond vector
    * ``r_neighbor - r_center``.  Outputs are written device-to-device.
    *
    * @param[out] d_atom_energy Per-atom energy, GPU [nloc].
-   * @param[out] d_force Per-atom force, GPU [nloc * 3] row-major.
-   * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
-   * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
-   * @param[in] d_atype Local atom types, GPU [nloc].
-   * @param[in] d_edge_index Local edge graph, GPU [2 * nedge].
+   * @param[out] d_force Per-node force, GPU [nall_nodes * 3] row-major.
+   * @param[out] d_atom_virial Per-node virial, GPU [nall_nodes * 9] row-major.
+   * @param[in] d_coord Coordinates, GPU [nall_nodes * 3] row-major.
+   * @param[in] d_atype Atom types, GPU [nall_nodes].
+   * @param[in] d_edge_index Destination-major [source, destination] edge graph,
+   *   GPU [2 * nedge].
    * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
    * @param[in] nloc Number of local atoms.
    * @param[in] nedge Number of physical edges (dummy edges added internally).
+   * @param[in] fparam Frame parameters, or empty for the stored default.
+   * @param[in] aparam Per-atom parameters, or empty for none.
+   * @param[in] nall_nodes Graph node count: 0 (or nloc) folds ghosts onto local
+   *   owners; nall_nodes > nloc keeps the extended (local + ghost) node set.
+   * @param[in] comm_nlist Communication neighbor list for the extended node
+   * set; required by a message-passing model under domain decomposition,
+   * nullptr otherwise.
    */
   void compute_edges_gpu(double* d_atom_energy,
                          double* d_force,
@@ -318,9 +327,54 @@ class DeepPotPTExpt : public DeepPotBackend {
                          const int* d_edge_index,
                          const double* d_edge_vec,
                          const int nloc,
-                         const int nedge) override;
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes,
+                         const InputNlist* comm_nlist) override;
+  /**
+   * @brief FP32 edge-vector overload for compressed graph artifacts.
+   *
+   * The model metadata must declare ``graph_edge_dtype == "float32"``. The
+   * remaining graph and output contracts are identical to the FP64 overload.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const float* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes,
+                         const InputNlist* comm_nlist) override;
+  /**
+   * @brief Whether the loaded artifact accepts the device-edge API.
+   */
+  bool supports_device_edge_inference() const override;
+  /**
+   * @brief Whether the loaded graph artifact consumes FP32 edge vectors.
+   */
+  bool uses_fp32_edge_vectors() const override;
 
  private:
+  template <typename EDGE_TYPE>
+  void compute_edges_gpu_impl(double* d_atom_energy,
+                              double* d_force,
+                              double* d_atom_virial,
+                              const double* d_coord,
+                              const int* d_atype,
+                              const int* d_edge_index,
+                              const EDGE_TYPE* d_edge_vec,
+                              const int nloc,
+                              const int nedge,
+                              const std::vector<double>& fparam,
+                              const std::vector<double>& aparam,
+                              const int nall_nodes,
+                              const InputNlist* comm_nlist);
   bool inited;
   int ntypes;
   int dfparam;
@@ -339,6 +393,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   int nnei;               // expected nlist nnei dimension (= sum(sel))
   bool lower_input_is_edge_ = false;
   bool lower_input_is_graph_ = false;
+  bool graph_edge_fp32_ = false;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
   std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
@@ -346,20 +401,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
-  // Optional second AOTInductor artifact for the multi-rank GNN code
-  // path (Phase 4).  Loaded only if the .pt2 metadata reports
-  // ``has_comm_artifact == true`` AND the model has GNN message
-  // passing.  ``with_comm_tempfile_`` owns the extracted nested .pt2
-  // for the lifetime of ``with_comm_loader``.
+  // Optional AOTInductor artifact for multi-rank message-passing inference,
+  // loaded only when the .pt2 metadata declares ``has_comm_artifact``. It is
+  // required when ghost features must be exchanged across ranks inside the
+  // forward pass.  ``with_comm_tempfile_`` owns the extracted nested .pt2 for
+  // the lifetime of ``with_comm_loader``.
   bool has_comm_artifact_ = false;
-  // Whether the regular .pt2 graph consumes the mapping tensor for
-  // ghost-feature gather (true for any message-passing descriptor:
-  // DPA2/DPA3/hybrids; false for se_e2_a/DPA1/etc.).  Mirrors the
-  // descriptor's ``has_message_passing()`` API; read from the
-  // ``has_message_passing`` metadata field.  Defaults to false for
-  // pre-PR .pt2 archives that lack the field so non-GNN archives
-  // continue to work; GNN archives must be regenerated to opt into
-  // the fail-fast guard against the silent-corruption bug.
+  // Whether the regular .pt2 graph consumes the mapping tensor to gather ghost
+  // features, i.e. the descriptor performs message passing.  Read from the
+  // ``has_message_passing`` metadata field; archives without it default to
+  // non-message-passing.
   bool has_message_passing_ = false;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
@@ -431,28 +482,38 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& charge_spin);
 
   /**
-   * @brief Run a NeighborGraph-schema ``.pt2`` (lower_input_kind="graph").
+   * @brief Run a graph-input ``.pt2`` artifact (lower_input_kind="graph").
    *
    * Positional AOTI input order matches the Python export ABI:
-   * ``(atype, n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
-   * [charge_spin])``.  Unlike the edge schema there is no ``coord`` and no
-   * ``edge_scatter_index`` input; node count is carried by ``n_node`` and the
-   * geometry is fully described by ``edge_vec``.
+   * ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+   * destination_order, destination_row_ptr, source_row_ptr, source_order,
+   * [fparam], [aparam], [charge_spin])``.
    *
-   * @param[in] atype Per-node local types, shape ``(N,)`` int64.
-   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] atype Per-node local-plus-halo types, shape ``(N,)`` int64.
+   * @param[in] n_node Per-frame total node count, shape ``(nf,)`` int64.
+   * @param[in] n_local Per-frame owned node count, shape ``(nf,)`` int64.
    * @param[in] edge_index Folded edge graph ``(2, E)`` int64 [src, dst].
    * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
    * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   * @param[in] destination_order Destination-grouped edge permutation ``(E,)``.
+   * @param[in] destination_row_ptr Destination CSR offsets ``(N + 1,)``.
+   * @param[in] source_row_ptr Source CSR offsets ``(N + 1,)``.
+   * @param[in] source_order Source-grouped edge permutation ``(E,)``.
    */
-  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
-                                             const torch::Tensor& n_node,
-                                             const torch::Tensor& edge_index,
-                                             const torch::Tensor& edge_vec,
-                                             const torch::Tensor& edge_mask,
-                                             const torch::Tensor& fparam,
-                                             const torch::Tensor& aparam,
-                                             const torch::Tensor& charge_spin);
+  std::vector<torch::Tensor> run_model_graph(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.
@@ -475,7 +536,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::vector<at::Tensor>& comm_tensors);
 
   /**
-   * @brief Run the with-comm edge (SeZM) ``.pt2`` artifact with comm tensors.
+   * @brief Run the with-comm edge-input ``.pt2`` artifact with comm tensors.
    *
    * The edge schema indexes the extended node set, so ``edge_index`` and
    * ``edge_scatter_index`` coincide. ``atype`` carries owned atoms (fitting,

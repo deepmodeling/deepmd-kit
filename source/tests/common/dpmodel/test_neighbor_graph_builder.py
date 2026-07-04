@@ -100,6 +100,45 @@ class TestNeighborGraphBuilder(unittest.TestCase):
             brute_force_neighbor_sets(self.coord[0], None, self.rcut),
         )
 
+    def test_canonicalization_is_explicit(self) -> None:
+        generic = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        with_csr = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            with_csr=True,
+        )
+        canonical = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            canonicalize=True,
+        )
+
+        self.assertFalse(generic.destination_sorted)
+        self.assertIsNone(generic.destination_order)
+        self.assertIsNone(generic.destination_row_ptr)
+        self.assertIsNone(generic.source_row_ptr)
+        self.assertIsNone(generic.source_order)
+        self.assertFalse(with_csr.destination_sorted)
+        self.assertIsNotNone(with_csr.destination_order)
+        self.assertIsNotNone(with_csr.destination_row_ptr)
+        self.assertIsNotNone(with_csr.source_row_ptr)
+        self.assertIsNotNone(with_csr.source_order)
+        self.assertTrue(canonical.destination_sorted)
+        np.testing.assert_array_equal(
+            canonical.destination_order,
+            np.arange(canonical.edge_index.shape[1]),
+        )
+        real_destination = canonical.edge_index[1, canonical.edge_mask]
+        self.assertTrue(bool(np.all(real_destination[:-1] <= real_destination[1:])))
+        self.assertEqual(
+            graph_neighbor_sets(canonical, 4),
+            graph_neighbor_sets(generic, 4),
+        )
+
     def test_periodic_matches_brute_force(self) -> None:
         box = np.eye(3, dtype=np.float64)[None] * 6.0
         ng = build_neighbor_graph(self.coord, self.atype, box, self.rcut)

@@ -106,22 +106,38 @@ def enable_compression(
     # 4. Serialize the compressed model dict (includes tabulated data)
     compressed_model_dict = model.serialize()
 
-    # 5. Re-export: trace an UNCOMPRESSED model for the exported program
-    #    (make_fx cannot trace through custom tabulate ops), but store
-    #    the full compressed dict in model.json so that deserialize()
-    #    restores compression state.
-    log.info("Re-exporting compressed model...")
-    uncompressed_data = {
-        "model": model_dict["model"],  # original uncompressed model
-        "model_def_script": model_dict.get("model_def_script"),
-    }
-    deserialize_to_file(
-        output,
-        uncompressed_data,
-        model_json_override={
-            "model": compressed_model_dict,
-            "model_def_script": model_dict.get("model_def_script"),
-            "min_nbor_dist": float(min_nbor_dist),
-        },
+    # 5. Re-export the compressed model.
+    #
+    # A geometrically compressed graph-lower descriptor (DPA1 / se_atten strip,
+    # attn_layer == 0) evaluates its tabulated embedding through fused CUDA
+    # operators that make_fx can trace, so its compressed graph exports directly
+    # to a graph-lower ``.pt2``: ``deserialize_to_file`` bakes the end-to-end
+    # fused table operator and the mandatory per-atom virial (see its docstring).
+    # Every other compressed descriptor keeps tabulated operators make_fx cannot
+    # trace: those export the UNCOMPRESSED graph and carry the compressed dict in
+    # ``model.json`` so ``deserialize()`` restores the compression state for the
+    # Python inference path.
+    from deepmd.pt_expt.train.training import (
+        _model_uses_graph_lower,
     )
+
+    model_def_script = model_dict.get("model_def_script")
+    if output.endswith(".pt2") and _model_uses_graph_lower(model):
+        log.info("Re-exporting compressed graph...")
+        deserialize_to_file(
+            output,
+            {"model": compressed_model_dict, "model_def_script": model_def_script},
+            lower_kind="graph",
+        )
+    else:
+        log.info("Re-exporting compressed model...")
+        deserialize_to_file(
+            output,
+            {"model": model_dict["model"], "model_def_script": model_def_script},
+            model_json_override={
+                "model": compressed_model_dict,
+                "model_def_script": model_def_script,
+                "min_nbor_dist": float(min_nbor_dist),
+            },
+        )
     log.info("Compressed model saved to %s", output)

@@ -60,33 +60,62 @@ def _graph_inputs(model):
     )
     atype = torch.tensor([[0, 1, 0, 1, 0, 1]], dtype=torch.int64, device=env.DEVICE)
     box = torch.eye(3, dtype=torch.float64, device=env.DEVICE).reshape(1, 9) * 20.0
-    g = build_neighbor_graph(coord, atype, box, model.get_rcut())
-    return (atype.reshape(-1), g.n_node, g.edge_index, g.edge_vec, g.edge_mask)
+    g = build_neighbor_graph(
+        coord,
+        atype,
+        box,
+        model.get_rcut(),
+        canonicalize=True,
+    )
+    edge_mask = g.edge_mask.clone()
+    assert bool(edge_mask[0])
+    edge_mask[0] = False
+    return (
+        atype.reshape(-1),
+        g.n_node,
+        g.n_node,
+        g.edge_index,
+        g.edge_vec,
+        edge_mask,
+        g.destination_order,
+        g.destination_row_ptr,
+        g.source_row_ptr,
+        g.source_order,
+    )
 
 
 def test_graph_exportable_traces():
     model = _model().eval()
-    atype, n_node, ei, ev, em = _graph_inputs(model)
+    graph_inputs = _graph_inputs(model)
     gm = model.forward_common_lower_graph_exportable(
-        atype,
-        n_node,
-        ei,
-        ev,
-        em,
+        *graph_inputs,
         do_atomic_virial=False,
+        destination_sorted=True,
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
     )
     assert isinstance(gm, torch.nn.Module)
     # the traced module reproduces eager outputs
-    eager = model.forward_common_lower_graph(
-        atype, n_node, ei, ev, em, do_atomic_virial=False
-    )
-    # traced module has placeholders for all 8 fn args (fparam/aparam/charge_spin=None)
-    traced = gm(atype, n_node, ei, ev, em, None, None, None)
+    eager = model.forward_common_lower_graph(*graph_inputs, do_atomic_virial=False)
+    # Optional conditioning inputs remain explicit placeholders.
+    traced = gm(*graph_inputs, None, None, None)
     # traced returns a tuple/dict; compare energy_redu
     te = traced["energy_redu"] if isinstance(traced, dict) else traced[1]
     torch.testing.assert_close(te, eager["energy_redu"], rtol=1e-10, atol=1e-10)
+
+
+def test_graph_export_rejects_false_canonical_claim():
+    model = _model().eval()
+    graph_inputs = list(_graph_inputs(model))
+    graph_inputs[6] = torch.flip(graph_inputs[6], dims=(0,))
+
+    with pytest.raises(ValueError, match="destination_order"):
+        model.forward_common_lower_graph_exportable(
+            *graph_inputs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
 
 
 @pytest.mark.parametrize("do_atomic_virial", [False, True])  # both branches of the bool
@@ -95,19 +124,16 @@ def test_forward_lower_graph_exportable_public_keys(do_atomic_virial):
     reproduces eager energy/force; atom_virial present iff do_atomic_virial.
     """
     model = _model().eval()
-    atype, n_node, ei, ev, em = _graph_inputs(model)
+    graph_inputs = _graph_inputs(model)
     gm = model.forward_lower_graph_exportable(
-        atype,
-        n_node,
-        ei,
-        ev,
-        em,
+        *graph_inputs,
         do_atomic_virial=do_atomic_virial,
+        destination_sorted=True,
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
     )
     assert isinstance(gm, torch.nn.Module)
-    out = gm(atype, n_node, ei, ev, em, None, None, None)
+    out = gm(*graph_inputs, None, None, None)
 
     # public key set (graph path is local-only: force/atom_virial, NOT extended_*)
     assert "atom_energy" in out and "energy" in out and "force" in out
@@ -118,7 +144,7 @@ def test_forward_lower_graph_exportable_public_keys(do_atomic_virial):
 
     # values match the eager graph lower
     eager = model.forward_common_lower_graph(
-        atype, n_node, ei, ev, em, do_atomic_virial=do_atomic_virial
+        *graph_inputs, do_atomic_virial=do_atomic_virial
     )
     torch.testing.assert_close(
         out["energy"], eager["energy_redu"], rtol=1e-10, atol=1e-10

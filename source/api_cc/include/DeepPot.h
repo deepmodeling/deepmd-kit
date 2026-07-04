@@ -308,13 +308,14 @@ class DeepPotBackend : public DeepBaseModelBackend {
                         coord, atype, box, fparam, aparam, atomic);
   }
   /**
-   * @brief GPU-resident edge-input inference for the SeZM/DPA4 graph-form .pt2:
-   *given device edge tensors, write per-atom energy / force / virial back to
-   * the device output pointers. The PyTorch Exportable backend overrides this;
-   * every other backend inherits the throwing default. The signature is
-   * intentionally torch-free so the dispatcher stays backend-agnostic (no
-   * dynamic_cast into a PyTorch-heavy type, so ``libdeepmd_cc`` need not link
-   * PyTorch).
+   * @brief GPU-resident edge inference backend hook.
+   *
+   * Given device-resident edge tensors, write the per-atom energy, force, and
+   * virial back to the device output pointers. The PyTorch Exportable backend
+   * overrides this; every other backend inherits the throwing default. The
+   * signature is torch-free so the dispatcher stays backend-agnostic and
+   * ``libdeepmd_cc`` need not link PyTorch. See DeepPot::compute_edges_gpu for
+   * the device pointer, graph, and communication contracts.
    */
   virtual void compute_edges_gpu(double* d_atom_energy,
                                  double* d_force,
@@ -324,7 +325,26 @@ class DeepPotBackend : public DeepBaseModelBackend {
                                  const int* d_edge_index,
                                  const double* d_edge_vec,
                                  const int nloc,
-                                 const int nedge);
+                                 const int nedge,
+                                 const std::vector<double>& fparam,
+                                 const std::vector<double>& aparam,
+                                 const int nall_nodes,
+                                 const InputNlist* comm_nlist);
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const float* d_edge_vec,
+                                 const int nloc,
+                                 const int nedge,
+                                 const std::vector<double>& fparam,
+                                 const std::vector<double>& aparam,
+                                 const int nall_nodes,
+                                 const InputNlist* comm_nlist);
+  virtual bool supports_device_edge_inference() const;
+  virtual bool uses_fp32_edge_vectors() const;
 };
 
 /**
@@ -683,7 +703,8 @@ class DeepPot : public DeepBaseModel {
   /** @} */
 
   /**
-   * @brief Fully device-resident edge inference for single-domain SeZM/DPA4.
+   * @brief Fully device-resident inference for exported edge-input or
+   * graph-input .pt2 models.
    *
    * Forwards to the PyTorch Exportable (.pt2) backend's GPU edge path; raising
    * if the active backend is not ``DeepPotPTExpt``.  All pointers reference GPU
@@ -711,6 +732,68 @@ class DeepPot : public DeepBaseModel {
                          const double* d_edge_vec,
                          const int nloc,
                          const int nedge);
+
+  /**
+   * @brief GPU-resident edge inference with runtime frame / atomic parameters.
+   *
+   * As the parameter-free overload, but ``fparam`` (global, ``dfparam`` values)
+   * and ``aparam`` (per-atom, ``nloc * daparam`` values) override the model's
+   * stored defaults. Empty vectors fall back to the stored default fparam and
+   * to no aparam, so the two overloads coincide.
+   *
+   * @param[in] fparam Runtime frame parameters, or empty for the model default.
+   * @param[in] aparam Runtime per-atom parameters (row-major [nloc, daparam]),
+   *   or empty for none.
+   * @param[in] nall_nodes Total graph node count; 0 (or nloc) folds ghosts onto
+   *   local owners (single domain), while nall_nodes > nloc keeps the extended
+   *   (local + ghost) node set for a domain-decomposed run.
+   * @param[in] comm_nlist Communication neighbor list (send/recv swaps) for the
+   *   extended node set. Required for a message-passing model under domain
+   *   decomposition, where ghost features are exchanged across ranks inside the
+   *   forward pass; nullptr otherwise.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr);
+
+  /**
+   * @brief Device-edge inference with FP32 edge vectors.
+   *
+   * Call this overload only when ``uses_fp32_edge_vectors()`` is true.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const float* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr);
+
+  /**
+   * @brief Whether the loaded artifact supports device-edge inference.
+   */
+  bool supports_device_edge_inference() const;
+
+  /**
+   * @brief Whether the loaded artifact expects FP32 device edge vectors.
+   */
+  bool uses_fp32_edge_vectors() const;
 
   int dim_chg_spin() const;
 
