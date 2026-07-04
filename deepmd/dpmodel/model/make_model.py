@@ -463,7 +463,8 @@ def make_model(
                 ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
             else:
                 raise ValueError(
-                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                    f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "
+                    "supports 'dense'/'ase' only ('vesin'/'nv' require the pt_expt backend)."
                 )
             xp = array_api_compat.array_namespace(atype)
             nf, nloc = atype.shape[:2]

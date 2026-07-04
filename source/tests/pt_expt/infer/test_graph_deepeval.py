@@ -32,6 +32,9 @@ from deepmd.pt_expt.utils.env import (
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
 )
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    is_vesin_torch_available,
+)
 
 # dpa1 with attn_layer == 0 -- the energy model exercised by the graph path.
 DPA1_CONFIG = {
@@ -237,3 +240,27 @@ def test_graph_pt2_deepeval_parity(graph_pt2, pbc, system) -> None:
         atol=1e-10,
         err_msg="atom_virial",
     )
+
+
+@pytest.mark.skipif(not is_vesin_torch_available(), reason="vesin[torch] not installed")
+@pytest.mark.parametrize("pbc", [True, False])  # periodic vs non-periodic
+def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
+    """Selecting neighbor_graph_method='vesin' at DeepEval yields identical
+    energy/force/virial to the default 'dense' builder on the SAME graph ``.pt2``
+    (the builder is a pure perf choice; neighbor sets are equal).
+    """
+    pt2_path, _ = graph_pt2
+    coords, cells, atype = _build_system(**_SYSTEMS["small_8"])
+    box = cells if pbc else None
+    max_nn = _max_neighbors(coords, box, atype)
+    assert max_nn < SEL, "test system must be non-binding for carry-all parity"
+
+    dp_dense = DeepPot(pt2_path)  # default neighbor_graph_method == "dense"
+    dp_vesin = DeepPot(pt2_path, neighbor_graph_method="vesin")
+    assert dp_vesin.deep_eval._neighbor_graph_method == "vesin"
+
+    e_d, f_d, v_d = dp_dense.eval(coords, box, atype)
+    e_v, f_v, v_v = dp_vesin.eval(coords, box, atype)
+    np.testing.assert_allclose(e_v, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
+    np.testing.assert_allclose(f_v, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
+    np.testing.assert_allclose(v_v, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")

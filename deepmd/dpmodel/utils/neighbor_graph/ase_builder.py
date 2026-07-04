@@ -58,7 +58,8 @@ def build_neighbor_graph_ase(
     coord
         (nf, nloc, 3) local coordinates.
     atype
-        (nf, nloc) local atom types (unused for the search; carried for API parity).
+        (nf, nloc) local atom types; ``type < 0`` marks a virtual atom, excluded
+        as center and neighbor (the search itself is type-blind).
     box
         (nf, 3, 3) simulation cell, or ``None`` for non-periodic.
     rcut
@@ -126,6 +127,14 @@ def build_neighbor_graph_ase(
     nframe_all = (
         np.concatenate(nframe_parts) if nframe_parts else np.zeros((0,), dtype=np.int64)
     )
+
+    # virtual atoms (atype < 0) are excluded as centers AND neighbors -- the
+    # World-2 builder contract shared with the dense reference builder; the
+    # geometric search above cannot know about them.
+    atype_np = _to_cpu_numpy(atype).reshape(nf, nloc)
+    keep = (atype_np[nframe_all, i_all] >= 0) & (atype_np[nframe_all, j_all] >= 0)
+    i_all, j_all = i_all[keep], j_all[keep]
+    S_all, nframe_all = S_all[keep], nframe_all[keep]
 
     return neighbor_graph_from_ijs(
         i_all, j_all, S_all, coord, box, nframe_all, nloc, layout=layout
