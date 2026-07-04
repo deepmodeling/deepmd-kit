@@ -734,7 +734,6 @@ def test_ener(
         numb_test=numb_test,
     )
     ae = optional_outputs.atom_energy
-    av = optional_outputs.atom_virial
     force_m = optional_outputs.force_mag
     mask_mag = optional_outputs.mask_mag
     hessian = optional_outputs.hessian
