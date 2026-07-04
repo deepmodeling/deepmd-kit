@@ -96,6 +96,12 @@ def test_spin_model_backbone_routes_legacy() -> None:
     # --- Get doubled inputs via the model's own transform ---
     coord_doubled, atype_doubled, _corr = model.process_spin_input(coord, atype, spin)
 
+    # The backbone descriptor has graph-lower disabled by the spin-model
+    # opt-out knob.  Temporarily re-enable it only for the sel-binding
+    # divergence probe below; the legacy/spin comparison uses the dense path.
+    backbone_descriptor = backbone.get_dp_atomic_model().descriptor
+    assert backbone_descriptor._graph_lower_disabled is True
+
     # --- Backbone with explicit legacy routing ---
     legacy_ret = backbone.call_common(
         coord_doubled, atype_doubled, box, neighbor_graph_method="legacy"
@@ -123,9 +129,14 @@ def test_spin_model_backbone_routes_legacy() -> None:
     )
 
     # --- Sel-binding guard: backbone graph must DIFFER from backbone legacy ---
-    graph_ret = backbone.call_common(
-        coord_doubled, atype_doubled, box, neighbor_graph_method="ase"
-    )
+    # Re-enable graph lower on the backbone descriptor only for this probe.
+    backbone_descriptor._graph_lower_disabled = False
+    try:
+        graph_ret = backbone.call_common(
+            coord_doubled, atype_doubled, box, neighbor_graph_method="ase"
+        )
+    finally:
+        backbone_descriptor._graph_lower_disabled = True
     graph_energy = np.array(graph_ret["energy"])
 
     assert not np.allclose(legacy_energy.sum(), graph_energy.sum(), rtol=1e-6), (
@@ -133,6 +144,32 @@ def test_spin_model_backbone_routes_legacy() -> None:
         "system — sel is not binding with these inputs; the regression fixture "
         "is too weak.  Reduce sel or increase atom density."
     )
+
+
+def test_spin_backbone_descriptor_graph_lower_disabled() -> None:
+    """The spin backbone descriptor must have graph-lower disabled.
+
+    The explicit ``disable_graph_lower`` opt-out knob is set structurally at
+    spin-model construction and must survive a serialize -> deserialize round
+    trip (the flag is NOT part of the serialized schema, so it must be
+    re-derived on deserialization).
+    """
+    model = get_spin_model(_spin_dpa1_config())
+    descriptor = model.backbone_model.get_dp_atomic_model().descriptor
+    # dpa1 with attn_layer=0 concat tebd would otherwise be graph-eligible.
+    assert descriptor._graph_lower_disabled is True
+    assert descriptor.uses_graph_lower() is False
+
+    # --- survive serialize -> deserialize ---
+    data = model.serialize()
+    from deepmd.dpmodel.model.spin_model import (
+        SpinModel,
+    )
+
+    model2 = SpinModel.deserialize(data)
+    descriptor2 = model2.backbone_model.get_dp_atomic_model().descriptor
+    assert descriptor2._graph_lower_disabled is True
+    assert descriptor2.uses_graph_lower() is False
 
 
 def test_spin_model_call_common_deterministic() -> None:

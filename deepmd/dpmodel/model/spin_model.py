@@ -63,6 +63,16 @@ class SpinModel(NativeOP):
         super().__init__()
         self.backbone_model = backbone_model
         self.spin = spin
+        # Spin graph-lower unsupported: carry-all routing diverges on
+        # sel-binding spin systems and spin export trips inductor scatter
+        # codegen. Re-derived structurally here so it survives both
+        # construction and serialize/deserialize round trips (the flag is
+        # not part of the serialized schema).
+        dp_atomic_model = self.backbone_model.get_dp_atomic_model()
+        if dp_atomic_model is not None:
+            descriptor = getattr(dp_atomic_model, "descriptor", None)
+            if descriptor is not None and hasattr(descriptor, "disable_graph_lower"):
+                descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
@@ -630,8 +640,9 @@ class SpinModel(NativeOP):
             coord_corr_for_virial=coord_corr_for_virial,
             # Spin graph support is not yet implemented; the carry-all graph
             # route diverges on sel-binding spin systems (virtual atoms double
-            # the density).  Force the legacy dense-nlist path until spin-graph
-            # support lands.
+            # the density).  Belt-and-braces: the backbone descriptor already
+            # has graph-lower disabled in ``__init__``, but force the legacy
+            # dense-nlist path here too until spin-graph support lands.
             neighbor_graph_method="legacy",
         )
         model_output_type = self.backbone_model.model_output_type()

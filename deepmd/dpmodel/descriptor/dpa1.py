@@ -356,6 +356,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.tebd_compress = False
         self.geo_compress = False
         self.compress = False
+        # When set, force the legacy dense lower even if the config would
+        # otherwise be graph-lower eligible (see ``disable_graph_lower``).
+        self._graph_lower_disabled = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -443,7 +446,23 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         differs from the dense lower by up to ~1e-4 (see the Notes of
         :meth:`call_graph`).
         """
+        if self._graph_lower_disabled:
+            return False
         return self.se_atten.tebd_input_mode == "concat"
+
+    def disable_graph_lower(self) -> None:
+        """Force the legacy dense lower for this descriptor.
+
+        This is an explicit opt-out knob used by contexts where the
+        graph-native lower is unsupported or undesirable (e.g. spin models,
+        whose carry-all routing diverges on sel-binding spin systems and
+        whose ``.pt2``/``.pte`` export trips a torch-inductor scatter/
+        atomic_add CPU codegen assertion).  After calling this,
+        :meth:`uses_graph_lower` returns ``False`` regardless of the
+        descriptor configuration.  The flag is not serialized; it is
+        re-derived structurally at spin-model construction/deserialization.
+        """
+        self._graph_lower_disabled = True
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
