@@ -248,6 +248,12 @@ def build_neighbor_graph_nv(
     ------
     ImportError
         if ``nvalchemi-toolkit-ops`` (CUDA) is not installed.
+
+    Notes
+    -----
+    The ``pair_excl`` path of this builder has no local oracle set-equality test
+    because nvalchemiops requires CUDA; the set-equality contract must be
+    validated on a GPU box (same pattern as :class:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`).
     """
     if not is_nv_available():
         raise ImportError(

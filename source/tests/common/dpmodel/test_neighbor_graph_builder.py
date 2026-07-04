@@ -470,5 +470,10 @@ class TestBuildNeighborGraphAseOracle(unittest.TestCase):
         self.assertLess(int(ng_ase.edge_mask.sum()), int(ng_ase_plain.edge_mask.sum()))
 
 
+# NOTE: nvalchemiops builder has no local oracle set-equality test for pair_excl
+# because it requires CUDA; validation is deferred to GPU box tests (PR-C/nv-gtest).
+# See deepmd.pt_expt.utils.nv_graph_builder.build_neighbor_graph_nv docstring.
+
+
 if __name__ == "__main__":
     unittest.main()
