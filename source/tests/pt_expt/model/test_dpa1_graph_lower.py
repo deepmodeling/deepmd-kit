@@ -96,6 +96,7 @@ class TestDpa1GraphLower:
         attn_layer: int = 0,
         smooth: bool = False,
         pair_excl_types: list | None = None,
+        descr_excl_types: list | None = None,
     ) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
@@ -116,6 +117,7 @@ class TestDpa1GraphLower:
             set_davg_zero=False,
             type_one_side=True,
             precision="float64",
+            exclude_types=descr_excl_types or [],
             seed=GLOBAL_SEED,
         ).to(self.device)
         ft = InvarFitting(
@@ -408,6 +410,65 @@ class TestDpa1GraphLower:
         e_diff = (graph_out["energy_redu"] - ref_out["energy_redu"]).abs().max().item()
         assert e_diff > 1e-10, (
             f"pair_exclude_types had no effect on energy; diff={e_diff:.3e}"
+        )
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_descriptor_exclude_types_graph_vs_legacy(self, attn_layer) -> None:
+        """Descriptor-level exclude_types: graph route and legacy dense agree
+        bit-tight (fp64, 1e-12) when exclusion is on the DESCRIPTOR (not the
+        model pair_exclude_types).  Uses identical weights across both routes;
+        also checks exclusion is non-vacuous vs a no-exclude baseline.
+        """
+        import copy
+
+        # 1. no-exclude model (graph route = reference)
+        model_ref = self._make_model(attn_layer=attn_layer)
+        model_ref.eval()
+
+        # 2. exclude model: inject exclude_types into the serialized dict
+        data = copy.deepcopy(model_ref.serialize())
+        data["descriptor"]["exclude_types"] = [[0, 1]]
+        model_excl = EnergyModel.deserialize(data).to(self.device)
+        model_excl.eval()
+
+        tol = (
+            {"rtol": 1e-12, "atol": 1e-12}
+            if self.device.type == "cpu"
+            else {"rtol": 1e-10, "atol": 1e-10}
+        )
+        box = self.cell.reshape(1, 9)
+
+        # 3. graph route
+        graph_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # 4. legacy dense route
+        legacy_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        torch.testing.assert_close(
+            graph_out["energy_redu"], legacy_out["energy_redu"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_r"], legacy_out["energy_derv_r"], **tol
+        )
+
+        # 5. exclusion must be non-vacuous
+        ref_out = model_ref.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        e_diff = (graph_out["energy_redu"] - ref_out["energy_redu"]).abs().max().item()
+        assert e_diff > 1e-10, (
+            f"descriptor exclude_types had no effect on energy; diff={e_diff:.3e}"
         )
 
     @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention

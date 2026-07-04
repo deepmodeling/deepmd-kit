@@ -114,7 +114,10 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
 
     @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
     @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
-    def test_exportable(self, idt, prec) -> None:
+    @pytest.mark.parametrize(
+        "excl_types", [[], [(0, 1)]]
+    )  # no exclusion / type-0-1 pair exclusion
+    def test_exportable(self, idt, prec, excl_types) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -130,6 +133,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             attn_layer=2,
             precision=prec,
             resnet_dt=idt,
+            exclude_types=excl_types,
             seed=GLOBAL_SEED,
         ).to(self.device)
         dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
