@@ -15,7 +15,11 @@ from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
     from_dense_quartet,
+)
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -306,3 +310,35 @@ def test_graph_matches_dense_with_out_bias():
         )
     # non-vacuous: the bias actually shifted the graph energy
     assert not np.allclose(np.asarray(g["energy"]), np.asarray(g_zero["energy"]))
+
+
+# ── apply_pair_exclusion idempotence (Task 2) ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "pair_exclude_types", [[], [(0, 1)]]
+)  # empty branch AND non-empty branch
+def test_apply_pair_exclusion_idempotent(pair_exclude_types):
+    """Applying apply_pair_exclusion twice gives the same edge_mask as once.
+
+    Covers both the empty pair_excl branch (identity) and non-empty branch.
+    """
+    rng = np.random.default_rng(42)
+    coord = rng.normal(size=(1, 5, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
+    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
+    am = DPAtomicModel(ds, ft, type_map=["a", "b"])
+    ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord, atype, 4.0, [200], mixed_types=True, box=None
+    )
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    pair_excl = PairExcludeMask(2, pair_exclude_types) if pair_exclude_types else None
+    atype_flat = atype.reshape(-1)
+    once = apply_pair_exclusion(ng, atype_flat, pair_excl)
+    twice = apply_pair_exclusion(once, atype_flat, pair_excl)
+    # Masks must be exactly equal (AND-idempotent for 0/1 values)
+    np.testing.assert_array_equal(
+        np.asarray(once.edge_mask),
+        np.asarray(twice.edge_mask),
+    )

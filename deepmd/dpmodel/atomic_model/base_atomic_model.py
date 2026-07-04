@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import dataclasses
 import functools
 import math
 from collections.abc import (
@@ -8,6 +7,10 @@ from collections.abc import (
 from typing import (
     TYPE_CHECKING,
     Any,
+)
+
+from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
 )
 
 if TYPE_CHECKING:
@@ -356,14 +359,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
         atom_mask = self.make_atom_mask(atype)  # (N,) bool
         atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
-        if self.pair_excl is not None:
-            keep = self.pair_excl.build_edge_exclude_mask(
-                graph.edge_index, atype_clamped
-            )
-            graph = dataclasses.replace(
-                graph,
-                edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
-            )
+        graph = apply_pair_exclusion(graph, atype_clamped, self.pair_excl)
         ret_dict = self.forward_atomic_graph(
             graph,
             atype_clamped,
