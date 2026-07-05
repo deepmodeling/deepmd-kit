@@ -1236,16 +1236,20 @@ class TestPropertyLossExtensiveGradAccum:
         import pytest
 
         torch = pytest.importorskip("torch")
+        # importing deepmd.pt sets a cuda:9999999 default-device trap; pin cpu.
+        dev = "cpu"
         p = _rnd(2, PROP_TASK_DIM)
         lab = _rnd(2, PROP_TASK_DIM)
         loss_obj = self._make_loss("mse")
         np_pred = {PROP_VAR: p, "mask": _MASK_PAD}
         pt_pred = {
-            PROP_VAR: torch.tensor(p),
-            "mask": torch.tensor(_MASK_PAD),
+            PROP_VAR: torch.tensor(p, device=dev),
+            "mask": torch.tensor(_MASK_PAD, device=dev),
         }
         loss_np, _ = loss_obj.call(1.0, NP, np_pred, {PROP_VAR: lab})
-        loss_pt, _ = loss_obj.call(1.0, NP, pt_pred, {PROP_VAR: torch.tensor(lab)})
+        loss_pt, _ = loss_obj.call(
+            1.0, NP, pt_pred, {PROP_VAR: torch.tensor(lab, device=dev)}
+        )
         assert np.isclose(float(loss_np), float(loss_pt)), (
             f"torch path must match numpy: {float(loss_np)} vs {float(loss_pt)}"
         )
