@@ -99,6 +99,18 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
         def get_default_fparam(self) -> None:
             return None
 
+        def has_chg_spin_ebd(self) -> bool:
+            return False
+
+        def get_dim_chg_spin(self) -> int:
+            return 0
+
+        def has_default_chg_spin(self) -> bool:
+            return False
+
+        def get_default_chg_spin(self) -> None:
+            return None
+
     monkeypatch.setattr(
         serialization.BaseModel,
         "deserialize",

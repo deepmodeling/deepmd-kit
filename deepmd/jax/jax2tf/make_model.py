@@ -51,6 +51,7 @@ def model_call_from_call_lower(
     box: tf.Tensor,
     fparam: tf.Tensor,
     aparam: tf.Tensor,
+    charge_spin: tf.Tensor | None = None,
     do_atomic_virial: bool = False,
 ) -> dict[str, tf.Tensor]:
     """Return model prediction from lower interface."""
@@ -79,13 +80,18 @@ def model_call_from_call_lower(
         distinguish_types=False,
     )
     extended_coord = tf.reshape(extended_coord, [nframes, -1, 3])
+    call_lower_kwargs = {
+        "fparam": fp,
+        "aparam": ap,
+    }
+    if charge_spin is not None:
+        call_lower_kwargs["charge_spin"] = charge_spin
     model_predict_lower = call_lower(
         extended_coord,
         extended_atype,
         nlist,
         mapping,
-        fparam=fp,
-        aparam=ap,
+        **call_lower_kwargs,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,
