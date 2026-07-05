@@ -388,6 +388,59 @@ def test_tf2_dp_model_call_common_uses_tf2_helper(
     assert isinstance(to_tf_tensor(captured["coord"]), tf.Tensor)
 
 
+def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
+    trainer = object.__new__(Trainer)
+    captured: dict[str, Any] = {}
+
+    class SpyEnergyModel:
+        def call_common(
+            self,
+            coord: Any,
+            atype: Any,
+            *,
+            box: Any = None,
+            fparam: Any = None,
+            aparam: Any = None,
+            charge_spin: Any = None,
+            do_atomic_virial: bool = False,
+            do_deriv_c: bool = True,
+        ) -> dict[str, Any]:
+            del coord, atype, box, fparam, aparam, charge_spin
+            captured["do_atomic_virial"] = do_atomic_virial
+            captured["do_deriv_c"] = do_deriv_c
+            return {
+                "energy": wrap_tensor(tf.constant([[[1.0]]], dtype=tf.float64)),
+                "energy_redu": wrap_tensor(tf.constant([[1.0]], dtype=tf.float64)),
+                "energy_derv_r": wrap_tensor(tf.zeros((1, 1, 1, 3), dtype=tf.float64)),
+                "energy_derv_c_redu": wrap_tensor(
+                    tf.ones((1, 1, 1, 9), dtype=tf.float64)
+                ),
+            }
+
+    trainer.models = {DEFAULT_TASK_KEY: SpyEnergyModel()}
+    trainer.losses = {DEFAULT_TASK_KEY: EnergyLoss(starter_learning_rate=1.0)}
+
+    result = Trainer._call_model(
+        trainer,
+        DEFAULT_TASK_KEY,
+        {
+            "coord": tf.constant([[[0.0, 0.0, 0.0]]], dtype=tf.float64),
+            "atype": tf.constant([[0]], dtype=tf.int32),
+        },
+        label_dict={"virial": tf.zeros((1, 9), dtype=tf.float64)},
+        do_virial=True,
+    )
+
+    assert captured == {
+        "do_atomic_virial": False,
+        "do_deriv_c": True,
+    }
+    np.testing.assert_allclose(
+        to_tf_tensor(result["virial"]).numpy(), np.ones((1, 1, 9))
+    )
+    assert "atom_virial" not in result
+
+
 def test_compiled_train_step_is_tf_function_and_updates_model() -> None:
     trainer, model = _make_minimal_trainer()
     compiled = trainer._make_compiled_train_step(DEFAULT_TASK_KEY)

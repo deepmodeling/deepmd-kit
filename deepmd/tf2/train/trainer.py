@@ -1120,7 +1120,7 @@ class Trainer(AbstractTrainer):
         label_dict: dict[str, Any] | None = None,
         do_virial: bool = True,
     ) -> dict[str, Any]:
-        if isinstance(self.losses[task_key], EnergyLoss) and not do_virial:
+        if isinstance(self.losses[task_key], EnergyLoss):
             model_ret = self.models[task_key].call_common(
                 input_dict["coord"],
                 input_dict["atype"],
@@ -1128,7 +1128,8 @@ class Trainer(AbstractTrainer):
                 fparam=input_dict.get("fparam"),
                 aparam=input_dict.get("aparam"),
                 charge_spin=input_dict.get("charge_spin"),
-                do_deriv_c=False,
+                do_atomic_virial=False,
+                do_deriv_c=do_virial,
             )
             model_pred = {
                 "atom_energy": model_ret["energy"],
@@ -1136,7 +1137,9 @@ class Trainer(AbstractTrainer):
             }
             if model_ret.get("energy_derv_r") is not None:
                 model_pred["force"] = model_ret["energy_derv_r"].squeeze(-2)
-            if label_dict is not None and "virial" in label_dict:
+            if model_ret.get("energy_derv_c_redu") is not None:
+                model_pred["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            elif label_dict is not None and "virial" in label_dict:
                 model_pred["virial"] = label_dict["virial"]
             if "mask" in model_ret:
                 model_pred["mask"] = model_ret["mask"]
