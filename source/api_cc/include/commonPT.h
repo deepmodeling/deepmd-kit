@@ -469,9 +469,9 @@ inline GraphTensorPack buildGraphTensors(
  *
  * Inference-path mirror of the Python ``PairExcludeMask`` constructor
  * (``deepmd/dpmodel/utils/exclude_mask.py``).  The table is row-major over
- * ``[tj][ti]`` (flat index ``tj * (ntypes+1) + ti``); an entry is ``0`` when the
- * ordered pair ``(ti, tj)`` is excluded and ``1`` otherwise.  Both ``(ti, tj)``
- * and ``(tj, ti)`` are inserted into the exclude set, so the table is
+ * ``[tj][ti]`` (flat index ``tj * (ntypes+1) + ti``); an entry is ``0`` when
+ * the ordered pair ``(ti, tj)`` is excluded and ``1`` otherwise.  Both ``(ti,
+ * tj)`` and ``(tj, ti)`` are inserted into the exclude set, so the table is
  * symmetric.  Type ``ntypes`` is the reserved virtual-atom row/column.
  *
  * Returns an empty vector when ``exclude_types`` is empty, so callers can treat
@@ -556,9 +556,11 @@ inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
  * @brief Dense-nlist pair-type exclusion: erase excluded neighbours to ``-1``.
  *
  * Inference-path twin of Python ``apply_pair_exclusion_nlist`` in
- * ``deepmd/dpmodel/utils/nlist.py`` + ``PairExcludeMask.build_type_exclude_mask``.
- * Same argument order (nlist, atype_ext, ...) and same variable names
- * (``type_ij``, ``keep``).  Idempotent: erasing ``-1`` a second time is a no-op.
+ * ``deepmd/dpmodel/utils/nlist.py`` +
+ * ``PairExcludeMask.build_type_exclude_mask``. Same argument order (nlist,
+ * atype_ext, ...) and same variable names
+ * (``type_ij``, ``keep``).  Idempotent: erasing ``-1`` a second time is a
+ * no-op.
  *
  * @param nlist (nf, nloc, nnei) int64 neighbour list; ``-1`` == empty slot.
  * @param atype_ext (nf, nall) int64 extended atom types.

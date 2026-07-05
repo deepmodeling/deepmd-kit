@@ -212,8 +212,8 @@ void DeepPotPTExpt::init(const std::string& model,
         pair_exclude_types.emplace_back(v[0].as_int(), v[1].as_int());
       }
     }
-    pair_exclude_table_ = deepmd::buildPairExcludeTable(ntypes,
-                                                        pair_exclude_types);
+    pair_exclude_table_ =
+        deepmd::buildPairExcludeTable(ntypes, pair_exclude_types);
   }
   if (has_comm_artifact_) {
     try {
@@ -892,10 +892,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
       // Model-level pair exclusion at the ingestion seam (idempotent backstop;
       // the compiled graph already applies the same transform internally).
-      const at::Tensor graph_edge_mask =
-          deepmd::applyPairExclusion(edge_tensors.edge_index,
-                                     edge_tensors.edge_mask, node_atype,
-                                     pair_exclude_table_, ntypes);
+      const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
+          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+          pair_exclude_table_, ntypes);
       flat_outputs =
           run_model_graph(node_atype, n_node_tensor, edge_tensors.edge_index,
                           edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
@@ -905,9 +904,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // backstop; the compiled dense forward already applies the same erase).
       const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
           firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
-      flat_outputs = run_model(coord_Tensor, atype_Tensor, excl_nlist,
-                               mapping_tensor, fparam_tensor, aparam_tensor,
-                               charge_spin_tensor);
+      flat_outputs =
+          run_model(coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
+                    fparam_tensor, aparam_tensor, charge_spin_tensor);
     }
   }
 

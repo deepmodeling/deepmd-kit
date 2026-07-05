@@ -2,7 +2,9 @@
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     apply_pair_exclusion,

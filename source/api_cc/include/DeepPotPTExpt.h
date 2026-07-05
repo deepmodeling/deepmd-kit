@@ -331,8 +331,8 @@ class DeepPotPTExpt : public DeepPotBackend {
   // continue to work; GNN archives must be regenerated to opt into
   // the fail-fast guard against the silent-corruption bug.
   bool has_message_passing_ = false;
-  // Flat (ntypes+1)^2 model-level pair-type keep table, rebuilt in ``init`` from
-  // the ``pair_exclude_types`` metadata field (see
+  // Flat (ntypes+1)^2 model-level pair-type keep table, rebuilt in ``init``
+  // from the ``pair_exclude_types`` metadata field (see
   // ``deepmd::buildPairExcludeTable``).  Empty => no model-level exclusion.
   // Applied at the C++ ingestion seam (``applyPairExclusion`` graph /
   // ``applyPairExclusionNlist`` dense) as an idempotent backstop; the compiled

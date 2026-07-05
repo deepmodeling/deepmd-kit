@@ -162,7 +162,9 @@ def test_vesin_pair_excl_oracle_set_equality(periodic):
 
 def test_vesin_nlist_edges_pair_excl_raises():
     """VesinNeighborList.build with return_mode='edges' and pair_excl raises NotImplementedError."""
-    from deepmd.pt_expt.utils.vesin_neighbor_list import VesinNeighborList
+    from deepmd.pt_expt.utils.vesin_neighbor_list import (
+        VesinNeighborList,
+    )
 
     coord = torch.zeros((1, 4, 3), dtype=torch.float64)
     atype = torch.zeros((1, 4), dtype=torch.int64)

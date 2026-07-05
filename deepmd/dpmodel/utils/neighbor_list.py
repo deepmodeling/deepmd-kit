@@ -23,7 +23,9 @@ from deepmd.dpmodel.array_api import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 @dataclass

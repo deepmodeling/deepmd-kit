@@ -51,7 +51,9 @@ if TYPE_CHECKING:
         Iterator,
     )
 
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 @contextlib.contextmanager

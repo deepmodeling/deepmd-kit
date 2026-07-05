@@ -160,7 +160,8 @@ TYPED_TEST(TestInferDpa1PairExclPtExpt, graph_equals_nlist_route) {
 
 // The no-exclusion baseline exercises the EMPTY-table (identity) branch of the
 // C++ helpers; it must run cleanly and produce an energy that DIFFERS from the
-// excluded models (proving pair_exclude_types is genuinely active, not dropped).
+// excluded models (proving pair_exclude_types is genuinely active, not
+// dropped).
 TYPED_TEST(TestInferDpa1PairExclPtExpt, exclusion_is_active_vs_baseline) {
   using VALUETYPE = TypeParam;
   double e_none, e_g, e_n;

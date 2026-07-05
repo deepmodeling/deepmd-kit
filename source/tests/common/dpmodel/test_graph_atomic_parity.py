@@ -14,12 +14,12 @@ from deepmd.dpmodel.fitting import (
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
     from_dense_quartet,
-)
-from deepmd.dpmodel.utils.exclude_mask import (
-    PairExcludeMask,
 )
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,

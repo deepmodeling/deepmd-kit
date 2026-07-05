@@ -26,7 +26,9 @@ from .region import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 class DefaultNeighborList(NeighborList):

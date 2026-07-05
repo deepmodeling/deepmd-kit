@@ -19,7 +19,9 @@ from .region import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 def _is_ndtensorflow_namespace(xp: Any) -> bool:

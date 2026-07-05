@@ -7,12 +7,13 @@
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.nlist import (
     apply_pair_exclusion_nlist,
     build_neighbor_list,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -212,7 +213,9 @@ def _local_system():
 
 def test_default_neighbor_list_pair_excl_equals_seam() -> None:
     """DefaultNeighborList(pair_excl=excl) nlist equals build-then-apply."""
-    from deepmd.dpmodel.utils.default_neighbor_list import DefaultNeighborList
+    from deepmd.dpmodel.utils.default_neighbor_list import (
+        DefaultNeighborList,
+    )
 
     coord, atype = _local_system()
     rcut = 1.5
@@ -282,8 +285,12 @@ def test_nv_nlist_edges_pair_excl_raises():
     """
     import torch
 
-    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
-    from deepmd.pt.utils.nv_nlist import NvNeighborList
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+    from deepmd.pt.utils.nv_nlist import (
+        NvNeighborList,
+    )
 
     coord = torch.zeros((1, 4, 3), dtype=torch.float64)
     atype = torch.zeros((1, 4), dtype=torch.int64)
