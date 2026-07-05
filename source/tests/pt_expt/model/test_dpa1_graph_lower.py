@@ -22,6 +22,7 @@ import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
     from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -223,6 +224,10 @@ class TestDpa1GraphLower:
         # returned edge_vec is already a torch tensor on env.DEVICE.
         ng = from_dense_quartet(ext_coord, nlist, mapping)
         atype_local = ext_atype[:, :nloc].reshape(nf * nloc)
+        # Model-level pair_exclude is a BUILD-time transform (decision #18): the
+        # converter does not bake it in and the lower no longer re-applies it, so
+        # apply it to the graph here (mirrors the C++ ``applyPairExclusion`` step).
+        ng = apply_pair_exclusion(ng, atype_local, model.atomic_model.pair_excl)
         graph = model.forward_common_lower_graph(
             atype_local,
             ng.n_node,

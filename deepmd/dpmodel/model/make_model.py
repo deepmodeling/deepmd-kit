@@ -460,10 +460,20 @@ def make_model(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
+            # Model-level ``pair_exclude_types`` is a graph-BUILD transform
+            # (decision #18): apply it here, at the seam where the NeighborGraph
+            # is constructed, so the graph lower / exported ``.pt2`` consumes an
+            # already-excluded ``edge_mask`` and never re-applies it. Mirrors the
+            # pt_expt eager path and the C++ ``applyPairExclusion`` at build.
+            pair_excl = getattr(self.atomic_model, "pair_excl", None)
             if method == "dense":
-                ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             elif method == "ase":
-                ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph_ase(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             else:
                 raise ValueError(
                     f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "

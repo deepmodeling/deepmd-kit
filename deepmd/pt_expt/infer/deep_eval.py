@@ -65,6 +65,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -1772,19 +1775,26 @@ class DeepEval(DeepEvalBackend):
         selection is a pure performance choice and results are unchanged.
         """
         method = self._neighbor_graph_method
+        # Model-level ``pair_exclude_types`` is a graph-BUILD transform
+        # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
+        # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
+        # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
+        pair_excl = self._graph_pair_excl()
         if method == "dense":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph,
             )
 
-            return build_neighbor_graph(coord_input, atom_types, box_input, self._rcut)
+            return build_neighbor_graph(
+                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
+            )
         if method == "ase":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph_ase,
             )
 
             return build_neighbor_graph_ase(
-                coord_input, atom_types, box_input, self._rcut
+                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
             )
         if method in ("vesin", "nv"):
             cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
@@ -1801,16 +1811,41 @@ class DeepEval(DeepEvalBackend):
                     build_neighbor_graph_vesin,
                 )
 
-                return build_neighbor_graph_vesin(cc, aa, bb, self._rcut)
+                return build_neighbor_graph_vesin(
+                    cc, aa, bb, self._rcut, pair_excl=pair_excl
+                )
             from deepmd.pt_expt.utils.nv_graph_builder import (
                 build_neighbor_graph_nv,
             )
 
-            return build_neighbor_graph_nv(cc, aa, bb, self._rcut)
+            return build_neighbor_graph_nv(cc, aa, bb, self._rcut, pair_excl=pair_excl)
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
             "use 'dense', 'ase', 'vesin', or 'nv'"
         )
+
+    def _graph_pair_excl(self) -> "PairExcludeMask | None":
+        """Model-level ``pair_exclude_types`` as a ``PairExcludeMask`` (or None).
+
+        Applied at graph BUILD time (decision #18), NOT inside the exported
+        ``.pt2`` lower. Prefers the loaded dpmodel's mask; otherwise rebuilds it
+        from the ``pair_exclude_types`` field in ``metadata.json``.
+
+        Returns
+        -------
+        PairExcludeMask | None
+            The exclusion mask, or ``None`` when the model excludes no pairs.
+        """
+        if self._dpmodel is not None:
+            return getattr(self._dpmodel.atomic_model, "pair_excl", None)
+        from deepmd.dpmodel.utils.exclude_mask import (
+            PairExcludeMask,
+        )
+
+        pet = self.metadata.get("pair_exclude_types", [])
+        if not pet:
+            return None
+        return PairExcludeMask(len(self._type_map), [tuple(p) for p in pet])
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int

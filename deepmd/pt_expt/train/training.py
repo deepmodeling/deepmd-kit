@@ -1154,8 +1154,12 @@ class _CompiledModel(torch.nn.Module):
                 )
 
         # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
-        # uncompiled ``_call_common_graph`` builder so the two paths match.
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        # uncompiled ``_call_common_graph`` builder so the two paths match. Model-
+        # level pair_exclude is a graph-BUILD transform (decision #18): fold it
+        # into edge_mask here so the compiled lower consumes a pre-excluded graph
+        # (the lower no longer re-applies it), matching the eager path exactly.
+        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).

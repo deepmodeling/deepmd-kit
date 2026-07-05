@@ -9,10 +9,6 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.utils.neighbor_graph import (
-    apply_pair_exclusion,
-)
-
 if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -329,10 +325,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         The node axis is flat ``(N,)`` (``N = sum(graph.n_node)``); masking and
         out-stat operate per node. Reuses :meth:`_finalize_atomic_ret`, so
         virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the dense
-        path. Model-level ``pair_exclude_types`` is graph-native: when
-        ``self.pair_excl is not None``, an edge-keep mask is ANDed into
-        ``graph.edge_mask`` before the descriptor forward, so excluded type-pairs
-        contribute zero to the segment_sum. Descriptor-level ``exclude_types`` is
+        path. Model-level ``pair_exclude_types`` is applied at graph BUILD time
+        (decision #18) — folded into ``graph.edge_mask`` by the NeighborGraph
+        builder (Python) or ``applyPairExclusion`` (C++), NOT here; this method
+        consumes a pre-excluded graph. Descriptor-level ``exclude_types`` is
         handled inside the descriptor's ``call_graph`` (graph-native).
 
         Parameters
@@ -359,7 +355,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
         atom_mask = self.make_atom_mask(atype)  # (N,) bool
         atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
-        graph = apply_pair_exclusion(graph, atype_clamped, self.pair_excl)
+        # NOTE: model-level ``pair_exclude_types`` is NOT applied here. It is a
+        # graph-BUILD transform (decision #18) already folded into
+        # ``graph.edge_mask`` by the NeighborGraph builder (Python) or
+        # ``applyPairExclusion`` (C++); this method consumes a pre-excluded graph.
         ret_dict = self.forward_atomic_graph(
             graph,
             atype_clamped,
