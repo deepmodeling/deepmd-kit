@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import os
 from collections.abc import (
     Callable,
     Mapping,
@@ -40,17 +39,12 @@ from deepmd.tf2.train.trainer import (
 from deepmd.tf2.utils._dpmodel import (
     format_nlist,
 )
+from deepmd.tf2.utils.jit import (
+    default_jit_compile,
+)
 from deepmd.tf2.utils.multi_task import (
     apply_shared_links,
 )
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
-
-
-def _default_jit_compile() -> bool:
-    return _env_flag("DP_JIT")
 
 
 class _ExportConstantArray:
@@ -279,7 +273,7 @@ def deserialize_to_savedmodel(
 ) -> None:
     """Deserialize the dictionary to a TensorFlow SavedModel directory."""
     if jit_compile is None:
-        jit_compile = _default_jit_compile()
+        jit_compile = default_jit_compile()
 
     # Import model registrations before deserializing the dpmodel payload.
     import deepmd.tf2.model.model  # noqa: F401

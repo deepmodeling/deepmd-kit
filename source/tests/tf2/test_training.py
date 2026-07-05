@@ -42,6 +42,9 @@ from deepmd.tf2.model.base_model import (
 from deepmd.tf2.train.trainer import (
     Trainer,
 )
+from deepmd.tf2.utils.jit import (
+    default_jit_compile,
+)
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:.*__init__ missing .*:DeprecationWarning:gast\\.astn"
@@ -502,6 +505,103 @@ def test_compiled_train_step_is_cached_per_task() -> None:
     assert trainer._compiled_train_step("a", {}, {}, 1.0, 0.1, 2, True)["task"] == "a"
     assert trainer._compiled_train_step("b", {}, {}, 1.0, 0.1, 1, True)["task"] == "b"
     assert calls == ["a", "b"]
+
+
+def test_default_jit_compile_reads_dp_jit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DP_JIT", raising=False)
+    assert default_jit_compile() is False
+
+    monkeypatch.setenv("DP_JIT", "1")
+    assert default_jit_compile() is True
+
+
+def test_compiled_steps_do_not_jit_whole_train_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trainer, _ = _make_minimal_trainer()
+    trainer_module = importlib.import_module("deepmd.tf2.train.trainer")
+    captured: list[dict[str, Any]] = []
+
+    def fake_tf_function(*args: Any, **kwargs: Any) -> Any:
+        assert not args
+        captured.append(kwargs)
+
+        def decorate(fn: Any) -> Any:
+            return fn
+
+        return decorate
+
+    monkeypatch.setenv("DP_JIT", "1")
+    monkeypatch.setattr(trainer_module.tf, "function", fake_tf_function)
+
+    trainer._make_compiled_train_step(DEFAULT_TASK_KEY)
+    trainer._make_compiled_eval_step(DEFAULT_TASK_KEY)
+
+    assert captured == [
+        {
+            "reduce_retracing": True,
+        },
+        {
+            "reduce_retracing": True,
+        },
+    ]
+
+
+def test_tf2_formatted_lower_forwards_dp_jit_to_tf_function(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
+    captured: list[dict[str, Any]] = []
+
+    def fake_tf_function(fn: Any = None, *args: Any, **kwargs: Any) -> Any:
+        assert not args
+        captured.append(kwargs)
+
+        def decorate(inner: Any) -> Any:
+            return inner
+
+        return decorate(fn) if fn is not None else decorate
+
+    class FakeDPModel:
+        pass
+
+    monkeypatch.setenv("DP_JIT", "1")
+    monkeypatch.setattr(dp_model_module.tf, "function", fake_tf_function)
+
+    model_class = dp_model_module.make_tf2_dp_model_from_dpmodel(FakeDPModel, object)
+    model_class()
+
+    assert captured == [
+        {
+            "reduce_retracing": True,
+            "jit_compile": True,
+        }
+    ]
+
+
+def test_tf2_formatted_lower_does_not_wrap_without_dp_jit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
+    captured: list[dict[str, Any]] = []
+
+    def fake_tf_function(fn: Any = None, *args: Any, **kwargs: Any) -> Any:
+        del fn, args
+        captured.append(kwargs)
+        raise AssertionError("formatted lower should not be wrapped when DP_JIT is off")
+
+    class FakeDPModel:
+        pass
+
+    monkeypatch.delenv("DP_JIT", raising=False)
+    monkeypatch.setattr(dp_model_module.tf, "function", fake_tf_function)
+
+    model_class = dp_model_module.make_tf2_dp_model_from_dpmodel(FakeDPModel, object)
+    model_class()
+
+    assert captured == []
 
 
 def test_train_step_passes_float_natoms_to_compiled_step() -> None:

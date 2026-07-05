@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.dpmodel.model import (
     DPModelCommon,
 )
@@ -11,9 +15,12 @@ from deepmd.tf2.atomic_model.dp_atomic_model import (
 from deepmd.tf2.common import (
     tf2_module,
     to_tensorflow_array,
+    unwrap_value,
+    wrap_value,
 )
 from deepmd.tf2.env import (
     stop_gradient,
+    tf,
     xp,
 )
 from deepmd.tf2.make_model import (
@@ -21,6 +28,9 @@ from deepmd.tf2.make_model import (
 )
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
+)
+from deepmd.tf2.utils.jit import (
+    default_jit_compile,
 )
 
 
@@ -44,6 +54,19 @@ def make_tf2_dp_model_from_dpmodel(
 
     @tf2_module
     class tf2_model(dpmodel_model):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            if default_jit_compile():
+                self._tf2_call_common_lower_formatted = tf.function(
+                    self._call_common_lower_formatted,
+                    reduce_retracing=True,
+                    jit_compile=True,
+                )
+            else:
+                self._tf2_call_common_lower_formatted = (
+                    self._call_common_lower_formatted
+                )
+
         def call_common(
             self,
             coord: xp.ndarray,
@@ -100,31 +123,21 @@ def make_tf2_dp_model_from_dpmodel(
             nlist_is_formatted: bool = False,
         ) -> dict[str, xp.ndarray]:
             if nlist_is_formatted:
-                del comm_dict  # tf2 path has no MPI ghost exchange
-                extended_coord = to_tensorflow_array(extended_coord)
-                extended_atype = to_tensorflow_array(extended_atype)
-                nlist = to_tensorflow_array(nlist)
-                nframes, _nall = extended_atype.shape[:2]
-                extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
-                cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
-                    extended_coord,
-                    fparam=to_tensorflow_array(fparam),
-                    aparam=to_tensorflow_array(aparam),
-                    charge_spin=to_tensorflow_array(charge_spin),
+                return wrap_value(
+                    self._tf2_call_common_lower_formatted(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping=mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        do_atomic_virial=do_atomic_virial,
+                        do_deriv_c=do_deriv_c,
+                        extended_coord_corr=extended_coord_corr,
+                        comm_dict=comm_dict,
+                        charge_spin=charge_spin,
+                    )
                 )
-                model_predict = self.forward_common_atomic(
-                    cc_ext,
-                    extended_atype,
-                    nlist,
-                    mapping=to_tensorflow_array(mapping),
-                    fparam=fp,
-                    aparam=ap,
-                    do_atomic_virial=do_atomic_virial,
-                    do_deriv_c=do_deriv_c,
-                    extended_coord_corr=to_tensorflow_array(extended_coord_corr),
-                    charge_spin=cs,
-                )
-                return self._output_type_cast(model_predict, input_prec)
             return super().call_common_lower(
                 to_tensorflow_array(extended_coord),
                 to_tensorflow_array(extended_atype),
@@ -137,6 +150,46 @@ def make_tf2_dp_model_from_dpmodel(
                 comm_dict=comm_dict,
                 charge_spin=to_tensorflow_array(charge_spin),
             )
+
+        def _call_common_lower_formatted(
+            self,
+            extended_coord: xp.ndarray,
+            extended_atype: xp.ndarray,
+            nlist: xp.ndarray,
+            mapping: xp.ndarray | None = None,
+            fparam: xp.ndarray | None = None,
+            aparam: xp.ndarray | None = None,
+            do_atomic_virial: bool = False,
+            do_deriv_c: bool = True,
+            extended_coord_corr: xp.ndarray | None = None,
+            comm_dict: dict | None = None,
+            charge_spin: xp.ndarray | None = None,
+        ) -> dict[str, tf.Tensor]:
+            del comm_dict  # tf2 path has no MPI ghost exchange
+            extended_coord = to_tensorflow_array(extended_coord)
+            extended_atype = to_tensorflow_array(extended_atype)
+            nlist = to_tensorflow_array(nlist)
+            nframes, _nall = extended_atype.shape[:2]
+            extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
+            cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+                extended_coord,
+                fparam=to_tensorflow_array(fparam),
+                aparam=to_tensorflow_array(aparam),
+                charge_spin=to_tensorflow_array(charge_spin),
+            )
+            model_predict = self.forward_common_atomic(
+                cc_ext,
+                extended_atype,
+                nlist,
+                mapping=to_tensorflow_array(mapping),
+                fparam=fp,
+                aparam=ap,
+                do_atomic_virial=do_atomic_virial,
+                do_deriv_c=do_deriv_c,
+                extended_coord_corr=to_tensorflow_array(extended_coord_corr),
+                charge_spin=cs,
+            )
+            return unwrap_value(self._output_type_cast(model_predict, input_prec))
 
         def forward_common_atomic(
             self,
