@@ -12,11 +12,12 @@ one exported through each C++ ingestion route, plus a no-exclusion baseline:
 The pair models exercise the C++ pair-exclusion ingestion seam:
 ``applyPairExclusion`` (graph route) / ``applyPairExclusionNlist`` (dense route)
 plus the ``pair_exclude_types`` metadata round-trip in ``DeepPotPTExpt::init``.
-The compiled ``.pt2`` forward ALREADY applies the exclusion internally (the seam
-transform is traced into the exported artifact), so the C++ seam is an
-idempotent backstop; the gtest validates C++ energy/force vs the Python
-``DeepEval`` reference at 1e-10 and, by comparing against the ``_none`` baseline,
-confirms the exclusion is actually active.
+Model-level pair exclusion is a graph-BUILD transform (decision #18): it is
+folded into ``edge_mask`` at build time (``applyPairExclusion`` in C++, the
+NeighborGraph builder in Python ``DeepEval``), NOT inside the exported ``.pt2``
+lower. The gtest validates C++ energy/force vs the Python ``DeepEval`` reference
+at 1e-10 and, by comparing against the ``_none`` baseline, confirms the exclusion
+is actually active.
 
 Reference sidecar files (.expected) consumed by the C++ gtest are written from
 the Python ``DeepEval`` evaluation of each pair model (PBC + NoPBC sections).

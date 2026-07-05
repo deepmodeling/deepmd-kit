@@ -1828,21 +1828,30 @@ class DeepEval(DeepEvalBackend):
         """Model-level ``pair_exclude_types`` as a ``PairExcludeMask`` (or None).
 
         Applied at graph BUILD time (decision #18), NOT inside the exported
-        ``.pt2`` lower. Prefers the loaded dpmodel's mask; otherwise rebuilds it
-        from the ``pair_exclude_types`` field in ``metadata.json``.
+        ``.pt2`` lower. Reads the excluded pairs from the loaded dpmodel (if any)
+        or the ``pair_exclude_types`` field in ``metadata.json``, and returns a
+        FRESH numpy-backed mask.
+
+        A numpy ``type_mask`` converts cleanly onto whichever namespace/device the
+        builder's ``atype`` uses (dense/ase pass numpy; vesin/nv pass torch). The
+        dpmodel's own ``pair_excl`` is NOT reused: as a pt_expt module attribute
+        its ``type_mask`` is a torch (possibly CUDA) buffer, which cannot convert
+        to a numpy ``atype`` on the dense/ase build path.
 
         Returns
         -------
         PairExcludeMask | None
             The exclusion mask, or ``None`` when the model excludes no pairs.
         """
-        if self._dpmodel is not None:
-            return getattr(self._dpmodel.atomic_model, "pair_excl", None)
         from deepmd.dpmodel.utils.exclude_mask import (
             PairExcludeMask,
         )
 
-        pet = self.metadata.get("pair_exclude_types", [])
+        if self._dpmodel is not None:
+            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pet = pe.get_exclude_types() if pe is not None else []
+        else:
+            pet = self.metadata.get("pair_exclude_types", [])
         if not pet:
             return None
         return PairExcludeMask(len(self._type_map), [tuple(p) for p in pet])
