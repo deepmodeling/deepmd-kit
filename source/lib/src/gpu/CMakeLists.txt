@@ -8,9 +8,9 @@ if(USE_CUDA_TOOLKIT)
 
   find_package(CUDAToolkit REQUIRED)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    # CUDA 12.9 CCCL fails to compile CUB/Thrust with -arch=all.
+    # CUDA 12.9 and 13.x CCCL fail to compile CUB/Thrust with -arch=all.
     if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9" AND CUDAToolkit_VERSION
-                                                            VERSION_LESS "13.0")
+                                                            VERSION_LESS "14.0")
       set(CMAKE_CUDA_ARCHITECTURES all-major)
     else()
       set(CMAKE_CUDA_ARCHITECTURES all)

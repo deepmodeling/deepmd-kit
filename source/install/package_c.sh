@@ -123,7 +123,7 @@ from urllib.parse import quote
 
 import torch
 
-version = torch.__version__.split(".dev", 1)[0]
+version = torch.__version__
 if "+" in version:
     variant = version.split("+", 1)[1]
 else:
@@ -138,6 +138,14 @@ if variant == "cpu" or variant.startswith("cu"):
     )
 PY
 	)
+fi
+
+if [ "${ENABLE_PYTORCH:-FALSE}" = "TRUE" ] && [ -z "${PYTORCH_RUNTIME_DOWNLOAD_URL:-}" ]; then
+	if [ -z "${PYTHON_BIN:-}" ]; then
+		echo "WARNING: PyTorch support is enabled, but PYTHON_BIN is not set; README/download_libtorch.sh will not be generated. Set PYTORCH_RUNTIME_DOWNLOAD_URL or PYTHON_BIN to emit the libtorch runtime helper." >&2
+	else
+		echo "WARNING: PyTorch support is enabled, but no supported libtorch runtime download URL could be derived from ${PYTHON_BIN}; README/download_libtorch.sh will not be generated. Set PYTORCH_RUNTIME_DOWNLOAD_URL explicitly to emit the libtorch runtime helper." >&2
+	fi
 fi
 
 if [ -n "${PYTORCH_RUNTIME_DOWNLOAD_URL:-}" ]; then
