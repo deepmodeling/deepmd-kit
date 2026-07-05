@@ -205,8 +205,9 @@ def apply_pair_exclusion(
         has no padding on the edge axis (data-dependent shape; eager /
         dynamic-nedge only). When the graph carries angle fields, angles are
         remapped onto the compacted edge axis and any angle whose constituent
-        edges were excluded is dropped (``angle_mask`` present without
-        ``angle_index`` is rejected: there are no indices to remap).
+        edges were excluded is dropped. ``angle_index`` and ``angle_mask`` must
+        be a consistent pair (both set or both ``None``; matching ``A``);
+        anything else raises ``ValueError``.
 
     Returns
     -------
@@ -235,13 +236,38 @@ def apply_pair_exclusion(
         edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
     )
     if compact:
+        # Angle fields are a coupled pair (produced together by the angle
+        # builder): both present or both None. Fail fast on any inconsistent
+        # state — a partial or shape-mismatched pair is a caller bug that would
+        # otherwise remap silently wrong.
+        has_ai = out.angle_index is not None
+        has_am = out.angle_mask is not None
+        if has_ai != has_am:
+            raise ValueError(
+                "apply_pair_exclusion(compact=True): angle_index and angle_mask "
+                "must both be set or both be None; got "
+                f"angle_index={'set' if has_ai else 'None'}, "
+                f"angle_mask={'set' if has_am else 'None'}."
+            )
+        if has_ai:
+            if out.angle_index.ndim != 2 or out.angle_index.shape[0] != 2:
+                raise ValueError(
+                    "apply_pair_exclusion(compact=True): angle_index must have "
+                    f"shape (2, A); got {tuple(out.angle_index.shape)}."
+                )
+            if out.angle_index.shape[1] != out.angle_mask.shape[0]:
+                raise ValueError(
+                    "apply_pair_exclusion(compact=True): angle_index (2, A) and "
+                    f"angle_mask (A,) disagree on A: {out.angle_index.shape[1]} "
+                    f"vs {out.angle_mask.shape[0]}."
+                )
         (keep_idx,) = xp.nonzero(out.edge_mask)
         fields = {
             "edge_index": out.edge_index[:, keep_idx],
             "edge_vec": xp.take(out.edge_vec, keep_idx, axis=0),
             "edge_mask": xp.take(out.edge_mask, keep_idx, axis=0),
         }
-        if out.angle_index is not None:
+        if has_ai:
             # Angles reference PRE-compaction edge positions; remap them to the
             # compacted axis and drop any angle whose constituent edges were
             # excluded. ``new_pos`` maps old edge position -> new position via an
@@ -252,12 +278,9 @@ def apply_pair_exclusion(
             a_new = xp.take(new_pos, out.angle_index[0, :], axis=0)
             b_new = xp.take(new_pos, out.angle_index[1, :], axis=0)
             both_survive = xp.logical_and(a_new >= 0, b_new >= 0)
-            if out.angle_mask is not None:
-                angle_keep = xp.logical_and(
-                    xp.astype(out.angle_mask, xp.bool), both_survive
-                )
-            else:
-                angle_keep = both_survive
+            angle_keep = xp.logical_and(
+                xp.astype(out.angle_mask, xp.bool), both_survive
+            )
             (angle_keep_idx,) = xp.nonzero(angle_keep)
             fields["angle_index"] = xp.stack(
                 [
@@ -266,14 +289,7 @@ def apply_pair_exclusion(
                 ],
                 axis=0,
             )
-            if out.angle_mask is not None:
-                fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
-        elif out.angle_mask is not None:
-            raise ValueError(
-                "apply_pair_exclusion(compact=True): angle_mask is set without "
-                "angle_index; cannot remap angles onto the compacted edge axis. "
-                "Provide angle_index too, or strip angle_mask first."
-            )
+            fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
         out = dataclasses.replace(out, **fields)
     return out
 

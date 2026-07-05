@@ -214,32 +214,56 @@ def test_compact_remaps_angles_when_no_angle_dropped() -> None:
     np.testing.assert_array_equal(out.angle_mask, [1, 1])
 
 
-def test_compact_angle_index_without_mask_defaults_all_real() -> None:
-    """angle_index present, angle_mask None: treated as all-real, still remapped."""
+def test_compact_raises_when_only_angle_index_present() -> None:
+    """compact=True fails fast when angle_index is set but angle_mask is None."""
     import dataclasses
 
     g = _toy_graph()
     angle_index = np.array([[0, 1], [1, 2]], dtype=np.int64)
     g2 = dataclasses.replace(g, angle_index=angle_index)  # angle_mask stays None
     atype = np.array([0, 1, 0, 1], dtype=np.int64)
-    out = apply_pair_exclusion(g2, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
-    # angle0 touches excluded edge0 -> dropped; angle1 kept & remapped
-    np.testing.assert_array_equal(out.angle_index, [[0], [1]])
-    assert out.angle_mask is None  # stays None (all remaining are real)
+    with pytest.raises(ValueError, match="both be set or both be None"):
+        apply_pair_exclusion(g2, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
 
 
 def test_compact_raises_when_only_angle_mask_present() -> None:
-    """compact=True rejects angle_mask set without angle_index (nothing to remap)."""
+    """compact=True fails fast when angle_mask is set but angle_index is None."""
     import dataclasses
 
     g = _toy_graph()
     angle_mask = np.array([1], dtype=np.int32)
     g_with_mask = dataclasses.replace(g, angle_mask=angle_mask)
     atype = np.array([0, 1, 0, 1], dtype=np.int64)
-    with pytest.raises(ValueError, match="angle_mask is set without"):
+    with pytest.raises(ValueError, match="both be set or both be None"):
         apply_pair_exclusion(
             g_with_mask, atype, PairExcludeMask(2, [(0, 1)]), compact=True
         )
+
+
+def test_compact_raises_on_angle_dim_mismatch() -> None:
+    """compact=True fails fast when angle_index (2,A) and angle_mask (A,) disagree."""
+    import dataclasses
+
+    g = _toy_graph()
+    angle_index = np.array([[0, 1], [1, 2]], dtype=np.int64)  # A == 2
+    angle_mask = np.array([1], dtype=np.int32)  # A == 1  (mismatch)
+    g2 = dataclasses.replace(g, angle_index=angle_index, angle_mask=angle_mask)
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    with pytest.raises(ValueError, match="disagree on A"):
+        apply_pair_exclusion(g2, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+
+
+def test_compact_raises_on_bad_angle_index_shape() -> None:
+    """compact=True fails fast when angle_index is not (2, A)."""
+    import dataclasses
+
+    g = _toy_graph()
+    angle_index = np.array([[0, 1, 2]], dtype=np.int64)  # (1, 3), not (2, A)
+    angle_mask = np.array([1, 1, 1], dtype=np.int32)
+    g2 = dataclasses.replace(g, angle_index=angle_index, angle_mask=angle_mask)
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    with pytest.raises(ValueError, match=r"shape \(2, A\)"):
+        apply_pair_exclusion(g2, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
 
 
 def test_compact_angle_torch_smoke() -> None:
