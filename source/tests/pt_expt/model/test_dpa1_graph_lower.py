@@ -254,7 +254,12 @@ class TestDpa1GraphLower:
             build_synthetic_graph_inputs,
         )
 
-        model = self._make_model(attn_layer=attn_layer)
+        # The real .pt2 export (``deserialize_to_file``) traces on CPU: it does
+        # ``model.to("cpu")`` and builds CPU synthetic inputs. Mirror that here so
+        # model params and the traced inputs share a device -- otherwise, on a
+        # CUDA runner, the CUDA params meet the CPU graph tensors and FakeTensor
+        # device propagation raises for aten.index_select.
+        model = self._make_model(attn_layer=attn_layer).to("cpu")
         model.eval()
         sample = build_synthetic_graph_inputs(
             model,
