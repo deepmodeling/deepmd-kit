@@ -581,6 +581,41 @@ def test_tf2_formatted_lower_forwards_dp_jit_to_tf_function(
     ]
 
 
+def test_tf2_formatted_lower_forwards_enable_compile_to_tf_function(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
+    captured: list[dict[str, Any]] = []
+
+    def fake_tf_function(fn: Any = None, *args: Any, **kwargs: Any) -> Any:
+        assert not args
+        captured.append(kwargs)
+
+        def decorate(inner: Any) -> Any:
+            return inner
+
+        return decorate(fn) if fn is not None else decorate
+
+    class FakeDPModel:
+        pass
+
+    monkeypatch.delenv("DP_JIT", raising=False)
+    monkeypatch.setattr(dp_model_module.tf, "function", fake_tf_function)
+
+    model_class = dp_model_module.make_tf2_dp_model_from_dpmodel(FakeDPModel, object)
+    model = model_class()
+    assert captured == []
+
+    model.set_enable_compile(True)
+
+    assert captured == [
+        {
+            "reduce_retracing": True,
+            "jit_compile": True,
+        }
+    ]
+
+
 def test_tf2_formatted_lower_does_not_wrap_without_dp_jit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -602,6 +637,28 @@ def test_tf2_formatted_lower_does_not_wrap_without_dp_jit(
     model_class()
 
     assert captured == []
+
+
+def test_trainer_applies_enable_compile_to_models() -> None:
+    trainer = object.__new__(Trainer)
+    calls: list[tuple[str, bool]] = []
+
+    class FakeModel:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def set_enable_compile(self, enable_compile: bool) -> None:
+            calls.append((self.key, enable_compile))
+
+    trainer.enable_compile = True
+    trainer.models = {
+        "a": FakeModel("a"),
+        "b": FakeModel("b"),
+    }
+
+    Trainer._configure_model_compile(trainer)
+
+    assert calls == [("a", True), ("b", True)]
 
 
 def test_train_step_passes_float_natoms_to_compiled_step() -> None:

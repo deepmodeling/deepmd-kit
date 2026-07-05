@@ -5441,10 +5441,12 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_expt_supported
-            + "Enable torch.compile to accelerate training. "
-            "Uses make_fx to decompose autograd into primitive ops, "
-            "then compiles with torch.compile/Inductor for kernel fusion. "
+            doc="(Supported Backend: PyTorch Experimental, TensorFlow2) "
+            "Enable backend compiler acceleration during training. "
+            "PyTorch Experimental uses make_fx to decompose autograd into "
+            "primitive ops, then compiles with torch.compile/Inductor for "
+            "kernel fusion. TensorFlow2 enables XLA jit_compile for the "
+            "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
         ),
     ]

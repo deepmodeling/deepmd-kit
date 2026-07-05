@@ -274,6 +274,7 @@ class Trainer(AbstractTrainer):
             training_params.get("tensorboard_log_dir", "log")
         )
         self.tensorboard_freq = int(training_params.get("tensorboard_freq", 1))
+        self.enable_compile = bool(training_params.get("enable_compile", False))
         self.change_bias_after_training = bool(
             training_params.get("change_bias_after_training", False)
         )
@@ -283,6 +284,7 @@ class Trainer(AbstractTrainer):
             model_key: get_model(deepcopy(self.model_params_by_task[model_key]))
             for model_key in self.model_keys
         }
+        self._configure_model_compile()
         self.set_min_nbor_dist(min_nbor_dist)
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
@@ -438,6 +440,21 @@ class Trainer(AbstractTrainer):
             raise NotImplementedError(
                 "TF2 training does not support model.modifier yet."
             )
+
+    def _configure_model_compile(self) -> None:
+        """Apply training.enable_compile to TF2 models that support lower XLA."""
+        if not self.enable_compile:
+            return
+        log.info("Enabling TF2 lower-forward XLA compilation.")
+        for model_key, model in self.models.items():
+            set_enable_compile = getattr(model, "set_enable_compile", None)
+            if not callable(set_enable_compile):
+                log.warning(
+                    "Model %s does not support training.enable_compile; ignoring.",
+                    model_key,
+                )
+                continue
+            set_enable_compile(True)
 
     def _create_full_validator(self) -> Any | None:
         if not self._is_validation_requested("full_validation"):

@@ -56,7 +56,11 @@ def make_tf2_dp_model_from_dpmodel(
     class tf2_model(dpmodel_model):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
-            if default_jit_compile():
+            self.set_enable_compile(default_jit_compile())
+
+        def set_enable_compile(self, enable_compile: bool) -> None:
+            """Enable or disable XLA compilation for the formatted lower path."""
+            if enable_compile:
                 self._tf2_call_common_lower_formatted = tf.function(
                     self._call_common_lower_formatted,
                     reduce_retracing=True,
