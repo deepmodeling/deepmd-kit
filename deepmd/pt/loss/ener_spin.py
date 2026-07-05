@@ -349,8 +349,12 @@ class EnergySpinLoss(TaskLoss):
                     )
             elif self.loss_func == "mae":
                 per_atom_l1 = F.l1_loss(label_fm, pred_fm, reduction="none").sum(-1)
+                # Report the per-component magnetic-force MAE (mean over the
+                # masked components), consistent with ``mae_fr``, the ``mse``
+                # branch, and the backend-independent reference. The loss
+                # contribution below keeps the per-atom reduction (summed xyz).
                 more_loss["mae_fm"] = self.display_if_exist(
-                    per_atom_l1.mean().detach(), find_force_m
+                    torch.mean(torch.abs(label_fm - pred_fm)).detach(), find_force_m
                 )
                 l1_force_mag_loss = _mean_within_segments(per_atom_l1, mag_counts).sum()
                 loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(

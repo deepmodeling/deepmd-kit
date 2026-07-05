@@ -144,7 +144,7 @@ class Model(ABC, make_plugin_registry("model")):
         if isinstance(spin, Spin):
             self.spin = spin
         elif spin is not None:
-            self.spin = Spin(**spin)
+            self.spin = Spin(**{k: v for k, v in spin.items() if k != "scheme"})
         else:
             self.spin = None
         self.compress = compress

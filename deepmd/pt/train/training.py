@@ -1240,11 +1240,11 @@ class Trainer:
         """
         if not self._is_validation_requested(validating_params, "ema_full_validation"):
             return None
-        self._raise_if_full_validation_unsupported(validation_data)
         if self.model_ema is None:
-            raise ValueError(
-                "validating.ema_full_validation requires `training.enable_ema=true`."
-            )
+            # EMA full validation needs the EMA-smoothed model; when EMA is
+            # disabled the option is silently ignored rather than failing.
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
         if validation_data is None:
             raise RuntimeError(
                 "validation_data must be available after EMA full validation checks."
