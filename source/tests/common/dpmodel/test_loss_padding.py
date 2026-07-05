@@ -1768,3 +1768,355 @@ class TestDPModelEnerSpinLossForceMagUnchanged:
             f"force_mag loss must be unchanged by padding mask: "
             f"{loss_with} vs {loss_without}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Part A: EnergySpinLoss atom_ener (has_ae) grad-accum invariant
+# ---------------------------------------------------------------------------
+
+
+class TestDPModelEnerSpinLossAtomEnerGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=1) for atom_ener in EnergySpinLoss.
+
+    RED before the Part-A has_ae mask fix; GREEN after.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            loss_func=loss_func,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, ae_A, ae_A_hat, ae_B, ae_B_hat):
+        def make_A():
+            p, l = _full_spin_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_A,
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            p["atom_energy"] = ae_A[None]  # [1, NA, 1]
+            l["atom_ener"] = ae_A_hat[None]
+            l["find_atom_ener"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_spin_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                _MASK_MAG_B,
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            p["atom_energy"] = ae_B[None]
+            l["atom_ener"] = ae_B_hat[None]
+            l["find_atom_ener"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            ae_pad = _padded_atom(ae_A, ae_B, 1)  # [2, NP, 1]
+            ae_hat_pad = _padded_atom(ae_A_hat, ae_B_hat, 1)
+            p, l = _full_spin_dicts(
+                2,
+                NP,
+                np.zeros((2, 1)),
+                np.zeros((2, 1)),
+                _MASK_MAG_PAD_SPIN,
+                mask=_MASK_PAD_SPIN,
+            )
+            p["atom_energy"] = ae_pad
+            l["atom_ener"] = ae_hat_pad
+            l["find_atom_ener"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Spin atom_ener MSE meets the grad-accum invariant."""
+        ae_A = _rnd(NA, 1)
+        ae_A_hat = _rnd(NA, 1)
+        ae_B = _rnd(NB, 1)
+        ae_B_hat = _rnd(NB, 1)
+        self._run_invariant(self._make_loss("mse"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Spin atom_ener MAE meets the grad-accum invariant."""
+        ae_A = _rnd(NA, 1)
+        ae_A_hat = _rnd(NA, 1)
+        ae_B = _rnd(NB, 1)
+        ae_B_hat = _rnd(NB, 1)
+        self._run_invariant(self._make_loss("mae"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom_ener spin loss as no mask."""
+        ae = _rnd(NP, 1)
+        ae_hat = _rnd(NP, 1)
+        loss_obj = self._make_loss()
+        p_mask, l_mask = _full_spin_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            _MASK_MAG_B,
+            mask=np.ones((1, NP), dtype=np.float64),
+        )
+        p_mask["atom_energy"] = ae[None]
+        l_mask["atom_ener"] = ae_hat[None]
+        l_mask["find_atom_ener"] = 1.0
+        p_nm, l_nm = _full_spin_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), _MASK_MAG_B
+        )
+        p_nm["atom_energy"] = ae[None]
+        l_nm["atom_ener"] = ae_hat[None]
+        l_nm["find_atom_ener"] = 1.0
+        loss_m = self._loss_fn(loss_obj, p_mask, l_mask, NP)
+        loss_nm = self._loss_fn(loss_obj, p_nm, l_nm, NP)
+        assert np.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# gen_force (has_gf) grad-accum invariant
+# Ghost-atom forces are masked before projection, so the invariant is met.
+# ---------------------------------------------------------------------------
+
+_NGEN = 2  # number of generalized coordinates for tests
+
+
+class TestDPModelEnergyLossGenForceGradAccum:
+    """gen_force (has_gf) excludes ghost atoms via force masking before projection.
+
+    The projected gen_force = sum_i(drdq_ij * masked_f_i) is frame-decomposable,
+    so mean(square(diff)) over [nf, ngen] already satisfies the invariant.
+    Expected GREEN immediately (no fix needed for gen_force).
+    """
+
+    def _make_loss(self):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            start_pref_gf=1.0,
+            limit_pref_gf=1.0,
+            numb_generalized_coord=_NGEN,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, drdq_A, f_B, f_B_hat, drdq_B):
+        def make_A():
+            p, l = _full_ener_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NA), dtype=np.float64),
+            )
+            p["force"] = f_A[None]  # [1, NA, 3]
+            l["force"] = f_A_hat[None]
+            l["find_force"] = 1.0
+            l["drdq"] = drdq_A[None]  # [1, NA*3, NGEN]
+            l["find_drdq"] = 1.0
+            return p, l, NA
+
+        def make_B():
+            p, l = _full_ener_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NB), dtype=np.float64),
+            )
+            p["force"] = f_B[None]
+            l["force"] = f_B_hat[None]
+            l["find_force"] = 1.0
+            l["drdq"] = drdq_B[None]  # [1, NB*3, NGEN]
+            l["find_drdq"] = 1.0
+            return p, l, NB
+
+        def make_padded():
+            f_pad = _padded_force(f_A, f_B)  # [2, NP, 3]
+            f_hat_pad = _padded_force(f_A_hat, f_B_hat)
+            # drdq ghost-atom slots are zero (ghost forces also zero, so no contribution)
+            drdq_A_pad = np.zeros((NP * 3, _NGEN), dtype=np.float64)
+            drdq_A_pad[: NA * 3] = drdq_A
+            drdq_pad = np.stack([drdq_A_pad, drdq_B], axis=0)  # [2, NP*3, NGEN]
+            p, l = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            p["force"] = f_pad
+            l["force"] = f_hat_pad
+            l["find_force"] = 1.0
+            l["drdq"] = drdq_pad
+            l["find_drdq"] = 1.0
+            return p, l, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """gen_force MSE meets the grad-accum invariant (GREEN: already correct)."""
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        drdq_A = _rnd(NA * 3, _NGEN)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        drdq_B = _rnd(NB * 3, _NGEN)
+        self._run_invariant(
+            self._make_loss(), f_A, f_A_hat, drdq_A, f_B, f_B_hat, drdq_B
+        )
+
+
+# ---------------------------------------------------------------------------
+# force_mag MSE grad-accum invariant (NM equal across frames, ghost atoms non-magnetic)
+#
+# NOTE: force_mag MAE (dpmodel) uses xp.sum over frames instead of xp.mean,
+# so MAE force_mag FAILS the invariant with a 2x factor when frames=2.
+# This is a pre-existing frame-normalization artifact independent of ghost-atom
+# masking. Ghost atoms are correctly excluded (mask_mag=0 there). The MAE
+# artifact is reported as NEEDS_CONTEXT in the audit report.
+# ---------------------------------------------------------------------------
+
+
+class TestDPModelEnerSpinLossForceMagMSEGradAccum:
+    """force_mag MSE meets the grad-accum invariant when ghost atoms are non-magnetic.
+
+    With equal magnetic-atom counts (NM) across frames and ghost atoms having
+    mask_mag=0, the global normalization n_valid = NM*nf correctly decomposes
+    per-frame, giving loss_pad == 0.5*(loss_A + loss_B).
+    Expected GREEN immediately (no fix needed for MSE force_mag).
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def test_mse_grad_accum(self):
+        """force_mag MSE (NM equal per frame, ghost atoms non-magnetic) meets invariant."""
+        fm_A = _rnd(NA, 3)
+        fm_A_hat = _rnd(NA, 3)
+        fm_B = _rnd(NB, 3)
+        fm_B_hat = _rnd(NB, 3)
+
+        def make_A():
+            # Frame A: NA=3 real atoms, first NM=2 are magnetic
+            fm_A_full = np.zeros((NA, 3), dtype=np.float64)
+            fm_A_full[:_NM] = fm_A[:_NM]
+            fm_A_hat_full = np.zeros((NA, 3), dtype=np.float64)
+            fm_A_hat_full[:_NM] = fm_A_hat[:_NM]
+            pred = {
+                "energy": np.zeros((1, 1), dtype=np.float64),
+                "force_mag": fm_A_full[None],  # [1, NA, 3]
+                "mask_mag": _MASK_MAG_A,
+            }
+            lbl = {
+                "force_mag": fm_A_hat_full[None],
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NA
+
+        def make_B():
+            fm_B_full = np.zeros((NB, 3), dtype=np.float64)
+            fm_B_full[:_NM] = fm_B[:_NM]
+            fm_B_hat_full = np.zeros((NB, 3), dtype=np.float64)
+            fm_B_hat_full[:_NM] = fm_B_hat[:_NM]
+            pred = {
+                "energy": np.zeros((1, 1), dtype=np.float64),
+                "force_mag": fm_B_full[None],  # [1, NB, 3]
+                "mask_mag": _MASK_MAG_B,
+            }
+            lbl = {
+                "force_mag": fm_B_hat_full[None],
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NB
+
+        def make_padded():
+            # Pad frame A force_mag to NP width; ghost slots are zero (non-magnetic)
+            fm_A_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_A_pad[:_NM] = fm_A[:_NM]
+            fm_A_hat_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_A_hat_pad[:_NM] = fm_A_hat[:_NM]
+            fm_B_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_B_pad[:_NM] = fm_B[:_NM]
+            fm_B_hat_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_B_hat_pad[:_NM] = fm_B_hat[:_NM]
+            fm_pad = np.stack([fm_A_pad, fm_B_pad], axis=0)  # [2, NP, 3]
+            fm_hat_pad = np.stack([fm_A_hat_pad, fm_B_hat_pad], axis=0)
+            pred = {
+                "energy": np.zeros((2, 1), dtype=np.float64),
+                "force_mag": fm_pad,
+                "mask_mag": _MASK_MAG_PAD_SPIN,  # ghost atoms have mask_mag=False
+                "mask": _MASK_PAD_SPIN,
+            }
+            lbl = {
+                "force_mag": fm_hat_pad,
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(self._make_loss(), mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )

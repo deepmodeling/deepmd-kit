@@ -383,36 +383,69 @@ class EnergySpinLoss(TaskLoss):
             atom_ener_label = label["atom_ener"]
             find_atom_ener = label.get("find_atom_ener", 0.0)
             pref_ae = pref_ae * find_atom_ener
-            atom_ener_reshape = atom_ener.reshape(-1)
-            atom_ener_label_reshape = atom_ener_label.reshape(-1)
 
-            if self.loss_func == "mse":
-                l2_atom_ener_loss = torch.square(
-                    atom_ener_label_reshape - atom_ener_reshape
-                ).mean()
-                if not self.inference:
-                    more_loss["l2_atom_ener_loss"] = self.display_if_exist(
-                        l2_atom_ener_loss.detach(), find_atom_ener
+            if maskf is not None:
+                # Idiom 1 (per-atom masked mean, ncomp=1).
+                ae = atom_ener.reshape(_nf, _nloc, 1)
+                ae_label = atom_ener_label.reshape(_nf, _nloc, 1)
+                maskf_col = maskf.reshape(_nf, _nloc, 1)  # [nf, nloc, 1]
+                if self.loss_func == "mse":
+                    sq = torch.square(ae_label - ae) * maskf_col  # [nf, nloc, 1]
+                    per_frame_sum = sq.reshape(_nf, -1).sum(dim=-1)  # [nf]
+                    per_frame_dof = maskf.sum(dim=-1)  # [nf] (ncomp=1)
+                    l2_atom_ener_loss = torch.mean(per_frame_sum / per_frame_dof)
+                    if not self.inference:
+                        more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                            l2_atom_ener_loss.detach(), find_atom_ener
+                        )
+                    loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    rmse_ae = l2_atom_ener_loss.sqrt()
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        rmse_ae.detach(), find_atom_ener
                     )
-                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                rmse_ae = l2_atom_ener_loss.sqrt()
-                more_loss["rmse_ae"] = self.display_if_exist(
-                    rmse_ae.detach(), find_atom_ener
-                )
-            elif self.loss_func == "mae":
-                l1_atom_ener_loss = F.l1_loss(
-                    atom_ener_reshape,
-                    atom_ener_label_reshape,
-                    reduction="mean",
-                )
-                loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                more_loss["mae_ae"] = self.display_if_exist(
-                    l1_atom_ener_loss.detach(), find_atom_ener
-                )
+                elif self.loss_func == "mae":
+                    abs_diff = torch.abs(ae_label - ae) * maskf_col  # [nf, nloc, 1]
+                    per_frame_sum = abs_diff.reshape(_nf, -1).sum(dim=-1)  # [nf]
+                    per_frame_dof = maskf.sum(dim=-1)  # [nf] (ncomp=1)
+                    l1_atom_ener_loss = torch.mean(per_frame_sum / per_frame_dof)
+                    loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_atom_ener_loss.detach(), find_atom_ener
+                    )
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                    )
             else:
-                raise NotImplementedError(
-                    f"Loss type {self.loss_func} is not implemented for atomic energy loss."
-                )
+                atom_ener_reshape = atom_ener.reshape(-1)
+                atom_ener_label_reshape = atom_ener_label.reshape(-1)
+                if self.loss_func == "mse":
+                    l2_atom_ener_loss = torch.square(
+                        atom_ener_label_reshape - atom_ener_reshape
+                    ).mean()
+                    if not self.inference:
+                        more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                            l2_atom_ener_loss.detach(), find_atom_ener
+                        )
+                    loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    rmse_ae = l2_atom_ener_loss.sqrt()
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        rmse_ae.detach(), find_atom_ener
+                    )
+                elif self.loss_func == "mae":
+                    l1_atom_ener_loss = F.l1_loss(
+                        atom_ener_reshape,
+                        atom_ener_label_reshape,
+                        reduction="mean",
+                    )
+                    loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_atom_ener_loss.detach(), find_atom_ener
+                    )
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                    )
 
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)

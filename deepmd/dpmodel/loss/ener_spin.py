@@ -297,24 +297,50 @@ class EnergySpinLoss(Loss):
             pref_ae = pref_ae * find_atom_ener
             atom_ener = model_dict["atom_energy"]
             atom_ener_label = label_dict["atom_ener"]
-            atom_ener_reshape = xp.reshape(atom_ener, (-1,))
-            atom_ener_label_reshape = xp.reshape(atom_ener_label, (-1,))
-            if self.loss_func == "mse":
-                l2_atom_ener_loss = xp.mean(
-                    xp.square(atom_ener_label_reshape - atom_ener_reshape)
-                )
-                loss += pref_ae * l2_atom_ener_loss
-                more_loss["rmse_ae"] = self.display_if_exist(
-                    xp.sqrt(l2_atom_ener_loss), find_atom_ener
-                )
-            elif self.loss_func == "mae":
-                l1_atom_ener_loss = xp.mean(
-                    xp.abs(atom_ener_label_reshape - atom_ener_reshape)
-                )
-                loss += pref_ae * l1_atom_ener_loss
-                more_loss["mae_ae"] = self.display_if_exist(
-                    l1_atom_ener_loss, find_atom_ener
-                )
+            if maskf is not None:
+                # Idiom 1 (per-atom masked mean, ncomp=1).
+                ae = xp.reshape(atom_ener, (_nf, _nloc, 1))
+                ae_label = xp.reshape(atom_ener_label, (_nf, _nloc, 1))
+                maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
+                if self.loss_func == "mse":
+                    sq = xp.square(ae_label - ae) * maskf_col  # [nf, nloc, 1]
+                    per_frame_sum = xp.sum(xp.reshape(sq, (_nf, -1)), axis=-1)  # [nf]
+                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf] (ncomp=1)
+                    l2_atom_ener_loss = xp.mean(per_frame_sum / per_frame_dof)
+                    loss += pref_ae * l2_atom_ener_loss
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        xp.sqrt(l2_atom_ener_loss), find_atom_ener
+                    )
+                elif self.loss_func == "mae":
+                    abs_diff = xp.abs(ae_label - ae) * maskf_col  # [nf, nloc, 1]
+                    per_frame_sum = xp.sum(
+                        xp.reshape(abs_diff, (_nf, -1)), axis=-1
+                    )  # [nf]
+                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf] (ncomp=1)
+                    l1_atom_ener_loss = xp.mean(per_frame_sum / per_frame_dof)
+                    loss += pref_ae * l1_atom_ener_loss
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_atom_ener_loss, find_atom_ener
+                    )
+            else:
+                atom_ener_reshape = xp.reshape(atom_ener, (-1,))
+                atom_ener_label_reshape = xp.reshape(atom_ener_label, (-1,))
+                if self.loss_func == "mse":
+                    l2_atom_ener_loss = xp.mean(
+                        xp.square(atom_ener_label_reshape - atom_ener_reshape)
+                    )
+                    loss += pref_ae * l2_atom_ener_loss
+                    more_loss["rmse_ae"] = self.display_if_exist(
+                        xp.sqrt(l2_atom_ener_loss), find_atom_ener
+                    )
+                elif self.loss_func == "mae":
+                    l1_atom_ener_loss = xp.mean(
+                        xp.abs(atom_ener_label_reshape - atom_ener_reshape)
+                    )
+                    loss += pref_ae * l1_atom_ener_loss
+                    more_loss["mae_ae"] = self.display_if_exist(
+                        l1_atom_ener_loss, find_atom_ener
+                    )
 
         if self.has_v:
             find_virial = label_dict.get("find_virial", 0.0)

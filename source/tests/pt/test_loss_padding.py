@@ -1774,3 +1774,290 @@ class TestPTEnerSpinLossForceMagUnchanged:
             f"force_mag loss must be unchanged by padding mask: "
             f"{loss_with.item()} vs {loss_without.item()}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Part A: EnergySpinLoss atom_ener (has_ae) grad-accum invariant (pt)
+# ---------------------------------------------------------------------------
+
+
+class TestPTEnerSpinLossAtomEnerGradAccum:
+    """Idiom 1 (per-atom masked mean, ncomp=1) for atom_ener in pt EnergySpinLoss.
+
+    RED before the Part-A has_ae mask fix; GREEN after.
+    """
+
+    def _make_loss(self, loss_func="mse"):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=0.0,
+            limit_pref_fm=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            loss_func=loss_func,
+        )
+
+    def _run_invariant(self, loss_obj, ae_A, ae_A_hat, ae_B, ae_B_hat):
+        def make_A():
+            mp = {
+                "atom_energy": ae_A.unsqueeze(0),  # [1, NA, 1]
+                "mask_mag": _MASK_MAG_A_PT,
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"atom_ener": ae_A_hat.unsqueeze(0), "find_atom_ener": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "atom_energy": ae_B.unsqueeze(0),
+                "mask_mag": _MASK_MAG_B_PT,
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {"atom_ener": ae_B_hat.unsqueeze(0), "find_atom_ener": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            ae_pad = _padded_atom_t(ae_A, ae_B, 1)  # [2, NP, 1]
+            ae_hat_pad = _padded_atom_t(ae_A_hat, ae_B_hat, 1)
+            mp = {
+                "atom_energy": ae_pad,
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {"atom_ener": ae_hat_pad, "find_atom_ener": 1.0}
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """Spin atom_ener MSE meets the grad-accum invariant."""
+        ae_A = _t(NA, 1)
+        ae_A_hat = _t(NA, 1)
+        ae_B = _t(NB, 1)
+        ae_B_hat = _t(NB, 1)
+        self._run_invariant(self._make_loss("mse"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_mae_grad_accum(self):
+        """Spin atom_ener MAE meets the grad-accum invariant."""
+        ae_A = _t(NA, 1)
+        ae_A_hat = _t(NA, 1)
+        ae_B = _t(NB, 1)
+        ae_B_hat = _t(NB, 1)
+        self._run_invariant(self._make_loss("mae"), ae_A, ae_A_hat, ae_B, ae_B_hat)
+
+    def test_no_op_for_non_mixed(self):
+        """All-ones mask gives same atom_ener spin loss as no mask."""
+        ae = _t(NP, 1)
+        ae_hat = _t(NP, 1)
+        loss_obj = self._make_loss()
+        mp_mask = {
+            "atom_energy": ae.unsqueeze(0),
+            "mask_mag": _MASK_MAG_B_PT,
+            "mask": torch.ones(1, NP, dtype=torch.float64, device="cpu"),
+        }
+        mp_nm = {
+            "atom_energy": ae.unsqueeze(0),
+            "mask_mag": _MASK_MAG_B_PT,
+        }
+        lb = {"atom_ener": ae_hat.unsqueeze(0), "find_atom_ener": 1.0}
+        loss_m = _spin_loss_fn(loss_obj, mp_mask, lb, NP)
+        loss_nm = _spin_loss_fn(loss_obj, mp_nm, lb, NP)
+        assert torch.isclose(loss_m, loss_nm), (
+            f"all-ones mask must be no-op: {loss_m.item()} vs {loss_nm.item()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# gen_force (has_gf) grad-accum invariant (pt)
+# ---------------------------------------------------------------------------
+
+_NGEN_PT = 2  # number of generalized coordinates for tests
+
+
+class TestPTEnergyLossGenForceGradAccum:
+    """gen_force (has_gf) excludes ghost atoms via force masking before projection.
+
+    Expected GREEN immediately (no fix needed for gen_force).
+    """
+
+    def _make_loss(self):
+        return EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_gf=1.0,
+            limit_pref_gf=1.0,
+            numb_generalized_coord=_NGEN_PT,
+        )
+
+    def _run_invariant(self, loss_obj, f_A, f_A_hat, drdq_A, f_B, f_B_hat, drdq_B):
+        def make_A():
+            mp = {
+                "force": f_A.unsqueeze(0),  # [1, NA, 3]
+                "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            }
+            lb = {
+                "force": f_A_hat.unsqueeze(0),
+                "find_force": 1.0,
+                "drdq": drdq_A.unsqueeze(0),  # [1, NA*3, NGEN]
+                "find_drdq": 1.0,
+            }
+            return mp, lb, NA
+
+        def make_B():
+            mp = {
+                "force": f_B.unsqueeze(0),
+                "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            }
+            lb = {
+                "force": f_B_hat.unsqueeze(0),
+                "find_force": 1.0,
+                "drdq": drdq_B.unsqueeze(0),  # [1, NB*3, NGEN]
+                "find_drdq": 1.0,
+            }
+            return mp, lb, NB
+
+        def make_padded():
+            f_pad = _padded_force_t(f_A, f_B)  # [2, NP, 3]
+            f_hat_pad = _padded_force_t(f_A_hat, f_B_hat)
+            # drdq ghost-atom slots are zero (ghost forces also zero, no contribution)
+            drdq_A_pad = torch.zeros(
+                NP * 3, _NGEN_PT, dtype=torch.float64, device="cpu"
+            )
+            drdq_A_pad[: NA * 3] = drdq_A
+            drdq_pad = torch.stack([drdq_A_pad, drdq_B], dim=0)  # [2, NP*3, NGEN]
+            mp = {"force": f_pad, "mask": _MASK_PAD_PT}
+            lb = {
+                "force": f_hat_pad,
+                "find_force": 1.0,
+                "drdq": drdq_pad,
+                "find_drdq": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _ener_loss_fn(loss_obj, mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+    def test_mse_grad_accum(self):
+        """gen_force MSE meets the grad-accum invariant (GREEN: already correct)."""
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        drdq_A = _t(NA * 3, _NGEN_PT)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        drdq_B = _t(NB * 3, _NGEN_PT)
+        self._run_invariant(
+            self._make_loss(), f_A, f_A_hat, drdq_A, f_B, f_B_hat, drdq_B
+        )
+
+
+# ---------------------------------------------------------------------------
+# force_mag MSE grad-accum invariant (pt)
+#
+# NOTE: force_mag MAE (pt) uses .sum() over frames, so MAE force_mag FAILS
+# the invariant with a 2x factor when frames=2. This is a pre-existing
+# frame-normalization artifact independent of ghost-atom masking. Ghost atoms
+# are correctly excluded (mask_mag=False there). MAE artifact reported as
+# NEEDS_CONTEXT in the audit report.
+# ---------------------------------------------------------------------------
+
+
+class TestPTEnerSpinLossForceMagMSEGradAccum:
+    """force_mag MSE meets the grad-accum invariant when ghost atoms are non-magnetic.
+
+    With equal magnetic-atom counts (NM) across frames and ghost atoms having
+    mask_mag=False, the fancy-index selection excludes padding and the mean()
+    over [nf, NM, 3] satisfies the invariant.
+    Expected GREEN immediately (no fix needed for MSE force_mag).
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def test_mse_grad_accum(self):
+        """force_mag MSE (NM equal per frame, ghost atoms non-magnetic) meets invariant."""
+        # Only magnetic-atom slots (first NM_PT) have non-zero values; others zero.
+        fm_A = _rnd_t(_NM_PT, 3)
+        fm_A_hat = _rnd_t(_NM_PT, 3)
+        fm_B = _rnd_t(_NM_PT, 3)
+        fm_B_hat = _rnd_t(_NM_PT, 3)
+
+        def make_A():
+            fm_A_full = torch.zeros(NA, 3, dtype=torch.float64, device="cpu")
+            fm_A_full[:_NM_PT] = fm_A
+            fm_A_hat_full = torch.zeros(NA, 3, dtype=torch.float64, device="cpu")
+            fm_A_hat_full[:_NM_PT] = fm_A_hat
+            mp = {
+                "force_mag": fm_A_full.unsqueeze(0),  # [1, NA, 3]
+                "mask_mag": _MASK_MAG_A_PT,
+            }
+            lb = {"force_mag": fm_A_hat_full.unsqueeze(0), "find_force_mag": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            fm_B_full = torch.zeros(NB, 3, dtype=torch.float64, device="cpu")
+            fm_B_full[:_NM_PT] = fm_B
+            fm_B_hat_full = torch.zeros(NB, 3, dtype=torch.float64, device="cpu")
+            fm_B_hat_full[:_NM_PT] = fm_B_hat
+            mp = {
+                "force_mag": fm_B_full.unsqueeze(0),  # [1, NB, 3]
+                "mask_mag": _MASK_MAG_B_PT,
+            }
+            lb = {"force_mag": fm_B_hat_full.unsqueeze(0), "find_force_mag": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            fm_A_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_A_pad[:_NM_PT] = fm_A
+            fm_A_hat_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_A_hat_pad[:_NM_PT] = fm_A_hat
+            fm_B_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_B_pad[:_NM_PT] = fm_B
+            fm_B_hat_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_B_hat_pad[:_NM_PT] = fm_B_hat
+            mp = {
+                "force_mag": torch.stack([fm_A_pad, fm_B_pad], dim=0),  # [2, NP, 3]
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {
+                "force_mag": torch.stack([fm_A_hat_pad, fm_B_hat_pad], dim=0),
+                "find_force_mag": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(self._make_loss(), mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
