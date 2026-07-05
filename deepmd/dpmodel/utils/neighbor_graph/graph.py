@@ -211,14 +211,15 @@ def apply_pair_exclusion(
         A ``dataclasses.replace`` copy (or the original ``graph`` on early
         exit) with the exclusion applied.
 
-    See Also
-    --------
-    C++ twin ``applyPairExclusion`` in ``source/api_cc/include/commonPT.h``
-        The inference-path mirror. Same argument order (edge_index, edge_mask,
-        atype, ...), same variable names (``type_ij``, ``keep``): it computes
-        ``type_ij = atype[dst]*(ntypes+1) + atype[src]`` and ANDs the flat
-        ``(ntypes+1)^2`` table lookup into ``edge_mask`` (mask-only mode; no
-        compact variant on the compiled path).
+    Notes
+    -----
+    The C++ inference-path mirror is ``applyPairExclusion`` in
+    ``source/api_cc/include/commonPT.h``. It uses the same argument order
+    (edge_index, edge_mask, atype, ...) and the same variable names
+    (``type_ij``, ``keep``): it computes
+    ``type_ij = atype[dst]*(ntypes+1) + atype[src]`` and ANDs the flat
+    ``(ntypes+1)^2`` table lookup into ``edge_mask`` (mask-only mode; no
+    compact variant on the compiled path).
     """
     import dataclasses
 

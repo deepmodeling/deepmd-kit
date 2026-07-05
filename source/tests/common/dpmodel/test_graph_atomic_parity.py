@@ -326,9 +326,6 @@ def test_apply_pair_exclusion_idempotent(pair_exclude_types):
     rng = np.random.default_rng(42)
     coord = rng.normal(size=(1, 5, 3)) * 1.5
     atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
-    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
-    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
-    am = DPAtomicModel(ds, ft, type_map=["a", "b"])
     ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
         coord, atype, 4.0, [200], mixed_types=True, box=None
     )

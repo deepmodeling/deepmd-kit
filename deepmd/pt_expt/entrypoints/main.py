@@ -569,7 +569,7 @@ def freeze(
     m.eval()
 
     # The graph lower is opt-in and only valid for graph-eligible models
-    # (dpa1 with concat tebd and no type exclusion; attention layers included
+    # (dpa1 with concat tebd, incl. attention layers and exclude_types
     # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
     # fast with a clear message rather than emitting a broken .pt2. Enable the
     # per-atom virial for the graph form -- it is near-free there (one extra

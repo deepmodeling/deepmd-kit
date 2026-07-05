@@ -421,8 +421,6 @@ class TestBuildNeighborGraphAseOracle(unittest.TestCase):
         try:
             import ase  # noqa: F401
         except ImportError as e:
-            import unittest
-
             raise unittest.SkipTest("ase not installed") from e
 
     def setUp(self) -> None:
