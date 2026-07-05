@@ -307,6 +307,24 @@ class DeepPotBackend : public DeepBaseModelBackend {
     computew_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
                         coord, atype, box, fparam, aparam, atomic);
   }
+  /**
+   * @brief GPU-resident edge-input inference for the SeZM/DPA4 graph-form .pt2:
+   *given device edge tensors, write per-atom energy / force / virial back to
+   * the device output pointers. The PyTorch Exportable backend overrides this;
+   * every other backend inherits the throwing default. The signature is
+   * intentionally torch-free so the dispatcher stays backend-agnostic (no
+   * dynamic_cast into a PyTorch-heavy type, so ``libdeepmd_cc`` need not link
+   * PyTorch).
+   */
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const double* d_edge_vec,
+                                 const int nloc,
+                                 const int nedge);
 };
 
 /**

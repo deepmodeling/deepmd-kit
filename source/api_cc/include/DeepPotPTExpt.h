@@ -318,7 +318,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                          const int* d_edge_index,
                          const double* d_edge_vec,
                          const int nloc,
-                         const int nedge);
+                         const int nedge) override;
 
  private:
   bool inited;

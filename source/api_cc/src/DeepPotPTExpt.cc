@@ -1780,9 +1780,10 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
         "compute_edges_gpu always returns the per-atom virial, but this .pt2 "
         "model was exported without it (do_atomic_virial=False).");
   }
-  if (!lower_input_is_edge_) {
+  if (!lower_input_is_edge_ && !lower_input_is_graph_) {
     throw deepmd::deepmd_exception(
-        "compute_edges_gpu requires an edge-input (SeZM/DPA4) .pt2 model.");
+        "compute_edges_gpu requires an edge-input (SeZM/DPA4) or graph-input "
+        "(DPA1/DPA2/DPA3) .pt2 model.");
   }
   translate_error([&] {
     const torch::Device device(torch::kCUDA, gpu_id);
@@ -1857,24 +1858,42 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
               .to(device);
     }
 
-    // === Step 4. Run the exported model on the device ===
-    std::vector<torch::Tensor> flat_outputs = run_model_edges(
-        coord_t, atype_t, edge_index, edge_vec, edge_scatter_index, edge_mask,
-        fparam_tensor, aparam_tensor, charge_spin_tensor);
-    std::map<std::string, torch::Tensor> output_map;
-    extract_outputs(output_map, flat_outputs);
+    // === Step 4. Run the exported model and read the per-atom outputs ===
+    // The two lower forms share the masked edge tensors but differ in both the
+    // input set and the output naming, so each form runs and unpacks itself;
+    // the result is always per-atom energy (nloc), force (nloc, 3) and virial
+    // (nloc, 9), copied out below.
+    at::Tensor ae, force_t, av;
+    std::map<std::string, torch::Tensor> out;
+    if (lower_input_is_graph_) {
+      // Graph (DPA1/DPA2/DPA3 NeighborGraph): single-frame node count and a
+      // flat node-major atype; the model returns the high-level per-atom
+      // quantities.
+      const at::Tensor n_node =
+          torch::full({1}, static_cast<std::int64_t>(nloc), opt_i64);
+      extract_outputs(
+          out, run_model_graph(atype_t.reshape({nloc}), n_node, edge_index,
+                               edge_vec, edge_mask, fparam_tensor,
+                               aparam_tensor, charge_spin_tensor));
+      ae = out["atom_energy"].reshape({nloc}).contiguous();
+      force_t = out["force"].reshape({nloc, 3}).contiguous();
+      av = out["atom_virial"].reshape({nloc, 9}).contiguous();
+    } else {
+      // Edge (SeZM/DPA4): coord + edge_scatter_index; the model returns the raw
+      // reduced-energy derivatives (force/virial per extended atom).
+      extract_outputs(
+          out, run_model_edges(coord_t, atype_t, edge_index, edge_vec,
+                               edge_scatter_index, edge_mask, fparam_tensor,
+                               aparam_tensor, charge_spin_tensor));
+      ae = out["energy"].reshape({nloc}).contiguous();
+      force_t =
+          out["energy_derv_r"].squeeze(-2).reshape({nloc, 3}).contiguous();
+      av = out["energy_derv_c"].squeeze(-2).reshape({nloc, 9}).contiguous();
+    }
 
-    // === Step 5. Copy outputs into caller GPU buffers (device-to-device) ===
-    // Per-atom energy: energy (1, nloc, 1) -> (nloc)
-    at::Tensor ae = output_map["energy"].reshape({nloc}).contiguous();
+    // === Step 5. Copy per-atom outputs into caller GPU buffers (D2D) ===
     torch::from_blob(d_atom_energy, {nloc}, opt_f64).copy_(ae);
-    // Force: energy_derv_r (1, nloc, 1, 3) -> (nloc, 3) row-major
-    at::Tensor force_t =
-        output_map["energy_derv_r"].squeeze(-2).reshape({nloc, 3}).contiguous();
     torch::from_blob(d_force, {nloc, 3}, opt_f64).copy_(force_t);
-    // Per-atom virial: energy_derv_c (1, nloc, 1, 9) -> (nloc, 9) row-major
-    at::Tensor av =
-        output_map["energy_derv_c"].squeeze(-2).reshape({nloc, 9}).contiguous();
     torch::from_blob(d_atom_virial, {nloc, 9}, opt_f64).copy_(av);
   });
 }
