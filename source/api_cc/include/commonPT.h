@@ -549,23 +549,7 @@ inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
           .clone()
           .to(device);
   const auto keep = table.index_select(0, type_ij).to(torch::kBool);
-  const auto result = torch::logical_and(edge_mask, keep);
-  std::cerr << "[DBG applyPairExclusion] table_sz=" << type_mask_table.size()
-            << " ntypes=" << ntypes << " E=" << edge_index.size(1)
-            << " atypeN=" << atype.size(0) << " edge_mask.sum="
-            << edge_mask.to(torch::kInt64).sum().item<int64_t>()
-            << " keep.sum=" << keep.to(torch::kInt64).sum().item<int64_t>()
-            << " result.sum=" << result.to(torch::kInt64).sum().item<int64_t>()
-            << " atype[:8]=";
-  {
-    auto a = atype.to(torch::kCPU).to(torch::kInt64);
-    int64_t n = std::min<int64_t>(8, a.size(0));
-    for (int64_t i = 0; i < n; ++i) {
-      std::cerr << a[i].item<int64_t>() << ",";
-    }
-  }
-  std::cerr << std::endl;
-  return result;
+  return torch::logical_and(edge_mask, keep);
 }
 
 /**
