@@ -176,6 +176,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     fparam=fparam,
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # the traced lower consumes a pre-excluded nlist.
+                    pair_excl=getattr(model.atomic_model, "pair_excl", None),
                 )
 
             return call

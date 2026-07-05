@@ -8,13 +8,15 @@
 // A no-exclusion baseline (deeppot_dpa1_pairexcl_none.pt2, empty exclude table)
 // exercises the identity/pre-change branch of both helpers.
 //
-// The compiled .pt2 forward ALREADY applies the exclusion internally (the seam
-// transform is traced into the exported artifact), so the C++ helpers are an
-// idempotent backstop; the reference values (.expected sidecars) come from the
-// Python DeepEval of the SAME .pt2, so a 1e-10 match validates the whole chain
-// (pair_exclude_types metadata round-trip + init table build + seam apply +
-// compiled math).  A separate assertion (excluded energy != baseline energy)
-// proves the exclusion is genuinely active and not silently dropped.
+// Exclusion is a BUILD-time transform (decision #18/A4): the exported .pt2
+// lowers consume pre-excluded inputs (graph edge_mask / dense nlist) and never
+// re-apply it, so the C++ helpers here are the SINGLE application site — these
+// tests are what proves they are load-bearing.  The reference values
+// (.expected sidecars) come from the Python DeepEval of the SAME .pt2, so a
+// 1e-10 match validates the whole chain (pair_exclude_types metadata
+// round-trip + init table build + build-time apply + compiled math).  A
+// separate assertion (excluded energy != baseline energy) proves the exclusion
+// is genuinely active and not silently dropped.
 #include <gtest/gtest.h>
 
 #include <cmath>

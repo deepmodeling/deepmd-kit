@@ -180,6 +180,26 @@ class SpinModel(NativeOP):
             mapping_updated = None
         # extend the nlist
         nlist_updated = self.extend_nlist(extended_atype, nlist)
+        # This extension CREATES the virtual-atom nlist entries, so it is the
+        # BUILD site of the spin-extended nlist: fold the backbone's model-level
+        # pair exclusion in here (decision #18/A4 — the lower consumes a
+        # pre-excluded nlist and never re-applies it). No-op when the backbone
+        # has no pair_exclude_types.
+        pair_excl = getattr(
+            self.backbone_model.atomic_model
+            if hasattr(self.backbone_model, "atomic_model")
+            else self.backbone_model,
+            "pair_excl",
+            None,
+        )
+        if pair_excl is not None:
+            from deepmd.dpmodel.utils.nlist import (
+                apply_pair_exclusion_nlist,
+            )
+
+            nlist_updated = apply_pair_exclusion_nlist(
+                nlist_updated, extended_atype_updated, pair_excl
+            )
         return (
             extended_coord_updated,
             extended_atype_updated,

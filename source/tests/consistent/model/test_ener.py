@@ -11,6 +11,9 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.model.ener_model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.model.model import get_model as get_model_dp
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -484,6 +487,14 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             6.0,
             [20, 20],
             distinguish_types=True,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4): the dpmodel-family lowers consume a pre-excluded nlist;
+            # legacy pt/pd re-apply internally, which is an idempotent no-op.
+            pair_excl=PairExcludeMask(
+                self.ntypes, [tuple(p) for p in self.data["pair_exclude_types"]]
+            )
+            if self.data["pair_exclude_types"]
+            else None,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
         self.nlist = nlist

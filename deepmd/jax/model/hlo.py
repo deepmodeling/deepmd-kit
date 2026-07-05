@@ -84,6 +84,25 @@ class HLO(BaseModel):
         self.model_def_script = model_def_script
         self._has_default_fparam = has_default_fparam
         self.default_fparam = default_fparam
+        # Model-level pair_exclude_types, rebuilt from the training config so
+        # the outer wrapper can fold it into the nlist at BUILD time (decision
+        # #18/A4) — the serialized StableHLO lower consumes a pre-excluded
+        # nlist and never re-applies it.
+        import json
+
+        from deepmd.dpmodel.utils.exclude_mask import (
+            PairExcludeMask,
+        )
+
+        pet = []
+        if model_def_script:
+            try:
+                pet = json.loads(model_def_script).get("pair_exclude_types", [])
+            except (ValueError, AttributeError):
+                pet = []
+        self._pair_excl = (
+            PairExcludeMask(len(type_map), [tuple(p) for p in pet]) if pet else None
+        )
 
     def __call__(
         self,
@@ -167,6 +186,9 @@ class HLO(BaseModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            # exclusion is a nlist-BUILD transform (decision #18/A4); the
+            # serialized StableHLO lower consumes a pre-excluded nlist.
+            pair_excl=self._pair_excl,
         )
 
     def model_output_def(self) -> ModelOutputDef:

@@ -32,7 +32,6 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
-    apply_pair_exclusion_nlist,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -270,7 +269,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             extended atom typs, shape: nf x nall
             for a type < 0 indicating the atomic is virtual.
         nlist
-            neighbor list, shape: nf x nloc x nsel
+            neighbor list, shape: nf x nloc x nsel. CONTRACT: model-level
+            ``pair_exclude_types`` is already folded in (excluded entries are
+            ``-1``) — exclusion is a nlist-BUILD transform (decision #18/A4)
+            applied by the NeighborList builders (Python) or
+            ``applyPairExclusionNlist`` (C++ ingestion), never re-applied here.
         mapping
             extended to local index mapping, shape: nf x nall
         fparam
@@ -294,9 +297,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
-        # idempotent backstop: externally-supplied nlists (C++/LAMMPS, call_lower
-        # users) bypass the in-tree builders and land here still unfiltered.
-        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, self.pair_excl)
+        # NOTE: model-level ``pair_exclude_types`` is NOT applied here. It is a
+        # nlist-BUILD transform (decision #18/A4, same as the graph route):
+        # already folded into the nlist by the NeighborList builders (Python)
+        # or ``applyPairExclusionNlist`` (C++ ingestion); this method consumes
+        # a pre-excluded nlist.
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
@@ -668,6 +673,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 self.get_sel(),
                 mixed_types=self.mixed_types(),
                 box=box,
+                # exclusion is a nlist-BUILD transform (decision #18/A4);
+                # forward_common_atomic consumes a pre-excluded nlist.
+                pair_excl=self.pair_excl,
             )
             atomic_ret = self.forward_common_atomic(
                 extended_coord,

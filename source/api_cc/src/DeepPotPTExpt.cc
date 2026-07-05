@@ -201,10 +201,12 @@ void DeepPotPTExpt::init(const std::string& model,
   has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
                          metadata["has_message_passing"].as_bool();
 
-  // Model-level pair-type exclusion table.  ``pair_exclude_types`` is a list of
-  // [ti, tj] pairs; rebuild the flat (ntypes+1)^2 keep table exactly like the
-  // Python ``PairExcludeMask`` ctor so the ingestion seam can re-apply the same
-  // exclusion (idempotent backstop; the compiled graph already applies it).
+  // Model-level pair-type exclusion table.  ``pair_exclude_types`` is a list
+  // of [ti, tj] pairs; rebuild the flat (ntypes+1)^2 keep table exactly like
+  // the Python ``PairExcludeMask`` ctor.  Exclusion is a BUILD-time transform
+  // (decision #18/A4): the C++ ingestion seam is the single application site
+  // (applyPairExclusion graph / applyPairExclusionNlist dense); the exported
+  // lowers consume pre-excluded inputs and never re-apply it.
   {
     std::vector<std::pair<int, int>> pair_exclude_types;
     if (metadata.obj_val.count("pair_exclude_types")) {
@@ -890,8 +892,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           torch::full({1}, n_node_count, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      // Model-level pair exclusion at the ingestion seam (idempotent backstop;
-      // the compiled graph already applies the same transform internally).
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported graph lower consumes a pre-excluded edge_mask
+      // and never re-applies it; this is the single application site on the
+      // C++ graph route.
       const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
           edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
           pair_exclude_table_, ntypes);
@@ -900,8 +904,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                           edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
                           aparam_tensor, charge_spin_tensor);
     } else {
-      // Model-level pair exclusion at the dense ingestion seam (idempotent
-      // backstop; the compiled dense forward already applies the same erase).
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+      // never re-applies it; this is the single application site on the C++
+      // dense route.
       const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
           firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
       flat_outputs =
@@ -1262,8 +1268,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                         edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                         fparam_tensor, aparam_tensor, charge_spin_tensor);
   } else if (lower_input_is_graph_) {
-    // Model-level pair exclusion at the ingestion seam (idempotent backstop;
-    // the compiled graph already applies the same transform internally).
+    // Model-level pair exclusion is a BUILD-time transform (decision
+    // #18/A4): the exported graph lower consumes a pre-excluded edge_mask and
+    // never re-applies it; this is the single application site on the C++
+    // graph route.
     const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
         graph_tensors.edge_index, graph_tensors.edge_mask, graph_tensors.atype,
         pair_exclude_table_, ntypes);
@@ -1272,8 +1280,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         graph_tensors.edge_vec, graph_edge_mask, fparam_tensor, aparam_tensor,
         charge_spin_tensor);
   } else {
-    // Model-level pair exclusion at the dense ingestion seam (idempotent
-    // backstop; the compiled dense forward already applies the same erase).
+    // Model-level pair exclusion is a BUILD-time transform (decision
+    // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+    // never re-applies it; this is the single application site on the C++
+    // dense route.
     const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
         nlist_tensor, atype_Tensor, pair_exclude_table_, ntypes);
     flat_outputs =

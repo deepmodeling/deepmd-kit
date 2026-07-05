@@ -515,9 +515,10 @@ inline std::vector<int> buildPairExcludeTable(
  * same argument order (edge_index, edge_mask, atype, ...) and same variable
  * names (``type_ij``, ``keep``).
  *
- * The compiled ``.pt2`` graph already applies this exclusion internally (the
- * seam transform is traced into the exported forward), so this call is an
- * idempotent backstop at the C++ ingestion seam.
+ * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
+ * exported ``.pt2`` graph lower consumes a pre-excluded ``edge_mask`` and
+ * never re-applies it, so this call is the SINGLE application site on the
+ * C++ graph route.
  *
  * @param edge_index (2, E) int64 ``[src, dst]``; src = neighbor, dst = center.
  * @param edge_mask (E,) bool real-vs-padding mask to be ANDed in place.
@@ -558,9 +559,12 @@ inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
  * Inference-path twin of Python ``apply_pair_exclusion_nlist`` in
  * ``deepmd/dpmodel/utils/nlist.py`` +
  * ``PairExcludeMask.build_type_exclude_mask``. Same argument order (nlist,
- * atype_ext, ...) and same variable names
- * (``type_ij``, ``keep``).  Idempotent: erasing ``-1`` a second time is a
- * no-op.
+ * atype_ext, ...) and same variable names (``type_ij``, ``keep``).
+ *
+ * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
+ * exported ``.pt2`` dense lower consumes a pre-excluded nlist and never
+ * re-applies it, so this call is the SINGLE application site on the C++
+ * dense route.
  *
  * @param nlist (nf, nloc, nnei) int64 neighbour list; ``-1`` == empty slot.
  * @param atype_ext (nf, nall) int64 extended atom types.

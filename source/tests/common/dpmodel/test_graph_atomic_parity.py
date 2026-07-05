@@ -226,6 +226,65 @@ def test_model_pair_exclude_applied_at_build_not_in_lower():
     ), "build-time pair exclusion must change the graph energy"
 
 
+def test_model_pair_exclude_applied_at_build_not_in_dense_lower():
+    """Dense-route seam contract (decision #18/A4, mirror of the graph test):
+    model-level pair_exclude is a nlist-BUILD transform. The dense lower
+    (``call_lower``) must NOT re-apply it — it consumes whatever nlist the
+    builder produced. Feeding a RAW nlist to the lower on a model that HAS
+    ``pair_exclude_types`` yields the SAME result as a model with no exclusion;
+    the exclusion only takes effect when folded in at build.
+    """
+    from deepmd.dpmodel.utils.nlist import (
+        apply_pair_exclusion_nlist,
+        extend_input_and_build_neighbor_list,
+    )
+
+    rng = np.random.default_rng(4)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
+    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
+    model = EnergyModel(ds, ft, type_map=["a", "b"], pair_exclude_types=[(0, 1)])
+    assert model.atomic_model.pair_excl is not None
+
+    # RAW quartet: built WITHOUT pair_excl (no exclusion folded into the nlist).
+    coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord.reshape(1, -1),
+        atype,
+        model.get_rcut(),
+        model.get_sel(),
+        mixed_types=True,
+        box=box,
+    )
+    # EnergyModel.call_lower translates keys: reduced energy -> "energy"
+    out_with_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
+    # clear the model-level exclusion; the lower output must be UNCHANGED,
+    # proving the lower never consulted ``pair_excl``.
+    model.atomic_model.reinit_pair_exclude([])
+    assert model.atomic_model.pair_excl is None
+    out_no_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
+    np.testing.assert_allclose(
+        np.asarray(out_with_excl_model["energy"]),
+        np.asarray(out_no_excl_model["energy"]),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+    # Positive control: folding the exclusion in at BUILD changes the output.
+    nlist_excl = apply_pair_exclusion_nlist(
+        nlist, atype_ext, PairExcludeMask(2, [(0, 1)])
+    )
+    out_built_excl = model.call_lower(coord_ext, atype_ext, nlist_excl, mapping)
+    assert not np.allclose(
+        np.asarray(out_built_excl["energy"]),
+        np.asarray(out_no_excl_model["energy"]),
+        rtol=1e-9,
+        atol=1e-9,
+    ), "build-time pair exclusion must change the dense energy"
+
+
 def test_graph_matches_dense_with_fparam():
     """Frame parameter is gathered to nodes by frame_id in forward_atomic_graph
     and fed to the fitting's call_graph; the graph path must match dense at 1e-12

@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.atomic_model.dp_atomic_model import (
         DPAtomicModel,
     )
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import array_api_compat
 import numpy as np
@@ -85,6 +88,7 @@ def model_call_from_call_lower(
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -109,6 +113,11 @@ def model_call_from_call_lower(
         historical behavior.  An alternative strategy (e.g. an O(N) cell list)
         may be injected to speed up neighbor-list construction; it returns the
         same extended representation, so model outputs are unchanged.
+    pair_excl
+        Model-level pair-type exclusion mask. Exclusion is a nlist-BUILD
+        transform (decision #18/A4): it is folded into the nlist here, at the
+        build seam, and ``call_lower`` consumes a pre-excluded nlist without
+        re-applying it.
 
     Returns
     -------
@@ -122,7 +131,7 @@ def model_call_from_call_lower(
     del coord, box, fparam, aparam
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     extended_coord, extended_atype, nlist, mapping = builder.build(
-        cc, atype, bb, rcut, sel
+        cc, atype, bb, rcut, sel, pair_excl=pair_excl
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
@@ -377,6 +386,8 @@ def make_model(
                     coord_corr_for_virial=coord_corr_for_virial,
                     charge_spin=cs,
                     neighbor_list=neighbor_list,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4)
+                    pair_excl=getattr(self.atomic_model, "pair_excl", None),
                 )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict

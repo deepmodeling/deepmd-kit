@@ -957,6 +957,10 @@ class DeepEval(DeepEvalBackend):
         sel = self._sel
         mixed_types = self._mixed_types
 
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): fold it in here; the exported dense lower consumes a
+        # pre-excluded nlist and never re-applies it.
+        pair_excl = self._model_pair_excl()
         if self._nlist_builder is not None:
             # O(N) cell-list strategy (e.g. vesin): builds the same extended
             # representation.  Match the native builder's type handling
@@ -966,7 +970,7 @@ class DeepEval(DeepEvalBackend):
             # type-distinguished nlist a non-mixed-type descriptor expects.  The
             # main eval path is unaffected (its ``format_nlist`` re-formats).
             extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
-                coords, atom_types, cells, rcut, sel
+                coords, atom_types, cells, rcut, sel, pair_excl=pair_excl
             )
             if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, sel)
@@ -991,6 +995,7 @@ class DeepEval(DeepEvalBackend):
             rcut,
             sel,
             distinguish_types=not mixed_types,
+            pair_excl=pair_excl,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
         return extended_coord, extended_atype, nlist, mapping
@@ -1050,10 +1055,21 @@ class DeepEval(DeepEvalBackend):
             ext_atypes.append(ea)
             nlists.append(nl)
             mappings.append(mp)
+        extended_atype = np.stack(ext_atypes, axis=0)
+        nlist = np.stack(nlists, axis=0)
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): fold it in here, like the native builder path.
+        from deepmd.dpmodel.utils.nlist import (
+            apply_pair_exclusion_nlist,
+        )
+
+        nlist = apply_pair_exclusion_nlist(
+            nlist, extended_atype, self._model_pair_excl()
+        )
         return (
             np.stack(ext_coords, axis=0),
-            np.stack(ext_atypes, axis=0),
-            np.stack(nlists, axis=0),
+            extended_atype,
+            nlist,
             np.stack(mappings, axis=0),
         )
 
@@ -1779,7 +1795,7 @@ class DeepEval(DeepEvalBackend):
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
         # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
-        pair_excl = self._graph_pair_excl()
+        pair_excl = self._model_pair_excl()
         if method == "dense":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph,
@@ -1824,7 +1840,7 @@ class DeepEval(DeepEvalBackend):
             "use 'dense', 'ase', 'vesin', or 'nv'"
         )
 
-    def _graph_pair_excl(self) -> "PairExcludeMask | None":
+    def _model_pair_excl(self) -> "PairExcludeMask | None":
         """Model-level ``pair_exclude_types`` as a ``PairExcludeMask`` (or None).
 
         Applied at graph BUILD time (decision #18), NOT inside the exported

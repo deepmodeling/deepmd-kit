@@ -52,6 +52,7 @@ def extend_input_and_build_neighbor_list(
     sel: list[int],
     mixed_types: bool = False,
     box: Array | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
@@ -72,6 +73,7 @@ def extend_input_and_build_neighbor_list(
         rcut,
         sel,
         distinguish_types=(not mixed_types),
+        pair_excl=pair_excl,
     )
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     return extended_coord, extended_atype, mapping, nlist
@@ -110,12 +112,14 @@ def apply_pair_exclusion_nlist(
 
     Notes
     -----
-    The C++ inference-path mirror is ``applyPairExclusionNlist`` in
-    ``source/api_cc/include/commonPT.h``. It uses the same argument order
-    (nlist, atype_ext, ...) and the same variable names (``type_ij``,
-    ``keep``): it computes ``type_ij`` from the center/neighbor types via
-    the flat ``(ntypes+1)^2`` table and replaces excluded entries with
-    ``-1``.
+    Exclusion is a nlist-BUILD transform (decision #18/A4), same as the graph
+    route: it is applied ONCE where the nlist is built — the Python builders
+    (``build_neighbor_list(pair_excl=...)`` / the NeighborList strategies) or
+    the C++ ingestion seam (``applyPairExclusionNlist`` in
+    ``source/api_cc/include/commonPT.h``, same table lookup and variable
+    names). The lower interfaces (``call_lower`` / ``forward_common_atomic``
+    and the exported artifacts) consume a pre-excluded nlist and never
+    re-apply it.
     """
     if pair_excl is None or len(pair_excl.exclude_types) == 0:
         return nlist

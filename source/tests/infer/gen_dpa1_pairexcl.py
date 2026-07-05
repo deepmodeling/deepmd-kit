@@ -9,15 +9,19 @@ one exported through each C++ ingestion route, plus a no-exclusion baseline:
   - deeppot_dpa1_pairexcl_nlist.pt2  (lower_kind="nlist", pair_exclude=[[0,1]])
   - deeppot_dpa1_pairexcl_none.pt2   (lower_kind="graph", NO exclusion)
 
-The pair models exercise the C++ pair-exclusion ingestion seam:
-``applyPairExclusion`` (graph route) / ``applyPairExclusionNlist`` (dense route)
-plus the ``pair_exclude_types`` metadata round-trip in ``DeepPotPTExpt::init``.
-Model-level pair exclusion is a graph-BUILD transform (decision #18): it is
-folded into ``edge_mask`` at build time (``applyPairExclusion`` in C++, the
-NeighborGraph builder in Python ``DeepEval``), NOT inside the exported ``.pt2``
-lower. The gtest validates C++ energy/force vs the Python ``DeepEval`` reference
-at 1e-10 and, by comparing against the ``_none`` baseline, confirms the exclusion
-is actually active.
+The pair models exercise the C++ pair-exclusion ownership (decision #18/A4:
+exclusion is a BUILD-time transform on BOTH routes) plus the
+``pair_exclude_types`` metadata round-trip in ``DeepPotPTExpt::init``:
+
+- graph route: folded into ``edge_mask`` at build by ``applyPairExclusion``
+  (C++) / the NeighborGraph builder (Python DeepEval).
+- dense route: folded into the nlist at build by ``applyPairExclusionNlist``
+  (C++) / ``build_neighbor_list(pair_excl=...)`` (Python DeepEval).
+
+The exported lowers consume pre-excluded inputs and never re-apply the
+exclusion. The gtest validates C++ energy/force vs the Python ``DeepEval``
+reference at 1e-10 and, by comparing against the ``_none`` baseline, confirms
+the exclusion is actually active.
 
 Reference sidecar files (.expected) consumed by the C++ gtest are written from
 the Python ``DeepEval`` evaluation of each pair model (PBC + NoPBC sections).

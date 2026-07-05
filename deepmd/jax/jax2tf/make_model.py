@@ -11,8 +11,16 @@ AutoGraph before it invokes the jax2tf-converted model body.
 from collections.abc import (
     Callable,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import tensorflow as tf
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -52,8 +60,15 @@ def model_call_from_call_lower(
     fparam: tf.Tensor,
     aparam: tf.Tensor,
     do_atomic_virial: bool = False,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, tf.Tensor]:
-    """Return model prediction from lower interface."""
+    """Return model prediction from lower interface.
+
+    ``pair_excl`` is the model-level pair-type exclusion mask. Exclusion is a
+    nlist-BUILD transform (decision #18/A4): it is folded into the nlist here,
+    in the traced TF wrapper, because the lower JAX model consumes a
+    pre-excluded nlist and never re-applies it.
+    """
     atype_shape = tf.shape(atype)
     nframes, nloc = atype_shape[0], atype_shape[1]
     cc, bb, fp, ap = coord, box, fparam, aparam
@@ -78,6 +93,31 @@ def model_call_from_call_lower(
         # need to be distinguished here
         distinguish_types=False,
     )
+    if pair_excl is not None and len(pair_excl.get_exclude_types()) > 0:
+        # TF twin of ``apply_pair_exclusion_nlist`` (nlist-BUILD transform,
+        # decision #18/A4): erase excluded type-pairs to -1 via the flat
+        # (ntypes+1)^2 keep table, exactly like the numpy / C++ versions.
+        n1 = pair_excl.ntypes + 1
+        table = tf.constant(pair_excl.type_mask, dtype=tf.int32)  # ((n1*n1),)
+        nall = tf.shape(extended_atype)[1]
+        # map -1 (empty slot) to the virtual atom appended at index nall
+        ae = tf.concat(
+            [
+                extended_atype,
+                tf.fill([nframes, 1], tf.constant(pair_excl.ntypes, atype.dtype)),
+            ],
+            axis=1,
+        )
+        nlist_for_type = tf.where(
+            nlist == -1, tf.fill(tf.shape(nlist), tf.cast(nall, nlist.dtype)), nlist
+        )
+        type_j = tf.gather(ae, nlist_for_type, batch_dims=1)  # (nf, nloc, nnei)
+        type_i = ae[:, :nloc] * n1  # (nf, nloc)
+        type_ij = type_i[:, :, None] + type_j
+        keep = tf.gather(table, tf.cast(type_ij, tf.int32))
+        nlist = tf.where(
+            keep == 1, nlist, tf.fill(tf.shape(nlist), tf.cast(-1, nlist.dtype))
+        )
     extended_coord = tf.reshape(extended_coord, [nframes, -1, 3])
     model_predict_lower = call_lower(
         extended_coord,

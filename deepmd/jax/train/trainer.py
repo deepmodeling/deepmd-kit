@@ -17,8 +17,14 @@ from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import numpy as np
 import optax
@@ -773,6 +779,7 @@ class DPTrainer(AbstractTrainer):
             box=jax_data["box"] if jax_data["find_box"] else None,
             fparam=jax_data.get("fparam", None),
             aparam=jax_data.get("aparam", None),
+            pair_excl=getattr(model.atomic_model, "pair_excl", None),
         )
         return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
 
@@ -1007,6 +1014,7 @@ def prepare_input(
     box: np.ndarray | None = None,
     fparam: np.ndarray | None = None,
     aparam: np.ndarray | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -1038,6 +1046,9 @@ def prepare_input(
         # types will be distinguished in the lower interface,
         # so it doesn't need to be distinguished here
         distinguish_types=False,
+        # model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4); the lower consumes a pre-excluded nlist.
+        pair_excl=pair_excl,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     return extended_coord, extended_atype, nlist, mapping, fp, ap

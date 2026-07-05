@@ -740,17 +740,15 @@ def _collect_metadata(
     meta["lower_input_kind"] = "graph" if lower_kind == "graph" else "nlist"
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
-    # ``[ti, tj]`` type pairs whose interaction is dropped.  The compiled AOTI
-    # forward ALREADY applies this exclusion internally (the graph seam
-    # ``apply_pair_exclusion`` / dense seam ``apply_pair_exclusion_nlist`` is
-    # traced into the exported artifact), so this field is redundant for the
-    # compiled math.  It is serialized so that the C++ loaders
-    # (``DeepPotPTExpt::init``) can rebuild the flat ``(ntypes+1)^2`` keep table
-    # and re-apply the SAME transform (``applyPairExclusion`` /
-    # ``applyPairExclusionNlist`` in ``commonPT.h``) at the ingestion seam as an
-    # idempotent backstop, keeping the C++ ingestion path side-by-side
-    # reviewable with the Python transforms.  Descriptor-level ``exclude_types``
-    # needs NO metadata: it is fully inside the compiled graph.
+    # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
+    # BUILD-time transform on BOTH routes (decision #18/A4): the exported
+    # lower (graph edge_mask / dense nlist) consumes a pre-excluded input and
+    # never re-applies it, so every feeder — Python builders, DeepEval, C++
+    # ``applyPairExclusion`` / ``applyPairExclusionNlist`` — MUST fold the
+    # exclusion in at build.  This metadata field is what lets external
+    # feeders (C++ ``DeepPotPTExpt::init``, metadata-only DeepEval) rebuild
+    # the mask.  Descriptor-level ``exclude_types`` needs NO metadata: it is
+    # fully inside the compiled artifact.
     pair_exclude_types: list[list[int]] = []
     for obj in (
         getattr(model, "atomic_model", None),

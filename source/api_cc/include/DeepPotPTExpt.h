@@ -334,9 +334,10 @@ class DeepPotPTExpt : public DeepPotBackend {
   // Flat (ntypes+1)^2 model-level pair-type keep table, rebuilt in ``init``
   // from the ``pair_exclude_types`` metadata field (see
   // ``deepmd::buildPairExcludeTable``).  Empty => no model-level exclusion.
-  // Applied at the C++ ingestion seam (``applyPairExclusion`` graph /
-  // ``applyPairExclusionNlist`` dense) as an idempotent backstop; the compiled
-  // .pt2 graph already applies the same transform internally.
+  // Exclusion is a BUILD-time transform (decision #18/A4): the C++ ingestion
+  // seam is the single application site (``applyPairExclusion`` graph /
+  // ``applyPairExclusionNlist`` dense); the exported .pt2 lowers consume
+  // pre-excluded inputs and never re-apply it.
   std::vector<int> pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;

@@ -26,6 +26,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
     build_neighbor_list,
     extend_coord_with_ghosts,
 )
@@ -211,6 +212,13 @@ class TestDpa1GraphLower:
         nf = ext_coord.shape[0]
         nloc = self.natoms
 
+        # Model-level pair_exclude is a nlist-BUILD transform (decision
+        # #18/A4): BOTH lowers consume pre-excluded inputs, so fold the
+        # exclusion into the dense nlist here (mirrors the C++
+        # ``applyPairExclusionNlist`` build step).
+        nlist = apply_pair_exclusion_nlist(
+            nlist, ext_atype, model.atomic_model.pair_excl
+        )
         legacy = model.forward_common_lower(
             ext_coord.clone().requires_grad_(True),
             ext_atype,
