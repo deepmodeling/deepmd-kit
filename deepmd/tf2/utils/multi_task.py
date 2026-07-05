@@ -332,14 +332,7 @@ def _share_fitting(
     _share_tf2_state_attrs(
         link_class,
         base_class,
-        excluded={
-            "bias_atom_e",
-            "case_embd",
-            "fparam_avg",
-            "fparam_inv_std",
-            "aparam_avg",
-            "aparam_inv_std",
-        },
+        shared_attr_names={"nets"},
     )
 
 
@@ -397,11 +390,12 @@ def _share_tf2_state_attrs(
     link_class: Any,
     base_class: Any,
     *,
-    excluded: set[str],
+    shared_attr_names: set[str],
 ) -> None:
-    for name, value in list(vars(link_class).items()):
-        if name in excluded or name.startswith("_"):
+    for name in shared_attr_names:
+        if not hasattr(link_class, name) or not hasattr(base_class, name):
             continue
+        value = getattr(link_class, name)
         if _is_shareable_tf2_state(value):
             setattr(link_class, name, getattr(base_class, name))
 

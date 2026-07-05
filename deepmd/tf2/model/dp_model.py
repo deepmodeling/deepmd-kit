@@ -150,6 +150,7 @@ def make_tf2_dp_model_from_dpmodel(
                 fparam=to_tensorflow_array(fparam),
                 aparam=to_tensorflow_array(aparam),
                 do_atomic_virial=do_atomic_virial,
+                do_deriv_c=do_deriv_c,
                 extended_coord_corr=to_tensorflow_array(extended_coord_corr),
                 comm_dict=comm_dict,
                 charge_spin=to_tensorflow_array(charge_spin),

@@ -177,6 +177,7 @@ def model_call_from_call_lower(
             mapping = to_tensorflow_array(mapping_tensor)
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     if coord_corr is not None:
+        coord_corr = xp.reshape(coord_corr, (nframes, nloc, 3))
         mapping_idx = xp.tile(
             xp.reshape(mapping, (nframes, -1, 1)),
             (1, 1, 3),

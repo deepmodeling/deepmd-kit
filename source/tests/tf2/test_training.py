@@ -46,9 +46,12 @@ from deepmd.tf2.utils.jit import (
     default_jit_compile,
 )
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:.*__init__ missing .*:DeprecationWarning:gast\\.astn"
-)
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:.*__init__ missing .*:DeprecationWarning:gast\\.astn"
+    ),
+    pytest.mark.timeout(60),
+]
 
 
 class _LinearModel(tf.Module):
@@ -325,6 +328,83 @@ def test_model_call_from_call_lower_uses_tf2_native_communicate(
     assert isinstance(to_tf_tensor(result["energy_redu"]), tf.Tensor)
 
 
+def test_model_call_from_call_lower_reshapes_coord_corr_for_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    captured: dict[str, Any] = {}
+
+    def fake_communicate(
+        model_ret: dict[str, Any],
+        model_output_def: ModelOutputDef,
+        mapping: Any,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, Any]:
+        del model_output_def, mapping, do_atomic_virial
+        return model_ret
+
+    monkeypatch.setattr(
+        make_model_module,
+        "communicate_extended_output",
+        fake_communicate,
+    )
+
+    def call_lower(
+        extended_coord: Any,
+        extended_atype: Any,
+        nlist: Any,
+        mapping: Any,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del extended_coord, nlist, mapping
+        captured["extended_coord_corr"] = kwargs["extended_coord_corr"]
+        atype = to_tf_tensor(extended_atype)
+        assert atype is not None
+        return {
+            "energy": tf.ones(
+                tf.concat([tf.shape(atype), tf.constant([1], dtype=tf.int32)], axis=0),
+                dtype=tf.float64,
+            )
+        }
+
+    model_output_def = ModelOutputDef(
+        FittingOutputDef(
+            [
+                OutputVariableDef(
+                    "energy",
+                    [1],
+                    reducible=True,
+                    r_differentiable=True,
+                )
+            ]
+        )
+    )
+
+    make_model_module.model_call_from_call_lower(
+        call_lower=call_lower,
+        rcut=1.0,
+        sel=[1],
+        mixed_types=False,
+        model_output_def=model_output_def,
+        coord=tf.constant([[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]], dtype=tf.float64),
+        atype=tf.constant([[0, 0]], dtype=tf.int32),
+        box=None,
+        fparam=None,
+        aparam=None,
+        do_deriv_c=True,
+        coord_corr_for_virial=tf.constant(
+            [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]],
+            dtype=tf.float64,
+        ),
+        pass_lower_kwargs=True,
+    )
+
+    np.testing.assert_allclose(
+        to_tf_tensor(captured["extended_coord_corr"]).numpy(),
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]],
+    )
+
+
 def test_tf2_dp_model_call_common_uses_tf2_helper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -389,6 +469,30 @@ def test_tf2_dp_model_call_common_uses_tf2_helper(
     assert captured["pass_lower_kwargs"] is True
     assert captured["call_lower"] == model.call_common_lower
     assert isinstance(to_tf_tensor(captured["coord"]), tf.Tensor)
+
+
+def test_tf2_dp_model_call_common_lower_forwards_do_deriv_c() -> None:
+    dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
+    captured: dict[str, Any] = {}
+
+    class FakeDPModel:
+        def call_common_lower(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            del args
+            captured.update(kwargs)
+            return {}
+
+    model_class = dp_model_module.make_tf2_dp_model_from_dpmodel(FakeDPModel, object)
+    model = model_class()
+
+    model.call_common_lower(
+        tf.zeros((1, 1, 3), dtype=tf.float64),
+        tf.zeros((1, 1), dtype=tf.int32),
+        tf.zeros((1, 1, 1), dtype=tf.int32),
+        do_deriv_c=False,
+        nlist_is_formatted=False,
+    )
+
+    assert captured["do_deriv_c"] is False
 
 
 def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
@@ -661,6 +765,96 @@ def test_trainer_applies_enable_compile_to_models() -> None:
     assert calls == [("a", True), ("b", True)]
 
 
+def test_write_checkpoint_directory_does_not_mutate_training_step(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trainer = object.__new__(Trainer)
+    trainer.step = tf.Variable(7, dtype=tf.int64, trainable=False)
+    trainer.optimizer = tf.keras.optimizers.Adam()
+    trainer.model_container = tf.Module()
+
+    def fake_write_training_state(directory: Any, *, step: int) -> None:
+        del directory, step
+
+    monkeypatch.setattr(trainer, "_write_training_state", fake_write_training_state)
+
+    Trainer._write_checkpoint_directory(trainer, tmp_path / "best", step=3)
+
+    assert int(trainer.step.numpy()) == 7
+
+
+def test_serialization_checkpoint_directory_without_latest_is_not_prefix(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serialization = importlib.import_module("deepmd.tf2.utils.serialization")
+    checkpoint_dir = tmp_path / "model.tf2"
+    checkpoint_dir.mkdir()
+    monkeypatch.setattr(serialization.tf.train, "latest_checkpoint", lambda path: None)
+
+    with pytest.raises(FileNotFoundError):
+        serialization._resolve_checkpoint_path(checkpoint_dir)
+
+
+def test_restore_models_from_checkpoint_validates_restore_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serialization = importlib.import_module("deepmd.tf2.utils.serialization")
+    calls: list[str] = []
+
+    class FakeStatus:
+        def expect_partial(self) -> "FakeStatus":
+            calls.append("expect_partial")
+            return self
+
+        def assert_existing_objects_matched(self) -> None:
+            calls.append("assert_existing_objects_matched")
+
+    class FakeCheckpoint:
+        def __init__(self, **kwargs: Any) -> None:
+            del kwargs
+
+        def restore(self, checkpoint_path: str) -> FakeStatus:
+            calls.append(checkpoint_path)
+            return FakeStatus()
+
+    monkeypatch.setattr(
+        serialization,
+        "_build_models",
+        lambda model_def_script: {DEFAULT_TASK_KEY: tf.Module()},
+    )
+    monkeypatch.setattr(serialization, "_set_min_nbor_dist", lambda models, value: None)
+    monkeypatch.setattr(
+        serialization,
+        "apply_shared_links",
+        lambda models, shared_links, resume: None,
+    )
+    monkeypatch.setattr(serialization.tf.train, "Checkpoint", FakeCheckpoint)
+
+    serialization._restore_models_from_checkpoint(
+        "ckpt-1",
+        {"type_map": ["O"]},
+        {"min_nbor_dist": None, "shared_links": None},
+    )
+
+    assert calls == ["ckpt-1", "expect_partial", "assert_existing_objects_matched"]
+
+
+def test_share_tf2_state_attrs_uses_allowlist_only() -> None:
+    multi_task = importlib.import_module("deepmd.tf2.utils.multi_task")
+    base_extra = tf.Variable(2.0)
+    link_extra = tf.Variable(1.0)
+    base = SimpleNamespace(nets=tf.Module(), extra=base_extra)
+    link = SimpleNamespace(nets=tf.Module(), extra=link_extra)
+
+    multi_task._share_tf2_state_attrs(link, base, shared_attr_names={"nets"})
+
+    assert link.nets is base.nets
+    assert link.extra is link_extra
+    assert link.extra is not base_extra
+
+
 def test_train_step_passes_float_natoms_to_compiled_step() -> None:
     trainer = object.__new__(Trainer)
     trainer.lr_schedule = SimpleNamespace(value=lambda step: 0.25)
@@ -766,7 +960,7 @@ def test_train_entrypoint_builds_data_without_descriptor_rcut(
         type_map: ClassVar[list[str]] = ["O", "H"]
 
         def print_summary(self, *args: Any) -> None:
-            del args
+            pass
 
     def fake_get_data(
         params: dict[str, Any],

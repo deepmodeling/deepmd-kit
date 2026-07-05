@@ -612,7 +612,7 @@ def _resolve_checkpoint_path(path: Path) -> tuple[str, Path]:
             latest = tf.train.latest_checkpoint(str(candidate))
             if latest is not None:
                 return latest, candidate
-    if path.exists() or Path(f"{path}.index").exists():
+    if path.is_file() or Path(f"{path}.index").is_file():
         return str(path), path.parent
     raise FileNotFoundError(
         f"Cannot find TF2 checkpoint {str(path)!r}. Expected a CheckpointManager "
@@ -630,8 +630,17 @@ def _restore_models_from_checkpoint(
     apply_shared_links(models, state.get("shared_links"), resume=True)
     container = _TaskModelContainer(models)
     checkpoint = tf.train.Checkpoint(model=container)
-    checkpoint.restore(checkpoint_path).expect_partial()
+    _materialize_module_variables(container)
+    restore_status = checkpoint.restore(checkpoint_path).expect_partial()
+    _materialize_module_variables(container)
+    restore_status.assert_existing_objects_matched()
     return models
+
+
+def _materialize_module_variables(module: tf.Module) -> None:
+    """Touch tracked variables before validating checkpoint restore status."""
+    tuple(module.variables)
+    tuple(module.trainable_variables)
 
 
 def _build_models(model_def_script: dict[str, Any]) -> dict[str, BaseModel]:

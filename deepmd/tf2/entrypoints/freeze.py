@@ -5,9 +5,6 @@ from __future__ import (
     annotations,
 )
 
-from copy import (
-    deepcopy,
-)
 from typing import (
     Any,
 )
@@ -70,7 +67,7 @@ def select_model_branch(
             f"{list(model_def_script['model_dict'])}."
         )
     resolved_head = model_alias_dict[head]
-    selected = deepcopy(data)
+    selected = data.copy()
     selected["model"] = data["model"]["model_dict"][resolved_head]
     selected["model_def_script"] = model_def_script["model_dict"][resolved_head]
     min_nbor_dist = data.get("min_nbor_dist")

@@ -395,14 +395,23 @@ class Trainer(AbstractTrainer):
             checkpoint_name=Path(self.save_ckpt).name,
         )
 
+        restart_restore: tuple[str, Any] | None = None
         if init_model is not None:
             self._restore_model(init_model)
             self.step.assign(0)
         elif restart_model is not None:
-            self._restore_checkpoint(restart_model)
-            self.start_step = int(self.step.numpy())
+            restart_restore = self._restore_checkpoint(restart_model)
 
         self._build_optimizer_slots()
+        if restart_restore is not None:
+            resolved, restore_status = restart_restore
+            restore_status.assert_existing_objects_matched()
+            self.start_step = int(self.step.numpy())
+            log.info(
+                "Restarted TF2 training from %s at step %d",
+                resolved,
+                self.start_step,
+            )
         self._compiled_train_steps: dict[str, Any] = {}
         self._compiled_eval_steps: dict[str, Any] = {}
         self.training_tasks = self._make_training_tasks()
@@ -552,7 +561,7 @@ class Trainer(AbstractTrainer):
                 latest = tf.train.latest_checkpoint(str(candidate))
                 if latest is not None:
                     return latest
-        if path.exists() or Path(f"{path}.index").exists():
+        if path.is_file() or Path(f"{path}.index").is_file():
             return str(path)
         raise FileNotFoundError(
             f"Cannot find TF2 checkpoint {checkpoint_path!r}. Expected a "
@@ -562,15 +571,14 @@ class Trainer(AbstractTrainer):
     def _restore_model(self, checkpoint_path: str) -> None:
         resolved = self._resolve_checkpoint_path(checkpoint_path)
         model_checkpoint = tf.train.Checkpoint(model=self.model_container)
-        model_checkpoint.restore(resolved).expect_partial()
+        restore_status = model_checkpoint.restore(resolved).expect_partial()
+        restore_status.assert_existing_objects_matched()
         log.info("Initialized TF2 model variables from %s", resolved)
 
-    def _restore_checkpoint(self, checkpoint_path: str) -> None:
+    def _restore_checkpoint(self, checkpoint_path: str) -> tuple[str, Any]:
         resolved = self._resolve_checkpoint_path(checkpoint_path)
-        self.checkpoint.restore(resolved).expect_partial()
-        log.info(
-            "Restarted TF2 training from %s at step %d", resolved, self.step.numpy()
-        )
+        restore_status = self.checkpoint.restore(resolved).expect_partial()
+        return resolved, restore_status
 
     @staticmethod
     def _model_params_by_task(
@@ -735,11 +743,13 @@ class Trainer(AbstractTrainer):
             probabilities=self.model_prob,
         )
 
-    def run(self) -> None:
+    def run(self, tasks: TrainingTaskCollection | None = None) -> None:
         """Run TF2 training through the backend-independent trainer loop."""
+        if tasks is None:
+            tasks = self.training_tasks
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
-        super().run(self.training_tasks)
+        super().run(tasks)
         if self.change_bias_after_training:
             self._change_bias_after_training()
             if self.rank_context.is_chief:
@@ -1019,11 +1029,15 @@ class Trainer(AbstractTrainer):
         self._write_checkpoint_directory(save_path, step=step)
 
     def _write_checkpoint_directory(self, directory: Path, *, step: int) -> None:
-        self.step.assign(step)
         if directory.exists():
             shutil.rmtree(directory)
+        checkpoint = tf.train.Checkpoint(
+            step=tf.Variable(step, dtype=tf.int64, trainable=False, name="step"),
+            optimizer=self.optimizer,
+            model=self.model_container,
+        )
         manager = tf.train.CheckpointManager(
-            self.checkpoint,
+            checkpoint,
             directory=str(directory),
             max_to_keep=1,
             checkpoint_name=directory.stem,
