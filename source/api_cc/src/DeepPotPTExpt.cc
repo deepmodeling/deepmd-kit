@@ -2,6 +2,7 @@
 #include "DeepPotPTExpt.h"
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+#include <c10/core/DeviceGuard.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
 #include <algorithm>
@@ -10,11 +11,6 @@
 #include <map>
 #include <numeric>
 #include <sstream>
-
-// CUDAGuard pins the model's device for the fully device-resident edge path.
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
-#include <c10/cuda/CUDAGuard.h>
-#endif
 
 #include "SimulationRegion.h"
 #include "common.h"
@@ -1789,9 +1785,8 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
         "compute_edges_gpu requires an edge-input (SeZM/DPA4) .pt2 model.");
   }
   translate_error([&] {
-    const c10::cuda::CUDAGuard device_guard(
-        static_cast<c10::DeviceIndex>(gpu_id));
     const torch::Device device(torch::kCUDA, gpu_id);
+    const c10::DeviceGuard device_guard(device);
     const auto opt_f64 =
         torch::TensorOptions().dtype(torch::kFloat64).device(device);
     const auto opt_i32 =
