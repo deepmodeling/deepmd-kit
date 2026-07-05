@@ -832,7 +832,12 @@ class Trainer(AbstractTrainer):
         )
 
     def _use_prepared_step(self, task_key: str) -> bool:
-        return bool(getattr(self, "enable_compile", False))
+        if not bool(getattr(self, "enable_compile", False)):
+            return False
+        model = self.models[task_key]
+        return callable(getattr(model, "call_common_lower", None)) or callable(
+            getattr(model, "_call_common_lower_formatted", None)
+        )
 
     def _prepare_lower_batch(
         self,
@@ -1324,6 +1329,7 @@ class Trainer(AbstractTrainer):
                 task_key,
                 model_ret,
                 label_dict=label_dict,
+                do_virial=do_virial,
             )
         return model.call(
             input_dict["coord"],
@@ -1392,6 +1398,7 @@ class Trainer(AbstractTrainer):
             task_key,
             model_ret,
             label_dict=label_dict,
+            do_virial=do_virial,
         )
 
     def _translate_model_ret_to_loss_dict(
@@ -1400,6 +1407,7 @@ class Trainer(AbstractTrainer):
         model_ret: dict[str, Any],
         *,
         label_dict: dict[str, Any] | None = None,
+        do_virial: bool = True,
     ) -> dict[str, Any]:
         translated_output_def = getattr(
             self.models[task_key],
@@ -1419,7 +1427,8 @@ class Trainer(AbstractTrainer):
                 output_def,
             )
         if (
-            label_dict is not None
+            not do_virial
+            and label_dict is not None
             and "virial" in label_dict
             and "virial" in output_defs
             and "virial" not in model_pred

@@ -478,7 +478,7 @@ def test_tf2_dp_model_call_common_uses_tf2_helper(
     assert isinstance(to_tf_tensor(captured["coord"]), tf.Tensor)
 
 
-def test_tf2_dp_model_call_common_lower_forwards_do_deriv_c() -> None:
+def test_tf2_dp_model_call_common_lower_does_not_forward_do_deriv_c() -> None:
     dp_model_module = importlib.import_module("deepmd.tf2.model.dp_model")
     captured: dict[str, Any] = {}
 
@@ -499,7 +499,7 @@ def test_tf2_dp_model_call_common_lower_forwards_do_deriv_c() -> None:
         nlist_is_formatted=False,
     )
 
-    assert captured["do_deriv_c"] is False
+    assert "do_deriv_c" not in captured
 
 
 def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
@@ -794,16 +794,23 @@ def test_trainer_applies_enable_compile_to_models() -> None:
     assert calls == [("a", True), ("b", True)]
 
 
-def test_prepared_step_only_depends_on_enable_compile() -> None:
+def test_prepared_step_uses_enable_compile_and_model_capability() -> None:
     trainer = object.__new__(Trainer)
     trainer.enable_compile = True
     trainer.losses = {
         "se": EnergyLoss(starter_learning_rate=1.0),
         "tensor": object(),
+        "plain": object(),
+    }
+    trainer.models = {
+        "se": SimpleNamespace(call_common_lower=lambda: None),
+        "tensor": SimpleNamespace(_call_common_lower_formatted=lambda: None),
+        "plain": SimpleNamespace(),
     }
 
     assert Trainer._use_prepared_step(trainer, "se") is True
     assert Trainer._use_prepared_step(trainer, "tensor") is True
+    assert Trainer._use_prepared_step(trainer, "plain") is False
 
     trainer.enable_compile = False
 
@@ -841,6 +848,41 @@ def test_model_ret_translation_uses_translated_output_def() -> None:
     }
 
 
+def test_model_ret_translation_only_uses_label_virial_when_not_requested() -> None:
+    trainer = object.__new__(Trainer)
+    trainer.models = {
+        "energy": SimpleNamespace(
+            translated_output_def=lambda: {
+                "energy": SimpleNamespace(name="energy_redu", shape=[1], atomic=False),
+                "virial": SimpleNamespace(
+                    name="energy_derv_c_redu",
+                    shape=[9],
+                    atomic=False,
+                ),
+            }
+        )
+    }
+    label_dict = {"virial": tf.ones((1, 9), dtype=tf.float64)}
+
+    skipped_virial = Trainer._translate_model_ret_to_loss_dict(
+        trainer,
+        "energy",
+        {"energy_redu": tf.ones((1, 1), dtype=tf.float64)},
+        label_dict=label_dict,
+        do_virial=False,
+    )
+    requested_virial = Trainer._translate_model_ret_to_loss_dict(
+        trainer,
+        "energy",
+        {"energy_redu": tf.ones((1, 1), dtype=tf.float64)},
+        label_dict=label_dict,
+        do_virial=True,
+    )
+
+    assert skipped_virial["virial"] is label_dict["virial"]
+    assert "virial" not in requested_virial
+
+
 def test_write_checkpoint_directory_does_not_mutate_training_step(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -851,7 +893,7 @@ def test_write_checkpoint_directory_does_not_mutate_training_step(
     trainer.model_container = tf.Module()
 
     def fake_write_training_state(directory: Any, *, step: int) -> None:
-        del directory, step
+        pass
 
     monkeypatch.setattr(trainer, "_write_training_state", fake_write_training_state)
 
@@ -888,8 +930,8 @@ def test_restore_models_from_checkpoint_validates_restore_status(
             calls.append("assert_existing_objects_matched")
 
     class FakeCheckpoint:
-        def __init__(self, **kwargs: Any) -> None:
-            del kwargs
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
 
         def restore(self, checkpoint_path: str) -> FakeStatus:
             calls.append(checkpoint_path)
