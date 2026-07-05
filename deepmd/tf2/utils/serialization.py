@@ -612,6 +612,11 @@ def _resolve_checkpoint_path(path: Path) -> tuple[str, Path]:
             latest = tf.train.latest_checkpoint(str(candidate))
             if latest is not None:
                 return latest, candidate
+    for candidate in candidates:
+        if candidate.is_dir():
+            raise FileNotFoundError(
+                f"Cannot find a latest TF2 checkpoint in directory {str(candidate)!r}."
+            )
     if path.is_file() or Path(f"{path}.index").is_file():
         return str(path), path.parent
     raise FileNotFoundError(

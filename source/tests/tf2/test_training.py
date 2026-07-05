@@ -915,6 +915,21 @@ def test_serialization_checkpoint_directory_without_latest_is_not_prefix(
         serialization._resolve_checkpoint_path(checkpoint_dir)
 
 
+def test_serialization_empty_checkpoint_candidate_directory_is_not_prefix(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serialization = importlib.import_module("deepmd.tf2.utils.serialization")
+    checkpoint_prefix = tmp_path / "model"
+    checkpoint_dir = tmp_path / "model.tf2"
+    checkpoint_dir.mkdir()
+    checkpoint_prefix.touch()
+    monkeypatch.setattr(serialization.tf.train, "latest_checkpoint", lambda path: None)
+
+    with pytest.raises(FileNotFoundError):
+        serialization._resolve_checkpoint_path(checkpoint_prefix)
+
+
 def test_restore_models_from_checkpoint_validates_restore_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
