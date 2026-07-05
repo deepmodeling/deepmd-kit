@@ -3,6 +3,9 @@
 
 import importlib
 import os
+from contextlib import (
+    nullcontext,
+)
 from types import (
     SimpleNamespace,
 )
@@ -1057,12 +1060,36 @@ def test_batch_needs_virial_handles_numpy_find_flags() -> None:
 
 
 def test_tensorboard_step_writes_tensors_without_float_sync(
-    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class FakeSummaryWriter:
+        def __init__(self) -> None:
+            self.flushes = 0
+
+        def as_default(self) -> Any:
+            return nullcontext()
+
+        def flush(self) -> None:
+            self.flushes += 1
+
+    scalar_calls = []
+
+    def fake_summary_scalar(
+        name: str,
+        data: Any,
+        *,
+        step: Any = None,
+        description: Any = None,
+    ) -> bool:
+        del description
+        scalar_calls.append((name, data, step))
+        return True
+
     trainer = object.__new__(Trainer)
-    trainer.summary_writer = tf.summary.create_file_writer(str(tmp_path))
+    trainer.summary_writer = FakeSummaryWriter()
     trainer.tensorboard_freq = 1
     trainer.multi_task = False
+    monkeypatch.setattr(tf.summary, "scalar", fake_summary_scalar)
 
     def fail_if_float_sync_is_used(more_loss: dict[str, Any]) -> dict[str, float]:
         del more_loss
@@ -1080,7 +1107,15 @@ def test_tensorboard_step_writes_tensors_without_float_sync(
             "l2_regularization": tf.constant(2.0, dtype=tf.float64),
         },
     )
-    trainer.summary_writer.close()
+
+    assert [call[0] for call in scalar_calls] == ["learning_rate", "train/rmse"]
+    assert scalar_calls[0][1].dtype == tf.float64
+    assert scalar_calls[0][1].numpy() == 0.1
+    assert scalar_calls[0][2] == 1
+    assert scalar_calls[1][1].dtype == tf.float64
+    assert scalar_calls[1][1].numpy() == 1.0
+    assert scalar_calls[1][2] == 1
+    assert trainer.summary_writer.flushes == 1
 
 
 def test_train_entrypoint_builds_data_without_descriptor_rcut(
