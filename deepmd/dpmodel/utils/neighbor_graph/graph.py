@@ -203,7 +203,10 @@ def apply_pair_exclusion(
         (shape-static; the ONLY mode allowed in compiled / AOTI paths).
         If ``True``, additionally drop masked edges so the returned graph
         has no padding on the edge axis (data-dependent shape; eager /
-        dynamic-nedge only).
+        dynamic-nedge only). When the graph carries angle fields, angles are
+        remapped onto the compacted edge axis and any angle whose constituent
+        edges were excluded is dropped (``angle_mask`` present without
+        ``angle_index`` is rejected: there are no indices to remap).
 
     Returns
     -------
@@ -232,21 +235,46 @@ def apply_pair_exclusion(
         edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
     )
     if compact:
-        if graph.angle_index is not None or graph.angle_mask is not None:
-            raise NotImplementedError(
-                "apply_pair_exclusion(compact=True) is not supported when the "
-                "NeighborGraph carries angle fields (angle_index / angle_mask). "
-                "Angle indices reference pre-compaction edge positions and would "
-                "become silently wrong after edge compaction. Either use "
-                "compact=False (mask-only mode) or strip the angle fields first."
-            )
         (keep_idx,) = xp.nonzero(out.edge_mask)
-        out = dataclasses.replace(
-            out,
-            edge_index=out.edge_index[:, keep_idx],
-            edge_vec=xp.take(out.edge_vec, keep_idx, axis=0),
-            edge_mask=xp.take(out.edge_mask, keep_idx, axis=0),
-        )
+        fields = {
+            "edge_index": out.edge_index[:, keep_idx],
+            "edge_vec": xp.take(out.edge_vec, keep_idx, axis=0),
+            "edge_mask": xp.take(out.edge_mask, keep_idx, axis=0),
+        }
+        if out.angle_index is not None:
+            # Angles reference PRE-compaction edge positions; remap them to the
+            # compacted axis and drop any angle whose constituent edges were
+            # excluded. ``new_pos`` maps old edge position -> new position via an
+            # exclusive prefix sum over the survivors (-1 for dropped edges).
+            surv = xp.astype(out.edge_mask, out.edge_index.dtype)  # (E,) 0/1
+            rank = xp.cumulative_sum(surv, axis=0) - surv  # survivors before me
+            new_pos = xp.where(out.edge_mask, rank, xp.full_like(rank, -1))
+            a_new = xp.take(new_pos, out.angle_index[0, :], axis=0)
+            b_new = xp.take(new_pos, out.angle_index[1, :], axis=0)
+            both_survive = xp.logical_and(a_new >= 0, b_new >= 0)
+            if out.angle_mask is not None:
+                angle_keep = xp.logical_and(
+                    xp.astype(out.angle_mask, xp.bool), both_survive
+                )
+            else:
+                angle_keep = both_survive
+            (angle_keep_idx,) = xp.nonzero(angle_keep)
+            fields["angle_index"] = xp.stack(
+                [
+                    xp.take(a_new, angle_keep_idx, axis=0),
+                    xp.take(b_new, angle_keep_idx, axis=0),
+                ],
+                axis=0,
+            )
+            if out.angle_mask is not None:
+                fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
+        elif out.angle_mask is not None:
+            raise ValueError(
+                "apply_pair_exclusion(compact=True): angle_mask is set without "
+                "angle_index; cannot remap angles onto the compacted edge axis. "
+                "Provide angle_index too, or strip angle_mask first."
+            )
+        out = dataclasses.replace(out, **fields)
     return out
 
 

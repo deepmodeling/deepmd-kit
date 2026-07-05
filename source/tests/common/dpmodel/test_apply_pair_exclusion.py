@@ -171,7 +171,7 @@ def test_compact_invariance_vs_mask_only() -> None:
 
 
 # ---------------------------------------------------------------------------
-# compact=True with angle fields — must raise NotImplementedError
+# compact=True with angle fields — remap onto the compacted edge axis
 # ---------------------------------------------------------------------------
 
 
@@ -180,32 +180,84 @@ def _toy_graph_with_angles():
     g = _toy_graph()
     import dataclasses
 
-    # Two toy angles (pairs of edges sharing a center)
+    # Two toy angles (pairs of edges sharing a center), into edge positions [0,5)
+    # angle0 = (edge0, edge1);  angle1 = (edge1, edge2)
     angle_index = np.array([[0, 1], [1, 2]], dtype=np.int64)
     angle_mask = np.array([1, 1], dtype=np.int32)
     return dataclasses.replace(g, angle_index=angle_index, angle_mask=angle_mask)
 
 
-def test_compact_raises_when_angle_index_present() -> None:
-    """compact=True must raise NotImplementedError when angle_index is set."""
+def test_compact_drops_angles_touching_excluded_edges() -> None:
+    """compact=True remaps angle_index and drops angles whose edges were excluded."""
     g = _toy_graph_with_angles()
     atype = np.array([0, 1, 0, 1], dtype=np.int64)
-    with pytest.raises(NotImplementedError, match="angle"):
-        apply_pair_exclusion(g, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    # exclusion (0,1) masks edges 0 and 3 (see the mask-only test): survivors are
+    # old edges [1, 2] -> new positions [0, 1]; padding edge 4 is dropped too.
+    out = apply_pair_exclusion(g, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    # edges compacted to the two survivors
+    assert out.edge_index.shape[1] == 2
+    # angle0 = (edge0, edge1): edge0 excluded -> angle0 DROPPED.
+    # angle1 = (edge1, edge2): both survive -> kept, remapped (edge1->0, edge2->1).
+    np.testing.assert_array_equal(out.angle_index, [[0], [1]])
+    np.testing.assert_array_equal(out.angle_mask, [1])
+
+
+def test_compact_remaps_angles_when_no_angle_dropped() -> None:
+    """When exclusion drops no referenced edge, angles are remapped, none lost."""
+    g = _toy_graph_with_angles()
+    atype = np.array([0, 0, 0, 0], dtype=np.int64)  # (0,1) matches nothing
+    # all 4 real edges kept (new positions == old for [0,1,2,3]); padding dropped.
+    out = apply_pair_exclusion(g, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    assert out.edge_index.shape[1] == 4
+    # both angles survive; indices unchanged (survivor ranks equal old positions)
+    np.testing.assert_array_equal(out.angle_index, [[0, 1], [1, 2]])
+    np.testing.assert_array_equal(out.angle_mask, [1, 1])
+
+
+def test_compact_angle_index_without_mask_defaults_all_real() -> None:
+    """angle_index present, angle_mask None: treated as all-real, still remapped."""
+    import dataclasses
+
+    g = _toy_graph()
+    angle_index = np.array([[0, 1], [1, 2]], dtype=np.int64)
+    g2 = dataclasses.replace(g, angle_index=angle_index)  # angle_mask stays None
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+    out = apply_pair_exclusion(g2, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    # angle0 touches excluded edge0 -> dropped; angle1 kept & remapped
+    np.testing.assert_array_equal(out.angle_index, [[0], [1]])
+    assert out.angle_mask is None  # stays None (all remaining are real)
 
 
 def test_compact_raises_when_only_angle_mask_present() -> None:
-    """compact=True must raise even when only angle_mask (not angle_index) is set."""
+    """compact=True rejects angle_mask set without angle_index (nothing to remap)."""
     import dataclasses
 
     g = _toy_graph()
     angle_mask = np.array([1], dtype=np.int32)
     g_with_mask = dataclasses.replace(g, angle_mask=angle_mask)
     atype = np.array([0, 1, 0, 1], dtype=np.int64)
-    with pytest.raises(NotImplementedError, match="angle"):
+    with pytest.raises(ValueError, match="angle_mask is set without"):
         apply_pair_exclusion(
             g_with_mask, atype, PairExcludeMask(2, [(0, 1)]), compact=True
         )
+
+
+def test_compact_angle_torch_smoke() -> None:
+    """compact-mode angle remap runs under the torch namespace."""
+    torch = pytest.importorskip("torch")
+    g = _toy_graph_with_angles()
+    gt = NeighborGraph(
+        n_node=torch.from_numpy(g.n_node),
+        edge_index=torch.from_numpy(g.edge_index),
+        edge_vec=torch.from_numpy(g.edge_vec),
+        edge_mask=torch.from_numpy(g.edge_mask),
+        angle_index=torch.from_numpy(g.angle_index),
+        angle_mask=torch.from_numpy(g.angle_mask),
+    )
+    atype = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    out = apply_pair_exclusion(gt, atype, PairExcludeMask(2, [(0, 1)]), compact=True)
+    np.testing.assert_array_equal(out.angle_index.numpy(), [[0], [1]])
+    np.testing.assert_array_equal(out.angle_mask.numpy(), [1])
 
 
 def test_compact_works_when_angle_fields_are_none() -> None:
