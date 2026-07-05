@@ -1226,6 +1226,30 @@ class TestPropertyLossExtensiveGradAccum:
             f"all-ones mask must be no-op: {float(loss_m)} vs {float(loss_nm)}"
         )
 
+    def test_torch_backend_matches_numpy(self):
+        """The array-API path must work with torch tensors (pt_expt runs this).
+
+        A padded batch is fed once as numpy and once as torch; the extensive
+        per-frame normalization uses xp.sum(mask, axis=-1), which raises under
+        the array_api_compat torch namespace if axis is passed positionally.
+        """
+        import pytest
+
+        torch = pytest.importorskip("torch")
+        p = _rnd(2, PROP_TASK_DIM)
+        lab = _rnd(2, PROP_TASK_DIM)
+        loss_obj = self._make_loss("mse")
+        np_pred = {PROP_VAR: p, "mask": _MASK_PAD}
+        pt_pred = {
+            PROP_VAR: torch.tensor(p),
+            "mask": torch.tensor(_MASK_PAD),
+        }
+        loss_np, _ = loss_obj.call(1.0, NP, np_pred, {PROP_VAR: lab})
+        loss_pt, _ = loss_obj.call(1.0, NP, pt_pred, {PROP_VAR: torch.tensor(lab)})
+        assert np.isclose(float(loss_np), float(loss_pt)), (
+            f"torch path must match numpy: {float(loss_np)} vs {float(loss_pt)}"
+        )
+
 
 class TestPropertyLossIntensiveUnaffectedByMask:
     """Intensive property loss must be unchanged whether or not mask is present."""

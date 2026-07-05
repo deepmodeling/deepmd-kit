@@ -88,7 +88,7 @@ class PropertyLoss(Loss):
             if "mask" in model_dict:
                 # Per-frame real atom count: shape [nf] → broadcast over [nf, task_dim].
                 real_natoms = xp.reshape(
-                    xp.astype(xp.sum(model_dict["mask"], -1), pred.dtype),
+                    xp.astype(xp.sum(model_dict["mask"], axis=-1), pred.dtype),
                     (-1,) + (1,) * (pred.ndim - 1),
                 )
                 pred = pred / real_natoms
