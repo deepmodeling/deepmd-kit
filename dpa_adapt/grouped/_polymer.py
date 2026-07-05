@@ -363,11 +363,16 @@ def _load_scaler(scaler: dict[str, Any] | str | Path | None) -> dict[str, Any] |
 
 def _molar_weight(smiles: str, cache: Mapping[str, tuple[list[str], np.ndarray]]) -> float:
     """Approximate molar weight from the embedded atom symbols."""
-    from ase.data import atomic_masses, chemical_symbols
+    from rdkit import Chem
 
-    z_of = {sym: i for i, sym in enumerate(chemical_symbols)}
+    periodic_table = Chem.GetPeriodicTable()
     symbols, _ = cache[smiles]
-    return float(sum(atomic_masses[z_of[s]] for s in symbols))
+    return float(
+        sum(
+            periodic_table.GetAtomicWeight(periodic_table.GetAtomicNumber(symbol))
+            for symbol in symbols
+        )
+    )
 
 
 def _end_share(
