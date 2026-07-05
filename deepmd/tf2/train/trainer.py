@@ -55,12 +55,19 @@ from deepmd.tf2.common import (
     to_tensorflow_array,
     to_tf_tensor,
     unwrap_value,
+    wrap_value,
 )
 from deepmd.tf2.env import (
     tf,
 )
+from deepmd.tf2.make_model import (
+    prepare_lower_inputs,
+)
 from deepmd.tf2.model.model import (
     get_model,
+)
+from deepmd.tf2.transform_output import (
+    communicate_extended_output,
 )
 from deepmd.tf2.utils.multi_task import (
     apply_shared_links,
@@ -90,6 +97,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 TF2_TRAINING_STATE_FILE = "training_state.json"
+TF2_FULL_STEP_XLA_DESCRIPTOR_TYPES = {"se_e2_a"}
 
 
 def get_loss(
@@ -413,6 +421,8 @@ class Trainer(AbstractTrainer):
                 self.start_step,
             )
         self._compiled_train_steps: dict[str, Any] = {}
+        self._compiled_prepare_steps: dict[str, Any] = {}
+        self._compiled_prepared_train_steps: dict[str, Any] = {}
         self._compiled_eval_steps: dict[str, Any] = {}
         self.training_tasks = self._make_training_tasks()
         self.summary_writer: Any | None = None
@@ -786,15 +796,27 @@ class Trainer(AbstractTrainer):
         cur_lr = float(self.lr_schedule.value(step))
         input_dict, label_dict, natoms = self.get_data(is_train=True, task_key=task_key)
         do_virial = bool(label_dict.pop("_do_virial", True))
-        more_loss = self._compiled_train_step(
-            task_key,
-            input_dict,
-            label_dict,
-            tf.constant(float(natoms), dtype=tf.float64),
-            tf.constant(cur_lr, dtype=tf.float64),
-            tf.constant(step + 1, dtype=tf.int64),
-            do_virial,
-        )
+        if self._use_prepared_energy_step(task_key):
+            prepared = self._prepare_energy_batch(task_key, input_dict)
+            more_loss = self._compiled_prepared_energy_train_step(
+                task_key,
+                label_dict,
+                prepared,
+                tf.constant(float(natoms), dtype=tf.float64),
+                tf.constant(cur_lr, dtype=tf.float64),
+                tf.constant(step + 1, dtype=tf.int64),
+                do_virial,
+            )
+        else:
+            more_loss = self._compiled_train_step(
+                task_key,
+                input_dict,
+                label_dict,
+                tf.constant(float(natoms), dtype=tf.float64),
+                tf.constant(cur_lr, dtype=tf.float64),
+                tf.constant(step + 1, dtype=tf.int64),
+                do_virial,
+            )
         self._write_tensorboard_step(
             task_key,
             display_step=step + 1,
@@ -809,6 +831,151 @@ class Trainer(AbstractTrainer):
                 "cur_lr": cur_lr,
             },
         )
+
+    def _use_prepared_energy_step(self, task_key: str) -> bool:
+        if not bool(getattr(self, "enable_compile", False)):
+            return False
+        if not isinstance(self.losses[task_key], EnergyLoss):
+            return False
+        return self._descriptor_type(task_key) in TF2_FULL_STEP_XLA_DESCRIPTOR_TYPES
+
+    def _descriptor_type(self, task_key: str) -> str | None:
+        descriptor = self.model_params_by_task[task_key].get("descriptor")
+        if not isinstance(descriptor, Mapping):
+            return None
+        return str(descriptor.get("type", "se_e2_a"))
+
+    def _prepare_energy_batch(
+        self,
+        task_key: str,
+        input_dict: dict[str, Any],
+    ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
+        if task_key not in self._compiled_prepare_steps:
+            self._compiled_prepare_steps[task_key] = (
+                self._make_compiled_prepare_energy_batch(task_key)
+            )
+        prepared = self._compiled_prepare_steps[task_key](
+            input_dict["coord"],
+            input_dict["atype"],
+            input_dict.get("box"),
+            input_dict.get("fparam"),
+            input_dict.get("aparam"),
+            input_dict.get("charge_spin"),
+        )
+        return prepared[:-1]
+
+    def _make_compiled_prepare_energy_batch(self, task_key: str) -> Any:
+        model = self.models[task_key]
+
+        @tf.function(reduce_retracing=True)
+        def compiled_prepare_energy_batch(
+            coord: Any,
+            atype: Any,
+            box: Any,
+            fparam: Any,
+            aparam: Any,
+            charge_spin: Any,
+        ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any, bool]:
+            cc, bb, fp, ap, cs, _input_prec = model._input_type_cast(
+                to_tensorflow_array(coord),
+                box=to_tensorflow_array(box),
+                fparam=to_tensorflow_array(fparam),
+                aparam=to_tensorflow_array(aparam),
+                charge_spin=to_tensorflow_array(charge_spin),
+            )
+            return prepare_lower_inputs(
+                rcut=model.get_rcut(),
+                sel=model.get_sel(),
+                mixed_types=model.mixed_types(),
+                coord=cc,
+                atype=to_tensorflow_array(atype),
+                box=bb,
+                fparam=fp,
+                aparam=ap,
+                charge_spin=cs,
+            )
+
+        return compiled_prepare_energy_batch
+
+    def _compiled_prepared_energy_train_step(
+        self,
+        task_key: str,
+        label_dict: dict[str, Any],
+        prepared: tuple[Any, Any, Any, Any, Any, Any, Any, Any],
+        natoms: Any,
+        cur_lr: Any,
+        next_step: Any,
+        do_virial: bool,
+    ) -> dict[str, Any]:
+        if task_key not in self._compiled_prepared_train_steps:
+            self._compiled_prepared_train_steps[task_key] = (
+                self._make_compiled_prepared_energy_train_step(task_key)
+            )
+        return self._compiled_prepared_train_steps[task_key](
+            label_dict,
+            *prepared,
+            natoms,
+            cur_lr,
+            next_step,
+            do_virial,
+        )
+
+    def _make_compiled_prepared_energy_train_step(self, task_key: str) -> Any:
+        variables = _unique_variables(self.models[task_key].trainable_variables)
+
+        @tf.function(reduce_retracing=True, jit_compile=True)
+        def compiled_prepared_energy_train_step(
+            label_dict: dict[str, Any],
+            extended_coord: Any,
+            extended_atype: Any,
+            nlist: Any,
+            mapping: Any,
+            fparam: Any,
+            aparam: Any,
+            charge_spin: Any,
+            extended_coord_corr: Any,
+            natoms: Any,
+            cur_lr: Any,
+            next_step: Any,
+            do_virial: bool,
+        ) -> dict[str, Any]:
+            self._assign_learning_rate(cur_lr)
+            with tf.GradientTape() as tape:
+                model_pred = self._call_prepared_energy_model(
+                    task_key,
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                    extended_coord_corr,
+                    label_dict=label_dict,
+                    do_virial=do_virial,
+                )
+                loss, more_loss = self.losses[task_key](
+                    learning_rate=cur_lr,
+                    natoms=natoms,
+                    model_dict=model_pred,
+                    label_dict=label_dict,
+                )
+                loss_tensor = to_tf_tensor(loss)
+            gradients = tape.gradient(loss_tensor, variables)
+            gradients_and_variables = [
+                (grad, var)
+                for grad, var in zip(gradients, variables, strict=True)
+                if grad is not None
+            ]
+            if self.gradient_max_norm > 0.0 and gradients_and_variables:
+                grads, vars_ = zip(*gradients_and_variables, strict=True)
+                grads, _ = tf.clip_by_global_norm(grads, self.gradient_max_norm)
+                gradients_and_variables = list(zip(grads, vars_, strict=True))
+            self.optimizer.apply_gradients(gradients_and_variables)
+            self.step.assign(next_step)
+            return unwrap_value(more_loss)
+
+        return compiled_prepared_energy_train_step
 
     def _compiled_train_step(
         self,
@@ -1162,19 +1329,10 @@ class Trainer(AbstractTrainer):
                 do_atomic_virial=False,
                 do_deriv_c=do_virial,
             )
-            model_pred = {
-                "atom_energy": model_ret["energy"],
-                "energy": model_ret["energy_redu"],
-            }
-            if model_ret.get("energy_derv_r") is not None:
-                model_pred["force"] = model_ret["energy_derv_r"].squeeze(-2)
-            if model_ret.get("energy_derv_c_redu") is not None:
-                model_pred["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-            elif label_dict is not None and "virial" in label_dict:
-                model_pred["virial"] = label_dict["virial"]
-            if "mask" in model_ret:
-                model_pred["mask"] = model_ret["mask"]
-            return model_pred
+            return self._energy_model_ret_to_loss_dict(
+                model_ret,
+                label_dict=label_dict,
+            )
         return self.models[task_key].call(
             input_dict["coord"],
             input_dict["atype"],
@@ -1183,6 +1341,85 @@ class Trainer(AbstractTrainer):
             aparam=input_dict.get("aparam"),
             charge_spin=input_dict.get("charge_spin"),
         )
+
+    def _call_prepared_energy_model(
+        self,
+        task_key: str,
+        extended_coord: Any,
+        extended_atype: Any,
+        nlist: Any,
+        mapping: Any,
+        fparam: Any,
+        aparam: Any,
+        charge_spin: Any,
+        extended_coord_corr: Any,
+        *,
+        label_dict: dict[str, Any] | None = None,
+        do_virial: bool = True,
+    ) -> dict[str, Any]:
+        model = self.models[task_key]
+        call_lower_formatted = getattr(model, "_call_common_lower_formatted", None)
+        if callable(call_lower_formatted):
+            model_ret_lower = wrap_value(
+                call_lower_formatted(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=False,
+                    do_deriv_c=do_virial,
+                    extended_coord_corr=extended_coord_corr,
+                    charge_spin=charge_spin,
+                )
+            )
+        else:
+            model_ret_lower = model.call_common_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=False,
+                do_deriv_c=do_virial,
+                extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
+                nlist_is_formatted=True,
+            )
+        model_ret = wrap_value(
+            communicate_extended_output(
+                unwrap_value(model_ret_lower),
+                model.model_output_def(),
+                to_tf_tensor(mapping),
+                do_atomic_virial=False,
+            )
+        )
+        return self._energy_model_ret_to_loss_dict(
+            model_ret,
+            label_dict=label_dict,
+        )
+
+    @staticmethod
+    def _energy_model_ret_to_loss_dict(
+        model_ret: dict[str, Any],
+        *,
+        label_dict: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        model_pred = {
+            "atom_energy": model_ret["energy"],
+            "energy": model_ret["energy_redu"],
+        }
+        if model_ret.get("energy_derv_r") is not None:
+            model_pred["force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if model_ret.get("energy_derv_c_redu") is not None:
+            model_pred["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+        elif label_dict is not None and "virial" in label_dict:
+            model_pred["virial"] = label_dict["virial"]
+        if "mask" in model_ret:
+            model_pred["mask"] = model_ret["mask"]
+        return model_pred
 
     def _batch_needs_virial(
         self,

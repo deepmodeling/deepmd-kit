@@ -765,6 +765,22 @@ def test_trainer_applies_enable_compile_to_models() -> None:
     assert calls == [("a", True), ("b", True)]
 
 
+def test_prepared_energy_step_only_uses_validated_descriptors() -> None:
+    trainer = object.__new__(Trainer)
+    trainer.enable_compile = True
+    trainer.losses = {
+        "se": EnergyLoss(starter_learning_rate=1.0),
+        "dpa3": EnergyLoss(starter_learning_rate=1.0),
+    }
+    trainer.model_params_by_task = {
+        "se": {"descriptor": {"type": "se_e2_a"}},
+        "dpa3": {"descriptor": {"type": "dpa3"}},
+    }
+
+    assert Trainer._use_prepared_energy_step(trainer, "se") is True
+    assert Trainer._use_prepared_energy_step(trainer, "dpa3") is False
+
+
 def test_write_checkpoint_directory_does_not_mutate_training_step(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,

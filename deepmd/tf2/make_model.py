@@ -101,6 +101,85 @@ def model_call_from_call_lower(
         The keys are defined by the `ModelOutputDef`.
 
     """
+    (
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fp,
+        ap,
+        cs,
+        extended_coord_corr,
+        nlist_is_formatted,
+    ) = prepare_lower_inputs(
+        rcut=rcut,
+        sel=sel,
+        mixed_types=mixed_types,
+        coord=coord,
+        atype=atype,
+        box=box,
+        fparam=fparam,
+        aparam=aparam,
+        coord_corr_for_virial=coord_corr_for_virial,
+        charge_spin=charge_spin,
+        neighbor_list=neighbor_list,
+    )
+    lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
+    if pass_lower_kwargs:
+        if nlist_is_formatted:
+            lower_kwargs["nlist_is_formatted"] = True
+        lower_kwargs.update(
+            {
+                "do_atomic_virial": do_atomic_virial,
+                "do_deriv_c": do_deriv_c,
+                "charge_spin": cs,
+            }
+        )
+        if extended_coord_corr is not None:
+            lower_kwargs["extended_coord_corr"] = extended_coord_corr
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        **lower_kwargs,
+    )
+    model_predict = wrap_value(
+        communicate_extended_output(
+            unwrap_value(model_predict_lower),
+            model_output_def,
+            to_tf_tensor(mapping),
+            do_atomic_virial=do_atomic_virial,
+        )
+    )
+    return model_predict
+
+
+def prepare_lower_inputs(
+    *,
+    rcut: float,
+    sel: list[int],
+    mixed_types: bool,
+    coord: Array,
+    atype: Array,
+    box: Array | None,
+    fparam: Array | None,
+    aparam: Array | None,
+    coord_corr_for_virial: Array | None = None,
+    charge_spin: Array | None = None,
+    neighbor_list: NeighborList | None = None,
+) -> tuple[
+    Array,
+    Array,
+    Array,
+    Array,
+    Array | None,
+    Array | None,
+    Array | None,
+    Array | None,
+    bool,
+]:
+    """Build lower-interface tensors outside the train-step compiler boundary."""
     cc = to_tensorflow_array(coord)
     atype = to_tensorflow_array(atype)
     bb = to_tensorflow_array(box)
@@ -185,34 +264,16 @@ def model_call_from_call_lower(
         extended_coord_corr = xp.take_along_axis(coord_corr, mapping_idx, axis=1)
     else:
         extended_coord_corr = None
-    lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
-    if pass_lower_kwargs:
-        if uses_native_nlist_builder:
-            if not mixed_types:
-                nlist = nlist_distinguish_types(nlist, extended_atype, sel)
-            lower_kwargs["nlist_is_formatted"] = True
-        lower_kwargs.update(
-            {
-                "do_atomic_virial": do_atomic_virial,
-                "do_deriv_c": do_deriv_c,
-                "charge_spin": cs,
-            }
-        )
-        if extended_coord_corr is not None:
-            lower_kwargs["extended_coord_corr"] = extended_coord_corr
-    model_predict_lower = call_lower(
+    if uses_native_nlist_builder and not mixed_types:
+        nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+    return (
         extended_coord,
         extended_atype,
         nlist,
         mapping,
-        **lower_kwargs,
+        fp,
+        ap,
+        cs,
+        extended_coord_corr,
+        uses_native_nlist_builder,
     )
-    model_predict = wrap_value(
-        communicate_extended_output(
-            unwrap_value(model_predict_lower),
-            model_output_def,
-            to_tf_tensor(mapping),
-            do_atomic_virial=do_atomic_virial,
-        )
-    )
-    return model_predict
