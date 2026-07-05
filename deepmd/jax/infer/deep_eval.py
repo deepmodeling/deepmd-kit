@@ -250,7 +250,11 @@ class DeepEval(DeepEvalBackend):
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
         **kwargs
-            Other parameters
+            Other parameters.
+            charge_spin : array-like, optional
+                The per-frame charge/spin conditioning input. The array can be
+                of size nframes x dim_chg_spin, or dim_chg_spin to reuse the
+                same value for all frames.
 
         Returns
         -------
@@ -396,6 +400,11 @@ class DeepEval(DeepEvalBackend):
             aparam_input = aparam.reshape(nframes, natoms, self.get_dim_aparam())
         else:
             aparam_input = None
+        if charge_spin is not None and not self.has_chg_spin_ebd():
+            raise ValueError(
+                "charge_spin was provided, but this model does not support "
+                "charge/spin conditioning."
+            )
         charge_spin_input = (
             np.asarray(charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION)
             if self.has_chg_spin_ebd() and charge_spin is not None

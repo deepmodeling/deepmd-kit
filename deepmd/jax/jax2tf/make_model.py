@@ -28,20 +28,36 @@ from deepmd.jax.jax2tf.transform_output import (
     communicate_extended_output,
 )
 
-
-def model_call_from_call_lower(
-    *,  # enforce keyword-only arguments
-    call_lower: Callable[
+CallLower = (
+    Callable[
         [
             tf.Tensor,
             tf.Tensor,
             tf.Tensor,
             tf.Tensor,
             tf.Tensor,
-            bool,
+            tf.Tensor,
         ],
         dict[str, tf.Tensor],
-    ],
+    ]
+    | Callable[
+        [
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+        ],
+        dict[str, tf.Tensor],
+    ]
+)
+
+
+def model_call_from_call_lower(
+    *,  # enforce keyword-only arguments
+    call_lower: CallLower,
     rcut: float,
     sel: list[int],
     mixed_types: bool,

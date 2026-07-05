@@ -906,27 +906,6 @@ inline const FPTYPE* validate_charge_spin(
       "model uses");
 }
 
-template <typename FPTYPE>
-inline const FPTYPE* validate_charge_spin(
-    const std::vector<FPTYPE>& charge_spin,
-    const int dchgspin,
-    const unsigned int nframes) {
-  if (charge_spin.empty()) {
-    return nullptr;
-  }
-  if (dchgspin == 0) {
-    throw deepmd::hpp::deepmd_exception(
-        "charge_spin was provided, but this model does not support "
-        "charge/spin conditioning");
-  }
-  if (charge_spin.size() !=
-      static_cast<size_t>(nframes) * static_cast<size_t>(dchgspin)) {
-    throw deepmd::hpp::deepmd_exception(
-        "the dim of charge_spin provided is not consistent with what the "
-        "model uses");
-  }
-  return charge_spin.data();
-}
 /**
  * @brief Neighbor list.
  **/
@@ -2334,7 +2313,6 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
-    // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -2424,7 +2402,6 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
-    // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());

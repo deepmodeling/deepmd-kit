@@ -126,6 +126,8 @@ class TFModelWrapper(tf.Module):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            The charge and spin conditioning input. shape: nf x dim_chg_spin
 
         Returns
         -------
@@ -171,6 +173,8 @@ class TFModelWrapper(tf.Module):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            The charge and spin conditioning input. shape: nf x dim_chg_spin
 
         Returns
         -------
