@@ -1832,9 +1832,10 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
             "stored in the .pt2 metadata.");
       }
       fparam_tensor =
-          torch::from_blob(const_cast<double*>(default_fparam_.data()),
-                           {1, static_cast<std::int64_t>(default_fparam_.size())},
-                           torch::TensorOptions().dtype(torch::kFloat64))
+          torch::from_blob(
+              const_cast<double*>(default_fparam_.data()),
+              {1, static_cast<std::int64_t>(default_fparam_.size())},
+              torch::TensorOptions().dtype(torch::kFloat64))
               .clone()
               .to(device);
     } else {
@@ -1862,10 +1863,9 @@ void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
     }
 
     // === Step 4. Run the exported model on the device ===
-    std::vector<torch::Tensor> flat_outputs =
-        run_model_edges(coord_t, atype_t, edge_index, edge_vec,
-                        edge_scatter_index, edge_mask, fparam_tensor,
-                        aparam_tensor, charge_spin_tensor);
+    std::vector<torch::Tensor> flat_outputs = run_model_edges(
+        coord_t, atype_t, edge_index, edge_vec, edge_scatter_index, edge_mask,
+        fparam_tensor, aparam_tensor, charge_spin_tensor);
     std::map<std::string, torch::Tensor> output_map;
     extract_outputs(output_map, flat_outputs);
 
