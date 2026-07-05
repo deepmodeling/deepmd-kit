@@ -97,7 +97,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 TF2_TRAINING_STATE_FILE = "training_state.json"
-TF2_FULL_STEP_XLA_DESCRIPTOR_TYPES = {"se_e2_a"}
 
 
 def get_loss(
@@ -796,9 +795,9 @@ class Trainer(AbstractTrainer):
         cur_lr = float(self.lr_schedule.value(step))
         input_dict, label_dict, natoms = self.get_data(is_train=True, task_key=task_key)
         do_virial = bool(label_dict.pop("_do_virial", True))
-        if self._use_prepared_energy_step(task_key):
-            prepared = self._prepare_energy_batch(task_key, input_dict)
-            more_loss = self._compiled_prepared_energy_train_step(
+        if self._use_prepared_step(task_key):
+            prepared = self._prepare_lower_batch(task_key, input_dict)
+            more_loss = self._compiled_prepared_train_step(
                 task_key,
                 label_dict,
                 prepared,
@@ -832,27 +831,17 @@ class Trainer(AbstractTrainer):
             },
         )
 
-    def _use_prepared_energy_step(self, task_key: str) -> bool:
-        if not bool(getattr(self, "enable_compile", False)):
-            return False
-        if not isinstance(self.losses[task_key], EnergyLoss):
-            return False
-        return self._descriptor_type(task_key) in TF2_FULL_STEP_XLA_DESCRIPTOR_TYPES
+    def _use_prepared_step(self, task_key: str) -> bool:
+        return bool(getattr(self, "enable_compile", False))
 
-    def _descriptor_type(self, task_key: str) -> str | None:
-        descriptor = self.model_params_by_task[task_key].get("descriptor")
-        if not isinstance(descriptor, Mapping):
-            return None
-        return str(descriptor.get("type", "se_e2_a"))
-
-    def _prepare_energy_batch(
+    def _prepare_lower_batch(
         self,
         task_key: str,
         input_dict: dict[str, Any],
     ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
         if task_key not in self._compiled_prepare_steps:
             self._compiled_prepare_steps[task_key] = (
-                self._make_compiled_prepare_energy_batch(task_key)
+                self._make_compiled_prepare_lower_batch(task_key)
             )
         prepared = self._compiled_prepare_steps[task_key](
             input_dict["coord"],
@@ -864,11 +853,11 @@ class Trainer(AbstractTrainer):
         )
         return prepared[:-1]
 
-    def _make_compiled_prepare_energy_batch(self, task_key: str) -> Any:
+    def _make_compiled_prepare_lower_batch(self, task_key: str) -> Any:
         model = self.models[task_key]
 
         @tf.function(reduce_retracing=True)
-        def compiled_prepare_energy_batch(
+        def compiled_prepare_lower_batch(
             coord: Any,
             atype: Any,
             box: Any,
@@ -895,9 +884,9 @@ class Trainer(AbstractTrainer):
                 charge_spin=cs,
             )
 
-        return compiled_prepare_energy_batch
+        return compiled_prepare_lower_batch
 
-    def _compiled_prepared_energy_train_step(
+    def _compiled_prepared_train_step(
         self,
         task_key: str,
         label_dict: dict[str, Any],
@@ -909,7 +898,7 @@ class Trainer(AbstractTrainer):
     ) -> dict[str, Any]:
         if task_key not in self._compiled_prepared_train_steps:
             self._compiled_prepared_train_steps[task_key] = (
-                self._make_compiled_prepared_energy_train_step(task_key)
+                self._make_compiled_prepared_train_step(task_key)
             )
         return self._compiled_prepared_train_steps[task_key](
             label_dict,
@@ -920,11 +909,11 @@ class Trainer(AbstractTrainer):
             do_virial,
         )
 
-    def _make_compiled_prepared_energy_train_step(self, task_key: str) -> Any:
+    def _make_compiled_prepared_train_step(self, task_key: str) -> Any:
         variables = _unique_variables(self.models[task_key].trainable_variables)
 
         @tf.function(reduce_retracing=True, jit_compile=True)
-        def compiled_prepared_energy_train_step(
+        def compiled_prepared_train_step(
             label_dict: dict[str, Any],
             extended_coord: Any,
             extended_atype: Any,
@@ -941,7 +930,7 @@ class Trainer(AbstractTrainer):
         ) -> dict[str, Any]:
             self._assign_learning_rate(cur_lr)
             with tf.GradientTape() as tape:
-                model_pred = self._call_prepared_energy_model(
+                model_pred = self._call_prepared_model(
                     task_key,
                     extended_coord,
                     extended_atype,
@@ -975,7 +964,7 @@ class Trainer(AbstractTrainer):
             self.step.assign(next_step)
             return unwrap_value(more_loss)
 
-        return compiled_prepared_energy_train_step
+        return compiled_prepared_train_step
 
     def _compiled_train_step(
         self,
@@ -1318,8 +1307,10 @@ class Trainer(AbstractTrainer):
         label_dict: dict[str, Any] | None = None,
         do_virial: bool = True,
     ) -> dict[str, Any]:
-        if isinstance(self.losses[task_key], EnergyLoss):
-            model_ret = self.models[task_key].call_common(
+        model = self.models[task_key]
+        call_common = getattr(model, "call_common", None)
+        if callable(call_common):
+            model_ret = call_common(
                 input_dict["coord"],
                 input_dict["atype"],
                 box=input_dict.get("box"),
@@ -1329,11 +1320,12 @@ class Trainer(AbstractTrainer):
                 do_atomic_virial=False,
                 do_deriv_c=do_virial,
             )
-            return self._energy_model_ret_to_loss_dict(
+            return self._translate_model_ret_to_loss_dict(
+                task_key,
                 model_ret,
                 label_dict=label_dict,
             )
-        return self.models[task_key].call(
+        return model.call(
             input_dict["coord"],
             input_dict["atype"],
             box=input_dict.get("box"),
@@ -1342,7 +1334,7 @@ class Trainer(AbstractTrainer):
             charge_spin=input_dict.get("charge_spin"),
         )
 
-    def _call_prepared_energy_model(
+    def _call_prepared_model(
         self,
         task_key: str,
         extended_coord: Any,
@@ -1396,30 +1388,84 @@ class Trainer(AbstractTrainer):
                 do_atomic_virial=False,
             )
         )
-        return self._energy_model_ret_to_loss_dict(
+        return self._translate_model_ret_to_loss_dict(
+            task_key,
             model_ret,
             label_dict=label_dict,
         )
 
-    @staticmethod
-    def _energy_model_ret_to_loss_dict(
+    def _translate_model_ret_to_loss_dict(
+        self,
+        task_key: str,
         model_ret: dict[str, Any],
         *,
         label_dict: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        model_pred = {
-            "atom_energy": model_ret["energy"],
-            "energy": model_ret["energy_redu"],
-        }
-        if model_ret.get("energy_derv_r") is not None:
-            model_pred["force"] = model_ret["energy_derv_r"].squeeze(-2)
-        if model_ret.get("energy_derv_c_redu") is not None:
-            model_pred["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-        elif label_dict is not None and "virial" in label_dict:
+        translated_output_def = getattr(
+            self.models[task_key],
+            "translated_output_def",
+            None,
+        )
+        if not callable(translated_output_def):
+            return model_ret
+        output_defs = translated_output_def()
+        model_pred = {}
+        for output_key, output_def in output_defs.items():
+            source_key = output_def.name
+            if source_key not in model_ret or model_ret[source_key] is None:
+                continue
+            model_pred[output_key] = self._match_output_rank(
+                model_ret[source_key],
+                output_def,
+            )
+        if (
+            label_dict is not None
+            and "virial" in label_dict
+            and "virial" in output_defs
+            and "virial" not in model_pred
+        ):
             model_pred["virial"] = label_dict["virial"]
-        if "mask" in model_ret:
-            model_pred["mask"] = model_ret["mask"]
         return model_pred
+
+    @classmethod
+    def _match_output_rank(cls, value: Any, output_def: Any) -> Any:
+        expected_rank = len(output_def.shape) + (2 if output_def.atomic else 1)
+        axis = -(len(output_def.shape) + 1)
+        while True:
+            rank = cls._shape_rank(value)
+            if rank is None or rank <= expected_rank:
+                return value
+            if cls._shape_dim(value, axis) != 1:
+                return value
+            squeeze = getattr(value, "squeeze", None)
+            if not callable(squeeze):
+                value = tf.squeeze(value, axis=axis)
+            else:
+                value = squeeze(axis)
+
+    @staticmethod
+    def _shape_rank(value: Any) -> int | None:
+        shape = getattr(value, "shape", None)
+        if shape is None:
+            return None
+        rank = getattr(shape, "rank", None)
+        if rank is not None:
+            return int(rank)
+        try:
+            return len(shape)
+        except TypeError:
+            return None
+
+    @staticmethod
+    def _shape_dim(value: Any, axis: int) -> int | None:
+        shape = getattr(value, "shape", None)
+        if shape is None:
+            return None
+        try:
+            dim = shape[axis]
+        except (IndexError, TypeError):
+            return None
+        return getattr(dim, "value", dim)
 
     def _batch_needs_virial(
         self,

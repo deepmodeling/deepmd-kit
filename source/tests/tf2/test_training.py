@@ -2,6 +2,7 @@
 """Unit tests for TensorFlow 2 training internals."""
 
 import importlib
+import os
 from types import (
     SimpleNamespace,
 )
@@ -12,6 +13,12 @@ from typing import (
 
 import numpy as np
 import pytest
+
+if os.environ.get("DP_TEST_TF2_ONLY") != "1":
+    pytest.skip(
+        "TF2 tests require DP_TEST_TF2_ONLY=1",
+        allow_module_level=True,
+    )
 
 from deepmd.dpmodel.loss import (
     EnergyLoss,
@@ -524,6 +531,30 @@ def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
                 ),
             }
 
+        def translated_output_def(self) -> dict[str, Any]:
+            return {
+                "atom_energy": SimpleNamespace(
+                    name="energy",
+                    shape=[1],
+                    atomic=True,
+                ),
+                "energy": SimpleNamespace(
+                    name="energy_redu",
+                    shape=[1],
+                    atomic=False,
+                ),
+                "force": SimpleNamespace(
+                    name="energy_derv_r",
+                    shape=[3],
+                    atomic=True,
+                ),
+                "virial": SimpleNamespace(
+                    name="energy_derv_c_redu",
+                    shape=[9],
+                    atomic=False,
+                ),
+            }
+
     trainer.models = {DEFAULT_TASK_KEY: SpyEnergyModel()}
     trainer.losses = {DEFAULT_TASK_KEY: EnergyLoss(starter_learning_rate=1.0)}
 
@@ -542,9 +573,7 @@ def test_training_energy_call_keeps_atomic_virial_disabled() -> None:
         "do_atomic_virial": False,
         "do_deriv_c": True,
     }
-    np.testing.assert_allclose(
-        to_tf_tensor(result["virial"]).numpy(), np.ones((1, 1, 9))
-    )
+    np.testing.assert_allclose(to_tf_tensor(result["virial"]).numpy(), np.ones((1, 9)))
     assert "atom_virial" not in result
 
 
@@ -765,20 +794,51 @@ def test_trainer_applies_enable_compile_to_models() -> None:
     assert calls == [("a", True), ("b", True)]
 
 
-def test_prepared_energy_step_only_uses_validated_descriptors() -> None:
+def test_prepared_step_only_depends_on_enable_compile() -> None:
     trainer = object.__new__(Trainer)
     trainer.enable_compile = True
     trainer.losses = {
         "se": EnergyLoss(starter_learning_rate=1.0),
-        "dpa3": EnergyLoss(starter_learning_rate=1.0),
-    }
-    trainer.model_params_by_task = {
-        "se": {"descriptor": {"type": "se_e2_a"}},
-        "dpa3": {"descriptor": {"type": "dpa3"}},
+        "tensor": object(),
     }
 
-    assert Trainer._use_prepared_energy_step(trainer, "se") is True
-    assert Trainer._use_prepared_energy_step(trainer, "dpa3") is False
+    assert Trainer._use_prepared_step(trainer, "se") is True
+    assert Trainer._use_prepared_step(trainer, "tensor") is True
+
+    trainer.enable_compile = False
+
+    assert Trainer._use_prepared_step(trainer, "se") is False
+
+
+def test_model_ret_translation_uses_translated_output_def() -> None:
+    trainer = object.__new__(Trainer)
+    trainer.losses = {"tensor": object()}
+    trainer.models = {
+        "tensor": SimpleNamespace(
+            translated_output_def=lambda: {
+                "dipole": SimpleNamespace(name="dipole", shape=[3], atomic=True),
+                "global_dipole": SimpleNamespace(
+                    name="dipole_redu",
+                    shape=[3],
+                    atomic=False,
+                ),
+            }
+        )
+    }
+
+    model_pred = Trainer._translate_model_ret_to_loss_dict(
+        trainer,
+        "tensor",
+        {
+            "dipole": "local",
+            "dipole_redu": "global",
+        },
+    )
+
+    assert model_pred == {
+        "dipole": "local",
+        "global_dipole": "global",
+    }
 
 
 def test_write_checkpoint_directory_does_not_mutate_training_step(
