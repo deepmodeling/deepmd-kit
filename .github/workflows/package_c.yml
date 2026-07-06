@@ -101,7 +101,7 @@ jobs:
   pass:
     name: Pass building c library
     needs: [build_c, test_c]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed

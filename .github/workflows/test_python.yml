@@ -112,7 +112,7 @@ jobs:
       id-token: write
   update_durations:
     name: Combine and update integration test durations
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-slim
     strategy:
       fail-fast: false
       matrix:
@@ -140,7 +140,7 @@ jobs:
   pass:
     name: Pass testing Python
     needs: [testpython, update_durations]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed
