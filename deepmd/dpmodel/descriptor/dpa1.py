@@ -1401,7 +1401,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             The path to the stat file.
 
         """
-        env_mat_stat = EnvMatStatSe(self)
+        # dpa1's forward computes its env matrix through the NeighborGraph
+        # (from_dense_quartet -> edge_env_mat); run the input stat through the
+        # SAME path so stat and forward share one env-matrix implementation.
+        # Bit-identical to the dense EnvMat (see test_env_mat_stat_graph.py).
+        env_mat_stat = EnvMatStatSe(self, use_graph=True)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         if path is None or not path.is_dir():

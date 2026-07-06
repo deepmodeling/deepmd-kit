@@ -15,12 +15,17 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
 )
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    edge_env_mat,
+    from_dense_quartet,
 )
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
@@ -143,12 +148,73 @@ class EnvMatStatSe(EnvMatStat):
         The descriptor of the model.
     """
 
-    def __init__(self, descriptor: Union["Descriptor", "DescriptorBlock"]) -> None:
+    def __init__(
+        self,
+        descriptor: Union["Descriptor", "DescriptorBlock"],
+        use_graph: bool = False,
+    ) -> None:
         super().__init__()
         self.descriptor = descriptor
         self.last_dim = (
             self.descriptor.ndescrpt // self.descriptor.nnei
         )  # se_r=1, se_a=4
+        # ``use_graph`` computes the env matrix through the NeighborGraph path
+        # (``from_dense_quartet`` -> ``edge_env_mat``) instead of the dense
+        # ``EnvMat``, so the input stat runs the SAME machinery the dpa1 graph
+        # forward uses. It is BIT-IDENTICAL to the dense path (same neighbor
+        # set + padding, ``edge_env_mat`` mirrors ``EnvMat.call``, row-major
+        # ``(frame, center, slot)`` edges reshape 1:1 to ``(nf, nloc, nsel)``);
+        # only se_a-type (``last_dim == 4``) descriptors may opt in.
+        self.use_graph = use_graph
+
+    def _graph_env_mat(
+        self,
+        extended_coord: Array,
+        extended_atype: Array,
+        mapping: Array,
+        nlist: Array,
+    ) -> Array:
+        """Env matrix via the NeighborGraph, shaped ``(nf, nloc, nsel, last_dim)``.
+
+        Bit-identical to the dense ``EnvMat.call`` with zero mean / unit std:
+        ``from_dense_quartet(compact=False)`` reuses the same neighbor set and
+        padding (row-major ``(frame, center, slot)`` edges), ``edge_env_mat``
+        mirrors ``EnvMat.call``, and padding / model-excluded edges (already
+        ``-1`` in the pre-excluded ``nlist``) carry ``edge_mask=False`` and are
+        zeroed -- so the ``(E, 4)`` output reshapes 1:1 back to the dense
+        ``(nf, nloc, nsel, 4)`` env-matrix tensor.
+        """
+        xp = array_api_compat.array_namespace(extended_coord, nlist)
+        dev = array_api_compat.device(extended_coord)
+        nframes, nloc, nsel = nlist.shape
+        nall = extended_atype.shape[1]
+        ntypes = self.descriptor.get_ntypes()
+        coord_ext_3 = xp.reshape(extended_coord, (nframes, nall, 3))
+        mapping_g = xp.reshape(mapping, (nframes, nall))
+        graph = from_dense_quartet(coord_ext_3, nlist, mapping_g, compact=False)
+        # local center type per edge (dst is the local center index)
+        atype_local = xp.reshape(
+            xp_take_first_n(extended_atype, 1, nloc), (nframes * nloc,)
+        )
+        center_type = xp.take(atype_local, graph.edge_index[1, :], axis=0)
+        zero2 = xp.zeros((ntypes, 4), dtype=graph.edge_vec.dtype, device=dev)
+        one2 = xp.ones((ntypes, 4), dtype=graph.edge_vec.dtype, device=dev)
+        em = edge_env_mat(
+            graph.edge_vec,
+            center_type,
+            zero2,
+            one2,
+            self.descriptor.get_rcut(),
+            self.descriptor.get_rcut_smth(),
+            protection=self.descriptor.get_env_protection(),
+            edge_mask=graph.edge_mask,
+            return_sw=False,
+        )  # (E, 4)
+        # zero padding / model-excluded edges (edge_mask=False) so they count
+        # as 0 -- exactly like empty slots in the dense path.
+        em = em * xp.astype(graph.edge_mask[:, None], em.dtype)
+        # row-major (frame, center, slot) -> dense (nf, nloc, nsel, last_dim)
+        return xp.reshape(em, (nframes, nloc, nsel, self.last_dim))
 
     def iter(
         self, data: list[dict[str, np.ndarray | list[tuple[int, int]]]]
@@ -228,19 +294,26 @@ class EnvMatStatSe(EnvMatStat):
                 # exclude_types, replacing the previous accumulation-deselect.
                 pair_excl=pair_excl,
             )
-            env_mat_caller = EnvMat(
-                self.descriptor.get_rcut(),
-                self.descriptor.get_rcut_smth(),
-                protection=self.descriptor.get_env_protection(),
-            )
-            env_mat, _, _ = env_mat_caller.call(
-                extended_coord,
-                extended_atype,
-                nlist,
-                zero_mean,
-                one_stddev,
-                radial_only,
-            )
+            if self.use_graph:
+                # NeighborGraph env matrix (bit-identical to the dense EnvMat
+                # below): the SAME machinery the dpa1 graph forward uses.
+                env_mat = self._graph_env_mat(
+                    extended_coord, extended_atype, mapping, nlist
+                )
+            else:
+                env_mat_caller = EnvMat(
+                    self.descriptor.get_rcut(),
+                    self.descriptor.get_rcut_smth(),
+                    protection=self.descriptor.get_env_protection(),
+                )
+                env_mat, _, _ = env_mat_caller.call(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    zero_mean,
+                    one_stddev,
+                    radial_only,
+                )
             # apply excluded_types
             exclude_mask = self.descriptor.emask.build_type_exclude_mask(
                 nlist, extended_atype
