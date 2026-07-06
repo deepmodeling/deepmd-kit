@@ -22,12 +22,12 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
 )
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     edge_env_mat,
     graph_from_dense_quartet,
-)
-from deepmd.dpmodel.utils.exclude_mask import (
-    PairExcludeMask,
 )
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
