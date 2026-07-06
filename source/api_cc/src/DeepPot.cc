@@ -5,20 +5,8 @@
 #include <stdexcept>
 
 #include "AtomMap.h"
+#include "BackendPlugin.h"
 #include "common.h"
-#ifdef BUILD_TENSORFLOW
-#include "DeepPotTF.h"
-#endif
-#ifdef BUILD_PYTORCH
-#include "DeepPotPT.h"
-#include "DeepPotPTExpt.h"
-#endif
-#if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
-#include "DeepPotJAX.h"
-#endif
-#ifdef BUILD_PADDLE
-#include "DeepPotPD.h"
-#endif
 #include "device.h"
 
 using namespace deepmd;
@@ -44,43 +32,11 @@ void DeepPot::init(const std::string& model,
     return;
   }
   const DPBackend backend = get_backend(model);
-  if (deepmd::DPBackend::TensorFlow == backend) {
-#ifdef BUILD_TENSORFLOW
-    dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
-#else
-    throw deepmd::deepmd_exception("TensorFlow backend is not built");
-#endif
-  } else if (deepmd::DPBackend::PyTorch == backend) {
-#ifdef BUILD_PYTORCH
-    dp = std::make_shared<deepmd::DeepPotPT>(model, gpu_rank, file_content);
-#else
-    throw deepmd::deepmd_exception("PyTorch backend is not built");
-#endif
-  } else if (deepmd::DPBackend::PyTorchExportable == backend) {
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
-    dp = std::make_shared<deepmd::DeepPotPTExpt>(model, gpu_rank, file_content);
-#else
-    throw deepmd::deepmd_exception(
-        "PyTorch Exportable backend is not available (missing AOTInductor "
-        "headers at build time)");
-#endif
-  } else if (deepmd::DPBackend::Paddle == backend) {
-#ifdef BUILD_PADDLE
-    dp = std::make_shared<deepmd::DeepPotPD>(model, gpu_rank, file_content);
-#else
-    throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
-#endif
-  } else if (deepmd::DPBackend::JAX == backend) {
-#if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
-    dp = std::make_shared<deepmd::DeepPotJAX>(model, gpu_rank, file_content);
-#else
-    throw deepmd::deepmd_exception(
-        "TensorFlow backend is not built, which is used to load JAX2TF "
-        "SavedModels");
-#endif
-  } else {
+  if (deepmd::DPBackend::Unknown == backend) {
     throw deepmd::deepmd_exception("Unknown file type");
   }
+  dp = create_deeppot_backend_from_plugin(backend, model, gpu_rank,
+                                          file_content);
   inited = true;
   dpbase = dp;  // make sure the base funtions work
 }

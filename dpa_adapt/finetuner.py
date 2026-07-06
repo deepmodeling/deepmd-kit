@@ -29,6 +29,9 @@ from dpa_adapt._backend import (
     resolve_model_branch,
     resolve_pretrained_path,
 )
+from dpa_adapt._validation import (
+    validate_fparam_dim,
+)
 from dpa_adapt.conditions import (
     ConditionManager,
     DPAConditionError,
@@ -37,73 +40,19 @@ from dpa_adapt.data.errors import (
     DPADataError,
 )
 from dpa_adapt.data.loader import (
+    _find_label_npys,
     _get_source,
     _resolve_label_key,
     load_data,
+)
+from dpa_adapt.data.type_map import (
+    _is_placeholder_type_map,
 )
 from dpa_adapt.utils.dotdict import (
     DotDict,
 )
 
 _LOG = logging.getLogger("dpa_adapt")
-
-# Pooling primitives in canonical column order.  A pooling spec is any
-# "+"-joined combination (or list) of these; the output feature layout always
-# follows this order regardless of input order, so columns are deterministic.
-POOLING_PRIMITIVES: tuple[str, ...] = ("mean", "sum", "std", "max", "min")
-
-
-def parse_pooling(spec: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    """Parse a pooling spec into ordered, deduplicated primitives.
-
-    Accepts ``"mean"``, ``"mean+std"``, ``["mean", "std"]``, etc.  Output order
-    follows :data:`POOLING_PRIMITIVES` regardless of input order, so the feature
-    column layout is deterministic.  ``mean+sum`` is legal and not redundant --
-    ``sum`` carries the atom-count (extensive) information that ``mean``
-    normalizes away.  Raises ``ValueError`` listing valid primitives on an
-    unknown token.
-    """
-    if isinstance(spec, str):
-        tokens = [t.strip() for t in spec.split("+") if t.strip()]
-    else:
-        tokens = [str(t).strip() for t in spec]
-    if not tokens:
-        raise ValueError(
-            f"empty pooling spec; use a '+'-combination of {list(POOLING_PRIMITIVES)}."
-        )
-    unknown = [t for t in tokens if t not in POOLING_PRIMITIVES]
-    if unknown:
-        raise ValueError(
-            f"unknown pooling primitive(s) {unknown}; valid primitives are "
-            f"{list(POOLING_PRIMITIVES)} (combine with '+', e.g. 'mean+std')."
-        )
-    present = set(tokens)
-    return tuple(p for p in POOLING_PRIMITIVES if p in present)
-
-
-def _pool_descriptor(descrpt: Any, primitives: tuple[str, ...]) -> Any:
-    """Reduce a per-atom descriptor ``(nframes, natoms, feat)`` to per-frame
-    features by concatenating ``primitives`` in canonical order.
-
-    Each primitive reproduces the exact legacy expression so the 4 historical
-    pooling strings yield byte-identical feature layouts.
-    """
-    import torch
-
-    parts = []
-    for primitive in primitives:
-        if primitive == "mean":
-            parts.append(descrpt.mean(dim=1))
-        elif primitive == "sum":
-            parts.append(descrpt.sum(dim=1))
-        elif primitive == "std":
-            parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
-        elif primitive == "max":
-            parts.append(descrpt.max(dim=1).values)
-        elif primitive == "min":
-            parts.append(descrpt.min(dim=1).values)
-    return parts[0] if len(parts) == 1 else torch.cat(parts, dim=-1)
-
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -139,18 +88,14 @@ def _load_labels(
                 all_labels.append(np.asarray(system.data[resolved]))
                 continue
 
-            # Fallback: load set.*/key.npy directly from the system directory.
+            # Fallback: load set.*/{key}.npy directly from the system directory.
             source = _get_source(system)
             if source is not None:
-                source_path = Path(source)
-                set_dirs = sorted(source_path.glob("set.*"))
-                npy_labels = []
-                for sd in set_dirs:
-                    npy_path = sd / f"{resolved}.npy"
-                    if npy_path.exists():
-                        npy_labels.append(np.load(npy_path))
-                if npy_labels:
-                    all_labels.append(np.concatenate(npy_labels, axis=0))
+                npy_paths = _find_label_npys(source, resolved)
+                if npy_paths:
+                    all_labels.append(
+                        np.concatenate([np.load(p) for p in npy_paths], axis=0)
+                    )
                     continue
 
             # Neither dpdata nor direct .npy found — build a clear error.
@@ -191,24 +136,6 @@ def _set_nframes(set_dir: Path) -> int | None:
     if not coord.is_file():
         return None
     return int(np.load(str(coord), mmap_mode="r").shape[0])
-
-
-def _infer_fparam_dim(data: str | list[str]) -> int:
-    """Best-effort fparam width from the first ``set.*/fparam.npy`` found.
-
-    Auto-enables per-group side features for grouped training when the data
-    carries ``fparam.npy`` but ``fparam_dim`` was left at 0.  Returns 0 when no
-    fparam file is found.
-    """
-    import glob as _glob
-
-    patterns = [data] if isinstance(data, str) else list(data)
-    for pattern in patterns:
-        for match in sorted(_glob.glob(str(pattern))):
-            for fp in sorted(Path(match).glob("set.*/fparam.npy")):
-                arr = np.load(str(fp), mmap_mode="r")
-                return int(arr.shape[1]) if arr.ndim == 2 else 0
-    return 0
 
 
 def _read_fparam_from_systems(
@@ -294,10 +221,7 @@ def _read_data_type_map(system: dpdata.System) -> list[str]:
     data had no ``type_map.raw``).
     """
     names = list(system.data.get("atom_names", []))
-    if not names:
-        return []
-    # dpdata generates "Type_0", "Type_1", ... when no type_map.raw was present.
-    if all(n.startswith("Type_") for n in names):
+    if not names or _is_placeholder_type_map(names):
         return []
     return names
 
@@ -575,7 +499,6 @@ class _FrozenSklearnPipeline:
         self._task_dim = 1
         self._target_key = None
         self._condition_manager = None
-        self._grouped_fit = False
         self._fitted = False
         self.type_map = []
 
@@ -794,7 +717,26 @@ class _FrozenSklearnPipeline:
 
             # Shape: (n_frames, n_atoms, feat_dim)
             descrpt = extractor._run_forward(coord_t, atype_t, box_t)
-            feat = _pool_descriptor(descrpt, parse_pooling(self.pooling))
+            if self.pooling == "mean":
+                feat = descrpt.mean(dim=1)
+            elif self.pooling == "sum":
+                feat = descrpt.sum(dim=1)
+            elif self.pooling == "mean+std":
+                mean = descrpt.mean(dim=1)
+                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
+                feat = torch.cat([mean, std], dim=-1)
+            elif self.pooling == "mean+std+max+min":
+                mean = descrpt.mean(dim=1)
+                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
+                feat = torch.cat(
+                    [
+                        mean,
+                        std,
+                        descrpt.max(dim=1).values,
+                        descrpt.min(dim=1).values,
+                    ],
+                    dim=-1,
+                )
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.detach().cpu().numpy())
 
@@ -923,7 +865,6 @@ class DPAFineTuner:
         # ---- training paradigms ----
         strategy: str = "frozen_sklearn",
         property_name: str = "property",
-        target: str | None = None,
         task_dim: int = 1,
         intensive: bool = True,
         init_branch: str = "SPICE2",
@@ -948,19 +889,16 @@ class DPAFineTuner:
         aux_batch_size: str | int | None = None,
         downstream_batch_size: str | int | None = None,
     ) -> None:
-        parsed_pooling = parse_pooling(pooling)  # validates; raises on unknown token
-        if strategy in {"frozen_head", "finetune", "mft"} and parsed_pooling != ("mean",):
+        if pooling not in self._VALID_POOLING:
             raise ValueError(
-                f"pooling={pooling!r} only applies to strategy='frozen_sklearn' and "
-                f"extract_descriptors. For strategy={strategy!r}, the atom->frame "
-                f"reduction is controlled by `intensive` (True=mean, False=sum), not "
-                f"`pooling`."
+                f"pooling must be one of {sorted(self._VALID_POOLING)}, got {pooling!r}"
             )
         if strategy not in self._VALID_STRATEGIES:
             raise ValueError(
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
                 f"got {strategy!r}"
             )
+        validate_fparam_dim(fparam_dim)
 
         self.strategy = strategy
 
@@ -971,8 +909,7 @@ class DPAFineTuner:
         self.seed = seed
 
         # Training-paradigm params (unused by frozen_sklearn).
-        # ``target`` is a clearer alias for ``property_name`` and wins if given.
-        self.property_name = target if target is not None else property_name
+        self.property_name = property_name
         self.task_dim = task_dim
         self.intensive = intensive
         self.init_branch = init_branch
@@ -1023,7 +960,6 @@ class DPAFineTuner:
         self._device = None  # set when model is first loaded
         self._checkpoint_type_map = []  # set by _load_descriptor_model
         self._condition_manager = None
-        self._grouped_fit = False
 
     # ------------------------------------------------------------------
     # Frozen-sklearn pipeline helpers (thin delegators)
@@ -1164,9 +1100,10 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
-            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
+        else:
+            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 
@@ -1179,8 +1116,6 @@ class DPAFineTuner:
         train_data: str | list[str],
         valid_data: str | list[str] | None,
         type_map: list[str],
-        *,
-        grouped: bool = False,
     ) -> str:
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
         from dpa_adapt.trainer import (
@@ -1188,16 +1123,6 @@ class DPAFineTuner:
         )
 
         freeze = self.strategy == "frozen_head"
-        fitting_net_params = dict(self.fitting_net_params or {})
-        loss_type = "property"
-        fparam_dim = self.fparam_dim
-        if grouped:
-            fitting_net_params["type"] = "group_property"
-            loss_type = "group_property"
-            # Auto-enable per-group side features when the data ships fparam.npy
-            # but the user did not set fparam_dim explicitly.
-            if fparam_dim == 0:
-                fparam_dim = _infer_fparam_dim(train_data)
         trainer = DPATrainer(
             pretrained=self.pretrained,
             init_branch=self.init_branch,
@@ -1208,8 +1133,7 @@ class DPAFineTuner:
             train_systems=train_data,
             valid_systems=valid_data,
             type_map=type_map,
-            fitting_net_params=fitting_net_params,
-            loss_type=loss_type,
+            fitting_net_params=self.fitting_net_params,
             learning_rate=self.learning_rate,
             stop_lr=self.stop_lr,
             decay_steps=self.decay_steps if self.decay_steps is not None else 1000,
@@ -1217,7 +1141,7 @@ class DPAFineTuner:
             max_steps=self.max_steps,
             batch_size=self.batch_size,
             loss_function=self.loss_function,
-            fparam_dim=fparam_dim,
+            fparam_dim=self.fparam_dim,
             seed=self.seed,
             output_dir=self.output_dir,
             save_freq=self.save_freq,
@@ -1407,16 +1331,13 @@ class DPAFineTuner:
 
     def fit(
         self,
-        train_data: str | list[str] | None = None,
+        train_data: str | list[str],
         valid_data: str | list[str] | None = None,
         type_map: list[str] | None = None,
         target_key: str | list[str] | None = None,
         labels: np.ndarray | None = None,
         fmt: str | None = None,
         aux_data: str | list[str] | None = None,
-        *,
-        train: str | list[str] | None = None,
-        valid: str | list[str] | None = None,
     ) -> str | None:
         """Train the model.
 
@@ -1444,22 +1365,6 @@ class DPAFineTuner:
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
-        train_data = train_data if train_data is not None else train
-        valid_data = valid_data if valid_data is not None else valid
-        if train_data is None:
-            raise ValueError("train_data (or train=) is required.")
-
-        from dpa_adapt.grouped._offline import (
-            has_grouped_markers,
-        )
-
-        grouped_input = has_grouped_markers(train_data)
-        if grouped_input:
-            if labels is not None:
-                raise ValueError("labels is not supported for grouped input.")
-            if self.strategy == "frozen_sklearn":
-                return self._fit_grouped(train_data, type_map, target_key, fmt)
-
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
 
@@ -1486,68 +1391,7 @@ class DPAFineTuner:
             type_map = self._resolve_type_maps(train_data)
 
         self.type_map = type_map
-        return self._fit_training(
-            train_data, valid_data, type_map, grouped=grouped_input
-        )
-
-    def _fit_grouped(
-        self,
-        data: str | list[str],
-        type_map: list[str] | None = None,
-        target_key: str | list[str] | None = None,
-        fmt: str | None = None,
-    ) -> None:
-        if isinstance(target_key, list):
-            raise ValueError("Assembly input supports one target key.")
-        target = target_key or "property"
-
-        from sklearn.pipeline import (
-            make_pipeline,
-        )
-        from sklearn.preprocessing import (
-            StandardScaler,
-        )
-
-        from dpa_adapt.grouped._offline import (
-            GroupedDataset,
-        )
-        from dpa_adapt.utils.sklearn_heads import (
-            build_sklearn_head,
-        )
-
-        self.type_map = type_map or []
-        dataset = GroupedDataset(
-            data,
-            pretrained=self.pretrained,
-            model_branch=self.model_branch,
-            type_map=self.type_map,
-            target_key=target,
-            fmt=fmt,
-        )
-        features = dataset.get_embeddings()
-        y = dataset.get_labels()
-        self._target_key = target
-        self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
-        y_flat = y.ravel() if self._task_dim == 1 else y
-
-        head = build_sklearn_head(
-            self._predictor_type,
-            seed=self.seed,
-            n_outputs=self._task_dim,
-        )
-        self.predictor = make_pipeline(StandardScaler(), head)
-        self.predictor.fit(features, y_flat)
-        self._condition_manager = None
-        self._grouped_fit = True
-        self._fitted = True
-
-        p = self._ensure_sklearn()
-        p.predictor = self.predictor
-        p.type_map = self.type_map
-        p._target_key = self._target_key
-        p._task_dim = self._task_dim
-        p._condition_manager = self._condition_manager
-        p._fitted = True
+        return self._fit_training(train_data, valid_data, type_map)
 
     def _fit_mft(
         self,
@@ -1697,9 +1541,9 @@ class DPAFineTuner:
         DotDict
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
         """
-        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
+        if self.strategy in {"frozen_head", "finetune"}:
             return self._run_training_predict(data, fmt=fmt)
-        if self.strategy == "mft" and not self._grouped_fit:
+        if self.strategy == "mft":
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft predict(); "
@@ -1712,24 +1556,8 @@ class DPAFineTuner:
                 "predict() was called before fit(). Train the model with fit() first."
             )
 
-        from dpa_adapt.grouped._offline import (
-            GroupedDataset,
-            has_grouped_markers,
-        )
-
-        if self._grouped_fit and has_grouped_markers(data):
-            dataset = GroupedDataset(
-                data,
-                pretrained=self.pretrained,
-                model_branch=self.model_branch,
-                type_map=self.type_map,
-                target_key=self._target_key or self.property_name,
-                fmt=fmt,
-            )
-            features = dataset.get_embeddings()
-        else:
-            systems = load_data(data, fmt=fmt)
-            features = self._extract_features(systems)
+        systems = load_data(data, fmt=fmt)
+        features = self._extract_features(systems)
 
         if self._condition_manager is not None:
             try:
@@ -1767,7 +1595,7 @@ class DPAFineTuner:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
-        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
+        if self.strategy in {"frozen_head", "finetune"}:
             result = self._run_training_predict(data, fmt=fmt)
             labels = result.labels
             predictions = result.predictions
@@ -1776,7 +1604,7 @@ class DPAFineTuner:
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
-        if self.strategy == "mft" and not self._grouped_fit:
+        if self.strategy == "mft":
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft evaluate(); "
@@ -1797,25 +1625,9 @@ class DPAFineTuner:
         result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
-        from dpa_adapt.grouped._offline import (
-            GroupedDataset,
-            has_grouped_markers,
-        )
-
-        if self._grouped_fit and has_grouped_markers(data):
-            dataset = GroupedDataset(
-                data,
-                pretrained=self.pretrained,
-                model_branch=self.model_branch,
-                type_map=self.type_map,
-                target_key=self._target_key or "property",
-                fmt=fmt,
-            )
-            labels = dataset.get_labels().reshape(predictions.shape)
-        else:
-            systems = load_data(data, fmt=fmt)
-            labels = _load_labels(systems, self._target_key)
-            labels = labels.reshape(predictions.shape)
+        systems = load_data(data, fmt=fmt)
+        labels = _load_labels(systems, self._target_key)
+        labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(
@@ -1878,10 +1690,10 @@ class DPAFineTuner:
                 "freeze() was called before fit(). Train the model with fit() first."
             )
 
-        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
+        if self.strategy in {"frozen_head", "finetune"}:
             return self._freeze_training_checkpoint(output_path)
 
-        if self.strategy == "mft" and not self._grouped_fit:
+        if self.strategy == "mft":
             frozen_path = self._ensure_mft()._freeze_ckpt()
             output_path = os.path.abspath(str(output_path))
             if os.path.abspath(frozen_path) != output_path:

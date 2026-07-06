@@ -1,37 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """
-S2 grid projection helpers for DPA4/SeZM function-space nonlinearities.
+Grid projection helpers for DPA4/SeZM function-space nonlinearities.
 
-This module is the dpmodel port of
-``deepmd.pt.model.descriptor.sezm_nn.projection``, restricted to the Lebedev
-S2 quadrature path used by the core DPA4 configuration
-(``lebedev_quadrature=True``). The projectors only handle basis transforms:
-a projector maps coefficient tensors to a fixed quadrature grid, and maps
-grid fields back to coefficients with the matching quadrature rule.
+The projectors in this module only handle basis transforms.  They do not apply
+channel mixing or nonlinearities.  A projector maps coefficient tensors to a
+fixed quadrature grid, and maps grid fields back to coefficients with the
+matching quadrature rule.
 
-Ported names: ``BaseGridProjector``, ``S2GridProjector`` (Lebedev branch),
-``resolve_s2_grid_resolution`` (as-is, both methods — pure arithmetic), and
-``_normalize_s2_grid_resolution``.
-
-SO(3) Wigner-D grid machinery (consumed by ``SO3GridNet`` in
-``grid_net.py``, which backs the ``node_wise_so3``, ``message_node_so3``,
-and ``ffn_so3_grid`` paths): ``resolve_so3_grid``, ``_build_so3_frame_set``,
-and ``SO3GridProjector`` are ported here. The SO(3) projection matrices are
-assembled at init time with pure numpy via the Wigner-D quadrature
-(``WignerDCalculator``) over a Lebedev x gamma rotation grid, matching the pt
-float64 buffers to machine precision.
-
-Not ported (guarded): the e3nn product-grid branch of ``S2GridProjector``
-(``grid_method="e3nn"``, i.e. ``lebedev_quadrature=False``) raises
-``NotImplementedError`` at construction. Only the Lebedev path reproduces
-to-grid/from-grid roundtrip identities at machine precision.
-
-The Lebedev projection matrices are assembled at init time with pure numpy:
-``load_lebedev_rule`` replaces the pt Lebedev loader (same packaged data) and
-``real_spherical_harmonics`` exactly replaces the e3nn call
-``spherical_harmonics(list(range(lmax+1)), points, normalize=True,
-normalization="norm")``, so the buffers match the pt float64 buffers to
-machine precision.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.projection``.
 """
 
 from __future__ import (
@@ -85,9 +62,10 @@ class BaseGridProjector(NativeOP):
     Subclasses build ``to_grid_mat`` with shape ``(G, J)`` and
     ``from_grid_mat`` with shape ``(J, G)``, where ``G`` is the number of grid
     samples and ``J`` is the flattened coefficient axis consumed by the grid
-    net. For ordinary S2 projections, ``J`` is the SO(3) feature coefficient
-    axis: ``D = (lmax + 1)^2`` in packed layout, or the retained ``D_m`` axis
-    in m-major layout.
+    net.  For ordinary S2 projections, ``J`` is the SO(3) feature coefficient
+    axis: ``D = (lmax + 1)^2`` in packed layout, or the retained ``D_m`` axis in
+    m-major layout.  For SO(3) frame projections, ``J = D * n_frames`` with
+    frame index packed inside each coefficient row.
     """
 
     def __init__(
@@ -123,8 +101,8 @@ class BaseGridProjector(NativeOP):
         if self.grid_size != int(from_grid_mat.shape[1]):
             raise ValueError("Projection matrix grid axes `G` do not match")
         prec = PRECISION_DICT[self.precision.lower()]
-        self.to_grid_mat = np.ascontiguousarray(to_grid_mat).astype(prec)
-        self.from_grid_mat = np.ascontiguousarray(from_grid_mat).astype(prec)
+        self.to_grid_mat = np.ascontiguousarray(to_grid_mat, dtype=prec)
+        self.from_grid_mat = np.ascontiguousarray(from_grid_mat, dtype=prec)
 
     def call(self, *args: Any, **kwargs: Any) -> Any:
         """Projectors expose ``to_grid``/``from_grid``; there is no forward."""
@@ -138,8 +116,7 @@ class BaseGridProjector(NativeOP):
         to_grid_mat = xp_asarray_nodetach(
             xp, self.to_grid_mat[...], device=array_api_compat.device(embedding)
         )
-        if to_grid_mat.dtype != embedding.dtype:
-            to_grid_mat = xp.astype(to_grid_mat, embedding.dtype)
+        to_grid_mat = xp.astype(to_grid_mat, embedding.dtype)
         # einsum "gj,njc->ngc" as a broadcast batched matmul
         return xp.matmul(to_grid_mat[None, ...], embedding)
 
@@ -149,8 +126,7 @@ class BaseGridProjector(NativeOP):
         from_grid_mat = xp_asarray_nodetach(
             xp, self.from_grid_mat[...], device=array_api_compat.device(grid)
         )
-        if from_grid_mat.dtype != grid.dtype:
-            from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
+        from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
         # einsum "jg,ngc->njc" as a broadcast batched matmul
         return xp.matmul(from_grid_mat[None, ...], grid)
 
@@ -172,7 +148,7 @@ class BaseGridProjector(NativeOP):
 
 class S2GridProjector(BaseGridProjector):
     """
-    Project SO(3) coefficients to/from a flattened S2 grid (Lebedev only).
+    Project SO(3) coefficients to/from a flattened S2 grid.
 
     Parameters
     ----------
@@ -183,15 +159,16 @@ class S2GridProjector(BaseGridProjector):
     precision
         Buffer precision used by the projection matrices.
     grid_resolution_list
-        Two-element resolution list ``[precision, n_points]`` for
-        ``grid_method='lebedev'``. If None, resolved automatically.
+        Two-element resolution list. For ``grid_method='e3nn'`` it is
+        ``[R_phi, R_theta]`` and is converted to the ``e3nn``
+        ``(lat, long) = (R_theta, R_phi)`` ordering. For
+        ``grid_method='lebedev'`` it is ``[precision, n_points]``.
     coefficient_layout
         Coefficient ordering expected by the caller:
         - ``"packed"``: packed ``(l, m)`` order, optionally truncated by ``mmax``.
         - ``"m_major"``: reduced m-major order used inside ``SO2Convolution``.
     grid_method
-        S2 quadrature backend. Must be ``"e3nn"`` or ``"lebedev"``; only
-        ``"lebedev"`` (``lebedev_quadrature=True``) is ported to dpmodel.
+        S2 quadrature backend. Must be ``"e3nn"`` or ``"lebedev"``.
     """
 
     def __init__(
@@ -209,11 +186,6 @@ class S2GridProjector(BaseGridProjector):
         self.grid_method = str(grid_method).lower()
         if self.grid_method not in {"e3nn", "lebedev"}:
             raise ValueError("`grid_method` must be either 'e3nn' or 'lebedev'")
-        if self.grid_method == "e3nn":
-            raise NotImplementedError(
-                "grid_method='e3nn' (lebedev_quadrature=False) is not ported "
-                "to dpmodel; use lebedev_quadrature=True"
-            )
 
         self.grid_resolution_list = _normalize_s2_grid_resolution(
             lmax_i,
@@ -221,9 +193,14 @@ class S2GridProjector(BaseGridProjector):
             grid_resolution_list,
             method=self.grid_method,
         )
-        self.phi_resolution = 0
-        self.theta_resolution = 0
-        self.lebedev_precision, self.lebedev_npoints = self.grid_resolution_list
+        if self.grid_method == "e3nn":
+            self.phi_resolution, self.theta_resolution = self.grid_resolution_list
+            self.lebedev_precision = 0
+            self.lebedev_npoints = 0
+        else:
+            self.phi_resolution = 0
+            self.theta_resolution = 0
+            self.lebedev_precision, self.lebedev_npoints = self.grid_resolution_list
 
         super().__init__(
             lmax=lmax_i,
@@ -232,6 +209,17 @@ class S2GridProjector(BaseGridProjector):
             n_frames=1,
             coefficient_layout=coefficient_layout,
         )
+
+    def _rescale_truncated_orders(self, mat: np.ndarray) -> None:
+        if self.lmax == self.mmax:
+            return
+        for degree in range(self.lmax + 1):
+            if degree <= self.mmax:
+                continue
+            start_idx = degree * degree
+            length = 2 * degree + 1
+            rescale = math.sqrt(length / float(2 * self.mmax + 1))
+            mat[:, :, start_idx : start_idx + length] *= rescale
 
     def _rescale_truncated_matrix(self, mat: np.ndarray) -> None:
         if self.lmax == self.mmax:
@@ -245,6 +233,86 @@ class S2GridProjector(BaseGridProjector):
             mat[:, start_idx : start_idx + length] *= rescale
 
     def _build_projection_mats(
+        self,
+        coeff_index: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if self.grid_method == "lebedev":
+            return self._build_lebedev_projection_mats(coeff_index)
+        return self._build_e3nn_projection_mats(coeff_index)
+
+    def _build_e3nn_projection_mats(
+        self,
+        coeff_index: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # Under the component normalization, the e3nn ``ToS2Grid``/``FromS2Grid``
+        # product-grid buffers evaluate the real spherical harmonics on the
+        # ``(beta, alpha)`` tensor-product grid: sampling
+        # ``real_spherical_harmonics`` on those grid points reproduces
+        # ``einsum("mbi,am->bai", ToS2Grid.shb, ToS2Grid.sha)``, and synthesis of
+        # the from-grid matrix multiplies in the e3nn beta quadrature weights.
+        # This keeps the e3nn and Lebedev S2 backends drop-in replacements for
+        # the same grid net.
+        res_beta = int(self.theta_resolution)
+        res_alpha = int(self.phi_resolution)
+        betas = (np.arange(res_beta, dtype=np.float64) + 0.5) / res_beta * math.pi
+        alphas = np.arange(res_alpha, dtype=np.float64) / res_alpha * (2.0 * math.pi)
+        beta_grid, alpha_grid = np.meshgrid(betas, alphas, indexing="ij")
+        grid_points = np.stack(
+            [
+                np.sin(beta_grid) * np.sin(alpha_grid),
+                np.cos(beta_grid),
+                np.sin(beta_grid) * np.cos(alpha_grid),
+            ],
+            axis=-1,
+        )
+        harmonics = real_spherical_harmonics(grid_points, self.lmax)
+        scale = math.sqrt(float(self.lmax + 1))
+        degree_factors = np.asarray(
+            [
+                float(2 * degree + 1)
+                for degree in range(self.lmax + 1)
+                for _ in range(2 * degree + 1)
+            ],
+            dtype=np.float64,
+        )
+        # e3nn beta quadrature weights (``FromS2Grid._quadrature_weights``),
+        # one weight per beta row, scaled by ``res_beta**2 / res_alpha``.
+        half = res_beta // 2
+        order = np.arange(half, dtype=np.float64)
+        beta_index = np.arange(2 * half, dtype=np.float64)
+        quad_inner = np.sum(
+            np.sin(
+                (2.0 * beta_index[:, None] + 1.0)
+                * (2.0 * order[None, :] + 1.0)
+                * math.pi
+                / (4.0 * half)
+            )
+            / (2.0 * order[None, :] + 1.0),
+            axis=1,
+        )
+        quad_weight = (
+            (2.0 / half)
+            * np.sin(math.pi * (2.0 * beta_index + 1.0) / (4.0 * half))
+            * quad_inner
+        )
+        quad_weight /= 2.0 * (2 * half) ** 2
+        quad_weight = quad_weight * (res_beta**2 / res_alpha)
+        to_grid_mat = harmonics / scale
+        from_grid_mat = harmonics * (
+            quad_weight[:, None, None] * scale * degree_factors[None, None, :]
+        )
+        self._rescale_truncated_orders(to_grid_mat)
+        self._rescale_truncated_orders(from_grid_mat)
+
+        to_grid_mat = np.reshape(to_grid_mat, (res_beta * res_alpha, -1))[
+            :, coeff_index
+        ]
+        from_grid_mat = np.reshape(from_grid_mat, (res_beta * res_alpha, -1)).T[
+            coeff_index, :
+        ]
+        return to_grid_mat, from_grid_mat
+
+    def _build_lebedev_projection_mats(
         self,
         coeff_index: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -276,7 +344,6 @@ class S2GridProjector(BaseGridProjector):
         return to_grid_mat, from_grid_mat
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the S2GridProjector to a dict (pt-compatible format)."""
         return {
             "@class": "S2GridProjector",
             "@version": 1,
@@ -293,7 +360,6 @@ class S2GridProjector(BaseGridProjector):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> S2GridProjector:
-        """Deserialize an S2GridProjector from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "S2GridProjector":
@@ -302,14 +368,7 @@ class S2GridProjector(BaseGridProjector):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         data.pop("@variables", None)
-        return cls(
-            lmax=int(config["lmax"]),
-            mmax=int(config["mmax"]),
-            precision=str(config["precision"]),
-            grid_resolution_list=config["grid_resolution_list"],
-            coefficient_layout=str(config["coefficient_layout"]),
-            grid_method=str(config["grid_method"]),
-        )
+        return cls(**config)
 
 
 class SO3GridProjector(BaseGridProjector):
@@ -320,23 +379,6 @@ class SO3GridProjector(BaseGridProjector):
     ``(l, m)`` order outside and the configured frame set inside each row.  A
     frame index outside ``[-l, l]`` is kept as a zero column/row.  This keeps the
     tensor layout regular while preserving the exact per-degree frame support.
-
-    Parameters
-    ----------
-    lmax
-        Maximum spherical harmonic degree.
-    mmax
-        Maximum order kept in the coefficient layout. If None, use ``lmax``.
-    kmax
-        Frame-index half-width; the frame set is ``{0, -1, 1, ..., -kmax, kmax}``.
-    precision
-        Buffer precision used by the projection matrices.
-    lebedev_precision
-        Explicit Lebedev rule precision. If None, resolved automatically.
-    coefficient_layout
-        Coefficient ordering expected by the caller:
-        - ``"packed"``: packed ``(l, m)`` order, optionally truncated by ``mmax``.
-        - ``"m_major"``: reduced m-major order used inside ``SO2Convolution``.
     """
 
     def __init__(
@@ -368,7 +410,6 @@ class SO3GridProjector(BaseGridProjector):
             n_frames=len(self.frame_set),
             coefficient_layout=coefficient_layout,
         )
-        # plain numpy int64 attribute (becomes a torch buffer in pt_expt later)
         self.frame_values = np.asarray(self.frame_set, dtype=np.int64)
 
     def _build_projection_mats(
@@ -382,24 +423,20 @@ class SO3GridProjector(BaseGridProjector):
             2.0 * math.pi / float(self.n_gamma)
         )
         edge_quaternion = build_edge_quaternion(points, eps=1e-14)
-        # torch ``repeat_interleave(n_gamma, dim=0)`` -> numpy ``repeat`` on axis 0
         edge_quaternion = np.repeat(edge_quaternion, self.n_gamma, axis=0)
-        # torch ``repeat(n_points, 1)`` (tile) -> numpy ``tile``
         gamma_quaternion = np.tile(quaternion_z_rotation(gamma), (points.shape[0], 1))
         grid_quaternion = quaternion_multiply(gamma_quaternion, edge_quaternion)
-        # WignerDCalculator.__call__ returns ``(D_full, Dt_full)``; take D_full.
-        wigner_grid = WignerDCalculator(self.lmax, precision="float64")(
+        wigner_grid, _ = WignerDCalculator(self.lmax, precision="float64")(
             grid_quaternion
-        )[0]
+        )
         # ``build_edge_quaternion`` follows SeZM's global-to-local convention.
-        # The transpose below stores the local m=0 column in the same layout as
-        # ``WignerDCalculator.forward_zonal`` and extends it to k != 0.
+        # The transpose below stores the local m=0 column in the same layout
+        # as ``WignerDCalculator.forward_zonal`` and extends it to k != 0.
         wigner_grid = np.ascontiguousarray(np.swapaxes(wigner_grid, -1, -2))
         haar_weight = np.repeat(weights, self.n_gamma) / float(self.n_gamma)
 
         grid_size = int(grid_quaternion.shape[0])
-        n_frames = len(self.frame_set)
-        coeff_dim = int(coeff_index.shape[0]) * n_frames
+        coeff_dim = int(coeff_index.shape[0] * len(self.frame_set))
         to_grid_mat = np.zeros((grid_size, coeff_dim), dtype=np.float64)
         from_grid_mat = np.zeros((coeff_dim, grid_size), dtype=np.float64)
 
@@ -407,14 +444,12 @@ class SO3GridProjector(BaseGridProjector):
             degree_factor = float(2 * degree + 1)
             for m_order in range(-degree, degree + 1):
                 packed_idx = so3_packed_index(degree, m_order)
-                # init-time numpy control-flow index; replaces pt's
-                # ``(coeff_index == packed_idx).nonzero(as_tuple=False)``
                 coeff_positions = np.argwhere(coeff_index == packed_idx)
                 if coeff_positions.size == 0:
                     continue
                 coeff_pos = int(coeff_positions[0, 0])
                 for frame_pos, frame_order in enumerate(self.frame_set):
-                    flat_idx = coeff_pos * n_frames + frame_pos
+                    flat_idx = coeff_pos * len(self.frame_set) + frame_pos
                     if abs(frame_order) > degree:
                         continue
                     row = so3_packed_index(degree, m_order)
@@ -425,7 +460,6 @@ class SO3GridProjector(BaseGridProjector):
         return to_grid_mat, from_grid_mat
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the SO3GridProjector to a dict (pt-compatible format)."""
         return {
             "@class": "SO3GridProjector",
             "@version": 1,
@@ -442,7 +476,6 @@ class SO3GridProjector(BaseGridProjector):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> SO3GridProjector:
-        """Deserialize an SO3GridProjector from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "SO3GridProjector":
@@ -451,14 +484,7 @@ class SO3GridProjector(BaseGridProjector):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         data.pop("@variables", None)
-        return cls(
-            lmax=int(config["lmax"]),
-            mmax=int(config["mmax"]),
-            kmax=int(config["kmax"]),
-            precision=str(config["precision"]),
-            lebedev_precision=int(config["lebedev_precision"]),
-            coefficient_layout=str(config["coefficient_layout"]),
-        )
+        return cls(**config)
 
 
 def resolve_s2_grid_resolution(
@@ -494,40 +520,6 @@ def resolve_s2_grid_resolution(
     theta_resolution = 3 * int(lmax) + 2
     theta_resolution += theta_resolution % 2
     return [phi_resolution, theta_resolution]
-
-
-def _normalize_s2_grid_resolution(
-    lmax: int,
-    mmax: int,
-    grid_resolution_list: list[int] | None,
-    *,
-    method: str,
-) -> list[int]:
-    """Resolve default grids or validate already-resolved low-level grids."""
-    method = str(method).lower()
-    if grid_resolution_list is None:
-        return resolve_s2_grid_resolution(lmax, mmax, method=method)
-    if method == "lebedev":
-        if len(grid_resolution_list) != 2:
-            raise ValueError(
-                "Lebedev `grid_resolution_list` must be [precision, n_points]"
-            )
-        precision = int(grid_resolution_list[0])
-        n_points = int(grid_resolution_list[1])
-        expected_n_points = LEBEDEV_PRECISION_TO_NPOINTS.get(precision)
-        if expected_n_points != n_points:
-            raise ValueError(
-                "Lebedev `grid_resolution_list` must match a packaged "
-                f"[precision, n_points] pair; got [{precision}, {n_points}]"
-            )
-        return [precision, n_points]
-
-    if len(grid_resolution_list) != 2:
-        raise ValueError("`grid_resolution_list` must contain two integers")
-    resolution = [int(grid_resolution_list[0]), int(grid_resolution_list[1])]
-    if resolution[0] < 1 or resolution[1] < 1:
-        raise ValueError("grid resolutions must be positive")
-    return resolution
 
 
 def resolve_so3_grid(
@@ -572,6 +564,40 @@ def resolve_so3_grid(
     # resolves the integer Fourier modes exactly.
     n_gamma = 1 if kmax_i == 0 else 3 * kmax_i + 1
     return int(lebedev_precision), int(lebedev_npoints), int(n_gamma)
+
+
+def _normalize_s2_grid_resolution(
+    lmax: int,
+    mmax: int,
+    grid_resolution_list: list[int] | None,
+    *,
+    method: str,
+) -> list[int]:
+    """Resolve default grids or validate already-resolved low-level grids."""
+    method = str(method).lower()
+    if grid_resolution_list is None:
+        return resolve_s2_grid_resolution(lmax, mmax, method=method)
+    if method == "lebedev":
+        if len(grid_resolution_list) != 2:
+            raise ValueError(
+                "Lebedev `grid_resolution_list` must be [precision, n_points]"
+            )
+        precision = int(grid_resolution_list[0])
+        n_points = int(grid_resolution_list[1])
+        expected_n_points = LEBEDEV_PRECISION_TO_NPOINTS.get(precision)
+        if expected_n_points != n_points:
+            raise ValueError(
+                "Lebedev `grid_resolution_list` must match a packaged "
+                f"[precision, n_points] pair; got [{precision}, {n_points}]"
+            )
+        return [precision, n_points]
+
+    if len(grid_resolution_list) != 2:
+        raise ValueError("`grid_resolution_list` must contain two integers")
+    resolution = [int(grid_resolution_list[0]), int(grid_resolution_list[1])]
+    if resolution[0] < 1 or resolution[1] < 1:
+        raise ValueError("grid resolutions must be positive")
+    return resolution
 
 
 def _build_so3_frame_set(kmax: int) -> list[int]:

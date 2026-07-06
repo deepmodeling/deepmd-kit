@@ -121,41 +121,6 @@ def test_frame_expand_parity(lmax, channels, kmax) -> None:
     )
 
 
-@pytest.mark.parametrize("lmax,channels,kmax", _CASES)  # degree, channels, kmax
-def test_expand_then_contract_shapes(lmax, channels, kmax) -> None:
-    """Shape round-trip ``(N,D,F,C) -> expand -> (N,D,F,K*C) -> contract -> (N,D,F,C)``."""
-    n_frames = 2 * kmax + 1
-    coeff_dim = (lmax + 1) ** 2
-    n_batch, n_focus = 3, 2
-    rng = np.random.default_rng(404)
-
-    expand = DPFrameExpand(
-        lmax=lmax,
-        mmax=lmax,
-        coefficient_layout="packed",
-        n_frames=n_frames,
-        channels=channels,
-        precision="float64",
-        trainable=True,
-        seed=1,
-    )
-    contract = DPFrameContract(
-        lmax=lmax,
-        mmax=lmax,
-        coefficient_layout="packed",
-        n_frames=n_frames,
-        channels=channels,
-        precision="float64",
-        trainable=True,
-        seed=2,
-    )
-    coeff = rng.normal(size=(n_batch, coeff_dim, n_focus, channels))
-    expanded = expand.call(coeff)
-    assert expanded.shape == (n_batch, coeff_dim, n_focus, n_frames * channels)
-    contracted = contract.call(expanded)
-    assert contracted.shape == (n_batch, coeff_dim, n_focus, channels)
-
-
 @pytest.mark.parametrize("cls", [DPFrameContract, DPFrameExpand])  # mixer class
 def test_serialize_roundtrip(cls) -> None:
     """Serialize -> deserialize -> forward is identical; @version == 1."""

@@ -18,6 +18,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
 )
 
 if INSTALLED_PT:
@@ -28,6 +29,8 @@ if INSTALLED_TF:
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
     )
+if INSTALLED_TF2:
+    import tensorflow as tf
 if INSTALLED_JAX:
     from deepmd.jax.common import to_jax_array as numpy_to_jax
     from deepmd.jax.env import (
@@ -118,6 +121,18 @@ class ModelTest:
                 coord_tensor,
                 pt_expt_numpy_to_torch(atype),
                 box=pt_expt_numpy_to_torch(box),
+                do_atomic_virial=True,
+            ).items()
+        }
+
+    def eval_tf2_model(self, tf2_obj: Any, natoms, coords, atype, box) -> Any:
+        del natoms
+        return {
+            kk: vv.numpy() if isinstance(vv, tf.Tensor) else to_numpy_array(vv)
+            for kk, vv in tf2_obj(
+                coords,
+                atype,
+                box=box,
                 do_atomic_virial=True,
             ).items()
         }

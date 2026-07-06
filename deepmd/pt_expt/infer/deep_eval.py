@@ -65,6 +65,24 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
+
+
+# Public output keys emitted by the graph-form AOTI forward
+# (``forward_lower_graph_exportable``) keyed by the output-variable category that
+# ``request_defs`` carries.  The graph path is LOCAL-only (``N == sum(n_node)``
+# nodes, no ghosts), so its outputs are already at local-atom resolution -- no
+# ``communicate_extended_output`` fold-back is needed.
+_GRAPH_CATEGORY_TO_KEY = {
+    OutputVariableCategory.OUT: "atom_energy",
+    OutputVariableCategory.REDU: "energy",
+    OutputVariableCategory.DERV_R: "force",
+    OutputVariableCategory.DERV_C_REDU: "virial",
+    OutputVariableCategory.DERV_C: "atom_virial",
+}
+
 
 def _reshape_charge_spin(
     charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
@@ -111,6 +129,19 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    nlist_backend : str, default: "auto"
+        Neighbor-list builder for the NLIST/extended lower path (``.pte`` and
+        nlist-form ``.pt2``): ``"auto"`` / ``"vesin"`` / ``"native"``. Not
+        used by graph-form ``.pt2`` artifacts.
+    neighbor_graph_method : str, default: "dense"
+        Carry-all graph builder for GRAPH-FORM ``.pt2`` artifacts ONLY
+        (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
+        (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
+        non-default value on any other artifact raises at construction — the
+        knob would silently do nothing there; use ``nlist_backend`` for the
+        nlist path instead. All builders emit the same neighbor set, so the
+        choice is performance-only. Consolidating the two knobs into a single
+        backend-selection API is deferred to the dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
     """
@@ -123,11 +154,15 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         nlist_backend: str = "auto",
+        neighbor_graph_method: str = "dense",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        # World-2 graph-form ``.pt2`` (lower_input_kind == "graph") builder select:
+        # "dense"/"ase" (backend-agnostic) or "vesin"/"nv" (on-device O(N)).
+        self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
 
         if self._is_pt2:
@@ -141,6 +176,20 @@ class DeepEval(DeepEvalBackend):
                 f"Unsupported model file '{model_file}' for the pt_expt "
                 "backend: expected `.pt2` / `.pte` (deployable archives) or "
                 "`.pt` (training checkpoint)."
+            )
+
+        # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
+        # (_eval_model_graph); fail fast instead of silently ignoring it on
+        # nlist-form artifacts (there, the builder knob is nlist_backend).
+        if (
+            neighbor_graph_method != "dense"
+            and getattr(self, "metadata", {}).get("lower_input_kind") != "graph"
+        ):
+            raise ValueError(
+                f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
+                "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
+                f"model is not graph-form. Use nlist_backend to select the "
+                "neighbor-list builder for the nlist path."
             )
 
         self._setup_nlist_backend(nlist_backend)
@@ -1423,6 +1472,10 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
+        if self.metadata.get("lower_input_kind") == "graph":
+            return self._eval_model_graph(
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
+            )
         model_inputs, mapping_t, nframes, natoms = self._prepare_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
@@ -1621,6 +1674,144 @@ class DeepEval(DeepEvalBackend):
                 )
         return tuple(results)
 
+    def _eval_model_graph(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        """Evaluate a graph-form ``.pt2`` (``lower_input_kind == "graph"``).
+
+        Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
+        from the eval system at its exact (tight) edge count and feeds the
+        positional schema
+        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+        charge_spin)`` to the exported forward.  The AOTI artifact's edge axis
+        is DYNAMIC (B2.0), so no ``edge_capacity`` padding is needed.  The
+        forward returns the LOCAL public keys directly, so results are reshaped
+        without ``communicate_extended_output``.
+        """
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        box_input = cells.reshape(nframes, 9) if cells is not None else None
+        # Dynamic edge axis (B2.0): build the carry-all graph at its exact edge
+        # count (no static padding); the AOTI artifact accepts any E.
+        graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
+
+        atype_t = torch.tensor(
+            np.asarray(atom_types).reshape(-1), dtype=torch.int64, device=DEVICE
+        )
+        # graph fields may be numpy (dense/ase) or torch, possibly on CUDA
+        # (vesin/nv) -- torch.as_tensor handles both and moves to DEVICE.
+        n_node_t = torch.as_tensor(graph.n_node, dtype=torch.int64, device=DEVICE)
+        edge_index_t = torch.as_tensor(
+            graph.edge_index, dtype=torch.int64, device=DEVICE
+        )
+        edge_vec_t = torch.as_tensor(graph.edge_vec, dtype=torch.float64, device=DEVICE)
+        edge_mask_t = torch.as_tensor(graph.edge_mask, dtype=torch.bool, device=DEVICE)
+
+        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+            fparam, aparam, nframes, natoms, DEVICE
+        )
+        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+
+        model_inputs = (
+            atype_t,
+            n_node_t,
+            edge_index_t,
+            edge_vec_t,
+            edge_mask_t,
+            fparam_t,
+            aparam_t,
+            charge_spin_t,
+        )
+        if self._is_pt2:
+            model_ret = self._pt2_runner(*model_inputs)
+        else:
+            model_ret = self.exported_module(*model_inputs)
+
+        results = []
+        for odef in request_defs:
+            shape = self._get_output_shape(odef, nframes, natoms)
+            gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
+            val = model_ret.get(gkey) if gkey is not None else None
+            if val is not None:
+                results.append(val.detach().cpu().numpy().reshape(shape))
+            else:
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
+    def _build_eval_graph(
+        self,
+        coord_input: np.ndarray,
+        atom_types: np.ndarray,
+        box_input: np.ndarray | None,
+        device: "torch.device",
+    ) -> "NeighborGraph":
+        """Build the carry-all NeighborGraph for graph-form ``.pt2`` inference.
+
+        Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
+        backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
+        All backends emit the SAME neighbor set (carry-all, sel-free), so the
+        selection is a pure performance choice and results are unchanged.
+        """
+        method = self._neighbor_graph_method
+        if method == "dense":
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                build_neighbor_graph,
+            )
+
+            return build_neighbor_graph(coord_input, atom_types, box_input, self._rcut)
+        if method == "ase":
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                build_neighbor_graph_ase,
+            )
+
+            return build_neighbor_graph_ase(
+                coord_input, atom_types, box_input, self._rcut
+            )
+        if method in ("vesin", "nv"):
+            cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
+            aa = torch.as_tensor(
+                np.asarray(atom_types), dtype=torch.int64, device=device
+            )
+            bb = (
+                torch.as_tensor(box_input, dtype=torch.float64, device=device)
+                if box_input is not None
+                else None
+            )
+            if method == "vesin":
+                from deepmd.pt_expt.utils.vesin_graph_builder import (
+                    build_neighbor_graph_vesin,
+                )
+
+                return build_neighbor_graph_vesin(cc, aa, bb, self._rcut)
+            from deepmd.pt_expt.utils.nv_graph_builder import (
+                build_neighbor_graph_nv,
+            )
+
+            return build_neighbor_graph_nv(cc, aa, bb, self._rcut)
+        raise ValueError(
+            f"unknown neighbor_graph_method {method!r}; "
+            "use 'dense', 'ase', 'vesin', or 'nv'"
+        )
+
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int
     ) -> list[int]:
@@ -1648,6 +1839,14 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script (training config)."""
         return self._model_def_script
+
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.model_path)
+        return data["model"] if isinstance(data, dict) and "model" in data else data
 
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.

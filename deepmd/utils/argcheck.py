@@ -398,6 +398,25 @@ def descrpt_se_zm_args() -> list[Argument]:
         "building Wigner-D blocks. The roll is sampled independently per edge and "
         "per forward call."
     )
+    doc_edge_cartesian = (
+        "If True, every interaction block whose message-passing degree is 1 or 2 "
+        "replaces its per-edge SO(2) rotation-frame tensor product with an "
+        "equivalent global-frame Cartesian rank-2 tensor product, removing the "
+        "two per-edge Wigner-D rotations. Blocks with degree 0 or at least 3 keep "
+        "the SO(2) path. When every block takes the Cartesian path, the full "
+        "Wigner-D construction is skipped automatically."
+    )
+    doc_node_cartesian = (
+        "Per-node global-frame Cartesian rank-2 tensor product applied to the "
+        "aggregated message in every interaction block whose message-passing "
+        "degree is 1 or 2, coupling it with the destination node feature. "
+        "Configured by a string `<mode>:<layers>` where `mode` is `default` (the "
+        "one-sided product) or `parity` (the symmetrized product), and `layers` "
+        "is the stack depth; a bare integer `N` is shorthand for `default:N`, and "
+        "`none` (or `0`) disables it. Orthogonal to `edge_cartesian`: "
+        "either, both, or neither may be enabled. Its cost scales with the number "
+        "of nodes rather than edges, leaving the per-edge message path unchanged."
+    )
     doc_lmax = "Maximum degree, only used when `l_schedule` is None."
     doc_l_schedule = "Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing. If set, lmax and n_blocks will be ignored."
     doc_mmax = "Maximum SO(2) order (|m|), only used when `m_schedule` is None. If None, defaults to the per-block lmax."
@@ -427,7 +446,13 @@ def descrpt_se_zm_args() -> list[Argument]:
         "If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers. "
         "When False (default), no normalization is applied between layers."
     )
-    doc_so2_layers = "Number of SO(2) mixing layers per block."
+    doc_mixing_layers = (
+        "Number of learnable mixing layers in the per-edge message core of each "
+        "block (legacy alias: so2_layers). `0` applies only the edge-condition "
+        "modulation: the rotation-free per-degree radial scaling on the SO(2) "
+        "path, or a single `x @ T_e` when edge_cartesian applies. The per-node "
+        "node_cartesian stack carries its own independent depth."
+    )
     doc_so2_attn_res = (
         "Depth-wise attention residual mode across the internal SO(2) layer "
         "history inside each interaction block. Must be one of `none`, "
@@ -441,7 +466,10 @@ def descrpt_se_zm_args() -> list[Argument]:
         "`degree` uses an edge-conditioned cross-degree kernel "
         "`W[l_in,l_out,|m|](r)` shared by all channels. "
         "`degree_channel` uses `W[l_in,l_out,|m|,c](r)`, optionally low-rank "
-        "when `radial_so2_rank > 0`."
+        "when `radial_so2_rank > 0`. "
+        "This setting has no effect on blocks that take the Cartesian path "
+        "(edge_cartesian with degree 1 or 2), where the dynamic radial degree "
+        "mixer is bypassed."
     )
     doc_radial_so2_rank = (
         "Low-rank channel factorization rank for `radial_so2_mode=degree_channel`. "
@@ -671,6 +699,20 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=True,
             doc=doc_only_pt_supported + doc_random_gamma,
         ),
+        Argument(
+            "edge_cartesian",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_edge_cartesian,
+        ),
+        Argument(
+            "node_cartesian",
+            [str, int],
+            optional=True,
+            default="none",
+            doc=doc_only_pt_supported + doc_node_cartesian,
+        ),
         Argument("lmax", int, optional=True, default=3, doc=doc_lmax),
         Argument(
             "l_schedule", list[int], optional=True, default=None, doc=doc_l_schedule
@@ -705,7 +747,14 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument("n_blocks", int, optional=True, default=3, doc=doc_n_blocks),
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
-        Argument("so2_layers", int, optional=True, default=4, doc=doc_so2_layers),
+        Argument(
+            "mixing_layers",
+            int,
+            optional=True,
+            default=4,
+            alias=["so2_layers"],
+            doc=doc_mixing_layers,
+        ),
         Argument(
             "so2_attn_res",
             str,
@@ -3455,6 +3504,7 @@ def linear_ener_model_args() -> Argument:
         'If "mean", the weights are set to be 1 / len(models). '
         'If "sum", the weights are set to be 1.'
     )
+    doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
     models_args = model_args(exclude_hybrid=True)
     models_args.name = "models"
     models_args.fold_subdoc = True
@@ -3471,6 +3521,9 @@ def linear_ener_model_args() -> Argument:
                 [list, str],
                 optional=False,
                 doc=doc_weights,
+            ),
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
             ),
         ],
         doc=doc_only_tf_supported,
@@ -5507,6 +5560,9 @@ def resolve_full_validation_start_step(
 def validating_args() -> Argument:
     """Generate full validation arguments."""
     valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation_supported = (
+        "(Supported Backend: PyTorch, PyTorch Experimental, JAX) "
+    )
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
         "validation dataset during training. This flow is independent from the "
@@ -5578,7 +5634,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_full_validation,
+            doc=doc_full_validation_supported + doc_full_validation,
         ),
         Argument(
             "ema_full_validation",
@@ -5592,7 +5648,7 @@ def validating_args() -> Argument:
             int,
             optional=True,
             default=5000,
-            doc=doc_only_pt_supported + doc_validation_freq,
+            doc=doc_full_validation_supported + doc_validation_freq,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5601,21 +5657,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_save_best,
+            doc=doc_full_validation_supported + doc_save_best,
         ),
         Argument(
             "save_best_dir",
             [str, None],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_save_best_dir,
+            doc=doc_full_validation_supported + doc_save_best_dir,
         ),
         Argument(
             "max_best_ckpt",
             int,
             optional=True,
             default=1,
-            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            doc=doc_full_validation_supported + doc_max_best_ckpt,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5624,7 +5680,7 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="E:MAE",
-            doc=doc_only_pt_supported + doc_validation_metric,
+            doc=doc_full_validation_supported + doc_validation_metric,
             extra_check=is_valid_full_validation_metric,
             extra_check_errmsg=(
                 "must be one of "
@@ -5636,14 +5692,14 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="val.log",
-            doc=doc_only_pt_supported + doc_full_val_file,
+            doc=doc_full_validation_supported + doc_full_val_file,
         ),
         Argument(
             "full_val_start",
             [int, float],
             optional=True,
             default=0.5,
-            doc=doc_only_pt_supported + doc_full_val_start,
+            doc=doc_full_validation_supported + doc_full_val_start,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be greater than or equal to 0",
         ),
@@ -5669,7 +5725,7 @@ def validating_args() -> Argument:
         sub_variants=[],
         optional=True,
         default={},
-        doc=doc_only_pt_supported
+        doc=doc_full_validation_supported
         + "Independent full validation options for single-task energy training.",
     )
 

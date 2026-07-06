@@ -355,6 +355,13 @@ def lammps_si():
     lmp.close()
 
 
+@pytest.fixture
+def lammps_real():
+    lmp = _lammps(data_file=data_file, units="real")
+    yield lmp
+    lmp.close()
+
+
 def test_pair_deepmd_sr(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
@@ -506,6 +513,39 @@ def test_pair_deepmd_lr_efield_variable(lammps) -> None:
         assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
             expected_f_lr_efield_variable_step1[ii]
         )
+
+
+def test_pair_deepmd_lr_efield_constant_real(lammps_real) -> None:
+    lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_real.pair_coeff("* *")
+    lammps_real.bond_style("zero")
+    lammps_real.bond_coeff("*")
+    lammps_real.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_real.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1"
+    )
+    lammps_real.fix_modify("0 energy yes virial yes")
+    lammps_real.run(0)
+    assert lammps_real.eval("f_0") == pytest.approx(
+        expected_e_efield_constant * constants.ener_metal2real
+    )
+
+
+def test_pair_deepmd_lr_efield_variable_real(lammps_real) -> None:
+    lammps_real.variable("EFIELD_Z equal 1.0")
+    lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_real.pair_coeff("* *")
+    lammps_real.bond_style("zero")
+    lammps_real.bond_coeff("*")
+    lammps_real.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_real.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z"
+    )
+    lammps_real.fix_modify("0 energy yes virial yes")
+    lammps_real.run(0)
+    assert lammps_real.eval("f_0") == pytest.approx(
+        expected_e_efield_constant * constants.ener_metal2real
+    )
 
 
 def test_min_dplr(lammps) -> None:

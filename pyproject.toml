@@ -91,6 +91,8 @@ test = [
     "pytest-split",
     "pytest-timeout",
     "dpgui",
+    # DPA-ADAPT tests import sklearn via dpa_adapt.cv at module load time.
+    "scikit-learn",
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
 ]
@@ -457,7 +459,9 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/3rdparty/**" = ["ALL"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
+"deepmd/_vendors/**" = ["ALL"]
 "deepmd/tf/**" = ["TID253"]
+"deepmd/tf2/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253", "B905"]
 "deepmd/pt_expt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]

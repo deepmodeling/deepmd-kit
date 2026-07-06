@@ -36,6 +36,9 @@ from dpa_adapt._backend import (
     resolve_dp_command,
     resolve_pretrained_path,
 )
+from dpa_adapt._validation import (
+    validate_fparam_dim,
+)
 
 _LOG = logging.getLogger("dpa_adapt.trainer")
 
@@ -170,7 +173,6 @@ class DPATrainer:
         # ---- model overrides ----
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
-        loss_type: str = "property",
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
@@ -220,10 +222,7 @@ class DPATrainer:
             raise ValueError(
                 f"loss_function must be one of {_VALID_LOSSES}; got {loss_function!r}."
             )
-        if not isinstance(fparam_dim, int) or fparam_dim < 0:
-            raise ValueError(
-                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
-            )
+        validate_fparam_dim(fparam_dim)
 
         self.pretrained = pretrained
         self.init_branch = init_branch
@@ -236,7 +235,6 @@ class DPATrainer:
         self.type_map = type_map
         self.fitting_net_params = fitting_net_params
         self.fparam_dim = fparam_dim
-        self.loss_type = loss_type
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.decay_steps = decay_steps
@@ -370,7 +368,7 @@ class DPATrainer:
                 "fitting_net": fitting_net,
             },
             "loss": {
-                "type": self.loss_type,
+                "type": "property",
                 "loss_func": self.loss_function,
                 "metric": ["mae", "rmse"],
             },

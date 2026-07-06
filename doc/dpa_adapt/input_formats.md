@@ -9,7 +9,6 @@
 `dpa-adapt data convert` and the Python `dpa_adapt.convert()` helper
 auto-detect the input type and route it to the correct pipeline:
 **SMILES table** → RDKit 3D conformer generation,
-**formula table** → random doping from a POSCAR template,
 **structure files** → dpdata (auto-detect or explicit `--fmt`).
 
 ## SMILES Tables (CSV)
@@ -46,56 +45,11 @@ dpaad data convert --input data.csv --output ./npy --fmt smiles \
     --split-seed 42 --conformer-seed 43
 ```
 
-## Formula Tables (CSV/TXT + POSCAR Template)
-
-**Trigger:** `--fmt formula`. Reads a table of elemental composition formulas
-(e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped
-structures by randomly substituting atoms on the host-element sublattice.
-
-Formula input supports two table styles:
-
-- Headered CSV/TSV: comma- or tab-delimited with named columns, such as
-  `formula,Property`.
-- Headered delimited text: comma, tab, semicolon, or pipe (`|`) delimiters
-  with named columns.
-- Headerless delimited or whitespace rows: use integer column indices, such as
-  `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9` or
-  `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1|291.9`.
-
-| Parameter         | Default                   | Description                                                                                                                                   |
-| ----------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--poscar`        | *(required)*              | Template POSCAR file for the host lattice                                                                                                     |
-| `--formula-col`   | `formula`                 | Input table column to read composition formulas from; use a column name for headered files or a 0-based index for headerless whitespace files |
-| `--base-element`  | auto                      | Host element to substitute. Inferred as the most frequent non-O/H element in the template if omitted.                                         |
-| `--sets`          | `1`                       | Number of random structures generated per formula row                                                                                         |
-| `--property-col`  | `Property`                | Input table column to read target values from; use a column name for headered files or a 0-based index for headerless whitespace files        |
-| `--property-name` | value of `--property-col` | Output label name written as `set.*/{property_name}.npy`                                                                                      |
-| `--seed`          | `42`                      | Random seed for selecting substituted host-atom sites                                                                                         |
-
-```bash
-dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --sets 3 \
-    --formula-col formula --property-col bandgap
-# Short alias
-dpaad data convert --input compositions.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --sets 3 \
-    --formula-col formula --property-col bandgap
-
-# Headerless whitespace-delimited TXT: formula in column 0, target in column 1
-dpa-adapt data convert --input 20260514.txt --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col 0 --property-col 1 \
-    --property-name overpotential
-
-# Headerless pipe-delimited TXT works the same way
-dpa-adapt data convert --input compositions.txt --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col 0 --property-col 1
-```
-
 ## Structure Files via dpdata
 
-**Trigger:** inputs not routed to the SMILES or formula pipelines. This means
-`--fmt` is neither `smiles` nor `formula`; when `--fmt` is omitted, CSV inputs
-are routed here only if they do not contain a recognized SMILES column.
+**Trigger:** inputs not routed to the SMILES pipeline. This means `--fmt` is
+not `smiles`; when `--fmt` is omitted, CSV inputs are routed here only if they
+do not contain a recognized SMILES column.
 Calls dpdata for format auto-detection or explicit conversion.
 
 ### Common Formats

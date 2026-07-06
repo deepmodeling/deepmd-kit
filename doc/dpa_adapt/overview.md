@@ -191,8 +191,6 @@ DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Pyth
 - **SMILES CSV**: a `.csv` file with a `SMILES`/`smiles` column. RDKit generates 3D
   conformers, or existing `.mol`/`.sdf`/`.xyz`/`.pdb` files can be supplied with
   `mol_dir`.
-- **Formula CSV + POSCAR template**: pass `fmt="formula"` and `poscar=...` to create
-  doped structures by random substitution on the host-element sublattice.
 - **Structure files / trajectories**: POSCAR, OUTCAR, `*.xyz`, `vasprun.xml`, ABACUS,
   CP2K, Gaussian, LAMMPS, ASE, `deepmd/raw`, `deepmd/npy`, LMDB, and other dpdata
   formats. Omit `fmt` when dpdata can infer it; set `fmt` explicitly for ambiguous
@@ -229,21 +227,6 @@ convert(
     mol_dir="./mol_files",
     mol_template="id{row}.sdf",
 )
-
-# Composition formula CSV + template POSCAR → random atomic substitution → deepmd/npy.
-# CSV: header required; defaults are formula_col="formula" and property_col="Property".
-# e.g.  formula,Property
-#       Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1,291.9
-convert(
-    "compositions.csv",
-    "./npy",
-    fmt="formula",
-    poscar="template.POSCAR",
-    formula_col="formula",
-    property_col="bandgap",
-    sets=3,  # random doped structures per composition row (default: 1)
-    seed=42,
-)
 ```
 
 CLI equivalents:
@@ -253,10 +236,6 @@ CLI equivalents:
 dpa-adapt data convert --input molecules.csv --output ./npy \
     --fmt smiles --smiles-col SMILES --property-col HOMO --train-ratio 0.9
 
-# Formula table + POSCAR template
-dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
-
 # Structure file or glob of calculation outputs
 dpa-adapt data convert --input POSCAR --output ./npy
 dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
@@ -265,7 +244,7 @@ dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/
 Lower-level helpers:
 
 ```python
-from dpa_adapt import convert, attach_labels, check_data, mark_groups
+from dpa_adapt import convert, attach_labels, check_data
 
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
 convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
@@ -278,9 +257,6 @@ labels = np.load("labels.npy")  # shape (n_systems,)
 attach_labels("./npy/", head="bandgap", values=labels)
 
 check_data("/data/system")  # → list[Issue]
-
-# Existing deepmd/npy data whose label belongs to a group of frames.
-mark_groups("./oer_npy", target="overpotential", group_by="system")
 ```
 
 For the full option list and supported dpdata formats, see
@@ -301,30 +277,6 @@ model.fit(train_data="data/train", target_key="property")
 | ---------------------------------- | ---------------------------------------------------------------------------------- |
 | `frozen_sklearn`                   | columns are standardized via `ConditionManager` and concatenated to the descriptor |
 | `frozen_head` / `finetune` / `mft` | passed into the fitting net as `numb_fparam`                                       |
-
-### Grouped frame labels
-
-For properties defined by several related frames, add grouped markers to an
-ordinary `deepmd/npy` dataset and train normally.  DPA-ADAPT detects
-`group_id.npy` automatically in `fit()`.
-
-```python
-from dpa_adapt import DPAFineTuner, mark_groups
-
-mark_groups("./oer_npy", target="overpotential", group_by="system")
-
-model = DPAFineTuner(strategy="finetune", fparam_dim=2)
-model.fit(train_data="./oer_npy", target_key="overpotential")
-```
-
-`mark_groups()` only writes grouped auxiliaries:
-
-- `group_id.npy` from `group_by`;
-- `pool_mask.npy` from `real_atom_types.npy < 0` when virtual atoms are present;
-- optional constant `weight.npy` when `weight=...` is provided.
-
-Labels, `fparam.npy`, coordinates, boxes, and type maps stay in the standard
-DeepMD layout and are read by the existing data path.
 
 ## Inference and uncertainty
 
@@ -389,9 +341,7 @@ from dpa_adapt import (
     cross_validate,  # leak-proof cross-validation
     train_test_split,  # formula-grouped splitting
     convert,  # format-sniffing data conversion
-    mark_groups,  # add group_id/pool_mask markers to existing deepmd/npy
     smiles_to_npy,  # CSV+SMILES → deepmd/npy
-    formula_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
     check_data,  # data sanity checks
     attach_labels,  # inject label arrays
     load_dataset,  # label-filtered data loading
@@ -418,8 +368,7 @@ X = extract_descriptors(
 | `dpa-adapt evaluate` / `dpaad evaluate`                       | Evaluate against stored labels                                      |
 | `dpa-adapt extract-descriptors` / `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy`                            |
 | `dpa-adapt cv` / `dpaad cv`                                   | Cross-validate                                                      |
-| `dpa-adapt data convert` / `dpaad data convert`               | Convert structure / CSV / formula → `deepmd/npy`                    |
-| `dpa-adapt data mark-groups` / `dpaad data mark-groups`       | Add grouped-training markers to existing `deepmd/npy` data          |
+| `dpa-adapt data convert` / `dpaad data convert`               | Convert structure / CSV → `deepmd/npy`                              |
 | `dpa-adapt data validate` / `dpaad data validate`             | Sanity-check `deepmd/npy` directories                               |
 | `dpa-adapt data attach-labels` / `dpaad data attach-labels`   | Inject `.npy` label arrays                                          |
 
@@ -431,14 +380,6 @@ dpa-adapt data convert --input POSCAR --output ./npy
 # SMILES CSV: --property-col names the input target column and output label name.
 dpaad data convert --input data.csv --output ./npy --fmt smiles \
     --property-col homo
-
-# Formula CSV + POSCAR template
-dpa-adapt data convert --input comps.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
-
-# Add grouped-training markers to existing deepmd/npy data
-dpa-adapt data mark-groups --input ./oer_npy --target overpotential \
-    --group-by system
 
 # Fine-tune
 dpa-adapt fit --train-data ./npy/train --pretrained DPA-3.1-3M \

@@ -2086,12 +2086,28 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # FakeTensors, so we need concrete values to resolve their
         # control flow exactly once; shapes become symbolic immediately
         # afterwards.
-        traced = make_fx(
-            compute_fn,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-            decomposition_table=decomp_table,
-        )(*trace_args)
+        # Eval lowers this make_fx graph verbatim through AOTAutograd, reusing
+        # the traced placeholders' symbolic shapes; any duck-shape symbol
+        # collision is therefore baked into the inference artifact. Disable
+        # duck-shaping for the eval trace so every size and stride receives an
+        # independent symbol -- a first frame whose ``nloc`` equals a trace axis
+        # size (e.g. the edge count) can then never unify an unrelated axis onto
+        # that symbol. Training re-derives its symbols through Dynamo from real
+        # contiguous inputs, so it keeps the default duck-shaped behavior.
+        from torch.fx.experimental import _config as fx_experimental_config
+
+        saved_use_duck_shape = fx_experimental_config.use_duck_shape
+        if mode == "eval":
+            fx_experimental_config.use_duck_shape = False
+        try:
+            traced = make_fx(
+                compute_fn,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+                decomposition_table=decomp_table,
+            )(*trace_args)
+        finally:
+            fx_experimental_config.use_duck_shape = saved_use_duck_shape
 
         if self.training:
             # Only the training trace runs with ``create_graph=True``, so only

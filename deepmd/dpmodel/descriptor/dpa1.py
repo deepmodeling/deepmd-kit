@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+import warnings
 from collections.abc import (
     Callable,
 )
 from typing import (
+    Any,
     NoReturn,
     Optional,
     Union,
@@ -31,6 +33,7 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+    tabulate_fusion,
 )
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -63,6 +66,9 @@ from deepmd.utils.finetune import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.tabulate_math import (
+    DPTabulate,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -345,6 +351,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.tebd_compress = False
+        self.geo_compress = False
         self.compress = False
 
     def get_rcut(self) -> float:
@@ -416,6 +424,21 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def get_numb_attn_layer(self) -> int:
         """Returns the number of se_atten attention layers."""
         return self.se_atten.attn_layer
+
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this descriptor supports the graph-native lower.
+
+        The graph-native energy lower (``call_graph``) currently covers only the
+        non-attention (``attn_layer == 0``) factorizable path with concat
+        type-embedding and no type exclusion. Any other config (attention,
+        ``tebd_input_mode == "strip"``, ``exclude_types``) falls back to the
+        legacy dense path, so those models keep working unchanged.
+        """
+        return (
+            self.se_atten.attn_layer == 0
+            and self.se_atten.tebd_input_mode == "concat"
+            and not self.se_atten.exclude_types
+        )
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
@@ -540,9 +563,141 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         sw
             The smooth switch function.
         """
-        del mapping
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        nloc = nlist.shape[1]
+        nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
+        # graph-eligible configs route through the graph-native adapter (decision
+        # #14: graph = single math source, dense call = thin adapter). Ineligible
+        # configs (attention, strip tebd, exclude_types) and the ghost case with
+        # no mapping fall back to the legacy dense body. The graph needs `mapping`
+        # to fold ghosts to local owners; without it only nall == nloc is valid.
+        if self.uses_graph_lower() and (mapping is not None or nall == nloc):
+            return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
+        else:
+            return self._call_dense(coord_ext, atype_ext, nlist)
+
+    def _call_graph_adapter(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None,
+    ) -> Array:
+        """Regime-1 dense->graph adapter (the eligible ``call`` path).
+
+        Builds a NeighborGraph from the dense quartet with the SHAPE-STATIC
+        converter (``compact=False``, so this is jit/export-traceable -- no
+        ``nonzero``), runs :meth:`call_graph`, and reconstructs the dense-shaped
+        ``sw``. Preserves the dense 5-tuple ABI exactly; masked invalid edges
+        contribute zero in ``call_graph``'s ``segment_sum`` so the output is
+        identical to the legacy dense body.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nall x 3)
+        atype_ext
+            The extended atom types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to local region. shape: nf x nall.
+            ``None`` is allowed only when nall == nloc (identity mapping).
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant single-particle representation.
+            shape: nf x nloc x ng x 3
+        g2
+            ``None`` for this descriptor.
+        h2
+            ``None`` for this descriptor.
+        sw
+            The smooth switch function. shape: nf x nloc x nnei x 1
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
+        )
+
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        dev = array_api_compat.device(coord_ext)
         nf, nloc, nnei = nlist.shape
+        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
+        coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
+        if mapping is None:
+            # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
+            mapping_g = xp.broadcast_to(
+                xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
+            )
+        else:
+            mapping_g = xp.reshape(mapping, (nf, nall))
+        graph = from_dense_quartet(
+            coord_ext_3, nlist, mapping_g, layout=None, compact=False
+        )
+        # local atom types, flat (nf * nloc,)
+        atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
+        grrg_flat, rot_mat_flat = self.call_graph(
+            graph,
+            atype_local,
+            type_embedding=self.type_embedding.call(),
+        )
+        # call_graph returns flat (N, ...) node axis; reshape to (nf, nloc, ...)
+        # for the dense 5-tuple ABI -- this reshape is LOCAL to the adapter shim.
+        grrg = xp.reshape(grrg_flat, (nf, nloc, *grrg_flat.shape[1:]))
+        rot_mat = xp.reshape(rot_mat_flat, (nf, nloc, *rot_mat_flat.shape[1:]))
+        # reconstruct the dense-shaped sw the dense way (env_mat switch masked
+        # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
+        # == nlist != -1, matching DescrptBlockSeAtten.call). A dense-layout
+        # artifact tied to neighbor slots, which the graph does not carry.
+        _, _, sw = self.se_atten.env_mat.call(
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.se_atten.mean[...],
+            self.se_atten.stddev[...],
+        )
+        nlist_mask = (nlist != -1)[:, :, :, None]
+        sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
+        sw = xp.reshape(sw, (nf, nloc, nnei, 1))
+        return grrg, rot_mat, None, None, sw
+
+    def _call_dense(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+    ) -> Array:
+        """Legacy dense descriptor body (the ineligible ``call`` path: attention,
+        strip tebd, exclude_types, or the no-mapping ghost case).
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nall x 3)
+        atype_ext
+            The extended atom types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant single-particle representation.
+            shape: nf x nloc x ng x 3
+        g2
+            ``None`` for this descriptor.
+        h2
+            ``None`` for this descriptor.
+        sw
+            The smooth switch function. shape: nf x nloc x nnei x 1
+        """
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        nf, nloc = nlist.shape[:2]
         nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
@@ -566,6 +721,141 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
                 [grrg, xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))], axis=-1
             )
         return grrg, rot_mat, None, None, sw
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Descriptor-level graph-native forward (``attn_layer == 0``).
+
+        Wraps the block kernel
+        :meth:`DescrptBlockSeAtten.call_graph`, adds the descriptor-level
+        ``concat_output_tebd`` step, and returns the outputs on the flat ``(N,
+        ...)`` node axis (ragged-native; no rectangular ``(nf, nloc)``
+        reshape).
+
+        This method is graph-native: it takes no dense quartet inputs and does
+        not produce the dense ``sw`` (that lives in the dense :meth:`call`
+        adapter, which has the ``nlist``/``coord_ext`` needed to build it).
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`.
+        atype
+            (N,) flat LOCAL atom types where ``N = sum(n_node)``.
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table.
+
+        Returns
+        -------
+        grrg : Array
+            (N, ng * axis_neuron [+ tebd_dim]) descriptor, flat node axis.
+        rot_mat : Array
+            (N, ng, 3) equivariant single-particle representation, flat node
+            axis.
+        """
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        dev = array_api_compat.device(graph.edge_vec)
+        grrg, rot_mat = self.se_atten.call_graph(
+            graph, atype, type_embedding=type_embedding
+        )
+        # FLAT node axis (N, ...): no (nf, nloc) reshape -- ragged-native, spec.
+        if self.concat_output_tebd:
+            # Use type_embedding directly (mirrors the dense path's
+            # ``xp.take(type_embedding, ...)``): ``xp.asarray(..., device=dev)``
+            # DETACHES under torch, silently severing the type-embedding weight
+            # gradient so the tebd net never trains; type_embedding already lives
+            # on the model device, so the device cast was redundant anyway.
+            atype_local = xp.asarray(atype, device=dev)
+            atype_embd = xp.take(type_embedding, atype_local, axis=0)  # (N, tebd_dim)
+            grrg = xp.concat([grrg, atype_embd], axis=-1)
+        return grrg, rot_mat
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Enable descriptor compression.
+
+        For DPA-1, compression is available for stripped type embeddings. The
+        type embedding branch is always precomputed; the radial embedding table
+        is enabled only when there is no attention layer, matching the PT/TF
+        compression semantics.
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        if self.se_atten.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.se_atten.resnet_dt:
+            raise RuntimeError(
+                "Model compression error: descriptor resnet_dt must be false!"
+            )
+        for tt in self.se_atten.exclude_types:
+            if (tt[0] not in range(self.se_atten.ntypes)) or (
+                tt[1] not in range(self.se_atten.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_atten.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_atten.ntypes * self.se_atten.ntypes
+            - len(self.se_atten.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        self.se_atten.type_embedding_compression(self.type_embedding)
+        self.type_embd_data = self.se_atten.type_embd_data
+        self.tebd_compress = True
+        self.compress = True
+
+        if self.se_atten.attn_layer == 0:
+            table = DPTabulate(
+                self,
+                self.se_atten.neuron,
+                self.se_atten.type_one_side,
+                self.se_atten.exclude_types,
+                self.se_atten.activation_function,
+            )
+            table_config = [
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            ]
+            lower, upper = table.build(
+                min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+            )
+            self.se_atten.enable_compression(
+                table.data,
+                table_config,
+                lower,
+                upper,
+            )
+            self.compress_data = self.se_atten.compress_data
+            self.compress_info = self.se_atten.compress_info
+            self.geo_compress = True
+        else:
+            self.geo_compress = False
+            warnings.warn(
+                "Attention layer is not 0, only type embedding is compressed. "
+                "Geometric part is not compressed.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
@@ -619,18 +909,33 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
         if self.compress:
+            type_embd_data = (
+                self.type_embd_data
+                if hasattr(self, "type_embd_data")
+                else obj.type_embd_data
+            )
             compress_dict: dict = {
                 "@variables": {
-                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                    "type_embd_data": to_numpy_array(type_embd_data),
                 },
                 "geo_compress": self.geo_compress,
             }
             if self.geo_compress:
+                compress_data = (
+                    self.compress_data
+                    if hasattr(self, "compress_data")
+                    else obj.compress_data
+                )
+                compress_info = (
+                    self.compress_info
+                    if hasattr(self, "compress_info")
+                    else obj.compress_info
+                )
                 compress_dict["@variables"]["compress_data"] = [
-                    to_numpy_array(d) for d in self.compress_data
+                    to_numpy_array(d) for d in compress_data
                 ]
                 compress_dict["@variables"]["compress_info"] = [
-                    to_numpy_array(i) for i in self.compress_info
+                    to_numpy_array(i) for i in compress_info
                 ]
             data["compress"] = compress_dict
         return data
@@ -678,9 +983,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         variables = compress["@variables"]
         self.type_embd_data = variables["type_embd_data"]
         self.geo_compress = compress.get("geo_compress", False)
+        self.tebd_compress = True
+        self.se_atten.type_embd_data = self.type_embd_data
+        self.se_atten.tebd_compress = True
+        self.se_atten.geo_compress = self.geo_compress
         if self.geo_compress:
             self.compress_data = variables["compress_data"]
             self.compress_info = variables["compress_info"]
+            self.se_atten.compress_data = self.compress_data
+            self.se_atten.compress_info = self.compress_info
         self.compress = True
 
     @classmethod
@@ -919,6 +1230,12 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
+        self.tebd_compress = False
+        self.geo_compress = False
+        self.is_sorted = len(self.exclude_types) == 0
+        self.compress_data = None
+        self.compress_info = None
+        self.type_embd_data = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -1057,6 +1374,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
     ) -> None:
         self.exclude_types = exclude_types
+        self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def cal_g(
@@ -1081,6 +1399,82 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
         return gg
+
+    def enable_compression(
+        self,
+        table_data: dict[str, Array],
+        table_config: list[int | float],
+        lower: dict[str, int],
+        upper: dict[str, int],
+    ) -> None:
+        """Store tabulated geometric embedding-net data."""
+        net = "filter_net"
+        dtype = self.mean.dtype
+        self.compress_info = [
+            np.asarray(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=dtype,
+            )
+        ]
+        self.compress_data = [np.asarray(table_data[net], dtype=dtype)]
+        self.geo_compress = True
+
+    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
+        """Precompute stripped type embedding network outputs."""
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.embeddings_strip is None:
+            raise RuntimeError(
+                "embeddings_strip must be initialized for type embedding compression"
+            )
+
+        full_embd = type_embedding_net.call()
+        xp = array_api_compat.array_namespace(full_embd)
+        nt, t_dim = full_embd.shape
+        if self.type_one_side:
+            embd_tensor = self.embeddings_strip[0].call(full_embd)
+        else:
+            type_embedding_nei = xp.tile(
+                xp.reshape(full_embd, (1, nt, t_dim)), (nt, 1, 1)
+            )
+            type_embedding_center = xp.tile(
+                xp.reshape(full_embd, (nt, 1, t_dim)), (1, nt, 1)
+            )
+            two_side_type_embedding = xp.reshape(
+                xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                (-1, t_dim * 2),
+            )
+            embd_tensor = self.embeddings_strip[0].call(two_side_type_embedding)
+        self.type_embd_data = embd_tensor
+        self.tebd_compress = True
+
+    def _tabulate_fusion_se_atten(
+        self,
+        table: Array,
+        table_info: Array,
+        em_x: Array,
+        em: Array,
+        two_embed: Array,
+        last_layer_size: int,
+    ) -> Array:
+        """Pure Array API implementation of tabulate_fusion_se_atten forward."""
+        xp = array_api_compat.array_namespace(em_x, em, two_embed)
+        values = tabulate_fusion(
+            table,
+            table_info,
+            em_x,
+            last_layer_size,
+            reference=em,
+        )
+        values = values * two_embed + values
+        return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
 
     def call(
         self,
@@ -1131,6 +1525,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         rr = rr * xp.astype(exclude_mask[:, :, None], rr.dtype)
         # nfnl x nnei x 1
         ss = rr[..., 0:1]
+        geo_gr = None
         if self.tebd_input_mode in ["concat"]:
             # nfnl x tebd_dim
             atype_embd = xp.reshape(
@@ -1157,8 +1552,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 # nfnl x nnei x ng
             gg = self.cal_g(ss, 0)
         elif self.tebd_input_mode in ["strip"]:
-            # nfnl x nnei x ng
-            gg_s = self.cal_g(ss, 0)
+            ss_scalar = ss
             assert self.embeddings_strip is not None
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
@@ -1168,7 +1562,14 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
-                tt_full = self.cal_g_strip(type_embedding, 0)
+                if self.tebd_compress:
+                    tt_full = xp.asarray(
+                        self.type_embd_data[...],
+                        dtype=rr.dtype,
+                        device=array_api_compat.device(rr),
+                    )
+                else:
+                    tt_full = self.cal_g_strip(type_embedding, 0)
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, nei_type_index, axis=0)
             else:
@@ -1183,46 +1584,70 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
                 # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
                 idx = xp.astype(idx, xp.int64)
-                # (ntypes) * ntypes * nt
-                type_embedding_nei = xp.tile(
-                    xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
-                    (ntypes_with_padding, 1, 1),
-                )
-                # ntypes * (ntypes) * nt
-                type_embedding_center = xp.tile(
-                    xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
-                    (1, ntypes_with_padding, 1),
-                )
-                # (ntypes * ntypes) * (nt+nt)
-                two_side_type_embedding = xp.reshape(
-                    xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
-                    (-1, nt * 2),
-                )
-                tt_full = self.cal_g_strip(two_side_type_embedding, 0)
+                if self.tebd_compress:
+                    tt_full = xp.asarray(
+                        self.type_embd_data[...],
+                        dtype=rr.dtype,
+                        device=array_api_compat.device(rr),
+                    )
+                else:
+                    # (ntypes) * ntypes * nt
+                    type_embedding_nei = xp.tile(
+                        xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
+                        (ntypes_with_padding, 1, 1),
+                    )
+                    # ntypes * (ntypes) * nt
+                    type_embedding_center = xp.tile(
+                        xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
+                        (1, ntypes_with_padding, 1),
+                    )
+                    # (ntypes * ntypes) * (nt+nt)
+                    two_side_type_embedding = xp.reshape(
+                        xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                        (-1, nt * 2),
+                    )
+                    tt_full = self.cal_g_strip(two_side_type_embedding, 0)
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, idx, axis=0)
             # (nf x nl) x nnei x ng
             gg_t = xp.reshape(gg_t, (nf * nloc, nnei, ng))
             if self.smooth:
                 gg_t = gg_t * xp.reshape(sw, (-1, self.nnei, 1))
-            # nfnl x nnei x ng
-            gg = gg_s * gg_t + gg_s
+            if self.geo_compress:
+                geo_gr = self._tabulate_fusion_se_atten(
+                    self.compress_data[0],
+                    self.compress_info[0],
+                    ss_scalar,
+                    rr,
+                    gg_t,
+                    self.filter_neuron[-1],
+                )
+                gg = None
+            else:
+                # nfnl x nnei x ng
+                gg_s = self.cal_g(ss_scalar, 0)
+                gg = gg_s * gg_t + gg_s
         else:
             raise NotImplementedError
 
-        normed = safe_for_vector_norm(
-            xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
-        )
-        input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
-            normed,
-            xp.full_like(normed, 1e-12),
-        )
-        gg = self.dpa1_attention(
-            gg, nlist_mask, input_r=input_r, sw=sw
-        )  # shape is [nframes*nloc, self.neei, out_size]
-        # nfnl x ng x 4
-        # gr = xp.einsum("lni,lnj->lij", gg, rr)
-        gr = xp.sum(gg[:, :, :, None] * rr[:, :, None, :], axis=1)
+        if geo_gr is None:
+            normed = safe_for_vector_norm(
+                xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
+            )
+            input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
+                normed,
+                xp.full_like(normed, 1e-12),
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x ng x 4
+            # gr = xp.einsum("lni,lnj->lij", gg, rr)
+            gr = xp.sum(gg[:, :, :, None] * rr[:, :, None, :], axis=1)
+            g2 = xp.reshape(gg, (nf, nloc, self.nnei, self.filter_neuron[-1]))
+        else:
+            gr = xp.permute_dims(geo_gr, (0, 2, 1))
+            g2 = None
         gr /= self.nnei
         gr1 = gr[:, : self.axis_neuron, :]
         # nfnl x ng x ng1
@@ -1234,11 +1659,130 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )
         return (
             xp.reshape(grrg, (nf, nloc, self.filter_neuron[-1] * self.axis_neuron)),
-            xp.reshape(gg, (nf, nloc, self.nnei, self.filter_neuron[-1])),
+            g2,
             xp.reshape(dmatrix, (nf, nloc, self.nnei, 4))[..., 1:],
             xp.reshape(gr[..., 1:], (nf, nloc, self.filter_neuron[-1], 3)),
             xp.reshape(sw, (nf, nloc, nnei, 1)),
         )
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Graph-native forward (``attn_layer=0`` only).
+
+        Bit-exact analogue of :meth:`call` on the SAME neighbor list, with the
+        neighbor-axis reduction replaced by a ``segment_sum`` over edge centers
+        (``dst``). Geometry enters only through ``graph.edge_vec``.
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph` whose
+            ``edge_index = [src, dst]`` (src = neighbor local owner, dst = center),
+            ``edge_vec = r_src - r_dst`` and ``edge_mask`` marks real edges.
+        atype
+            (N,) flat node atom types (``N = sum(graph.n_node)``).
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table.
+
+        Returns
+        -------
+        grrg : Array
+            (N, ng * axis_neuron) per-node descriptor, matching the first output
+            of :meth:`call` flattened over the (nf, nloc) axes.
+        rot_mat : Array
+            (N, ng, 3) per-node equivariant single-particle representation,
+            matching ``gr[..., 1:]`` of :meth:`call` flattened over (nf, nloc).
+
+        Notes
+        -----
+        Known limitations (NeighborGraph PR-A):
+        - ``attn_layer == 0`` only (attention lands in PR-D);
+        - ``tebd_input_mode == "concat"`` only (strip mode lands later);
+        - ``exclude_types`` is not yet supported and raises (lands in a later PR).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            edge_env_mat,
+            segment_sum,
+        )
+
+        if self.attn_layer != 0:
+            raise NotImplementedError(
+                "graph path supports attn_layer=0 only (NeighborGraph PR-A); "
+                "attn_layer>0 lands in PR-D"
+            )
+        if self.tebd_input_mode not in ["concat"]:
+            raise NotImplementedError(
+                "graph path supports tebd_input_mode='concat' only (NeighborGraph PR-A)"
+            )
+        if self.exclude_types:
+            raise NotImplementedError(
+                "graph path does not yet apply exclude_types (NeighborGraph PR-A); "
+                "type exclusion lands in a later PR"
+            )
+        if type_embedding is None:
+            raise ValueError("type_embedding is required for the graph path")
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        dev = array_api_compat.device(graph.edge_vec)
+        # N == sum(graph.n_node) by contract (atype is (N,)); use the static shape
+        # value so the kernel stays jit/export-traceable (no concretize of n_node).
+        n_total = atype.shape[0]
+        src = graph.edge_index[0, :]
+        dst = graph.edge_index[1, :]
+        atype = xp.asarray(atype, device=dev)
+        center_type = xp.take(atype, dst, axis=0)  # (E,)
+        nei_type = xp.take(atype, src, axis=0)  # (E,)
+        # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
+        # self.mean/self.stddev are slot-independent (ntypes, nnei, 4); slot 0 is
+        # the canonical per-type vector.
+        rr = edge_env_mat(
+            graph.edge_vec,
+            center_type,
+            self.mean[:, 0, :],
+            self.stddev[:, 0, :],
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+            edge_mask=graph.edge_mask,
+        )  # (E, 4)
+        # radial channel
+        ss = rr[:, 0:1]  # (E, 1)
+        # neighbor / center type embeddings (concat mode); ghost type == owner type
+        # so gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
+        # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES under
+        # torch and severs the type-embedding weight gradient (the tebd net would
+        # never train); type_embedding already lives on the model device.
+        tebd = type_embedding
+        atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+        if not self.type_one_side:
+            atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+            ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
+        else:
+            ss = xp.concat([ss, atype_embd_nlist], axis=-1)
+        # embedding net (same weights as the dense path); applies on the last axis
+        gg = self.embeddings[0].call(ss)  # (E, ng)
+        # zero padding/guard edges BEFORE the segment sum
+        gg = gg * xp.astype(graph.edge_mask[:, None], gg.dtype)
+        # outer product (replaces the dense gg[:,:,:,None] * rr[:,:,None,:])
+        outer = gg[:, :, None] * rr[:, None, :]  # (E, ng, 4)
+        # neighbor-axis reduction -> segment_sum over centers; divide by nnei
+        gr = segment_sum(outer, dst, n_total) / self.nnei  # (N, ng, 4)
+        gr1 = gr[:, : self.axis_neuron, :]
+        # nf x nloc x (ng x ng1)
+        grrg = xp.sum(gr[:, :, None, :] * gr1[:, None, :, :], axis=3)  # (N, ng, ng1)
+        ng = self.neuron[-1]
+        grrg = xp.astype(
+            xp.reshape(grrg, (n_total, ng * self.axis_neuron)),
+            graph.edge_vec.dtype,
+        )
+        # equivariant single-particle representation, dense-ABI slice gr[..., 1:]
+        # (N, ng, 3); not cast, mirroring the dense block which leaves rot_mat in
+        # the working precision before the descriptor-level @cast_precision.
+        rot_mat = gr[:, :, 1:]
+        return grrg, rot_mat
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""

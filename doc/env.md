@@ -89,6 +89,14 @@ These environment variables also apply to third-party programs using the C++ int
 List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/path/to/plugin2.so` on Linux and `/path/to/plugin1.dll;/path/to/plugin2.dll` on Windows.
 :::
 
+:::{envvar} DP_BACKEND_PLUGIN_PATH
+
+**Type**: List of directories, split by `:` on Unix and `;` on Windows
+
+List of directories used to search for C/C++ backend plugin libraries before the directory that contains `libdeepmd_cc`.
+This controls backend implementation plugins, such as `libdeepmd_backend_tf.so` and `libdeepmd_backend_pt.so`, and is separate from {envvar}`DP_PLUGIN_PATH`, which loads customized OP plugins.
+:::
+
 :::{envvar} DP_PROFILER
 
 {{ pytorch_icon }} Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.

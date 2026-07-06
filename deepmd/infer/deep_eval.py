@@ -434,6 +434,27 @@ class DeepEvalBackend(ABC):
             The model module implemented by the deep learning framework.
         """
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        Most in-tree backends return the lossless, weight-bearing ``model``
+        subtree from the serialized file payload. Backends that cannot recover a
+        lossless tree may override this method to document and implement their
+        narrower behavior.
+
+        Returns
+        -------
+        dict
+            Serialized model tree that can be consumed by ``Node.deserialize``.
+        """
+        model = self.get_model()
+        if hasattr(model, "serialize"):
+            return model.serialize()
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement serialize(), and its "
+            "model object has no serialize() method."
+        )
+
 
 def _cast_output_dtype(array: np.ndarray, dtype: str) -> np.ndarray:
     """Cast a backend evaluation output to the requested output dtype.
@@ -506,6 +527,7 @@ class DeepEval(ABC):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
+        self.model_file = model_file
         self.deep_eval = DeepEvalBackend(
             model_file,
             self.output_def,
@@ -521,6 +543,16 @@ class DeepEval(ABC):
     @abstractmethod
     def output_def(self) -> ModelOutputDef:
         """Returns the output variable definitions."""
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        Most backends return the lossless, weight-bearing ``model`` subtree from
+        the serialized file payload. JAX ``.savedmodel`` inputs are the known
+        exception: they are reconstructed from the model definition script and
+        therefore do not preserve trained weights.
+        """
+        return self.deep_eval.serialize()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

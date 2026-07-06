@@ -4,7 +4,7 @@
 The autograd that produces g_e (grad(E, edge_vec)) is wired in the torch/jax
 backend later; this pure-array-API assembly is shared by all backends.
 
-Conventions (see memory/spec_unified_edge_nlist.md):
+Conventions (see the unified edge-nlist design discussion, wanghan-iapcm/deepmd-kit#4):
   edge_vec_e = r_src - r_dst ;  F_k = sum_{dst=k} g - sum_{src=k} g
   per-edge virial w_e = -g_e (x) edge_vec_e
   atom virial attributed FULL-TO-src (canonical TF==pt-legacy convention)
@@ -13,15 +13,24 @@ Conventions (see memory/spec_unified_edge_nlist.md):
 Padding/guard edges (edge_mask == 0) are zeroed before any scatter.
 """
 
-import array_api_compat
-
-from deepmd.dpmodel.array_api import (
-    Array,
+from __future__ import (
+    annotations,
 )
+
+from typing import (
+    TYPE_CHECKING,
+)
+
+import array_api_compat
 
 from .segment import (
     segment_sum,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
 
 
 def edge_force_virial(
@@ -40,6 +49,15 @@ def edge_force_virial(
 
     Parameters
     ----------
+    g_e
+        (E, 3) per-edge gradient ``dE/d(edge_vec)``.
+    edge_vec
+        (E, 3) per-edge displacement ``r_src - r_dst``; padding edges are zero.
+    edge_index
+        (2, E) ``[src, dst]`` node endpoints of each edge.
+    edge_mask
+        (E,) boolean valid-edge mask; padding/guard edges (``False``) are zeroed
+        before any scatter.
     n_node
         (nf,) per-frame REAL node counts. Real nodes occupy the compact prefix
         ``[0, sum(n_node))`` frame-major; ``nf = n_node.shape[0]``.
@@ -62,14 +80,42 @@ def edge_force_virial(
         frame via the frame of their ``dst`` node.
     """
     xp = array_api_compat.array_namespace(g_e)
-    n_real = int(xp.sum(n_node))  # real node count
-    n_out = n_real if node_capacity is None else int(node_capacity)  # node-axis size
+    # node-axis size; when a ``node_capacity`` is supplied (the jax/export path)
+    # use it AS-IS so we never call int() on the traced ``sum(n_node)`` -- and,
+    # crucially, never on ``node_capacity`` itself: under symbolic make_fx /
+    # torch.export it is a SymInt (``atype.shape[0]``); ``int(SymInt)`` would
+    # SPECIALIZE the node axis to the trace-time sample size, baking a constant
+    # ``N`` into the scatter and breaking dynamic-``N`` inference.
+    n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
     nf = n_node.shape[0]
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    src = edge_index[0]
-    dst = edge_index[1]
+    # Wrap node indices into ``[0, n_out)`` so every scatter address is provably
+    # in-bounds. For a well-formed graph every real edge already has
+    # ``index < n_out`` (== ``atype.shape[0]``), so this modulo is the IDENTITY on
+    # real edges (pinned by test_modulo_clamp_leaves_real_edges_unchanged) -- a
+    # correctness-preserving guard, not a value fixup.
+    #
+    # Why it is needed (root cause, GPU-confirmed): under the dynamic-edge graph
+    # ``torch.export`` path the node count is traced as several equal-but-distinct
+    # symbols (``atype.shape[0]``, ``fit_ret.shape[0]``, ...), tied only by
+    # ``aten._assert_scalar(Eq(...))`` nodes. ``_strip_shape_assertions``
+    # (pt_expt/utils/serialization.py) neutralises ALL such asserts so export can
+    # trace -- which also drops those node-count equalities, so inductor can no
+    # longer prove the scatter index and its bound ``ks0 == n_out`` share a symbol
+    # and emits ``tl.device_assert(idx < ks0)`` (fatal on CUDA; unchecked on CPU,
+    # which is why all CPU dev/CI was green). ``% n_out`` discharges that guard
+    # unconditionally. This is the PERMANENT fix: the upstream alternative --
+    # making the SHARED, spin-export-critical ``_strip_shape_assertions``
+    # selective -- risks re-triggering the torch.export bugs it exists to bypass
+    # and the spin ``.pt2`` path, so it is deliberately NOT taken.
+    #
+    # Pure arithmetic => torch.export-safe, unlike ``xp.clip`` (SymInt bound
+    # breaks array_api_compat's clip) and unlike a mask-multiply (which misses the
+    # ``edge_mask == 1`` indices the stripped guard mis-bounds).
+    src = edge_index[0] % n_out
+    dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
     force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
     # per-edge virial w_e[k, j] = -g_e[k] * edge_vec[j]  (broadcast, no einsum)
@@ -82,6 +128,8 @@ def edge_force_virial(
     boundaries = xp.cumulative_sum(n_node)  # (nf,) per-frame node upper bounds
     edge_frame = xp.astype(
         xp.searchsorted(boundaries, dst, side="right"), xp.int64
-    )  # (E,) in [0, nf)
+    )  # (E,) in [0, nf]
+    # wrap into [0, nf) for the same CUDA-bounds reason (export-safe modulo)
+    edge_frame = edge_frame % nf
     virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial

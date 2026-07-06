@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""JAX/jax2tf SavedModel export.
+
+The ``.savedmodel`` suffix is the JAX SavedModel artifact used by the JAX C++
+inference path. It is intentionally different from the TF2 eager
+``.savedmodeltf`` artifact: the model body below must pass through
+``jax2tf.convert`` so TensorFlow stores XlaCallModule nodes. Do not replace this
+module with the TF2 SavedModel exporter unless the file suffix and C++ loader
+contract are changed together.
+"""
+
 import json
 from collections.abc import (
     Callable,
 )
 
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 from jax.experimental import (
     jax2tf,
 )
@@ -19,20 +28,16 @@ from deepmd.jax.jax2tf.make_model import (
 from deepmd.jax.model.base_model import (
     BaseModel,
 )
+from deepmd.jax.utils.serialization import (
+    _set_model_min_nbor_dist_from_data,
+)
 
 
 def deserialize_to_file(model_file: str, data: dict) -> None:
-    """Deserialize the dictionary to a model file.
-
-    Parameters
-    ----------
-    model_file : str
-        The model file to be saved.
-    data : dict
-        The dictionary to be deserialized.
-    """
+    """Deserialize the dictionary to a JAX/jax2tf SavedModel."""
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
+        _set_model_min_nbor_dist_from_data(model, data)
         model_def_script = data["model_def_script"]
         call_lower = model.call_common_lower
 
@@ -42,13 +47,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             do_atomic_virial: bool, has_ghost_atoms: bool
         ) -> Callable:
             def call_lower_with_fixed_do_atomic_virial(
-                coord: tnp.ndarray,
-                atype: tnp.ndarray,
-                nlist: tnp.ndarray,
-                mapping: tnp.ndarray,
-                fparam: tnp.ndarray,
-                aparam: tnp.ndarray,
-            ) -> dict[str, tnp.ndarray]:
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                nlist: tf.Tensor,
+                mapping: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
                 return call_lower(
                     coord,
                     atype,
@@ -59,13 +64,16 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     do_atomic_virial=do_atomic_virial,
                 )
 
-            # nghost >= 1 is assumed if there is
-            # other workaround does not work, such as
-            # nall; nloc + nghost - 1
+            # nghost >= 1 is assumed if there is ghost atoms. Other workarounds
+            # do not work, such as nall; nloc + nghost - 1.
             if has_ghost_atoms:
                 nghost = "nghost"
             else:
                 nghost = "0"
+            # The converted function is the part that carries the JAX model
+            # semantics into TensorFlow. Its SavedModel graph is expected to
+            # contain XlaCallModule ops; a graph made only of ordinary TF ops
+            # means this path has accidentally fallen back to the TF2 exporter.
             return jax2tf.convert(
                 call_lower_with_fixed_do_atomic_virial,
                 polymorphic_shapes=[
@@ -79,8 +87,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 with_gradient=True,
             )
 
-        # Save a function that can take scalar inputs.
-        # We need to explicit set the function name, so C++ can find it.
         @tf.function(
             autograph=False,
             input_signature=[
@@ -93,13 +99,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_lower_without_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
@@ -125,13 +131,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_lower_with_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
@@ -152,35 +158,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 call_lower = call_lower_without_atomic_virial
 
             def call(
-                coord: tnp.ndarray,
-                atype: tnp.ndarray,
-                box: tnp.ndarray | None = None,
-                fparam: tnp.ndarray | None = None,
-                aparam: tnp.ndarray | None = None,
-            ) -> dict[str, tnp.ndarray]:
-                """Return model prediction.
-
-                Parameters
-                ----------
-                coord
-                    The coordinates of the atoms.
-                    shape: nf x (nloc x 3)
-                atype
-                    The type of atoms. shape: nf x nloc
-                box
-                    The simulation box. shape: nf x 9
-                fparam
-                    frame parameter. nf x ndf
-                aparam
-                    atomic parameter. nf x nloc x nda
-
-                Returns
-                -------
-                ret_dict
-                    The result dict of type dict[str,jnp.ndarray].
-                    The keys are defined by the `ModelOutputDef`.
-
-                """
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor | None = None,
+                fparam: tf.Tensor | None = None,
+                aparam: tf.Tensor | None = None,
+            ) -> dict[str, tf.Tensor]:
                 return model_call_from_call_lower(
                     call_lower=call_lower,
                     rcut=model.get_rcut(),
@@ -208,12 +191,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_with_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            box: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            box: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
             return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
                 coord, atype, box, fparam, aparam
             )
@@ -231,19 +214,18 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_without_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            box: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            box: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
             return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
                 coord, atype, box, fparam, aparam
             )
 
         tf_model.call = call_without_atomic_virial
 
-        # set functions to export other attributes
         @tf.function
         def get_type_map() -> tf.Tensor:
             return tf.constant(model.get_type_map(), dtype=tf.string)
@@ -319,6 +301,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             return tf.constant(model.has_message_passing(), dtype=tf.bool)
 
         tf_model.has_message_passing = has_message_passing
+        tf_model.do_message_passing = has_message_passing
 
         @tf.function
         def has_default_fparam() -> tf.Tensor:
@@ -331,8 +314,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             default_fparam = model.get_default_fparam()
             if default_fparam is None:
                 return tf.constant([], dtype=tf.double)
-            else:
-                return tf.constant(default_fparam, dtype=tf.double)
+            return tf.constant(default_fparam, dtype=tf.double)
 
         tf_model.get_default_fparam = get_default_fparam
 

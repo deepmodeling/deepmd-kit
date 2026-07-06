@@ -318,15 +318,8 @@ def smiles_to_3d_coords(
     smiles: str,
     *,
     random_seed: int = 42,
-    cap_open_valences: bool = False,
 ) -> tuple[list[str], np.ndarray]:
-    """Generate a 3D conformer from a SMILES string via RDKit ETKDGv3.
-
-    When ``cap_open_valences`` is set, atoms carrying unfilled valences (parsed
-    by RDKit as radical electrons, e.g. polymer repeating-unit SMILES like
-    ``[CH2][CH](...)``) are capped with explicit H before embedding, turning the
-    fragment into a neutral capped molecule.
-    """
+    """Generate a 3D conformer from a SMILES string via RDKit ETKDGv3."""
     try:
         from rdkit import (
             Chem,
@@ -343,14 +336,6 @@ def smiles_to_3d_coords(
     mol = Chem.MolFromSmiles(str(smiles))
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles!r}")
-    if cap_open_valences:
-        for atom in mol.GetAtoms():
-            nrad = atom.GetNumRadicalElectrons()
-            if nrad:
-                atom.SetNumExplicitHs(atom.GetNumExplicitHs() + nrad)
-                atom.SetNumRadicalElectrons(0)
-        mol.UpdatePropertyCache(strict=False)
-        Chem.SanitizeMol(mol)
     mol = Chem.AddHs(mol)
     params = AllChem.ETKDGv3()
     params.randomSeed = int(random_seed)

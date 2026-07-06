@@ -308,10 +308,12 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool do_atomic_virial;  // whether model was exported with atomic virial corr
   int nnei;               // expected nlist nnei dimension (= sum(sel))
   bool lower_input_is_edge_ = false;
+  bool lower_input_is_graph_ = false;
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;         // cached mapping tensor (LAMMPS path)
-  at::Tensor firstneigh_tensor;      // cached nlist tensor (LAMMPS path)
-  at::Tensor edge_index_tensor;      // cached local edge graph (LAMMPS path)
+  at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
+  std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
+  at::Tensor firstneigh_tensor;        // cached nlist tensor (LAMMPS path)
+  at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional second AOTInductor artifact for the multi-rank GNN code
@@ -397,6 +399,30 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin);
+
+  /**
+   * @brief Run a NeighborGraph-schema ``.pt2`` (lower_input_kind="graph").
+   *
+   * Positional AOTI input order matches the Python export ABI:
+   * ``(atype, n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
+   * [charge_spin])``.  Unlike the edge schema there is no ``coord`` and no
+   * ``edge_scatter_index`` input; node count is carried by ``n_node`` and the
+   * geometry is fully described by ``edge_vec``.
+   *
+   * @param[in] atype Per-node local types, shape ``(N,)`` int64.
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Folded edge graph ``(2, E)`` int64 [src, dst].
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   */
+  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
+                                             const torch::Tensor& n_node,
+                                             const torch::Tensor& edge_index,
+                                             const torch::Tensor& edge_vec,
+                                             const torch::Tensor& edge_mask,
+                                             const torch::Tensor& fparam,
+                                             const torch::Tensor& aparam,
+                                             const torch::Tensor& charge_spin);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.

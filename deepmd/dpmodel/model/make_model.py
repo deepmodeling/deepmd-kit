@@ -17,8 +17,6 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
-    xp_take_along_axis,
-    xp_take_first_n,
 )
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
@@ -40,12 +38,21 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils import (
     DefaultNeighborList,
     NeighborList,
+    format_nlist,
     nlist_distinguish_types,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+    build_neighbor_graph,
+    build_neighbor_graph_ase,
 )
 from deepmd.utils.path import (
     DPPath,
 )
 
+from .edge_transform_output import (
+    fit_output_to_model_output_graph,
+)
 from .transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
@@ -259,6 +266,7 @@ def make_model(
             coord_corr_for_virial: Array | None = None,
             charge_spin: Array | None = None,
             neighbor_list: NeighborList | None = None,
+            neighbor_graph_method: str | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -281,10 +289,34 @@ def make_model(
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
             neighbor_list
-                The neighbor-list construction strategy.  ``None`` uses the
-                default all-pairs builder; an alternative strategy (e.g. an O(N)
-                cell list) may be injected to speed up neighbor-list construction
-                without changing model outputs.
+                Neighbor-list construction strategy for the DENSE-nlist path
+                only.  ``None`` uses the default all-pairs builder; an
+                alternative strategy (e.g. an O(N) cell list) may be injected to
+                speed up nlist construction without changing model outputs.  It
+                is consumed by the dense lower; supplying it forces the dense
+                route (see below) and it is rejected together with an explicit
+                ``neighbor_graph_method``.
+            neighbor_graph_method
+                Selects the lower the model routes through.  The option strings
+                refer to the neighbor-GRAPH builder, NOT the legacy dense nlist:
+
+                - ``None`` -- default.  dpmodel/jax keep the dense nlist path;
+                  pt_expt default-flips graph-eligible mixed_types descriptors to
+                  the carry-all graph (decision #17).
+                - ``"legacy"`` -- force the dense nlist path (opt out of the
+                  default-flip).
+                - ``"dense"`` -- build a carry-all :class:`NeighborGraph` with the
+                  in-tree O(N^2) ALL-PAIRS search (this is NOT the dense nlist
+                  lower; "dense" = the all-pairs graph builder).
+                - ``"ase"`` -- build the carry-all graph with the O(N) ASE cell
+                  list.
+
+                The graph routes (``"dense"``/``"ase"``, and the pt_expt
+                default-flip) require a ``mixed_types`` descriptor with a graph
+                lower (dpa1 ``attn_layer == 0``).  At non-binding ``sel`` the
+                graph matches the dense path exactly; at binding ``sel`` the
+                carry-all graph keeps neighbors the dense path truncates, so the
+                energy intentionally differs.
 
             Returns
             -------
@@ -297,23 +329,170 @@ def make_model(
                 coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del coord, box, fparam, aparam, charge_spin
-            model_predict = model_call_from_call_lower(
-                call_lower=self.call_common_lower,
-                rcut=self.get_rcut(),
-                sel=self.get_sel(),
-                mixed_types=self.mixed_types(),
-                model_output_def=self.model_output_def(),
-                coord=cc,
-                atype=atype,
-                box=bb,
+            graph_method = self._resolve_graph_method(neighbor_graph_method)
+            # ``neighbor_list`` is a DENSE-nlist strategy; the graph path cannot
+            # consume it. Reject an explicit graph+nlist combination, and
+            # otherwise honor the supplied nlist by taking the dense route
+            # (don't let the pt_expt default-flip silently ignore it).
+            if neighbor_list is not None:
+                if neighbor_graph_method not in (None, "legacy"):
+                    raise ValueError(
+                        "neighbor_list is a dense-nlist strategy and cannot be "
+                        f"combined with neighbor_graph_method={neighbor_graph_method!r}; "
+                        "pass one or the other"
+                    )
+                graph_method = None
+            # the graph lower does not consume charge_spin yet -> keep those
+            # models on dense (a None check, so it stays jit/export-safe)
+            if cs is not None:
+                graph_method = None
+            if graph_method is not None:
+                # carry-all NeighborGraph energy forward (Option B / decision #17)
+                model_predict = self._call_common_graph(
+                    cc,
+                    atype,
+                    bb,
+                    fp,
+                    ap,
+                    graph_method,
+                    do_atomic_virial,
+                )
+            else:
+                # legacy dense-nlist path (builds the extended quartet)
+                model_predict = model_call_from_call_lower(
+                    call_lower=self.call_common_lower,
+                    rcut=self.get_rcut(),
+                    sel=self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    model_output_def=self.model_output_def(),
+                    coord=cc,
+                    atype=atype,
+                    box=bb,
+                    fparam=fp,
+                    aparam=ap,
+                    do_atomic_virial=do_atomic_virial,
+                    coord_corr_for_virial=coord_corr_for_virial,
+                    charge_spin=cs,
+                    neighbor_list=neighbor_list,
+                )
+            model_predict = self._output_type_cast(model_predict, input_prec)
+            return model_predict
+
+        def _resolve_graph_method(
+            self, neighbor_graph_method: str | None
+        ) -> str | None:
+            """Resolve the neighbor-graph method.
+
+            Base (dpmodel/jax): ``None`` => the dense path. These backends compute
+            force/virial ANALYTICALLY inside ``call_common`` (``energy_derv_r`` in
+            the output); the carry-all graph lower here is ENERGY-only, so it is
+            NOT used by default (it would drop force). ``"legacy"`` => dense;
+            explicit ``"dense"``/``"ase"`` => opt into the (energy-only) graph.
+
+            pt_expt OVERRIDES this so ``None`` defaults graph-eligible mixed_types
+            descriptors to the carry-all graph (decision #17) -- pt_expt has the
+            autograd ``forward_common_lower_graph`` that produces force/virial.
+
+            Parameters
+            ----------
+            neighbor_graph_method
+                The user-requested method: ``None`` (default), ``"legacy"``
+                (force dense), or ``"dense"``/``"ase"`` (force the graph builder).
+
+            Returns
+            -------
+            method
+                The resolved method passed to :meth:`_call_common_graph`, or
+                ``None`` to take the dense path.
+            """
+            if neighbor_graph_method == "legacy":
+                return None
+            return neighbor_graph_method
+
+        def _call_common_graph(
+            self,
+            cc: Array,
+            atype: Array,
+            bb: Array | None,
+            fp: Array | None,
+            ap: Array | None,
+            method: str,
+            do_atomic_virial: bool = False,
+        ) -> dict[str, Array]:
+            """Carry-all graph forward (opt-in, Option B).
+
+            Builds a carry-all :class:`NeighborGraph` from ``cc``/``atype``/``bb``
+            and routes the forward through the OUTPUT-AGNOSTIC
+            :meth:`call_lower_graph`. Input/output type-casting is done by the
+            caller.
+
+            Parameters
+            ----------
+            cc
+                coordinates. nf x nloc x 3 (or nf x (nloc x 3))
+            atype
+                the atom types. nf x nloc
+            bb
+                the simulation cell. nf x 3 x 3, or ``None`` for non-periodic.
+            fp
+                the frame parameter. nf x ndf
+            ap
+                the atomic parameter. nf x nloc x nda
+            method
+                the carry-all builder, ``"dense"`` or ``"ase"``.
+            do_atomic_virial
+                whether to calculate the atomic virial.
+
+            Returns
+            -------
+            model_predict
+                the standard model dict mirroring the dense ``call_common`` keys
+                (``<var>`` per-atom, ``<var>_redu`` reduced, derivative
+                name-holders ``None``, plus the int ``mask``).
+            """
+            descriptor = getattr(self.atomic_model, "descriptor", None)
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if not (self.mixed_types() and uses_graph_lower()):
+                raise NotImplementedError(
+                    "neighbor_graph_method requires a mixed_types descriptor with a "
+                    "graph lower (e.g. dpa1 attn_layer=0)"
+                )
+            if method == "dense":
+                ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())
+            elif method == "ase":
+                ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
+            else:
+                raise ValueError(
+                    f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "
+                    "supports 'dense'/'ase' only ('vesin'/'nv' require the pt_expt backend)."
+                )
+            xp = array_api_compat.array_namespace(atype)
+            nf, nloc = atype.shape[:2]
+            # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
+            # derivative name-holders ``None``, plus int ``mask``), like the
+            # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
+            # (atype<0) and sets the real int mask.
+            model_predict = self.call_lower_graph(
+                atype=xp.reshape(atype, (nf * nloc,)),
+                n_node=ng.n_node,
+                edge_index=ng.edge_index,
+                edge_vec=ng.edge_vec,
+                edge_mask=ng.edge_mask,
                 fparam=fp,
                 aparam=ap,
-                do_atomic_virial=do_atomic_virial,
-                coord_corr_for_virial=coord_corr_for_virial,
-                charge_spin=cs,
-                neighbor_list=neighbor_list,
             )
-            model_predict = self._output_type_cast(model_predict, input_prec)
+            # Public ABI is rectangular (nf, nloc, *); the lower is flat
+            # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
+            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
+            for k in list(model_predict.keys()):
+                v = model_predict[k]
+                # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
+                if (
+                    v is not None
+                    and not k.endswith("_redu")
+                    and v.shape[:1] == (nf * nloc,)
+                ):
+                    model_predict[k] = xp.reshape(v, (nf, nloc, *v.shape[1:]))
             return model_predict
 
         def call_common_lower(
@@ -422,6 +601,155 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
+
+        def forward_common_atomic_graph(
+            self,
+            atype: Array,
+            n_node: Array,
+            edge_index: Array,
+            edge_vec: Array,
+            edge_mask: Array,
+            n_local: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+            comm_dict: dict | None = None,
+            charge_spin: Array | None = None,
+        ) -> dict[str, Array]:
+            """Model-level graph forward (no type cast). Analogue of the dense
+            :meth:`forward_common_atomic`.
+
+            Builds a :class:`NeighborGraph` from the flat edge fields, runs the
+            atomic model's :meth:`forward_common_atomic_graph` (flat ``(N, *)``
+            per-node output), then the flat-N output transform (per-frame
+            ``segment_sum`` reduction; derivative name-holders ``None`` --
+            force/virial come from the pt_expt autograd lower). The
+            ``(nf, nloc)`` unravel for the public ABI happens in the caller
+            (:meth:`_call_common_graph`).
+
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) boolean/0-1 valid-edge mask.
+            n_local
+                Per-rank local atom counts for multi-rank inference. Ignored in
+                PR-A (single-rank); accepted for ABI stability.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(N, nda)``.
+            comm_dict
+                MPI communication metadata. Ignored in PR-A; accepted for ABI
+                stability.
+            charge_spin
+                charge/spin conditioning. Ignored in PR-A; accepted for ABI
+                stability with charge/spin-conditioned descriptors.
+
+            Returns
+            -------
+            dict
+                The standard model dict (``<var>`` per-node, ``<var>_redu``
+                reduced, derivative name-holders ``None``), matching
+                :func:`fit_output_to_model_output_graph`.
+            """
+            graph = NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+            atomic_ret = self.atomic_model.forward_common_atomic_graph(
+                graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            )
+            return fit_output_to_model_output_graph(
+                atomic_ret,
+                self.atomic_output_def(),
+                graph,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+            )
+
+        def call_common_lower_graph(
+            self,
+            atype: Array,
+            n_node: Array,
+            edge_index: Array,
+            edge_vec: Array,
+            edge_mask: Array,
+            n_local: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+            comm_dict: dict | None = None,
+            charge_spin: Array | None = None,
+        ) -> dict[str, Array]:
+            """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
+
+            The PRIMARY directly-callable graph interface (spec decision #14).
+            Casts inputs/outputs to/from the model precision exactly like the
+            dense :meth:`call_common_lower` (``edge_vec`` is the geometry, in
+            place of ``coord``), then runs :meth:`forward_common_atomic_graph`.
+            OUTPUT-AGNOSTIC: every fitting (energy/dos/dipole/polar/property/...)
+            flows through with no change on the fitting side; force/virial are
+            produced by the pt_expt autograd lower. Must match the dense
+            :meth:`call_common_lower` reduction on the SAME neighbor set.
+
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) boolean/0-1 valid-edge mask.
+            n_local
+                Per-rank local atom counts for multi-rank inference. Ignored in
+                PR-A (single-rank); accepted for ABI stability.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(N, nda)``.
+            comm_dict
+                MPI communication metadata. Ignored in PR-A; accepted for ABI
+                stability.
+            charge_spin
+                charge/spin conditioning. Ignored in PR-A; accepted for ABI
+                stability with charge/spin-conditioned descriptors.
+
+            Returns
+            -------
+            dict
+                The standard model dict in the INPUT precision.
+            """
+            edge_vec, _, fparam, aparam, cs, input_prec = self._input_type_cast(
+                edge_vec, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            )
+            model_predict = self.forward_common_atomic_graph(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                n_local=n_local,
+                fparam=fparam,
+                aparam=aparam,
+                comm_dict=comm_dict,
+                charge_spin=cs,
+            )
+            model_predict = self._output_type_cast(model_predict, input_prec)
+            return model_predict
+
+        # backward-compat alias (mirrors ``call_lower = call_common_lower``)
+        call_lower_graph = call_common_lower_graph
 
         call = call_common
         call_lower = call_common_lower
@@ -611,72 +939,13 @@ def make_model(
             nnei: int,
             extra_nlist_sort: bool = False,
         ) -> Array:
-            xp = array_api_compat.array_namespace(extended_coord, nlist)
-            n_nf, n_nloc, n_nnei = nlist.shape
-            extended_coord = extended_coord.reshape([n_nf, -1, 3])
-            rcut = self.get_rcut()
-
-            if n_nnei < nnei:
-                # make a copy before revise
-                ret = xp.concat(
-                    [
-                        nlist,
-                        -1
-                        * xp.ones(
-                            [n_nf, n_nloc, nnei - n_nnei],
-                            dtype=nlist.dtype,
-                            device=array_api_compat.device(nlist),
-                        ),
-                    ],
-                    axis=-1,
-                )
-
-            # Order matters for torch.export: Python evaluates `or` left-to-right
-            # with short-circuit.  When `extra_nlist_sort=True` (Python bool) is
-            # on the left, the right-hand `n_nnei > nnei` is not evaluated, so no
-            # symbolic guard is registered on the dynamic `n_nnei` dimension.
-            # Swapping the operands would force the SymInt comparison to run and
-            # emit an `_assert_scalar` node in the exported graph.
-            if extra_nlist_sort or n_nnei > nnei:
-                n_nf, n_nloc, n_nnei = nlist.shape
-                # make a copy before revise
-                m_real_nei = nlist >= 0
-                ret = xp.where(m_real_nei, nlist, 0)
-                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
-                index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
-                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
-                coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
-                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = xp.where(m_real_nei, rr, float("inf"))
-                rr, ret_mapping = xp.sort(rr, axis=-1), xp.argsort(rr, axis=-1)
-                ret = xp_take_along_axis(ret, ret_mapping, axis=2)
-                ret = xp.where(rr > rcut, -1, ret)
-                ret = ret[..., :nnei]
-            else:
-                # not extra_nlist_sort and n_nnei <= nnei: no reordering is
-                # needed (these descriptors reduce over neighbors order-
-                # independently), but we must still drop neighbors beyond rcut.
-                # The C++/LAMMPS neighbor list is built with rcut+skin and is
-                # NOT rcut-filtered before forward_lower; without this, out-of-
-                # rcut neighbors leak into the descriptor whenever the per-atom
-                # neighbor count <= nnei (this branch), making the result
-                # order-dependent (see discussion #5438).
-                if n_nnei == nnei:
-                    ret = nlist
-                # else (n_nnei < nnei): `ret` is already padded to nnei above.
-                n_nf, n_nloc, n_pad = ret.shape
-                m_real_nei = ret >= 0
-                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
-                index = xp.tile(
-                    xp.where(m_real_nei, ret, 0).reshape(n_nf, n_nloc * n_pad, 1),
-                    (1, 1, 3),
-                )
-                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
-                coord1 = coord1.reshape(n_nf, n_nloc, n_pad, 3)
-                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                ret = xp.where(m_real_nei & (rr > rcut), -1, ret)
-            assert ret.shape[-1] == nnei
-            return ret
+            return format_nlist(
+                extended_coord,
+                nlist,
+                nnei,
+                self.get_rcut(),
+                extra_nlist_sort=extra_nlist_sort,
+            )
 
         def do_grad_r(
             self,

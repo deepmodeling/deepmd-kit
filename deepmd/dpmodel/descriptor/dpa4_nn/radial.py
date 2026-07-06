@@ -2,14 +2,11 @@
 """
 Radial building blocks for the DPA4/SeZM descriptor.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.radial``.
-It defines the cutoff envelope, radial basis, and radial multilayer perceptron
-used by the DPA4 descriptor. ``InnerClamp`` and ``BridgingSwitch`` are ported
-by later tasks together with the modules that consume them.
+This module defines the cutoff envelope, inner-distance clamp, radial basis,
+and radial multilayer perceptron used by SeZM.
 
-Serialization contract: the ``@variables`` keys of each class match the
-``state_dict`` key names of its pt counterpart, so pt ``serialize()`` output
-deserializes directly into the dpmodel classes (and vice versa).
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.radial``.
 """
 
 from __future__ import (
@@ -66,8 +63,6 @@ class RadialMLP(NativeOP):
         Floating point precision for the linear layers.
     trainable : bool
         Whether the parameters are trainable.
-    seed : int | list[int] | None
-        Random seed for the layer initialization.
 
     Architecture
     ------------
@@ -94,35 +89,36 @@ class RadialMLP(NativeOP):
     ) -> None:
         if len(mlp_layers) < 2:
             raise ValueError("`mlp_layers` must have at least 2 elements")
-        self.mlp_layers = [int(d) for d in mlp_layers]
+        self.mlp_layers = list(mlp_layers)
         self.activation_function = str(activation_function)
         self.precision = precision
         self.trainable = bool(trainable)
 
-        n_layers = len(self.mlp_layers)
-        self.layers: list[NativeLayer] = []
-        self.norms: list[RMSNorm] = []
+        modules: list = []
+        n_layers = len(mlp_layers)
         for i in range(n_layers - 1):
-            self.layers.append(
-                NativeLayer(
-                    self.mlp_layers[i],
-                    self.mlp_layers[i + 1],
-                    bias=False,
-                    activation_function=None,
-                    precision=self.precision,
-                    seed=child_seed(seed, i),
-                    trainable=self.trainable,
-                )
+            linear = NativeLayer(
+                mlp_layers[i],
+                mlp_layers[i + 1],
+                bias=False,
+                activation_function=None,
+                precision=self.precision,
+                seed=child_seed(seed, i),
+                trainable=trainable,
             )
+            modules.append(linear)
             # Last layer: no RMSNorm/activation
             if i < n_layers - 2:
-                self.norms.append(
+                modules.append(
                     RMSNorm(
-                        channels=self.mlp_layers[i + 1],
+                        channels=mlp_layers[i + 1],
                         precision=self.precision,
-                        trainable=self.trainable,
+                        trainable=trainable,
                     )
                 )
+                modules.append(get_activation_fn(self.activation_function))
+
+        self.net = modules
 
     def call(self, x: Any) -> Any:
         """
@@ -138,29 +134,18 @@ class RadialMLP(NativeOP):
         Array
             Output array with shape (..., mlp_layers[-1]).
         """
-        n_hidden = len(self.norms)
-        for i, layer in enumerate(self.layers):
-            x = layer.call(x)
-            if i < n_hidden:
-                x = self.norms[i].call(x)
-                fn = get_activation_fn(self.activation_function)
-                x = fn(x)
+        for layer in self.net:
+            x = layer(x)
         return x
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the RadialMLP to a dict.
-
-        The ``@variables`` keys follow the pt ``net.state_dict()`` naming:
-        ``{3*i}.matrix`` for the i-th linear layer and ``{3*i+1}.adam_scale``
-        for the i-th RMSNorm (activation modules are parameter-free).
-        """
+        """Serialize the RadialMLP to a dict."""
         variables: dict[str, np.ndarray] = {}
-        for i, layer in enumerate(self.layers):
-            variables[f"{3 * i}.matrix"] = to_numpy_array(layer.w)
-            if i < len(self.norms):
-                variables[f"{3 * i + 1}.adam_scale"] = to_numpy_array(
-                    self.norms[i].adam_scale
-                )
+        for idx, layer in enumerate(self.net):
+            if isinstance(layer, NativeLayer):
+                variables[f"{idx}.matrix"] = to_numpy_array(layer.w)
+            elif isinstance(layer, RMSNorm):
+                variables[f"{idx}.adam_scale"] = to_numpy_array(layer.adam_scale)
         return {
             "@class": "RadialMLP",
             "@version": 1,
@@ -181,37 +166,16 @@ class RadialMLP(NativeOP):
         version = int(data.pop("@version"))
         check_version_compatibility(version, 1, 1)
         variables = data.pop("@variables")
-        precision = str(data.pop("dtype"))
-        obj = cls(
-            data.pop("mlp_layers"),
-            activation_function=str(data.pop("activation_function")),
-            precision=precision,
-            trainable=bool(data.pop("trainable")),
-        )
-        prec = PRECISION_DICT[precision.lower()]
-        expected_keys = {f"{3 * i}.matrix" for i in range(len(obj.layers))} | {
-            f"{3 * i + 1}.adam_scale" for i in range(len(obj.norms))
-        }
-        if set(variables) != expected_keys:
-            raise ValueError(
-                f"variable keys {sorted(variables)} do not match the expected "
-                f"keys {sorted(expected_keys)}"
-            )
+        data["precision"] = data.pop("dtype")
+        obj = cls(**data)
+        prec = PRECISION_DICT[obj.precision.lower()]
         for key, value in variables.items():
-            idx_s, _, name = key.partition(".")
-            idx = int(idx_s)
-            value = np.asarray(value, dtype=prec)
+            idx, _, name = key.partition(".")
+            layer = obj.net[int(idx)]
             if name == "matrix":
-                layer = obj.layers[idx // 3]
-                if value.shape != layer.w.shape:
-                    raise ValueError(
-                        f"shape of {key} {value.shape} does not match "
-                        f"the layer shape {layer.w.shape}"
-                    )
-                layer.w = value
+                layer.w = np.asarray(value, dtype=prec)
             else:
-                norm = obj.norms[idx // 3]
-                norm.adam_scale = value.reshape(norm.adam_scale.shape)
+                layer.adam_scale = np.asarray(value, dtype=prec)
         return obj
 
 
@@ -253,9 +217,21 @@ class C3CutoffEnvelope(NativeOP):
         Cutoff radius in Å.
     exponent : int, optional
         Polynomial exponent (p), must be positive. Default is 5.
-    precision : str
-        Floating point precision label (kept for config parity with pt; the
-        computation follows the input dtype).
+
+    Attributes
+    ----------
+    rcut : float
+        Cutoff radius in Å.
+    p : float
+        Polynomial exponent.
+    a : float
+        Quadratic coefficient for x^p term.
+    b : float
+        Linear coefficient for x^(p+1) term.
+    c : float
+        Quadratic coefficient for x^(p+2) term.
+    d : float
+        Cubic coefficient for x^(p+3) term.
     """
 
     def __init__(
@@ -287,33 +263,160 @@ class C3CutoffEnvelope(NativeOP):
         env_val = 1 + d_scaled**self.p * poly
         return env_val * xp.astype(d_scaled < 1.0, dst.dtype)
 
-    def serialize(self) -> dict[str, Any]:
-        """Serialize the C3CutoffEnvelope to a dict (config only, no state)."""
-        return {
-            "@class": "C3CutoffEnvelope",
-            "@version": 1,
-            "config": {
-                "rcut": self.rcut,
-                "exponent": self.p,
-                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
-            },
-        }
 
-    @classmethod
-    def deserialize(cls, data: dict[str, Any]) -> C3CutoffEnvelope:
-        """Deserialize a C3CutoffEnvelope from a dict."""
-        data = data.copy()
-        data_cls = data.pop("@class")
-        if data_cls != "C3CutoffEnvelope":
-            raise ValueError(f"Invalid class for C3CutoffEnvelope: {data_cls}")
-        version = int(data.pop("@version"))
-        check_version_compatibility(version, 1, 1)
-        config = data.pop("config")
-        return cls(
-            rcut=float(config["rcut"]),
-            exponent=int(config["exponent"]),
-            precision=str(config["precision"]),
+class InnerClamp(NativeOP):
+    """
+    C3-continuous inner distance clamping for zone bridging.
+
+    Applies a septic Hermite polynomial transition that freezes distances
+    below ``r_inner`` to the constant ``r_inner``, then smoothly transitions
+    back to identity at ``r_outer``::
+
+        r̃(r) = r_inner                                    if r <= r_inner
+        r̃(r) = r_inner + (r_outer - r_inner) * h(t)       if r_inner < r < r_outer
+        r̃(r) = r                                          if r >= r_outer
+
+        h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7,  t = (r - r_inner) / (r_outer - r_inner)
+
+    Boundary conditions:
+    ``h(0)=0``, ``h(1)=1``, ``h'(0)=0``, ``h'(1)=1``,
+    ``h''(0)=0``, ``h''(1)=0``, ``h'''(0)=0``, ``h'''(1)=0``.
+    This ensures C3 continuity: ``dr̃/dr = 0`` at r_inner (frozen zone) and
+    ``dr̃/dr = 1`` at r_outer (identity zone), with matched second and third
+    derivatives at both boundaries.
+
+    Parameters
+    ----------
+    r_inner : float
+        Freeze radius in Å. Distances below this are clamped to ``r_inner``.
+    r_outer : float
+        Outer boundary of the transition zone in Å. Above this, ``r̃ = r``.
+
+    Raises
+    ------
+    ValueError
+        If ``r_inner >= r_outer`` or either is non-positive.
+    """
+
+    def __init__(self, r_inner: float, r_outer: float) -> None:
+        if r_inner <= 0 or r_outer <= 0:
+            raise ValueError("r_inner and r_outer must be positive")
+        if r_inner >= r_outer:
+            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
+        self.r_inner = float(r_inner)
+        self.r_outer = float(r_outer)
+
+    def call(self, r: Any) -> Any:
+        """
+        Apply inner distance clamping.
+
+        Parameters
+        ----------
+        r : Array
+            Pair distances with shape (...) or (..., 1) in Å.
+
+        Returns
+        -------
+        Array
+            Clamped distances r̃ with the same shape as input.
+        """
+        xp = array_api_compat.array_namespace(r)
+        t = xp.clip(
+            (r - self.r_inner) / (self.r_outer - self.r_inner), min=0.0, max=1.0
         )
+        t2 = t * t
+        t4 = t2 * t2
+        # h(t) = 20t^4 - 45t^5 + 36t^6 - 10t^7
+        # Satisfies:
+        #   h(0)=0, h(1)=1
+        #   h'(0)=0, h'(1)=1
+        #   h''(0)=0, h''(1)=0
+        #   h'''(0)=0, h'''(1)=0
+        h = t4 * (20.0 + t * (-45.0 + t * (36.0 - 10.0 * t)))
+        interpolated = self.r_inner + (self.r_outer - self.r_inner) * h
+        # Identity zone: r >= r_outer returns r directly.
+        # Both branches have matching first three derivatives at r_outer,
+        # so xp.where preserves C3 continuity here.
+        return xp.where(r >= self.r_outer, r, interpolated)
+
+
+class BridgingSwitch(NativeOP):
+    r"""
+    C3-continuous switching amplitude for the SeZM bridging zone.
+
+    ``BridgingSwitch`` returns a per-edge scalar amplitude in ``[0, 1]``
+    that measures how far an edge sits outside the frozen zone. It is
+    the elementary piece the Source Freeze Propagation Gate (SFPG)
+    aggregates into a per-node "non-frozen confidence" via a product
+    over each source node's outgoing edges::
+
+        w(r) = 0                                             if r <= r_inner  (frozen)
+        w(r) = h((r - r_inner) / (r_outer - r_inner))        if r_inner < r < r_outer  (transition)
+        w(r) = 1                                             if r >= r_outer  (normal)
+
+        h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7
+
+    Boundary conditions at ``t=0`` and ``t=1``::
+
+        h(0)   = h'(0)   = h''(0)   = h'''(0)   = 0
+        h(1)=1, h'(1)    = h''(1)   = h'''(1)   = 0
+
+    The vanishing first three derivatives at both endpoints give
+    ``w \in C^3(\mathbb{R}_{\ge 0})`` with zero slope/curvature at
+    ``r_inner`` and ``r_outer``, so forces (first derivatives) and the
+    force derivatives consumed by second-order training stay continuous
+    across both zone boundaries.
+
+    The surrounding infrastructure (``compute_edge_src_gate``) owns the
+    per-node product reduction and broadcast; this module only encodes
+    the scalar amplitude shape.
+
+    Parameters
+    ----------
+    r_inner : float
+        Inner radius in Å. At or below this distance ``w = 0``.
+    r_outer : float
+        Outer radius in Å. At or above this distance ``w = 1``.
+
+    Raises
+    ------
+    ValueError
+        If ``r_inner <= 0``, ``r_outer <= 0``, or ``r_inner >= r_outer``.
+    """
+
+    def __init__(self, r_inner: float, r_outer: float) -> None:
+        if r_inner <= 0 or r_outer <= 0:
+            raise ValueError("r_inner and r_outer must be positive")
+        if r_inner >= r_outer:
+            raise ValueError(f"r_inner ({r_inner}) must be < r_outer ({r_outer})")
+        self.r_inner = float(r_inner)
+        self.r_outer = float(r_outer)
+
+    def call(self, r: Any) -> Any:
+        """
+        Evaluate the C3 switching amplitude.
+
+        Parameters
+        ----------
+        r : Array
+            Pair distances with shape (...) or (..., 1) in Å.
+
+        Returns
+        -------
+        Array
+            Switching amplitudes in ``[0, 1]`` with the same shape as input.
+        """
+        xp = array_api_compat.array_namespace(r)
+        t = xp.clip(
+            (r - self.r_inner) / (self.r_outer - self.r_inner), min=0.0, max=1.0
+        )
+        t2 = t * t
+        t4 = t2 * t2
+        # h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7  (Horner form).
+        # Degree-7 smootherstep: the unique polynomial of this degree that
+        # hits ``w(r_inner)=0, w(r_outer)=1`` together with C3 flatness at
+        # both radii.
+        return t4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
 
 
 class RadialBasis(NativeOP):
@@ -325,15 +428,14 @@ class RadialBasis(NativeOP):
 
     Notes
     -----
-    The Bessel basis uses the normalized sinc function for numerical
-    stability::
+    The Bessel basis uses PyTorch's sinc function for numerical stability::
 
         phi_n(r) = w_n * sinc(w_n * r / π)
 
-    where ``sinc(z) = sin(π*z) / (π*z)`` with ``sinc(0) = 1`` (same convention
-    as ``torch.sinc`` and ``np.sinc``). This is mathematically equivalent to
-    the standard form ``sin(w_n * r) / r``, but sinc handles the r->0 limit,
-    providing continuous gradients without explicit epsilon clamping.
+    where ``torch.sinc(z) = sin(π*z) / (π*z)``. This is mathematically
+    equivalent to the standard form ``sin(w_n * r) / r``, but sinc handles
+    the r->0 limit via Taylor expansion, providing continuous gradients
+    without explicit epsilon clamping.
 
     The ``r -> 0`` limit is finite::
 
@@ -350,10 +452,10 @@ class RadialBasis(NativeOP):
     ----------
     rcut : float
         Cutoff radius in Å.
-    basis_type : str, optional
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
     n_radial : int
         Number of basis functions.
+    basis_type : str, optional
+        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
     precision : str
         Floating-point precision for the radial basis frequencies and outputs.
     exponent : int, optional
@@ -380,6 +482,7 @@ class RadialBasis(NativeOP):
         self.precision = precision
         self.exponent = int(exponent)
         prec = PRECISION_DICT[self.precision.lower()]
+        self.pi_tensor = math.pi
 
         # Frequencies: n*π/rcut, n=1..n_radial
         # Shape: (1, n_radial), stored as a trainable array.
@@ -404,30 +507,28 @@ class RadialBasis(NativeOP):
         Parameters
         ----------
         r : Array
-            Pair distances with shape (N, 1) in Å, where N is the number of
-            pairs.
+            Pair distances with shape (N, 1) in Å, where N is the number of pairs.
 
         Returns
         -------
         Array
-            Radial basis multiplied by C^3 cutoff envelope with shape
-            (N, n_rbf). The output is smoothly truncated to zero at r = rcut.
+            Radial basis multiplied by C^3 cutoff envelope with shape (N, n_rbf).
+            The output is smoothly truncated to zero at r = rcut.
         """
         xp = array_api_compat.array_namespace(r)
         freqs = xp_asarray_nodetach(
-            xp, self.adam_freqs, device=array_api_compat.device(r)
+            xp, self.adam_freqs[...], device=array_api_compat.device(r)
         )
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
         if self.basis_type == "bessel":
             # phi_n(r) = w_n * sinc(w_n * r / π)
             x = r * freqs  # (N, n_rbf)
-            # normalized sinc, mirroring torch.sinc(x / π):
-            # sinc(z) = sin(π*z) / (π*z), with sinc(0) = 1.
-            # The zero branch is selected through a safe denominator so that
-            # gradients stay finite at r = 0.
-            z = x / math.pi
-            pz = math.pi * z
+            # torch.sinc(z) = sin(π z) / (π z) with sinc(0) = 1. The array API
+            # has no sinc, so evaluate it directly with a guarded denominator so
+            # the r -> 0 limit and its gradient stay finite.
+            z = x / self.pi_tensor
+            pz = self.pi_tensor * z
             zero = z == 0.0
             safe_pz = xp.where(zero, xp.ones_like(pz), pz)
             sinc = xp.where(zero, xp.ones_like(pz), xp.sin(safe_pz) / safe_pz)
@@ -437,7 +538,7 @@ class RadialBasis(NativeOP):
             raw = xp.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
         # === Step 2. Apply C^3 envelope for smooth cutoff ===
-        envelope = self.envelope.call(r)  # (N, 1)
+        envelope = self.envelope(r)  # (N, 1)
         return raw * envelope
 
     def serialize(self) -> dict[str, Any]:
@@ -469,18 +570,12 @@ class RadialBasis(NativeOP):
         precision = str(config["precision"])
         obj = cls(
             rcut=float(config["rcut"]),
-            basis_type=str(config.get("basis_type", "bessel")),
             n_radial=int(config["n_radial"]),
-            precision=precision,
+            basis_type=str(config.get("basis_type", "bessel")),
             exponent=int(config.get("exponent", 7)),
+            precision=precision,
         )
         if variables is not None:
             prec = PRECISION_DICT[precision.lower()]
-            adam_freqs = np.asarray(variables["adam_freqs"], dtype=prec)
-            if adam_freqs.shape != obj.adam_freqs.shape:
-                raise ValueError(
-                    f"adam_freqs shape {adam_freqs.shape} does not match "
-                    f"the expected shape {obj.adam_freqs.shape}"
-                )
-            obj.adam_freqs = adam_freqs
+            obj.adam_freqs = np.asarray(variables["adam_freqs"], dtype=prec)
         return obj
