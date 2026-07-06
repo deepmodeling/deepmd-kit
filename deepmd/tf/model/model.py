@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import logging
 from abc import (
     ABC,
@@ -144,7 +145,8 @@ class Model(ABC, make_plugin_registry("model")):
         if isinstance(spin, Spin):
             self.spin = spin
         elif spin is not None:
-            self.spin = Spin(**{k: v for k, v in spin.items() if k != "scheme"})
+            spin_fields = set(inspect.signature(Spin).parameters)
+            self.spin = Spin(**{k: v for k, v in spin.items() if k in spin_fields})
         else:
             self.spin = None
         self.compress = compress

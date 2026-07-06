@@ -989,6 +989,27 @@ def freeze_sezm_to_pt2(
         target_device,
         output_keys,
     )
+    log.info(
+        "Thank you for using the DPA4/SeZM model! If it benefits your "
+        "research, please cite the DPA4 paper "
+        "(https://arxiv.org/abs/2606.02419):"
+    )
+    log.info(
+        "\n"
+        "@article{li2026dpa4,\n"
+        "  title = {{DPA4}: Pushing the Accuracy-Cost Frontier of Interatomic "
+        "Potentials with {EMFA} {SO(2)} Convolution},\n"
+        "  author = {Li, Tiancheng and Li, Wentao and Peng, Anyang and "
+        "Xue, Jianming and Zhang, Linfeng and Zhang, Duo and Wang, Han},\n"
+        "  journal = {arXiv preprint arXiv:2606.02419},\n"
+        "  year = {2026},\n"
+        "  eprint = {2606.02419},\n"
+        "  archivePrefix = {arXiv},\n"
+        "  primaryClass = {physics.chem-ph},\n"
+        "  doi = {10.48550/arXiv.2606.02419},\n"
+        "  url = {https://arxiv.org/abs/2606.02419}\n"
+        "}"
+    )
 
 
 __all__ = [
