@@ -102,9 +102,7 @@ def model_call_from_call_lower(
         # control flow: its only branch is on the static ``exclude_types``
         # config, so it traces cleanly under SavedModel export and does not
         # need a hand-written TF twin.
-        from deepmd._vendors import (
-            ndtensorflow as ndtf,
-        )
+        from deepmd._vendors import ndtensorflow as ndtf
         from deepmd.dpmodel.utils.nlist import (
             apply_pair_exclusion_nlist,
         )
