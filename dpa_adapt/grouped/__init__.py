@@ -17,7 +17,7 @@ that already have component arrays in memory:
     a.group(label=..., fparam={...}).add(coords, symbols, weight=...)
     a.write(PATH)
 
-The DeepMD tensor names still use ``group_id`` internally because that is the
+The DeePMD tensor names still use ``group_id`` internally because that is the
 training primitive, and users describe assemblies and groups.
 """
 

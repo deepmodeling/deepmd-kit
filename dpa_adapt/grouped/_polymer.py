@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Build grouped DeepMD data for polymer property prediction.
+"""Build grouped DeePMD data for polymer property prediction.
 
 A polymer is one **group**: each repeating unit / end group becomes one
 component (frame), weighted by its mole fraction (end groups by their computed
@@ -84,7 +84,7 @@ class _PolymerRow:
 
 
 class PolymerBuilder:
-    """Accumulate polymers and write them as grouped DeepMD systems."""
+    """Accumulate polymers and write them as grouped DeePMD systems."""
 
     def __init__(
         self,
@@ -253,7 +253,7 @@ class PolymerBuilder:
         overwrite: bool = False,
         scaler: dict[str, Any] | str | Path | None = None,
     ) -> dict[str, Any]:
-        """Embed, standardize, and write grouped DeepMD data.
+        """Embed, standardize, and write grouped DeePMD data.
 
         ``scaler`` reuses a previously written scaler (dict or path to the
         ``polymer_scaler.json`` written by an earlier ``write``) so a validation

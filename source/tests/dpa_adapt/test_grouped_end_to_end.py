@@ -3,7 +3,7 @@
 
 These cover the full data path for groups whose components differ in size and
 composition (e.g. OER O*/OH*/OOH*): the assembly writer pads every frame up to
-the group's max atom count and emits the DeepMD ``mixed_type`` layout, and the
+the group's max atom count and emits the DeePMD ``mixed_type`` layout, and the
 grouped model must aggregate the padded frames without letting the virtual
 padding atoms corrupt the pooled embedding.
 

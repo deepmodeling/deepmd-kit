@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """High-level assembly dataset writer for grouped property training.
 
-The DeepMD system stores only tensors needed at train time.  Scientific
+The DeePMD system stores only tensors needed at train time.  Scientific
 semantics, generation provenance, source paths, roles, blocks, and fparam
 schemas live in the adapt manifest so the user-facing API can evolve without
-turning a DeepMD ``set.*`` directory into a metadata dump.
+turning a DeePMD ``set.*`` directory into a metadata dump.
 """
 
 from __future__ import (
@@ -130,7 +130,7 @@ class PoolMask:
 
 @dataclass
 class ComponentSpec:
-    """One structure/component that becomes one DeepMD frame."""
+    """One structure/component that becomes one DeePMD frame."""
 
     coords: np.ndarray
     symbols: list[str]
@@ -258,11 +258,11 @@ class GroupSpec:
 
 
 class Assembly:
-    """Build assembly DeepMD data plus an adapt manifest.
+    """Build assembly DeePMD data plus an adapt manifest.
 
-    Each group is written as one DeepMD system.  Components within a group may
+    Each group is written as one DeePMD system.  Components within a group may
     differ in size and composition: every frame is padded up to the group's max
-    atom count with virtual atoms (real type -1) and stored in the DeepMD
+    atom count with virtual atoms (real type -1) and stored in the DeePMD
     ``mixed_type`` layout, with padding atoms masked out of pooling.  Richer
     assembly semantics live in ``manifest.json``.
     """
@@ -439,7 +439,7 @@ def _write_group_system(
 
     # Components in a group may differ in size and composition (e.g. OER
     # O*/OH*/OOH*).  Pad every frame up to the group's max atom count with
-    # virtual atoms (real type -1) and emit the DeepMD ``mixed_type`` layout so
+    # virtual atoms (real type -1) and emit the DeePMD ``mixed_type`` layout so
     # one shared descriptor can consume the whole group in a single system.
     # Padding atoms are excluded from pooling (``pool_mask`` = 0) and ignored by
     # the neighbor list (type < 0), so they never affect real-atom embeddings.
@@ -461,7 +461,7 @@ def _write_group_system(
         "".join(f"{el}\n" for el in resolved_type_map), encoding="utf-8"
     )
     # ``mixed_type`` placeholder: a uniform (all-zero) ``type.raw`` makes
-    # DeepMD's per-atom sort a no-op, keeping coord/pool_mask/real_atom_types
+    # DeePMD's per-atom sort a no-op, keeping coord/pool_mask/real_atom_types
     # aligned in written order.  Real per-frame types live in real_atom_types.
     (system_path / "type.raw").write_text("0\n" * natoms, encoding="utf-8")
 

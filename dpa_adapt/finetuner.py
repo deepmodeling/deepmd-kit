@@ -1845,7 +1845,9 @@ class DPAFineTuner:
         if getattr(self, "_grouped", False):
             # predict() returns one row per group; use matching group-level
             # labels instead of frame-level ones (which would not reshape).
-            from dpa_adapt.grouped._offline import GroupedDataset
+            from dpa_adapt.grouped._offline import (
+                GroupedDataset,
+            )
 
             dataset = GroupedDataset(
                 data,

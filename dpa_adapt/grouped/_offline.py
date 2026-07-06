@@ -88,7 +88,7 @@ class GroupedDataset:
                 )
             source_path = Path(source)
             system_frames = _read_system_group_rows(source_path, self.target_key)
-            # group_id.npy is scoped to one DeepMD system.  Many assembly writers
+            # group_id.npy is scoped to one DeePMD system.  Many assembly writers
             # naturally use group_id=0 in every system, so remap each system's
             # local ids into a process-wide id space before offline aggregation.
             local_to_global: dict[int, int] = {}

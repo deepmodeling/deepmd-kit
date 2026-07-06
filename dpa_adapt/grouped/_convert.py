@@ -88,7 +88,7 @@ def mark_groups(
         recursively for every directory that directly holds ``set.*`` subdirs.
     group_by
         How frames are grouped **within one system** (frame order follows the
-        DeepMD convention: sorted ``set.*`` directories concatenated):
+        DeePMD convention: sorted ``set.*`` directories concatenated):
 
         * ``"system"`` (default) -- every frame in the system is one group
           (group id ``0``).  Matches "one system directory == one group", the

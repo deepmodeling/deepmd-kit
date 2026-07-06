@@ -91,9 +91,9 @@ def normalize_pool_mask_tensor(
 
 
 def load_group_ids_for_system(system: str | Path) -> np.ndarray | None:
-    """Load frame-level group ids from a DeepMD system, if present.
+    """Load frame-level group ids from a DeePMD system, if present.
 
-    The returned ids follow DeepMD frame order across sorted ``set.*``
+    The returned ids follow DeePMD frame order across sorted ``set.*``
     directories.  Missing data returns ``None`` so callers can fall back to
     ordinary frame batching.
     """

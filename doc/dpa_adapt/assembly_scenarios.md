@@ -1,6 +1,6 @@
 # Assembly Groups for Multi-Component Properties
 
-Grouped property training is activated by ordinary DeepMD data fields. If a
+Grouped property training is activated by ordinary DeePMD data fields. If a
 system contains `group_id.npy`, DPA-ADAPT automatically treats frames with the
 same group id as one labeled training example. `weight.npy` and
 `pool_mask.npy` are optional; missing weights default to `1.0`, and missing
@@ -15,10 +15,10 @@ mark_groups("oer/dpdata", target="overpotential", group_by="system")
 ```
 
 `mark_groups()` only adds grouped markers. It does not re-declare labels,
-`fparam.npy`, coordinates, boxes, or type maps; those remain standard DeepMD /
+`fparam.npy`, coordinates, boxes, or type maps; those remain standard DeePMD /
 DPA-ADAPT data fields and are read automatically during `fit()`.
 
-Each group becomes one labeled training example. Each component is one DeepMD
+Each group becomes one labeled training example. Each component is one DeePMD
 frame. The model computes frame embeddings, applies `pool_mask`, aggregates
 `weight * frame_embedding` within the group (`group_reduce="mean"` by default),
 concatenates per-group `fparam` after group aggregation, and predicts the
@@ -27,7 +27,7 @@ target.
 The low-level `Assembly.group().add(coords, symbols, ...)` API is intended only
 for programmatic converters that already have arrays in memory. Public data
 preparation should use `convert()` for raw formats and `mark_groups()` for
-existing DeepMD systems.
+existing DeePMD systems.
 
 ## Electrocatalysis Reaction Assemblies
 
@@ -68,7 +68,7 @@ Use this when a polymer is represented by repeat units and end groups.
 - `pool_mask`: exclude artificial caps or attachment placeholders.
 
 For polymer CSVs, keep conversion in the ordinary data-preparation layer. A
-converter should write standard DeepMD fields plus `group_id.npy`,
+converter should write standard DeePMD fields plus `group_id.npy`,
 `weight.npy`, and `pool_mask.npy`; training then uses the same automatic grouped
 path as every other scenario.
 

@@ -18,14 +18,14 @@ import torch
 from deepmd.dpmodel import (
     ModelOutputDef,
 )
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.pt.model.model.dp_model import (
     DPModelCommon,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
-)
-from deepmd.pt.model.descriptor.base_descriptor import (
-    BaseDescriptor,
 )
 from deepmd.pt.model.task import (
     BaseFitting,

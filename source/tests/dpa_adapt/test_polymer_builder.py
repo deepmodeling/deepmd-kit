@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""End-to-end test for PolymerBuilder (CSV -> grouped DeepMD npy).
+"""End-to-end test for PolymerBuilder (CSV -> grouped DeePMD npy).
 
 Needs RDKit for SMILES->3D; skips cleanly otherwise.  No compiled deepmd
 backend required.
