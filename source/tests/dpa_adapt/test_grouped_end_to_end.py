@@ -42,33 +42,27 @@ def _require_real_torch():
 
 def _require_dataloader_backend():
     _require_real_torch()
-    try:
-        from deepmd.pt.utils.dataloader import (
-            DpLoaderSet,
-        )
-        from deepmd.pt.utils.grouped import (
-            group_data_requirements,
-        )
-        from deepmd.utils.data import (
-            DataRequirementItem,
-        )
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
-    return DpLoaderSet, group_data_requirements, DataRequirementItem
+    # importorskip binds the names via module attributes (always defined) and
+    # skips cleanly when the compiled deepmd.lib extension is unavailable.
+    reason = "needs the compiled deepmd.lib extension"
+    dataloader = pytest.importorskip("deepmd.pt.utils.dataloader", reason=reason)
+    grouped = pytest.importorskip("deepmd.pt.utils.grouped", reason=reason)
+    data = pytest.importorskip("deepmd.utils.data", reason=reason)
+    return (
+        dataloader.DpLoaderSet,
+        grouped.group_data_requirements,
+        data.DataRequirementItem,
+    )
 
 
 def _require_group_property_backend():
     torch = _require_real_torch()
-    try:
-        from deepmd.pt.model.model.group_property_model import (
-            GroupPropertyModel,
-        )
-        from deepmd.pt.model.task.group_property import (
-            GroupPropertyFittingNet,
-        )
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
-    return torch, GroupPropertyModel, GroupPropertyFittingNet
+    reason = "needs the compiled deepmd.lib extension"
+    model = pytest.importorskip(
+        "deepmd.pt.model.model.group_property_model", reason=reason
+    )
+    task = pytest.importorskip("deepmd.pt.model.task.group_property", reason=reason)
+    return torch, model.GroupPropertyModel, task.GroupPropertyFittingNet
 
 
 def _heterogeneous_builder() -> Assembly:

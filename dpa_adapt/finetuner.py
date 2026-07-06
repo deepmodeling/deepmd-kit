@@ -1591,7 +1591,8 @@ class DPAFineTuner:
         if has_grouped_markers(data):
             # Grouped input carries its own per-group labels (read from
             # set.*/<target_key>.npy), so target_key/labels are optional here.
-            return self._fit_sklearn_grouped(data, type_map, target_key, fmt)
+            self._fit_sklearn_grouped(data, type_map, target_key, fmt)
+            return
 
         if target_key is not None and labels is not None:
             raise ValueError(
