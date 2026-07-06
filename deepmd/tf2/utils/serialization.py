@@ -391,8 +391,11 @@ def deserialize_to_savedmodel(
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
                     # exclusion is a nlist-BUILD transform (decision #18/A4);
-                    # the traced lower consumes a pre-excluded nlist.
-                    pair_excl=getattr(model.atomic_model, "pair_excl", None),
+                    # the traced lower consumes a pre-excluded nlist. Guard
+                    # atomic_model too: test doubles (DummyModel) lack it.
+                    pair_excl=getattr(
+                        getattr(model, "atomic_model", None), "pair_excl", None
+                    ),
                 )
             )
 
