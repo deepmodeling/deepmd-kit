@@ -195,6 +195,31 @@ def test_group_distributed_batch_sampler_keeps_groups_intact_per_rank() -> None:
             if frames & group_frames:
                 assert group_frames <= frames
 
+
+def test_group_distributed_batch_sampler_uses_shared_seed_across_ranks() -> None:
+    group_ids = np.array([0, 0, 0, 1, 2, 2, 3, 4, 4, 4])
+    samplers = [
+        GroupDistributedBatchSampler(
+            group_ids,
+            max_frames=8,
+            num_replicas=2,
+            rank=rank,
+            shuffle=True,
+            seed=[11, 23, 37],
+        )
+        for rank in range(2)
+    ]
+    frames_by_rank = [set(sum(list(sampler), [])) for sampler in samplers]
+
+    assert frames_by_rank[0].isdisjoint(frames_by_rank[1])
+    assert frames_by_rank[0] | frames_by_rank[1] == set(range(len(group_ids)))
+    for frames in frames_by_rank:
+        for group in set(group_ids):
+            group_frames = {ii for ii, gid in enumerate(group_ids) if gid == group}
+            if frames & group_frames:
+                assert group_frames <= frames
+
+
 def test_dploaderset_enables_group_batches_for_group_requirements(tmp_path) -> None:
     system = tmp_path / "sys"
     set_dir = system / "set.000"

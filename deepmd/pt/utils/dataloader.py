@@ -316,6 +316,19 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _normalize_group_sampler_seed(
+    seed: int | list[int] | tuple[int, ...] | None,
+) -> int | None:
+    if seed is None:
+        return None
+    if isinstance(seed, (list, tuple)):
+        if not seed:
+            return None
+        # DDP group batching first builds a global group order, then slices it
+        # by rank.  Every rank must therefore use the same base seed.
+        return int(seed[0])
+    return int(seed)
+
 
 class GroupDistributedBatchSampler(Sampler[list[int]]):
     """Yield group-complete frame batches for one distributed rank."""
@@ -327,21 +340,20 @@ class GroupDistributedBatchSampler(Sampler[list[int]]):
         num_replicas: int,
         rank: int,
         shuffle: bool = True,
-        seed: int | None = None,
+        seed: int | list[int] | tuple[int, ...] | None = None,
     ) -> None:
         self.group_ids = np.asarray(group_ids, dtype=np.int64)
         self.max_frames = max(int(max_frames), 1)
         self.num_replicas = int(num_replicas)
         self.rank = int(rank)
         self.shuffle = shuffle
-        self.seed = seed
+        self.seed = _normalize_group_sampler_seed(seed)
         self._epoch = 0
         self._batches = self._make_batches()
 
     def _make_batches(self) -> list[list[int]]:
-        rng = np.random.default_rng(
-            None if self.seed is None else self.seed + self._epoch
-        )
+        base_seed = 0 if self.seed is None else self.seed
+        rng = np.random.default_rng(base_seed + self._epoch)
         return distributed_grouped_frame_batches(
             self.group_ids,
             self.max_frames,
@@ -368,12 +380,12 @@ class GroupCompleteBatchSampler(Sampler[list[int]]):
         group_ids: np.ndarray,
         max_frames: int,
         shuffle: bool = True,
-        seed: int | None = None,
+        seed: int | list[int] | tuple[int, ...] | None = None,
     ) -> None:
         self.group_ids = np.asarray(group_ids, dtype=np.int64)
         self.max_frames = max(int(max_frames), 1)
         self.shuffle = shuffle
-        self.seed = seed
+        self.seed = _normalize_group_sampler_seed(seed)
         self._epoch = 0
         self._batches = self._make_batches()
 

@@ -68,6 +68,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         self.atomic_model = SimpleNamespace(
             descriptor=self.descriptor,
             fitting_net=self.fitting_net,
+            observed_type=self.type_map,
             get_dim_fparam=self.fitting_net.get_dim_fparam,
             has_default_fparam=self.fitting_net.has_default_fparam,
             get_default_fparam=self.fitting_net.get_default_fparam,
@@ -154,6 +155,30 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
     def get_dim_aparam(self) -> int:
         return self.fitting_net.get_dim_aparam()
 
+    def get_out_bias(self) -> torch.Tensor:
+        # GroupPropertyFittingNet zero-inits its output bias by design and
+        # learns the offset during training (setting it from replicated group
+        # labels would bias toward large groups).  Expose a zero bias so the
+        # finetune bias-adjust step is a well-defined no-op.
+        return torch.zeros(
+            self.get_task_dim(),
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
+        )
+
+    def set_out_bias(self, out_bias: torch.Tensor) -> None:
+        # No externally managed per-type/group output bias; see get_out_bias.
+        del out_bias
+
+    def change_out_bias(
+        self,
+        merged: Any,
+        bias_adjust_mode: str = "change-by-statistic",
+    ) -> None:
+        # The group offset is learned by the fitting net during training, so
+        # there is no statistical output bias to (re)adjust on finetune.
+        del merged, bias_adjust_mode
+
     @torch.jit.export
     def has_chg_spin_ebd(self) -> bool:
         return bool(getattr(self.descriptor, "add_chg_spin_ebd", False))
@@ -208,12 +233,13 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             mixed_types=True,
             box=box,
         )
+        descriptor_atype = extended_atype.clamp_min(0)
+        del charge_spin
         descriptor, _rot_mat, _g2, _h2, _sw = self.descriptor(
             extended_coord,
-            extended_atype,
+            descriptor_atype,
             nlist,
             mapping=mapping,
-            charge_spin=charge_spin,
         )
         if descriptor is None:
             raise RuntimeError("Descriptor returned None for group_property.")
@@ -229,11 +255,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             )
         mask_sum = pool_mask.sum(dim=1)
         if bool((mask_sum == 0).any()):
-            bad = torch.nonzero(mask_sum == 0, as_tuple=False).flatten().tolist()
-            raise ValueError(
-                f"frames {bad} have an all-zero pool_mask (every atom masked out); "
-                "an all-masked frame is a data bug, not a numerical edge case."
-            )
+            raise ValueError("pool_mask cannot be all zero for any frame.")
         denom = mask_sum.clamp_min(1.0)
         # Zero out non-pooled atoms (padding/virtual atoms and excluded caps)
         # before the weighted sum so a non-finite descriptor on those rows --
@@ -300,8 +322,8 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             "frame_group_id": group_id,
             "group_inverse": inverse,
             "frame_embedding": frame_embedding,
-            GROUP_WEIGHT_KEY: weight,
-            POOL_MASK_KEY: pool_mask,
+            "weight": weight,
+            "pool_mask": pool_mask,
         }
 
     def serialize(self) -> dict[str, Any]:

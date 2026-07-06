@@ -895,8 +895,23 @@ class Trainer:
                                 not use_random_initialization
                                 and new_key not in _origin_state_dict
                             ):
+                                # GroupPropertyModel attaches the descriptor
+                                # directly (its ``atomic_model`` is a plain
+                                # namespace, not an nn.Module), so its keys read
+                                # ``model.<key>.descriptor.*``.  A standard
+                                # (energy/property) pretrained model stores the
+                                # descriptor one level deeper, under
+                                # ``model.<key_from>.atomic_model.descriptor.*``.
+                                # Bridge the two by inserting ``atomic_model``.
+                                atomic_key = new_key.replace(
+                                    f".{_model_key_from}.descriptor.",
+                                    f".{_model_key_from}.atomic_model.descriptor.",
+                                    1,
+                                )
                                 # for ZBL models finetuning from standard models
-                                if ".models.0." in new_key:
+                                if atomic_key in _origin_state_dict:
+                                    new_key = atomic_key
+                                elif ".models.0." in new_key:
                                     new_key = new_key.replace(".models.0.", ".")
                                 elif ".models.1." in new_key:
                                     use_random_initialization = True

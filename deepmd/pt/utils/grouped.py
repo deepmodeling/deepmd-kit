@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 import numpy as np
+import torch
 
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -55,33 +54,29 @@ def has_group_requirement(data_requirement: list[DataRequirementItem]) -> bool:
     return GROUP_ID_KEY in keys and GROUP_WEIGHT_KEY in keys and POOL_MASK_KEY in keys
 
 
-def normalize_group_id_tensor(group_id: Any, nframes: int) -> Any:
+def normalize_group_id_tensor(group_id: torch.Tensor, nframes: int) -> torch.Tensor:
     """Normalize collated group ids to shape ``(nframes,)``."""
     group_id = group_id.reshape(nframes, -1)
     if group_id.shape[1] != 1:
-        raise ValueError(
-            f"{GROUP_ID_KEY} must have one value per frame; got shape {group_id.shape}."
-        )
+        raise ValueError("group_id must have one value per frame.")
     return group_id[:, 0].long()
 
 
-def normalize_weight_tensor(weight: Any, nframes: int) -> Any:
+def normalize_weight_tensor(weight: torch.Tensor, nframes: int) -> torch.Tensor:
     """Normalize collated group weights to shape ``(nframes,)``."""
     weight = weight.reshape(nframes, -1)
     if weight.shape[1] != 1:
-        raise ValueError(
-            f"{GROUP_WEIGHT_KEY} must have one value per frame; got shape {weight.shape}."
-        )
+        raise ValueError("weight must have one value per frame.")
     return weight[:, 0]
 
 
-def normalize_pool_mask_tensor(pool_mask: Any, nframes: int, natoms: int) -> Any:
+def normalize_pool_mask_tensor(
+    pool_mask: torch.Tensor, nframes: int, natoms: int
+) -> torch.Tensor:
     """Normalize collated pool masks to shape ``(nframes, natoms)``."""
     pool_mask = pool_mask.reshape(nframes, natoms, -1)
     if pool_mask.shape[2] != 1:
-        raise ValueError(
-            f"{POOL_MASK_KEY} must have one value per atom; got shape {pool_mask.shape}."
-        )
+        raise ValueError("pool_mask must have one value per atom.")
     return pool_mask[:, :, 0]
 
 
@@ -183,6 +178,8 @@ def distributed_grouped_frame_batches(
         raise ValueError(
             f"rank must be in [0, {num_replicas}); got rank={rank}."
         )
+    if shuffle and rng is None:
+        rng = np.random.default_rng(0)
     group_items = _shuffle_group_items(
         _group_frame_indices(group_ids), shuffle=shuffle, rng=rng
     )

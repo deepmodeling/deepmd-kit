@@ -2776,6 +2776,12 @@ def fitting_property() -> list[Argument]:
     ]
 
 
+@fitting_args_plugin.register("group_property", doc=doc_only_pt_supported)
+def fitting_group_property() -> list[Argument]:
+    """Grouped frame-property fitting uses the property head schema."""
+    return fitting_property()
+
+
 @fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -4820,6 +4826,12 @@ def loss_property() -> list[Argument]:
             doc=doc_beta,
         ),
     ]
+
+
+@loss_args_plugin.register("group_property")
+def loss_group_property() -> list[Argument]:
+    """Grouped property loss uses the property loss hyper-parameters."""
+    return loss_property()
 
 
 # YWolfeee: Modified to support tensor type of loss args.
