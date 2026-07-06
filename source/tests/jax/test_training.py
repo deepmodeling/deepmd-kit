@@ -312,6 +312,68 @@ def test_jax_train_entrypoint_keeps_multitask_without_shared_dict() -> None:
     assert entrypoint.shared_links is None
 
 
+@patch("deepmd.jax.entrypoints.train.serialize_from_file")
+def test_jax_train_entrypoint_preprocesses_shared_dict_after_model_replacement(
+    serialize_from_file,
+) -> None:
+    """JAX shared links match the final model after pretrain-script replacement."""
+    input_model = {
+        "shared_dict": {
+            "input_type_map": ["input"],
+            "input_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+        },
+        "model_dict": {
+            "task_a": {
+                "type_map": "input_type_map",
+                "descriptor": "input_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+            "task_b": {
+                "type_map": "input_type_map",
+                "descriptor": "input_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+        },
+    }
+    checkpoint_model = {
+        "shared_dict": {
+            "checkpoint_type_map": ["O", "H", "B"],
+            "checkpoint_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+        },
+        "model_dict": {
+            "task_a": {
+                "type_map": "checkpoint_type_map",
+                "descriptor": "checkpoint_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+            "task_b": {
+                "type_map": "checkpoint_type_map",
+                "descriptor": "checkpoint_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+        },
+    }
+    serialize_from_file.return_value = {
+        "model_def_script": checkpoint_model,
+    }
+    entrypoint = JAXTrainEntrypoint()
+    config = {"model": input_model, "training": {}}
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(
+            input_file="input.json",
+            init_model="model.jax",
+            use_pretrain_script=True,
+        ),
+    )
+
+    assert updated["model"]["model_dict"]["task_a"]["type_map"] == ["O", "H", "B"]
+    assert entrypoint.shared_links is not None
+    assert set(entrypoint.shared_links) == {"checkpoint_descriptor"}
+    assert "input_descriptor" not in entrypoint.shared_links
+
+
 def test_jax_trainer_applies_shared_dict_links() -> None:
     """Trainer-level sharing links descriptor and fitting-net parameters."""
     trainer = DPTrainer(

@@ -106,17 +106,6 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         """Apply JAX fine-tuning and pretrained-script preprocessing."""
         self.finetune_links = None
         self.shared_links = None
-        if self.is_multi_task(config):
-            if config["model"].get("shared_dict"):
-                from deepmd.jax.utils.multi_task import (
-                    preprocess_shared_params,
-                )
-
-                config["model"], self.shared_links = preprocess_shared_params(
-                    config["model"]
-                )
-            if "RANDOM" in config["model"]["model_dict"]:
-                raise ValueError("Model name can not be 'RANDOM' in multi-task mode!")
 
         if options.finetune is not None:
             from deepmd.jax.utils.finetune import (
@@ -132,6 +121,17 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         elif options.init_model is not None and options.use_pretrain_script:
             model_data = serialize_from_file(options.init_model)
             config["model"] = model_data["model_def_script"]
+        if self.is_multi_task(config):
+            if config["model"].get("shared_dict"):
+                from deepmd.jax.utils.multi_task import (
+                    preprocess_shared_params,
+                )
+
+                config["model"], self.shared_links = preprocess_shared_params(
+                    config["model"]
+                )
+            if "RANDOM" in config["model"]["model_dict"]:
+                raise ValueError("Model name can not be 'RANDOM' in multi-task mode!")
         return config
 
     def update_neighbor_stat(

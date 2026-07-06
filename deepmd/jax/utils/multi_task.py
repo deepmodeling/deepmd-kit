@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from importlib import (
+    import_module,
+)
 from typing import (
     Any,
 )
 
-import deepmd.jax.descriptor as _jax_descriptor  # noqa: F401
-import deepmd.jax.fitting.fitting as _jax_fitting  # noqa: F401
 from deepmd.dpmodel.utils.multi_task import (
     preprocess_shared_params as preprocess_shared_params_common,
 )
@@ -14,6 +15,10 @@ from deepmd.jax.descriptor.base_descriptor import (
 from deepmd.jax.fitting.base_fitting import (
     BaseFitting,
 )
+
+# Populate JAX descriptor and fitting registries before class lookup.
+import_module("deepmd.jax.descriptor")
+import_module("deepmd.jax.fitting.fitting")
 
 
 def preprocess_shared_params(
