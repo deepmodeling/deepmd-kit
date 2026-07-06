@@ -1717,6 +1717,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             rtol=1e-6,
         )
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_export_matches_forward(self) -> None:
         """The traced ``.pt2`` export reduces to the public forward.
 
