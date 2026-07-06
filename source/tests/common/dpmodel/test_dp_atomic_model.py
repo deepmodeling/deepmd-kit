@@ -10,11 +10,11 @@ from deepmd.dpmodel.atomic_model import (
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
-from deepmd.dpmodel.utils.nlist import (
-    apply_pair_exclusion_nlist,
-)
 from deepmd.dpmodel.fitting import (
     InvarFitting,
+)
+from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
 )
 
 from .case_single_frame_with_nlist import (
