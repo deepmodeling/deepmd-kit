@@ -15,7 +15,6 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
-    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
@@ -25,7 +24,7 @@ from deepmd.dpmodel.utils.env_mat import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     edge_env_mat,
-    from_dense_quartet,
+    graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
@@ -187,15 +186,11 @@ class EnvMatStatSe(EnvMatStat):
         xp = array_api_compat.array_namespace(extended_coord, nlist)
         dev = array_api_compat.device(extended_coord)
         nframes, nloc, nsel = nlist.shape
-        nall = extended_atype.shape[1]
         ntypes = self.descriptor.get_ntypes()
-        coord_ext_3 = xp.reshape(extended_coord, (nframes, nall, 3))
-        mapping_g = xp.reshape(mapping, (nframes, nall))
-        graph = from_dense_quartet(coord_ext_3, nlist, mapping_g, compact=False)
-        # local center type per edge (dst is the local center index)
-        atype_local = xp.reshape(
-            xp_take_first_n(extended_atype, 1, nloc), (nframes * nloc,)
+        graph, atype_local = graph_from_dense_quartet(
+            extended_coord, extended_atype, nlist, mapping
         )
+        # local center type per edge (dst is the local center index)
         center_type = xp.take(atype_local, graph.edge_index[1, :], axis=0)
         zero2 = xp.zeros((ntypes, 4), dtype=graph.edge_vec.dtype, device=dev)
         one2 = xp.ones((ntypes, 4), dtype=graph.edge_vec.dtype, device=dev)

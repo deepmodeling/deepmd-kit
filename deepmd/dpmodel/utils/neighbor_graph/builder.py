@@ -39,6 +39,10 @@ from typing import (
 
 import array_api_compat
 
+from deepmd.dpmodel.array_api import (
+    xp_take_first_n,
+)
+
 from .graph import (
     GraphLayout,
     NeighborGraph,
@@ -200,6 +204,58 @@ def from_dense_quartet(
             edge_vec=edge_vec,
             edge_mask=edge_mask,
         )
+
+
+def graph_from_dense_quartet(
+    coord_ext: Array,
+    atype_ext: Array,
+    nlist: Array,
+    mapping: Array | None,
+) -> tuple[NeighborGraph, Array]:
+    """Shape-static NeighborGraph + flat local center atype from a dense quartet.
+
+    Convenience wrapper over :func:`from_dense_quartet` (``compact=False``) that
+    also fills the ``mapping is None`` identity case (no-PBC, ``nall == nloc``)
+    and derives the ghost-free flat local atom types ``(nf * nloc,)``. Shared by
+    the dpa1 dense->graph forward adapter (``DescrptDPA1._call_graph_adapter``)
+    and the input-stat graph path (``EnvMatStatSe._graph_env_mat``) so both build
+    the graph identically.
+
+    Parameters
+    ----------
+    coord_ext
+        Extended coordinates, ``(nf, nall x 3)`` or ``(nf, nall, 3)``.
+    atype_ext
+        Extended atom types, ``(nf, nall)``.
+    nlist
+        Dense neighbor list into the extended atoms, ``(nf, nloc, nsel)``; ``-1``
+        is padding.
+    mapping
+        Extended -> local-owner index, ``(nf, nall)``; ``None`` means the
+        identity mapping (``nall == nloc``).
+
+    Returns
+    -------
+    graph
+        Shape-static :class:`NeighborGraph` over the LOCAL atoms.
+    atype_local
+        Flat local atom types, ``(nf * nloc,)``.
+    """
+    xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+    dev = array_api_compat.device(coord_ext)
+    nf, nloc, _ = nlist.shape
+    nall = atype_ext.shape[1]
+    coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
+    if mapping is None:
+        # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
+        mapping_g = xp.broadcast_to(
+            xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
+        )
+    else:
+        mapping_g = xp.reshape(mapping, (nf, nall))
+    graph = from_dense_quartet(coord_ext_3, nlist, mapping_g, compact=False)
+    atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
+    return graph, atype_local
 
 
 def build_neighbor_graph(

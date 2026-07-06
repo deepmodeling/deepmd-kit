@@ -15,6 +15,7 @@ from .ase_builder import (
 from .builder import (
     build_neighbor_graph,
     from_dense_quartet,
+    graph_from_dense_quartet,
 )
 from .derivatives import (
     edge_force_virial,
@@ -54,6 +55,7 @@ __all__ = [
     "edge_force_virial",
     "frame_id_from_n_node",
     "from_dense_quartet",
+    "graph_from_dense_quartet",
     "neighbor_graph_from_ijs",
     "node_validity_mask",
     "pad_and_guard_edges",

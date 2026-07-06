@@ -643,26 +643,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei x 1
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
-            from_dense_quartet,
+            graph_from_dense_quartet,
         )
 
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        dev = array_api_compat.device(coord_ext)
         nf, nloc, nnei = nlist.shape
-        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
-        coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
-        if mapping is None:
-            # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
-            mapping_g = xp.broadcast_to(
-                xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
-            )
-        else:
-            mapping_g = xp.reshape(mapping, (nf, nall))
-        graph = from_dense_quartet(
-            coord_ext_3, nlist, mapping_g, layout=None, compact=False
+        # shape-static graph + flat local center types from the dense quartet
+        # (shared with the input-stat graph path, see graph_from_dense_quartet).
+        graph, atype_local = graph_from_dense_quartet(
+            coord_ext, atype_ext, nlist, mapping
         )
-        # local atom types, flat (nf * nloc,)
-        atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
         grrg_flat, rot_mat_flat = self.call_graph(
             graph,
             atype_local,
