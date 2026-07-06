@@ -906,6 +906,7 @@ class DPAFineTuner:
         # ---- training paradigms ----
         strategy: str = "frozen_sklearn",
         property_name: str = "property",
+        target: str | None = None,
         task_dim: int = 1,
         intensive: bool = True,
         init_branch: str = "SPICE2",
@@ -930,6 +931,9 @@ class DPAFineTuner:
         aux_batch_size: str | int | None = None,
         downstream_batch_size: str | int | None = None,
     ) -> None:
+        if target is not None:
+            # ``target`` is a user-facing alias for ``property_name``.
+            property_name = target
         if strategy not in self._VALID_STRATEGIES:
             raise ValueError(
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
@@ -1376,13 +1380,16 @@ class DPAFineTuner:
 
     def fit(
         self,
-        train_data: str | list[str],
+        train_data: str | list[str] | None = None,
         valid_data: str | list[str] | None = None,
         type_map: list[str] | None = None,
         target_key: str | list[str] | None = None,
         labels: np.ndarray | None = None,
         fmt: str | None = None,
         aux_data: str | list[str] | None = None,
+        *,
+        train: str | list[str] | None = None,
+        valid: str | list[str] | None = None,
     ) -> str | None:
         """Train the model.
 
@@ -1410,6 +1417,15 @@ class DPAFineTuner:
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
+        # ``train=`` / ``valid=`` are user-facing aliases for the positional
+        # ``train_data`` / ``valid_data`` arguments.
+        if train_data is None:
+            train_data = train
+        if valid_data is None:
+            valid_data = valid
+        if train_data is None:
+            raise ValueError("fit() requires train_data (or the train= alias).")
+
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
 
@@ -1500,6 +1516,13 @@ class DPAFineTuner:
         Refactored: logic extracted to ``_FrozenSklearnPipeline``; this method
         now orchestrates the pipeline and mirrors its state for backward compat.
         """
+        from dpa_adapt.grouped._offline import has_grouped_markers
+
+        if has_grouped_markers(data):
+            # Grouped input carries its own per-group labels (read from
+            # set.*/<target_key>.npy), so target_key/labels are optional here.
+            return self._fit_sklearn_grouped(data, type_map, target_key, fmt)
+
         if target_key is not None and labels is not None:
             raise ValueError(
                 "target_key and labels are mutually exclusive; provide only one."
@@ -1566,6 +1589,60 @@ class DPAFineTuner:
         p._condition_manager = self._condition_manager
         p._fitted = True
 
+    def _fit_sklearn_grouped(
+        self,
+        data: str | list[str],
+        type_map: list[str] | None,
+        target_key: str | list[str] | None,
+        fmt: str | None,
+    ) -> None:
+        """Fit the frozen-sklearn head on one pooled row per assembly group.
+
+        Descriptors are extracted per frame, weighted-pooled into one embedding
+        per group id, and regressed against the group's shared label.
+        """
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        from dpa_adapt.grouped._offline import GroupedDataset
+        from dpa_adapt.utils.sklearn_heads import build_sklearn_head
+
+        p = self._ensure_sklearn()
+        self.type_map = type_map or []
+        self._target_key = target_key if target_key is not None else "property"
+
+        dataset = GroupedDataset(
+            data,
+            pretrained=self.pretrained,
+            model_branch=self.model_branch,
+            type_map=type_map,
+            target_key=self._target_key,
+            fmt=fmt,
+        )
+        features = dataset.get_embeddings()
+        y = dataset.get_labels()
+        self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
+        y_flat = y.ravel() if self._task_dim == 1 else y
+
+        head = build_sklearn_head(
+            self._predictor_type,
+            seed=self.seed,
+            n_outputs=self._task_dim,
+        )
+        self.predictor = make_pipeline(StandardScaler(), head)
+        self.predictor.fit(features, y_flat)
+        self._fitted = True
+        self._grouped = True
+        self._condition_manager = None
+
+        # Mirror pipeline state for backward compat.
+        p.predictor = self.predictor
+        p.type_map = self.type_map
+        p._target_key = self._target_key
+        p._task_dim = self._task_dim
+        p._condition_manager = None
+        p._fitted = True
+
     def predict(self, data: str | list[str], fmt: str | None = None) -> DotDict:
         """
         Predict with the adapted model.
@@ -1600,6 +1677,21 @@ class DPAFineTuner:
             raise RuntimeError(
                 "predict() was called before fit(). Train the model with fit() first."
             )
+
+        if getattr(self, "_grouped", False):
+            from dpa_adapt.grouped._offline import GroupedDataset
+
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map or None,
+                target_key=self._target_key,
+                fmt=fmt,
+            )
+            raw = self.predictor.predict(dataset.get_embeddings())
+            predictions = np.asarray(raw).reshape(-1, self._task_dim)
+            return DotDict({"predictions": predictions})
 
         systems = load_data(data, fmt=fmt)
         features = self._extract_features(systems)

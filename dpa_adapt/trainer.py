@@ -101,6 +101,45 @@ DEFAULT_FITTING_NET = {
 
 _VALID_LOSSES = ("mse", "smooth_mae")
 
+# Group markers written by the grouped data writer; their presence flips the
+# fitting/loss to the ``group_property`` head.
+_GROUP_MARKERS = ("group_id", "weight", "pool_mask")
+
+
+def _first_set_dir(systems: list) -> str | None:
+    """Return the first ``set.*`` directory across the resolved systems."""
+    for sysdir in systems:
+        sets = sorted(_glob.glob(os.path.join(sysdir, "set.*")))
+        if sets:
+            return sets[0]
+    return None
+
+
+def _systems_are_grouped(systems: list) -> bool:
+    """A system set is grouped when its frames carry the group markers."""
+    setdir = _first_set_dir(systems)
+    if setdir is None:
+        return False
+    return all(
+        os.path.isfile(os.path.join(setdir, f"{name}.npy")) for name in _GROUP_MARKERS
+    )
+
+
+def _detect_fparam_dim(systems: list) -> int:
+    """Per-frame side-feature width from ``set.*/fparam.npy`` (0 if absent)."""
+    setdir = _first_set_dir(systems)
+    if setdir is None:
+        return 0
+    fpath = os.path.join(setdir, "fparam.npy")
+    if not os.path.isfile(fpath):
+        return 0
+    import numpy as np
+
+    arr = np.load(fpath)
+    if arr.ndim == 0:
+        return 0
+    return int(arr.reshape(arr.shape[0], -1).shape[1])
+
 
 # ---------------------------------------------------------------------------
 # DPATrainer
@@ -173,6 +212,7 @@ class DPATrainer:
         # ---- model overrides ----
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
+        grouped: bool | None = None,
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
@@ -235,6 +275,8 @@ class DPATrainer:
         self.type_map = type_map
         self.fitting_net_params = fitting_net_params
         self.fparam_dim = fparam_dim
+        # None => auto-detect from the resolved training systems in _build_config.
+        self.grouped = grouped
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.decay_steps = decay_steps
@@ -333,6 +375,10 @@ class DPATrainer:
                 "seed": self.seed,
             }
         )
+        if self.grouped:
+            # Grouped data pools frame embeddings per assembly, so the head and
+            # loss switch to the group_property variants (same property schema).
+            fn["type"] = "group_property"
         # NB: dim_case_embd is intentionally NOT injected for FT/LP. The paper
         # qm9_gap input.json omits it: single-task `--finetune` (without
         # --model-branch) copies only the backbone and random-inits the
@@ -357,6 +403,13 @@ class DPATrainer:
         self._resolved_train_systems = train_sys
         self._resolved_valid_systems = valid_sys
 
+        # Grouped training is inferred from the resolved systems unless the
+        # caller forced it; a grouped set also auto-sizes numb_fparam.
+        if self.grouped is None:
+            self.grouped = _systems_are_grouped(train_sys)
+        if self.grouped and not self.fparam_dim:
+            self.fparam_dim = _detect_fparam_dim(train_sys)
+
         descriptor = self._get_descriptor()
         descriptor["seed"] = self.seed  # verified: descrpt_dpa3_args (deepmd v3.1.3)
         fitting_net = self._build_fitting_net()
@@ -368,7 +421,7 @@ class DPATrainer:
                 "fitting_net": fitting_net,
             },
             "loss": {
-                "type": "property",
+                "type": "group_property" if self.grouped else "property",
                 "loss_func": self.loss_function,
                 "metric": ["mae", "rmse"],
             },
