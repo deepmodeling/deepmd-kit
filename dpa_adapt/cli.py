@@ -361,6 +361,52 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_data_mark_groups(args: argparse.Namespace) -> int:
+    from dpa_adapt import (
+        mark_groups,
+    )
+
+    group_by: str | int = args.group_by
+    if isinstance(group_by, str) and group_by.isdigit():
+        group_by = int(group_by)
+
+    results = mark_groups(
+        args.input,
+        group_by=group_by,
+        target=args.target,
+        weight=args.weight,
+        overwrite=args.overwrite,
+        dry_run=args.dry_run,
+    )
+    n_updated = sum(
+        1
+        for item in results
+        if item.wrote_group_id or item.wrote_pool_mask or item.wrote_weight
+    )
+    _LOG.info(
+        "%s%s systems discovered; %s updated; %s groups total.",
+        "[dry-run] " if args.dry_run else "",
+        len(results),
+        n_updated,
+        sum(item.n_groups for item in results),
+    )
+    for item in results[:10]:
+        suffix = f" skipped({item.reason})" if item.skipped else ""
+        _LOG.info(
+            "%s: frames=%s groups=%s group_id=%s pool_mask=%s weight=%s%s",
+            item.system,
+            item.n_frames,
+            item.n_groups,
+            item.wrote_group_id,
+            item.wrote_pool_mask,
+            item.wrote_weight,
+            suffix,
+        )
+    if len(results) > 10:
+        _LOG.info("... (+%s more)", len(results) - 10)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -377,6 +423,7 @@ _DATA_DISPATCH = {
     "convert": _cmd_data_convert,
     "validate": _cmd_data_validate,
     "attach-labels": _cmd_data_attach_labels,
+    "mark-groups": _cmd_data_mark_groups,
 }
 
 
@@ -710,6 +757,32 @@ def get_parser() -> argparse.ArgumentParser:
     parser_data_attach.add_argument("--head", required=True)
     parser_data_attach.add_argument("--head-json", action="store_true")
     parser_data_attach.add_argument("--values", required=True)
+
+    # data mark-groups
+    parser_data_mark = data_subparsers.add_parser(
+        "mark-groups",
+        help="Add grouped-training markers to existing deepmd/npy directories",
+        parents=[parser_log],
+    )
+    parser_data_mark.add_argument("--input", required=True, nargs="+")
+    parser_data_mark.add_argument(
+        "--group-by",
+        default="system",
+        help="'system' (default), 'label', or an integer group size.",
+    )
+    parser_data_mark.add_argument(
+        "--target",
+        default="property",
+        help="Label key used when --group-by label.",
+    )
+    parser_data_mark.add_argument(
+        "--weight",
+        type=float,
+        default=None,
+        help="Optional constant weight.npy value. Missing weight defaults to 1.0.",
+    )
+    parser_data_mark.add_argument("--overwrite", action="store_true")
+    parser_data_mark.add_argument("--dry-run", action="store_true")
 
     return parser
 

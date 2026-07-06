@@ -16,6 +16,8 @@ _LAZY = {
     "PoolMask": (".grouped", "PoolMask"),
     "SiteSelector": (".grouped", "SiteSelector"),
     "SubstitutionSpec": (".grouped", "SubstitutionSpec"),
+    "GroupMarkerResult": (".grouped", "GroupMarkerResult"),
+    "mark_groups": (".grouped", "mark_groups"),
     "ConditionManager": (".conditions", "ConditionManager"),
     "DPAConditionError": (".conditions", "DPAConditionError"),
     "cross_validate": (".cv", "cross_validate"),

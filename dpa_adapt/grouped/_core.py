@@ -257,44 +257,6 @@ class Assembly:
         self.groups: list[GroupSpec] = []
         self.fparam_schema: list[dict[str, Any]] = []
 
-    # ------------------------------------------------------------------
-    # scenario constructors (facade)
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def from_polymer_csv(
-        cls,
-        path: str | Path,
-        *,
-        target: str = "cloud_point",
-        **kwargs: Any,
-    ) -> Any:
-        """Build a grouped dataset from a cloud-point polymer CSV.
-
-        Returns a polymer builder exposing ``.write(path)`` (see
-        :meth:`dpa_adapt.grouped._polymer.PolymerBuilder.from_csv`).
-        """
-        from dpa_adapt.grouped._polymer import PolymerBuilder
-
-        return PolymerBuilder.from_csv(path, target=target, **kwargs)
-
-    @classmethod
-    def mark_existing(
-        cls,
-        data: Any,
-        *,
-        target: str = "property",
-        group_by: str | int = "system",
-        **kwargs: Any,
-    ) -> Any:
-        """Retrofit existing mixed-type deepmd/npy *in place* with grouped
-        markers (``group_id`` / ``pool_mask``); see
-        :func:`dpa_adapt.grouped._convert.add_group_markers`.
-        """
-        from dpa_adapt.grouped._convert import add_group_markers
-
-        return add_group_markers(data, group_by=group_by, property_name=target, **kwargs)
-
     def group(
         self,
         *,

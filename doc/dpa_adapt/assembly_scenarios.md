@@ -1,21 +1,33 @@
 # Assembly Groups for Multi-Component Properties
 
-`Assembly` is the user-facing name for groups whose label belongs to a set of related structures rather than to one frame.  Internally the training tensors still use `group_id.npy`, because the model aggregates frame embeddings by group, but user code should describe assemblies, groups, and components.
+Grouped property training is activated by ordinary DeepMD data fields.  If a
+system contains `group_id.npy`, DPA-ADAPT automatically treats frames with the
+same group id as one labeled training example.  `weight.npy` and
+`pool_mask.npy` are optional; missing weights default to `1.0`, and missing
+pool masks default to all real atoms.
 
-Preferred dataset-level entry:
+Preferred dataset-level entry for existing `deepmd/npy` data:
 
 ```python
-from dpa_adapt import Assembly
+from dpa_adapt import mark_groups
 
-Assembly.mark_existing("oer/dpdata", target="overpotential")
-Assembly.from_polymer_csv("cloud_points.csv", target="cloud_point").write("polymer_data")
+mark_groups("oer/dpdata", target="overpotential", group_by="system")
 ```
 
-`Assembly.write()` infers one global `type_map.raw` from all group components when `type_map` is not provided. Training-side `DPAFineTuner` reads the checkpoint global `type_map` and validates that data elements are a subset, so ordinary users do not need to pass `type_map` manually.
+`mark_groups()` only adds grouped markers.  It does not re-declare labels,
+`fparam.npy`, coordinates, boxes, or type maps; those remain standard DeepMD /
+DPA-ADAPT data fields and are read automatically during `fit()`.
 
-Each `group` becomes one labeled training example.  Each component is one DeepMD frame.  The model computes frame embeddings, applies `pool_mask`, sums `weight * frame_embedding` within the group, concatenates per-group `fparam` after group aggregation, and predicts the target.
+Each group becomes one labeled training example.  Each component is one DeepMD
+frame.  The model computes frame embeddings, applies `pool_mask`, aggregates
+`weight * frame_embedding` within the group (`group_reduce="mean"` by default),
+concatenates per-group `fparam` after group aggregation, and predicts the
+target.
 
-The low-level `group().add(coords, symbols, ...)` API is intended only for programmatic builders that already have arrays in memory. Public scenario converters should accept a dataset path, CSV, or structure files and infer `coords`, `symbols`, `weight`, `role`, and `pool_mask` from the source data or scenario rules.
+The low-level `Assembly.group().add(coords, symbols, ...)` API is intended only
+for programmatic converters that already have arrays in memory. Public data
+preparation should use `convert()` for raw formats and `mark_groups()` for
+existing DeepMD systems.
 
 ## Electrocatalysis Reaction Assemblies
 
@@ -28,7 +40,8 @@ Use this when the measured or computed label depends on several adsorbate states
 - `pool_mask`: exclude virtual adsorbate slots, cap atoms, or atoms intentionally not participating in the descriptor pool.
 - `fparam`: pH, potential, electrolyte identity encoded upstream, surface coverage, temperature.
 
-Example roles: `clean`, `O*`, `OH*`, `OOH*`.  The OER retrofit path is `Assembly.mark_existing(path, target="overpotential")`.
+Example roles: `clean`, `O*`, `OH*`, `OOH*`.  The OER retrofit path is
+`mark_groups(path, target="overpotential", group_by="system")`.
 
 ## Solvent and Electrolyte Mixtures
 
@@ -54,7 +67,10 @@ Use this when a polymer is represented by repeat units and end groups.
 - `fparam`: standardized `Mn`, concentration, pH, salt concentrations, solvent identity.
 - `pool_mask`: exclude artificial caps or attachment placeholders.
 
-CSV ingestion remains available through `Assembly.from_polymer_csv(...).write(...)`; direct construction should use `Assembly.group(..., fparam=...)` only when the source is not the standard cloud-point CSV and the caller already has arrays in memory.
+For polymer CSVs, keep conversion in the ordinary data-preparation layer.  A
+converter should write standard DeepMD fields plus `group_id.npy`,
+`weight.npy`, and `pool_mask.npy`; training then uses the same automatic grouped
+path as every other scenario.
 
 ## Battery Cell Recipes
 

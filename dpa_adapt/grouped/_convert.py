@@ -42,7 +42,7 @@ REAL_ATYPE_KEY = "real_atom_types"
 
 @dataclass
 class GroupMarkerResult:
-    """Per-system summary of what :func:`add_group_markers` wrote."""
+    """Per-system summary of what :func:`mark_groups` wrote."""
 
     system: Path
     n_frames: int = 0
@@ -55,11 +55,11 @@ class GroupMarkerResult:
     reason: str = ""
 
 
-def add_group_markers(
+def mark_groups(
     data: str | Path | Iterable[str | Path],
     *,
     group_by: str | int = "system",
-    property_name: str = "property",
+    target: str = "property",
     weight: float | None = None,
     overwrite: bool = False,
     dry_run: bool = False,
@@ -87,7 +87,7 @@ def add_group_markers(
           system.
         * ``int`` -- fixed group size: every ``group_by`` consecutive frames
           form a group.  A trailing remainder becomes a smaller final group.
-    property_name
+    target
         Label key read from ``set.*/{property_name}.npy`` when
         ``group_by="label"``.  Ignored otherwise.
     weight
@@ -124,7 +124,7 @@ def add_group_markers(
         _process_system(
             sysdir,
             group_by=group_by,
-            property_name=property_name,
+            property_name=target,
             weight=weight,
             overwrite=overwrite,
             dry_run=dry_run,
@@ -340,10 +340,10 @@ def _main() -> None:  # pragma: no cover - thin CLI wrapper
     if isinstance(group_by, str) and group_by.isdigit():
         group_by = int(group_by)
 
-    results = add_group_markers(
+    results = mark_groups(
         args.data,
         group_by=group_by,
-        property_name=args.property_name,
+        target=args.property_name,
         weight=args.weight,
         overwrite=args.overwrite,
         dry_run=args.dry_run,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for the mixed-type -> grouped marker converter (add_group_markers).
+"""Tests for the mixed-type -> grouped marker converter (mark_groups).
 
 Pure numpy / filesystem; no compiled deepmd backend needed, so these run
 anywhere.
@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from dpa_adapt import Assembly
+from dpa_adapt import mark_groups
 
 
 def _write_mixed_system(
@@ -43,7 +43,7 @@ def test_group_by_system_writes_group_id_and_pool_mask(tmp_path):
     sysdir = tmp_path / "Fe0.2Ni0.8" / "05"
     _write_mixed_system(sysdir / "set.000", natoms=5, masked_per_frame=(2, 1, 0))
 
-    results = Assembly.mark_existing(tmp_path, target="overpotential")
+    results = mark_groups(tmp_path, target="overpotential")
     assert len(results) == 1
     r = results[0]
     assert r.n_frames == 3
@@ -72,7 +72,7 @@ def test_discovers_deeply_nested_systems(tmp_path):
             _write_mixed_system(
                 tmp_path / "dpdata" / f"set_{si:02d}" / eq / "05" / "set.000"
             )
-    results = Assembly.mark_existing(tmp_path, target="overpotential")
+    results = mark_groups(tmp_path, target="overpotential")
     assert len(results) == 4
     assert all(r.wrote_group_id for r in results)
     # every leaf now has both markers
@@ -90,7 +90,7 @@ def test_group_by_label_splits_distinct_labels(tmp_path):
     np.save(set_dir / "real_atom_types.npy", real)
     np.save(set_dir / "overpotential.npy", np.array([[1.0]] * 3 + [[2.0]] * 3))
 
-    Assembly.mark_existing(tmp_path, group_by="label", target="overpotential")
+    mark_groups(tmp_path, group_by="label", target="overpotential")
     gid = np.load(set_dir / "group_id.npy")
     assert gid.tolist() == [0, 0, 0, 1, 1, 1]
 
@@ -99,7 +99,7 @@ def test_group_by_int_chunks(tmp_path):
     set_dir = tmp_path / "chunked" / "set.000"
     set_dir.mkdir(parents=True)
     np.save(set_dir / "coord.npy", np.zeros((7, 3)))  # 7 frames, 1 atom
-    Assembly.mark_existing(tmp_path, group_by=3)
+    mark_groups(tmp_path, group_by=3)
     gid = np.load(set_dir / "group_id.npy")
     assert gid.tolist() == [0, 0, 0, 1, 1, 1, 2]  # trailing remainder is its own group
 
@@ -109,7 +109,7 @@ def test_no_masked_atoms_skips_pool_mask(tmp_path):
     set_dir.mkdir(parents=True)
     np.save(set_dir / "coord.npy", np.zeros((3, 9)))
     np.save(set_dir / "real_atom_types.npy", np.zeros((3, 3), dtype=np.int32))
-    r = Assembly.mark_existing(tmp_path)[0]
+    r = mark_groups(tmp_path)[0]
     assert r.wrote_group_id
     assert not r.wrote_pool_mask  # pool_mask defaults to 1.0 at train time
     assert not (set_dir / "pool_mask.npy").exists()
@@ -120,17 +120,17 @@ def test_overwrite_false_preserves_existing(tmp_path):
     _write_mixed_system(set_dir, masked_per_frame=(1, 0, 0))
     np.save(set_dir / "group_id.npy", np.array([7, 7, 7], dtype=np.int64))
 
-    Assembly.mark_existing(tmp_path, target="overpotential", overwrite=False)
+    mark_groups(tmp_path, target="overpotential", overwrite=False)
     assert np.load(set_dir / "group_id.npy").tolist() == [7, 7, 7]  # untouched
 
-    Assembly.mark_existing(tmp_path, target="overpotential", overwrite=True)
+    mark_groups(tmp_path, target="overpotential", overwrite=True)
     assert np.load(set_dir / "group_id.npy").tolist() == [0, 0, 0]  # regenerated
 
 
 def test_dry_run_writes_nothing(tmp_path):
     set_dir = tmp_path / "sys" / "set.000"
     _write_mixed_system(set_dir, masked_per_frame=(2, 1, 0))
-    results = Assembly.mark_existing(tmp_path, target="overpotential", dry_run=True)
+    results = mark_groups(tmp_path, target="overpotential", dry_run=True)
     assert results[0].wrote_group_id and results[0].wrote_pool_mask
     assert not (set_dir / "group_id.npy").exists()
     assert not (set_dir / "pool_mask.npy").exists()
@@ -141,4 +141,4 @@ def test_no_systems_found_raises(tmp_path):
 
     (tmp_path / "empty").mkdir()
     with pytest.raises(DPADataError):
-        Assembly.mark_existing(tmp_path / "empty")
+        mark_groups(tmp_path / "empty")
