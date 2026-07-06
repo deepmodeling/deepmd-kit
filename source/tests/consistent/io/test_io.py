@@ -311,3 +311,59 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
 
     def tearDown(self) -> None:
         IOTest.tearDown(self)
+
+
+@unittest.skipIf(
+    not DP_TEST_TF2_ONLY,
+    "pair_exclude_types is not supported by the TF v1 backend; it is validated "
+    "in the TF2-only job, where test_deep_eval also exercises the jax2tf "
+    "'.savedmodel' export path (see the backend table in test_deep_eval).",
+)
+class TestDeepPotPairExclude(unittest.TestCase, IOTest):
+    """Model-level ``pair_exclude_types`` is a nlist-BUILD transform (decision
+    #18/A4). Every backend folds it in where the neighbor list is built (the
+    jax2tf ``.savedmodel`` export reuses the dpmodel
+    ``apply_pair_exclusion_nlist`` via the ``ndtensorflow`` namespace), so the
+    exported models must still eval-agree across backends.
+    """
+
+    def setUp(self) -> None:
+        model_def_script = {
+            "type_map": ["O", "H"],
+            "pair_exclude_types": [[0, 1]],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [20, 20],
+                "rcut_smth": 0.50,
+                "rcut": 6.00,
+                "neuron": [
+                    3,
+                    6,
+                ],
+                "resnet_dt": False,
+                "axis_neuron": 2,
+                "precision": "float64",
+                "type_one_side": True,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "ener",
+                "neuron": [
+                    5,
+                    5,
+                ],
+                "resnet_dt": True,
+                "precision": "float64",
+                "atom_ener": [],
+                "seed": 1,
+            },
+        }
+        model = get_model(copy.deepcopy(model_def_script))
+        self.data = {
+            "model": model.serialize(),
+            "backend": "test",
+            "model_def_script": model_def_script,
+        }
+
+    def tearDown(self) -> None:
+        IOTest.tearDown(self)

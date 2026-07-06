@@ -3,6 +3,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -18,6 +19,7 @@ from deepmd.dpmodel.utils.neighbor_list import (
     NeighborList,
 )
 from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
     nlist_distinguish_types,
 )
 from deepmd.tf2.common import (
@@ -37,6 +39,11 @@ from deepmd.tf2.utils._dpmodel import (
     extend_coord_with_ghosts,
     normalize_coord,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 def _unwrap_tuple(values: tuple[Array, ...]) -> tuple[tf.Tensor, ...]:
@@ -68,6 +75,7 @@ def model_call_from_call_lower(
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
     pass_lower_kwargs: bool = False,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -124,6 +132,13 @@ def model_call_from_call_lower(
         charge_spin=charge_spin,
         neighbor_list=neighbor_list,
     )
+    if pair_excl is not None:
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): fold it into the freshly built nlist here (already an
+        # ndtensorflow array, so no wrap/unwrap) via the canonical dpmodel
+        # helper, before the lower consumes it. Identity when nothing is
+        # excluded.
+        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
     if pass_lower_kwargs:
         if nlist_is_formatted:
