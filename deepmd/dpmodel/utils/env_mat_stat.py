@@ -203,6 +203,11 @@ class EnvMatStatSe(EnvMatStat):
                 system["box"],
             )
             nframes, nloc = atype.shape[:2]
+            pair_excl = None
+            if "pair_exclude_types" in system:
+                pair_excl = PairExcludeMask(
+                    self.descriptor.get_ntypes(), system["pair_exclude_types"]
+                )
             (
                 extended_coord,
                 extended_atype,
@@ -215,6 +220,13 @@ class EnvMatStatSe(EnvMatStat):
                 self.descriptor.get_sel(),
                 mixed_types=self.descriptor.mixed_types(),
                 box=box,
+                # Model-level pair exclusion is a nlist-BUILD transform
+                # (decision #18/A4): fold it in here so the input stat matches
+                # the model forward, which feeds the descriptor a pre-excluded
+                # nlist. Excluded pairs then behave exactly like empty slots
+                # (env_mat 0, still counted) -- identical to descriptor-level
+                # exclude_types, replacing the previous accumulation-deselect.
+                pair_excl=pair_excl,
             )
             env_mat_caller = EnvMat(
                 self.descriptor.get_rcut(),
@@ -258,21 +270,11 @@ class EnvMatStatSe(EnvMatStat):
                     (-1, 1),
                 ),
             )
-            if "pair_exclude_types" in system:
-                pair_exclude_mask = PairExcludeMask(
-                    self.descriptor.get_ntypes(), system["pair_exclude_types"]
-                )
-                pair_exclude_mask.type_mask = xp.asarray(
-                    pair_exclude_mask.type_mask,
-                    device=array_api_compat.device(atype),
-                )
-                # shape: (1, nloc, nnei)
-                exclude_mask = xp.reshape(
-                    pair_exclude_mask.build_type_exclude_mask(nlist, extended_atype),
-                    (1, nframes * nloc, -1),
-                )
-                # shape: (ntypes, nloc, nnei)
-                type_idx = xp.logical_and(type_idx[..., None], exclude_mask)
+            # NOTE: model-level ``pair_exclude_types`` is NOT re-applied here.
+            # It is folded into the neighbor list at BUILD time above
+            # (decision #18/A4), so excluded pairs already have env_mat == 0
+            # and are counted like empty slots -- the same treatment the model
+            # forward gives them.
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i, ...]]
                 dd = xp.reshape(
