@@ -313,10 +313,14 @@ def make_model(
 
                 The graph routes (``"dense"``/``"ase"``, and the pt_expt
                 default-flip) require a ``mixed_types`` descriptor with a graph
-                lower (dpa1 ``attn_layer == 0``).  At non-binding ``sel`` the
-                graph matches the dense path exactly; at binding ``sel`` the
-                carry-all graph keeps neighbors the dense path truncates, so the
-                energy intentionally differs.
+                lower (dpa1/se_atten with concat type embedding and no
+                ``exclude_types``; attention layers included).  At non-binding
+                ``sel`` the graph matches the dense path exactly for the
+                non-smooth branch; at binding ``sel`` the carry-all graph keeps
+                neighbors the dense path truncates, and for
+                ``smooth_type_embedding=True`` the graph drops the dense
+                layout's sel-padding softmax terms, so the energy intentionally
+                differs (sel-independent graph semantics).
 
             Returns
             -------
@@ -688,7 +692,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
         ) -> dict[str, Array]:
-            """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
+            """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
             The PRIMARY directly-callable graph interface (spec decision #14).
             Casts inputs/outputs to/from the model precision exactly like the

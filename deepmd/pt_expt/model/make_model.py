@@ -292,7 +292,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            """Graph-native lower with autograd force/virial (PR-A: dpa1 ``attn_layer==0``).
+            """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
             OUTPUT-AGNOSTIC: runs the graph descriptor + fitting forward with
             ``edge_vec`` as the autograd leaf (via the inherited
