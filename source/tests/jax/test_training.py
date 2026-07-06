@@ -11,6 +11,9 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
@@ -157,6 +160,59 @@ def _minimal_jax_config(model_params: dict) -> dict:
     }
 
 
+def _minimal_jax_multitask_config(model_params: dict) -> dict:
+    return {
+        "model": model_params,
+        "training": {
+            "numb_steps": 1,
+            "data_dict": {
+                "task_a": {"training_data": {}},
+                "task_b": {"training_data": {}},
+            },
+        },
+        "learning_rate": {
+            "type": "exp",
+            "start_lr": 0.001,
+            "stop_lr": 1e-8,
+            "decay_steps": 1,
+        },
+        "loss_dict": {
+            "task_a": {},
+            "task_b": {},
+        },
+    }
+
+
+def _shared_jax_model_config(*, share_fitting: bool = True) -> dict:
+    shared_dict: dict = {
+        "shared_type_map": ["O", "H", "B"],
+        "shared_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+    }
+    fitting_ref_a: dict | str = deepcopy(MODEL_SE_E2_A["fitting_net"])
+    fitting_ref_b: dict | str = deepcopy(MODEL_SE_E2_A["fitting_net"])
+    if share_fitting:
+        shared_dict["shared_fitting"] = deepcopy(MODEL_SE_E2_A["fitting_net"])
+        fitting_ref_a = "shared_fitting"
+        fitting_ref_b = "shared_fitting"
+    return {
+        "shared_dict": shared_dict,
+        "model_dict": {
+            "task_a": {
+                "type_map": "shared_type_map",
+                "descriptor": "shared_descriptor",
+                "fitting_net": fitting_ref_a,
+                "data_stat_nbatch": 1,
+            },
+            "task_b": {
+                "type_map": "shared_type_map",
+                "descriptor": "shared_descriptor",
+                "fitting_net": fitting_ref_b,
+                "data_stat_nbatch": 1,
+            },
+        },
+    }
+
+
 @patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
 @patch("deepmd.jax.train.trainer.DPTrainer._deserialize_models")
 @patch("deepmd.jax.train.trainer.serialize_from_file")
@@ -212,6 +268,63 @@ def test_jax_restart_uses_checkpoint_model_script(
     assert trainer.model_def_script == checkpoint_model
     assert trainer.model_params_by_task["Default"] == checkpoint_model
     assert trainer.start_step == 7
+
+
+def test_jax_train_entrypoint_preprocesses_shared_dict() -> None:
+    """JAX multi-task preprocessing expands shared_dict references."""
+    entrypoint = JAXTrainEntrypoint()
+    config = {
+        "model": _shared_jax_model_config(),
+        "training": {},
+    }
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(input_file="input.json"),
+    )
+
+    model_dict = updated["model"]["model_dict"]
+    assert model_dict["task_a"]["type_map"] == ["O", "H", "B"]
+    assert model_dict["task_b"]["descriptor"]["type"] == "se_e2_a"
+    assert entrypoint.shared_links is not None
+    assert set(entrypoint.shared_links) == {"shared_descriptor", "shared_fitting"}
+
+
+def test_jax_train_entrypoint_keeps_multitask_without_shared_dict() -> None:
+    """JAX multi-task configs without shared_dict keep the existing path."""
+    entrypoint = JAXTrainEntrypoint()
+    config = {
+        "model": {
+            "model_dict": {
+                "task_a": deepcopy(MODEL_SE_E2_A),
+                "task_b": deepcopy(MODEL_SE_E2_A),
+            },
+        },
+        "training": {},
+    }
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(input_file="input.json"),
+    )
+
+    assert updated["model"]["model_dict"]["task_a"]["type_map"] == ["O", "H", "B"]
+    assert entrypoint.shared_links is None
+
+
+def test_jax_trainer_applies_shared_dict_links() -> None:
+    """Trainer-level sharing links descriptor and fitting-net parameters."""
+    trainer = DPTrainer(
+        _minimal_jax_multitask_config(_shared_jax_model_config()),
+    )
+
+    trainer._share_model_params(resume=True)
+
+    model_a = trainer.models["task_a"]
+    model_b = trainer.models["task_b"]
+    assert model_a.get_descriptor() is model_b.get_descriptor()
+    assert model_a.get_fitting_net() is not model_b.get_fitting_net()
+    assert model_a.get_fitting_net().nets is model_b.get_fitting_net().nets
 
 
 def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> None:
@@ -429,17 +542,6 @@ class TestJAXTraining(unittest.TestCase):
                     init_frz_model="frozen_model.pb",
                 ),
                 "init_frz_model",
-            ),
-            (
-                {
-                    "model": {
-                        "model_dict": {"task": {}},
-                        "shared_dict": {"shared": {}},
-                    },
-                    "training": {},
-                },
-                TrainEntrypointOptions(input_file="input.json"),
-                "shared_dict",
             ),
         ]
 
