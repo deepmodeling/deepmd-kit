@@ -12,12 +12,18 @@ and therefore only run in a full build (they skip cleanly otherwise); the
 standalone pooling test runs anywhere ``torch`` is available.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
 
-from dpa_adapt import Assembly, ComponentSpec, PoolMask
+from dpa_adapt import (
+    Assembly,
+    ComponentSpec,
+    PoolMask,
+)
 
 
 def _require_real_torch():
@@ -30,7 +36,39 @@ def _require_real_torch():
     torch = pytest.importorskip("torch")
     if type(torch).__module__.startswith("unittest.mock"):
         pytest.skip("real torch shadowed by a leaked mock-torch stub in this session")
+    torch.set_default_device("cpu")
     return torch
+
+
+def _require_dataloader_backend():
+    _require_real_torch()
+    try:
+        from deepmd.pt.utils.dataloader import (
+            DpLoaderSet,
+        )
+        from deepmd.pt.utils.grouped import (
+            group_data_requirements,
+        )
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+    except ImportError as exc:  # needs the compiled deepmd.lib extension
+        pytest.skip(f"deepmd backend unavailable: {exc}")
+    return DpLoaderSet, group_data_requirements, DataRequirementItem
+
+
+def _require_group_property_backend():
+    torch = _require_real_torch()
+    try:
+        from deepmd.pt.model.model.group_property_model import (
+            GroupPropertyModel,
+        )
+        from deepmd.pt.model.task.group_property import (
+            GroupPropertyFittingNet,
+        )
+    except ImportError as exc:  # needs the compiled deepmd.lib extension
+        pytest.skip(f"deepmd backend unavailable: {exc}")
+    return torch, GroupPropertyModel, GroupPropertyFittingNet
 
 
 def _heterogeneous_builder() -> Assembly:
@@ -55,13 +93,9 @@ def _heterogeneous_builder() -> Assembly:
 
 
 def test_writer_to_dataloader_preserves_padding_and_group(tmp_path) -> None:
-    _require_real_torch()
-    try:
-        from deepmd.pt.utils.dataloader import DpLoaderSet
-        from deepmd.pt.utils.grouped import group_data_requirements
-        from deepmd.utils.data import DataRequirementItem
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
+    DpLoaderSet, group_data_requirements, DataRequirementItem = (
+        _require_dataloader_backend()
+    )
 
     builder = _heterogeneous_builder()
     result = builder.write(tmp_path)
@@ -92,12 +126,9 @@ def test_writer_to_dataloader_preserves_padding_and_group(tmp_path) -> None:
 
 
 def test_group_property_model_pool_is_nan_safe_for_virtual_atoms() -> None:
-    torch = _require_real_torch()
-    try:
-        from deepmd.pt.model.model.group_property_model import GroupPropertyModel
-        from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
+    torch, GroupPropertyModel, GroupPropertyFittingNet = (
+        _require_group_property_backend()
+    )
 
     dim = 4
 
@@ -218,12 +249,9 @@ def test_group_property_model_consumes_per_group_fparam() -> None:
     """numb_fparam widens the fitting input; the model concats the per-group
     fparam AFTER aggregation, so it bypasses the weighted sum over frames.
     """
-    torch = _require_real_torch()
-    try:
-        from deepmd.pt.model.model.group_property_model import GroupPropertyModel
-        from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
+    torch, GroupPropertyModel, GroupPropertyFittingNet = (
+        _require_group_property_backend()
+    )
 
     dim, fdim = 4, 2
 
@@ -280,12 +308,9 @@ def test_group_property_model_consumes_per_group_fparam() -> None:
 
 
 def test_group_property_model_rejects_inconsistent_group_fparam() -> None:
-    torch = _require_real_torch()
-    try:
-        from deepmd.pt.model.model.group_property_model import GroupPropertyModel
-        from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
-    except ImportError as exc:  # needs the compiled deepmd.lib extension
-        pytest.skip(f"deepmd backend unavailable: {exc}")
+    torch, GroupPropertyModel, GroupPropertyFittingNet = (
+        _require_group_property_backend()
+    )
 
     dim, fdim = 4, 2
     fitting = GroupPropertyFittingNet(

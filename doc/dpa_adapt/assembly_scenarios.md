@@ -1,8 +1,8 @@
 # Assembly Groups for Multi-Component Properties
 
-Grouped property training is activated by ordinary DeepMD data fields.  If a
+Grouped property training is activated by ordinary DeepMD data fields. If a
 system contains `group_id.npy`, DPA-ADAPT automatically treats frames with the
-same group id as one labeled training example.  `weight.npy` and
+same group id as one labeled training example. `weight.npy` and
 `pool_mask.npy` are optional; missing weights default to `1.0`, and missing
 pool masks default to all real atoms.
 
@@ -14,12 +14,12 @@ from dpa_adapt import mark_groups
 mark_groups("oer/dpdata", target="overpotential", group_by="system")
 ```
 
-`mark_groups()` only adds grouped markers.  It does not re-declare labels,
+`mark_groups()` only adds grouped markers. It does not re-declare labels,
 `fparam.npy`, coordinates, boxes, or type maps; those remain standard DeepMD /
 DPA-ADAPT data fields and are read automatically during `fit()`.
 
-Each group becomes one labeled training example.  Each component is one DeepMD
-frame.  The model computes frame embeddings, applies `pool_mask`, aggregates
+Each group becomes one labeled training example. Each component is one DeepMD
+frame. The model computes frame embeddings, applies `pool_mask`, aggregates
 `weight * frame_embedding` within the group (`group_reduce="mean"` by default),
 concatenates per-group `fparam` after group aggregation, and predicts the
 target.
@@ -40,7 +40,7 @@ Use this when the measured or computed label depends on several adsorbate states
 - `pool_mask`: exclude virtual adsorbate slots, cap atoms, or atoms intentionally not participating in the descriptor pool.
 - `fparam`: pH, potential, electrolyte identity encoded upstream, surface coverage, temperature.
 
-Example roles: `clean`, `O*`, `OH*`, `OOH*`.  The OER retrofit path is
+Example roles: `clean`, `O*`, `OH*`, `OOH*`. The OER retrofit path is
 `mark_groups(path, target="overpotential", group_by="system")`.
 
 ## Solvent and Electrolyte Mixtures
@@ -67,7 +67,7 @@ Use this when a polymer is represented by repeat units and end groups.
 - `fparam`: standardized `Mn`, concentration, pH, salt concentrations, solvent identity.
 - `pool_mask`: exclude artificial caps or attachment placeholders.
 
-For polymer CSVs, keep conversion in the ordinary data-preparation layer.  A
+For polymer CSVs, keep conversion in the ordinary data-preparation layer. A
 converter should write standard DeepMD fields plus `group_id.npy`,
 `weight.npy`, and `pool_mask.npy`; training then uses the same automatic grouped
 path as every other scenario.
@@ -100,4 +100,4 @@ Suggested component roles: `node`, `linker`, `functional_group`, `guest`.
 
 ## Naming Rationale
 
-`Grouped` describes the tensor operation.  `Assembly` describes the scientific object users build: several components assembled into one labeled group.  API names should therefore stay on the scientific layer (`Assembly`, `group`, `component`, `weight`, `fparam`) while tensor files keep the implementation layer (`group_id`, `pool_mask`, `fparam`).
+`Grouped` describes the tensor operation. `Assembly` describes the scientific object users build: several components assembled into one labeled group. API names should therefore stay on the scientific layer (`Assembly`, `group`, `component`, `weight`, `fparam`) while tensor files keep the implementation layer (`group_id`, `pool_mask`, `fparam`).

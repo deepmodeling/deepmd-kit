@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Loss for grouped frame-level properties."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from typing import Any
+from typing import (
+    Any,
+)
 
 import torch
 import torch.nn.functional as F
@@ -69,9 +73,13 @@ class GroupPropertyLoss(TaskLoss):
             if not torch.as_tensor(find_group).eq(0).all():
                 group_id = label[GROUP_ID_KEY]
         if group_id is None:
-            group_id = torch.arange(nframes, dtype=torch.long, device=frame_label.device)
+            group_id = torch.arange(
+                nframes, dtype=torch.long, device=frame_label.device
+            )
         else:
-            group_id = normalize_group_id_tensor(group_id, nframes).to(frame_label.device)
+            group_id = normalize_group_id_tensor(group_id, nframes).to(
+                frame_label.device
+            )
 
         model_pred = model(
             **input_dict,
@@ -129,9 +137,9 @@ class GroupPropertyLoss(TaskLoss):
         group_label[group_inverse] = frame_label
         gathered = group_label[group_inverse]
         if not torch.allclose(gathered, frame_label, atol=self.label_tol):
-            mismatch = (
-                ~torch.isclose(gathered, frame_label, atol=self.label_tol)
-            ).any(dim=1)
+            mismatch = (~torch.isclose(gathered, frame_label, atol=self.label_tol)).any(
+                dim=1
+            )
             bad_frame = int(torch.nonzero(mismatch, as_tuple=False).flatten()[0])
             raise ValueError(
                 f"Inconsistent {self.var_name} labels within a group "

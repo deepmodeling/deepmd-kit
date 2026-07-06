@@ -5,14 +5,18 @@ Needs RDKit for SMILES->3D; skips cleanly otherwise.  No compiled deepmd
 backend required.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
 
 pytest.importorskip("rdkit")
 
-from dpa_adapt.grouped._polymer import PolymerBuilder
+from dpa_adapt.grouped._polymer import (
+    PolymerBuilder,
+)
 
 _CSV = """\
 reference;SMILES_start_group;SMILES_end_group;SMILES_repeating_unitA;molpercent_repeating_unitA;SMILES_repeating_unitB;molpercent_repeating_unitB;Mn;polymer_concentration_wpercent;additive1;additive1_concentration_molar;pH;cloud_point
@@ -92,8 +96,12 @@ def test_valid_split_reuses_training_scaler(tmp_path):
 
     assert res_valid["fparam_dim"] == res_train["fparam_dim"]
     # same scaler -> identical standardized fparam for the same row
-    f_train = np.load(tmp_path / "train" / res_train["systems"][0] / "set.000" / "fparam.npy")
-    f_valid = np.load(tmp_path / "valid" / res_valid["systems"][0] / "set.000" / "fparam.npy")
+    f_train = np.load(
+        tmp_path / "train" / res_train["systems"][0] / "set.000" / "fparam.npy"
+    )
+    f_valid = np.load(
+        tmp_path / "valid" / res_valid["systems"][0] / "set.000" / "fparam.npy"
+    )
     np.testing.assert_allclose(f_train, f_valid)
 
 

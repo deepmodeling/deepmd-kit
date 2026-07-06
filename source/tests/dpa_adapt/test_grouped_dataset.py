@@ -1,14 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for grouped descriptor aggregation."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 
-from dpa_adapt.grouped._aggregation import aggregate_weighted_groups
-from dpa_adapt.grouped._offline import GroupedDataset
 from dpa_adapt.finetuner import (
     DPAFineTuner,
+)
+from dpa_adapt.grouped._aggregation import (
+    aggregate_weighted_groups,
+)
+from dpa_adapt.grouped._offline import (
+    GroupedDataset,
 )
 
 
@@ -33,7 +39,9 @@ def _write_system(
     np.save(set_dir / "energy.npy", np.full((n_frames,), label, dtype=float))
     np.save(set_dir / "property.npy", np.full((n_frames,), label, dtype=float))
     if group_id is not None:
-        np.save(set_dir / "group_id.npy", np.full((n_frames,), group_id, dtype=np.int64))
+        np.save(
+            set_dir / "group_id.npy", np.full((n_frames,), group_id, dtype=np.int64)
+        )
     if weight is not None:
         np.save(set_dir / "weight.npy", np.asarray(weight, dtype=float))
     return sys_dir
@@ -56,9 +64,7 @@ def test_aggregate_weighted_groups_core():
 
 def test_grouped_dataset_weighted_embedding(monkeypatch, tmp_path):
     parent = tmp_path / "data"
-    sys_a = _write_system(
-        parent, "a", group_id=0, weight=[0.7, 0.3], n_frames=2
-    )
+    sys_a = _write_system(parent, "a", group_id=0, weight=[0.7, 0.3], n_frames=2)
     expected_rows = {
         str(sys_a.resolve()): np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]]),
     }

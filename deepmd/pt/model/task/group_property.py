@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Group-level property fitting network."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import logging
-from typing import Any
+from typing import (
+    Any,
+)
 
 import torch
 

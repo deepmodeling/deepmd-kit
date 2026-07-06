@@ -5,12 +5,18 @@ parse_pooling + the strategy guard are pure-Python and run anywhere; the
 byte-identical layout check needs torch (available without deepmd.lib).
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
 
-from dpa_adapt.finetuner import POOLING_PRIMITIVES, DPAFineTuner, parse_pooling
+from dpa_adapt.finetuner import (
+    POOLING_PRIMITIVES,
+    DPAFineTuner,
+    parse_pooling,
+)
 
 
 def test_parse_pooling_legacy_strings():
@@ -61,7 +67,10 @@ def test_pooling_strategy_guard():
 
 def test_pool_descriptor_byte_identical_to_legacy():
     torch = pytest.importorskip("torch")
-    from dpa_adapt.finetuner import _pool_descriptor
+    torch.set_default_device("cpu")
+    from dpa_adapt.finetuner import (
+        _pool_descriptor,
+    )
 
     rng = np.random.default_rng(0)
     descrpt = torch.tensor(rng.standard_normal((3, 5, 4)))

@@ -390,6 +390,23 @@ class DPATrainer:
             fn.update(self.fitting_net_params)
         return fn
 
+    def _infer_grouped(self) -> None:
+        """Resolve grouped mode and ``numb_fparam`` from the training systems.
+
+        Idempotent, so ``fit()`` can call it *before* the fparam preflight (so
+        auto-detected grouped ``fparam.npy`` files are still validated) and
+        ``_build_config()`` can call it again cheaply.
+        """
+        if self.grouped is False:
+            return
+        if self.grouped and self.fparam_dim:
+            return
+        train_sys = self._expand_systems(self.train_systems, "train_systems")
+        if self.grouped is None:
+            self.grouped = _systems_are_grouped(train_sys)
+        if self.grouped and not self.fparam_dim:
+            self.fparam_dim = _detect_fparam_dim(train_sys)
+
     def _build_config(self) -> dict:
         # Seed propagation in DeePMD-kit v3.1.3 (deepmd/utils/argcheck.py):
         #   - model.descriptor.seed   verified: descrpt_dpa3_args() L1428
@@ -405,10 +422,7 @@ class DPATrainer:
 
         # Grouped training is inferred from the resolved systems unless the
         # caller forced it; a grouped set also auto-sizes numb_fparam.
-        if self.grouped is None:
-            self.grouped = _systems_are_grouped(train_sys)
-        if self.grouped and not self.fparam_dim:
-            self.fparam_dim = _detect_fparam_dim(train_sys)
+        self._infer_grouped()
 
         descriptor = self._get_descriptor()
         descriptor["seed"] = self.seed  # verified: descrpt_dpa3_args (deepmd v3.1.3)
@@ -598,6 +612,11 @@ class DPATrainer:
                 self.max_steps,
             )
             return str(latest)
+
+        # Infer grouped mode / numb_fparam first so an auto-detected grouped
+        # fparam.npy is covered by the preflight below (otherwise fparam_dim is
+        # still 0 here and the shape/frame checks are skipped).
+        self._infer_grouped()
 
         if self.fparam_dim > 0:
             self._validate_fparam(self.train_systems, self.fparam_dim)

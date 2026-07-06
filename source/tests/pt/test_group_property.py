@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
@@ -8,7 +10,9 @@ import torch
 
 pytest.importorskip("deepmd.lib")
 
-from deepmd.pt.loss.group_property import GroupPropertyLoss
+from deepmd.pt.loss.group_property import (
+    GroupPropertyLoss,
+)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
     GroupCompleteBatchSampler,
@@ -24,7 +28,13 @@ from deepmd.pt.utils.grouped import (
     normalize_pool_mask_tensor,
     normalize_weight_tensor,
 )
-from deepmd.utils.data import DataRequirementItem
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+
+
+def _flatten_batches(batches: list[list[int]]) -> list[int]:
+    return [frame for batch in batches for frame in batch]
 
 
 class ToyGroupedModel(torch.nn.Module):
@@ -54,9 +64,9 @@ class ToyGroupedModel(torch.nn.Module):
         pool_mask = normalize_pool_mask_tensor(pool_mask, nframes, natoms).to(
             descriptor.dtype
         )
-        frame_embedding = (descriptor * pool_mask[:, :, None]).sum(dim=1) / pool_mask.sum(
+        frame_embedding = (descriptor * pool_mask[:, :, None]).sum(
             dim=1
-        ).clamp_min(1.0)[:, None]
+        ) / pool_mask.sum(dim=1).clamp_min(1.0)[:, None]
         group_id = normalize_group_id_tensor(group_id, nframes)
         weight = normalize_weight_tensor(weight, nframes).to(descriptor.dtype).detach()
         group_order, inverse = torch.unique(group_id, sorted=True, return_inverse=True)
@@ -150,7 +160,6 @@ def test_group_complete_batch_sampler_keeps_groups_intact() -> None:
     assert list(sampler) == [[0, 1], [2, 3], [4]]
 
 
-
 def test_distributed_group_batches_assign_whole_groups_to_one_rank() -> None:
     group_ids = np.array([0, 0, 1, 1, 2, 3, 3, 4])
     rank0 = distributed_grouped_frame_batches(
@@ -160,7 +169,7 @@ def test_distributed_group_batches_assign_whole_groups_to_one_rank() -> None:
         group_ids, max_frames=3, num_replicas=2, rank=1, shuffle=False
     )
 
-    rank_frames = [set(sum(rank0, [])), set(sum(rank1, []))]
+    rank_frames = [set(_flatten_batches(rank0)), set(_flatten_batches(rank1))]
     assert rank_frames[0].isdisjoint(rank_frames[1])
     assert rank_frames[0] | rank_frames[1] == set(range(len(group_ids)))
 
@@ -185,7 +194,7 @@ def test_group_distributed_batch_sampler_keeps_groups_intact_per_rank() -> None:
         for rank in range(2)
     ]
     batches_by_rank = [list(sampler) for sampler in samplers]
-    frames_by_rank = [set(sum(batches, [])) for batches in batches_by_rank]
+    frames_by_rank = [set(_flatten_batches(batches)) for batches in batches_by_rank]
 
     assert frames_by_rank[0].isdisjoint(frames_by_rank[1])
     assert frames_by_rank[0] | frames_by_rank[1] == set(range(len(group_ids)))
@@ -209,7 +218,7 @@ def test_group_distributed_batch_sampler_uses_shared_seed_across_ranks() -> None
         )
         for rank in range(2)
     ]
-    frames_by_rank = [set(sum(list(sampler), [])) for sampler in samplers]
+    frames_by_rank = [set(_flatten_batches(list(sampler))) for sampler in samplers]
 
     assert frames_by_rank[0].isdisjoint(frames_by_rank[1])
     assert frames_by_rank[0] | frames_by_rank[1] == set(range(len(group_ids)))
@@ -237,5 +246,7 @@ def test_dploaderset_enables_group_batches_for_group_requirements(tmp_path) -> N
     req = [DataRequirementItem("target", ndof=1, atomic=False, must=True)]
     req.extend(group_data_requirements())
     data.add_data_requirement(req)
-    batches = [batch[GROUP_ID_KEY].reshape(-1).tolist() for batch in data.dataloaders[0]]
+    batches = [
+        batch[GROUP_ID_KEY].reshape(-1).tolist() for batch in data.dataloaders[0]
+    ]
     assert batches == [[0, 0], [1, 1], [2]]

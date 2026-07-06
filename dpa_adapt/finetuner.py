@@ -76,7 +76,7 @@ def parse_pooling(spec: Any) -> tuple[str, ...]:
     if isinstance(spec, str):
         tokens = [tok for tok in spec.split("+") if tok]
     else:
-        tokens = [tok for tok in spec]
+        tokens = list(spec)
     if not tokens:
         raise ValueError("empty pooling spec")
     seen: set[str] = set()
@@ -90,33 +90,95 @@ def parse_pooling(spec: Any) -> tuple[str, ...]:
     return tuple(prim for prim in POOLING_PRIMITIVES if prim in seen)
 
 
-def _pool_descriptor(descrpt: Any, primitives: Any) -> Any:
+def _pool_descriptor(descrpt: Any, primitives: Any, mask: Any = None) -> Any:
     """Pool a per-atom descriptor ``(nframes, natoms, ndim)`` over atoms.
 
     Each primitive in ``primitives`` reduces the atom axis; results are
     concatenated along the feature axis in the given order.  ``std`` uses
     ``nan_to_num`` so a single-atom frame contributes zeros instead of NaN.
-    This matches the historical per-string pooling byte-for-byte.
+    With ``mask`` ``None`` this matches the historical per-string pooling
+    byte-for-byte; a ``(nframes, natoms)`` ``mask`` (1 = real, 0 = virtual)
+    excludes padding/virtual atoms from every reduction.
     """
     import torch
+
+    if mask is not None:
+        m = mask.to(dtype=descrpt.dtype, device=descrpt.device).unsqueeze(-1)
+        count = m.sum(dim=1).clamp_min(1.0)
 
     parts = []
     for prim in primitives:
         if prim == "mean":
-            parts.append(descrpt.mean(dim=1))
+            if mask is None:
+                parts.append(descrpt.mean(dim=1))
+            else:
+                parts.append((descrpt * m).sum(dim=1) / count)
         elif prim == "sum":
-            parts.append(descrpt.sum(dim=1))
+            if mask is None:
+                parts.append(descrpt.sum(dim=1))
+            else:
+                parts.append((descrpt * m).sum(dim=1))
         elif prim == "std":
-            parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
+            if mask is None:
+                parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
+            else:
+                mean = (descrpt * m).sum(dim=1, keepdim=True) / count.unsqueeze(1)
+                var = (((descrpt - mean) ** 2) * m).sum(dim=1) / count
+                parts.append(torch.nan_to_num(torch.sqrt(var), nan=0.0))
         elif prim == "max":
-            parts.append(descrpt.max(dim=1).values)
+            if mask is None:
+                parts.append(descrpt.max(dim=1).values)
+            else:
+                parts.append(
+                    descrpt.masked_fill(m == 0, float("-inf")).max(dim=1).values
+                )
         elif prim == "min":
-            parts.append(descrpt.min(dim=1).values)
+            if mask is None:
+                parts.append(descrpt.min(dim=1).values)
+            else:
+                parts.append(
+                    descrpt.masked_fill(m == 0, float("inf")).min(dim=1).values
+                )
         else:
             raise ValueError(f"unknown pooling primitive {prim!r}")
     if len(parts) == 1:
         return parts[0]
     return torch.cat(parts, dim=-1)
+
+
+def _pool_mask_for_system(system: Any, n_frames: int, n_atoms: int) -> Any:
+    """Per-frame ``(n_frames, n_atoms)`` pool mask for a grouped system.
+
+    Reads ``set.*/pool_mask.npy`` (or derives it from ``real_atom_types >= 0``)
+    in dpdata's set order so padded/virtual atoms can be excluded from offline
+    descriptor pooling.  Returns ``None`` for non-grouped systems or when a
+    complete, frame-aligned mask cannot be built, keeping the pooling
+    byte-identical to the unmasked path in that case.
+    """
+    source = _get_source(system)
+    if source is None:
+        return None
+    masks: list[np.ndarray] = []
+    for set_dir in sorted(Path(source).glob("set.*")):
+        pool_mask_path = set_dir / "pool_mask.npy"
+        real_types_path = set_dir / "real_atom_types.npy"
+        if pool_mask_path.is_file():
+            arr = np.asarray(np.load(pool_mask_path), dtype=np.float64)
+        elif real_types_path.is_file():
+            arr = (np.asarray(np.load(real_types_path)) >= 0).astype(np.float64)
+        else:
+            return None
+        arr = arr.reshape(arr.shape[0], -1)
+        if arr.shape[1] != n_atoms:
+            return None
+        masks.append(arr)
+    if not masks:
+        return None
+    mask = np.concatenate(masks, axis=0)
+    if mask.shape[0] != n_frames or bool(np.all(mask == 1.0)):
+        # frame-count mismatch, or no virtual atoms -> nothing to mask out.
+        return None
+    return mask
 
 
 def _load_labels(
@@ -777,7 +839,13 @@ class _FrozenSklearnPipeline:
 
             # Shape: (n_frames, n_atoms, feat_dim)
             descrpt = extractor._run_forward(coord_t, atype_t, box_t)
-            feat = _pool_descriptor(descrpt, parse_pooling(self.pooling))
+            mask_np = _pool_mask_for_system(system, n_frames, n_atoms)
+            mask_t = (
+                None
+                if mask_np is None
+                else torch.tensor(mask_np, dtype=torch.float64, device=self._device)
+            )
+            feat = _pool_descriptor(descrpt, parse_pooling(self.pooling), mask=mask_t)
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.detach().cpu().numpy())
 
@@ -1516,7 +1584,9 @@ class DPAFineTuner:
         Refactored: logic extracted to ``_FrozenSklearnPipeline``; this method
         now orchestrates the pipeline and mirrors its state for backward compat.
         """
-        from dpa_adapt.grouped._offline import has_grouped_markers
+        from dpa_adapt.grouped._offline import (
+            has_grouped_markers,
+        )
 
         if has_grouped_markers(data):
             # Grouped input carries its own per-group labels (read from
@@ -1601,11 +1671,19 @@ class DPAFineTuner:
         Descriptors are extracted per frame, weighted-pooled into one embedding
         per group id, and regressed against the group's shared label.
         """
-        from sklearn.pipeline import make_pipeline
-        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import (
+            make_pipeline,
+        )
+        from sklearn.preprocessing import (
+            StandardScaler,
+        )
 
-        from dpa_adapt.grouped._offline import GroupedDataset
-        from dpa_adapt.utils.sklearn_heads import build_sklearn_head
+        from dpa_adapt.grouped._offline import (
+            GroupedDataset,
+        )
+        from dpa_adapt.utils.sklearn_heads import (
+            build_sklearn_head,
+        )
 
         p = self._ensure_sklearn()
         self.type_map = type_map or []
@@ -1679,7 +1757,9 @@ class DPAFineTuner:
             )
 
         if getattr(self, "_grouped", False):
-            from dpa_adapt.grouped._offline import GroupedDataset
+            from dpa_adapt.grouped._offline import (
+                GroupedDataset,
+            )
 
             dataset = GroupedDataset(
                 data,
@@ -1762,9 +1842,24 @@ class DPAFineTuner:
         result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
-        systems = load_data(data, fmt=fmt)
-        labels = _load_labels(systems, self._target_key)
-        labels = labels.reshape(predictions.shape)
+        if getattr(self, "_grouped", False):
+            # predict() returns one row per group; use matching group-level
+            # labels instead of frame-level ones (which would not reshape).
+            from dpa_adapt.grouped._offline import GroupedDataset
+
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map or None,
+                target_key=self._target_key,
+                fmt=fmt,
+            )
+            labels = np.asarray(dataset.get_labels()).reshape(predictions.shape)
+        else:
+            systems = load_data(data, fmt=fmt)
+            labels = _load_labels(systems, self._target_key)
+            labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(

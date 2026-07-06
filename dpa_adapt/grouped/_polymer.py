@@ -17,18 +17,31 @@ the type_map is the element union across all monomers, and every auxiliary npy
 written automatically.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 import math
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
-from collections.abc import Mapping, Sequence
+from collections.abc import (
+    Mapping,
+    Sequence,
+)
+from dataclasses import (
+    dataclass,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 MN_KEY = "mn_log"
 SALT_PREFIX = "salt:"
@@ -122,7 +135,9 @@ class PolymerBuilder:
         conds = dict(fparam or {})
         salts_raw = conds.pop("salts", None) or {}
         scalars = {
-            str(k): float(v) for k, v in conds.items() if v is not None and not _isnan(v)
+            str(k): float(v)
+            for k, v in conds.items()
+            if v is not None and not _isnan(v)
         }
         salts = {
             str(name): float(conc)
@@ -133,7 +148,9 @@ class PolymerBuilder:
             _PolymerRow(
                 units=_as_unit_pairs(units),
                 ends=[str(s) for s in (ends or []) if s is not None and not _isnan(s)],
-                mol_weight=None if mol_weight is None or _isnan(mol_weight) else float(mol_weight),
+                mol_weight=None
+                if mol_weight is None or _isnan(mol_weight)
+                else float(mol_weight),
                 scalars=scalars,
                 salts=salts,
                 target=float(target),
@@ -243,7 +260,10 @@ class PolymerBuilder:
         split is standardized with the training statistics.  When ``None`` the
         scaler is fit on these rows and saved next to the data.
         """
-        from dpa_adapt.grouped._core import Assembly, ComponentSpec
+        from dpa_adapt.grouped._core import (
+            Assembly,
+            ComponentSpec,
+        )
 
         if not self._rows:
             raise DPADataError("PolymerBuilder is empty; call add()/from_csv() first.")
@@ -288,15 +308,15 @@ class PolymerBuilder:
     # ------------------------------------------------------------------
 
     def _embed_all(self) -> dict[str, tuple[list[str], np.ndarray]]:
-        from dpa_adapt.data.smiles import smiles_to_3d_coords
+        from dpa_adapt.data.smiles import (
+            smiles_to_3d_coords,
+        )
 
         smiles_set = {s for row in self._rows for s, _ in row.units}
         smiles_set.update(s for row in self._rows for s in row.ends)
         cache: dict[str, tuple[list[str], np.ndarray]] = {}
         for smiles in sorted(smiles_set):
-            symbols, xyz = smiles_to_3d_coords(
-                smiles, random_seed=self.seed, cap_open_valences=True
-            )
+            symbols, xyz = smiles_to_3d_coords(smiles, random_seed=self.seed)
             cache[smiles] = (symbols, np.asarray(xyz, dtype=np.float64))
         return cache
 
@@ -361,9 +381,13 @@ def _load_scaler(scaler: dict[str, Any] | str | Path | None) -> dict[str, Any] |
     return dict(scaler)
 
 
-def _molar_weight(smiles: str, cache: Mapping[str, tuple[list[str], np.ndarray]]) -> float:
+def _molar_weight(
+    smiles: str, cache: Mapping[str, tuple[list[str], np.ndarray]]
+) -> float:
     """Approximate molar weight from the embedded atom symbols."""
-    from rdkit import Chem
+    from rdkit import (
+        Chem,
+    )
 
     periodic_table = Chem.GetPeriodicTable()
     symbols, _ = cache[smiles]

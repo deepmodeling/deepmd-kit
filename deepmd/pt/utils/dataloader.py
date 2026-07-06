@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+from collections.abc import (
+    Iterator,
+)
 from multiprocessing.dummy import (
     Pool,
 )
@@ -353,8 +356,13 @@ class GroupDistributedBatchSampler(Sampler[list[int]]):
 
     def _make_batches(self) -> list[list[int]]:
         base_seed = 0 if self.seed is None else self.seed
-        rng = np.random.default_rng(base_seed + self._epoch)
-        return distributed_grouped_frame_batches(
+        # Partition groups across ranks with an epoch-INDEPENDENT seed so every
+        # rank always agrees on the split.  If the group shuffle depended on a
+        # per-rank ``_epoch`` (which drifts when ranks restart ``cycle_iterator``
+        # at different times), the ``group_items[rank::num_replicas]`` slices
+        # would come from different shuffles and duplicate/drop groups.
+        rng = np.random.default_rng(base_seed)
+        batches = distributed_grouped_frame_batches(
             self.group_ids,
             self.max_frames,
             num_replicas=self.num_replicas,
@@ -362,8 +370,19 @@ class GroupDistributedBatchSampler(Sampler[list[int]]):
             shuffle=self.shuffle,
             rng=rng,
         )
+        # Vary only THIS rank's own batch order per epoch.  Reordering a rank's
+        # batches never moves groups between ranks, so the split stays intact
+        # while training still sees a fresh batch order each epoch even if the
+        # per-rank epoch counters are not in lock-step.
+        if self.shuffle and self._epoch > 0:
+            local = np.random.default_rng(
+                base_seed + 1 + self.rank + self._epoch * (self.num_replicas + 1)
+            )
+            order = local.permutation(len(batches))
+            batches = [batches[int(ii)] for ii in order]
+        return batches
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[list[int]]:
         self._batches = self._make_batches()
         self._epoch += 1
         yield from self._batches
@@ -400,7 +419,7 @@ class GroupCompleteBatchSampler(Sampler[list[int]]):
             rng=rng,
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[list[int]]:
         self._batches = self._make_batches()
         self._epoch += 1
         yield from self._batches

@@ -7,7 +7,9 @@ Run on Bohrium/CI with the DeePMD 3.1.3 env:
     pytest source/tests/pt/test_group_property_hardening.py -v
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import pytest
 
@@ -15,10 +17,18 @@ pytest.importorskip("torch")
 try:
     import torch
 
-    from deepmd.pt.loss.group_property import GroupPropertyLoss
-    from deepmd.pt.model.model.group_property_model import GroupPropertyModel
-    from deepmd.pt.model.task.group_property import GroupPropertyFittingNet
-    from deepmd.pt.utils.grouped import distributed_grouped_frame_batches
+    from deepmd.pt.loss.group_property import (
+        GroupPropertyLoss,
+    )
+    from deepmd.pt.model.model.group_property_model import (
+        GroupPropertyModel,
+    )
+    from deepmd.pt.model.task.group_property import (
+        GroupPropertyFittingNet,
+    )
+    from deepmd.pt.utils.grouped import (
+        distributed_grouped_frame_batches,
+    )
 except ImportError as exc:  # needs the compiled deepmd.lib extension
     pytest.skip(f"deepmd backend unavailable: {exc}", allow_module_level=True)
 
@@ -61,7 +71,9 @@ def _fitting(dim=2, task_dim=1, neuron=(4,), numb_fparam=0, group_reduce="mean")
 
 
 def _model(fitting, dim=2):
-    return GroupPropertyModel(descriptor=_StubDescriptor(dim), fitting=fitting, type_map=["A", "B"])
+    return GroupPropertyModel(
+        descriptor=_StubDescriptor(dim), fitting=fitting, type_map=["A", "B"]
+    )
 
 
 def _coords(nframes, natoms):
@@ -83,7 +95,9 @@ def test_masked_mean_model_divides_by_mask_sum():
         pool_mask=pool_mask,
     )
     # per-atom features = [0,0],[1,1],[2,2]; masked mean over atoms 0,1 = [0.5,0.5]
-    assert torch.allclose(out["frame_embedding"], torch.tensor([[0.5, 0.5]], dtype=torch.float64))
+    assert torch.allclose(
+        out["frame_embedding"], torch.tensor([[0.5, 0.5]], dtype=torch.float64)
+    )
 
 
 def test_zero_mask_rejected_by_model():
@@ -105,7 +119,11 @@ def test_group_reduce_mean_vs_sum_wiring():
     model = _model(fitting)
     atype = torch.tensor([[0, 1], [0, 1]])
     coord = _coords(2, 2)
-    kw = {"box": None, "pool_mask": torch.ones(2, 2), "weight": torch.tensor([[1.0], [1.0]])}
+    kw = {
+        "box": None,
+        "pool_mask": torch.ones(2, 2),
+        "weight": torch.tensor([[1.0], [1.0]]),
+    }
 
     # two identical frames in one group: mean-reduce == a single-frame group
     pred_two = model(coord, atype, group_id=torch.tensor([[0], [0]]), **kw)["y"]
@@ -169,9 +187,12 @@ def test_shuffled_batch_loss_invariance():
 
     def run(perm):
         inp = {"coord": coord[perm], "atype": atype[perm], "box": None}
-        lab = {"y": y[perm], "group_id": group_id[perm].reshape(-1, 1).double(),
-               "weight": torch.ones(nframes, 1).double(),
-               "pool_mask": torch.ones(nframes, natoms).double()}
+        lab = {
+            "y": y[perm],
+            "group_id": group_id[perm].reshape(-1, 1).double(),
+            "weight": torch.ones(nframes, 1).double(),
+            "pool_mask": torch.ones(nframes, natoms).double(),
+        }
         _, loss, _ = loss_fn(inp, model, lab, natoms=natoms)
         return loss
 
@@ -196,8 +217,12 @@ def test_padding_invariance():
     """Real descriptor: appending virtual atoms (atype=-1) must not change the
     descriptors of real atoms, even when virtual atoms sit inside the cutoff.
     """
-    from deepmd.pt.model.descriptor import DescrptSeA
-    from deepmd.pt.utils.nlist import extend_input_and_build_neighbor_list
+    from deepmd.pt.model.descriptor import (
+        DescrptSeA,
+    )
+    from deepmd.pt.utils.nlist import (
+        extend_input_and_build_neighbor_list,
+    )
 
     desc = DescrptSeA(rcut=6.0, rcut_smth=5.0, sel=[20, 20], ntypes=2)
 

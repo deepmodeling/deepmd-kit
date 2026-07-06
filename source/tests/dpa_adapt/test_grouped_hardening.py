@@ -10,15 +10,27 @@ The model/loss/descriptor wiring versions live in source/tests/pt/ and need the
 native extension (Bohrium/CI).
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
 
 
+def _require_cpu_torch():
+    torch = pytest.importorskip("torch")
+    torch.set_default_device("cpu")
+    return torch
+
+
 def test_zero_mask_rejected_at_construction():
-    from dpa_adapt.data.errors import DPADataError
-    from dpa_adapt.grouped import ComponentSpec
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        ComponentSpec,
+    )
 
     comp = ComponentSpec.from_arrays(
         [[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"], pool_mask=[0.0, 0.0]
@@ -28,8 +40,12 @@ def test_zero_mask_rejected_at_construction():
 
 
 def test_zero_mask_rejected_through_writer(tmp_path):
-    from dpa_adapt.data.errors import DPADataError
-    from dpa_adapt.grouped import Assembly
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
 
     a = Assembly(target="y", type_map=["H", "O"])
     g = a.group(label=1.0)
@@ -39,7 +55,7 @@ def test_zero_mask_rejected_through_writer(tmp_path):
 
 
 def test_masked_mean_divides_by_mask_sum():
-    torch = pytest.importorskip("torch")
+    torch = _require_cpu_torch()
     # frame 0: atoms 0,1 kept (atom 2 masked); frame 1: only atom 0 kept
     descriptor = torch.tensor(
         [
@@ -65,7 +81,7 @@ def test_masked_mean_divides_by_mask_sum():
 
 def _reduce(frame_emb, weight, group_id, mode):
     """Mirror of GroupPropertyModel.forward frame->group reduction."""
-    import torch
+    torch = _require_cpu_torch()
 
     order, inverse = torch.unique(group_id, sorted=True, return_inverse=True)
     n = order.shape[0]
@@ -79,7 +95,7 @@ def _reduce(frame_emb, weight, group_id, mode):
 
 
 def test_group_reduce_mean_vs_sum():
-    torch = pytest.importorskip("torch")
+    torch = _require_cpu_torch()
     frame_emb = torch.tensor([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])  # 2 identical frames
     weight = torch.ones(2)
     group_id = torch.tensor([0, 0])  # one group
@@ -93,7 +109,7 @@ def test_group_reduce_mean_vs_sum():
 
 def _group_labels(frame_label, group_inverse, n_groups):
     """Mirror of GroupPropertyLoss._group_labels (uses shared inverse)."""
-    import torch
+    torch = _require_cpu_torch()
 
     gl = frame_label.new_zeros((n_groups, frame_label.shape[1]))
     gl[group_inverse] = frame_label
@@ -102,7 +118,7 @@ def _group_labels(frame_label, group_inverse, n_groups):
 
 
 def test_shuffled_batch_group_labels_invariance():
-    torch = pytest.importorskip("torch")
+    torch = _require_cpu_torch()
     # groups: 0->0.0, 1->10.0, 2->20.0; frames arrive interleaved
     order_sorted = torch.tensor([0, 1, 2])
 
@@ -116,12 +132,16 @@ def test_shuffled_batch_group_labels_invariance():
     ref = group_labels_for(torch.arange(5))
     shuffled = group_labels_for(torch.tensor([3, 0, 4, 1, 2]))
     assert torch.allclose(ref, shuffled)
-    assert torch.allclose(ref, torch.tensor([[0.0], [10.0], [20.0]]))  # sorted by group id
+    assert torch.allclose(
+        ref, torch.tensor([[0.0], [10.0], [20.0]])
+    )  # sorted by group id
 
 
 def test_padding_coords_are_non_physical(tmp_path):
     """Task D data-writer: padding atoms get a large, spread-out offset (not 0,0,0)."""
-    from dpa_adapt.grouped import Assembly
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
 
     a = Assembly(target="y", type_map=["C", "O", "H"])
     g = a.group(label=1.0)
@@ -137,4 +157,6 @@ def test_padding_coords_are_non_physical(tmp_path):
     real = np.load(set_dir / "real_atom_types.npy")
     pad = real[0] < 0
     assert pad.sum() == 1  # frame 0 has one padding atom
-    assert np.linalg.norm(coord[0][pad][0]) > 20.0  # far outside the 20 A box, not origin
+    assert (
+        np.linalg.norm(coord[0][pad][0]) > 20.0
+    )  # far outside the 20 A box, not origin

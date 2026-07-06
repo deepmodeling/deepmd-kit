@@ -21,18 +21,31 @@ match :func:`dpa_adapt.grouped._core._write_group_system` exactly (``group_id``
 shape ``(nframes,)`` int64, ``pool_mask`` shape ``(nframes, natoms)`` float64).
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import os
-from dataclasses import dataclass, field
-from glob import has_magic
+from collections.abc import (
+    Iterable,
+)
+from dataclasses import (
+    dataclass,
+    field,
+)
 from glob import glob as _glob
-from pathlib import Path
-from collections.abc import Iterable
+from glob import (
+    has_magic,
+)
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 GROUP_ID_KEY = "group_id"
 WEIGHT_KEY = "weight"
@@ -207,7 +220,9 @@ def _process_system(
         nframes, natoms, real_types = _read_set_shape(set_dir)
         if nframes is None:
             return GroupMarkerResult(
-                sysdir, skipped=True, reason=f"{set_dir.name} has no coord/real_atom_types"
+                sysdir,
+                skipped=True,
+                reason=f"{set_dir.name} has no coord/real_atom_types",
             )
         per_set.append((set_dir, nframes, natoms, real_types))
 
@@ -218,7 +233,7 @@ def _process_system(
         sysdir, n_frames=total, n_groups=len(np.unique(group_ids))
     )
     offset = 0
-    for set_dir, nframes, natoms, real_types in per_set:
+    for set_dir, nframes, _natoms, real_types in per_set:
         result.set_dirs.append(set_dir)
         gid_slice = group_ids[offset : offset + nframes].astype(np.int64, copy=False)
         if _should_write(set_dir / f"{GROUP_ID_KEY}.npy", overwrite):
@@ -226,12 +241,21 @@ def _process_system(
                 np.save(set_dir / f"{GROUP_ID_KEY}.npy", gid_slice)
             result.wrote_group_id = True
 
-        if real_types is not None and bool((real_types < 0).any()):
-            if _should_write(set_dir / f"{POOL_MASK_KEY}.npy", overwrite):
+        pool_mask_path = set_dir / f"{POOL_MASK_KEY}.npy"
+        needs_pool_mask = real_types is not None and bool((real_types < 0).any())
+        if needs_pool_mask:
+            if _should_write(pool_mask_path, overwrite):
                 pool_mask = (real_types >= 0).astype(np.float64)
                 if not dry_run:
-                    np.save(set_dir / f"{POOL_MASK_KEY}.npy", pool_mask)
+                    np.save(pool_mask_path, pool_mask)
                 result.wrote_pool_mask = True
+        elif overwrite and pool_mask_path.is_file():
+            # The deterministic derivation says "no virtual atoms -> no mask".
+            # Drop any stale pool_mask.npy from an earlier run so it cannot
+            # silently mask real atoms on the next load.
+            if not dry_run:
+                pool_mask_path.unlink()
+            result.wrote_pool_mask = True
 
         if weight is not None and _should_write(
             set_dir / f"{WEIGHT_KEY}.npy", overwrite
@@ -324,7 +348,9 @@ def _main() -> None:  # pragma: no cover - thin CLI wrapper
             "so they can be trained via the grouped route (strategy='finetune')."
         )
     )
-    parser.add_argument("data", nargs="+", help="System dir(s), parent tree(s), or glob(s).")
+    parser.add_argument(
+        "data", nargs="+", help="System dir(s), parent tree(s), or glob(s)."
+    )
     parser.add_argument(
         "--group-by",
         default="system",

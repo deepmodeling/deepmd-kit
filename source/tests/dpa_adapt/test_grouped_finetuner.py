@@ -1,14 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 
-from dpa_adapt.finetuner import DPAFineTuner
+from dpa_adapt.finetuner import (
+    DPAFineTuner,
+)
 from source.tests.dpa_adapt.test_finetuner_strategies import (
     _FULL_TYPE_MAP,
     _fake_ckpt_sd,

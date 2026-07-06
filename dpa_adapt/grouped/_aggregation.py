@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generic weighted many-to-one aggregation utilities."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 
 def aggregate_weighted_groups(
@@ -48,17 +52,15 @@ def aggregate_weighted_groups(
             f"group_ids has shape {group_ids.shape}; expected ({n_items},)."
         )
     if weights.shape != (n_items,):
-        raise DPADataError(
-            f"weights has shape {weights.shape}; expected ({n_items},)."
-        )
+        raise DPADataError(f"weights has shape {weights.shape}; expected ({n_items},).")
     if labels.shape[0] != n_items:
-        raise DPADataError(
-            f"labels has {labels.shape[0]} rows; expected {n_items}."
-        )
+        raise DPADataError(f"labels has {labels.shape[0]} rows; expected {n_items}.")
     if n_items == 0:
         raise DPADataError("Cannot aggregate an empty feature matrix.")
 
-    ordered_ids = np.array(sorted(np.unique(group_ids.astype(np.int64))), dtype=np.int64)
+    ordered_ids = np.array(
+        sorted(np.unique(group_ids.astype(np.int64))), dtype=np.int64
+    )
     embeddings = []
     grouped_labels = []
     for group_id in ordered_ids:

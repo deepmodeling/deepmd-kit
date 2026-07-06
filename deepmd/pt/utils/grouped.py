@@ -1,15 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for grouped frame-level property training."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+)
+
 import numpy as np
-import torch
 
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+
+if TYPE_CHECKING:
+    import torch
 
 GROUP_ID_KEY = "group_id"
 GROUP_WEIGHT_KEY = "weight"
@@ -175,13 +185,16 @@ def distributed_grouped_frame_batches(
     if num_replicas < 1:
         raise ValueError(f"num_replicas must be >= 1; got {num_replicas}.")
     if rank < 0 or rank >= num_replicas:
-        raise ValueError(
-            f"rank must be in [0, {num_replicas}); got rank={rank}."
-        )
+        raise ValueError(f"rank must be in [0, {num_replicas}); got rank={rank}.")
     if shuffle and rng is None:
         rng = np.random.default_rng(0)
     group_items = _shuffle_group_items(
         _group_frame_indices(group_ids), shuffle=shuffle, rng=rng
     )
+    if len(group_items) < num_replicas:
+        raise ValueError(
+            "distributed grouped batching requires at least one group per rank; "
+            f"got {len(group_items)} groups for {num_replicas} ranks."
+        )
     rank_items = group_items[rank::num_replicas]
     return _pack_group_items(rank_items, max_frames)

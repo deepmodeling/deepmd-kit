@@ -15,11 +15,11 @@ from .ener import (
 from .ener_spin import (
     EnergySpinLoss,
 )
-from .loss import (
-    TaskLoss,
-)
 from .group_property import (
     GroupPropertyLoss,
+)
+from .loss import (
+    TaskLoss,
 )
 from .population import (
     PopulationLoss,

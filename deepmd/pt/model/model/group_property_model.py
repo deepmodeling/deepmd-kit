@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Group-level property model for end-to-end grouped embeddings."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from types import SimpleNamespace
+from types import (
+    SimpleNamespace,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -20,6 +24,12 @@ from deepmd.pt.model.model.dp_model import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
+from deepmd.pt.model.task import (
+    BaseFitting,
+)
 from deepmd.pt.model.task.group_property import (
     GroupPropertyFittingNet,
 )
@@ -27,8 +37,6 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.grouped import (
-    GROUP_WEIGHT_KEY,
-    POOL_MASK_KEY,
     normalize_group_id_tensor,
     normalize_pool_mask_tensor,
     normalize_weight_tensor,
@@ -38,10 +46,16 @@ from deepmd.pt.utils.nlist import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import (
+        Callable,
+    )
 
-    from deepmd.dpmodel import OutputVariableDef
-    from deepmd.utils.path import DPPath
+    from deepmd.dpmodel import (
+        OutputVariableDef,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseModel.register("group_property")
@@ -168,7 +182,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
 
     def set_out_bias(self, out_bias: torch.Tensor) -> None:
         # No externally managed per-type/group output bias; see get_out_bias.
-        del out_bias
+        return None
 
     def change_out_bias(
         self,
@@ -177,7 +191,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
     ) -> None:
         # The group offset is learned by the fitting net during training, so
         # there is no statistical output bias to (re)adjust on finetune.
-        del merged, bias_adjust_mode
+        return None
 
     @torch.jit.export
     def has_chg_spin_ebd(self) -> bool:
@@ -225,29 +239,36 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         box = None if box is None else box.to(env.GLOBAL_PT_FLOAT_PRECISION)
         nframes, natoms = atype.shape
 
-        extended_coord, extended_atype, mapping, nlist = extend_input_and_build_neighbor_list(
-            coord,
-            atype,
-            self.get_rcut(),
-            self.get_sel(),
-            mixed_types=True,
-            box=box,
+        extended_coord, extended_atype, mapping, nlist = (
+            extend_input_and_build_neighbor_list(
+                coord,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                mixed_types=True,
+                box=box,
+            )
         )
         descriptor_atype = extended_atype.clamp_min(0)
-        del charge_spin
+        if self.has_chg_spin_ebd() and charge_spin is None:
+            default_chg_spin = self.get_default_chg_spin()
+            if default_chg_spin is not None:
+                default_chg_spin = default_chg_spin.to(device=extended_coord.device)
+                charge_spin = torch.tile(default_chg_spin.unsqueeze(0), [nframes, 1])
         descriptor, _rot_mat, _g2, _h2, _sw = self.descriptor(
             extended_coord,
             descriptor_atype,
             nlist,
             mapping=mapping,
+            charge_spin=charge_spin if self.has_chg_spin_ebd() else None,
         )
         if descriptor is None:
             raise RuntimeError("Descriptor returned None for group_property.")
         descriptor = descriptor[:, :natoms, :]
 
         if pool_mask is None:
-            pool_mask = torch.ones(
-                (nframes, natoms), dtype=descriptor.dtype, device=descriptor.device
+            pool_mask = (atype[:, :natoms] >= 0).to(
+                device=descriptor.device, dtype=descriptor.dtype
             )
         else:
             pool_mask = normalize_pool_mask_tensor(pool_mask, nframes, natoms).to(
@@ -263,14 +284,20 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         # ``0 * NaN``.  Kept atoms retain their (possibly fractional) weights.
         keep = pool_mask[:, :, None] > 0
         descriptor = torch.where(keep, descriptor, torch.zeros_like(descriptor))
-        frame_embedding = (descriptor * pool_mask[:, :, None]).sum(dim=1) / denom[:, None]
+        frame_embedding = (descriptor * pool_mask[:, :, None]).sum(dim=1) / denom[
+            :, None
+        ]
 
         if group_id is None:
             group_id = torch.arange(nframes, dtype=torch.long, device=descriptor.device)
         else:
-            group_id = normalize_group_id_tensor(group_id, nframes).to(descriptor.device)
+            group_id = normalize_group_id_tensor(group_id, nframes).to(
+                descriptor.device
+            )
         if weight is None:
-            weight = torch.ones(nframes, dtype=descriptor.dtype, device=descriptor.device)
+            weight = torch.ones(
+                nframes, dtype=descriptor.dtype, device=descriptor.device
+            )
         else:
             weight = normalize_weight_tensor(weight, nframes).to(
                 descriptor.device, descriptor.dtype
@@ -334,3 +361,16 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             "fitting": self.fitting_net.serialize(),
             "type_map": self.type_map,
         }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GroupPropertyModel:
+        data = data.copy()
+        data.pop("type", None)
+        descriptor = BaseDescriptor.deserialize(data.pop("descriptor"))
+        fitting = BaseFitting.deserialize(data.pop("fitting"))
+        return cls(
+            descriptor=descriptor,
+            fitting=fitting,
+            type_map=data.pop("type_map", None),
+            **data,
+        )

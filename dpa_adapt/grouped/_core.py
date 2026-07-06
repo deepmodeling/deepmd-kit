@@ -7,20 +7,37 @@ schemas live in the adapt manifest so the user-facing API can evolve without
 turning a DeepMD ``set.*`` directory into a metadata dump.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, TYPE_CHECKING
+import shutil
+from dataclasses import (
+    dataclass,
+    field,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import numpy as np
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import (
+        Iterable,
+        Mapping,
+        Sequence,
+    )
 
 GROUP_ID_KEY = "group_id"
 WEIGHT_KEY = "weight"
@@ -48,7 +65,9 @@ class SiteSelector:
         return cls("tag", str(tag))
 
     @classmethod
-    def top_layer(cls, element: str | None = None, topk: int | None = None) -> SiteSelector:
+    def top_layer(
+        cls, element: str | None = None, topk: int | None = None
+    ) -> SiteSelector:
         value: dict[str, Any] = {}
         if element is not None:
             value["element"] = element
@@ -142,7 +161,9 @@ class ComponentSpec:
             symbols=[str(s) for s in symbols],
             box=None if box is None else np.asarray(box, dtype=np.float64),
             weight=float(weight),
-            pool_mask=pool_mask if isinstance(pool_mask, PoolMask) or pool_mask is None else np.asarray(pool_mask, dtype=np.float64),
+            pool_mask=pool_mask
+            if isinstance(pool_mask, PoolMask) or pool_mask is None
+            else np.asarray(pool_mask, dtype=np.float64),
             role=role,
             block=block,
             source=source,
@@ -198,7 +219,9 @@ class GroupSpec:
     fparam: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def add_component(self, component: ComponentSpec, **overrides: Any) -> ComponentSpec:
+    def add_component(
+        self, component: ComponentSpec, **overrides: Any
+    ) -> ComponentSpec:
         for key, value in overrides.items():
             if not hasattr(component, key):
                 raise TypeError(f"Unknown ComponentSpec field: {key}")
@@ -289,24 +312,35 @@ class Assembly:
             raise DPADataError(f"Output directory is not empty: {out_path}")
         out_path.mkdir(parents=True, exist_ok=True)
         systems_root = out_path / system_dir
+        if overwrite and systems_root.exists():
+            # Regenerate from scratch: drop stale system dirs so groups removed
+            # since the last run are not rediscovered by grouped loaders.
+            shutil.rmtree(systems_root)
         systems_root.mkdir(parents=True, exist_ok=True)
 
         resolved_type_map = self._resolved_type_map()
+        fparam_columns, fparam_defaults = self._fparam_columns()
 
         manifest_groups = []
         systems: list[str] = []
         for group_idx, group in enumerate(self.groups):
-            system_path = systems_root / _safe_name(group.key, fallback=f"group_{group_idx}")
+            system_path = systems_root / _safe_name(
+                group.key, fallback=f"group_{group_idx}"
+            )
             _write_group_system(
                 group,
                 group_idx=group_idx,
                 system_path=system_path,
                 property_name=self.property_name,
                 type_map=resolved_type_map,
+                fparam_columns=fparam_columns,
+                fparam_defaults=fparam_defaults,
             )
             systems.append(str(system_path.relative_to(out_path)))
             manifest_groups.append(
-                _group_manifest(group, group_idx, str(system_path.relative_to(out_path)))
+                _group_manifest(
+                    group, group_idx, str(system_path.relative_to(out_path))
+                )
             )
 
         manifest = {
@@ -325,7 +359,9 @@ class Assembly:
             "groups": manifest_groups,
         }
         manifest_path = out_path / MANIFEST_NAME
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+        )
         return {
             "output_dir": str(out_path.resolve()),
             "manifest": str(manifest_path.resolve()),
@@ -346,6 +382,27 @@ class Assembly:
 
     def _has_fparam(self) -> bool:
         return any(group.fparam for group in self.groups)
+
+    def _fparam_columns(self) -> tuple[list[str], dict[str, float]]:
+        """Canonical fparam columns + per-name defaults for missing values.
+
+        Once any group declares ``fparam`` the manifest advertises a uniform
+        ``fparam`` field, so every system must write ``fparam.npy`` with the same
+        columns.  Order follows ``fparam_schema`` when set (matching the
+        manifest), otherwise the sorted union of the groups' keys.  Missing
+        per-group values fall back to the schema ``default`` (or ``0.0``).
+        """
+        if not self._has_fparam():
+            return [], {}
+        if self.fparam_schema:
+            names = [str(item["name"]) for item in self.fparam_schema]
+            defaults = {
+                str(item["name"]): float(item.get("default", 0.0))
+                for item in self.fparam_schema
+            }
+            return names, defaults
+        names = sorted({key for group in self.groups for key in group.fparam})
+        return names, {}
 
 
 def write_grouped_deepmd(
@@ -372,6 +429,8 @@ def _write_group_system(
     system_path: Path,
     property_name: str,
     type_map: Sequence[str] | None,
+    fparam_columns: Sequence[str] = (),
+    fparam_defaults: Mapping[str, float] | None = None,
 ) -> None:
     if not group.components:
         raise DPADataError(f"Group {group.key!r} has no components.")
@@ -448,10 +507,21 @@ def _write_group_system(
     np.save(set_dir / f"{GROUP_ID_KEY}.npy", group_id)
     np.save(set_dir / f"{WEIGHT_KEY}.npy", weight)
     np.save(set_dir / f"{POOL_MASK_KEY}.npy", pool_mask)
-    if group.fparam:
-        keys = sorted(group.fparam)
-        fparam = np.asarray([[group.fparam[k] for k in keys]], dtype=np.float64)
-        np.save(set_dir / "fparam.npy", np.repeat(fparam, nframes, axis=0))
+    if fparam_columns:
+        # The manifest advertises a uniform fparam field, so write fparam.npy
+        # for every group -- filling any key this group omits with the schema
+        # default -- so downstream readers never hit a missing/ragged file.
+        defaults = fparam_defaults or {}
+        row = np.asarray(
+            [
+                [
+                    float(group.fparam.get(name, defaults.get(name, 0.0)))
+                    for name in fparam_columns
+                ]
+            ],
+            dtype=np.float64,
+        )
+        np.save(set_dir / "fparam.npy", np.repeat(row, nframes, axis=0))
 
 
 def _group_manifest(group: GroupSpec, group_idx: int, system: str) -> dict[str, Any]:
@@ -463,7 +533,9 @@ def _group_manifest(group: GroupSpec, group_idx: int, system: str) -> dict[str, 
             "role": component.role,
             "block": component.block,
             "source": component.source,
-            "pool_mask_excluded": np.where(component.normalized_pool_mask() == 0)[0].astype(int).tolist(),
+            "pool_mask_excluded": np.where(component.normalized_pool_mask() == 0)[0]
+            .astype(int)
+            .tolist(),
             "metadata": component.metadata,
         }
         components.append({k: v for k, v in item.items() if v is not None and v != {}})

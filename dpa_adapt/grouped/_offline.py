@@ -1,22 +1,46 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Grouped descriptor dataset for shared-target structures."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import glob as _glob
-from pathlib import Path
+import os
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+)
 
 import dpdata
 import numpy as np
 
-from dpa_adapt.grouped._aggregation import aggregate_weighted_groups
-from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.data.loader import _get_source, _resolve_label_key, load_data
-from dpa_adapt.finetuner import load_or_extract
-from typing import TYPE_CHECKING
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.data.loader import (
+    _get_source,
+    _resolve_label_key,
+    load_data,
+)
+from dpa_adapt.grouped._aggregation import (
+    aggregate_weighted_groups,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import (
+        Iterable,
+    )
+
+
+def load_or_extract(*args: object, **kwargs: object) -> np.ndarray:
+    """Delegate to finetuner.load_or_extract without a module import cycle."""
+    import importlib
+
+    finetuner = importlib.import_module("dpa_adapt.finetuner")
+    return finetuner.load_or_extract(*args, **kwargs)
 
 
 class GroupedDataset:
@@ -157,9 +181,17 @@ def _paths_from_directory(path: Path) -> list[Path]:
         return [path]
     if not path.is_dir():
         return []
-    return sorted(
-        child for child in path.iterdir() if child.is_dir() and _is_system_dir(child)
-    )
+    # Recurse arbitrarily deep so discovery matches ``mark_groups`` /
+    # ``_walk_systems`` (which uses ``os.walk``); scanning only immediate
+    # children would silently drop systems nested more than one level down.
+    found: list[Path] = []
+    for dirpath, dirnames, _ in os.walk(path):
+        candidate = Path(dirpath)
+        if _is_system_dir(candidate):
+            found.append(candidate)
+            # Do not descend into this system's own set.* directories.
+            dirnames[:] = [d for d in dirnames if not d.startswith("set.")]
+    return sorted(found)
 
 
 def _is_system_dir(path: Path) -> bool:
@@ -196,11 +228,7 @@ def _read_system_group_rows(
         group_id_path = set_dir / "group_id.npy"
         weight_path = set_dir / "weight.npy"
         label_path = set_dir / f"{target_key}.npy"
-        missing = [
-            str(p)
-            for p in (group_id_path, label_path)
-            if not p.is_file()
-        ]
+        missing = [str(p) for p in (group_id_path, label_path) if not p.is_file()]
         if missing:
             raise DPADataError(f"Grouped input is missing required files: {missing}.")
 

@@ -1,15 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 
 import numpy as np
 import pytest
 
-from dpa_adapt import Assembly, ComponentSpec, PoolMask, SiteSelector, SubstitutionSpec
-from dpa_adapt.data.assemblies import GROUP_ID_KEY, POOL_MASK_KEY, WEIGHT_KEY
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt import (
+    Assembly,
+    ComponentSpec,
+    PoolMask,
+    SiteSelector,
+    SubstitutionSpec,
+)
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.grouped._core import (
+    GROUP_ID_KEY,
+    POOL_MASK_KEY,
+    WEIGHT_KEY,
+)
 
 
 def _component(offset: float = 0.0, *, role: str = "state") -> ComponentSpec:
@@ -101,7 +115,9 @@ def test_fparam_write_fparam_but_schema_stays_in_manifest(tmp_path) -> None:
             {"name": "pH", "default": 7.0},
         ]
     )
-    group = builder.group(key="polymer_0", label=32.1, fparam={"log_mn": 0.67, "pH": 7.0})
+    group = builder.group(
+        key="polymer_0", label=32.1, fparam={"log_mn": 0.67, "pH": 7.0}
+    )
     group.add_component(
         ComponentSpec.from_arrays(
             coords=[[0, 0, 0], [0, 0, 1]],
@@ -177,6 +193,7 @@ def test_writer_infers_global_type_map_across_groups(tmp_path) -> None:
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["type_map"] == expected
+
 
 def test_writer_rejects_symbols_missing_from_type_map(tmp_path) -> None:
     builder = Assembly(target="property", type_map=["C"])

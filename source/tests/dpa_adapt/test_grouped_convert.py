@@ -5,12 +5,16 @@ Pure numpy / filesystem; no compiled deepmd backend needed, so these run
 anywhere.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
 
-from dpa_adapt import mark_groups
+from dpa_adapt import (
+    mark_groups,
+)
 
 
 def _write_mixed_system(
@@ -137,7 +141,9 @@ def test_dry_run_writes_nothing(tmp_path):
 
 
 def test_no_systems_found_raises(tmp_path):
-    from dpa_adapt.data.errors import DPADataError
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
 
     (tmp_path / "empty").mkdir()
     with pytest.raises(DPADataError):
