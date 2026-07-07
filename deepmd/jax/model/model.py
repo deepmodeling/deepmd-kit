@@ -109,6 +109,53 @@ def get_zbl_model(data: dict) -> DPZBLModel:
     )
 
 
+def get_sezm_model(data: dict) -> BaseModel:
+    """Build a DPA4/SeZM energy model from the pt-style model config."""
+    data = deepcopy(data)
+    if "spin" in data:
+        raise NotImplementedError("Spin DPA4/SeZM models are not supported in JAX.")
+    if str(data.get("bridging_method", "none")).lower() != "none":
+        raise NotImplementedError("DPA4/SeZM bridging is not supported in JAX.")
+    if data.get("lora") is not None:
+        raise NotImplementedError("DPA4/SeZM LoRA is not supported in JAX.")
+    if data.get("use_compile"):
+        raise NotImplementedError("model.use_compile is not supported in JAX.")
+    if data.get("preset_out_bias"):
+        raise NotImplementedError("DPA4/SeZM preset_out_bias is not supported in JAX.")
+
+    data.pop("type", None)
+    data.setdefault("descriptor", {})
+    data.setdefault("fitting_net", {})
+    data["descriptor"].setdefault("type", "dpa4")
+    data["fitting_net"].setdefault("type", "dpa4_ener")
+    if data["descriptor"]["type"] not in ("dpa4", "DPA4", "sezm", "SeZM"):
+        raise ValueError(
+            "Model type 'dpa4' requires a DPA4/SeZM descriptor, but got "
+            f"descriptor type '{data['descriptor']['type']}'."
+        )
+    if data["fitting_net"]["type"] not in ("dpa4_ener", "sezm_ener"):
+        raise ValueError(
+            "Model type 'dpa4' requires the DPA4/SeZM energy fitting net, but got "
+            f"fitting_net type '{data['fitting_net']['type']}'."
+        )
+
+    descriptor_exclude_types = [
+        list(pair) for pair in (data["descriptor"].get("exclude_types") or [])
+    ]
+    if "pair_exclude_types" in data:
+        pair_exclude_types = [list(pair) for pair in (data["pair_exclude_types"] or [])]
+        if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
+            raise ValueError(
+                "DPA4/SeZM pair_exclude_types and descriptor.exclude_types must "
+                "match when both are provided."
+            )
+    else:
+        pair_exclude_types = descriptor_exclude_types
+    data["pair_exclude_types"] = pair_exclude_types
+    data["descriptor"]["exclude_types"] = deepcopy(pair_exclude_types)
+    return get_standard_model(data)
+
+
 def get_model(data: dict) -> BaseModel:
     """Get a model from a dictionary.
 
@@ -125,5 +172,7 @@ def get_model(data: dict) -> BaseModel:
             return get_zbl_model(data)
         else:
             return get_standard_model(data)
+    elif model_type in ("SeZM", "sezm", "DPA4", "dpa4"):
+        return get_sezm_model(data)
     else:
         return BaseModel.get_class_by_type(model_type).get_model(data)

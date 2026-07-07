@@ -11,6 +11,8 @@ from deepmd.jax.model.dp_model import (
 )
 
 
+@BaseModel.register("sezm_ener")
+@BaseModel.register("dpa4_ener")
 @BaseModel.register("ener")
 class EnergyModel(make_jax_dp_model_from_dpmodel(EnergyModelDP, DPAtomicModelEnergy)):
     pass
