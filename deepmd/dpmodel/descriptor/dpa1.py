@@ -1749,7 +1749,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         Notes
         -----
         Known limitations:
-        - ``tebd_input_mode == "concat"`` only (strip mode lands later);
+        - ``tebd_input_mode`` in {"concat", "strip"}; compressed descriptors stay dense;
         - ``exclude_types`` is not yet supported and raises (lands in a later PR).
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
@@ -1757,9 +1757,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             segment_sum,
         )
 
-        if self.tebd_input_mode not in ["concat"]:
+        if self.tebd_input_mode not in ["concat", "strip"]:
             raise NotImplementedError(
-                "graph path supports tebd_input_mode='concat' only (NeighborGraph PR-A)"
+                f"graph path does not support tebd_input_mode={self.tebd_input_mode!r}"
             )
         if self.exclude_types:
             raise NotImplementedError(
@@ -1794,20 +1794,25 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )  # (E, 4), (E, 1) sw zeroed on padding
         # radial channel
         ss = rr[:, 0:1]  # (E, 1)
-        # neighbor / center type embeddings (concat mode); ghost type == owner type
-        # so gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
-        # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES under
-        # torch and severs the type-embedding weight gradient (the tebd net would
-        # never train); type_embedding already lives on the model device.
-        tebd = type_embedding
-        atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
-        if not self.type_one_side:
-            atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
-            ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
-        else:
-            ss = xp.concat([ss, atype_embd_nlist], axis=-1)
-        # embedding net (same weights as the dense path); applies on the last axis
-        gg = self.embeddings[0].call(ss)  # (E, ng)
+        if self.tebd_input_mode == "concat":
+            # neighbor / center type embeddings; ghost type == owner type so
+            # gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
+            # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES
+            # under torch and severs the type-embedding weight gradient (the tebd
+            # net would never train); type_embedding already lives on the device.
+            tebd = type_embedding
+            atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+            if not self.type_one_side:
+                atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+                ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
+            else:
+                ss = xp.concat([ss, atype_embd_nlist], axis=-1)
+            # embedding net (same weights as the dense path); applies on last axis
+            gg = self.embeddings[0].call(ss)  # (E, ng)
+        else:  # strip: factorized gg_s*gg_t + gg_s (per-edge; no neighbor coupling)
+            gg = self._graph_edge_gg_strip(
+                ss, center_type, nei_type, type_embedding, sw_e
+            )
         # transformer attention over each center's edges — mirrors the dense
         # self.dpa1_attention(gg, nlist_mask, input_r, sw), which also runs on
         # the UNMASKED gg (padding rows are neutralized afterwards).
@@ -1834,6 +1839,78 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # the working precision before the descriptor-level @cast_precision.
         rot_mat = gr[:, :, 1:]
         return grrg, rot_mat
+
+    def _graph_edge_gg_strip(
+        self,
+        ss: Array,
+        center_type: Array,
+        nei_type: Array,
+        type_embedding: Array,
+        sw_e: Array,
+    ) -> Array:
+        """Per-edge stripped-tebd embedding, op-for-op vs the dense strip branch.
+
+        Mirrors the ``tebd_input_mode == "strip"`` block of :meth:`call`: the
+        geometric net runs on the radial channel only (``gg_s``), the stripped
+        type-embedding net produces a per-type(-pair) factor (``gg_t``,
+        optionally switch-smoothed), and the two combine as
+        ``gg_s * gg_t + gg_s``. The compression branches (geo/tebd) are NOT
+        reached on the graph route: :meth:`DescrptDPA1.uses_graph_lower`
+        excludes compressed descriptors, so this kernel assumes no compression.
+
+        Parameters
+        ----------
+        ss
+            (E, 1) per-edge radial channel (``rr[:, 0:1]``).
+        center_type
+            (E,) center (dst) LOCAL atom type of each edge.
+        nei_type
+            (E,) neighbor (src) LOCAL atom type of each edge.
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table.
+        sw_e
+            (E, 1) smooth switch, zeroed on padding edges.
+
+        Returns
+        -------
+        gg
+            (E, ng) per-edge embedding feeding the attention / segment_sum.
+        """
+        assert self.embeddings_strip is not None
+        xp = array_api_compat.array_namespace(ss)
+        nt = self.tebd_dim
+        ntypes_with_padding = type_embedding.shape[0]
+        # geometric net on the radial channel only (dense: gg_s = cal_g(ss_scalar))
+        gg_s = self.embeddings[0].call(ss)  # (E, ng)
+        if self.type_one_side:
+            # one-side strip table indexed by NEIGHBOR type only
+            tt_full = self.cal_g_strip(type_embedding, 0)  # (ntypes_pad, ng)
+            gg_t = xp.take(tt_full, nei_type, axis=0)  # (E, ng)
+        else:
+            # two-side type-pair table; row = center * ntypes_pad + nei
+            # (dense builds the same (ntypes_pad**2, 2*nt) table, nei-fastest).
+            type_embedding_nei = xp.tile(
+                xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
+                (ntypes_with_padding, 1, 1),
+            )
+            type_embedding_center = xp.tile(
+                xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
+                (1, ntypes_with_padding, 1),
+            )
+            two_side_type_embedding = xp.reshape(
+                xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                (-1, nt * 2),
+            )
+            tt_full = self.cal_g_strip(
+                two_side_type_embedding, 0
+            )  # (ntypes_pad**2, ng)
+            # int64 for torch take (take_along/take requires Long indices)
+            idx = xp.astype(center_type * ntypes_with_padding + nei_type, xp.int64)
+            gg_t = xp.take(tt_full, idx, axis=0)  # (E, ng)
+        if self.smooth:
+            # dense: gg_t = gg_t * sw (per-neighbor); sw_e is (E, 1), zeroed on padding
+            gg_t = gg_t * sw_e
+        return gg_s * gg_t + gg_s
 
     def _graph_attention(
         self,
