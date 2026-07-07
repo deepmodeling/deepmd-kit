@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <string>
 #include <vector>
 
 #include "DeepSpin.h"
@@ -50,17 +51,12 @@ class TestInferDeepSpinDpaPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    // The .pt2 spin model requires the BUILD_PT_EXPT guard from the header.
-    // If AOTInductor headers are missing, skip.
-    {
-      std::ifstream f(kModelPath);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
-      }
-    }
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
+    std::ifstream model_file(kModelPath);
+    ASSERT_TRUE(model_file.good())
+        << "Model artifact is not available: " << kModelPath;
     dp.init(kModelPath);
 
     deepmd_test::ExpectedRef ref;
@@ -94,6 +90,12 @@ TYPED_TEST(TestInferDeepSpinDpaPtExpt, test_get_use_spin) {
   EXPECT_TRUE(use_spin[0]);   // Ni has spin
   EXPECT_FALSE(use_spin[1]);  // O has no spin
   EXPECT_FALSE(use_spin[2]);  // H has no spin
+}
+
+TYPED_TEST(TestInferDeepSpinDpaPtExpt, type_map) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_EQ(type_map, "Ni O H");
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtExpt, cpu_build_nlist) {
@@ -198,15 +200,12 @@ class TestInferDeepSpinDpaPtExptNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    {
-      std::ifstream f(kModelPath);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
-      }
-    }
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
+    std::ifstream model_file(kModelPath);
+    ASSERT_TRUE(model_file.good())
+        << "Model artifact is not available: " << kModelPath;
     dp.init(kModelPath);
 
     deepmd_test::ExpectedRef ref;

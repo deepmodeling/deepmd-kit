@@ -134,33 +134,48 @@ class WignerSmallOrderCoefficients(nn.Module):
     """
     Precomputed low-order quaternion polynomial kernels in the SeZM packed basis.
 
-    The tensors in this container provide the specialized ``l=2`` and ``l=3,4``
-    kernels used by the hybrid Wigner runtime:
-    - ``C_l2`` stores the degree-4 tensor-contraction coefficients;
-    - ``C_l3`` / ``C_l4`` store flattened monomial coefficient matrices;
+    Only kernels required by the owning ``WignerDCalculator`` are registered:
+
+    - ``C_l2`` stores the degree-4 tensor-contraction coefficients.
+    - ``C_l3`` .. ``C_l10`` store flattened monomial coefficient matrices.
     - ``C_combined_l3l4`` lifts the ``l=3`` basis to degree 8 and stacks it with
-      ``l=4`` so both blocks can be produced by one matrix multiply;
-    - ``exp_l3`` / ``exp_l4`` store the monomial exponent tables used by the runtime
-      gather/prod path.
+      ``l=4`` so both blocks can be produced by one matrix multiply.
+    - ``C_combined_l5l6`` applies the same degree-12 stacking for ``l=5,6``.
+    - ``C_combined_l7l8`` applies the same degree-16 stacking for ``l=7,8``.
+    - ``C_combined_l9l10`` applies the same degree-20 stacking for ``l=9,10``.
+    - ``exp_l3`` .. ``exp_l10`` store the monomial exponent tables used by the
+      runtime gather/prod path.
     """
+
+    _EXTRA_KERNELS_BY_LMAX: ClassVar[tuple[tuple[int, tuple[str, ...]], ...]] = (
+        (3, ("C_l3", "exp_l3")),
+        (4, ("C_l4", "C_combined_l3l4", "exp_l4")),
+        (5, ("C_l5", "exp_l5")),
+        (6, ("C_l6", "C_combined_l5l6", "exp_l6")),
+        (7, ("C_l7", "exp_l7")),
+        (8, ("C_l8", "C_combined_l7l8", "exp_l8")),
+        (9, ("C_l9", "exp_l9")),
+        (10, ("C_l10", "C_combined_l9l10", "exp_l10")),
+    )
 
     def __init__(
         self,
         *,
-        C_l2: torch.Tensor,
-        C_l3: torch.Tensor,
-        C_l4: torch.Tensor,
-        C_combined_l3l4: torch.Tensor,
-        exp_l3: torch.Tensor,
-        exp_l4: torch.Tensor,
+        lmax: int,
+        kernels: dict[str, torch.Tensor],
     ) -> None:
         super().__init__()
-        self.register_buffer("C_l2", C_l2, persistent=True)
-        self.register_buffer("C_l3", C_l3, persistent=True)
-        self.register_buffer("C_l4", C_l4, persistent=True)
-        self.register_buffer("C_combined_l3l4", C_combined_l3l4, persistent=True)
-        self.register_buffer("exp_l3", exp_l3, persistent=True)
-        self.register_buffer("exp_l4", exp_l4, persistent=True)
+        for name in self.required_kernel_names(lmax):
+            self.register_buffer(name, kernels[name], persistent=False)
+
+    @classmethod
+    def required_kernel_names(cls, lmax: int) -> tuple[str, ...]:
+        """Return low-order kernel names required for ``lmax``."""
+        names = ["C_l2"]
+        for threshold, extra_names in cls._EXTRA_KERNELS_BY_LMAX:
+            if lmax >= threshold:
+                names.extend(extra_names)
+        return tuple(names)
 
 
 def _safe_norm_nd(x: torch.Tensor, eps: float = 1e-7) -> torch.Tensor:
@@ -375,7 +390,10 @@ class WignerDCalculator(nn.Module):
     - ``l=1``: direct quaternion -> Cartesian rotation -> real l=1 block;
     - ``l=2``: dedicated degree-4 quaternion tensor contraction;
     - ``l=3,4``: dedicated quaternion monomial kernels;
-    - ``l>=5``: generic quaternion polynomial path with precomputed coefficient tables.
+    - ``l=5,6``: dedicated quaternion monomial kernels;
+    - ``l=7,8``: dedicated quaternion monomial kernels;
+    - ``l=9,10``: dedicated quaternion monomial kernels;
+    - ``l>=11``: generic quaternion polynomial path with precomputed coefficient tables.
     """
 
     _SMALL_ORDER_CACHE_CPU_FP64: ClassVar[dict[str, torch.Tensor] | None] = None
@@ -395,7 +413,7 @@ class WignerDCalculator(nn.Module):
         self.device = env.DEVICE
         self.eps = float(eps)
         self.dim_full = (self.lmax + 1) ** 2
-        self.poly_lmin = 5
+        self.poly_lmin = 11
         self.poly_offset = self.poly_lmin * self.poly_lmin
 
         self.register_buffer(
@@ -412,6 +430,7 @@ class WignerDCalculator(nn.Module):
 
         if self.lmax >= 2:
             self.small_order_kernels = self._build_small_order_kernels(
+                lmax=self.lmax,
                 dtype=self.dtype,
                 device=self.device,
             )
@@ -503,6 +522,36 @@ class WignerDCalculator(nn.Module):
                 with nvtx_range("WignerD/l3"):
                     D_full[:, 9:16, 9:16] = self._compute_l3_block(edge_quaternion)
 
+        if self.lmax >= 5:
+            if self.lmax >= 6:
+                with nvtx_range("WignerD/l5l6"):
+                    D_l5, D_l6 = self._compute_l5l6_blocks(edge_quaternion)
+                    D_full[:, 25:36, 25:36] = D_l5
+                    D_full[:, 36:49, 36:49] = D_l6
+            else:
+                with nvtx_range("WignerD/l5"):
+                    D_full[:, 25:36, 25:36] = self._compute_l5_block(edge_quaternion)
+
+        if self.lmax >= 7:
+            if self.lmax >= 8:
+                with nvtx_range("WignerD/l7l8"):
+                    D_l7, D_l8 = self._compute_l7l8_blocks(edge_quaternion)
+                    D_full[:, 49:64, 49:64] = D_l7
+                    D_full[:, 64:81, 64:81] = D_l8
+            else:
+                with nvtx_range("WignerD/l7"):
+                    D_full[:, 49:64, 49:64] = self._compute_l7_block(edge_quaternion)
+
+        if self.lmax >= 9:
+            if self.lmax >= 10:
+                with nvtx_range("WignerD/l9l10"):
+                    D_l9, D_l10 = self._compute_l9l10_blocks(edge_quaternion)
+                    D_full[:, 81:100, 81:100] = D_l9
+                    D_full[:, 100:121, 100:121] = D_l10
+            else:
+                with nvtx_range("WignerD/l9"):
+                    D_full[:, 81:100, 81:100] = self._compute_l9_block(edge_quaternion)
+
         if self.lmax >= self.poly_lmin:
             with nvtx_range("WignerD/polynomial"):
                 ra_re, ra_im, rb_re, rb_im = self._quaternion_to_ra_rb_real(
@@ -533,33 +582,174 @@ class WignerDCalculator(nn.Module):
         Dt_full = D_full.transpose(-1, -2).contiguous()
         return D_full, Dt_full
 
+    def forward_zonal(
+        self,
+        edge_quaternion: torch.Tensor,
+        lmin: int = 1,
+    ) -> torch.Tensor:
+        """
+        Build local ``m=0`` to global coupling for GIE.
+
+        The returned layout matches the packed node rows for degrees
+        ``lmin..lmax``: each degree contributes ``2l+1`` values in packed
+        ``m=-l..l`` order. These values are equivalent to gathering
+        ``Dt_full[:, row(l, m), col(l, 0)]`` from :meth:`forward` over the
+        same degree range.
+
+        Parameters
+        ----------
+        edge_quaternion
+            Unit quaternions with shape ``(E, 4)`` representing the global->local
+            edge rotation.
+        lmin
+            First degree to return.
+
+        Returns
+        -------
+        torch.Tensor
+            Zonal coupling with shape
+            ``(E, (lmax + 1) ** 2 - lmin ** 2)``.
+        """
+        lmin = int(lmin)
+        if lmin < 1:
+            raise ValueError("`lmin` must be >= 1")
+        n_edge = edge_quaternion.shape[0]
+        if self.lmax < lmin:
+            return torch.empty(
+                n_edge,
+                0,
+                dtype=self.dtype,
+                device=edge_quaternion.device,
+            )
+        edge_quaternion = quaternion_normalize(
+            edge_quaternion.to(dtype=self.dtype),
+            eps=self.eps,
+        )
+
+        with nvtx_range("WignerD/zonal"):
+            zonal_blocks: list[torch.Tensor] = []
+            if lmin <= 1 <= self.lmax:
+                zonal_blocks.append(self._compute_l1_block(edge_quaternion)[:, 1, :])
+
+            if lmin <= 2 <= self.lmax:
+                zonal_blocks.append(self._compute_l2_block(edge_quaternion)[:, 2, :])
+
+            if self.lmax >= 3 and lmin <= 4:
+                if self.lmax >= 4:
+                    D_l3, D_l4 = self._compute_l3l4_blocks(edge_quaternion)
+                    if lmin <= 3:
+                        zonal_blocks.append(D_l3[:, 3, :])
+                    zonal_blocks.append(D_l4[:, 4, :])
+                else:
+                    zonal_blocks.append(
+                        self._compute_l3_block(edge_quaternion)[:, 3, :]
+                    )
+
+            if self.lmax >= 5 and lmin <= 6:
+                if self.lmax >= 6:
+                    D_l5, D_l6 = self._compute_l5l6_blocks(edge_quaternion)
+                    if lmin <= 5:
+                        zonal_blocks.append(D_l5[:, 5, :])
+                    zonal_blocks.append(D_l6[:, 6, :])
+                else:
+                    zonal_blocks.append(
+                        self._compute_l5_block(edge_quaternion)[:, 5, :]
+                    )
+
+            if self.lmax >= 7 and lmin <= 8:
+                if self.lmax >= 8:
+                    D_l7, D_l8 = self._compute_l7l8_blocks(edge_quaternion)
+                    if lmin <= 7:
+                        zonal_blocks.append(D_l7[:, 7, :])
+                    zonal_blocks.append(D_l8[:, 8, :])
+                else:
+                    zonal_blocks.append(
+                        self._compute_l7_block(edge_quaternion)[:, 7, :]
+                    )
+
+            if self.lmax >= 9 and lmin <= 10:
+                if self.lmax >= 10:
+                    D_l9, D_l10 = self._compute_l9l10_blocks(edge_quaternion)
+                    if lmin <= 9:
+                        zonal_blocks.append(D_l9[:, 9, :])
+                    zonal_blocks.append(D_l10[:, 10, :])
+                else:
+                    zonal_blocks.append(
+                        self._compute_l9_block(edge_quaternion)[:, 9, :]
+                    )
+
+            if self.lmax >= self.poly_lmin and lmin <= self.lmax:
+                ra_re, ra_im, rb_re, rb_im = self._quaternion_to_ra_rb_real(
+                    edge_quaternion
+                )
+                D_re, D_im = self._wigner_d_matrix_realpair(
+                    ra_re,
+                    ra_im,
+                    rb_re,
+                    rb_im,
+                    self.poly_coeffs,
+                    dtype=self.dtype,
+                )
+                D_poly = self._wigner_d_pair_to_real(
+                    D_re,
+                    D_im,
+                    (
+                        self.poly_u_re,
+                        self.poly_u_im,
+                        self.poly_u_re_t,
+                        self.poly_u_im_t,
+                    ),
+                    lmax=self.lmax,
+                    lmin=self.poly_lmin,
+                )
+                poly_lmin = max(lmin, self.poly_lmin)
+                offset = 0
+                for degree in range(self.poly_lmin, self.lmax + 1):
+                    block_size = 2 * degree + 1
+                    block_end = offset + block_size
+                    if degree >= poly_lmin:
+                        zonal_blocks.append(
+                            D_poly[:, offset + degree, offset:block_end]
+                        )
+                    offset = block_end
+
+            return torch.cat(zonal_blocks, dim=1)
+
     @classmethod
-    def _get_small_order_cache_cpu_fp64(cls) -> dict[str, torch.Tensor]:
-        """Generate the low-order kernel coefficients once per process on CPU fp64."""
+    def _get_small_order_cache_cpu_fp64(cls, lmax: int) -> dict[str, torch.Tensor]:
+        """Generate the required low-order kernel coefficients on CPU fp64."""
+        target_lmax = min(max(int(lmax), 2), 10)
         if cls._SMALL_ORDER_CACHE_CPU_FP64 is None:
-            cls._SMALL_ORDER_CACHE_CPU_FP64 = cls._generate_small_order_cache_cpu_fp64()
-        return cls._SMALL_ORDER_CACHE_CPU_FP64
+            cls._SMALL_ORDER_CACHE_CPU_FP64 = {}
+        cache = cls._SMALL_ORDER_CACHE_CPU_FP64
+        required_names = WignerSmallOrderCoefficients.required_kernel_names(target_lmax)
+        if any(name not in cache for name in required_names):
+            cache.update(cls._generate_small_order_cache_cpu_fp64(target_lmax))
+        return cache
 
     @classmethod
     def _build_small_order_kernels(
         cls,
         *,
+        lmax: int,
         dtype: torch.dtype,
         device: torch.device,
     ) -> WignerSmallOrderCoefficients:
-        """Instantiate the specialized ``l=2,3,4`` kernels on the requested device/dtype."""
-        cache = cls._get_small_order_cache_cpu_fp64()
+        """Instantiate the specialized ``l=2..10`` kernels on the requested device/dtype."""
+        cache = cls._get_small_order_cache_cpu_fp64(lmax)
+        kernels = {}
+        for name in WignerSmallOrderCoefficients.required_kernel_names(lmax):
+            if name.startswith("exp_"):
+                kernels[name] = cache[name].to(device=device)
+            else:
+                kernels[name] = cache[name].to(device=device, dtype=dtype)
         return WignerSmallOrderCoefficients(
-            C_l2=cache["C_l2"].to(device=device, dtype=dtype),
-            C_l3=cache["C_l3"].to(device=device, dtype=dtype),
-            C_l4=cache["C_l4"].to(device=device, dtype=dtype),
-            C_combined_l3l4=cache["C_combined_l3l4"].to(device=device, dtype=dtype),
-            exp_l3=cache["exp_l3"].to(device=device),
-            exp_l4=cache["exp_l4"].to(device=device),
+            lmax=lmax,
+            kernels=kernels,
         )
 
     @classmethod
-    def _generate_small_order_cache_cpu_fp64(cls) -> dict[str, torch.Tensor]:
+    def _generate_small_order_cache_cpu_fp64(cls, lmax: int) -> dict[str, torch.Tensor]:
         """
         Generate the low-order kernel coefficients from the generic SeZM reference path.
 
@@ -567,65 +757,59 @@ class WignerDCalculator(nn.Module):
         validated against the generic quaternion polynomial evaluator, and then reused by
         every `WignerDCalculator` instance.
         """
+        target_lmax = min(max(int(lmax), 2), 10)
         dtype = torch.float64
         device = torch.device("cpu")
         generator = torch.Generator()
         generator.manual_seed(20260404)
 
-        q_fit = torch.randn(2048, 4, dtype=dtype, device=device, generator=generator)
+        max_monomials = math.comb(2 * target_lmax + 3, 3)
+        n_fit = min(2048, max(128, 2 * max_monomials))
+        q_fit = torch.randn(n_fit, 4, dtype=dtype, device=device, generator=generator)
         q_fit = quaternion_normalize(q_fit, eps=torch.finfo(dtype).eps)
         ref_blocks = cls._compute_generic_reference_blocks(
-            q_fit, lmax=4, dtype=dtype, device=device
+            q_fit, lmax=target_lmax, dtype=dtype, device=device
         )
 
-        monomials_l2 = cls._generate_monomials(4, 4)
-        monomials_l3 = cls._generate_monomials(4, 6)
-        monomials_l4 = cls._generate_monomials(4, 8)
-        exp_l2 = cls._monomials_to_exponent_tensor(monomials_l2, device=device)
-        exp_l3 = cls._monomials_to_exponent_tensor(monomials_l3, device=device)
-        exp_l4 = cls._monomials_to_exponent_tensor(monomials_l4, device=device)
+        monomials: dict[int, list[tuple[int, int, int, int]]] = {}
+        exponents: dict[int, torch.Tensor] = {}
+        coefficients: dict[int, torch.Tensor] = {}
+        cache: dict[str, torch.Tensor] = {}
 
-        C_l2_flat = cls._solve_monomial_coefficients(
-            q_fit,
-            ref_blocks[2],
-            exp_l2,
-        )
-        C_l3 = cls._solve_monomial_coefficients(q_fit, ref_blocks[3], exp_l3)
-        C_l4 = cls._solve_monomial_coefficients(q_fit, ref_blocks[4], exp_l4)
-        C_l2 = cls._build_l2_contraction_tensor(C_l2_flat, monomials_l2)
-        C_combined_l3l4 = cls._build_combined_l3l4(
-            C_l3, C_l4, monomials_l3, monomials_l4
-        )
+        for ell in range(2, target_lmax + 1):
+            monomials[ell] = cls._generate_monomials(4, 2 * ell)
+            exponents[ell] = cls._monomials_to_exponent_tensor(
+                monomials[ell], device=device
+            )
+            coeff = cls._solve_monomial_coefficients(
+                q_fit,
+                ref_blocks[ell],
+                exponents[ell],
+            )
+            if ell == 2:
+                cache["C_l2"] = cls._build_l2_contraction_tensor(coeff, monomials[2])
+            else:
+                coefficients[ell] = coeff
+                cache[f"C_l{ell}"] = coeff
+                cache[f"exp_l{ell}"] = exponents[ell]
 
-        q_val = torch.randn(256, 4, dtype=dtype, device=device, generator=generator)
-        q_val = quaternion_normalize(q_val, eps=torch.finfo(dtype).eps)
-        ref_val = cls._compute_generic_reference_blocks(
-            q_val, lmax=4, dtype=dtype, device=device
-        )
-        test_val = cls._evaluate_small_order_blocks(
-            q_val,
-            C_l2=C_l2,
-            C_l3=C_l3,
-            C_l4=C_l4,
-            exp_l3=exp_l3,
-            exp_l4=exp_l4,
-        )
-        thresholds = {2: 1e-10, 3: 1e-10, 4: 1e-10}
-        for ell in (2, 3, 4):
-            err = (test_val[ell] - ref_val[ell]).abs().max().item()
-            if err > thresholds[ell]:
-                raise RuntimeError(
-                    f"Failed to generate stable SeZM Wigner coefficients for l={ell}: max_err={err}"
+        combined_builders = {
+            4: ("C_combined_l3l4", cls._build_combined_l3l4),
+            6: ("C_combined_l5l6", cls._build_combined_l5l6),
+            8: ("C_combined_l7l8", cls._build_combined_l7l8),
+            10: ("C_combined_l9l10", cls._build_combined_l9l10),
+        }
+        for even_ell, (name, builder) in combined_builders.items():
+            if target_lmax >= even_ell:
+                odd_ell = even_ell - 1
+                cache[name] = builder(
+                    coefficients[odd_ell],
+                    coefficients[even_ell],
+                    monomials[odd_ell],
+                    monomials[even_ell],
                 )
 
-        return {
-            "C_l2": C_l2,
-            "C_l3": C_l3,
-            "C_l4": C_l4,
-            "C_combined_l3l4": C_combined_l3l4,
-            "exp_l3": exp_l3,
-            "exp_l4": exp_l4,
-        }
+        return cache
 
     @classmethod
     def _compute_generic_reference_blocks(
@@ -636,7 +820,7 @@ class WignerDCalculator(nn.Module):
         dtype: torch.dtype,
         device: torch.device,
     ) -> dict[int, torch.Tensor]:
-        """Evaluate the generic SeZM polynomial path and extract the ``l=2,3,4`` blocks."""
+        """Evaluate the generic SeZM polynomial path and extract per-degree blocks."""
         coeffs = cls._precompute_wigner_coefficients(
             lmax,
             dtype=dtype,
@@ -665,11 +849,14 @@ class WignerDCalculator(nn.Module):
             lmax=lmax,
             lmin=2,
         )
-        return {
-            2: D_ref[:, 0:5, 0:5],
-            3: D_ref[:, 5:12, 5:12],
-            4: D_ref[:, 12:21, 12:21],
-        }
+        ref_blocks: dict[int, torch.Tensor] = {}
+        offset = 0
+        for ell in range(2, lmax + 1):
+            block_size = 2 * ell + 1
+            block_end = offset + block_size
+            ref_blocks[ell] = D_ref[:, offset:block_end, offset:block_end]
+            offset = block_end
+        return ref_blocks
 
     @classmethod
     def _solve_monomial_coefficients(
@@ -706,39 +893,6 @@ class WignerDCalculator(nn.Module):
                 for p0, p1, p2, p3 in unique_permutations:
                     C_l2[i, j, p0, p1, p2, p3] = share
         return C_l2
-
-    @classmethod
-    def _evaluate_small_order_blocks(
-        cls,
-        edge_quaternion: torch.Tensor,
-        *,
-        C_l2: torch.Tensor,
-        C_l3: torch.Tensor,
-        C_l4: torch.Tensor,
-        exp_l3: torch.Tensor,
-        exp_l4: torch.Tensor,
-    ) -> dict[int, torch.Tensor]:
-        """Evaluate the specialized ``l=2,3,4`` kernels for validation and caching."""
-        q2 = edge_quaternion.unsqueeze(-1) * edge_quaternion.unsqueeze(-2)
-        q4 = q2.unsqueeze(-1).unsqueeze(-1) * q2.unsqueeze(-3).unsqueeze(-3)
-        D_l2 = torch.einsum("nabcd,ijabcd->nij", q4, C_l2)
-
-        powers6 = cls._precompute_powers(edge_quaternion, 6)
-        M3 = cls._build_monomial_matrix(powers6, exp_l3)
-        D_l3 = torch.matmul(M3, C_l3.transpose(0, 1)).view(
-            edge_quaternion.shape[0], 7, 7
-        )
-
-        powers8 = cls._precompute_powers(edge_quaternion, 8)
-        M4 = cls._build_monomial_matrix(powers8, exp_l4)
-        D_l4 = torch.matmul(M4, C_l4.transpose(0, 1)).view(
-            edge_quaternion.shape[0], 9, 9
-        )
-        return {
-            2: D_l2,
-            3: D_l3,
-            4: D_l4,
-        }
 
     @staticmethod
     def _generate_monomials(
@@ -795,6 +949,81 @@ class WignerDCalculator(nn.Module):
             ):
                 C_l3_lifted[:, mono8_to_idx[mono8]] += C_l3[:, j]
         return torch.cat([C_l3_lifted, C_l4], dim=0)
+
+    @staticmethod
+    def _build_combined_l5l6(
+        C_l5: torch.Tensor,
+        C_l6: torch.Tensor,
+        monomials_l5: list[tuple[int, int, int, int]],
+        monomials_l6: list[tuple[int, int, int, int]],
+    ) -> torch.Tensor:
+        """Lift the ``l=5`` basis to degree 12 and stack it with the ``l=6`` basis."""
+        mono12_to_idx = {mono: idx for idx, mono in enumerate(monomials_l6)}
+        C_l5_lifted = torch.zeros(
+            C_l5.shape[0],
+            len(monomials_l6),
+            dtype=C_l5.dtype,
+            device=C_l5.device,
+        )
+        for j, (a, b, c, d) in enumerate(monomials_l5):
+            for mono12 in (
+                (a + 2, b, c, d),
+                (a, b + 2, c, d),
+                (a, b, c + 2, d),
+                (a, b, c, d + 2),
+            ):
+                C_l5_lifted[:, mono12_to_idx[mono12]] += C_l5[:, j]
+        return torch.cat([C_l5_lifted, C_l6], dim=0)
+
+    @staticmethod
+    def _build_combined_l7l8(
+        C_l7: torch.Tensor,
+        C_l8: torch.Tensor,
+        monomials_l7: list[tuple[int, int, int, int]],
+        monomials_l8: list[tuple[int, int, int, int]],
+    ) -> torch.Tensor:
+        """Lift the ``l=7`` basis to degree 16 and stack it with the ``l=8`` basis."""
+        mono16_to_idx = {mono: idx for idx, mono in enumerate(monomials_l8)}
+        C_l7_lifted = torch.zeros(
+            C_l7.shape[0],
+            len(monomials_l8),
+            dtype=C_l7.dtype,
+            device=C_l7.device,
+        )
+        for j, (a, b, c, d) in enumerate(monomials_l7):
+            for mono16 in (
+                (a + 2, b, c, d),
+                (a, b + 2, c, d),
+                (a, b, c + 2, d),
+                (a, b, c, d + 2),
+            ):
+                C_l7_lifted[:, mono16_to_idx[mono16]] += C_l7[:, j]
+        return torch.cat([C_l7_lifted, C_l8], dim=0)
+
+    @staticmethod
+    def _build_combined_l9l10(
+        C_l9: torch.Tensor,
+        C_l10: torch.Tensor,
+        monomials_l9: list[tuple[int, int, int, int]],
+        monomials_l10: list[tuple[int, int, int, int]],
+    ) -> torch.Tensor:
+        """Lift the ``l=9`` basis to degree 20 and stack it with the ``l=10`` basis."""
+        mono20_to_idx = {mono: idx for idx, mono in enumerate(monomials_l10)}
+        C_l9_lifted = torch.zeros(
+            C_l9.shape[0],
+            len(monomials_l10),
+            dtype=C_l9.dtype,
+            device=C_l9.device,
+        )
+        for j, (a, b, c, d) in enumerate(monomials_l9):
+            for mono20 in (
+                (a + 2, b, c, d),
+                (a, b + 2, c, d),
+                (a, b, c + 2, d),
+                (a, b, c, d + 2),
+            ):
+                C_l9_lifted[:, mono20_to_idx[mono20]] += C_l9[:, j]
+        return torch.cat([C_l9_lifted, C_l10], dim=0)
 
     @staticmethod
     def _precompute_powers(
@@ -879,6 +1108,99 @@ class WignerDCalculator(nn.Module):
         D_l3 = D_flat[:, :49].view(edge_quaternion.shape[0], 7, 7)
         D_l4 = D_flat[:, 49:].view(edge_quaternion.shape[0], 9, 9)
         return D_l3, D_l4
+
+    def _compute_l5_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
+        """Compute the ``l=5`` block from the dedicated degree-10 monomial kernel."""
+        powers = self._precompute_powers(edge_quaternion, 10)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l5,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_l5.transpose(0, 1),
+        )
+        return D_flat.view(edge_quaternion.shape[0], 11, 11)
+
+    def _compute_l5l6_blocks(
+        self,
+        edge_quaternion: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the ``l=5`` and ``l=6`` blocks from one shared degree-12 kernel."""
+        powers = self._precompute_powers(edge_quaternion, 12)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l6,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_combined_l5l6.transpose(0, 1),
+        )
+        D_l5 = D_flat[:, :121].view(edge_quaternion.shape[0], 11, 11)
+        D_l6 = D_flat[:, 121:].view(edge_quaternion.shape[0], 13, 13)
+        return D_l5, D_l6
+
+    def _compute_l7_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
+        """Compute the ``l=7`` block from the dedicated degree-14 monomial kernel."""
+        powers = self._precompute_powers(edge_quaternion, 14)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l7,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_l7.transpose(0, 1),
+        )
+        return D_flat.view(edge_quaternion.shape[0], 15, 15)
+
+    def _compute_l7l8_blocks(
+        self,
+        edge_quaternion: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the ``l=7`` and ``l=8`` blocks from one shared degree-16 kernel."""
+        powers = self._precompute_powers(edge_quaternion, 16)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l8,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_combined_l7l8.transpose(0, 1),
+        )
+        D_l7 = D_flat[:, :225].view(edge_quaternion.shape[0], 15, 15)
+        D_l8 = D_flat[:, 225:].view(edge_quaternion.shape[0], 17, 17)
+        return D_l7, D_l8
+
+    def _compute_l9_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
+        """Compute the ``l=9`` block from the dedicated degree-18 monomial kernel."""
+        powers = self._precompute_powers(edge_quaternion, 18)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l9,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_l9.transpose(0, 1),
+        )
+        return D_flat.view(edge_quaternion.shape[0], 19, 19)
+
+    def _compute_l9l10_blocks(
+        self,
+        edge_quaternion: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the ``l=9`` and ``l=10`` blocks from one shared degree-20 kernel."""
+        powers = self._precompute_powers(edge_quaternion, 20)
+        monomials = self._build_monomial_matrix(
+            powers,
+            self.small_order_kernels.exp_l10,
+        )
+        D_flat = torch.matmul(
+            monomials,
+            self.small_order_kernels.C_combined_l9l10.transpose(0, 1),
+        )
+        D_l9 = D_flat[:, :361].view(edge_quaternion.shape[0], 19, 19)
+        D_l10 = D_flat[:, 361:].view(edge_quaternion.shape[0], 21, 21)
+        return D_l9, D_l10
 
     @staticmethod
     def _factorial_table(

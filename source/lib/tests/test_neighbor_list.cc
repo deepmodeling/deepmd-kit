@@ -1,9 +1,23 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "device.h"
 #include "fmt_nlist.h"
 #include "neighbor_list.h"
+
+template <typename T>
+static std::vector<T> repeat_vector(const std::vector<T>& values,
+                                    const int repeats) {
+  std::vector<T> result;
+  result.reserve(static_cast<size_t>(repeats) * values.size());
+  for (int ii = 0; ii < repeats; ++ii) {
+    result.insert(result.end(), values.begin(), values.end());
+  }
+  return result;
+}
 
 class TestNeighborList : public ::testing::Test {
  protected:
@@ -110,6 +124,41 @@ TEST_F(TestNeighborList, cpu) {
   delete[] firstneigh;
 }
 
+TEST_F(TestNeighborList, cpu_multiple_frames) {
+  constexpr int nframes = 2;
+  const int nrows = nframes * nloc;
+  int mem_size = 10;
+  std::vector<int> ilist(nrows);
+  std::vector<int> numneigh(nrows);
+  std::vector<int*> firstneigh(nrows);
+  std::vector<int> jlist(static_cast<size_t>(nrows) * mem_size);
+  std::vector<double> posi_multi = repeat_vector(posi_cpy, nframes);
+  for (int ii = 0; ii < nrows; ++ii) {
+    firstneigh[ii] = jlist.data() + ii * mem_size;
+  }
+
+  deepmd::InputNlist nlist(nrows, ilist.data(), numneigh.data(),
+                           firstneigh.data());
+  int max_list_size;
+  int ret = build_nlist_cpu(nlist, &max_list_size, posi_multi.data(), nloc,
+                            nall, mem_size, rc, nframes);
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(nlist.inum, nrows);
+  EXPECT_EQ(max_list_size, 5);
+  for (int ff = 0; ff < nframes; ++ff) {
+    for (int ii = 0; ii < nloc; ++ii) {
+      const int row = ff * nloc + ii;
+      EXPECT_EQ(nlist.ilist[row], ii);
+      EXPECT_EQ(nlist.numneigh[row], expect_nlist_cpy[ii].size());
+      std::sort(nlist.firstneigh[row],
+                nlist.firstneigh[row] + nlist.numneigh[row]);
+      for (int jj = 0; jj < nlist.numneigh[row]; ++jj) {
+        EXPECT_EQ(nlist.firstneigh[row][jj], expect_nlist_cpy[ii][jj]);
+      }
+    }
+  }
+}
+
 TEST_F(TestNeighborList, cpu_lessmem) {
   int mem_size = 2;
   int* ilist = new int[nloc];
@@ -196,6 +245,71 @@ TEST_F(TestNeighborList, gpu) {
   deepmd::delete_device_memory(c_cpy_dev);
 }
 
+TEST_F(TestNeighborList, gpu_multiple_frames) {
+  constexpr int nframes = 2;
+  const int nrows = nframes * nloc;
+  int mem_size = 48;
+
+  int *nlist_data_dev = NULL, *jlist_dev = NULL, *ilist_dev = NULL,
+      *numneigh_dev = NULL;
+  int** firstneigh_dev = NULL;
+  std::vector<int*> temp_firstneigh(nrows);
+  std::vector<double> posi_multi = repeat_vector(posi_cpy, nframes);
+  double* c_cpy_dev = NULL;
+
+  deepmd::malloc_device_memory(nlist_data_dev, 2 * nrows * mem_size);
+  deepmd::malloc_device_memory(jlist_dev, nrows * mem_size);
+  deepmd::malloc_device_memory(ilist_dev, nrows);
+  deepmd::malloc_device_memory(numneigh_dev, nrows);
+  for (int ii = 0; ii < nrows; ++ii) {
+    temp_firstneigh[ii] = jlist_dev + ii * mem_size;
+  }
+  deepmd::malloc_device_memory_sync(firstneigh_dev, temp_firstneigh);
+  deepmd::malloc_device_memory_sync(c_cpy_dev, posi_multi);
+  deepmd::InputNlist nlist_dev(nrows, ilist_dev, numneigh_dev, firstneigh_dev);
+
+  int max_list_size;
+  int ret =
+      deepmd::build_nlist_gpu(nlist_dev, &max_list_size, nlist_data_dev,
+                              c_cpy_dev, nloc, nall, mem_size, rc, nframes);
+
+  EXPECT_EQ(ret, 0);
+  std::vector<int> ilist(nrows);
+  std::vector<int> numneigh(nrows);
+  std::vector<int*> firstneigh(nrows);
+  std::vector<int> jlist(nrows * mem_size);
+  deepmd::memcpy_device_to_host(jlist_dev, jlist.data(), nrows * mem_size);
+  deepmd::memcpy_device_to_host(ilist_dev, ilist.data(), nrows);
+  deepmd::memcpy_device_to_host(numneigh_dev, numneigh.data(), nrows);
+  for (int ii = 0; ii < nrows; ++ii) {
+    firstneigh[ii] = jlist.data() + ii * mem_size;
+  }
+
+  deepmd::InputNlist nlist(nlist_dev.inum, ilist.data(), numneigh.data(),
+                           firstneigh.data());
+  EXPECT_EQ(nlist.inum, nrows);
+  EXPECT_EQ(max_list_size, 5);
+  for (int ff = 0; ff < nframes; ++ff) {
+    for (int ii = 0; ii < nloc; ++ii) {
+      const int row = ff * nloc + ii;
+      EXPECT_EQ(nlist.ilist[row], ii);
+      EXPECT_EQ(nlist.numneigh[row], expect_nlist_cpy[ii].size());
+      std::sort(nlist.firstneigh[row],
+                nlist.firstneigh[row] + nlist.numneigh[row]);
+      for (int jj = 0; jj < nlist.numneigh[row]; ++jj) {
+        EXPECT_EQ(nlist.firstneigh[row][jj], expect_nlist_cpy[ii][jj]);
+      }
+    }
+  }
+
+  deepmd::delete_device_memory(nlist_data_dev);
+  deepmd::delete_device_memory(jlist_dev);
+  deepmd::delete_device_memory(ilist_dev);
+  deepmd::delete_device_memory(numneigh_dev);
+  deepmd::delete_device_memory(firstneigh_dev);
+  deepmd::delete_device_memory(c_cpy_dev);
+}
+
 TEST_F(TestNeighborList, gpu_lessmem) {
   int mem_size = 47;
 
@@ -227,6 +341,54 @@ TEST_F(TestNeighborList, gpu_lessmem) {
   deepmd::delete_device_memory(numneigh_dev);
   deepmd::delete_device_memory(firstneigh_dev);
   deepmd::delete_device_memory(c_cpy_dev);
+}
+
+TEST(TestNeighborListStandalone, gpu_tail_segment_prefix_scan) {
+  const int nloc = 2;
+  const int nall = TPB + 68;
+  const int mem_size = nall;
+  const double rc = 1.0;
+
+  std::vector<double> coord(nall * 3, 0.0);
+  for (int ii = 0; ii < nall; ++ii) {
+    coord[ii * 3] = ii * 10.0;
+  }
+
+  int *nlist_data_dev = NULL, *jlist_dev = NULL, *ilist_dev = NULL,
+      *numneigh_dev = NULL;
+  int** firstneigh_dev = NULL;
+  std::vector<int*> temp_firstneigh(nloc);
+  double* coord_dev = NULL;
+
+  deepmd::malloc_device_memory(nlist_data_dev, 2 * nloc * mem_size);
+  deepmd::malloc_device_memory(jlist_dev, nloc * mem_size);
+  deepmd::malloc_device_memory(ilist_dev, nloc);
+  deepmd::malloc_device_memory(numneigh_dev, nloc);
+  for (int ii = 0; ii < nloc; ++ii) {
+    temp_firstneigh[ii] = jlist_dev + ii * mem_size;
+  }
+  deepmd::malloc_device_memory_sync(firstneigh_dev, temp_firstneigh);
+  deepmd::malloc_device_memory_sync(coord_dev, coord);
+  deepmd::InputNlist nlist_dev(nloc, ilist_dev, numneigh_dev, firstneigh_dev);
+
+  int max_list_size = -1;
+  int ret = deepmd::build_nlist_gpu(nlist_dev, &max_list_size, nlist_data_dev,
+                                    coord_dev, nloc, nall, mem_size, rc);
+
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(max_list_size, 0);
+  std::vector<int> numneigh(nloc, -1);
+  deepmd::memcpy_device_to_host(numneigh_dev, numneigh.data(), nloc);
+  for (int ii = 0; ii < nloc; ++ii) {
+    EXPECT_EQ(numneigh[ii], 0);
+  }
+
+  deepmd::delete_device_memory(nlist_data_dev);
+  deepmd::delete_device_memory(jlist_dev);
+  deepmd::delete_device_memory(ilist_dev);
+  deepmd::delete_device_memory(numneigh_dev);
+  deepmd::delete_device_memory(firstneigh_dev);
+  deepmd::delete_device_memory(coord_dev);
 }
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

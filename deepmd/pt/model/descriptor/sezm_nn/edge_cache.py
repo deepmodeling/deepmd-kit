@@ -20,13 +20,11 @@ from typing import (
 )
 
 import torch
+import torch.nn.functional as F
 from einops import (
     rearrange,
 )
 
-from .triton import (
-    edge_geometry_rbf_triton,
-)
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -74,6 +72,9 @@ class EdgeFeatureCache(NamedTuple):
         Used for efficient batched rotation. None if not available.
     Dt_full
         Transpose of D_full with shape (E, D, D). None if not available.
+    edge_quat
+        Per-edge global-to-local quaternion actually used to build ``D_full`` and
+        ``Dt_full`` with shape (E, 4). Includes the optional random local-Z roll.
     D_to_m_cache
         Lazy cache for projected D matrices keyed by a normalized
         ``"lmax:mmax"`` identifier.
@@ -106,6 +107,7 @@ class EdgeFeatureCache(NamedTuple):
     D_to_m_cache: dict[str, torch.Tensor] | None = None
     Dt_from_m_cache: dict[str, torch.Tensor] | None = None
     edge_src_gate: torch.Tensor | None = None
+    edge_quat: torch.Tensor | None = None
 
 
 def compute_edge_src_gate(
@@ -222,7 +224,7 @@ def build_edge_cache(
     n_radial: int,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
-    use_geometry_rbf_triton: bool = False,
+    build_wigner: bool = True,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from DeePMD padded neighbor list.
@@ -284,9 +286,6 @@ def build_edge_cache(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
-    use_geometry_rbf_triton
-        Whether to allow the standard-path fused Triton geometry/RBF chain
-        ``gather -> vec -> len -> env -> rbf``.
 
     Returns
     -------
@@ -320,57 +319,38 @@ def build_edge_cache(
         )
 
     # === Step 3-5. Edge geometry/RBF chain ===
-    # This segment covers:
     #   gather -> edge_vec -> edge_len -> edge_env -> edge_rbf
-    # The Triton path is only used on the standard non-compile path when the
-    # caller explicitly allows it (descriptor eval/inference path). Bridging
-    # primitives never enter here; they are owned by the sparse-edge path.
     coord_flat = coord.reshape(nf * nall, 3)
-    use_bessel_triton = (
-        use_geometry_rbf_triton
-        and getattr(radial_basis, "basis_type", "bessel") == "bessel"
-    )
-    if use_bessel_triton:
-        with nvtx_range("edge_geometry_rbf_triton"):
-            edge_vec, edge_len, edge_env, edge_rbf = edge_geometry_rbf_triton(
-                coord_flat=coord_flat,
-                center_coord_index=center_coord_index,
-                neighbor_coord_index=neighbor_coord_index,
-                edge_envelope=edge_envelope,
-                radial_basis=radial_basis,
-                eps=eps,
-                inner_clamp=None,
-            )
-    else:
-        # === Step 3. Gather per-edge geometry ===
-        # edge_vec points from center -> neighbor: r_ij = r_j - r_i (in Å).
-        # edge_len is the scalar distance.
-        with nvtx_range("edge_geom"):
-            center_pos = coord_flat.index_select(0, center_coord_index)
-            neighbor_pos = coord_flat.index_select(0, neighbor_coord_index)
-            edge_vec = neighbor_pos - center_pos  # (E, 3)
-            edge_len = safe_norm(edge_vec, eps)  # (E, 1)
+    # === Step 3. Gather per-edge geometry ===
+    # edge_vec points from center -> neighbor: r_ij = r_j - r_i (in Å).
+    # edge_len is the scalar distance.
+    with nvtx_range("edge_geom"):
+        center_pos = coord_flat.index_select(0, center_coord_index)
+        neighbor_pos = coord_flat.index_select(0, neighbor_coord_index)
+        edge_vec = neighbor_pos - center_pos  # (E, 3)
+        edge_len = safe_norm(edge_vec, eps)  # (E, 1)
 
-        # === Step 4. C^3 envelope weight ===
-        # Edges with r >= rcut are not removed from the cache. Their envelope is
-        # exactly zero, so messages vanish naturally while degree normalization
-        # remains smooth at the cutoff boundary.
-        with nvtx_range("envelope"):
-            edge_env = edge_envelope(edge_len)  # (E, 1)
+    # === Step 4. C^3 envelope weight ===
+    # Edges with r >= rcut are not removed from the cache. Their envelope is
+    # exactly zero, so messages vanish naturally while degree normalization
+    # remains smooth at the cutoff boundary.
+    with nvtx_range("envelope"):
+        edge_env = edge_envelope(edge_len)  # (E, 1)
 
-        # === Step 5. Radial basis (envelope already baked in) ===
-        with nvtx_range("radial_basis"):
-            edge_rbf = radial_basis(edge_len)  # (E, n_radial)
+    # === Step 5. Radial basis (envelope already baked in) ===
+    with nvtx_range("radial_basis"):
+        edge_rbf = radial_basis(edge_len)  # (E, n_radial)
 
     # === Step 6. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full = _build_edge_wigner(
+        D_full, Dt_full, edge_quat = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
-        )  # (E, D, D), (E, D, D)
+            build_full=build_wigner,
+        )  # (E, D, D), (E, D, D), (E, 4)
 
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)  # (E, C)
 
@@ -384,6 +364,7 @@ def build_edge_cache(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
     )
 
@@ -407,6 +388,7 @@ def build_edge_cache_from_edges(
     edge_type_keep_mask: EdgeTypeKeepMaskFn,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
+    build_wigner: bool = True,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -472,7 +454,10 @@ def build_edge_cache_from_edges(
     edge_vec = edge_vec.to(dtype=compute_dtype)
     edge_keep_f = edge_keep.to(dtype=compute_dtype).unsqueeze(-1)
     edge_vec = edge_vec * edge_keep_f
-    edge_vec = edge_vec + (1.0 - edge_keep_f) * edge_vec.new_tensor([0.0, 0.0, 1.0])
+    # Masked-out edges (zeroed above) are assigned the canonical +z direction so the
+    # length normalization and quaternion construction remain finite. Padding the
+    # keep-complement into the z channel constructs this term entirely on device.
+    edge_vec = edge_vec + F.pad(1.0 - edge_keep_f, (2, 0))
 
     # === Step 3. Edge length, envelope, and radial basis ===
     with nvtx_range("envelope"):
@@ -487,13 +472,14 @@ def build_edge_cache_from_edges(
 
     # === Step 4. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full = _build_edge_wigner(
+        D_full, Dt_full, edge_quat = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
-        )  # (E, D, D), (E, D, D)
+            build_full=build_wigner,
+        )  # (E, D, D), (E, D, D), (E, 4)
 
     # === Step 5. Edge type features ===
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)
@@ -525,6 +511,7 @@ def build_edge_cache_from_edges(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
     )
@@ -537,7 +524,8 @@ def _build_edge_wigner(
     eps: float,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
-) -> tuple[torch.Tensor, torch.Tensor]:
+    build_full: bool = True,
+) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
     """
     Build packed Wigner-D blocks from edge vectors.
 
@@ -554,11 +542,18 @@ def _build_edge_wigner(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
+    build_full
+        Whether to materialize the full ``(E, D, D)`` Wigner-D blocks. When
+        False (all message-passing blocks take the Cartesian path), only the
+        quaternion is returned and the blocks are ``None``; the geometric
+        initial embedding reconstructs the zonal coupling from the quaternion.
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor]
-        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``.
+    tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]
+        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
+        (or ``None`` when ``build_full`` is False) and the quaternion used to
+        build them with shape ``(E, 4)``.
     """
     # === Step 1. Build edge-aligned quaternions ===
     edge_quat = build_edge_quaternion(
@@ -577,7 +572,10 @@ def _build_edge_wigner(
         edge_quat = quaternion_multiply(quaternion_z_rotation(gamma), edge_quat)
 
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
-    return wigner_calc(edge_quat)
+    if not build_full:
+        return None, None, edge_quat
+    D_full, Dt_full = wigner_calc(edge_quat)
+    return D_full, Dt_full, edge_quat
 
 
 def _finalize_edge_cache(
@@ -589,8 +587,9 @@ def _finalize_edge_cache(
     edge_vec: torch.Tensor,
     edge_rbf: torch.Tensor,
     edge_env: torch.Tensor,
-    D_full: torch.Tensor,
-    Dt_full: torch.Tensor,
+    D_full: torch.Tensor | None,
+    Dt_full: torch.Tensor | None,
+    edge_quat: torch.Tensor,
     deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
 ) -> EdgeFeatureCache:
@@ -614,9 +613,14 @@ def _finalize_edge_cache(
     edge_env
         Smooth edge envelope weights with shape (E, 1).
     D_full
-        Packed Wigner-D matrices with shape (E, D, D).
+        Packed Wigner-D matrices with shape (E, D, D), or None when the
+        full Wigner-D construction is skipped (all-Cartesian model).
     Dt_full
-        Transposed packed Wigner-D matrices with shape (E, D, D).
+        Transposed packed Wigner-D matrices with shape (E, D, D), or None
+        when the full Wigner-D construction is skipped.
+    edge_quat
+        Global-to-local quaternions used to build the Wigner-D matrices with
+        shape (E, 4).
     deg_norm_floor
         Floor added to the envelope-squared degree before the inverse-sqrt
         normalization. A tiny ``eps`` reproduces the legacy behavior; an
@@ -635,9 +639,8 @@ def _finalize_edge_cache(
     with nvtx_range("degree"):
         deg = torch.zeros(n_nodes, dtype=edge_vec.dtype, device=edge_vec.device)  # (N,)
         deg.index_add_(0, dst, edge_env.squeeze(-1).to(dtype=edge_vec.dtype).square())
-        floor_tensor = deg.new_tensor(deg_norm_floor)
         inv_sqrt_deg = rearrange(
-            torch.rsqrt(deg + floor_tensor), "N -> N 1 1"
+            torch.rsqrt(deg + deg_norm_floor), "N -> N 1 1"
         )  # (N, 1, 1)
 
     return EdgeFeatureCache(
@@ -654,6 +657,7 @@ def _finalize_edge_cache(
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=edge_src_gate,
+        edge_quat=edge_quat,
     )
 
 
@@ -688,6 +692,7 @@ def _get_empty_edge_cache(
     """
     empty_long = torch.empty(0, dtype=torch.long, device=device)
     empty_vec = torch.empty(0, 3, dtype=dtype, device=device)
+    empty_quat = torch.empty(0, 4, dtype=dtype, device=device)
     empty_rbf = torch.empty(0, n_radial, dtype=dtype, device=device)
     empty_type_feat = torch.empty(0, n_channel, dtype=dtype, device=device)
     deg = torch.zeros(n_nodes, dtype=dtype, device=device)
@@ -706,6 +711,7 @@ def _get_empty_edge_cache(
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=None,
+        edge_quat=empty_quat,
     )
 
 
@@ -862,15 +868,19 @@ def edge_cache_to_dtype(
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
     _edge_src_gate = cache.edge_src_gate
+    _edge_quat = cache.edge_quat
     D_full: torch.Tensor | None = None
     Dt_full: torch.Tensor | None = None
     edge_src_gate: torch.Tensor | None = None
+    edge_quat: torch.Tensor | None = None
     if _D_full is not None:
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
         Dt_full = _Dt_full.to(dtype=dtype)
     if _edge_src_gate is not None:
         edge_src_gate = _edge_src_gate.to(dtype=dtype)
+    if _edge_quat is not None:
+        edge_quat = _edge_quat.to(dtype=dtype)
 
     return EdgeFeatureCache(
         src=cache.src,
@@ -886,4 +896,5 @@ def edge_cache_to_dtype(
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
         edge_src_gate=edge_src_gate,
+        edge_quat=edge_quat,
     )

@@ -1,104 +1,56 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""TensorFlow geometry helpers used while exporting JAX models through jax2tf.
+
+Keep these helpers free of TensorFlow eager array wrappers. They run inside the
+SavedModel tracing path for ``.savedmodel`` and should stay as small, plain TF
+graph functions that AutoGraph and the TensorFlow serializer can inspect.
+"""
+
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 
 def phys2inter(
-    coord: tnp.ndarray,
-    cell: tnp.ndarray,
-) -> tnp.ndarray:
-    """Convert physical coordinates to internal(direct) coordinates.
-
-    Parameters
-    ----------
-    coord : tnp.ndarray
-        physical coordinates of shape [*, na, 3].
-    cell : tnp.ndarray
-        simulation cell tensor of shape [*, 3, 3].
-
-    Returns
-    -------
-    inter_coord: tnp.ndarray
-        the internal coordinates
-
-    """
+    coord: tf.Tensor,
+    cell: tf.Tensor,
+) -> tf.Tensor:
+    """Convert physical coordinates to internal coordinates."""
     rec_cell = tf.linalg.inv(cell)
-    return tnp.matmul(coord, rec_cell)
+    return tf.matmul(coord, rec_cell)
 
 
 def inter2phys(
-    coord: tnp.ndarray,
-    cell: tnp.ndarray,
-) -> tnp.ndarray:
-    """Convert internal(direct) coordinates to physical coordinates.
-
-    Parameters
-    ----------
-    coord : tnp.ndarray
-        internal coordinates of shape [*, na, 3].
-    cell : tnp.ndarray
-        simulation cell tensor of shape [*, 3, 3].
-
-    Returns
-    -------
-    phys_coord: tnp.ndarray
-        the physical coordinates
-
-    """
-    return tnp.matmul(coord, cell)
+    coord: tf.Tensor,
+    cell: tf.Tensor,
+) -> tf.Tensor:
+    """Convert internal coordinates to physical coordinates."""
+    return tf.matmul(coord, cell)
 
 
 def normalize_coord(
-    coord: tnp.ndarray,
-    cell: tnp.ndarray,
-) -> tnp.ndarray:
-    """Apply PBC according to the atomic coordinates.
-
-    Parameters
-    ----------
-    coord : tnp.ndarray
-        original coordinates of shape [*, na, 3].
-    cell : tnp.ndarray
-        simulation cell shape [*, 3, 3].
-
-    Returns
-    -------
-    wrapped_coord: tnp.ndarray
-        wrapped coordinates of shape [*, na, 3].
-
-    """
+    coord: tf.Tensor,
+    cell: tf.Tensor,
+) -> tf.Tensor:
+    """Apply PBC according to the atomic coordinates."""
     icoord = phys2inter(coord, cell)
-    icoord = tnp.remainder(icoord, 1.0)
+    icoord = tf.math.floormod(icoord, tf.cast(1.0, icoord.dtype))
     return inter2phys(icoord, cell)
 
 
 def to_face_distance(
-    cell: tnp.ndarray,
-) -> tnp.ndarray:
-    """Compute the to-face-distance of the simulation cell.
-
-    Parameters
-    ----------
-    cell : tnp.ndarray
-        simulation cell tensor of shape [*, 3, 3].
-
-    Returns
-    -------
-    dist: tnp.ndarray
-        the to face distances of shape [*, 3]
-
-    """
+    cell: tf.Tensor,
+) -> tf.Tensor:
+    """Compute the to-face-distance of the simulation cell."""
     cshape = tf.shape(cell)
-    dist = b_to_face_distance(tnp.reshape(cell, [-1, 3, 3]))
-    return tnp.reshape(dist, tf.concat([cshape[:-2], [3]], axis=0))
+    dist = b_to_face_distance(tf.reshape(cell, [-1, 3, 3]))
+    return tf.reshape(dist, tf.concat([cshape[:-2], [3]], axis=0))
 
 
-def b_to_face_distance(cell: tnp.ndarray) -> tnp.ndarray:
-    volume = tf.linalg.det(cell)
+def b_to_face_distance(cell: tf.Tensor) -> tf.Tensor:
+    volume = tf.abs(tf.linalg.det(cell))
     c_yz = tf.linalg.cross(cell[:, 1, ...], cell[:, 2, ...])
-    _h2yz = volume / tf.linalg.norm(c_yz, axis=-1)
+    h2yz = volume / tf.linalg.norm(c_yz, axis=-1)
     c_zx = tf.linalg.cross(cell[:, 2, ...], cell[:, 0, ...])
-    _h2zx = volume / tf.linalg.norm(c_zx, axis=-1)
+    h2zx = volume / tf.linalg.norm(c_zx, axis=-1)
     c_xy = tf.linalg.cross(cell[:, 0, ...], cell[:, 1, ...])
-    _h2xy = volume / tf.linalg.norm(c_xy, axis=-1)
-    return tnp.stack([_h2yz, _h2zx, _h2xy], axis=1)
+    h2xy = volume / tf.linalg.norm(c_xy, axis=-1)
+    return tf.stack([h2yz, h2zx, h2xy], axis=1)

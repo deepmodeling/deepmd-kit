@@ -7,6 +7,7 @@ from __future__ import (
 
 import logging
 import re
+import shutil
 import traceback
 from contextlib import (
     nullcontext,
@@ -122,14 +123,21 @@ class BestCheckpointRecord:
     step: int
 
 
-def build_best_checkpoint_glob(best_checkpoint_prefix: str) -> str:
+def build_best_checkpoint_glob(
+    best_checkpoint_prefix: str, best_checkpoint_suffix: str = ".pt"
+) -> str:
     """Build the glob pattern for managed best checkpoints."""
-    return f"{best_checkpoint_prefix}-*.t-*.pt"
+    return f"{best_checkpoint_prefix}-*.t-*{best_checkpoint_suffix}"
 
 
-def build_best_checkpoint_pattern(best_checkpoint_prefix: str) -> re.Pattern[str]:
+def build_best_checkpoint_pattern(
+    best_checkpoint_prefix: str, best_checkpoint_suffix: str = ".pt"
+) -> re.Pattern[str]:
     """Build the regex pattern for managed best checkpoints."""
-    return re.compile(rf"^{re.escape(best_checkpoint_prefix)}-(\d+)\.t-(\d+)\.pt$")
+    return re.compile(
+        rf"^{re.escape(best_checkpoint_prefix)}-(\d+)\.t-(\d+)"
+        rf"{re.escape(best_checkpoint_suffix)}$"
+    )
 
 
 def parse_validation_metric(metric: str) -> tuple[str, str]:
@@ -208,6 +216,7 @@ class FullValidator:
         checkpoint_dir: Path | None = None,
         full_val_file: str | Path | None = None,
         best_checkpoint_prefix: str = BEST_CKPT_PREFIX,
+        best_checkpoint_suffix: str = ".pt",
         metric_name_info_key: str = BEST_METRIC_NAME_INFO_KEY,
         topk_records_info_key: str = TOPK_RECORDS_INFO_KEY,
         stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
@@ -227,9 +236,12 @@ class FullValidator:
         self.topk_records_info_key = topk_records_info_key
         self.stale_state_keys = stale_state_keys
         self.best_checkpoint_prefix = best_checkpoint_prefix
-        self.best_checkpoint_glob = build_best_checkpoint_glob(best_checkpoint_prefix)
+        self.best_checkpoint_suffix = best_checkpoint_suffix
+        self.best_checkpoint_glob = build_best_checkpoint_glob(
+            best_checkpoint_prefix, best_checkpoint_suffix
+        )
         self.best_checkpoint_pattern = build_best_checkpoint_pattern(
-            best_checkpoint_prefix
+            best_checkpoint_prefix, best_checkpoint_suffix
         )
         self.emit_best_save_log = emit_best_save_log
         self.model_eval_context = model_eval_context or nullcontext
@@ -273,6 +285,7 @@ class FullValidator:
         self.topk_records = self._load_topk_records()
         self._sync_state_store()
         if self.rank == 0:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
         # Lazily-populated full test snapshot for LMDB validation. Mixed-nloc
@@ -431,6 +444,16 @@ class FullValidator:
                 yield LmdbTestDataNlocView(lmdb_test_data, nloc)
             return
 
+        if hasattr(validation_data, "_reader"):
+            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
+            for nloc in sorted(lmdb_test_data.nloc_groups.keys()):
+                yield LmdbTestDataNlocView(lmdb_test_data, nloc)
+            return
+
+        if hasattr(validation_data, "data_systems"):
+            yield from validation_data.data_systems
+            return
+
         for dataset in validation_data.systems:
             if not isinstance(dataset, DeepmdDataSetForLoader):
                 raise TypeError(
@@ -439,7 +462,7 @@ class FullValidator:
                 )
             yield dataset.data_system
 
-    def _get_lmdb_test_data_snapshot(self, lmdb_dataset: LmdbDataset) -> LmdbTestData:
+    def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
 
         Reuses the ``type_map`` and previously-registered
@@ -450,12 +473,32 @@ class FullValidator:
         if self._lmdb_test_data is not None:
             return self._lmdb_test_data
 
+        reader = getattr(lmdb_dataset, "_reader", None)
+        lmdb_path = getattr(lmdb_dataset, "lmdb_path", None)
+        if lmdb_path is None and reader is not None:
+            lmdb_path = getattr(reader, "lmdb_path", None)
+        type_map = getattr(lmdb_dataset, "type_map", None)
+        if type_map is None and reader is not None:
+            type_map = getattr(reader, "type_map", None)
+        data_requirements = getattr(lmdb_dataset, "data_requirements", None)
+        if data_requirements is None and reader is not None:
+            data_requirements = getattr(reader, "data_requirements", None)
+        if lmdb_path is None:
+            raise TypeError(
+                "Full validation could not resolve the LMDB path from "
+                f"{type(lmdb_dataset)!r}."
+            )
+        if type_map is None:
+            raise TypeError(
+                "Full validation could not resolve the LMDB type_map from "
+                f"{type(lmdb_dataset)!r}."
+            )
+
         self._lmdb_test_data = LmdbTestData(
-            lmdb_dataset.lmdb_path,
-            type_map=list(lmdb_dataset.type_map),
+            lmdb_path,
+            type_map=list(type_map),
             shuffle_test=False,
         )
-        data_requirements = lmdb_dataset.data_requirements
         if data_requirements:
             self._lmdb_test_data.add_data_requirement(data_requirements)
         return self._lmdb_test_data
@@ -520,7 +563,7 @@ class FullValidator:
                 ),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
-            )
+            ).requires_grad_(True)
             type_input = torch.tensor(
                 atom_types_batch.astype(np.int64),
                 dtype=torch.long,
@@ -661,7 +704,7 @@ class FullValidator:
 
     def _best_checkpoint_name(self, step: int, rank: int) -> str:
         """Build the best-checkpoint filename for one step."""
-        return f"{self.best_checkpoint_prefix}-{step}.t-{rank}.pt"
+        return f"{self.best_checkpoint_prefix}-{step}.t-{rank}{self.best_checkpoint_suffix}"
 
     def _best_checkpoint_path(self, step: int, rank: int) -> Path:
         """Build the best-checkpoint path for one step."""
@@ -672,10 +715,18 @@ class FullValidator:
         best_checkpoints = [
             path
             for path in self.checkpoint_dir.glob(self.best_checkpoint_glob)
-            if path.is_file() and not path.is_symlink()
+            if path.exists() and not path.is_symlink()
         ]
         best_checkpoints.sort(key=lambda path: path.stat().st_mtime)
         return best_checkpoints
+
+    @staticmethod
+    def _remove_checkpoint_path(path: Path) -> None:
+        """Remove one managed checkpoint path, file or directory."""
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
 
     def _expected_topk_checkpoint_names(self) -> dict[int, str]:
         """Return the expected checkpoint filename for each retained step."""
@@ -722,9 +773,9 @@ class FullValidator:
                 temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
         for checkpoint_path in stale_files:
-            checkpoint_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(checkpoint_path)
         for temp_path, final_path in temp_moves:
-            final_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(final_path)
             temp_path.rename(final_path)
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
@@ -733,7 +784,7 @@ class FullValidator:
             self._reconcile_best_checkpoints()
             return
         for checkpoint_path in self._list_best_checkpoints():
-            checkpoint_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(checkpoint_path)
 
     def _raise_if_distributed_error(
         self,

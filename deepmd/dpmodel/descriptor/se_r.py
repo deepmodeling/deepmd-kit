@@ -22,12 +22,14 @@ from deepmd.dpmodel.common import (
     cast_precision,
     get_xp_precision,
     to_numpy_array,
+    to_numpy_dtype,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+    tabulate_fusion,
 )
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -43,6 +45,9 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.tabulate_math import (
+    DPTabulate,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -367,6 +372,79 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         gg = self.embeddings[(ll,)].call(ss)
         return gg
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Enable descriptor compression by tabulating embedding networks."""
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        table = DPTabulate(
+            self,
+            self.neuron,
+            self.type_one_side,
+            self.exclude_types,
+            self.activation_function,
+        )
+        lower, upper = table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        self._store_compress_data(
+            table.data,
+            [table_extrapolate, table_stride_1, table_stride_2, check_frequency],
+            lower,
+            upper,
+        )
+        self.compress = True
+
+    def _store_compress_data(
+        self,
+        table_data: dict[str, Array],
+        table_config: list[int | float],
+        lower: dict[str, int],
+        upper: dict[str, int],
+    ) -> None:
+        """Store tabulated embedding-net data in the descriptor state."""
+        compress_data = []
+        compress_info = []
+        dtype = to_numpy_dtype(self.davg.dtype)
+        for embedding_idx in range(self.ntypes):
+            net = "filter_-1_net_" + str(embedding_idx)
+            if net not in table_data:
+                compress_data.append(np.asarray([], dtype=dtype))
+                compress_info.append(np.asarray([], dtype=dtype))
+                continue
+            compress_data.append(np.asarray(table_data[net], dtype=dtype))
+            compress_info.append(
+                np.asarray(
+                    [
+                        lower[net],
+                        upper[net],
+                        upper[net] * table_config[0],
+                        table_config[1],
+                        table_config[2],
+                        table_config[3],
+                    ],
+                    dtype=dtype,
+                )
+            )
+        self.compress_data = compress_data
+        self.compress_info = compress_info
+
+    def _tabulate_fusion_se_r(
+        self,
+        table: Array,
+        table_info: Array,
+        em_x: Array,
+        last_layer_size: int,
+    ) -> Array:
+        """Pure Array API implementation of tabulate_fusion_se_r forward."""
+        return tabulate_fusion(table, table_info, em_x, last_layer_size)
+
     @cast_precision
     def call(
         self,
@@ -429,14 +507,34 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         rr = xp.astype(rr, xyz_scatter.dtype)
-        for tt in range(self.ntypes):
-            mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
-            tr = rr[:, :, sec[tt] : sec[tt + 1], :]
-            tr = tr * xp.astype(mm[:, :, :, None], tr.dtype)
-            gg = self.cal_g(tr, tt)
-            gg = xp.mean(gg, axis=2)
-            # nf x nloc x ng x 1
-            xyz_scatter += gg * (self.sel[tt] / self.nnei)
+        if self.compress:
+            rr = xp.reshape(rr, (nf * nloc, nnei, 1))
+            exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+            for tt, (compress_data_ii, compress_info_ii) in enumerate(
+                zip(self.compress_data, self.compress_info, strict=True)
+            ):
+                if array_api_compat.size(compress_data_ii) == 0:
+                    continue
+                mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
+                tr = rr[:, sec[tt] : sec[tt + 1], :]
+                tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+                gg = self._tabulate_fusion_se_r(
+                    compress_data_ii,
+                    compress_info_ii,
+                    tr,
+                    ng,
+                )
+                gg = xp.reshape(xp.sum(gg, axis=1), (nf, nloc, ng))
+                xyz_scatter += gg / self.nnei
+        else:
+            for tt in range(self.ntypes):
+                mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
+                tr = rr[:, :, sec[tt] : sec[tt + 1], :]
+                tr = tr * xp.astype(mm[:, :, :, None], tr.dtype)
+                gg = self.cal_g(tr, tt)
+                gg = xp.mean(gg, axis=2)
+                # nf x nloc x ng x 1
+                xyz_scatter += gg * (self.sel[tt] / self.nnei)
 
         res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale

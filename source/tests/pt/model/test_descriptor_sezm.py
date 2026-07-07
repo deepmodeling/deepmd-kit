@@ -10,15 +10,21 @@ from deepmd.pt.model.descriptor.sezm import (
 )
 from deepmd.pt.model.descriptor.sezm_nn import (
     DynamicRadialDegreeMixer,
+    EdgeCartesianTensorProduct,
     ForceEmbedding,
     InnerClamp,
+    NodeCartesianTensorProduct,
     SeZMDirectForceHead,
     SO2Linear,
     WignerDCalculator,
+    build_cartesian_basis,
+    build_edge_cartesian_tensors,
     build_edge_quaternion,
+    build_gie_zonal_index,
     build_m_major_l_index,
     quaternion_multiply,
     quaternion_to_rotation_matrix,
+    safe_norm,
 )
 from deepmd.pt.model.model import (
     get_sezm_model,
@@ -154,6 +160,130 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
 
+    def test_cartesian_config_wiring(self) -> None:
+        """Each Cartesian/mixing config builds the intended submodules.
+
+        Guards against silent fallback: a mis-wired flag would still run and stay
+        equivariant, so the structural assertions are the only safeguard that the
+        requested path is actually taken.
+        """
+        # edge_cartesian replaces the SO(2) core and elides the full Wigner-D.
+        edge_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1], edge_cartesian=True, channels=4, n_focus=2
+            )
+        )
+        self.assertFalse(edge_model._need_full_wigner)
+        for block in edge_model.blocks:
+            conv = block.so2_conv
+            self.assertTrue(conv.edge_cartesian)
+            self.assertTrue(hasattr(conv, "edge_cartesian_tp"))
+            self.assertFalse(hasattr(conv, "so2_linears"))
+
+        # node_cartesian adds a per-node product on top of the SO(2) core, leaving
+        # the per-edge message path (and the full Wigner-D) intact.
+        node_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1], node_cartesian="parity:2", channels=4, n_focus=2
+            )
+        )
+        self.assertTrue(node_model._need_full_wigner)
+        for block in node_model.blocks:
+            tp = block.so2_conv.node_cartesian_tp
+            self.assertIsNotNone(tp)
+            self.assertTrue(tp.symmetric)
+            self.assertEqual(tp.n_layers, 2)
+
+        # mixing_layers=0 without a degree mixer skips the edge-aligned frame.
+        radial_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1],
+                mixing_layers=0,
+                radial_so2_mode="none",
+                channels=4,
+                n_focus=2,
+            )
+        )
+        for block in radial_model.blocks:
+            conv = block.so2_conv
+            self.assertFalse(conv.needs_local_frame)
+            self.assertEqual(len(conv.so2_linears), 0)
+
+    def test_cartesian_rotation_invariance(self) -> None:
+        """Descriptor scalar output is rotation-invariant across Cartesian modes.
+
+        This end-to-end check covers every per-edge and per-node path introduced
+        by the Cartesian options, so it also guards the edge/node engine
+        equivariance within the full pipeline.
+        """
+        dtype = torch.float64
+        coord = torch.tensor(
+            [[0.0, 0.0, 0.0], [0.9, 0.2, 0.1], [0.1, 1.0, 0.3]],
+            dtype=dtype,
+            device=self.device,
+        ).view(1, -1, 3)
+        atype = torch.tensor([[0, 1, 1]], dtype=torch.int32, device=self.device)
+        nlist = torch.tensor(
+            [[[1, 2], [0, 2], [0, 1]]], dtype=torch.int64, device=self.device
+        )
+        rot = quaternion_to_rotation_matrix(
+            _random_quaternion(1, device=self.device, dtype=dtype)
+        )[0]
+        configs = {
+            "edge": {"edge_cartesian": True},
+            "node_default": {"node_cartesian": "default:1"},
+            "node_parity": {"node_cartesian": "parity:2"},
+            "edge_and_node": {"edge_cartesian": True, "node_cartesian": "parity:1"},
+            "mixing0_radial": {"mixing_layers": 0, "radial_so2_mode": "none"},
+            "mixing0_degree": {"mixing_layers": 0, "radial_so2_mode": "degree_channel"},
+        }
+        for name, override in configs.items():
+            with self.subTest(config=name):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        rcut=3.0,
+                        sel=[2, 2],
+                        l_schedule=[2, 2],
+                        channels=4,
+                        n_focus=2,
+                        n_atten_head=1,
+                        precision="float64",
+                        use_amp=False,
+                        random_gamma=False,
+                        **override,
+                    )
+                )
+                model.eval()
+                with torch.no_grad():
+                    desc, *_ = model(coord.reshape(1, -1), atype, nlist)
+                    coord_rot = (rot @ coord.reshape(-1, 3).T).T.reshape(1, -1)
+                    desc_rot, *_ = model(coord_rot, atype, nlist)
+                torch.testing.assert_close(desc, desc_rot, atol=1e-10, rtol=1e-10)
+
+    def test_so3_readout_empty_edge_shrinking_schedule(self) -> None:
+        """so3_readout glu/mlp must handle the empty-edge path.
+
+        With a shrinking ``l_schedule`` and no edges (every atom isolated),
+        ``_forward_blocks`` is skipped so ``x`` keeps the *initial* node degree
+        ``node_ebed_dims[0]``; the readout must truncate it to the final degree
+        ``node_ebed_dims[-1]`` (what ``output_ffn`` is built for) before the FFN.
+        Regression for the readout shape mismatch on isolated atoms.
+        """
+        coord, atype, _ = _tiny_two_atom_system(self.device, dtype=torch.float32)
+        extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+        # all neighbors masked out -> edge_cache.src.numel() == 0 -> blocks skipped
+        nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
+        for readout in ("glu", "mlp"):
+            with self.subTest(so3_readout=readout):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(l_schedule=[2, 1], so3_readout=readout)
+                )
+                desc, *_ = model(
+                    extended_coord, atype, nlist, mapping=None, comm_dict=None
+                )
+                self.assertEqual(desc.shape, (1, 2, 4))
+                self.assertTrue(torch.all(torch.isfinite(desc)))
+
     def test_forward_with_descriptor_variants(self) -> None:
         """Test forward/backward smoke paths for compact descriptor variants."""
         cases = {
@@ -184,9 +314,21 @@ class TestDescrptSeZM(_SeZMTestCase):
                 s2_activation=[False, True],
                 lebedev_quadrature=[False, True],
             ),
+            "message_node_s2": _descriptor_kwargs(
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                message_node_s2=True,
+            ),
             "gaussian_basis": _descriptor_kwargs(
                 channels=4,
                 basis_type="gaussian",
+            ),
+            "extra_node_l": _descriptor_kwargs(
+                channels=4,
+                extra_node_l=1,
+                s2_activation=[False, True],
             ),
             "radial_so2_degree": _descriptor_kwargs(
                 channels=4,
@@ -225,6 +367,7 @@ class TestDescrptSeZM(_SeZMTestCase):
                 precision="float32",
                 seed=123,
                 s2_activation=[False, True],
+                extra_node_l=1,
             ),
             "mixed_so2_attention": _attention_descriptor_kwargs(
                 precision="float32",
@@ -418,6 +561,26 @@ class TestDescrptSeZM(_SeZMTestCase):
                 s2_activation=[False, True],
                 lebedev_quadrature=[False, True],
             ),
+            "message_node_s2": _descriptor_kwargs(
+                precision="float32",
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
+                message_node_s2=True,
+            ),
+            "extra_node_l": _descriptor_kwargs(
+                precision="float32",
+                channels=4,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
+                extra_node_l=1,
+                s2_activation=[False, True],
+            ),
             "radial_so2_degree": _descriptor_kwargs(
                 precision="float32",
                 channels=4,
@@ -440,6 +603,18 @@ class TestDescrptSeZM(_SeZMTestCase):
                 ffn_neurons=8,
                 radial_so2_mode="degree_channel",
                 radial_so2_rank=2,
+            ),
+            "cartesian": _descriptor_kwargs(
+                precision="float32",
+                l_schedule=[2, 1],
+                edge_cartesian=True,
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
             ),
         }
         dtype = PRECISION_DICT["float32"]
@@ -529,28 +704,6 @@ class TestDescrptSeZM(_SeZMTestCase):
         torch.testing.assert_close(desc_default, desc_explicit, atol=1e-6, rtol=1e-6)
         self.assertFalse(torch.allclose(desc_ref, desc_shifted))
         torch.testing.assert_close(desc_ref, desc_restored, atol=1e-6, rtol=1e-6)
-
-    def test_plain_descriptor_deserializes_without_condition_config(self) -> None:
-        """Plain descriptors should not depend on charge/spin condition fields."""
-        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=torch.float32)
-        extended_coord = coord.reshape(1, -1)
-        model = DescrptSeZM(**_descriptor_kwargs(seed=123))
-        self.assertTrue(
-            all("charge_spin_embedding" not in key for key in model.state_dict())
-        )
-        data = model.serialize()
-        data["config"].pop("add_chg_spin_ebd", None)
-        data["config"].pop("default_chg_spin", None)
-
-        restored = DescrptSeZM.deserialize(data)
-        desc_ref, *_ = model(extended_coord, atype, nlist)
-        desc_new, *_ = restored(extended_coord, atype, nlist)
-
-        self.assertFalse(restored.add_chg_spin_ebd)
-        self.assertTrue(
-            all("charge_spin_embedding" not in key for key in restored.state_dict())
-        )
-        torch.testing.assert_close(desc_ref, desc_new, atol=1e-6, rtol=1e-6)
 
     def test_seed_reproducibility(self) -> None:
         """Test that fixed seed produces identical model initialization."""
@@ -696,9 +849,11 @@ class TestWignerDCalculator(_SeZMTestCase):
 
     def test_orthogonality(self) -> None:
         """Test D @ D^T = I for random quaternions."""
-        for dtype, lmax in itertools.product([torch.float64, torch.float32], [1, 3, 6]):
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [1, 3, 5, 6, 8, 10]
+        ):
             atol, rtol = self._get_tols(dtype)
-            wigner = WignerDCalculator(lmax=lmax, dtype=dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
             edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             D_full, Dt_full = wigner(edge_quat)
 
@@ -721,10 +876,12 @@ class TestWignerDCalculator(_SeZMTestCase):
 
     def test_group_property(self) -> None:
         """Test group property in quaternion composition order."""
-        for dtype, lmax in itertools.product([torch.float64, torch.float32], [1, 3, 6]):
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [1, 3, 5, 6, 8, 10]
+        ):
             atol = 1e-10 if dtype == torch.float64 else 5e-4
             rtol = 1e-10 if dtype == torch.float64 else 5e-4
-            wigner = WignerDCalculator(lmax=lmax, dtype=dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
 
             q1 = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             q2 = _random_quaternion(self.batch, device=self.device, dtype=dtype)
@@ -761,7 +918,7 @@ class TestWignerDCalculator(_SeZMTestCase):
 
             edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             rot = quaternion_to_rotation_matrix(edge_quat)
-            wigner = WignerDCalculator(lmax=1, dtype=dtype)
+            wigner = WignerDCalculator(lmax=1, dtype=dtype).to(self.device)
             D_full, Dt_full = wigner(edge_quat)
             D1 = self._extract_l_block(D_full, 1)
             Dt1 = self._extract_l_block(Dt_full, 1)
@@ -782,10 +939,61 @@ class TestWignerDCalculator(_SeZMTestCase):
                 msg=f"l=1 transpose block mismatch for WignerDCalculator, dtype={dtype}",
             )
 
+    def test_zonal_matches_full_wigner_gather(self) -> None:
+        """Test GIE zonal coupling matches the full Wigner-D gather."""
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [0, 1, 3, 5, 6, 8, 10]
+        ):
+            atol, rtol = self._get_tols(dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
+            if lmax < 11:
+                self.assertFalse(hasattr(wigner, "poly_coeffs"))
+            edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
+            _, dt_full = wigner(edge_quat)
+            node_row_index, node_zonal_m0_col_index, _ = build_gie_zonal_index(
+                lmax,
+                device=self.device,
+            )
+            expected = dt_full[:, node_row_index, node_zonal_m0_col_index]
+            actual = wigner.forward_zonal(edge_quat)
+            torch.testing.assert_close(actual, expected, atol=atol, rtol=rtol)
+            if lmax >= 2:
+                lmin = 2
+                suffix_start = lmin * lmin - 1
+                actual_suffix = wigner.forward_zonal(edge_quat, lmin=lmin)
+                torch.testing.assert_close(
+                    actual_suffix,
+                    expected[:, suffix_start:],
+                    atol=atol,
+                    rtol=rtol,
+                )
+
+    def test_special_blocks_match_generic_reference_on_cpu(self) -> None:
+        """Test specialized l=2..10 Wigner blocks against the generic reference."""
+        device = torch.device("cpu")
+        dtype = torch.float64
+        edge_quat = _random_quaternion(4, device=device, dtype=dtype)
+        wigner = WignerDCalculator(lmax=10, dtype=dtype).to(device)
+        d_full, _ = wigner(edge_quat)
+        reference = WignerDCalculator._compute_generic_reference_blocks(
+            edge_quat,
+            lmax=10,
+            dtype=dtype,
+            device=device,
+        )
+        for degree in range(2, 11):
+            torch.testing.assert_close(
+                self._extract_l_block(d_full, degree),
+                reference[degree],
+                atol=1.0e-12,
+                rtol=1.0e-10,
+                msg=f"Special Wigner block mismatch for l={degree}",
+            )
+
     def test_pole_path_gradient_matches_finite_difference(self) -> None:
         """Check one pole-crossing Wigner probe against finite differences."""
         for dtype in [torch.float64, torch.float32]:
-            wigner = WignerDCalculator(lmax=6, dtype=dtype)
+            wigner = WignerDCalculator(lmax=6, dtype=dtype).to(self.device)
             atol = 5.0e-8 if dtype == torch.float64 else 2.0e-6
             rtol = 1.0e-6 if dtype == torch.float64 else 2.0e-4
             for sign in [1.0, -1.0]:
@@ -823,7 +1031,7 @@ class TestWignerDCalculator(_SeZMTestCase):
     def test_y_crossing_overlap_has_no_large_wigner_jump(self) -> None:
         """Check chart-overlap continuity for a path that crosses y=0."""
         for dtype in [torch.float64, torch.float32]:
-            wigner = WignerDCalculator(lmax=4, dtype=dtype)
+            wigner = WignerDCalculator(lmax=4, dtype=dtype).to(self.device)
             max_allowed = 1.0e-2 if dtype == torch.float64 else 1.5e-2
             y_vals = torch.tensor(
                 [-1.0e-3, -5.0e-4, -1.0e-4, 0.0, 1.0e-4, 5.0e-4, 1.0e-3],
@@ -1015,6 +1223,146 @@ class TestSO2LinearEquivariance(_SeZMTestCase):
                 torch.testing.assert_close(lhs, rhs, atol=1e-5, rtol=1e-5)
 
 
+class TestCartesianTensorProduct(_SeZMTestCase):
+    """Test the Cartesian rank-2 tensor-product building blocks."""
+
+    def test_basis_intertwines_wigner(self) -> None:
+        """cart(D @ sh) == R cart(sh) R^T links Wigner-D to Cartesian rotation.
+
+        Guards the hand-written sign/ordering convention of
+        ``build_cartesian_basis``: the change of basis must intertwine the packed
+        Wigner-D rotation with the Cartesian conjugation ``X -> R X R^T``.
+        """
+        for lmax in (1, 2):
+            dim = (lmax + 1) ** 2
+            basis = build_cartesian_basis(lmax, dtype=torch.float64, device=self.device)
+            wigner = WignerDCalculator(lmax=lmax, dtype=torch.float64).to(self.device)
+            quat = _random_quaternion(6, device=self.device, dtype=torch.float64)
+            d_full, _ = wigner(quat)
+            rot = quaternion_to_rotation_matrix(quat)
+            sh = torch.randn(6, dim, dtype=torch.float64, device=self.device)
+            cart = torch.einsum("bd,dij->bij", sh, basis)
+            lhs = torch.einsum(
+                "bd,dij->bij", torch.einsum("bde,be->bd", d_full, sh), basis
+            )
+            rhs = rot @ cart @ rot.transpose(-1, -2)
+            torch.testing.assert_close(lhs, rhs, atol=1e-9, rtol=1e-9)
+
+    def test_edge_cartesian_matches_dense_reference(self) -> None:
+        """Channel-shared edge evaluation equals the naive per-channel ``Y @ T_e``.
+
+        Covers the ``mixing_layers > 0`` stack and the ``mixing_layers == 0``
+        single-modulation path; equivariance of the edge path is covered
+        end-to-end by ``test_cartesian_rotation_invariance``.
+        """
+        for lmax in (1, 2):
+            for n_layers in (0, 3):
+                dim = (lmax + 1) ** 2
+                n_focus, focus_dim, n_edge = 2, 4, 16
+                width = n_focus * focus_dim
+                engine = EdgeCartesianTensorProduct(
+                    lmax=lmax,
+                    focus_dim=focus_dim,
+                    n_focus=n_focus,
+                    n_layers=n_layers,
+                    activation_function="silu",
+                    mlp_bias=True,
+                    eps=1e-7,
+                    dtype=torch.float64,
+                    seed=7,
+                    trainable=True,
+                ).to(self.device)
+                x = torch.randn(
+                    n_edge, dim, width, dtype=torch.float64, device=self.device
+                )
+                edge_vec = torch.randn(
+                    n_edge, 3, dtype=torch.float64, device=self.device
+                )
+                rad = torch.randn(
+                    n_edge, lmax + 1, width, dtype=torch.float64, device=self.device
+                )
+                out = engine(x, edge_vec, rad)
+                ref = self._dense_cartesian_reference(engine, x, edge_vec, rad)
+                torch.testing.assert_close(out, ref, atol=1e-11, rtol=1e-11)
+
+    @staticmethod
+    def _dense_cartesian_reference(
+        engine: EdgeCartesianTensorProduct,
+        x: torch.Tensor,
+        edge_vec: torch.Tensor,
+        rad: torch.Tensor,
+    ) -> torch.Tensor:
+        """Reference Cartesian product via explicit per-channel ``Y @ T_e``."""
+        n_edge = x.shape[0]
+        f, cf = engine.n_focus, engine.focus_dim
+        basis = build_cartesian_basis(engine.lmax, dtype=x.dtype, device=x.device)
+        r_hat = edge_vec / safe_norm(edge_vec, engine.eps)
+        a0, s0 = build_edge_cartesian_tensors(r_hat)
+        eye = torch.eye(3, dtype=x.dtype, device=x.device) / math.sqrt(3.0)
+        a0 = a0 / math.sqrt(2.0)
+        f_iso = rad[:, 0, :].reshape(n_edge, f, cf, 1, 1)
+        f_aniso = rad[:, 1, :].reshape(n_edge, f, cf, 1, 1)
+        t_e = f_iso * eye + f_aniso * a0[:, None, None, :, :]
+        if engine.lmax == 2:
+            s0 = s0 / math.sqrt(2.0 / 3.0)
+            f_sym = rad[:, 2, :].reshape(n_edge, f, cf, 1, 1)
+            t_e = t_e + f_sym * s0[:, None, None, :, :]
+
+        def modulate(coeff: torch.Tensor) -> torch.Tensor:
+            cart = torch.einsum("edfc,dij->efcij", coeff, basis)
+            return torch.einsum("efcij,dij->edfc", torch.matmul(cart, t_e), basis)
+
+        h = x.reshape(n_edge, engine.ebed_dim, f, cf)
+        if engine.n_layers == 0:
+            # Single modulation ``x @ T_e`` with no learnable channel-mixing layer.
+            return modulate(h).reshape(n_edge, engine.ebed_dim, f * cf)
+        for linear, activation in zip(engine.linears, engine.activations, strict=True):
+            h = h + activation(modulate(linear(h)))
+        return h.reshape(n_edge, engine.ebed_dim, f * cf)
+
+    def test_node_engine_rotation_equivariance(self) -> None:
+        """NodeCartesianTensorProduct commutes with a global Wigner-D rotation."""
+        for lmax in (1, 2):
+            for symmetric in (False, True):
+                dim = (lmax + 1) ** 2
+                n_focus, focus_dim, n_node = 2, 4, 16
+                width = n_focus * focus_dim
+                engine = NodeCartesianTensorProduct(
+                    lmax=lmax,
+                    focus_dim=focus_dim,
+                    n_focus=n_focus,
+                    n_layers=3,
+                    symmetric=symmetric,
+                    activation_function="silu",
+                    mlp_bias=True,
+                    dtype=torch.float64,
+                    seed=7,
+                    trainable=True,
+                ).to(self.device)
+                message = torch.randn(
+                    n_node, dim, width, dtype=torch.float64, device=self.device
+                )
+                node = torch.randn(
+                    n_node, dim, width, dtype=torch.float64, device=self.device
+                )
+                wigner = WignerDCalculator(lmax=lmax, dtype=torch.float64).to(
+                    self.device
+                )
+                quat = _random_quaternion(1, device=self.device, dtype=torch.float64)
+                d_mat = wigner(quat)[0][0]  # (D, D), one shared global rotation
+                out = engine(message, node)
+                out_rot = engine(
+                    torch.einsum("ij,njc->nic", d_mat, message),
+                    torch.einsum("ij,njc->nic", d_mat, node),
+                )
+                torch.testing.assert_close(
+                    out_rot,
+                    torch.einsum("ij,njc->nic", d_mat, out),
+                    atol=1e-9,
+                    rtol=1e-9,
+                )
+
+
 class TestInnerClamp(_SeZMTestCase):
     """Test InnerClamp C3-continuous septic Hermite clamping."""
 
@@ -1183,6 +1531,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int = 1,
+        edge_cartesian: bool = False,
         bridging_method: str = "none",
         bridging_r_inner: float = 0.8,
         bridging_r_outer: float = 1.2,
@@ -1202,7 +1551,8 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 "n_radial": 6,
                 "radial_mlp": [16],
                 "use_env_seed": True,
-                "l_schedule": [1, 0],
+                "edge_cartesian": edge_cartesian,
+                "l_schedule": [2, 1] if edge_cartesian else [1, 0],
                 "mmax": 1,
                 "so2_norm": False,
                 "so2_layers": 1,
@@ -1258,6 +1608,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int = 1,
+        edge_cartesian: bool = False,
         bridging_method: str = "none",
         bridging_r_inner: float = 0.8,
         bridging_r_outer: float = 1.2,
@@ -1268,6 +1619,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 n_atten_head,
                 use_amp=use_amp,
                 n_focus=n_focus,
+                edge_cartesian=edge_cartesian,
                 bridging_method=bridging_method,
                 bridging_r_inner=bridging_r_inner,
                 bridging_r_outer=bridging_r_outer,
@@ -1401,12 +1753,14 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int,
+        edge_cartesian: bool = False,
     ) -> None:
         """Check that the non-bridged near-cutoff probe keeps one smooth extremum."""
         model = self._build_random_weight_model(
             n_atten_head,
             use_amp=use_amp,
             n_focus=n_focus,
+            edge_cartesian=edge_cartesian,
         )
         displacements, energies = self._scan_total_energy_curve(
             model,
@@ -1429,45 +1783,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
             ),
         )
 
-    def _assert_bridged_boundary_energy_curve_is_smooth(
-        self,
-        n_atten_head: int,
-        *,
-        use_amp: bool,
-        n_focus: int,
-        nearest_distance: float,
-        boundary_label: str,
-    ) -> None:
-        """Check that one bridged boundary probe keeps one smooth minimum."""
-        model = self._build_random_weight_model(
-            n_atten_head,
-            use_amp=use_amp,
-            n_focus=n_focus,
-            bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
-        )
-        displacements, energies = self._scan_total_energy_curve(
-            model,
-            nearest_distance=nearest_distance,
-        )
-        self.assertTrue(torch.isfinite(energies).all().item())
-
-        stats = self._collect_curve_statistics(energies, displacements)
-        self._assert_curve_has_usable_signal(
-            stats,
-            label=f"Bridged {boundary_label} (use_amp={use_amp}, n_focus={n_focus})",
-            n_atten_head=n_atten_head,
-        )
-        self.assertEqual(
-            stats["curve_kind"],
-            "minimum",
-            (
-                f"Bridged {boundary_label} probe should form one symmetric repulsive bowl "
-                f"for n_atten_head={n_atten_head}, use_amp={use_amp}, n_focus={n_focus}: {stats}"
-            ),
-        )
-
     def test_scaled_cutoff_near_energy_curve_is_smooth_across_attention_modes(
         self,
     ) -> None:
@@ -1484,41 +1799,90 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                             n_focus=n_focus,
                         )
 
-    def test_scaled_bridging_inner_energy_curve_is_smooth_across_attention_modes(
-        self,
-    ) -> None:
-        """Check the bridged near-r_inner PES shape across attention and AMP modes."""
-        for use_amp in (False, True):
-            for n_atten_head in (0, 1, 2):
-                for n_focus in (1, 2):
-                    with self.subTest(
-                        n_atten_head=n_atten_head, use_amp=use_amp, n_focus=n_focus
-                    ):
-                        self._assert_bridged_boundary_energy_curve_is_smooth(
-                            n_atten_head,
-                            use_amp=use_amp,
-                            n_focus=n_focus,
-                            nearest_distance=self.BRIDGING_R_INNER,
-                            boundary_label="r_inner",
-                        )
+    def test_cartesian_near_cutoff_energy_curve_is_smooth(self) -> None:
+        """The Cartesian path keeps a single smooth near-cutoff PES extremum."""
+        for n_atten_head in (0, 1):
+            for n_focus in (1, 2):
+                with self.subTest(n_atten_head=n_atten_head, n_focus=n_focus):
+                    self._assert_cutoff_near_energy_curve_is_smooth(
+                        n_atten_head,
+                        use_amp=False,
+                        n_focus=n_focus,
+                        edge_cartesian=True,
+                    )
 
-    def test_scaled_bridging_outer_energy_curve_is_smooth_across_attention_modes(
+    def _assert_bridging_force_consistent_across_switch(
         self,
+        model: torch.nn.Module,
+        *,
+        eps: float = 1.0e-5,
     ) -> None:
-        """Check the bridged near-r_outer PES shape across attention and AMP modes."""
+        """Assert the bridged force matches a finite difference of the energy.
+
+        A finite, isolated cluster keeps the neighbor count bounded and equal to
+        the physical neighbors within ``rcut``, so the check is independent of
+        the periodic-image count and of ``sel``.  Atom 1 slides along ``x`` from
+        below ``r_inner`` to above ``r_outer`` while the spectator atoms stay
+        beyond ``r_outer``; if the ``BridgingSwitch`` blend kinked at either
+        boundary, the analytical force (``-dE/dx``) would diverge from the
+        central finite difference there.
+        """
+        distances = torch.linspace(0.70, 1.30, 25, dtype=self.dtype, device=self.device)
+        # Isolated cluster: atom 0 anchor, atom 1 probe (slides on x), spectators
+        # fixed beyond r_outer but inside rcut so only the probe crosses a switch.
+        template = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 2.6, 0.0],
+                [0.0, 0.0, 2.8],
+                [-3.0, 0.2, 0.0],
+            ],
+            dtype=self.dtype,
+            device=self.device,
+        )
+        atype = torch.tensor([[0, 1, 0, 1, 0]], dtype=torch.int32, device=self.device)
+        # Three coordinate frames per scan point: the probe distance and its
+        # +/- eps neighbors for a central difference of the total energy.
+        offsets = torch.tensor([0.0, eps, -eps], dtype=self.dtype, device=self.device)
+        probe_x = (distances.unsqueeze(1) + offsets.unsqueeze(0)).reshape(-1)
+        n_frame = probe_x.shape[0]
+        coord = template.unsqueeze(0).repeat(n_frame, 1, 1)
+        coord[:, 1, 0] = probe_x
+        result = model(coord, atype.expand(n_frame, -1), box=None)
+        energy = result["energy"][:, 0].reshape(-1, 3)
+        self.assertTrue(torch.isfinite(energy).all().item())
+        fd_force = -(energy[:, 1] - energy[:, 2]) / (2.0 * eps)
+        analytical_force = result["force"][::3, 1, 0]
+        torch.testing.assert_close(analytical_force, fd_force, atol=1.0e-6, rtol=1.0e-4)
+        # Below r_inner the gate freezes the network term and the ZBL repulsion
+        # dominates, so the closest probe must be pushed outward (+x).
+        self.assertGreater(
+            analytical_force[0].item(),
+            0.0,
+            "bridged short-range force should be repulsive",
+        )
+
+    def test_bridging_force_consistent_across_switch_boundaries(self) -> None:
+        """The bridged total energy stays conservative and C1-smooth across both
+        switch boundaries on a bounded, sel-independent isolated cluster, and is
+        repulsive at short range.
+        """
         for use_amp in (False, True):
             for n_atten_head in (0, 1, 2):
                 for n_focus in (1, 2):
                     with self.subTest(
                         n_atten_head=n_atten_head, use_amp=use_amp, n_focus=n_focus
                     ):
-                        self._assert_bridged_boundary_energy_curve_is_smooth(
+                        model = self._build_random_weight_model(
                             n_atten_head,
                             use_amp=use_amp,
                             n_focus=n_focus,
-                            nearest_distance=self.BRIDGING_R_OUTER,
-                            boundary_label="r_outer",
+                            bridging_method="ZBL",
+                            bridging_r_inner=self.BRIDGING_R_INNER,
+                            bridging_r_outer=self.BRIDGING_R_OUTER,
                         )
+                        self._assert_bridging_force_consistent_across_switch(model)
 
 
 class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):

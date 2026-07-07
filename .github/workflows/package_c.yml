@@ -21,8 +21,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - tensorflow_build_version: "2.20"
-            tensorflow_version: "==2.20.*"
+          - package_c_runtime_dependency_pre_exclude_regexes: 'libtorch.*\.so.*;libc10.*\.so.*;libshm\.so.*;libkineto\.so.*;libbackend_with_compiler\.so.*;libcaffe2.*\.so.*;libcuda.*\.so.*;libcudart.*\.so.*;libcublas.*\.so.*;libcufft.*\.so.*;libcufile.*\.so.*;libcupti.*\.so.*;libcurand.*\.so.*;libcusolver.*\.so.*;libcusparse.*\.so.*;libnv.*\.so.*;libcudnn.*\.so.*;libnccl.*\.so.*'
+            package_c_runtime_dependency_post_exclude_regexes: '.*/libtorch.*\.so.*;.*/libc10.*\.so.*;.*/libshm\.so.*;.*/libkineto\.so.*;.*/libbackend_with_compiler\.so.*;.*/libcaffe2.*\.so.*;.*/libcuda.*\.so.*;.*/libcudart.*\.so.*;.*/libcublas.*\.so.*;.*/libcufft.*\.so.*;.*/libcufile.*\.so.*;.*/libcupti.*\.so.*;.*/libcurand.*\.so.*;.*/libcusolver.*\.so.*;.*/libcusparse.*\.so.*;.*/libnv.*\.so.*;.*/libcudnn.*\.so.*;.*/libnccl.*\.so.*'
             filename: libdeepmd_c.tar.gz
     steps:
       - name: Free Disk Space (Ubuntu)
@@ -35,14 +35,36 @@ jobs:
           large-packages: true
           swap-storage: true
           docker-images: true
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Package C library
         run: ./source/install/docker_package_c.sh
         env:
-          TENSORFLOW_VERSION: ${{ matrix.tensorflow_version }}
-          TENSORFLOW_BUILD_VERSION: ${{ matrix.tensorflow_build_version }}
+          ENABLE_PYTORCH: "TRUE"
+          PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES: ${{ matrix.package_c_runtime_dependency_pre_exclude_regexes }}
+          PACKAGE_C_RUNTIME_DEPENDENCY_POST_EXCLUDE_REGEXES: ${{ matrix.package_c_runtime_dependency_post_exclude_regexes }}
+      - name: Check C library package contents
+        run: |
+          tar -tzf libdeepmd_c.tar.gz | tee libdeepmd_c.contents
+          grep -q 'libdeepmd_c/lib/libdeepmd_backend_tf.so' libdeepmd_c.contents
+          grep -q 'libdeepmd_c/lib/libdeepmd_backend_pt.so' libdeepmd_c.contents
+          grep -q 'libdeepmd_c/lib/libdeepmd_backend_ptexpt.so' libdeepmd_c.contents
+          grep -q 'libdeepmd_c/lib/libdeepmd_op_pt.so' libdeepmd_c.contents
+          grep -q 'libdeepmd_c/download_libtorch.sh' libdeepmd_c.contents
+          if grep -E 'libdeepmd_c/lib/(libtorch|libc10|libshm|libkineto|libbackend_with_compiler|libcaffe2|libcuda|libcudart|libcublas|libcufft|libcufile|libcupti|libcurand|libcusolver|libcusparse|libnv|libcudnn|libnccl)' libdeepmd_c.contents; then
+            echo "PyTorch/CUDA runtime libraries must not be bundled in libdeepmd_c.tar.gz"
+            exit 1
+          fi
+      - name: Note external PyTorch runtime
+        run: |
+          libtorch_url=$(tar -xOf libdeepmd_c.tar.gz libdeepmd_c/download_libtorch.sh | sed -n 's/^LIBTORCH_DOWNLOAD_URL="\(.*\)"$/\1/p')
+          {
+            echo "PyTorch support was built into the C package, but PyTorch runtime libraries are not bundled."
+            echo "Download matching libtorch from: ${libtorch_url}"
+            echo "Or run ./download_libtorch.sh after extracting libdeepmd_c.tar.gz."
+            echo "The PyTorch version must match the build version exactly; the CUDA variant may be omitted only when compatible."
+          } >> "$GITHUB_STEP_SUMMARY"
       - run: cp libdeepmd_c.tar.gz ${{ matrix.filename }}
         if: matrix.filename != 'libdeepmd_c.tar.gz'
       # for download and debug
@@ -53,6 +75,8 @@ jobs:
           path: ${{ matrix.filename }}
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
+        env:
+          CHECK_PYTORCH_RUNTIME: "1"
       - name: Release
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
@@ -63,7 +87,7 @@ jobs:
     needs: [build_c]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:

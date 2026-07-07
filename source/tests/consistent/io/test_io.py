@@ -146,6 +146,7 @@ class IOTest:
         for backend_name, suffix_idx in (
             # unfortunately, jax2tf cannot work with tf v1 behaviors
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
+            ("tf2", 0) if DP_TEST_TF2_ONLY else (None, None),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
@@ -156,11 +157,14 @@ class IOTest:
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(
-                prefix + backend.suffixes[suffix_idx], reference_data
-            )
-            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
+            model_file = prefix + backend.suffixes[suffix_idx]
+            self.save_data_to_model(model_file, reference_data)
+            deep_eval = DeepEval(model_file)
             self.assertIsInstance(deep_eval.get_model_def_script(), dict)
+            if not model_file.endswith((".savedmodel", ".savedmodeltf")):
+                # SavedModel formats store an executable graph, not a lossless model dict.
+                serialized_data = self.get_data_from_model(model_file)
+                np.testing.assert_equal(deep_eval.serialize(), serialized_data["model"])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:

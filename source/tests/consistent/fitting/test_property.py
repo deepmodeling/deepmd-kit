@@ -24,8 +24,9 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -62,17 +63,63 @@ else:
     PropertyFittingStrict = object
 
 PropertyFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import PropertyFittingNet as PropertyFittingTF2
+else:
+    PropertyFittingTF2 = object
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
-    (True, False),  # mixed_types
-    (0, 1),  # numb_fparam
-    (0, 1),  # numb_aparam
-    (1, 3),  # task_dim
-    (True, False),  # intensive
+PROPERTY_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
+    "numb_fparam",
+    "numb_aparam",
+    "task_dim",
+    "intensive",
 )
+
+PROPERTY_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+    "numb_fparam": 0,
+    "numb_aparam": 0,
+    "task_dim": 1,
+    "intensive": True,
+}
+
+
+def property_fitting_case(**overrides: Any) -> tuple:
+    case = PROPERTY_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in PROPERTY_FITTING_CASE_FIELDS)
+
+
+PROPERTY_FITTING_CURATED_CASES = (
+    property_fitting_case(),
+    property_fitting_case(resnet_dt=False),
+    property_fitting_case(precision="float32"),
+    property_fitting_case(mixed_types=False),
+    property_fitting_case(numb_fparam=1),
+    property_fitting_case(numb_aparam=1),
+    property_fitting_case(task_dim=3),
+    property_fitting_case(intensive=False),
+    property_fitting_case(
+        resnet_dt=False,
+        precision="float32",
+        mixed_types=False,
+        numb_fparam=1,
+        numb_aparam=1,
+        task_dim=3,
+        intensive=False,
+    ),
+)
+
+
+@parameterized_cases(*PROPERTY_FITTING_CURATED_CASES)
 class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -117,12 +164,14 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
 
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def skip_pt_expt(self) -> bool:
         return CommonTest.skip_pt_expt
 
     tf_class = PropertyFittingTF
+    tf2_class = PropertyFittingTF2
     dp_class = PropertyFittingDP
     pt_class = PropertyFittingPT
     pt_expt_class = PropertyFittingPTExpt
@@ -249,6 +298,25 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
         )[dp_obj.var_name]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            task_dim,
+            intensive,
+        ) = self.param
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam) if numb_fparam else None,
+                aparam=to_tensorflow_array(self.aparam) if numb_aparam else None,
+            )[tf2_obj.var_name]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (

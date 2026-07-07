@@ -28,9 +28,10 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -48,6 +49,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.ener import EnerModel as EnergyModelTF
 else:
     EnergyModelTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.ener_model import EnergyModel as EnergyModelTF2
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+else:
+    EnergyModelTF2 = None
 if INSTALLED_PD:
     from deepmd.pd.model.model import get_model as get_model_pd
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
@@ -74,16 +80,28 @@ else:
     EnergyModelJAX = None
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
+MODEL_EXCLUSION_CURATED_CASES = (
+    ([], []),
+    ([], [1]),
+    ([[0, 1]], []),
+    ([[0, 1]], [1]),
 )
+
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
+)
+
+ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES = (
+    ("no_chg_spin",),
+    ("explicit_chg_spin",),
+    ("default_chg_spin",),
+)
+
+
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -119,6 +137,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
@@ -153,6 +172,13 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         )
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2 or (
+            self.data["pair_exclude_types"] != []
+            or self.data["atom_exclude_types"] != []
+        )
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -168,6 +194,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -250,6 +278,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -290,6 +327,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -302,16 +340,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError(f"Unknown backend: {backend}")
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
-)
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -347,6 +376,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pt_expt_class = EnergyModelPTExpt
@@ -377,6 +407,13 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         return True
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2 or (
+            self.data["pair_exclude_types"] != []
+            or self.data["atom_exclude_types"] != []
+        )
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -390,6 +427,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -490,6 +529,18 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return {
+            kk: to_numpy_array(vv)
+            for kk, vv in tf2_obj.call_lower(
+                self.extended_coord,
+                self.extended_atype,
+                self.nlist,
+                self.mapping,
+                do_atomic_virial=True,
+            ).items()
+        }
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return {
             kk: to_numpy_array(vv)
@@ -535,6 +586,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif backend in {
             self.RefBackend.PT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -1669,10 +1721,7 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
-)
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.
@@ -2015,9 +2064,7 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
             compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
 
 
-@parameterized(
-    ("no_chg_spin", "explicit_chg_spin", "default_chg_spin"),  # cs_mode
-)
+@parameterized_cases(*ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerChgSpinEbdFparam(unittest.TestCase):
     """Test dp/pt/pt_expt/pd model forward consistency for add_chg_spin_ebd with three modes.

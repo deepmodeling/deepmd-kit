@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.jax.atomic_model.linear_atomic_model import (
+    DPZBLLinearEnergyAtomicModel,
+)
+
 from .dipole_model import (
     DipoleModel,
 )
 from .dos_model import (
     DOSModel,
-)
-from .dp_zbl_model import (
-    DPZBLLinearEnergyAtomicModel,
 )
 from .ener_model import (
     EnergyModel,

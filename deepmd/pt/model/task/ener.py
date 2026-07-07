@@ -204,6 +204,7 @@ class EnergyFittingNetDirect(Fitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 
@@ -215,6 +216,10 @@ class EnergyFittingNetDirect(Fitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
+        if return_atomic_feature:
+            raise NotImplementedError(
+                "EnergyFittingNetDirect does not expose an atomic feature."
+            )
         nframes, nloc, _ = inputs.size()
         if self.use_tebd:
             # if atype_tebd is not None:

@@ -13,6 +13,7 @@ from __future__ import (
 import contextlib
 import copy
 import json
+import os
 import tempfile
 import unittest
 import zipfile
@@ -28,15 +29,69 @@ from unittest import (
 
 import numpy as np
 import torch
+from packaging.version import parse as parse_version
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
     _build_dynamic_shapes,
+    _build_with_comm_dynamic_shapes,
     _collect_metadata,
+    _make_comm_sample_inputs,
     _make_sample_inputs,
     _resolve_nframes,
     freeze_sezm_to_pt2,
     is_sezm_checkpoint,
 )
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
+)
+
+_COMM_KEYS = (
+    "send_list",
+    "send_proc",
+    "recv_proc",
+    "send_num",
+    "recv_num",
+    "communicator",
+    "nlocal",
+    "nghost",
+)
+
+
+def _eager_parallel_forward(
+    model: torch.nn.Module,
+    comm_sample: tuple,
+) -> dict[str, torch.Tensor]:
+    """Reference parallel lower forward driven by the with-comm sample tensors."""
+    (
+        coord,
+        atype,
+        extended_atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    ) = comm_sample[:10]
+    comm_dict = dict(zip(_COMM_KEYS, comm_sample[10:18], strict=True))
+    eager_coord = coord.detach().clone().requires_grad_(True)
+    return model.forward_common_lower(
+        eager_coord,
+        atype,
+        edge_index,
+        edge_vec.detach(),
+        edge_scatter_index,
+        edge_mask,
+        fparam=fparam,
+        aparam=aparam,
+        comm_dict=comm_dict,
+        extended_atype=extended_atype,
+        charge_spin=charge_spin,
+        use_compile=False,
+    )
+
+
 from deepmd.pt.model.model import (
     get_model,
 )
@@ -60,6 +115,15 @@ _REQUIRED_OUTPUT_KEYS = {
     "energy_derv_c",
     "energy_derv_c_redu",
 }
+_TORCH_VERSION = parse_version(torch.__version__)
+_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
+    (2, 11),
+    (2, 12),
+}
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile/export path is only supported on torch 2.11.x and "
+    f"2.12.x; current torch is {torch.__version__}."
+)
 
 
 def _tiny_sezm_model_params() -> dict:
@@ -194,21 +258,32 @@ def _eager_forward(
     sample_inputs: tuple,
 ) -> dict[str, torch.Tensor]:
     """Mirror the trace closure: fresh leaf coord + ``requires_grad=True``."""
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin = sample_inputs
+    (
+        ext_coord,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    ) = sample_inputs
     eager_coord = ext_coord.detach().clone().requires_grad_(True)
     return model.forward_common_lower(
         eager_coord,
-        ext_atype,
-        nlist,
-        mapping=mapping,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
         fparam=fparam,
         aparam=aparam,
         charge_spin=charge_spin,
-        do_atomic_virial=True,
-        extra_nlist_sort=model.need_sorted_nlist_for_lower(),
     )
 
 
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     """Bitwise trace / export / ``.pte`` round-trip parity (``rtol=1e-10``).
 
@@ -216,18 +291,24 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     it must reproduce the eager result exactly.  Drift here implies a
     bug in ``forward_common_lower_exportable`` or the dynamic-shape
     spec, not in AOTI.  The pipeline is built once per class because
-    ``make_fx`` and ``.pte`` round-trip dominate wall time.
+    ``make_fx`` and ``.pte`` round-trip dominate wall time.  Subclasses
+    set ``TRITON_INFER`` to drive the identical pipeline through the
+    opt-in Triton inference kernels.
     """
+
+    # ``DP_TRITON_INFER`` policy applied while the model is constructed.
+    TRITON_INFER = "0"
 
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
         try:
-            cls.model = _build_tiny_sezm_model()
-            cls.sample_inputs = _make_sample(cls.model, nloc=7, start=2)
-            cls.traced, cls.loaded, cls._pte_tmp = cls._build_pipeline(
-                cls.model, cls.sample_inputs
-            )
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": cls.TRITON_INFER}):
+                cls.model = _build_tiny_sezm_model()
+                cls.sample_inputs = _make_sample(cls.model, nloc=7, start=2)
+                cls.traced, cls.loaded, cls._pte_tmp = cls._build_pipeline(
+                    cls.model, cls.sample_inputs
+                )
         except Exception:
             super().tearDownClass()
             raise
@@ -255,7 +336,6 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     ]:
         traced = model.forward_common_lower_exportable(
             *sample_inputs,
-            do_atomic_virial=True,
         )
         exported = torch.export.export(
             traced,
@@ -278,11 +358,15 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
         *,
         context: str,
     ) -> None:
-        test_pairs = (
-            list(test_dict.items())
-            if hasattr(test_dict, "items")
-            else list(zip(ref.keys(), test_dict, strict=True))
-        )
+        if hasattr(test_dict, "items"):
+            self.assertEqual(
+                set(test_dict.keys()),
+                set(ref.keys()),
+                msg=f"{context}: exported output keys do not match the reference",
+            )
+            test_pairs = list(test_dict.items())
+        else:
+            test_pairs = list(zip(ref.keys(), test_dict, strict=True))
         for key, test_val in test_pairs:
             self.assertIn(key, ref, msg=f"{context}: unexpected output key {key!r}")
             ref_val = ref[key]
@@ -324,6 +408,150 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
         loaded_out = self.loaded(*infer_inputs)
         self._assert_dict_allclose(
             eager_out, loaded_out, context="loaded (.pte) vs eager (infer shape)"
+        )
+
+
+class TestSeZMExportPipelineTritonInfer(TestSeZMExportPipeline):
+    """The same trace / ``.pte`` pipeline exercised with ``DP_TRITON_INFER=1``.
+
+    Inheriting the parity suite asserts the Triton-enabled model still traces,
+    exports, and reloads, and that the loaded ``.pte`` reproduces its eager
+    forward — including the force path, whose custom ``*_bwd`` ops run inside
+    ``_AutoDispatchBelowAutograd`` during the export's no-grad replay and must
+    therefore be closed-form.  Two checks are added: the captured graph routes
+    through the custom ops, and the Triton ``.pte`` matches the dense (Triton-off)
+    inference, proving ``DP_TRITON_INFER`` swaps the implementation without
+    changing results.
+    """
+
+    TRITON_INFER = "1"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        try:
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}):
+                dense_model = _build_tiny_sezm_model()
+            cls.dense_out = _eager_forward(dense_model, cls.sample_inputs)
+        except Exception:
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            if hasattr(cls, "dense_out"):
+                delattr(cls, "dense_out")
+        finally:
+            super().tearDownClass()
+
+    def test_force_graph_carries_triton_ops(self) -> None:
+        """``DP_TRITON_INFER=1`` must route the descriptor through the custom ops."""
+        code = self.traced.code
+        self.assertIn("radial_mix_block_bwd", code)
+        self.assertIn("rotate_to_local", code)
+
+    def test_loaded_pte_matches_dense(self) -> None:
+        """The Triton-on ``.pte`` reproduces the dense-path inference."""
+        loaded_out = self.loaded(*self.sample_inputs)
+        self._assert_dict_allclose(
+            self.dense_out, loaded_out, context="triton .pte vs dense eager"
+        )
+
+
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
+    """Trace / export / ``.pte`` parity for the parallel with-comm lower graph.
+
+    The with-comm artifact threads the eight ``border_op`` communication tensors
+    so cross-rank ghost exchange is captured as opaque external calls. A
+    single-process self-send plan reduces the exchange to an owner->ghost copy,
+    so the exported program must reproduce the eager parallel forward to fp64
+    round-off, on both the trace shape and a different owned-atom count.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        try:
+            ensure_comm_registered()
+            cls.model = _build_tiny_sezm_model()
+            cls.sample_inputs = _make_comm_sample_inputs(cls.model, nloc=7, device=_CPU)
+            traced = cls.model.forward_common_lower_exportable_with_comm(
+                *cls.sample_inputs
+            )
+            exported = torch.export.export(
+                traced,
+                cls.sample_inputs,
+                dynamic_shapes=_build_with_comm_dynamic_shapes(cls.sample_inputs),
+                strict=False,
+                prefer_deferred_runtime_asserts_over_guards=True,
+            )
+            cls.traced = traced
+            cls._pte_tmp = tempfile.NamedTemporaryFile(suffix=".pte", delete=True)
+            torch.export.save(exported, cls._pte_tmp.name)
+            cls.loaded = torch.export.load(cls._pte_tmp.name).module()
+        except Exception:
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            for attr in ("loaded", "traced", "model", "sample_inputs"):
+                if hasattr(cls, attr):
+                    delattr(cls, attr)
+            if hasattr(cls, "_pte_tmp"):
+                cls._pte_tmp.close()
+                delattr(cls, "_pte_tmp")
+        finally:
+            super().tearDownClass()
+
+    def _assert_dict_allclose(
+        self,
+        ref: dict[str, torch.Tensor],
+        test_dict: dict[str, torch.Tensor] | object,
+        *,
+        context: str,
+    ) -> None:
+        if hasattr(test_dict, "items"):
+            self.assertEqual(
+                set(test_dict.keys()),
+                set(ref.keys()),
+                msg=f"{context}: exported output keys do not match the reference",
+            )
+            test_pairs = list(test_dict.items())
+        else:
+            test_pairs = list(zip(ref.keys(), test_dict, strict=True))
+        for key, test_val in test_pairs:
+            np.testing.assert_allclose(
+                ref[key].detach().cpu().numpy(),
+                test_val.detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"{context}: {key}",
+            )
+
+    def test_traced_matches_eager(self) -> None:
+        eager = _eager_parallel_forward(self.model, self.sample_inputs)
+        traced_out = self.traced(*self.sample_inputs)
+        self._assert_dict_allclose(
+            eager, traced_out, context="with-comm traced vs eager"
+        )
+
+    def test_loaded_pte_matches_eager(self) -> None:
+        eager = _eager_parallel_forward(self.model, self.sample_inputs)
+        loaded_out = self.loaded(*self.sample_inputs)
+        self._assert_dict_allclose(eager, loaded_out, context="with-comm .pte vs eager")
+
+    def test_loaded_pte_matches_eager_different_nloc(self) -> None:
+        # nloc=11 retargets the owned-atom symbol away from the trace value (7);
+        # nall/nedge follow from the geometry and nswap stays 1.
+        infer_inputs = _make_comm_sample_inputs(self.model, nloc=11, device=_CPU)
+        eager = _eager_parallel_forward(self.model, infer_inputs)
+        loaded_out = self.loaded(*infer_inputs)
+        self._assert_dict_allclose(
+            eager, loaded_out, context="with-comm .pte vs eager (infer shape)"
         )
 
 
@@ -401,6 +629,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             "ntypes",
             "rcut",
             "sel",
+            "lower_input_kind",
             "dim_fparam",
             "dim_aparam",
             "dim_chg_spin",
@@ -418,6 +647,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
         self.assertEqual(metadata["ntypes"], len(self.params["type_map"]))
         self.assertEqual(metadata["rcut"], self.params["descriptor"]["rcut"])
         self.assertEqual(list(metadata["sel"]), list(self.params["descriptor"]["sel"]))
+        self.assertEqual(metadata["lower_input_kind"], "edge_vec")
         self.assertTrue(metadata["mixed_types"])
         self.assertFalse(metadata["is_spin"])
         self.assertEqual(metadata["dim_fparam"], 0)
@@ -655,7 +885,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         metadata = _collect_metadata(model, ["energy"])
         dynamic_shapes = _build_dynamic_shapes(sample_inputs)
 
-        self.assertEqual(len(sample_inputs), 7)
+        self.assertEqual(len(sample_inputs), 9)
         self.assertEqual(sample_inputs[-1].shape, (5, 2))
         self.assertEqual(len(dynamic_shapes), len(sample_inputs))
         self.assertEqual(metadata["dim_chg_spin"], 2)
@@ -701,6 +931,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
             with self.assertRaises(ValueError):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out))
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_multi_task_dpa4_head(self) -> None:
         """Multitask DPA4 checkpoints should export the selected branch."""
 
@@ -738,6 +969,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
         self.assertEqual(model_def["type"], "dpa4")
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
         """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
 
@@ -758,11 +990,13 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
 
             with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
                 metadata = json.loads(
                     zf.read("model/extra/metadata.json").decode("utf-8")
                 )
 
         self.assertTrue(metadata["is_spin"])
+        self.assertEqual(metadata["lower_input_kind"], "nlist")
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
         self.assertEqual(metadata["dim_chg_spin"], 0)
@@ -771,6 +1005,40 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertEqual(metadata["ntypes_spin"], 1)
         self.assertIn("energy_derv_r_mag", metadata["output_keys"])
         self.assertIn("energy_derv_c_redu", metadata["output_keys"])
+        # Spin uses the nlist lower interface; the edge-based with-comm artifact
+        # does not apply, so multi-rank inference fails fast in C++.
+        self.assertFalse(metadata["has_comm_artifact"])
+        self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_freeze_embeds_with_comm_artifact(self) -> None:
+        """A plain SeZM checkpoint ships the nested multi-rank with-comm artifact."""
+
+        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
+            with zipfile.ZipFile(package_path, "w") as zf:
+                zf.writestr("model/data.pkl", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            params = _tiny_sezm_model_params()
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            out = tmp_path / "with_comm.pt2"
+
+            with mock.patch(
+                "torch._inductor.aoti_compile_and_package",
+                side_effect=fake_compile,
+            ):
+                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
+
+            with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
+                metadata = json.loads(
+                    zf.read("model/extra/metadata.json").decode("utf-8")
+                )
+
+        self.assertTrue(metadata["has_comm_artifact"])
+        self.assertTrue(metadata["has_message_passing"])
+        self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
 
 
 if __name__ == "__main__":

@@ -77,6 +77,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate without nlist (standalone — builds nlist, folds back).
@@ -92,6 +93,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 
  public:
@@ -115,6 +117,10 @@ class DeepPotPTExpt : public DeepPotBackend {
     assert(inited);
     return daparam;
   };
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const {
     assert(inited);
@@ -125,7 +131,8 @@ class DeepPotPTExpt : public DeepPotBackend {
     return has_default_fparam_;
   };
 
-  // forward to template class
+  // forward to template class (no charge_spin — uses default_chg_spin_
+  // fallback)
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -201,12 +208,94 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const std::vector<float>& aparam,
                            const bool atomic);
 
+  // charge_spin overloads — pass runtime charge/spin per call
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<double>& force,
+                           std::vector<double>& virial,
+                           std::vector<double>& atom_energy,
+                           std::vector<double>& atom_virial,
+                           const int& nframes,
+                           const std::vector<double>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<double>& box,
+                           const std::vector<double>& fparam,
+                           const std::vector<double>& aparam,
+                           const std::vector<double>& charge_spin,
+                           const bool atomic) override;
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<float>& force,
+                           std::vector<float>& virial,
+                           std::vector<float>& atom_energy,
+                           std::vector<float>& atom_virial,
+                           const int& nframes,
+                           const std::vector<float>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<float>& box,
+                           const std::vector<float>& fparam,
+                           const std::vector<float>& aparam,
+                           const std::vector<double>& charge_spin,
+                           const bool atomic) override;
+
  private:
   bool inited;
   int ntypes;
   int dfparam;
   int daparam;
-  int dim_chg_spin;
+  int dchgspin;
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
@@ -218,9 +307,14 @@ class DeepPotPTExpt : public DeepPotBackend {
   std::vector<std::string> output_keys;  // sorted internal output key names
   bool do_atomic_virial;  // whether model was exported with atomic virial corr
   int nnei;               // expected nlist nnei dimension (= sum(sel))
+  bool lower_input_is_edge_ = false;
+  bool lower_input_is_graph_ = false;
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;     // cached mapping tensor (LAMMPS path)
-  at::Tensor firstneigh_tensor;  // cached nlist tensor (LAMMPS path)
+  at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
+  std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
+  at::Tensor firstneigh_tensor;        // cached nlist tensor (LAMMPS path)
+  at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
+  at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional second AOTInductor artifact for the multi-rank GNN code
   // path (Phase 4).  Loaded only if the .pt2 metadata reports
@@ -255,6 +349,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                        const std::vector<VALUETYPE>& box,
                        const std::vector<VALUETYPE>& fparam,
                        const std::vector<VALUETYPE>& aparam,
+                       const std::vector<double>& charge_spin,
                        const bool atomic);
 
   /**
@@ -272,6 +367,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                                const std::vector<VALUETYPE>& box,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
+                               const std::vector<double>& charge_spin,
                                const bool atomic);
 
   /**
@@ -282,6 +378,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] mapping Mapping tensor.
    * @param[in] fparam Frame parameter tensor (or empty).
    * @param[in] aparam Atomic parameter tensor (or empty).
+   * @param[in] charge_spin Charge/spin tensor (or empty).
    * @return Vector of output tensors in sorted key order.
    */
   std::vector<torch::Tensor> run_model(const torch::Tensor& coord,
@@ -289,13 +386,50 @@ class DeepPotPTExpt : public DeepPotBackend {
                                        const torch::Tensor& nlist,
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
-                                       const torch::Tensor& aparam);
+                                       const torch::Tensor& aparam,
+                                       const torch::Tensor& charge_spin);
+
+  std::vector<torch::Tensor> run_model_edges(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin);
+
+  /**
+   * @brief Run a NeighborGraph-schema ``.pt2`` (lower_input_kind="graph").
+   *
+   * Positional AOTI input order matches the Python export ABI:
+   * ``(atype, n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
+   * [charge_spin])``.  Unlike the edge schema there is no ``coord`` and no
+   * ``edge_scatter_index`` input; node count is carried by ``n_node`` and the
+   * geometry is fully described by ``edge_vec``.
+   *
+   * @param[in] atype Per-node local types, shape ``(N,)`` int64.
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Folded edge graph ``(2, E)`` int64 [src, dst].
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   */
+  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
+                                             const torch::Tensor& n_node,
+                                             const torch::Tensor& edge_index,
+                                             const torch::Tensor& edge_vec,
+                                             const torch::Tensor& edge_mask,
+                                             const torch::Tensor& fparam,
+                                             const torch::Tensor& aparam,
+                                             const torch::Tensor& charge_spin);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.
    *
    * @param[in] base 4-6 base inputs (coord, atype, nlist, mapping,
    *            fparam?, aparam?) — same as ``run_model``.
+   * @param[in] charge_spin Charge/spin tensor (or empty).
    * @param[in] comm_tensors 8 comm tensors in canonical positional
    *            order: send_list, send_proc, recv_proc, send_num,
    *            recv_num, communicator, nlocal, nghost.
@@ -307,6 +441,31 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& mapping,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
+   * @brief Run the with-comm edge (SeZM) ``.pt2`` artifact with comm tensors.
+   *
+   * The edge schema indexes the extended node set, so ``edge_index`` and
+   * ``edge_scatter_index`` coincide. ``atype`` carries owned atoms (fitting,
+   * energy read-out) while ``extended_atype`` embeds ghost neighbours.
+   *
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.
+   */
+  std::vector<torch::Tensor> run_model_edges_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& extended_atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
       const std::vector<at::Tensor>& comm_tensors);
 
   /**

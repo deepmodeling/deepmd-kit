@@ -54,6 +54,10 @@ class _DummyModel(torch.nn.Module):
         return 0
 
 
+class _LmdbDatasetWithoutTypeMap:
+    lmdb_path = "missing-type-map.lmdb"
+
+
 def _make_lmdb_frame(natoms: int, seed: int) -> dict:
     """Create one synthetic LMDB frame for full-validation tests."""
     rng = np.random.RandomState(seed)
@@ -280,6 +284,97 @@ class TestValidationHelpers(unittest.TestCase):
                 ["best.ckpt-10.t-2.pt", "best.ckpt-20.t-1.pt"],
             )
 
+    def test_full_validator_writes_best_into_custom_checkpoint_dir(self) -> None:
+        train_infos = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                best_dir = Path("nested/best")
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": True,
+                        "max_best_ckpt": 1,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=_DummyModel(),
+                    state_store=train_infos,
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=False,
+                    checkpoint_dir=best_dir,
+                )
+                # The directory is created recursively at construction time.
+                self.assertTrue(best_dir.is_dir())
+                new_best_path = validator._update_best_state(
+                    display_step=1,
+                    selected_metric_value=2.0,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(new_best_path, str(best_dir / "best.ckpt-1.t-1.pt"))
+
+    def test_full_validator_reconciles_directory_checkpoints(self) -> None:
+        train_infos = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": True,
+                        "max_best_ckpt": 2,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=_DummyModel(),
+                    state_store=train_infos,
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=False,
+                    best_checkpoint_suffix=".jax",
+                )
+                new_best_path = validator._update_best_state(
+                    display_step=1,
+                    selected_metric_value=2.0,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
+                    display_step=2,
+                    selected_metric_value=1.0,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
+                    display_step=3,
+                    selected_metric_value=1.5,
+                )
+                Path(new_best_path).mkdir()
+                validator._reconcile_best_checkpoints()
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(new_best_path, "best.ckpt-3.t-2.jax")
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.jax")),
+                ["best.ckpt-2.t-1.jax", "best.ckpt-3.t-2.jax"],
+            )
+
     def test_full_validator_lmdb_full_validation_iterates_nloc_groups(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lmdb_path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
@@ -329,6 +424,29 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertEqual(evaluate_system.call_count, 3)
         self.assertAlmostEqual(metrics["mae_e_per_atom"], 8.4)
         self.assertAlmostEqual(metrics["rmse_e_per_atom"], np.sqrt(75.6))
+
+    def test_full_validator_lmdb_snapshot_requires_type_map(self) -> None:
+        validator = FullValidator(
+            validating_params={
+                "full_validation": True,
+                "validation_freq": 1,
+                "save_best": False,
+                "max_best_ckpt": 1,
+                "validation_metric": "E:MAE",
+                "full_val_file": "val.log",
+                "full_val_start": 0.0,
+            },
+            validation_data=_DummyValidationData(),
+            model=_DummyModel(),
+            state_store={},
+            num_steps=10,
+            rank=0,
+            zero_stage=0,
+            restart_training=False,
+        )
+
+        with self.assertRaisesRegex(TypeError, "LMDB type_map"):
+            validator._get_lmdb_test_data_snapshot(_LmdbDatasetWithoutTypeMap())
 
 
 class TestValidationArgcheck(unittest.TestCase):

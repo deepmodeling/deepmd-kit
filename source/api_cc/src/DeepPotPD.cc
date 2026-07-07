@@ -202,7 +202,7 @@ void DeepPotPD::init(const std::string& model,
               << std::endl;
     return;
   }
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::Paddle);
   // NOTE: Only support 1 GPU now.
   int gpu_num = 1;
   if (gpu_num > 0) {
@@ -677,6 +677,7 @@ void DeepPotPD::get_type_map(std::string& type_map) {
 
   std::vector<int> type_map_arr(type_map_size, 0);
   type_map_tensor->CopyToCpu(type_map_arr.data());
+  type_map.clear();
   for (auto char_c : type_map_arr) {
     type_map += std::string(1, char_c);
   }

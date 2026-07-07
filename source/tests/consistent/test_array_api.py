@@ -19,10 +19,15 @@ from .common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_TF2,
 )
 
 if INSTALLED_PT:
     import torch
+
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
+    )
 
 if INSTALLED_JAX:
     from deepmd.jax.env import (
@@ -31,6 +36,23 @@ if INSTALLED_JAX:
 
 if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict as xp
+
+if INSTALLED_TF2:
+    from deepmd._vendors import ndtensorflow as tnp
+
+
+class TestArrayConversion(unittest.TestCase):
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_torch_parameter_requires_grad(self) -> None:
+        param = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        self.assertTrue(param.requires_grad)
+        np.testing.assert_allclose(
+            to_numpy_array(param), np.array([1.0, 2.0], dtype=np.float64)
+        )
+        self.assertTrue(param.requires_grad)
+        self.assertEqual(param.device, DEVICE)
 
 
 class TestXpScatterSumConsistent(unittest.TestCase):
@@ -324,3 +346,27 @@ class TestXpSetitemAtConsistent(unittest.TestCase):
         values_xp = xp.asarray(self.values_np)
         result = xp_setitem_at(x_xp, mask_xp, values_xp)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_consistent_with_ref(self) -> None:
+        x_tf2 = tnp.asarray(self.x_np)
+        mask_tf2 = tnp.asarray(self.mask_np)
+        values_tf2 = tnp.asarray(self.values_np)
+        result = xp_setitem_at(x_tf2, mask_tf2, values_tf2)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_full_rank_mask_consistent_with_ref(self) -> None:
+        x_np = np.zeros((1, 6, 10), dtype=np.int64)
+        mask_np = np.zeros((1, 6, 10), dtype=bool)
+        mask_np[:, :, :5] = True
+        values_np = np.arange(np.count_nonzero(mask_np), dtype=np.int64)
+        ref = x_np.copy()
+        ref[mask_np] = values_np
+
+        result = xp_setitem_at(
+            tnp.asarray(x_np),
+            tnp.asarray(mask_np),
+            tnp.asarray(values_np),
+        )
+        np.testing.assert_allclose(ref, to_numpy_array(result), atol=1e-10)

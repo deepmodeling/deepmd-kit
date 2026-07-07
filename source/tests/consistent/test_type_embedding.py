@@ -20,8 +20,9 @@ from .common import (
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -53,15 +54,55 @@ if INSTALLED_PD:
     from deepmd.pd.utils.env import DEVICE as PD_DEVICE
 else:
     TypeEmbedNetPD = object
+if INSTALLED_TF2:
+    from deepmd.tf2.utils.type_embed import TypeEmbedNet as TypeEmbedNetTF2
+else:
+    TypeEmbedNetTF2 = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float32", "float64"),  # precision
-    (True, False),  # padding
-    (True, False),  # use_econf_tebd
-    (True, False),  # use_tebd_bias
+TYPE_EMBEDDING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "padding",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+TYPE_EMBEDDING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "padding": True,
+    "use_econf_tebd": True,
+    "use_tebd_bias": True,
+}
+
+
+def type_embedding_case(**overrides: Any) -> tuple:
+    unknown = set(overrides) - set(TYPE_EMBEDDING_CASE_FIELDS)
+    if unknown:
+        raise ValueError(f"Unknown type-embedding case fields: {sorted(unknown)}")
+    case = TYPE_EMBEDDING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in TYPE_EMBEDDING_CASE_FIELDS)
+
+
+TYPE_EMBEDDING_CURATED_CASES = (
+    type_embedding_case(),
+    type_embedding_case(resnet_dt=False),
+    type_embedding_case(precision="float32"),
+    type_embedding_case(padding=False),
+    type_embedding_case(use_econf_tebd=False),
+    type_embedding_case(use_tebd_bias=False),
+    type_embedding_case(
+        resnet_dt=False,
+        precision="float32",
+        padding=False,
+        use_econf_tebd=False,
+        use_tebd_bias=False,
+    ),
+)
+
+
+@parameterized_cases(*TYPE_EMBEDDING_CURATED_CASES)
 class TestTypeEmbedding(CommonTest, unittest.TestCase):
     """Useful utilities for descriptor tests."""
 
@@ -84,6 +125,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
         }
 
     tf_class = TypeEmbedNetTF
+    tf2_class = TypeEmbedNetTF2
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
     jax_class = TypeEmbedNetJAX
@@ -92,6 +134,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     args = type_embedding_args()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def additional_data(self) -> dict:
@@ -147,6 +190,13 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()
+        return [
+            to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
+            for x in (out,)
+        ]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        out = tf2_obj()
         return [
             to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
             for x in (out,)

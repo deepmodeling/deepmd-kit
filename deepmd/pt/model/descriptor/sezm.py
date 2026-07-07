@@ -19,8 +19,8 @@ Runtime flow at a glance:
 
 Layout notes
 ------------
-- Node-level backbone features use contiguous `(N, D, 1, C)` where
-  `D=(lmax+1)^2` and `C=channels`.
+- Node-level backbone features use contiguous `(N, D_node, 1, C)` where
+  `D_node=(l_schedule[i]+extra_node_l+1)^2` and `C=channels`.
 - The singleton focus axis is kept only to reuse the existing equivariant
   operators; real multi-focus structure lives strictly inside `SO2Convolution`.
 - Edge-level SO(2) internal operators keep m-major reduced layout
@@ -33,7 +33,6 @@ from __future__ import (
 )
 
 import math
-import os
 from contextlib import (
     contextmanager,
 )
@@ -91,6 +90,7 @@ from .sezm_nn import (
     WignerDCalculator,
     build_edge_cache,
     build_edge_cache_from_edges,
+    build_edge_quaternion,
     edge_cache_to_dtype,
     fold_lora_state_dict_keys,
     get_promoted_dtype,
@@ -98,6 +98,7 @@ from .sezm_nn import (
     has_lora,
     np_safe,
     nvtx_range,
+    safe_norm,
     safe_numpy_to_tensor,
 )
 
@@ -153,12 +154,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Number of radial basis functions.
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
-        `(l_schedule[0]+1)*channels` will be automatically appended.
+        `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
         `[s, s*r_hat]` representation, and enable the non-scalar geometric
-        initial embedding when `l_schedule[0] > 0`. If False, the initial state
+        initial embedding when `l_schedule[0] + extra_node_l > 0`. If False, the initial state
         contains only atom-local scalar features before message passing. FiLM
         deltas are normalized and scaled with learnable strengths initialized
         to small values. Internal dimensions are derived from `channels`:
@@ -171,6 +172,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         If True, apply a random roll about the edge-aligned local ``+Z`` axis
         before building the Wigner-D blocks. The roll is sampled independently
         per edge and per forward call.
+    edge_cartesian
+        If True, every block whose message-passing degree is ``1`` or ``2``
+        replaces its per-edge SO(2) rotation-frame tensor product with the
+        equivalent global-frame Cartesian rank-2 tensor product, removing the two
+        per-edge Wigner-D rotations. Blocks with degree ``0`` or ``>= 3`` keep
+        the SO(2) path. When every block takes the Cartesian path the full
+        Wigner-D construction is skipped automatically, and the geometric initial
+        embedding falls back to the zonal coupling.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message, applied in every block whose message-passing degree is ``1`` or
+        ``2``. Configured by a ``"<mode>:<layers>"`` string where ``mode`` is
+        ``"default"`` (one-sided product) or ``"parity"`` (symmetrized product)
+        and ``layers`` is the stack depth; a bare integer ``N`` is shorthand for
+        ``"default:N"``, and ``"none"`` disables it. Orthogonal to
+        ``edge_cartesian``: either, both, or neither may be set. Unlike
+        ``edge_cartesian`` it does not affect the Wigner-D construction, since the
+        per-edge message path is left unchanged.
     lmax
         Maximum degree, only used when `l_schedule` is None.
     l_schedule
@@ -179,17 +198,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     mmax
         Maximum SO(2) order (|m|), only used when `m_schedule` is None.
         If None, defaults to the per-block `lmax` (i.e. `m_schedule = l_schedule`).
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid nets. The frame set
+        is built as ``[0, -1, 1, ..., -kmax, kmax]``. ``kmax=0`` recovers the
+        S2-like k=0 slice, while ``kmax=1`` is the default low-cost setting that
+        opens odd/antisymmetric coupling paths.
     m_schedule
         Schedule of mmax per block, e.g. [2, 2, 1, 0]. Must satisfy
         `m_schedule[i] <= l_schedule[i]` for every block. A non-increasing schedule is
         recommended but not required. If set, `mmax` will be ignored.
+    extra_node_l
+        Extra node representation degree above each message-passing degree.
+        The node degree of block `i` is `l_schedule[i] + extra_node_l`, while
+        SO(2) message passing still uses `l_schedule[i]`.
     n_blocks
         Number of blocks (only used when `l_schedule` is None).
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers per block.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core of each
+        block (legacy alias: ``so2_layers``). ``0`` applies only the
+        edge-condition modulation: the rotation-free per-degree radial scaling on
+        the SO(2) path, or a single ``x @ T_e`` when ``edge_cartesian`` applies.
+        The per-node ``node_cartesian`` stack carries its own independent depth.
     so2_attn_res
         SO(2)-internal depth-wise attention residual mode inside each interaction
         block. Must be one of ``"none"``, ``"independent"``, or ``"dependent"``.
@@ -197,7 +229,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Dynamic radial degree mixer mode inside SO(2) convolution. ``"none"``
         applies elementwise radial modulation, ``"degree"`` uses a
         channel-shared edge-conditioned cross-degree kernel, and
-        ``"degree_channel"`` uses a per-channel cross-degree kernel.
+        ``"degree_channel"`` uses a per-channel cross-degree kernel. Has no
+        effect on blocks taking the Cartesian path (``edge_cartesian`` with
+        degree 1 or 2), where the dynamic radial degree mixer is bypassed.
     radial_so2_rank
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
@@ -231,8 +265,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         effective GLU setting: ``4 * channels`` without GLU, ``(8 / 3) * channels``
         with GLU, then round up to a multiple of 32.
     grid_mlp
-        If True, use the optional grid-MLP structure for the block-internal FFN
-        units. The final scalar output head is unchanged.
+        Either one boolean applied to every grid path, or three booleans
+        ``[node_wise, message_node, ffn]`` selecting the polynomial point-wise
+        grid MLP operation per grid path. On any path whose ``grid_branch``
+        entry is positive it is overridden by branch mixing, and it has no
+        effect on the final ``l=0`` output head.
+    grid_branch
+        Either one non-negative integer applied to every grid path, or three
+        integers ``[node_wise, message_node, ffn]`` setting the number of
+        scalar-routed polynomial product branches per grid path. ``0`` disables
+        branch mixing on that path; positive values select branch mixing and
+        take precedence over ``grid_mlp``. Branch weights are computed from
+        ``l=0`` scalar features only, while each branch is a quadratic product
+        of channel-mixed grid fields. The ``node_wise`` and ``message_node``
+        entries control the SO(2) convolution cross-grid paths, and the ``ffn``
+        entry controls the block-internal FFN grid path.
     ffn_blocks
         Number of FFN subblocks per interaction block.
     sandwich_norm
@@ -275,17 +322,43 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ``activation_function="silu"``.
         ``ffn_enabled=True`` makes the block-internal FFN path use
         ``activation_function="silu"`` and ``glu_activation=True``.
-        S2-grid resolutions are resolved automatically per block. The e3nn
-        product grid uses ``[2 * mmax + 4, ceil_even(3 * lmax + 2)]`` in the
-        SO(2) branch, and the FFN branch lifts it to a square
+        S2-grid resolutions are resolved automatically per block. The
+        tensor-product grid uses ``[2 * mmax + 4, ceil_even(3 * lmax + 2)]``
+        in the SO(2) branch, and the FFN branch lifts it to a square
         ``[max(R_phi, R_theta), max(R_phi, R_theta)]`` grid. Lebedev branches
         use the smallest packaged rule with precision at least ``3 * lmax``.
         The final ``l=0`` output FFN is unchanged.
+    ffn_so3_grid
+        If True, use the SO(3) Wigner-D grid in the block-internal FFN. This
+        option takes precedence over the FFN grid path and ignores
+        ``s2_activation[1]``. The final ``l=0`` output FFN is unchanged.
+    node_wise_s2
+        If True, add an edge-local S2 product branch between source and
+        destination node features inside the SO(2) convolution.
+    node_wise_so3
+        If True, use the corresponding edge-local SO(3) Wigner-D grid-net branch.
+        The source side is the query and the destination side is the context.
+    message_node_s2
+        If True, add a post-aggregation S2 product branch between hidden messages
+        and destination node features before the SO(2) output projection.
+    message_node_so3
+        If True, use the corresponding post-aggregation SO(3) Wigner-D grid-net
+        branch. The message is the query and the node state is the context.
+    so3_readout
+        Read-out FFN mode for the final ``l=0`` descriptor. ``"none"`` applies a
+        degree-0 scalar FFN to the ``l=0`` slice only; ``l>0`` coefficients are
+        discarded before the read-out. ``"glu"`` and ``"mlp"`` apply a full
+        equivariant FFN whose degree equals the node degree of the last
+        interaction block, driven by the SO(3) Wigner-D grid, so ``l>0`` geometry
+        is folded into ``l=0`` before the scalar is extracted. The value selects
+        the quadratic grid product (``"glu"``) or the polynomial point-wise grid
+        MLP (``"mlp"``). The Wigner-D frame order follows ``kmax``. The residual
+        stays on the ``l=0`` channel.
     lebedev_quadrature
         Either one boolean applied to both S2 branches, or two booleans
         ``[so2_enabled, ffn_enabled]`` aligned with ``s2_activation``. If
-        enabled for a branch, that branch uses Lebedev quadrature instead of
-        the e3nn product grid in its S2 projector.
+        enabled for a branch, that branch uses packaged Lebedev quadrature
+        instead of the tensor-product sphere grid in its S2 projector.
     activation_function
         Base activation function for helper MLPs, the SO(2) gated activation
         path, and the final ``l=0`` output FFN.
@@ -353,13 +426,18 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         radial_mlp: list[int] | None = None,
         use_env_seed: bool = True,
         random_gamma: bool = True,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         lmax: int = 3,
         l_schedule: list[int] | None = None,
         mmax: int | None = 1,
+        kmax: int = 1,
         m_schedule: list[int] | None = None,
+        extra_node_l: int = 0,
         n_blocks: int = 3,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
+        so2_layers: int | None = None,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "degree_channel",
         radial_so2_rank: int = 1,
@@ -370,7 +448,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         ffn_neurons: int = 0,
-        grid_mlp: bool = False,
+        grid_mlp: bool | list[bool] = False,
+        grid_branch: int | list[int] = 0,
         ffn_blocks: int = 1,
         sandwich_norm: list[bool] | None = None,
         mlp_bias: bool = False,
@@ -378,6 +457,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         full_attn_res: str = "none",
         block_attn_res: str = "none",
         s2_activation: list[bool] | None = None,
+        ffn_so3_grid: bool = False,
+        node_wise_s2: bool = False,
+        node_wise_so3: bool = False,
+        message_node_s2: bool = False,
+        message_node_so3: bool = False,
+        so3_readout: str = "none",
         lebedev_quadrature: bool | list[bool] | None = True,
         activation_function: str = "silu",
         glu_activation: bool = True,
@@ -460,8 +545,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "`s2_activation` must be a list[bool] of length 2: [so2_activation, ffn_activation]"
             )
         self.s2_activation = list(s2_activation)
+        self.ffn_so3_grid = bool(ffn_so3_grid)
+        self.node_wise_s2 = bool(node_wise_s2)
+        self.node_wise_so3 = bool(node_wise_so3)
+        self.message_node_s2 = bool(message_node_s2)
+        self.message_node_so3 = bool(message_node_so3)
+        self.so3_readout = str(so3_readout).lower()
+        if self.so3_readout not in {"none", "glu", "mlp"}:
+            raise ValueError("`so3_readout` must be one of 'none', 'glu', or 'mlp'")
         if lebedev_quadrature is None:
-            lebedev_quadrature = [False, False]
+            lebedev_quadrature = [True, True]
         elif isinstance(lebedev_quadrature, bool):
             lebedev_quadrature = [lebedev_quadrature, lebedev_quadrature]
         if not isinstance(lebedev_quadrature, list) or len(lebedev_quadrature) != 2:
@@ -478,7 +571,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Split effective activation config by branch ===
         self.so2_s2_activation = self.s2_activation[0]
-        self.ffn_s2_activation = self.s2_activation[1]
+        self.ffn_s2_activation = False if self.ffn_so3_grid else self.s2_activation[1]
         self.so2_lebedev_quadrature = self.lebedev_quadrature[0]
         self.ffn_lebedev_quadrature = self.lebedev_quadrature[1]
         self.so2_activation_function = (
@@ -488,7 +581,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             "silu" if self.ffn_s2_activation else self.activation_function
         )
         self.ffn_glu_activation = (
-            True if self.ffn_s2_activation else self.glu_activation
+            True
+            if (self.ffn_s2_activation or self.ffn_so3_grid)
+            else self.glu_activation
         )
         self.out_activation_function = self.activation_function
         self.out_glu_activation = self.glu_activation
@@ -500,14 +595,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.layer_scale = bool(layer_scale)
         self.use_amp = bool(use_amp)  # and self.training
         self.trainable = bool(trainable)
-        self.use_triton = os.environ.get("DP_TRITON", "0").lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
         self.seed = seed
         self.random_gamma = bool(random_gamma)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         if default_chg_spin is not None and len(default_chg_spin) != 2:
             raise ValueError("`default_chg_spin` must contain [charge, spin].")
@@ -568,11 +659,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
+        self.kmax = int(kmax)
+        if self.kmax < 0:
+            raise ValueError("`kmax` must be non-negative")
+        if self.kmax > self.lmax:
+            raise ValueError("`kmax` must be <= `lmax`")
         self.ebed_dims = [get_so3_dim_of_lmax(l) for l in self.l_schedule]
+        self._init_node_l_schedules(extra_node_l)
         self.rad_sizes_per_block = [l + 1 for l in self.l_schedule]
 
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        # ``so2_layers`` is the legacy alias for ``mixing_layers``; when supplied
+        # it takes precedence so existing configs keep working.
+        self.mixing_layers = int(mixing_layers if so2_layers is None else so2_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -595,7 +694,27 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             self.ffn_neurons,
             glu_activation=self.out_glu_activation,
         )
-        self.grid_mlp = bool(grid_mlp)
+        self.grid_mlp = self._broadcast_grid_setting(
+            grid_mlp,
+            name="grid_mlp",
+            cast=bool,
+        )
+        self.grid_branch = self._broadcast_grid_setting(
+            grid_branch,
+            name="grid_branch",
+            cast=int,
+            non_negative=True,
+        )
+        (
+            self.node_wise_grid_mlp,
+            self.message_node_grid_mlp,
+            self.ffn_grid_mlp,
+        ) = self.grid_mlp
+        (
+            self.node_wise_grid_branch,
+            self.message_node_grid_branch,
+            self.ffn_grid_branch,
+        ) = self.grid_branch
         self.ffn_blocks = int(ffn_blocks)
         if self.ffn_blocks < 1:
             raise ValueError("`ffn_blocks` must be >= 1")
@@ -722,10 +841,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
-        # Output dimension is (lmax+1)*channels, directly usable by GIE and SO2Conv.
+        # Output dimension follows the first node degree, directly usable by
+        # GIE and truncated for each SO2Conv block.
         # radial_mlp specifies hidden layer sizes; input/output layers are prepended/appended.
         # Use fp32+ precision (same as RBF output) for numerical stability.
-        radial_out_dim = (self.lmax + 1) * self.channels
+        radial_out_dim = (self.node_l_schedule[0] + 1) * self.channels
         radial_mlp_layers = [self.n_radial, *self.radial_mlp, radial_out_dim]
         self.radial_embedding = RadialMLP(
             radial_mlp_layers,
@@ -738,46 +858,88 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === C^3 cutoff envelope for edge weight ===
         self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
 
-        wigner_lmax = self.l_schedule[0]
-        # force fp32+
+        # === Edge-aligned Wigner-D calculator ===
+        # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
+        # per-edge Wigner-D blocks are built only when a block keeps the SO(2)
+        # path (tracked by ``_need_full_wigner``).
+        block_edge_cartesian = [
+            self.edge_cartesian and l_b in (1, 2) for l_b in self.l_schedule
+        ]
+        block_node_cartesian = [
+            self.node_cartesian if l_b in (1, 2) else "none" for l_b in self.l_schedule
+        ]
+        self._need_full_wigner = not all(block_edge_cartesian)
         self.wigner_calc = WignerDCalculator(
-            lmax=wigner_lmax,
+            lmax=self.l_schedule[0],
             eps=self.eps,
-            dtype=self.compute_dtype,
+            dtype=self.compute_dtype,  # force fp32+
         )
 
-        self.use_gie = self.use_env_seed and self.l_schedule[0] > 0
+        self.use_gie = self.use_env_seed and self.node_l_schedule[0] > 0
         if self.use_gie:
             self.gie = GeometricInitialEmbedding(
-                lmax=self.l_schedule[0],
+                lmax=self.node_l_schedule[0],
                 channels=self.channels,
                 dtype=self.compute_dtype,  # force fp32+
             )
+            if self.extra_node_l > 0:
+                self.gie_zonal_wigner_calc: WignerDCalculator | None = (
+                    WignerDCalculator(
+                        lmax=self.node_l_schedule[0],
+                        eps=self.eps,
+                        dtype=self.compute_dtype,
+                    )
+                )
+            else:
+                self.gie_zonal_wigner_calc = None
         else:
             self.gie = None
+            self.gie_zonal_wigner_calc = None
 
         blocks: list[SeZMInteractionBlock] = []
-        for block_idx, (l_b, m_b) in enumerate(zip(self.l_schedule, self.m_schedule)):
+        for block_idx, (l_b, node_l_b, m_b) in enumerate(
+            zip(
+                self.l_schedule,
+                self.node_l_schedule,
+                self.m_schedule,
+                strict=True,
+            )
+        ):
+            k_b = min(self.kmax, l_b)
             blocks.append(
                 SeZMInteractionBlock(
                     lmax=l_b,
+                    node_lmax=node_l_b,
                     mmax=m_b,
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
                     so2_norm=self.so2_norm,
-                    so2_layers=self.so2_layers,
+                    mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
                     radial_so2_mode=self.radial_so2_mode,
                     radial_so2_rank=self.radial_so2_rank,
+                    edge_cartesian=block_edge_cartesian[block_idx],
+                    node_cartesian=block_node_cartesian[block_idx],
                     ffn_neurons=self.block_ffn_neurons,
-                    grid_mlp=self.grid_mlp,
+                    node_wise_grid_mlp=self.node_wise_grid_mlp,
+                    node_wise_grid_branch=self.node_wise_grid_branch,
+                    message_node_grid_mlp=self.message_node_grid_mlp,
+                    message_node_grid_branch=self.message_node_grid_branch,
+                    ffn_grid_mlp=self.ffn_grid_mlp,
+                    ffn_grid_branch=self.ffn_grid_branch,
                     ffn_blocks=self.ffn_blocks,
                     layer_scale=self.layer_scale,
                     full_attn_res=self.full_attn_res_mode,
                     block_attn_res=self.block_attn_res_mode,
                     so2_s2_activation=self.so2_s2_activation,
+                    node_wise_s2=self.node_wise_s2,
+                    node_wise_so3=self.node_wise_so3,
+                    message_node_s2=self.message_node_s2,
+                    message_node_so3=self.message_node_so3,
                     ffn_s2_activation=self.ffn_s2_activation,
+                    ffn_so3_grid=self.ffn_so3_grid,
+                    kmax=k_b,
                     so2_lebedev_quadrature=self.so2_lebedev_quadrature,
                     ffn_lebedev_quadrature=self.ffn_lebedev_quadrature,
                     n_atten_head=self.n_atten_head,
@@ -792,7 +954,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     ffn_activation_function=self.ffn_activation_function,
                     ffn_glu_activation=self.ffn_glu_activation,
                     mlp_bias=self.mlp_bias,
-                    use_triton=self.use_triton,
                     eps=self.eps,
                     dtype=self.dtype,
                     seed=child_seed(seed_blocks, block_idx),
@@ -827,13 +988,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
 
         # === Final FFN for l=0 output mixing ===
+        # ``so3_readout="none"`` runs a degree-0 scalar FFN on the l=0 slice.
+        # ``"glu"``/``"mlp"`` run a full FFN at the last block's node degree whose
+        # SO(3) Wigner-D grid folds l>0 geometry into l=0; the value selects the
+        # quadratic grid product or the point-wise grid MLP.
+        readout_lmax = self.node_l_schedule[-1]
         self.output_ffn = EquivariantFFN(
-            lmax=0,
+            lmax=0 if self.so3_readout == "none" else readout_lmax,
             channels=self.channels,
             hidden_channels=self.out_ffn_neurons,
-            grid_mlp=False,
+            kmax=min(self.kmax, readout_lmax),
+            grid_mlp=self.so3_readout == "mlp",
+            grid_branch=0,
             dtype=self.compute_dtype,
             s2_activation=False,
+            ffn_so3_grid=self.so3_readout != "none",
             activation_function=self.out_activation_function,
             glu_activation=self.out_glu_activation,
             mlp_bias=self.mlp_bias,
@@ -844,11 +1013,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         for p in self.parameters():
             p.requires_grad = self.trainable
 
-        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP)
+        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(
             "_empty_tensor",
             torch.empty(0, device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            persistent=True,
+            persistent=False,
         )
 
         # === Statistics buffers (interface compatibility) ===
@@ -914,7 +1083,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         force_embedding
             Optional precomputed equivariant force embedding with shape
             ``(nf * nloc, D, 1, channels)``, where
-            ``D = (l_schedule[0] + 1) ** 2``. This tensor is added to the
+            ``D = (node_l_schedule[0] + 1) ** 2``. This tensor is added to the
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
@@ -1017,25 +1186,26 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 n_radial=self.radial_basis.n_radial,
-                random_gamma=self.random_gamma,
+                # Random local-Z roll is a training-only augmentation;
+                # the model is roll-equivariant, so inference fixes gamma.
+                random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                use_geometry_rbf_triton=(self.use_triton and not self.training),
+                build_wigner=self._need_full_wigner,
             )
 
-        lmax_0 = self.l_schedule[0]
-        ebed_dim_0 = get_so3_dim_of_lmax(lmax_0)  # (lmax+1)^2
+        ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
 
         # === Step 5. Compute radial features once (fp32+) ===
-        # Shape: (E, (lmax+1)*C) -> (E, lmax+1, C)
+        # Shape: (E, (node_lmax+1)*C) -> (E, node_lmax+1, C)
         radial_feat = None
         with nvtx_range("radial_embedding"):
             if edge_cache.src.numel() > 0:
                 radial_feat = rearrange(
                     self.radial_embedding(edge_cache.edge_rbf),
                     "E (L C) -> E L C",
-                    L=self.lmax + 1,
+                    L=self.node_l_schedule[0] + 1,
                     C=self.channels,
                 )  # (E, lmax+1, C)
                 if self.version >= 1.1:
@@ -1068,10 +1238,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("gie"):
             if self.use_gie and radial_feat is not None:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
+                zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
+                    zonal_coupling=zonal_coupling,
                 ).unsqueeze(2)
 
         # === Step 9. Fuse edge type features into radial features (fp32+) ===
@@ -1098,15 +1270,23 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
 
         # === Step 11. Final l=0 output mixing ===
-        # Extract l=0 scalar features and apply FFN in promoted dtype.
-        # Residual keeps the output close to identity with zero-initialized FFN output.
+        # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
+        # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
+        # residual is added on the full coefficient tensor before extracting
+        # l=0: slicing the summed tensor rather than the FFN output keeps the
+        # saved degree-axis stride static under torch.compile dynamic shapes.
         with nvtx_range("output_ffn"):
-            x_scalar = (
+            ffn_in = (
                 x[:, 0:1, :, :]
                 .reshape(n_nodes, 1, 1, self.channels)
                 .to(dtype=self.compute_dtype)
-            )  # (N, 1, 1, C)
-            x_scalar = x_scalar + self.output_ffn(x_scalar)
+                if self.so3_readout == "none"
+                # truncate to the final node degree: the empty-edge path
+                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
+                # is built for node_ebed_dims[-1]. No-op when blocks ran.
+                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
+            )
+            x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
         # === Step 12. Reshape to (nf, nloc, channels) and return ===
         descriptor = rearrange(
@@ -1130,16 +1310,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         edge_mask: torch.Tensor,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        nloc: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute the descriptor from a sparse edge list.
 
+        Two node-set conventions share this path. In the single-domain path
+        (``comm_dict`` is ``None``) the nodes are exactly the local atoms and
+        ``edge_index`` source/destination both index ``[0, nf*nloc)``. In the
+        parallel (LAMMPS multi-rank) path the nodes span the extended region
+        (local owners followed by ghosts), ``edge_index`` indexes the extended
+        atoms directly, and each interaction block refreshes ghost-node features
+        from their owner ranks at the SO(2) convolution input (see
+        :func:`~deepmd.pt.model.descriptor.sezm_nn.block.exchange_ghost_features`).
+
         Parameters
         ----------
         extended_coord
-            Coordinates with shape (nf, nloc*3) or (nf, nloc, 3) in Å.
+            Coordinates with shape (nf, n*3) or (nf, n, 3) in Å, where ``n`` is
+            ``nloc`` in the single-domain path and ``nall`` in the parallel path.
         extended_atype
-            Atom types with shape (nf, nloc).
+            Atom types with shape (nf, n). In the parallel path this spans the
+            extended region so ghost type embeddings are available for the
+            edge-type and environment-seed features.
         edge_index
             Edge indices with shape (2, E).
         edge_vec
@@ -1149,10 +1343,17 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         force_embedding
             Optional precomputed equivariant force embedding with shape
             ``(nf * nloc, D, 1, channels)``, where
-            ``D = (l_schedule[0] + 1) ** 2``. This tensor is added to the
+            ``D = (node_l_schedule[0] + 1) ** 2``. This tensor is added to the
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            node set spans the extended region and ghost features are exchanged
+            via ``deepmd_export::border_op`` between interaction blocks.
+        nloc
+            Number of owned (local) atoms per frame. Required when ``comm_dict``
+            is provided; the final scalar read-out is restricted to these atoms.
 
         Returns
         -------
@@ -1161,13 +1362,32 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
         """
         # === Step 1. Setup dimensions ===
+        # ``n_per_frame`` is the per-frame node count: ``nloc`` in the
+        # single-domain path and ``nall`` in the parallel path. ``out_nloc`` is
+        # the owned-atom count used for the final local read-out.
         extended_coord = extended_coord.to(self.compute_dtype)
-        nf, nloc = extended_atype.shape[:2]
+        nf, n_per_frame = extended_atype.shape[:2]
+        parallel = comm_dict is not None
+        if parallel:
+            # The border exchange and the owned-atom read-out assume one MPI
+            # rank's single-frame extended layout (LAMMPS, the with-comm export
+            # trace, and the parity tests all provide it). nf > 1 would silently
+            # mix frames into wrong forces, so it is rejected outright.
+            if nf != 1:
+                raise ValueError("parallel `comm_dict` inference requires nf == 1")
+            # Imported lazily so plain pt inference never pulls the custom-op
+            # registration module onto its import path.
+            from deepmd.pt_expt.utils.comm import (
+                ensure_comm_registered,
+            )
+
+            ensure_comm_registered()
+        out_nloc = nloc if parallel else n_per_frame
+        atype_flat = extended_atype.reshape(-1)  # (N,)
 
         # === Step 2. Type embedding (l=0) ===
         with nvtx_range("type_embedding"):
-            atype_loc = extended_atype[:, :nloc]  # (nf, nloc)
-            type_ebed = self.type_embedding(atype_loc).reshape(
+            type_ebed = self.type_embedding(extended_atype).reshape(
                 -1, self.channels
             )  # (N, C)
             if self.charge_spin_embedding is not None:
@@ -1175,7 +1395,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     type_ebed,
                     charge_spin,
                     nf=nf,
-                    nloc=nloc,
+                    nloc=n_per_frame,
                 )
             n_nodes = type_ebed.shape[0]
 
@@ -1183,7 +1403,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache_from_edges(
                 type_ebed=type_ebed,
-                atype_flat=atype_loc.reshape(-1),
+                atype_flat=atype_flat,
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
@@ -1198,12 +1418,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 radial_basis=self.radial_basis,
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
-                random_gamma=self.random_gamma,
+                # Random local-Z roll is a training-only augmentation;
+                # the model is roll-equivariant, so inference fixes gamma.
+                random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
+                build_wigner=self._need_full_wigner,
             )
 
-        lmax_0 = self.l_schedule[0]
-        ebed_dim_0 = get_so3_dim_of_lmax(lmax_0)  # (lmax+1)^2
+        ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
 
@@ -1211,7 +1433,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("radial_embedding"):
             radial_feat_flat = self.radial_embedding(edge_cache.edge_rbf)
             radial_feat = radial_feat_flat.reshape(
-                radial_feat_flat.shape[0], self.lmax + 1, self.channels
+                radial_feat_flat.shape[0],
+                self.node_l_schedule[0] + 1,
+                self.channels,
             )  # (E, lmax+1, C)
             if self.version >= 1.1:
                 radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
@@ -1219,7 +1443,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 5. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
             if self.use_env_seed:
-                atype_flat = atype_loc.reshape(-1)  # (N,)
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
@@ -1242,10 +1465,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 7. Geometric Initial Embedding (fp32+) ===
         with nvtx_range("gie"):
             if self.use_gie:
+                zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
+                    zonal_coupling=zonal_coupling,
                 ).unsqueeze(2)
 
         # === Step 8. Fuse edge type features into radial features (fp32+) ===
@@ -1265,19 +1490,40 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 x = x + force_embedding.to(dtype=self.dtype)
             edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
             with self._compute_mode_ctx(extended_coord.device):
-                x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
+                x = self._forward_blocks(
+                    x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
+                )
 
-        # === Step 10. Final l=0 output mixing ===
+        # === Step 10. Keep the owned-atom rows for the read-out ===
+        # ``n_out_nodes`` is the owned-node count in the flattened layout
+        # (``nf * nloc``). Single-domain: ``out_nloc == n_per_frame``, so this
+        # equals the whole node set and the slice is a no-op. Parallel
+        # (single-frame): it drops the trailing ghost rows that only fed message
+        # passing -- LAMMPS orders owned atoms before ghosts, so they lead.
+        n_out_nodes = nf * out_nloc
+        x = x[:n_out_nodes]
+
+        # === Step 11. Final l=0 output mixing ===
+        # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
+        # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
+        # residual is added on the full coefficient tensor before extracting
+        # l=0: slicing the summed tensor rather than the FFN output keeps the
+        # saved degree-axis stride static under torch.compile dynamic shapes.
         with nvtx_range("output_ffn"):
-            x_scalar = (
+            ffn_in = (
                 x[:, 0:1, :, :]
-                .reshape(n_nodes, 1, 1, self.channels)
+                .reshape(n_out_nodes, 1, 1, self.channels)
                 .to(dtype=self.compute_dtype)
-            )  # (N, 1, 1, C)
-            x_scalar = x_scalar + self.output_ffn(x_scalar)
+                if self.so3_readout == "none"
+                # truncate to the final node degree: the empty-edge path
+                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
+                # is built for node_ebed_dims[-1]. No-op when blocks ran.
+                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
+            )
+            x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
-        # === Step 11. Reshape to (nf, nloc, channels) and return ===
-        descriptor = x_scalar.reshape(nf, nloc, self.channels)  # (nf, nloc, C)
+        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
         return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
 
     def _forward_blocks(
@@ -1285,6 +1531,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat_per_block: list[torch.Tensor],
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Run the interaction blocks with optional depth attention.
@@ -1297,6 +1544,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Per-edge cache.
         radial_feat_per_block
             List of per-block radial features already truncated to l_schedule[i]+1.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to each
+            block. The block refreshes ghost rows at the SO(2) convolution
+            input — the descriptor's only cross-node operation — so message
+            passing always reads up-to-date neighbours regardless of the
+            (per-node) attention-residual history.
 
         Returns
         -------
@@ -1306,10 +1559,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if not self.use_full_attn_res and not self.use_block_attn_res:
             # === Fast path without descriptor-level attention residuals ===
             for i, block in enumerate(self.blocks):
-                x = x[:, : self.ebed_dims[i], :, :]
+                x = x[:, : self.node_ebed_dims[i], :, :]
                 blk_radial = radial_feat_per_block[i]
                 with nvtx_range(f"block_{i}"):
-                    x, _, _, _ = block(x, edge_cache, blk_radial)
+                    x, _, _, _ = block(
+                        x,
+                        edge_cache,
+                        blk_radial,
+                        comm_dict=self._block_comm(i, comm_dict),
+                    )
             return x
 
         n_node = x.shape[0]
@@ -1324,7 +1582,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
             # === Step 2. Run each block with selective unit-history aggregation ===
             for i, block in enumerate(self.blocks):
-                current_dim = self.ebed_dims[i]
+                current_dim = self.node_ebed_dims[i]
                 current_x = x[:, :current_dim, :, :]
                 truncated_unit_history = [
                     source[:, :current_dim, :, :] for source in unit_history
@@ -1336,13 +1594,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                         edge_cache,
                         blk_radial,
                         unit_history=truncated_unit_history,
+                        comm_dict=self._block_comm(i, comm_dict),
                     )
                 unit_history.append(so2_unit_output)
                 unit_history.extend(ffn_unit_outputs)
                 x = block_output
 
             # === Step 3. Final aggregation over all completed unit representations ===
-            final_dim = self.ebed_dims[-1]
+            final_dim = self.node_ebed_dims[-1]
             final_sources = [source[:, :final_dim, :, :] for source in unit_history]
             x = self.final_full_attn_res(
                 sources=final_sources,
@@ -1356,7 +1615,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 2. Run each block with selective block-history aggregation ===
         for i, block in enumerate(self.blocks):
-            current_dim = self.ebed_dims[i]
+            current_dim = self.node_ebed_dims[i]
             current_x = x[:, :current_dim, :, :]
             truncated_block_history = [
                 source[:, :current_dim, :, :] for source in block_history
@@ -1368,12 +1627,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     edge_cache,
                     blk_radial,
                     unit_history=truncated_block_history,
+                    comm_dict=self._block_comm(i, comm_dict),
                 )
             block_history.append(block_summary)
             x = block_output
 
         # === Step 3. Final aggregation over all completed block summaries ===
-        final_dim = self.ebed_dims[-1]
+        final_dim = self.node_ebed_dims[-1]
         final_sources = [source[:, :final_dim, :, :] for source in block_history]
         x = self.final_block_attn_res(
             sources=final_sources,
@@ -1381,6 +1641,66 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             current_x=x,
         ).to(dtype=self.dtype)
         return x
+
+    def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
+        """
+        Return the cached global->local edge quaternion, rebuilding if absent.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            Per-edge cache. ``edge_quat`` is populated by the cache builder; the
+            fallback covers caches produced without it.
+
+        Returns
+        -------
+        torch.Tensor
+            Unit quaternions with shape (E, 4).
+        """
+        edge_quat = edge_cache.edge_quat
+        if edge_quat is None:
+            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_quat = build_edge_quaternion(
+                edge_cache.edge_vec,
+                edge_len=edge_len,
+                eps=self.eps,
+            )
+        return edge_quat
+
+    def _build_gie_zonal_coupling(
+        self,
+        edge_cache: EdgeFeatureCache,
+    ) -> torch.Tensor | None:
+        """
+        Build node-level zonal coupling for GIE when node degrees exceed MP degrees.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coupling with shape ``(E, D_node - 1)``. ``None`` is returned only
+            when the full Wigner-D blocks are present and ``extra_node_l == 0``,
+            in which case GIE gathers the coupling from the cache directly. When
+            the blocks are skipped (all-Cartesian model) the full coupling is
+            reconstructed from the edge quaternion via the m=0-only path.
+        """
+        if edge_cache.Dt_full is None:
+            calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
+        if self.gie_zonal_wigner_calc is None:
+            return None
+        mp_row_count = self.ebed_dims[0] - 1
+        mp_row_index = self.gie.non_scalar_row_index[:mp_row_count]
+        mp_m0_col_index = self.gie.zonal_m0_col_index_for_row[:mp_row_count]
+        mp_coupling = edge_cache.Dt_full[
+            :,
+            mp_row_index,
+            mp_m0_col_index,
+        ]
+        extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
+            self._edge_quaternion(edge_cache),
+            lmin=self.lmax + 1,
+        )
+        return torch.cat([mp_coupling, extra_coupling], dim=1)
 
     def _apply_charge_spin_embedding(
         self,
@@ -1447,6 +1767,31 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         keep = type_mask.index_select(0, type_ij.to(dtype=torch.long))
         return keep.to(dtype=torch.bool)
 
+    @staticmethod
+    def _broadcast_grid_setting(
+        value: bool | int | list[bool] | list[int],
+        *,
+        name: str,
+        cast: type,
+        non_negative: bool = False,
+    ) -> list:
+        """Normalize a grid-path setting to ``[node_wise, message_node, ffn]``.
+
+        A scalar is broadcast to all three grid paths, while a length-three
+        list is validated element-wise. When ``non_negative`` is set, every
+        entry must be ``>= 0``.
+        """
+        entries = list(value) if isinstance(value, list) else [value, value, value]
+        if len(entries) != 3:
+            raise ValueError(
+                f"`{name}` must be a {cast.__name__} or a list[{cast.__name__}] "
+                "of length 3: [node_wise, message_node, ffn]"
+            )
+        normalized = [cast(entry) for entry in entries]
+        if non_negative and any(entry < 0 for entry in normalized):
+            raise ValueError(f"`{name}` entries must be non-negative")
+        return normalized
+
     def _resolve_ffn_neurons(
         self,
         ffn_neurons: int,
@@ -1510,12 +1855,26 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             raise ValueError("`m_schedule` must have the same length as `l_schedule`")
         if any(x < 0 for x in self.m_schedule):
             raise ValueError("`m_schedule` entries must be non-negative")
-        if any(m > l for m, l in zip(self.m_schedule, self.l_schedule)):
+        if any(m > l for m, l in zip(self.m_schedule, self.l_schedule, strict=True)):
             raise ValueError(
                 "`m_schedule` entries must satisfy `m_schedule[i] <= l_schedule[i]`"
             )
 
         self.mmax = int(self.m_schedule[0])
+
+    def _init_node_l_schedules(self, extra_node_l: int) -> None:
+        """Parse node degree schedules derived from message-passing schedules."""
+        self.extra_node_l = int(extra_node_l)
+        if self.extra_node_l < 0:
+            raise ValueError("`extra_node_l` must be non-negative")
+        self.node_l_schedule = [
+            int(l_value) + self.extra_node_l for l_value in self.l_schedule
+        ]
+        self.node_ebed_dims = [
+            get_so3_dim_of_lmax(l_value) for l_value in self.node_l_schedule
+        ]
+        self.node_lmax = int(self.node_l_schedule[0])
+        self.node_ebed_dim = int(self.node_ebed_dims[0])
 
     def _canonicalize_charge_spin(
         self,
@@ -1569,6 +1928,29 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         elif charge_spin.shape[0] != nf:
             raise ValueError("`charge_spin` first dimension must match nframes.")
         return charge_spin
+
+    def _block_comm(
+        self,
+        block_idx: int,
+        comm_dict: dict[str, torch.Tensor] | None,
+    ) -> dict[str, torch.Tensor] | None:
+        """Return the border-exchange tensors block ``block_idx`` actually needs.
+
+        Only the SO(2) convolution reads neighbour features, so a block needs the
+        ghost exchange exactly when its neighbour rows cannot be rebuilt locally.
+        Block 0 reads the initial node state: a rank reproduces its ghost rows
+        from ``extended_atype`` (type embedding) unless env-seed / GIE folds
+        neighbour-environment information into them. Every later block reads a
+        previous block's output, which a rank cannot reproduce for ghosts (they
+        receive no messages locally). Returning ``None`` skips the exchange, so a
+        purely local model (``use_env_seed=False`` with a single block) runs
+        multi-rank with no communication at all.
+        """
+        if comm_dict is None:
+            return None
+        if block_idx == 0 and not self.use_env_seed:
+            return None
+        return comm_dict
 
     @contextmanager
     def _compute_mode_ctx(self, device: torch.device) -> Generator[None, None, None]:
@@ -1656,7 +2038,22 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return True
 
     def has_message_passing(self) -> bool:
-        return bool(len(self.blocks) > 0 and self.lmax > 0)
+        # SeZM resolves ghost neighbours through the atom-map fold (single
+        # domain) or border_op exchange (parallel) instead of reading them
+        # directly, so its lower path always needs message-passing handling.
+        return True
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Whether multi-rank inference needs cross-rank ghost-feature exchange.
+
+        SeZM reads ghost-neighbour features at every interaction block, so a
+        domain-decomposed run must exchange them through ``border_op``. Source
+        Freeze Propagation bridging is excluded: its per-node gate folds a
+        node's entire outgoing-edge set, which a single rank cannot observe for
+        ghost owners, so the edge-based with-comm artifact is not exported for
+        bridging models and multi-rank inference fails fast instead.
+        """
+        return self.bridging_switch is None
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False
@@ -1821,15 +2218,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "n_blocks": self.n_blocks,
                 "l_schedule": self.l_schedule,
                 "mmax": self.mmax,
+                "kmax": self.kmax,
                 "m_schedule": self.m_schedule,
+                "extra_node_l": self.extra_node_l,
                 "channels": self.channels,
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
@@ -1837,6 +2238,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "focus_dim": self.focus_dim,
                 "ffn_neurons": self.ffn_neurons,
                 "grid_mlp": self.grid_mlp,
+                "grid_branch": self.grid_branch,
                 "ffn_blocks": self.ffn_blocks,
                 "layer_scale": self.layer_scale,
                 "n_atten_head": self.n_atten_head,
@@ -1847,6 +2249,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "full_attn_res": self.full_attn_res_mode,
                 "block_attn_res": self.block_attn_res_mode,
                 "s2_activation": self.s2_activation,
+                "ffn_so3_grid": self.ffn_so3_grid,
+                "node_wise_s2": self.node_wise_s2,
+                "node_wise_so3": self.node_wise_so3,
+                "message_node_s2": self.message_node_s2,
+                "message_node_so3": self.message_node_so3,
+                "so3_readout": self.so3_readout,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,

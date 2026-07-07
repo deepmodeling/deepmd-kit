@@ -67,7 +67,7 @@ void DeepSpinPTExpt::init(const std::string& model,
   // Load libdeepmd_op_pt.so so deepmd_export::* schemas are visible
   // to torch's dispatcher before the AOTI module loads.  See
   // DeepPotPTExpt::init for the full rationale.
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
 
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
@@ -1028,9 +1028,12 @@ template void DeepSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 
 void DeepSpinPTExpt::get_type_map(std::string& type_map_str) {
+  type_map_str.clear();
   for (const auto& t : type_map) {
+    if (!type_map_str.empty()) {
+      type_map_str += " ";
+    }
     type_map_str += t;
-    type_map_str += " ";
   }
 }
 

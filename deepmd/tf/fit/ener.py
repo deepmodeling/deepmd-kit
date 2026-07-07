@@ -22,6 +22,13 @@ from deepmd.tf.env import (
 from deepmd.tf.fit.fitting import (
     Fitting,
 )
+from deepmd.tf.fit.stat import (
+    load_param_stats,
+    make_aparam_stats,
+    make_fparam_stats,
+    save_param_stats,
+    stats_avg_std,
+)
 from deepmd.tf.infer import (
     DeepPotential,
 )
@@ -64,6 +71,9 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -334,7 +344,12 @@ class EnerFitting(Fitting):
         )
         return energy_shift.ravel()
 
-    def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
+    def compute_input_stats(
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
         """Compute the input statistics.
 
         Parameters
@@ -345,35 +360,24 @@ class EnerFitting(Fitting):
             can be prepared by model.make_stat_input
         protection
             Divided-by-zero protection
+        stat_file_path
+            The path to the stat file.
         """
         # stat fparam
         if self.numb_fparam > 0:
-            cat_data = np.concatenate(all_stat["fparam"], axis=0)
-            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
-            self.fparam_avg = np.average(cat_data, axis=0)
-            self.fparam_std = np.std(cat_data, axis=0)
-            for ii in range(self.fparam_std.size):
-                if self.fparam_std[ii] < protection:
-                    self.fparam_std[ii] = protection
+            fparam_stats = load_param_stats(stat_file_path, "fparam", self.numb_fparam)
+            if fparam_stats is None:
+                fparam_stats = make_fparam_stats(all_stat, self.numb_fparam)
+                save_param_stats(stat_file_path, "fparam", fparam_stats)
+            self.fparam_avg, self.fparam_std = stats_avg_std(fparam_stats, protection)
             self.fparam_inv_std = 1.0 / self.fparam_std
         # stat aparam
         if self.numb_aparam > 0:
-            sys_sumv = []
-            sys_sumv2 = []
-            sys_sumn = []
-            for ss_ in all_stat["aparam"]:
-                ss = np.reshape(ss_, [-1, self.numb_aparam])
-                sys_sumv.append(np.sum(ss, axis=0))
-                sys_sumv2.append(np.sum(np.multiply(ss, ss), axis=0))
-                sys_sumn.append(ss.shape[0])
-            sumv = np.sum(sys_sumv, axis=0)
-            sumv2 = np.sum(sys_sumv2, axis=0)
-            sumn = np.sum(sys_sumn)
-            self.aparam_avg = (sumv) / sumn
-            self.aparam_std = self._compute_std(sumv2, sumv, sumn)
-            for ii in range(self.aparam_std.size):
-                if self.aparam_std[ii] < protection:
-                    self.aparam_std[ii] = protection
+            aparam_stats = load_param_stats(stat_file_path, "aparam", self.numb_aparam)
+            if aparam_stats is None:
+                aparam_stats = make_aparam_stats(all_stat, self.numb_aparam)
+                save_param_stats(stat_file_path, "aparam", aparam_stats)
+            self.aparam_avg, self.aparam_std = stats_avg_std(aparam_stats, protection)
             self.aparam_inv_std = 1.0 / self.aparam_std
 
     def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
@@ -1036,7 +1040,8 @@ def change_energy_bias_lower(
     for sys in data.data_systems:
         test_data = sys.get_test()
         nframes = test_data["box"].shape[0]
-        numb_test = min(nframes, ntest)
+        # ntest <= 0 means using all frames in the system
+        numb_test = nframes if ntest <= 0 else min(nframes, ntest)
         if mixed_type:
             atype = test_data["type"][:numb_test].reshape([numb_test, -1])
         else:

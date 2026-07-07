@@ -23,6 +23,7 @@ from ..common import (
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -57,6 +58,10 @@ else:
 
 # not implemented
 DescrptDPA3TF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3TF2
+else:
+    DescrptDPA3TF2 = None
 
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
@@ -338,8 +343,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_pt_expt = not INSTALLED_PT_EXPT
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = DescrptDPA3TF
+    tf2_class = DescrptDPA3TF2
     dp_class = DescrptDPA3DP
     pt_class = DescrptDPA3PT
     pt_expt_class = DescrptDPA3PTExpt
@@ -463,6 +470,17 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+            charge_spin=self.charge_spin,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

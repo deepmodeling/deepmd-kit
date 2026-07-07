@@ -5,6 +5,8 @@ include(CMakePackageConfigHelpers)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
+option(DEEPMD_BYPASS_TORCH_CUDA_CHECK
+       "Bypass PyTorch CUDA toolkit discovery when nvcc is unavailable" ON)
 option(ENABLE_JAX "Enable JAX interface" OFF)
 if(ENABLE_TENSORFLOW)
   # JAX requires TF C interface, contained in TF C++ library
@@ -12,6 +14,9 @@ if(ENABLE_TENSORFLOW)
 endif()
 option(ENABLE_PADDLE "Enable Paddle interface" OFF)
 option(BUILD_TESTING "Build test and enable coverage" OFF)
+option(ALLOW_NO_BACKEND
+       "Allow a backend-neutral C/C++ build without built-in backend plugins"
+       OFF)
 set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
@@ -335,6 +340,21 @@ if(BUILD_CPP_IF
   list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
+  if(DEEPMD_BYPASS_TORCH_CUDA_CHECK AND NOT USE_CUDA_TOOLKIT)
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+      set(DEEPMD_NVCC_EXECUTABLE ${CUDAToolkit_NVCC_EXECUTABLE})
+    else()
+      set(DEEPMD_NVCC_EXECUTABLE "DEEPMD_NVCC_EXECUTABLE-NOTFOUND")
+    endif()
+    if(NOT DEEPMD_NVCC_EXECUTABLE AND NOT TARGET torch::cudart)
+      message(
+        STATUS
+          "CUDAToolkit/nvcc not found; bypassing PyTorch CUDA toolkit discovery for this CPU-only build"
+      )
+      add_library(torch::cudart INTERFACE IMPORTED)
+    endif()
+  endif()
   find_package(Torch REQUIRED)
   if(NOT Torch_VERSION VERSION_LESS "2.1.0")
     set_if_higher(CMAKE_CXX_STANDARD 17)
@@ -438,7 +458,15 @@ if(NOT DEEPMD_C_ROOT)
      AND NOT ENABLE_JAX
      AND NOT ENABLE_PADDLE
      AND NOT BUILD_PY_IF)
-    message(FATAL_ERROR "No backend is enabled.")
+    if(ALLOW_NO_BACKEND)
+      message(STATUS "- none (backend-neutral C/C++ library only)")
+    else()
+      message(
+        FATAL_ERROR
+          "No backend is enabled. Enable at least one backend, or set "
+          "ALLOW_NO_BACKEND=ON for a backend-neutral C/C++ library that "
+          "loads backend plugins at runtime.")
+    endif()
   endif()
 endif()
 

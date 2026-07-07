@@ -40,8 +40,8 @@ from deepmd.utils.version import (
 )
 
 from .indexing import (
+    build_gie_zonal_index,
     get_so3_dim_of_lmax,
-    map_degree_idx,
 )
 from .utils import (
     np_safe,
@@ -154,7 +154,7 @@ class GeometricInitialEmbedding(nn.Module):
     Parameters
     ----------
     lmax
-        Maximum degree, should match ``l_schedule[0]``.
+        Maximum node degree for the initial embedding.
     channels
         Number of channels per (l, m) coefficient.
     dtype
@@ -175,49 +175,24 @@ class GeometricInitialEmbedding(nn.Module):
         self.dtype = dtype
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
-        if self.lmax > 0:
-            packed_degree_by_row = map_degree_idx(self.lmax, device=self.device)
-            # These aligned arrays describe one packed non-scalar row at a time.
-            # non_scalar_row_index[k] picks the output row in the packed SO(3) layout.
-            # zonal_m0_col_index_for_row[k] picks the matching m=0 column in Dt_full.
-            # radial_slot_index_for_row[k] picks the matching degree slot in radial_feat.
-            non_scalar_row_index = torch.arange(
-                1, self.ebed_dim, device=self.device, dtype=torch.long
-            )
-            non_scalar_degree_by_row = packed_degree_by_row[1:]
-            zonal_m0_col_index_for_row = non_scalar_degree_by_row * (
-                non_scalar_degree_by_row + 1
-            )
-            radial_slot_index_for_row = non_scalar_degree_by_row - 1
-            self.register_buffer(
-                "non_scalar_row_index", non_scalar_row_index, persistent=True
-            )
-            self.register_buffer(
-                "zonal_m0_col_index_for_row",
-                zonal_m0_col_index_for_row,
-                persistent=True,
-            )
-            self.register_buffer(
-                "radial_slot_index_for_row",
-                radial_slot_index_for_row,
-                persistent=True,
-            )
-        else:
-            self.register_buffer(
-                "non_scalar_row_index",
-                torch.empty(0, device=self.device, dtype=torch.long),
-                persistent=True,
-            )
-            self.register_buffer(
-                "zonal_m0_col_index_for_row",
-                torch.empty(0, device=self.device, dtype=torch.long),
-                persistent=True,
-            )
-            self.register_buffer(
-                "radial_slot_index_for_row",
-                torch.empty(0, device=self.device, dtype=torch.long),
-                persistent=True,
-            )
+        (
+            node_row_index,
+            node_zonal_m0_col_index,
+            node_radial_l_index,
+        ) = build_gie_zonal_index(self.lmax, device=self.device)
+        # One aligned entry per non-scalar node row: output row, local m=0
+        # column, and the matching radial degree slot.
+        self.register_buffer("non_scalar_row_index", node_row_index, persistent=True)
+        self.register_buffer(
+            "zonal_m0_col_index_for_row",
+            node_zonal_m0_col_index,
+            persistent=True,
+        )
+        self.register_buffer(
+            "radial_slot_index_for_row",
+            node_radial_l_index,
+            persistent=True,
+        )
 
     def forward(
         self,
@@ -225,6 +200,7 @@ class GeometricInitialEmbedding(nn.Module):
         n_nodes: int,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
+        zonal_coupling: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Parameters
@@ -235,6 +211,9 @@ class GeometricInitialEmbedding(nn.Module):
             Per-edge cache containing geometry, weights, and Wigner-D blocks.
         radial_feat
             Per-edge radial features with shape (E, lmax, C) for l=1..lmax.
+        zonal_coupling
+            Optional precomputed zonal coupling with shape (E, D-1). If None,
+            it is gathered from ``edge_cache.Dt_full``.
 
         Returns
         -------
@@ -253,12 +232,13 @@ class GeometricInitialEmbedding(nn.Module):
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
         # from the same degree block in Dt_full.
-        Dt_full = edge_cache.Dt_full  # (E, D, D)
-        zonal_m0_value_for_row = Dt_full[
-            :,
-            self.non_scalar_row_index,
-            self.zonal_m0_col_index_for_row,
-        ]  # (E, D-1)
+        if zonal_coupling is None:
+            Dt_full = edge_cache.Dt_full  # (E, D, D)
+            zonal_coupling = Dt_full[
+                :,
+                self.non_scalar_row_index,
+                self.zonal_m0_col_index_for_row,
+            ]  # (E, D-1)
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
@@ -266,7 +246,7 @@ class GeometricInitialEmbedding(nn.Module):
             1, self.radial_slot_index_for_row
         )  # (E, D-1, C)
         non_scalar_message = (
-            zonal_m0_value_for_row.unsqueeze(-1) * radial_value_for_row
+            zonal_coupling.unsqueeze(-1) * radial_value_for_row
         )  # (E, D-1, C)
 
         # === Step 4. Source Freeze Propagation Gate (optional) ===

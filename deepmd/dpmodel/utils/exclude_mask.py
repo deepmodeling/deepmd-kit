@@ -42,21 +42,24 @@ class AtomExcludeMask:
         Parameters
         ----------
         atype
-            The extended aotm types. shape: nf x natom
+            The atom types. shape: nf x natom (dense) or N (graph / flat)
 
         Returns
         -------
         mask
-            The type exclusion mask for atoms. shape: nf x natom
-            Element [ff,ii] being 0 if type(ii) is excluded,
-            otherwise being 1.
+            The type exclusion mask for atoms, same shape as ``atype``.
+            Element being 0 if the type is excluded, otherwise being 1.
 
         """
         xp = array_api_compat.array_namespace(atype)
-        nf, natom = atype.shape
+        lead = atype.shape  # (nf, natom) dense | (N,) graph
         return xp.reshape(
-            xp.take(self.type_mask[...], xp.reshape(atype, (-1,)), axis=0),
-            (nf, natom),
+            xp.take(
+                xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+                xp.reshape(atype, (-1,)),
+                axis=0,
+            ),
+            lead,
         )
 
 
@@ -147,10 +150,45 @@ class PairExcludeMask:
         # (nf * nloc * nnei,)
         type_ij_flat = xp.reshape(type_ij, (-1,))
         mask = xp.reshape(
-            xp.take(self.type_mask[...], type_ij_flat),
+            xp.take(
+                xp.asarray(self.type_mask[...], device=array_api_compat.device(nlist)),
+                type_ij_flat,
+            ),
             (nf, nloc, nnei),
         )
         return mask
+
+    def build_edge_exclude_mask(self, edge_index: Array, atype: Array) -> Array:
+        """Graph-native pair exclusion: per-edge keep mask (1 keep, 0 exclude).
+
+        Parameters
+        ----------
+        edge_index
+            (2, E) [src, dst]; src = neighbor, dst = center; into [0, N).
+        atype
+            (N,) flat local node types (clamped >= 0).
+
+        Returns
+        -------
+        mask
+            (E,) int. ``type_mask[atype[dst]*(ntypes+1) + atype[src]]``.
+
+        """
+        xp = array_api_compat.array_namespace(atype)
+        if len(self.exclude_types) == 0:
+            return xp.ones(
+                (edge_index.shape[1],),
+                dtype=xp.int32,
+                device=array_api_compat.device(atype),
+            )
+        src_t = xp.take(atype, edge_index[0, :], axis=0)
+        dst_t = xp.take(atype, edge_index[1, :], axis=0)
+        type_ij = dst_t * (self.ntypes + 1) + src_t
+        return xp.take(
+            xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+            type_ij,
+            axis=0,
+        )
 
     def __contains__(self, item: tuple[int, int]) -> bool:
         return item in self.exclude_types

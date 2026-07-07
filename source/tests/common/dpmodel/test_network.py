@@ -18,6 +18,7 @@ from deepmd.dpmodel.utils import (
     NativeLayer,
     NativeNet,
     NetworkCollection,
+    aggregate,
     load_dp_model,
     save_dp_model,
 )
@@ -475,6 +476,51 @@ class TestNetworkCollection(unittest.TestCase):
         )
         np.testing.assert_equal(
             networks[()].serialize(), networks.serialize()["networks"][0]
+        )
+
+
+class TestAggregate(unittest.TestCase):
+    def setUp(self) -> None:
+        self.data = np.array(
+            [
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [5.0, 6.0],
+            ],
+            dtype=np.float64,
+        )
+        self.owners = np.array([0, 2, 2], dtype=np.int64)
+
+    def test_average_with_explicit_num_owner(self) -> None:
+        output = aggregate(self.data, self.owners, average=True, num_owner=4)
+
+        np.testing.assert_allclose(
+            output,
+            np.array(
+                [
+                    [1.0, 2.0],
+                    [0.0, 0.0],
+                    [4.0, 5.0],
+                    [0.0, 0.0],
+                ],
+                dtype=np.float64,
+            ),
+        )
+
+    def test_sum_with_explicit_num_owner(self) -> None:
+        output = aggregate(self.data, self.owners, average=False, num_owner=4)
+
+        np.testing.assert_allclose(
+            output,
+            np.array(
+                [
+                    [1.0, 2.0],
+                    [0.0, 0.0],
+                    [8.0, 10.0],
+                    [0.0, 0.0],
+                ],
+                dtype=np.float64,
+            ),
         )
 
 

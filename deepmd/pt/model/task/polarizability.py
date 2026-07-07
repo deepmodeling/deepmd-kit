@@ -235,6 +235,7 @@ class PolarFittingNet(GeneralFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, (
@@ -242,10 +243,18 @@ class PolarFittingNet(GeneralFitting):
         )
         # cast the input to internal precsion
         gr = gr.to(self.prec)
+        fit_ret = self._forward_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            return_atomic_feature=return_atomic_feature,
+        )
         # (nframes, nloc, _net_out_dim)
-        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        out = fit_ret[self.var_name]
         out = out * (self.scale.to(atype.device).to(self.prec))[atype]
 
         gr = gr.view(nframes * nloc, self.embedding_width, 3)  # (nframes * nloc, m1, 3)
@@ -261,7 +270,10 @@ class PolarFittingNet(GeneralFitting):
             "bim,bmj->bij", gr.transpose(1, 2), out
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
-        return {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        result = {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        if return_atomic_feature:
+            result["atomic_feature"] = fit_ret["atomic_feature"]
+        return result
 
     # make jit happy with torch 2.0.0
     exclude_types: list[int]

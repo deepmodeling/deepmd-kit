@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""``nlist_backend`` dispatch + vesin/native equivalence for the pt backend.
+"""``nlist_backend`` dispatch + O(N) strategy equivalence for the pt backend.
 
 The pt model is reconstructed eagerly in ``DeepEval`` and evaluated via
-``forward_common_lower`` when the O(N) vesin neighbor list is selected (the
-exported TorchScript graph is untouched).  native and vesin must give identical
-results, and the ``nlist_backend`` choice must dispatch / validate correctly.
+``forward_common_lower`` when an O(N) neighbor-list strategy is selected.  Each
+strategy (``vesin``, ``nv``) must give results identical to the native dense
+builder, and the ``nlist_backend`` choice must dispatch / validate correctly.
+Strategy tests are skipped when the backend (or, for ``nv``, a CUDA device) is
+unavailable.
 """
 
 import copy
@@ -22,13 +24,27 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pt.utils.nv_nlist import (
+    NvNeighborList,
+    is_nv_available,
+)
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
     is_vesin_torch_available,
 )
 
-pytestmark = pytest.mark.skipif(
-    not is_vesin_torch_available(), reason="vesin.torch is not installed"
-)
+# Each O(N) strategy: (backend name, builder class, availability skip mark).
+_BACKEND_MARKS = {
+    "vesin": pytest.mark.skipif(
+        not is_vesin_torch_available(), reason="vesin.torch is not installed"
+    ),
+    "nv": pytest.mark.skipif(
+        not (is_nv_available() and torch.cuda.is_available()),
+        reason="nvalchemiops CUDA neighbor list unavailable",
+    ),
+}
+_BUILDER_CLS = {"vesin": VesinNeighborList, "nv": NvNeighborList}
+STRATEGIES = [pytest.param(name, marks=mark) for name, mark in _BACKEND_MARKS.items()]
 
 TYPE_MAP = ["O", "H", "B"]
 
@@ -79,6 +95,7 @@ def _save_pt(md_dict: dict, path: str) -> None:
 
 
 def _system():
+    """Single periodic frame (every strategy supports a periodic box)."""
     rng = np.random.default_rng(20240604)
     coords = (rng.random((1, 8, 3)) * 6.0).astype(np.float64)
     atype = np.array([0, 0, 1, 1, 2, 0, 1, 2], dtype=np.int64)
@@ -88,7 +105,7 @@ def _system():
 
 def _multiframe_system(nframes: int = 3):
     """Frames with different box sizes -> different per-frame ghost counts,
-    exercising the vesin builder's pad-to-common-nall + stack path.
+    exercising the builder's pad-to-common-nall + stack path.
     """
     rng = np.random.default_rng(20240604)
     atype = np.array([0, 0, 1, 1, 2, 0, 1, 2], dtype=np.int64)
@@ -111,46 +128,88 @@ def pt_files(tmp_path_factory):
     return files
 
 
-def test_default_is_auto(pt_files) -> None:
-    # vesin is available (module skip guard), non-spin/non-hessian -> auto picks it
-    assert DeepPot(pt_files["se_e2_a"]).deep_eval._use_vesin is True
+def _assert_eval_close(dp_ref, dp_test, coords, cells, atype, msg: str) -> None:
+    ref = dp_ref.eval(coords, cells, atype, atomic=True)
+    out = dp_test.eval(coords, cells, atype, atomic=True)
+    for a, b, label in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
+        np.testing.assert_allclose(a, b, rtol=1e-9, atol=1e-9, err_msg=f"{msg} {label}")
 
 
-def test_native_disables_vesin(pt_files) -> None:
-    dp = DeepPot(pt_files["se_e2_a"], nlist_backend="native")
-    assert dp.deep_eval._use_vesin is False
+# --- dispatch / selection ---------------------------------------------------
 
 
-def test_invalid_raises(pt_files) -> None:
+def test_invalid_backend_raises(pt_files) -> None:
     with pytest.raises(ValueError):
         DeepPot(pt_files["se_e2_a"], nlist_backend="bogus")
 
 
-@pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
-@pytest.mark.parametrize("periodic", [False, True])  # non-PBC vs PBC
-def test_vesin_matches_native(pt_files, name: str, periodic: bool) -> None:
-    """Vesin and native give identical energy/force/virial/atomic-virial."""
+def test_native_uses_no_strategy(pt_files) -> None:
+    dp = DeepPot(pt_files["se_e2_a"], nlist_backend="native")
+    assert dp.deep_eval._nlist_builder is None
+
+
+@pytest.mark.parametrize("backend", STRATEGIES)
+def test_explicit_backend_selects_builder(pt_files, backend: str) -> None:
+    dp = DeepPot(pt_files["se_e2_a"], nlist_backend=backend)
+    assert isinstance(dp.deep_eval._nlist_builder, _BUILDER_CLS[backend])
+
+
+@_BACKEND_MARKS["vesin"]
+def test_auto_prefers_vesin(pt_files) -> None:
+    # auto picks the first available O(N) builder; vesin is preferred.
+    builder = DeepPot(pt_files["se_e2_a"]).deep_eval._nlist_builder
+    assert isinstance(builder, VesinNeighborList)
+
+
+def test_self_built_model_forces_native(pt_files, monkeypatch) -> None:
+    # A model reporting use_self_built_nlist()=True keeps the native path and
+    # ignores the requested backend (without even validating its name).
+    deep_eval = DeepPot(pt_files["se_e2_a"], nlist_backend="native").deep_eval
+    inner = deep_eval.dp.model["Default"]
+    monkeypatch.setattr(inner, "use_self_built_nlist", lambda: True, raising=False)
+    for backend in ("auto", "vesin", "nv", "bogus"):
+        deep_eval._setup_nlist_backend(backend)
+        assert deep_eval._nlist_builder is None
+
+
+# --- equivalence with the native dense builder ------------------------------
+
+
+@pytest.mark.parametrize("name", list(ALL_MODELS))
+@pytest.mark.parametrize("backend", STRATEGIES)
+def test_strategy_matches_native(pt_files, backend: str, name: str) -> None:
+    """Each strategy matches native on a periodic single-frame system."""
     coords, atype, box = _system()
-    cells = box if periodic else None
     dp_native = DeepPot(pt_files[name], nlist_backend="native")
-    dp_vesin = DeepPot(pt_files[name], nlist_backend="vesin")
-    ref = dp_native.eval(coords, cells, atype, atomic=True)
-    out = dp_vesin.eval(coords, cells, atype, atomic=True)
-    for a, b, label in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
-        np.testing.assert_allclose(
-            a, b, rtol=1e-9, atol=1e-9, err_msg=f"{name} {label}"
-        )
+    dp_strat = DeepPot(pt_files[name], nlist_backend=backend)
+    _assert_eval_close(dp_native, dp_strat, coords, box, atype, f"{name} {backend}")
 
 
-@pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
-def test_vesin_matches_native_multiframe(pt_files, name: str) -> None:
-    """Multi-frame eval (frames with differing ghost counts) matches native."""
+@pytest.mark.parametrize("name", list(ALL_MODELS))
+@pytest.mark.parametrize("backend", STRATEGIES)
+def test_strategy_matches_native_multiframe(pt_files, backend: str, name: str) -> None:
+    """Each strategy matches native across frames with differing ghost counts."""
     coords, atype, box = _multiframe_system()
     dp_native = DeepPot(pt_files[name], nlist_backend="native")
+    dp_strat = DeepPot(pt_files[name], nlist_backend=backend)
+    _assert_eval_close(dp_native, dp_strat, coords, box, atype, f"{name} {backend} mf")
+
+
+@_BACKEND_MARKS["vesin"]
+@pytest.mark.parametrize("name", list(ALL_MODELS))
+def test_vesin_matches_native_nonperiodic(pt_files, name: str) -> None:
+    """Vesin also supports non-periodic systems."""
+    coords, atype, _ = _system()
+    dp_native = DeepPot(pt_files[name], nlist_backend="native")
     dp_vesin = DeepPot(pt_files[name], nlist_backend="vesin")
-    ref = dp_native.eval(coords, box, atype, atomic=True)
-    out = dp_vesin.eval(coords, box, atype, atomic=True)
-    for a, b, label in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
-        np.testing.assert_allclose(
-            a, b, rtol=1e-9, atol=1e-9, err_msg=f"{name} {label}"
-        )
+    _assert_eval_close(dp_native, dp_vesin, coords, None, atype, f"{name} vesin nopbc")
+
+
+@_BACKEND_MARKS["nv"]
+@pytest.mark.parametrize("name", list(ALL_MODELS))
+def test_nv_matches_native_nonperiodic(pt_files, name: str) -> None:
+    """NV also supports non-periodic systems."""
+    coords, atype, _ = _system()
+    dp_native = DeepPot(pt_files[name], nlist_backend="native")
+    dp_nv = DeepPot(pt_files[name], nlist_backend="nv")
+    _assert_eval_close(dp_native, dp_nv, coords, None, atype, f"{name} nv nopbc")

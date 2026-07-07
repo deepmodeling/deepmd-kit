@@ -49,9 +49,9 @@ def find_pytorch() -> tuple[str | None, list[str]]:
     str, optional
         PyTorch library path if found.
     list of str
-        TensorFlow requirement if not found. Empty if found.
+        PyTorch requirement if not found. Empty if found.
     """
-    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "0":
+    if os.environ.get("DP_ENABLE_PYTORCH", "1") == "0":
         return None, []
     requires = []
     pt_spec = None
@@ -142,6 +142,13 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # under the torch extra rather than the core deps (conda-forge has
             # vesin but not vesin-torch).
             "vesin[torch]",
+            # GPU O(N) cell-list neighbor list for large systems. Restricted to
+            # Python >= 3.11 (the package requires it while deepmd-kit still
+            # supports 3.10) and to Linux: it is a CUDA package, and its
+            # dependency warp-lang ships no macosx_x86_64 wheel, which otherwise
+            # makes the macOS x86_64 wheel build's dependency resolution
+            # unsatisfiable.
+            "nvalchemi-toolkit-ops>=0.3.1; python_version >= '3.11' and platform_system == 'Linux'",
             *mpi_requirement,
             *cibw_requirement,
         ],

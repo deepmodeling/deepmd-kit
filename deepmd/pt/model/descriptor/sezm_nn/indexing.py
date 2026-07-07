@@ -76,6 +76,44 @@ def map_degree_idx(lmax: int, *, device: torch.device) -> torch.Tensor:
     )
 
 
+def build_gie_zonal_index(
+    lmax: int, *, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Build node-level packed indices for GIE zonal coupling.
+
+    The returned tensors are aligned row-wise for every non-scalar packed
+    coefficient in the node representation. They select the local ``m=0`` column
+    of the matching degree from ``Dt_full`` or an equivalent zonal coupling table.
+
+    Parameters
+    ----------
+    lmax
+        Maximum node degree used by the geometric initial embedding.
+    device
+        Device for the returned tensors.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ``(node_row_index, node_zonal_m0_col_index, node_radial_l_index)``.
+        The first two index packed SO(3) rows/columns; the last one indexes
+        radial features with degree slots ``l=1..lmax`` stored as ``0..lmax-1``.
+    """
+    lmax_i = int(lmax)
+    ebed_dim = get_so3_dim_of_lmax(lmax_i)
+    if lmax_i == 0:
+        empty = torch.empty(0, device=device, dtype=torch.long)
+        return empty, empty, empty
+
+    packed_degree_by_row = map_degree_idx(lmax_i, device=device)
+    node_row_index = torch.arange(1, ebed_dim, device=device, dtype=torch.long)
+    node_degree_by_row = packed_degree_by_row[1:]
+    node_zonal_m0_col_index = node_degree_by_row * (node_degree_by_row + 1)
+    node_radial_l_index = node_degree_by_row - 1
+    return node_row_index, node_zonal_m0_col_index, node_radial_l_index
+
+
 def project_D_to_m(
     D_full: torch.Tensor,
     coeff_index_m: torch.Tensor,

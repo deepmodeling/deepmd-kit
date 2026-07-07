@@ -69,7 +69,7 @@ class TestCaseSingleFrameWithNlist:
             [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
         )
         self.mapping = np.concatenate(
-            [self.mapping, self.mapping[:, self.perm]], axis=0
+            [self.mapping, inv_perm[self.mapping[:, self.perm]]], axis=0
         )
         # permute the nlist
         nlist1 = self.nlist[:, self.perm[: self.nloc], :]

@@ -3,7 +3,6 @@ import datetime
 import functools
 import json
 import logging
-import os
 import time
 from collections.abc import (
     Callable,
@@ -45,6 +44,7 @@ from deepmd.pt.loss import (
     EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    PopulationLoss,
     PropertyLoss,
     TaskLoss,
     TensorLoss,
@@ -74,7 +74,12 @@ from deepmd.pt.train.ema import (
     get_ema_validation_log_path,
 )
 from deepmd.pt.train.utils import (
-    clip_grad_norm_with_stable_fallback,
+    NonFiniteGradGuard,
+    clip_grad_norm_,
+    latest_checkpoint_path,
+    resolve_best_checkpoint_dir,
+    resolve_keep_ckpt_count,
+    scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
     FullValidator,
@@ -113,6 +118,9 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
 )
 
 if torch.__version__.startswith("2"):
@@ -181,18 +189,12 @@ class Trainer:
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 
-        # NOTE: Translate ``validating.compiled_infer`` (input.json opt-in)
-        # into the ``DP_COMPILE_INFER`` environment variable *before* any
-        # model is constructed below.  SeZMModel samples this env var
-        # exactly once inside its __init__ (see ``_env_use_compile_infer``
-        # in ``deepmd/pt/model/model/sezm_model.py``) and uses the cached
-        # value to decide whether eval / full-validation forwards take
-        # the compile path.  Setting it later would be silently ignored
-        # for the rest of the run.  ``setdefault`` preserves any explicit
-        # shell-level override so a user who manually exported
-        # ``DP_COMPILE_INFER`` (either direction) stays in control.
-        if bool((config.get("validating") or {}).get("compiled_infer", False)):
-            os.environ.setdefault("DP_COMPILE_INFER", "1")
+        validating_params = config.get("validating") or {}
+        infer_env_defaults = {}
+        if bool(validating_params.get("compiled_infer", False)):
+            infer_env_defaults["DP_COMPILE_INFER"] = "1"
+        if bool(validating_params.get("tf32_infer", False)):
+            infer_env_defaults["DP_TF32_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -213,8 +215,13 @@ class Trainer:
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
+        save_dir = training_params.get("save_dir")
+        self.save_dir = Path(save_dir) if save_dir else None
+        if self.save_dir is not None and self.rank == 0:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
+        self.ckpt_keep_ratio = training_params.get("ckpt_keep_ratio")
         self.enable_ema = bool(training_params.get("enable_ema", False))
         self.ema_decay = float(training_params.get("ema_decay", 0.999))
         self.ema_ckpt_keep = int(training_params.get("ema_ckpt_keep", 3))
@@ -449,11 +456,14 @@ class Trainer:
             }
 
         # Model
-        self.model = get_model_for_wrapper(
-            model_params,
-            resuming=resuming,
-            _loss_params=loss_param_tmp,
-        )
+        # SeZMModel samples these eval/inference env vars exactly once inside
+        # __init__; keep config-derived defaults scoped to construction.
+        with scoped_env_defaults(infer_env_defaults):
+            self.model = get_model_for_wrapper(
+                model_params,
+                resuming=resuming,
+                _loss_params=loss_param_tmp,
+            )
         # SeZM specific process for DeNS training
         prepare_model_for_loss(self.model, loss_param_tmp)
 
@@ -658,6 +668,11 @@ class Trainer:
                         training_data.index,
                         sampler_weights,
                     )
+                # Sampler weights carry tiny per-rank floating-point noise, so
+                # the rounded batch count can differ by one unit across ranks.
+                # Pin it to rank 0 before deriving num_steps so every rank
+                # shares the same training and full-validation schedule.
+                total_numb_batch = self._broadcast_value_from_rank0(total_numb_batch)
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -689,6 +704,7 @@ class Trainer:
                                 sampler_weights,
                             )
                         )
+                per_task_total = self._broadcast_value_from_rank0(per_task_total)
                 (
                     self.model_prob,
                     self.num_steps,
@@ -719,8 +735,27 @@ class Trainer:
                     rank=self.rank,
                 )
 
+        # === Derive checkpoint retention from ckpt_keep_ratio ===
+        # num_steps is final here (including when derived from num_epoch), so the
+        # ratio can be converted into an absolute keep count once.
+        keep_ckpt_count = resolve_keep_ckpt_count(
+            self.ckpt_keep_ratio, self.num_steps, self.save_freq
+        )
+        if keep_ckpt_count is not None:
+            self.max_ckpt_keep = keep_ckpt_count
+            self.ema_ckpt_keep = keep_ckpt_count
+            log.info(
+                "Resolved checkpoint retention to %d from ckpt_keep_ratio=%s "
+                "(num_steps=%d, save_freq=%d).",
+                keep_ckpt_count,
+                self.ckpt_keep_ratio,
+                self.num_steps,
+                self.save_freq,
+            )
+
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
         # Minimum pairwise distance for filtering unphysical frames during training
@@ -788,9 +823,8 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model = get_model_for_wrapper(
-                        state_dict["_extra_state"]["model_params"]
-                    )
+                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
                     pretrained_model_wrapper = ModelWrapper(pretrained_model)
                     pretrained_model_wrapper.load_state_dict(state_dict)
                     # update type related params
@@ -825,6 +859,25 @@ class Trainer:
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
+                        _input_model_params = (
+                            model_params["model_dict"][_model_key]
+                            if self.multi_task
+                            else model_params
+                        )
+                        _pretrained_model_params = (
+                            pretrained_model_params["model_dict"][_model_key_from]
+                            if "model_dict" in pretrained_model_params
+                            else pretrained_model_params
+                        )
+                        if (
+                            "descriptor" in _input_model_params
+                            and "descriptor" in _pretrained_model_params
+                        ):
+                            warn_configuration_mismatch_during_finetune(
+                                _input_model_params["descriptor"],
+                                _pretrained_model_params["descriptor"],
+                                _model_key_from,
+                            )
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -1018,6 +1071,7 @@ class Trainer:
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
 
             if self.opt_type in ("Adam", "AdamW"):
                 cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
@@ -1038,7 +1092,6 @@ class Trainer:
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
-                    "named_parameters": tuple(self.wrapper.named_parameters()),
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
@@ -1057,6 +1110,11 @@ class Trainer:
                 weight_decay=weight_decay,
                 **extra,
             )
+            if self.opt_type == "HybridMuon":
+                target_optimizer = (
+                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                )
+                target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
@@ -1093,7 +1151,6 @@ class Trainer:
         self.full_validator = None
         self.ema_full_validator = None
 
-        validating_params = config.get("validating") or {}
         self.full_validator = self._create_full_validator(
             validating_params=validating_params,
             validation_data=validation_data,
@@ -1106,6 +1163,24 @@ class Trainer:
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    def _broadcast_value_from_rank0(self, value: Any) -> Any:
+        """Return rank 0's copy of ``value`` on every rank.
+
+        ``num_steps`` derived from ``num_epoch`` ultimately depends on the
+        per-rank sampler weights, whose tiny floating-point differences can
+        shift the rounded batch count -- and therefore ``num_steps`` -- by a
+        single unit across ranks. A drifting ``num_steps`` makes ranks
+        disagree on the full-validation start step, so some ranks enter the
+        validation barrier while the others keep training, deadlocking the
+        mismatched collective calls. Pinning every rank to rank 0's value
+        keeps the whole training schedule in lockstep.
+        """
+        if not self.is_distributed:
+            return value
+        holder = [value]
+        dist.broadcast_object_list(holder, src=0, device=DEVICE)
+        return holder[0]
 
     @staticmethod
     def _create_lr_scheduler(
@@ -1145,7 +1220,9 @@ class Trainer:
             rank=self.rank,
             zero_stage=self.zero_stage,
             restart_training=self.restart_training,
-            checkpoint_dir=Path(self.save_ckpt).parent,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
         )
 
     def _create_ema_full_validator(
@@ -1179,7 +1256,9 @@ class Trainer:
             rank=self.rank,
             zero_stage=self.zero_stage,
             restart_training=self.restart_training,
-            checkpoint_dir=Path(self.save_ckpt).parent,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
             full_val_file=get_ema_validation_log_path(
                 validating_params.get("full_val_file", "val.log")
             ),
@@ -1416,12 +1495,12 @@ class Trainer:
                             for name, p in self.wrapper.named_parameters()
                             if p.grad is not None
                         ]
-                    total_norm = clip_grad_norm_with_stable_fallback(
+                    total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        use_stable_fallback=self.zero_stage < 2,
-                        named_parameters=self.wrapper.named_parameters,
+                        stable=self.zero_stage < 2,
                     )
+                    self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -1755,29 +1834,38 @@ class Trainer:
                     ),
                 )
 
-            if (
-                (
-                    (display_step_id) % self.save_freq == 0
-                    and _step_id != self.start_step
+            should_save_checkpoint = (
+                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
+            ) or (display_step_id) == self.num_steps
+            if should_save_checkpoint:
+                # Abort before writing if any gradient norm since the previous
+                # checkpoint was non-finite.
+                self.nonfinite_grad_guard.raise_if_nonfinite(
+                    self.wrapper.named_parameters
                 )
-                or (display_step_id) == self.num_steps
-            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+            if should_save_checkpoint and (
+                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+            ):
                 # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
+                self.latest_model = latest_checkpoint_path(
+                    self.save_ckpt, display_step_id, self.save_dir
+                )
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 if self.rank == 0 or dist.get_rank() == 0:
                     log.info(f"Saved model to {self.latest_model}")
-                    symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                    symlink_prefix_files(
+                        str(self.latest_model.with_suffix("")), self.save_ckpt
+                    )
                     with open("checkpoint", "w") as f:
                         f.write(str(self.latest_model))
                 if self.model_ema is not None:
-                    self.latest_ema_model = Path(
-                        self.ema_save_ckpt + f"-{display_step_id}.pt"
+                    self.latest_ema_model = latest_checkpoint_path(
+                        self.ema_save_ckpt, display_step_id, self.save_dir
                     )
                     self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
                     if self.rank == 0 or dist.get_rank() == 0:
                         symlink_prefix_files(
-                            self.latest_ema_model.stem,
+                            str(self.latest_ema_model.with_suffix("")),
                             self.ema_save_ckpt,
                         )
 
@@ -1838,7 +1926,11 @@ class Trainer:
             if JIT:
                 break
 
-        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+        if (
+            self.change_bias_after_training
+            and self.num_steps > self.start_step
+            and (self.rank == 0 or dist.get_rank() == 0)
+        ):
             if not self.multi_task:
                 self.model = model_change_out_bias(
                     self.model,
@@ -1852,30 +1944,36 @@ class Trainer:
                         self.get_sample_func[model_key],
                         _bias_adjust_mode="change-by-statistic",
                     )
-            self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
+            self.latest_model = latest_checkpoint_path(
+                self.save_ckpt, self.num_steps, self.save_dir
+            )
             cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
-            symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+            symlink_prefix_files(str(self.latest_model.with_suffix("")), self.save_ckpt)
             with open("checkpoint", "w") as f:
                 f.write(str(self.latest_model))
             if self.model_ema is not None:
-                self.latest_ema_model = Path(
-                    self.ema_save_ckpt + f"-{self.num_steps}.pt"
+                self.latest_ema_model = latest_checkpoint_path(
+                    self.ema_save_ckpt, self.num_steps, self.save_dir
                 )
                 self.save_ema_model(
                     self.latest_ema_model,
                     lr=cur_lr,
                     step=self.num_steps - 1,
                 )
-                symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
+                symlink_prefix_files(
+                    str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
+                )
 
         if self.num_steps == 0 and self.zero_stage > 0:
             # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
-            self.latest_model = Path(self.save_ckpt + "-0.pt")
+            self.latest_model = latest_checkpoint_path(self.save_ckpt, 0, self.save_dir)
             self.save_model(self.latest_model, lr=0, step=0)
             if self.model_ema is not None:
-                self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                self.latest_ema_model = latest_checkpoint_path(
+                    self.ema_save_ckpt, 0, self.save_dir
+                )
                 self.save_ema_model(self.latest_ema_model, lr=0, step=0)
 
         if (
@@ -1884,17 +1982,25 @@ class Trainer:
             if self.num_steps == 0:
                 if self.zero_stage == 0:
                     # When num_steps is 0, the checkpoint is never saved in the loop
-                    self.latest_model = Path(self.save_ckpt + "-0.pt")
+                    self.latest_model = latest_checkpoint_path(
+                        self.save_ckpt, 0, self.save_dir
+                    )
                     self.save_model(self.latest_model, lr=0, step=0)
                     if self.model_ema is not None:
-                        self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                        self.latest_ema_model = latest_checkpoint_path(
+                            self.ema_save_ckpt, 0, self.save_dir
+                        )
                         self.save_ema_model(self.latest_ema_model, lr=0, step=0)
                 log.info(f"Saved model to {self.latest_model}")
-                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                symlink_prefix_files(
+                    str(self.latest_model.with_suffix("")), self.save_ckpt
+                )
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
                 if self.model_ema is not None:
-                    symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
+                    symlink_prefix_files(
+                        str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
+                    )
 
             if self.timing_in_training and self.timed_steps:
                 msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
@@ -2428,6 +2534,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "population":
+        loss_params["starter_learning_rate"] = start_lr
+        return PopulationLoss(**loss_params)
+
     else:
         loss_params["starter_learning_rate"] = start_lr
         return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)

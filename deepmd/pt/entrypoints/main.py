@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import copy
 import io
 import json
 import logging
@@ -99,6 +98,38 @@ from deepmd.utils.path import (
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
+
+
+def _update_changed_model_tensors(
+    target_state_dict: dict[str, Any],
+    source_state_dict: dict[str, Any],
+    key_prefix: str | None = None,
+) -> None:
+    """Copy changed tensors into an existing state dict without breaking aliases."""
+    for key, source_value in source_state_dict.items():
+        if key == "_extra_state":
+            continue
+        if key_prefix is not None and not key.startswith(key_prefix):
+            continue
+        if key not in target_state_dict:
+            target_state_dict[key] = (
+                source_value.detach().clone()
+                if torch.is_tensor(source_value)
+                else source_value
+            )
+            continue
+        target_value = target_state_dict[key]
+        if torch.is_tensor(target_value) and torch.is_tensor(source_value):
+            if (
+                target_value.shape == source_value.shape
+                and target_value.dtype == source_value.dtype
+            ):
+                if not torch.equal(target_value, source_value):
+                    target_value.copy_(source_value)
+            else:
+                target_state_dict[key] = source_value.detach().clone()
+        elif target_value != source_value:
+            target_state_dict[key] = source_value
 
 
 def get_trainer(
@@ -512,7 +543,7 @@ def change_bias(
         old_state_dict = torch.load(
             input_file, map_location=env.DEVICE, weights_only=True
         )
-        model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
+        model_state_dict = old_state_dict.get("model", old_state_dict)
         model_params = model_state_dict["_extra_state"]["model_params"]
     elif input_file.endswith(".pth"):
         old_model = torch.jit.load(input_file, map_location=env.DEVICE)
@@ -545,7 +576,7 @@ def change_bias(
     model_to_change = model if not multi_task else model[model_branch]
     if input_file.endswith(".pt"):
         wrapper = ModelWrapper(model)
-        wrapper.load_state_dict(old_state_dict["model"])
+        wrapper.load_state_dict(model_state_dict)
     else:
         # for .pth
         model.load_state_dict(old_state_dict)
@@ -608,12 +639,12 @@ def change_bias(
             output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
         wrapper = ModelWrapper(model)
-        if "model" in old_state_dict:
-            old_state_dict["model"] = wrapper.state_dict()
-            old_state_dict["model"]["_extra_state"] = model_state_dict["_extra_state"]
-        else:
-            old_state_dict = wrapper.state_dict()
-            old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
+        key_prefix = f"model.{model_branch}." if multi_task else None
+        _update_changed_model_tensors(
+            model_state_dict,
+            wrapper.state_dict(),
+            key_prefix=key_prefix,
+        )
         torch.save(old_state_dict, output_path)
     else:
         # for .pth

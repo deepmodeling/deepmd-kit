@@ -13,6 +13,9 @@ from deepmd.pt.utils import (
 from ..consistent.common import (
     parameterized,
 )
+from .tabulate_test_utils import (
+    assert_second_order_backward_matches_finite_difference,
+)
 
 
 @parameterized((torch.float64, torch.float32))
@@ -1330,6 +1333,20 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
         # Check the values of the gradients
         torch.testing.assert_close(
             self.em_tensor.grad, self.expected_dy_dem, atol=self.prec, rtol=self.prec
+        )
+
+    def test_second_order_backward(self) -> None:
+        forward_result = torch.ops.deepmd.tabulate_fusion_se_r(
+            self.table_tensor,
+            self.table_info_tensor,
+            self.em_tensor,
+            self.last_layer_size,
+        )
+
+        descriptor_tensor = forward_result[0]
+        assert_second_order_backward_matches_finite_difference(
+            descriptor_tensor,
+            self.em_tensor,
         )
 
 

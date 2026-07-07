@@ -34,11 +34,11 @@ from deepmd.pt.model.model.spin_model import (
     SpinModel,
     _lookup_type_values,
 )
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
+)
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_extended,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -158,13 +158,14 @@ class SeZMSpinModel(SeZMModel):
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
+            atype = atype.to(device=cc.device, dtype=torch.long)
             nf, nloc = atype.shape[:2]
             if cc.ndim == 2:
                 cc = cc.view(nf, nloc, 3)
             spin = spin.to(dtype=cc.dtype, device=cc.device).reshape(nf, nloc, 3)
 
-            extended_coord, extended_atype, mapping, nlist = self.build_neighbor_list(
-                cc, atype, bb
+            extended_coord, extended_atype, nlist, mapping = (
+                self.build_extended_neighbor_list(cc, atype, bb)
             )
             extended_spin = torch.gather(
                 spin,
@@ -186,18 +187,31 @@ class SeZMSpinModel(SeZMModel):
             )
             if ap is not None:
                 ap = self.expand_aparam(ap, nloc * 2)
-            model_ret = self.forward_common_after_nlist(
+            nlist_updated = self.format_nlist(
                 extended_coord_updated,
                 extended_atype_updated,
-                mapping_updated,
                 nlist_updated,
+                extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            )
+            edge_schema = edge_schema_from_extended(
+                extended_coord_updated,
                 extended_atype_updated[:, : nloc * 2],
-                fp,
-                ap,
-                input_prec,
-                do_atomic_virial=do_atomic_virial,
-                extended_coord_corr=extended_coord_corr,
+                nlist_updated,
+                mapping_updated,
+                scatter_to_local=True,
+            )
+            model_ret = super().forward_common_lower(
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                fparam=fp,
+                aparam=ap,
+                extended_coord_corr=extended_coord_corr[:, : nloc * 2, :],
                 charge_spin=charge_spin,
+                input_prec=input_prec,
             )
             return self._split_spin_common_output(model_ret, atype, nloc)
 
@@ -223,7 +237,6 @@ class SeZMSpinModel(SeZMModel):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             charge_spin=charge_spin,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
@@ -255,12 +268,14 @@ class SeZMSpinModel(SeZMModel):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return spin-aware lower-interface predictions with internal keys."""
+        extended_atype = extended_atype.to(
+            device=extended_coord.device, dtype=torch.long
+        )
         _, nloc = nlist.shape[:2]
         (
             extended_coord_updated,
@@ -277,16 +292,28 @@ class SeZMSpinModel(SeZMModel):
         )
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
-        model_ret = super().forward_common_lower(
+        nlist_updated = self.format_nlist(
             extended_coord_updated,
             extended_atype_updated,
             nlist_updated,
-            mapping=mapping_updated,
+            extra_nlist_sort=extra_nlist_sort,
+        )
+        edge_schema = edge_schema_from_extended(
+            extended_coord_updated,
+            extended_atype_updated[:, : nloc * 2],
+            nlist_updated,
+            mapping_updated,
+        )
+        model_ret = super().forward_common_lower(
+            edge_schema.coord,
+            edge_schema.atype,
+            edge_schema.edge_index,
+            edge_schema.edge_vec,
+            edge_schema.edge_scatter_index,
+            edge_schema.edge_mask,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
-            extra_nlist_sort=extra_nlist_sort,
             extended_coord_corr=extended_coord_corr,
             charge_spin=charge_spin,
         )
@@ -302,8 +329,6 @@ class SeZMSpinModel(SeZMModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
-        *,
-        do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
         """Trace the spin lower interface into an exportable FX graph."""
         extra_sort = self.need_sorted_nlist_for_lower()
@@ -327,7 +352,6 @@ class SeZMSpinModel(SeZMModel):
                 mapping_,
                 fparam=fparam_,
                 aparam=aparam_,
-                do_atomic_virial=do_atomic_virial,
                 extra_nlist_sort=extra_sort,
                 charge_spin=charge_spin_,
             )
@@ -539,14 +563,7 @@ class SeZMSpinModel(SeZMModel):
         box: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build the real-atom neighbor list before spin expansion."""
-        return extend_input_and_build_neighbor_list(
-            coord,
-            atype,
-            self.get_rcut(),
-            self.real_sel,
-            mixed_types=True,
-            box=box,
-        )
+        return super().build_neighbor_list(coord, atype, box)
 
     def format_nlist(
         self,

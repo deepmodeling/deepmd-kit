@@ -216,6 +216,88 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
+        @torch.jit.export
+        def forward_embedding(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Extract embeddings in a single forward, without force/virial autograd.
+
+            One descriptor and fitting forward yields the per-atom descriptor, the
+            per-atom last fitting hidden activation, and the per-structure pooled
+            feature (the masked atom-sum of the atomic feature).  The neighbor
+            list is built exactly as in `forward_common`, so the descriptor and
+            atomic feature match the energy forward.
+
+            Parameters
+            ----------
+            coord
+                Coordinates with shape (nf, nloc*3) or (nf, nloc, 3).
+            atype
+                Atom types with shape (nf, nloc).
+            box
+                Simulation box with shape (nf, 9), or None.
+            fparam
+                Frame parameters with shape (nf, ndf), or None.
+            aparam
+                Atomic parameters with shape (nf, nloc, nda), or None.
+            charge_spin
+                Frame-level charge and spin conditions with shape (nf, 2), or None.
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` with
+                shape (nf, nloc, h), and ``structural_feature`` with shape
+                (nf, h), in the model's native precision. The DeepEval embedding
+                API casts these to the requested output dtype (float32 by
+                default).
+
+            Raises
+            ------
+            RuntimeError
+                If called in training mode; call ``model.eval()`` first.
+            """
+            if self.training:
+                raise RuntimeError(
+                    "Embedding extraction requires eval mode; call model.eval() first."
+                )
+            cc, bb, fp, ap, _ = self._input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam
+            )
+            del coord, box, fparam, aparam
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                cc,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                # types are distinguished by `format_nlist` below when needed
+                mixed_types=True,
+                box=bb,
+            )
+            extended_coord = extended_coord.view(extended_atype.shape[0], -1, 3)
+            nlist = self.format_nlist(extended_coord, extended_atype, nlist)
+            with torch.no_grad():
+                return self.atomic_model.forward_embedding(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fp,
+                    aparam=ap,
+                    charge_spin=charge_spin,
+                )
+
         def get_out_bias(self) -> torch.Tensor:
             return self.atomic_model.get_out_bias()
 
@@ -501,7 +583,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 nlist = torch.where(rr > rcut, -1, nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
-                pass  # great!
+                # No reordering is needed here (these descriptors reduce over
+                # neighbors order-independently), but we must still drop
+                # neighbors beyond rcut.  The C++/LAMMPS neighbor list is built
+                # with rcut+skin and is NOT rcut-filtered before forward_lower;
+                # without this, out-of-rcut neighbors leak into the descriptor
+                # whenever the per-atom neighbor count <= nnei (this branch),
+                # making the result order-dependent (see discussion #5438).
+                n_nf, n_nloc, n_nnei = nlist.shape
+                m_real_nei = nlist >= 0
+                coord0 = extended_coord[:, :n_nloc, :]
+                index = (
+                    torch.where(m_real_nei, nlist, 0)
+                    .view(n_nf, n_nloc * n_nnei, 1)
+                    .expand(-1, -1, 3)
+                )
+                coord1 = torch.gather(extended_coord, 1, index).view(
+                    n_nf, n_nloc, n_nnei, 3
+                )
+                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
+                nlist = torch.where(m_real_nei & (rr > rcut), -1, nlist)
             assert nlist.shape[-1] == nnei
             return nlist
 

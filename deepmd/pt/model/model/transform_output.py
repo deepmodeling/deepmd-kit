@@ -206,6 +206,114 @@ def fit_output_to_model_output(
     return model_ret
 
 
+def edge_energy_deriv(
+    energy_redu: torch.Tensor,
+    edge_vec: torch.Tensor,
+    src_ext: torch.Tensor,
+    dst_ext: torch.Tensor,
+    edge_mask: torch.Tensor,
+    nf: int,
+    nall: int,
+    create_graph: bool,
+    extended_coord_corr: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Assemble extended force, virial and atomic virial from edge gradients.
+
+    The energy depends on coordinates only through the per-edge displacement
+    vectors ``edge_vec``.  A single ``autograd.grad`` produces the per-edge
+    gradient ``g_e = dE / d(edge_vec_e)``; force, global virial and per-atom
+    virial are assembled from it with explicit scatter and outer-product ops.
+
+    With edge ``e`` running from receiver ``dst(e)`` to sender ``src(e)`` and
+    ``edge_vec_e = r_{src(e)} - r_{dst(e)}``, the chain rule
+    ``d(edge_vec_e)/dr_k = (delta_{k,src} - delta_{k,dst}) I`` gives the
+    conservative force and the pairwise virial::
+
+        F_k = sum_{dst(e)=k} g_e - sum_{src(e)=k} g_e
+        W   = - sum_e g_e (x) edge_vec_e
+
+    ``src_ext`` and ``dst_ext`` index the flattened extended space
+    ``[0, nf * nall)``, so the scatter produces per-ghost extended tensors
+    consumed by ``communicate_extended_output`` and the lower interface.
+
+    ``edge_vec`` carries the coordinate precision (``GLOBAL_PT_FLOAT_PRECISION``),
+    so ``g`` and the assembled force / virial share that dtype -- the dtype the
+    ``communicate_extended_output`` scatter buffers and the reduced energy
+    expect.  The reduced global virial is summed in
+    ``GLOBAL_PT_ENER_FLOAT_PRECISION``.
+
+    Parameters
+    ----------
+    energy_redu
+        Reduced per-frame energy with shape ``(nf, 1)``.
+    edge_vec
+        Per-edge displacement leaf with shape ``(E, 3)`` carrying ``requires_grad``.
+    src_ext, dst_ext
+        Sender / receiver indices into the flattened extended space, each with
+        shape ``(E,)``.
+    edge_mask
+        Boolean validity mask with shape ``(E,)``.
+    nf, nall
+        Frame count and extended-atom count.
+    create_graph
+        Keep the first-derivative graph alive so the force-loss second backward
+        can reach the parameters.
+    extended_coord_corr
+        Optional spin virtual-displacement correction with shape
+        ``(nf, nall, 3)``; adds ``force (x) coord_corr`` per extended atom.
+
+    Returns
+    -------
+    energy_derv_r
+        Extended force with shape ``(nf, nall, 1, 3)``.
+    energy_derv_c
+        Extended per-atom virial with shape ``(nf, nall, 1, 9)``, split
+        symmetrically between the two endpoints of each edge.
+    energy_derv_c_redu
+        Reduced global virial with shape ``(nf, 1, 9)``.
+    """
+    (g,) = torch.autograd.grad(
+        [energy_redu],
+        [edge_vec],
+        grad_outputs=[torch.ones_like(energy_redu)],
+        create_graph=create_graph,
+        retain_graph=True,
+    )
+    # Padded edges carry no energy contribution, so their gradient is zero;
+    # mask defensively before the scatter.
+    g = torch.where(edge_mask.unsqueeze(-1), g, torch.zeros_like(g))
+
+    n_ext = nf * nall
+    # Force: F_k = sum_{dst=k} g_e - sum_{src=k} g_e.
+    force_flat = torch.zeros(n_ext, 3, dtype=g.dtype, device=g.device)
+    force_flat = force_flat.index_add(0, dst_ext, g)
+    force_flat = force_flat.index_add(0, src_ext, -g)
+    extended_force = force_flat.view(nf, nall, 3)
+
+    # Per-edge virial outer product w_e[k, j] = -g_e^k * edge_vec_e^j, flattened
+    # to 9 with (force component k, coordinate component j) ordering.
+    w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
+    # Atomic virial: split each per-edge tensor symmetrically between endpoints.
+    half_w = 0.5 * w_edge
+    av_flat = torch.zeros(n_ext, 9, dtype=g.dtype, device=g.device)
+    av_flat = av_flat.index_add(0, dst_ext, half_w)
+    av_flat = av_flat.index_add(0, src_ext, half_w)
+    extended_virial = av_flat.view(nf, nall, 9)
+
+    if extended_coord_corr is not None:
+        # Spin: the virtual-atom displacement adds force (x) coord_corr per atom.
+        corr = (
+            extended_force.unsqueeze(-1)
+            @ extended_coord_corr.unsqueeze(-2).to(extended_force.dtype)
+        ).reshape(nf, nall, 9)
+        extended_virial = extended_virial + corr
+
+    energy_derv_r = extended_force.unsqueeze(-2)
+    energy_derv_c = extended_virial.unsqueeze(-2)
+    energy_derv_c_redu = energy_derv_c.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).sum(dim=1)
+    return energy_derv_r, energy_derv_c, energy_derv_c_redu
+
+
 def communicate_extended_output(
     model_ret: dict[str, torch.Tensor],
     model_output_def: ModelOutputDef,

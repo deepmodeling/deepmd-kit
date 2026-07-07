@@ -251,6 +251,21 @@ class ArgsPlugin:
                 raise ValueError(f"Invalid return type {type(args)}")
         return arguments
 
+    def get_argument(self, name: str) -> Argument:
+        """Get one registered argument by its canonical tag."""
+        for (arg_name, alias, doc), metd in self.__plugin.plugins.items():
+            if arg_name != name:
+                continue
+            args = metd()
+            if isinstance(args, Argument):
+                return args
+            if isinstance(args, list):
+                return Argument(
+                    name=arg_name, dtype=dict, sub_fields=args, alias=alias, doc=doc
+                )
+            raise ValueError(f"Invalid return type {type(args)}")
+        raise KeyError(f"Unknown argument plugin: {name}")
+
 
 descrpt_args_plugin = ArgsPlugin()
 
@@ -351,10 +366,10 @@ def descrpt_se_a_args() -> list[Argument]:
 )
 def descrpt_se_zm_args() -> list[Argument]:
     # Follows exact order of docstring in sezm.py DescrptSeZM class
-    doc_sel = 'The maximum number of neighbors. It can be:\n\n\
-    - `int`: the total maximum number of neighbors within `rcut` (all types combined)\n\n\
-    - `list[int]`: sel[i] specifies the maximum number of type-i neighbors within `rcut`\n\n\
-    - `str`: Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) and spin paths still cap the neighbor list at `sum(sel)`, so for those modes `sel` must cover the true maximum neighbor count. It can be:\n\n\
+    - `int`: the total capacity across all atom types.\n\n\
+    - `list[int]`: `sel[i]` is the type-i capacity; only `sum(sel)` is used.\n\n\
+    - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
         "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
@@ -365,12 +380,12 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_channels = "Total channels per (l,m) coefficient."
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
-    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
         "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
-        "embedding when l_schedule[0] > 0. If False, the initial state contains "
+        "embedding when l_schedule[0] + extra_node_l > 0. If False, the initial state contains "
         "only atom-local scalar features before message passing. Internal dimensions "
         "are derived from channels: embed_dim=min(channels, 128), "
         "axis_dim=min(4 if embed_dim < 64 else 8, embed_dim-1), "
@@ -383,6 +398,25 @@ def descrpt_se_zm_args() -> list[Argument]:
         "building Wigner-D blocks. The roll is sampled independently per edge and "
         "per forward call."
     )
+    doc_edge_cartesian = (
+        "If True, every interaction block whose message-passing degree is 1 or 2 "
+        "replaces its per-edge SO(2) rotation-frame tensor product with an "
+        "equivalent global-frame Cartesian rank-2 tensor product, removing the "
+        "two per-edge Wigner-D rotations. Blocks with degree 0 or at least 3 keep "
+        "the SO(2) path. When every block takes the Cartesian path, the full "
+        "Wigner-D construction is skipped automatically."
+    )
+    doc_node_cartesian = (
+        "Per-node global-frame Cartesian rank-2 tensor product applied to the "
+        "aggregated message in every interaction block whose message-passing "
+        "degree is 1 or 2, coupling it with the destination node feature. "
+        "Configured by a string `<mode>:<layers>` where `mode` is `default` (the "
+        "one-sided product) or `parity` (the symmetrized product), and `layers` "
+        "is the stack depth; a bare integer `N` is shorthand for `default:N`, and "
+        "`none` (or `0`) disables it. Orthogonal to `edge_cartesian`: "
+        "either, both, or neither may be enabled. Its cost scales with the number "
+        "of nodes rather than edges, leaving the per-edge message path unchanged."
+    )
     doc_lmax = "Maximum degree, only used when `l_schedule` is None."
     doc_l_schedule = "Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing. If set, lmax and n_blocks will be ignored."
     doc_mmax = "Maximum SO(2) order (|m|), only used when `m_schedule` is None. If None, defaults to the per-block lmax."
@@ -390,6 +424,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "Schedule of mmax per block. Must have the same length as "
         "`l_schedule` and satisfy `m_schedule[i] <= l_schedule[i]`. "
         "If set, `mmax` will be ignored."
+    )
+    doc_extra_node_l = (
+        "Extra node representation degree above each message-passing degree. "
+        "`0` keeps the node representation identical to `l_schedule`. In general, "
+        "block `i` uses node degree `l_schedule[i] + extra_node_l`, while SO(2) "
+        "message passing still uses `l_schedule[i]`."
     )
     doc_n_blocks = "Number of blocks (only used when `l_schedule` is None)."
     doc_block_attn_res = (
@@ -406,7 +446,13 @@ def descrpt_se_zm_args() -> list[Argument]:
         "If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers. "
         "When False (default), no normalization is applied between layers."
     )
-    doc_so2_layers = "Number of SO(2) mixing layers per block."
+    doc_mixing_layers = (
+        "Number of learnable mixing layers in the per-edge message core of each "
+        "block (legacy alias: so2_layers). `0` applies only the edge-condition "
+        "modulation: the rotation-free per-degree radial scaling on the SO(2) "
+        "path, or a single `x @ T_e` when edge_cartesian applies. The per-node "
+        "node_cartesian stack carries its own independent depth."
+    )
     doc_so2_attn_res = (
         "Depth-wise attention residual mode across the internal SO(2) layer "
         "history inside each interaction block. Must be one of `none`, "
@@ -420,7 +466,10 @@ def descrpt_se_zm_args() -> list[Argument]:
         "`degree` uses an edge-conditioned cross-degree kernel "
         "`W[l_in,l_out,|m|](r)` shared by all channels. "
         "`degree_channel` uses `W[l_in,l_out,|m|,c](r)`, optionally low-rank "
-        "when `radial_so2_rank > 0`."
+        "when `radial_so2_rank > 0`. "
+        "This setting has no effect on blocks that take the Cartesian path "
+        "(edge_cartesian with degree 1 or 2), where the dynamic radial degree "
+        "mixer is bypassed."
     )
     doc_radial_so2_rank = (
         "Low-rank channel factorization rank for `radial_so2_mode=degree_channel`. "
@@ -498,23 +547,80 @@ def descrpt_se_zm_args() -> list[Argument]:
         '`activation_function="silu"`. '
         "`ffn_enabled=true` makes the block-internal FFN path use "
         '`activation_function="silu"` and `glu_activation=true`. '
-        "S2-grid resolutions are resolved automatically per block. The e3nn "
-        "SO(2) grid is `[2 * mmax + 4, ceil_even(3 * lmax + 2)]`, and the "
-        "e3nn FFN grid is lifted to `[max(R_phi, R_theta), max(R_phi, R_theta)]`. "
+        "S2-grid resolutions are resolved automatically per block. The tensor-product "
+        "SO(2) grid uses the message-passing lmax as `[2 * mmax + 4, ceil_even(3 * lmax + 2)]`, "
+        "and the tensor-product FFN grid is lifted from the node lmax to `[max(R_phi, R_theta), max(R_phi, R_theta)]`. "
         "Lebedev branches use the smallest packaged rule with precision at "
         "least `3 * lmax`. "
         "The final scalar output FFN is unchanged."
+    )
+    doc_ffn_so3_grid = (
+        "If True, use the Wigner-D SO(3) grid in the block-internal FFN. "
+        "This option takes precedence over the FFN grid path and ignores "
+        "`s2_activation[1]`; the SO(2) branch still follows `s2_activation[0]`."
+    )
+    doc_node_wise_s2 = (
+        "If True, enable an edge-local S2 pointwise product branch between "
+        "source and destination node features inside the SO(2) convolution."
+    )
+    doc_node_wise_so3 = (
+        "If True, enable the corresponding edge-local SO(3) Wigner-D grid-net "
+        "branch. It uses the source side as query and the destination side as "
+        "context. When enabled together with `node_wise_s2`, the SO(3) branch "
+        "is used for this path."
+    )
+    doc_message_node_s2 = (
+        "If True, enable a post-aggregation S2 pointwise product branch between "
+        "hidden messages and destination node features inside the SO(2) convolution."
+    )
+    doc_message_node_so3 = (
+        "If True, enable the corresponding post-aggregation SO(3) Wigner-D "
+        "grid-net branch. The message is used as query and the node state as "
+        "context. When enabled together with `message_node_s2`, the SO(3) "
+        "branch is used for this path."
+    )
+    doc_so3_readout = (
+        "Read-out FFN mode for the final l=0 descriptor. `none` applies a "
+        "degree-0 scalar FFN to the l=0 slice only; l>0 coefficients are "
+        "discarded before the read-out. `glu` and `mlp` apply a full equivariant "
+        "FFN on the SO(3) Wigner-D grid so l>0 geometry is folded into l=0 "
+        "before the scalar is extracted; the value selects the quadratic grid "
+        "product (`glu`) or the polynomial point-wise grid MLP (`mlp`). The "
+        "read-out degree equals the node degree of the last interaction block; "
+        "the Wigner-D frame order follows `kmax`."
     )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
         "`[so2_enabled, ffn_enabled]` aligned with `s2_activation`. If a branch "
         "is enabled here, its S2 projector uses packaged Lebedev quadrature "
-        "rules instead of the e3nn product grid. The default keeps the existing "
-        "e3nn behavior."
+        "rules instead of the tensor-product sphere grid. The default enables "
+        "Lebedev quadrature for both S2 branches."
     )
-    doc_grid_ffn = (
-        "If True, use the optional grid-MLP structure for the block-internal "
-        "equivariant FFN. This does not change the final `l=0` output head."
+    doc_grid_mlp = (
+        "Either one boolean applied to every grid path, or three booleans "
+        "`[node_wise, message_node, ffn]` selecting the polynomial point-wise "
+        "grid MLP operation per grid path. The grid MLP projects the two grid "
+        "fields, multiplies them point-wise, and projects the result back to "
+        "grid channels. On any path whose `grid_branch` entry is positive it is "
+        "overridden by branch mixing, and it has no effect on the final `l=0` "
+        "output head."
+    )
+    doc_grid_branch = (
+        "Either one non-negative integer applied to every grid path, or three "
+        "integers `[node_wise, message_node, ffn]` setting the number of "
+        "scalar-routed polynomial product branches per grid path. `0` disables "
+        "branch mixing on that path; positive values select branch mixing and "
+        "take precedence over `grid_mlp`. Branch weights are computed from "
+        "`l=0` scalar features only, while each branch is a quadratic product "
+        "of two channel-mixed grid fields. The `node_wise` and `message_node` "
+        "entries control the SO(2) convolution cross-grid paths, and the `ffn` "
+        "entry controls the block-internal FFN grid path."
+    )
+    doc_kmax = (
+        "Maximum Wigner-D frame order used by SO(3) grid nets. The frame set is "
+        "`[0, -1, 1, ..., -kmax, kmax]`. `kmax=1` is the default low-cost "
+        "setting that opens odd/antisymmetric coupling paths. The gamma grid is "
+        "resolved internally from `kmax`."
     )
     doc_activation_function = (
         f"Base activation function for helper MLPs, the SO(2) gated activation "
@@ -558,9 +664,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_trainable = "If the parameters in the descriptor are trainable."
     doc_seed = "Random seed for parameter initialization."
     return [
-        Argument(
-            "sel", [int, list[int], str], optional=True, default="auto", doc=doc_sel
-        ),
+        Argument("sel", [int, list[int], str], optional=True, default=256, doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",
@@ -595,6 +699,20 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=True,
             doc=doc_only_pt_supported + doc_random_gamma,
         ),
+        Argument(
+            "edge_cartesian",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_edge_cartesian,
+        ),
+        Argument(
+            "node_cartesian",
+            [str, int],
+            optional=True,
+            default="none",
+            doc=doc_only_pt_supported + doc_node_cartesian,
+        ),
         Argument("lmax", int, optional=True, default=3, doc=doc_lmax),
         Argument(
             "l_schedule", list[int], optional=True, default=None, doc=doc_l_schedule
@@ -607,11 +725,36 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=doc_mmax,
         ),
         Argument(
+            "kmax",
+            int,
+            optional=True,
+            default=1,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be >= 0",
+            doc=doc_only_pt_supported + doc_kmax,
+        ),
+        Argument(
             "m_schedule", list[int], optional=True, default=None, doc=doc_m_schedule
+        ),
+        Argument(
+            "extra_node_l",
+            int,
+            optional=True,
+            default=0,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be >= 0",
+            doc=doc_extra_node_l,
         ),
         Argument("n_blocks", int, optional=True, default=3, doc=doc_n_blocks),
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
-        Argument("so2_layers", int, optional=True, default=4, doc=doc_so2_layers),
+        Argument(
+            "mixing_layers",
+            int,
+            optional=True,
+            default=4,
+            alias=["so2_layers"],
+            doc=doc_mixing_layers,
+        ),
         Argument(
             "so2_attn_res",
             str,
@@ -682,10 +825,28 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument(
             "grid_mlp",
-            bool,
+            [bool, list[bool]],
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_grid_ffn,
+            extra_check=lambda x: isinstance(x, bool) or len(x) == 3,
+            extra_check_errmsg="must be a boolean or a list of three booleans: [node_wise, message_node, ffn]",
+            doc=doc_only_pt_supported + doc_grid_mlp,
+        ),
+        Argument(
+            "grid_branch",
+            [int, list[int]],
+            optional=True,
+            default=0,
+            extra_check=lambda x: (
+                (isinstance(x, int) and x >= 0)
+                or (
+                    isinstance(x, list)
+                    and len(x) == 3
+                    and all(isinstance(i, int) and i >= 0 for i in x)
+                )
+            ),
+            extra_check_errmsg="must be a non-negative int or a list of three non-negative ints: [node_wise, message_node, ffn]",
+            doc=doc_only_pt_supported + doc_grid_branch,
         ),
         Argument(
             "ffn_blocks",
@@ -741,6 +902,50 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: len(x) == 2,
             extra_check_errmsg="must be a list of two booleans: [so2_activation, ffn_activation]",
             doc=doc_only_pt_supported + doc_s2_activation,
+        ),
+        Argument(
+            "ffn_so3_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_ffn_so3_grid,
+        ),
+        Argument(
+            "node_wise_s2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_node_wise_s2,
+        ),
+        Argument(
+            "node_wise_so3",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_node_wise_so3,
+        ),
+        Argument(
+            "message_node_s2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_message_node_s2,
+        ),
+        Argument(
+            "message_node_so3",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_message_node_so3,
+        ),
+        Argument(
+            "so3_readout",
+            str,
+            optional=True,
+            default="none",
+            extra_check=lambda x: x in ("none", "glu", "mlp"),
+            extra_check_errmsg="must be one of 'none', 'glu', or 'mlp'",
+            doc=doc_only_pt_supported + doc_so3_readout,
         ),
         Argument(
             "lebedev_quadrature",
@@ -1938,7 +2143,8 @@ def dpa3_repflow_args() -> list[Argument]:
     doc_a_rcut_smth = "Where to start smoothing for angle. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_a_sel = 'Maximally possible number of selected angle neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1". \n\n\
+    For JAX export, DPA3 uses static shapes and materializes angle-pair work arrays with size proportional to `nf * nloc * a_sel^2`. Keep `a_sel` no larger than needed, including when `use_dynamic_sel` is enabled.'
     doc_a_compress_rate = (
         "The compression rate for angular messages. The default value is 0, indicating no compression. "
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
@@ -2012,6 +2218,8 @@ def dpa3_repflow_args() -> list[Argument]:
         "without padding to a fixed selection numbers. "
         "When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively) "
         "to guarantee capturing all neighbors within the cutoff radius. "
+        "For JAX export, the static upper bound still controls memory use; in particular, angle-pair work arrays "
+        "scale as `nf * nloc * a_sel^2`. "
         "Note that when using dynamic selection, the `smooth_edge_update` must be True. "
     )
     doc_sel_reduce_factor = (
@@ -2496,6 +2704,44 @@ def fitting_dos() -> list[Argument]:
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
+    ]
+
+
+@fitting_args_plugin.register("population", doc=doc_only_pt_supported)
+def fitting_population() -> list[Argument]:
+    """Return the argument list for the population fitting network."""
+    return [
+        Argument("numb_fparam", int, optional=True, default=0),
+        Argument("numb_aparam", int, optional=True, default=0),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[128, 128, 128],
+            alias=["n_neuron"],
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True),
+        Argument("precision", str, optional=True, default="default"),
+        Argument("seed", [int, None], optional=True),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+        ),
     ]
 
 
@@ -3012,7 +3258,7 @@ def standard_model_args() -> Argument:
 )
 def sezm_model_args() -> Argument:
     doc_descrpt = "Descriptor configuration for atomic environments. DPA4/SeZM uses the SeZM descriptor."
-    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting."
+    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting by default and also supports invariant `property` fitting."
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
@@ -3031,7 +3277,12 @@ def sezm_model_args() -> Argument:
         "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
-    doc_enable_tf32 = "If True, enable TF32 matmul precision when use_compile=True."
+    doc_enable_tf32 = (
+        "If True, enable TF32 matmul precision for CUDA training forwards. "
+        "This training-time setting is independent of `use_compile`; eval-time "
+        "TF32 is controlled separately by `validating.tf32_infer` or "
+        "`DP_TF32_INFER`."
+    )
     doc_bridging_method = (
         "Short-range bridging method. Currently supports 'ZBL'. "
         "The value is case-insensitive; set it to 'None' to disable bridging."
@@ -3070,7 +3321,7 @@ def sezm_model_args() -> Argument:
         "are saved with LoRA deltas folded into base weights, producing plain "
         "DPA4/SeZM checkpoints suitable for deployment."
     )
-    doc_model = "DPA4/SeZM model scaffold with fixed SeZM descriptor and fitting types."
+    doc_model = "DPA4/SeZM model scaffold with the SeZM descriptor and selectable energy or invariant-property fitting."
 
     ca = Argument(
         "dpa4",
@@ -3080,14 +3331,33 @@ def sezm_model_args() -> Argument:
                 "descriptor",
                 dict,
                 [],
-                [descrpt_variant_type_args()],
+                [
+                    Variant(
+                        "type",
+                        [descrpt_args_plugin.get_argument("dpa4")],
+                        optional=True,
+                        default_tag="dpa4",
+                        doc="The type of the descriptor.",
+                    )
+                ],
                 doc=doc_only_pt_supported + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
                 dict,
                 [],
-                [fitting_variant_type_args()],
+                [
+                    Variant(
+                        "type",
+                        [
+                            fitting_args_plugin.get_argument("dpa4_ener"),
+                            fitting_args_plugin.get_argument("property"),
+                        ],
+                        optional=True,
+                        default_tag="dpa4_ener",
+                        doc="The type of the fitting.",
+                    )
+                ],
                 doc=doc_only_pt_supported + doc_fitting,
             ),
             Argument(
@@ -3228,6 +3498,7 @@ def linear_ener_model_args() -> Argument:
         'If "mean", the weights are set to be 1 / len(models). '
         'If "sum", the weights are set to be 1.'
     )
+    doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
     models_args = model_args(exclude_hybrid=True)
     models_args.name = "models"
     models_args.fold_subdoc = True
@@ -3244,6 +3515,9 @@ def linear_ener_model_args() -> Argument:
                 [list, str],
                 optional=False,
                 doc=doc_weights,
+            ),
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
             ),
         ],
         doc=doc_only_tf_supported,
@@ -4470,6 +4744,107 @@ def loss_dos() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("population")
+def loss_population() -> list[Argument]:
+    """Return the argument list for the population loss function."""
+    doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
+    doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "start_pref_spin",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_spin",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_spin_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_spin_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop_alpha_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop_alpha_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop_beta_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop_beta_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
+        ),
+    ]
+
+
 @loss_args_plugin.register("property")
 def loss_property() -> list[Argument]:
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
@@ -4530,7 +4905,7 @@ def loss_tensor() -> list[Argument]:
 
 
 def loss_variant_type_args() -> Variant:
-    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
+    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
     return Variant(
         "type",
@@ -4542,7 +4917,7 @@ def loss_variant_type_args() -> Variant:
 
 
 def loss_args() -> list[Argument]:
-    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `ener`, `dens` or left unset."
+    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset."
     ca = Argument(
         "loss", dict, [], [loss_variant_type_args()], optional=True, doc=doc_loss
     )
@@ -4800,10 +5175,25 @@ def training_args(
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_save_dir = (
+        "The directory in which periodic checkpoint files are written, "
+        "including the regular checkpoints (the `save_ckpt` prefix) and, when "
+        "EMA is enabled, the EMA checkpoints. It is created recursively if it "
+        "does not exist. The latest-checkpoint symlinks (such as "
+        "`model.ckpt.pt`) and the `checkpoint` pointer file remain in the "
+        "working directory and reference the files in this directory. If not "
+        "set, checkpoints are written to the working directory."
+    )
     doc_max_ckpt_keep = (
         "The maximum number of checkpoints to keep. "
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
+    )
+    doc_ckpt_keep_ratio = (
+        "An alternative to `max_ckpt_keep` that sets the number of retained "
+        "checkpoints as a fraction in (0, 1) of the run: the most recent "
+        "`ceil(ckpt_keep_ratio * ceil(numb_steps / save_freq))` checkpoints are kept. "
+        "When set, it overrides `max_ckpt_keep` and `ema_ckpt_keep`."
     )
     doc_enable_ema = (
         "Whether to maintain an exponential moving average (EMA) of model "
@@ -4882,9 +5272,7 @@ def training_args(
     data_args = [
         arg_training_data,
         arg_validation_data,
-        Argument(
-            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
-        ),
+        Argument("stat_file", str, optional=True, doc=doc_stat_file),
     ]
     args = (
         data_args
@@ -4930,9 +5318,25 @@ def training_args(
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
         Argument(
+            "save_dir",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_save_dir,
+        ),
+        Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "ckpt_keep_ratio",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_ckpt_keep_ratio,
+            extra_check=lambda x: x is None or 0.0 < x < 1.0,
+            extra_check_errmsg="must be a fraction in the open interval (0, 1)",
+        ),
         Argument(
             "enable_ema",
             bool,
@@ -5037,10 +5441,12 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_expt_supported
-            + "Enable torch.compile to accelerate training. "
-            "Uses make_fx to decompose autograd into primitive ops, "
-            "then compiles with torch.compile/Inductor for kernel fusion. "
+            doc="(Supported Backend: PyTorch Experimental, TensorFlow2) "
+            "Enable backend compiler acceleration during training. "
+            "PyTorch Experimental uses make_fx to decompose autograd into "
+            "primitive ops, then compiles with torch.compile/Inductor for "
+            "kernel fusion. TensorFlow2 enables XLA jit_compile for the "
+            "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
         ),
     ]
@@ -5144,6 +5550,9 @@ def resolve_full_validation_start_step(
 def validating_args() -> Argument:
     """Generate full validation arguments."""
     valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation_supported = (
+        "(Supported Backend: PyTorch, PyTorch Experimental, JAX, TensorFlow2) "
+    )
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
         "validation dataset during training. This flow is independent from the "
@@ -5155,6 +5564,14 @@ def validating_args() -> Argument:
         "The frequency, in training steps, of running the full validation pass."
     )
     doc_save_best = "Whether to save an extra checkpoint when the selected full validation metric reaches a new best value."
+    doc_save_best_dir = (
+        "The directory in which the best checkpoints selected by full "
+        "validation are written (the `best.ckpt` prefix, and the "
+        "`best_ema.ckpt` prefix when EMA full validation is enabled). It is "
+        "created recursively if it does not exist. If not set, the best "
+        "checkpoints are written to the directory determined by "
+        "`training.save_ckpt`."
+    )
     doc_ema_full_validation = (
         "Whether to additionally run the same full validation flow on the "
         "EMA-smoothed model when `validating.full_validation=true`. This reuses "
@@ -5193,13 +5610,21 @@ def validating_args() -> Argument:
         "meaningful when `model.use_compile=true`; has no effect on models "
         "that do not implement the SeZM-style eval compile path."
     )
+    doc_tf32_infer = (
+        "Whether to enable TF32 `high` matmul precision for eval-time forwards "
+        "(including regular validation and full validation). When `true`, this "
+        "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_TF32_INFER` takes "
+        "precedence over this option. This does not affect training forwards, "
+        "which are controlled by `model.enable_tf32`."
+    )
     args = [
         Argument(
             "full_validation",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_full_validation,
+            doc=doc_full_validation_supported + doc_full_validation,
         ),
         Argument(
             "ema_full_validation",
@@ -5213,7 +5638,7 @@ def validating_args() -> Argument:
             int,
             optional=True,
             default=5000,
-            doc=doc_only_pt_supported + doc_validation_freq,
+            doc=doc_full_validation_supported + doc_validation_freq,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5222,14 +5647,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_save_best,
+            doc=doc_full_validation_supported + doc_save_best,
+        ),
+        Argument(
+            "save_best_dir",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_full_validation_supported + doc_save_best_dir,
         ),
         Argument(
             "max_best_ckpt",
             int,
             optional=True,
             default=1,
-            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            doc=doc_full_validation_supported + doc_max_best_ckpt,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5238,7 +5670,7 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="E:MAE",
-            doc=doc_only_pt_supported + doc_validation_metric,
+            doc=doc_full_validation_supported + doc_validation_metric,
             extra_check=is_valid_full_validation_metric,
             extra_check_errmsg=(
                 "must be one of "
@@ -5250,14 +5682,14 @@ def validating_args() -> Argument:
             str,
             optional=True,
             default="val.log",
-            doc=doc_only_pt_supported + doc_full_val_file,
+            doc=doc_full_validation_supported + doc_full_val_file,
         ),
         Argument(
             "full_val_start",
             [int, float],
             optional=True,
             default=0.5,
-            doc=doc_only_pt_supported + doc_full_val_start,
+            doc=doc_full_validation_supported + doc_full_val_start,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be greater than or equal to 0",
         ),
@@ -5268,6 +5700,13 @@ def validating_args() -> Argument:
             default=False,
             doc=doc_only_pt_supported + doc_compiled_infer,
         ),
+        Argument(
+            "tf32_infer",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_tf32_infer,
+        ),
     ]
     return Argument(
         "validating",
@@ -5276,7 +5715,7 @@ def validating_args() -> Argument:
         sub_variants=[],
         optional=True,
         default={},
-        doc=doc_only_pt_supported
+        doc=doc_full_validation_supported
         + "Independent full validation options for single-task energy training.",
     )
 

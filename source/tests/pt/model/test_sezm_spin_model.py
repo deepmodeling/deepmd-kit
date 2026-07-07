@@ -224,6 +224,7 @@ class TestSeZMSpinModel(unittest.TestCase):
     def test_forward_lower_matches_forward(self) -> None:
         """Lower spin interface should match the standard spin forward path."""
         model = get_model(self._build_model_params()).to(self.device)
+        model.eval()
         out = model(self.coord, self.atype, spin=self.spin, box=self.box)
         extended_coord, extended_atype, mapping, nlist = (
             extend_input_and_build_neighbor_list(
@@ -351,33 +352,28 @@ class TestSeZMSpinModel(unittest.TestCase):
         )
         self.assertIsNotNone(model.inter_potential)
 
-        coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 0.0, 0.0]]],
+        # Nodes 0 (type 0) and 1 (type 1) are real; node 2 (type 2) is a virtual
+        # spin atom (>= real_type_count=2).  Edges touching node 2 must be masked.
+        edge_vec = torch.tensor(
+            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]],
             dtype=torch.float64,
             device=self.device,
         )
-        atype_with_virtual = torch.tensor(
-            [[0, 1, 2]], dtype=torch.long, device=self.device
+        edge_index = torch.tensor(
+            [[1, 0, 2, 0], [0, 1, 0, 2]], dtype=torch.long, device=self.device
         )
-        nlist_real_and_virtual = torch.tensor(
-            [[[1, 2], [0, 2], [0, 1]]], dtype=torch.long, device=self.device
-        )
-        nlist_real_only = torch.tensor(
-            [[[1, -1], [0, -1], [-1, -1]]], dtype=torch.long, device=self.device
-        )
+        atype_flat = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
+        edge_mask = torch.tensor([True, True, True, True], device=self.device)
 
         energy_with_virtual = model.inter_potential(
-            coord,
-            atype_with_virtual,
-            nlist_real_and_virtual,
-            nloc=3,
-            real_type_count=2,
+            edge_vec, edge_index, atype_flat, edge_mask, n_node=3, real_type_count=2
         )
         energy_real_only = model.inter_potential(
-            coord,
-            atype_with_virtual,
-            nlist_real_only,
-            nloc=3,
+            edge_vec[:2],
+            edge_index[:, :2],
+            atype_flat,
+            edge_mask[:2],
+            n_node=3,
             real_type_count=2,
         )
 
@@ -398,7 +394,7 @@ class TestSeZMSpinModel(unittest.TestCase):
         out_eager = eager(self.coord, self.atype, spin=self.spin, box=self.box)
         out_compiled = compiled(self.coord, self.atype, spin=self.spin, box=self.box)
 
-        self.assertIn((False, False, True), compiled.compiled_core_compute_cache)
+        self.assertIn((False, True), compiled.compiled_core_compute_cache)
         _assert_close_with_strict_warning(
             out_compiled["energy"],
             out_eager["energy"],
