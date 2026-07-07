@@ -748,6 +748,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         fparam: paddle.Tensor | None = None,
         charge_spin: paddle.Tensor | None = None,
     ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
         paddle.Tensor | None,
         paddle.Tensor | None,
     ]:
