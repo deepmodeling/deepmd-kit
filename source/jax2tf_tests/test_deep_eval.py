@@ -8,6 +8,9 @@ from deepmd.jax.infer.deep_eval import (
 
 
 class _NoChargeSpinModel:
+    def __init__(self) -> None:
+        self.kwargs = None
+
     def get_dim_fparam(self) -> int:
         return 0
 
@@ -20,12 +23,23 @@ class _NoChargeSpinModel:
     def has_chg_spin_ebd(self) -> bool:
         return False
 
+    def __call__(self, coord, atype, **kwargs):
+        del coord, atype
+        self.kwargs = kwargs
+        return {}
 
-def test_eval_model_rejects_charge_spin_without_embedding() -> None:
+
+class _ChargeSpinModel(_NoChargeSpinModel):
+    def has_chg_spin_ebd(self) -> bool:
+        return True
+
+
+def test_eval_model_warns_and_ignores_charge_spin_without_embedding() -> None:
     deep_eval = object.__new__(DeepEval)
-    deep_eval.dp = _NoChargeSpinModel()
+    model = _NoChargeSpinModel()
+    deep_eval.dp = model
 
-    with pytest.raises(ValueError, match="does not support"):
+    with pytest.warns(UserWarning, match="will be ignored"):
         deep_eval._eval_model(
             np.zeros((1, 6)),
             None,
@@ -35,3 +49,44 @@ def test_eval_model_rejects_charge_spin_without_embedding() -> None:
             np.array([[1.0, 2.0]]),
             [],
         )
+
+    assert model.kwargs is not None
+    assert "charge_spin" not in model.kwargs
+
+
+def test_eval_model_forwards_charge_spin_with_embedding() -> None:
+    deep_eval = object.__new__(DeepEval)
+    model = _ChargeSpinModel()
+    deep_eval.dp = model
+
+    deep_eval._eval_model(
+        np.zeros((1, 6)),
+        None,
+        np.array([0, 0], dtype=np.int32),
+        None,
+        None,
+        np.array([[1.0, 2.0]]),
+        [],
+    )
+
+    assert model.kwargs is not None
+    np.testing.assert_allclose(np.asarray(model.kwargs["charge_spin"]), [[1.0, 2.0]])
+
+
+def test_eval_model_forwards_none_charge_spin_with_embedding() -> None:
+    deep_eval = object.__new__(DeepEval)
+    model = _ChargeSpinModel()
+    deep_eval.dp = model
+
+    deep_eval._eval_model(
+        np.zeros((1, 6)),
+        None,
+        np.array([0, 0], dtype=np.int32),
+        None,
+        None,
+        None,
+        [],
+    )
+
+    assert model.kwargs is not None
+    assert model.kwargs["charge_spin"] is None

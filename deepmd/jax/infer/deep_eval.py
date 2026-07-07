@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -401,9 +402,11 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_input = None
         if charge_spin is not None and not self.has_chg_spin_ebd():
-            raise ValueError(
+            warnings.warn(
                 "charge_spin was provided, but this model does not support "
-                "charge/spin conditioning."
+                "charge/spin conditioning. The provided charge_spin will be ignored.",
+                UserWarning,
+                stacklevel=2,
             )
         charge_spin_input = (
             np.asarray(charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION)
