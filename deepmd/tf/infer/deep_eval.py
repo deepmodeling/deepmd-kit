@@ -13,6 +13,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.common import (
     make_default_mesh,
@@ -306,6 +309,22 @@ class DeepEval(DeepEvalBackend):
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.
@@ -1247,6 +1266,28 @@ class DeepEvalOld:
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.
