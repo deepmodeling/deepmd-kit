@@ -359,7 +359,7 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
             deserialize_to_file as deserialize_to_savedmodel,
         )
 
-        return deserialize_to_savedmodel(model_file, data, hessian=hessian)
+        deserialize_to_savedmodel(model_file, data, hessian=hessian)
     else:
         raise ValueError("Unsupported file extension")
 
