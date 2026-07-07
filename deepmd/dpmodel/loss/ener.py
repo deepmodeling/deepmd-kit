@@ -567,9 +567,10 @@ class EnergyLoss(Loss):
                 DataRequirementItem(
                     "hessian",
                     ndof=1,
-                    atomic=True,
+                    atomic=False,
                     must=False,
                     high_prec=False,
+                    special_shape="hessian",
                 )
             )
         return label_requirement

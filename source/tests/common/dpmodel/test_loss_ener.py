@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
+)
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 from ...seed import (
@@ -186,6 +192,35 @@ class TestEnergyLossHessian(TestEnergyLossBase):
             "hessian",
             {item.key for item in loss_fn.label_requirement},
         )
+
+    def test_hessian_label_requirement_loads_full_matrix(self) -> None:
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+        hessian_req = next(
+            item for item in loss_fn.label_requirement if item.key == "hessian"
+        )
+        self.assertFalse(hessian_req.atomic)
+        self.assertEqual(hessian_req.special_shape, "hessian")
+
+        system = (
+            Path(__file__).resolve().parents[2] / "pt" / "hessian" / "data" / "H8C4N2O"
+        )
+        data = DeepmdData(str(system), type_map=["C", "H", "N", "O"])
+        data.add(
+            hessian_req.key,
+            hessian_req.ndof,
+            atomic=hessian_req.atomic,
+            must=hessian_req.must,
+            high_prec=hessian_req.high_prec,
+            special_shape=hessian_req.special_shape,
+        )
+
+        batch = data.get_batch(2)
+
+        self.assertEqual(batch["hessian"].shape, (2, (3 * data.natoms) ** 2))
 
 
 class TestEnergyLossSerialize(TestEnergyLossBase):
