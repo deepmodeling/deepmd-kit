@@ -147,7 +147,6 @@ def test_graph_angle_cos_parity_vs_dpa3_dense():
     am = np.asarray(ng.angle_mask)
     ai = np.asarray(ng.angle_index)
     ei = np.asarray(ng.edge_index)  # (2, E): [src, dst]
-    ev = np.asarray(ng.edge_vec)
 
     # No self-angles
     for p in range(am.shape[0]):

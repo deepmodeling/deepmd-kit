@@ -292,6 +292,18 @@ def test_attach_angles_ordered_include_self():
     n_full = int(am_full.sum())
     # ordered+include_self must produce at least as many angles as default
     assert n_full >= n_default
+    # ... and the full set must contain every default (edge_a, edge_b) pair
+    default_pairs = {
+        (int(ai_def[0, p]), int(ai_def[1, p]))
+        for p in range(ai_def.shape[1])
+        if am_def[p]
+    }
+    full_pairs = {
+        (int(ai_full[0, p]), int(ai_full[1, p]))
+        for p in range(ai_full.shape[1])
+        if am_full[p]
+    }
+    assert default_pairs <= full_pairs
 
 
 def test_attach_angles_with_layout_node_capacity():
@@ -361,6 +373,57 @@ def test_angle_aggregation_torch_namespace():
     # compare
     np.testing.assert_allclose(np.asarray(e_t), e_np)
     np.testing.assert_allclose(np.asarray(n_t), n_np)
+
+
+def test_angle_aggregation_ignores_padding_when_masked():
+    """Padded angle slots must not pollute the sums once ``data`` is masked.
+
+    ``angle_to_edge_sum`` / ``angle_to_node_sum`` do not apply ``angle_mask``
+    internally: guard angles point at edge ``pad_value`` (an in-range real
+    edge), so their ``data`` would otherwise land on that edge/node. The
+    precondition is that callers zero ``data`` on padded slots (``data *
+    angle_mask``). This test pins that: with non-zero padding data, the masked
+    aggregation reproduces the real-only result, while the unmasked one does
+    not.
+    """
+    edge_index = np.array([[5, 5], [0, 0]], dtype=np.int64)
+    real_ai = np.array([[0, 0, 1], [0, 1, 0]], dtype=np.int64)  # 3 real angles
+    # pad to capacity 5 => 2 guard angles pointing at edge pad_value=0
+    ai, mask = pad_and_guard_angles(real_ai, angle_capacity=5, pad_value=0)
+    np.testing.assert_array_equal(mask, [True, True, True, False, False])
+    # non-zero data in the padded slots (would corrupt edge 0 / node 0 if used)
+    data = np.array([1.0, 2.0, 4.0, 99.0, 88.0])
+    masked = data * mask.astype(data.dtype)
+
+    # masked aggregation == real-only reference [3, 4] / [7]
+    e = angle_to_edge_sum(masked, ai, 2)
+    n = angle_to_node_sum(masked, ai, edge_index, 1)
+    np.testing.assert_allclose(e, [3.0, 4.0])
+    np.testing.assert_allclose(n, [7.0])
+
+    # sanity: without masking the padding DOES leak into edge/node 0
+    e_bad = angle_to_edge_sum(data, ai, 2)
+    assert not np.allclose(e_bad, [3.0, 4.0])
+
+
+def test_angle_aggregation_ignores_padding_torch_namespace():
+    """torch-namespace smoke test for the masked-padding aggregation."""
+    import torch
+
+    edge_index = np.array([[5, 5], [0, 0]], dtype=np.int64)
+    real_ai = np.array([[0, 0, 1], [0, 1, 0]], dtype=np.int64)
+    ai, mask = pad_and_guard_angles(real_ai, angle_capacity=5, pad_value=0)
+    data = np.array([1.0, 2.0, 4.0, 99.0, 88.0])
+    masked = data * mask.astype(data.dtype)
+
+    t_edge_index = torch.from_numpy(edge_index)
+    t_ai = torch.from_numpy(ai)
+    t_masked = torch.from_numpy(masked)
+
+    e_t = angle_to_edge_sum(t_masked, t_ai, 2)
+    n_t = angle_to_node_sum(t_masked, t_ai, t_edge_index, 1)
+    np.testing.assert_allclose(np.asarray(e_t), [3.0, 4.0])
+    np.testing.assert_allclose(np.asarray(n_t), [7.0])
 
 
 # ---------------------------------------------------------------------------
