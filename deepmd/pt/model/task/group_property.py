@@ -53,7 +53,11 @@ class GroupPropertyFittingNet(Fitting):
         property_name: str,
         task_dim: int = 1,
         neuron: list[int] | None = None,
-        activation_function: str = "tanh",
+        # GELU (not tanh): the group head consumes an un-normalized
+        # frame/group embedding concatenated with fparam.  tanh saturates at
+        # that input scale, so the head collapses to a constant (bias-only)
+        # prediction; GELU keeps gradients flowing and learns per-group signal.
+        activation_function: str = "gelu",
         precision: str = DEFAULT_PRECISION,
         trainable: bool | list[bool] = True,
         type_map: list[str] | None = None,

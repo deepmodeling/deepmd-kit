@@ -2827,8 +2827,15 @@ def fitting_property() -> list[Argument]:
 
 @fitting_args_plugin.register("group_property", doc=doc_only_pt_supported)
 def fitting_group_property() -> list[Argument]:
-    """Grouped frame-property fitting uses the property head schema."""
-    return fitting_property()
+    """Grouped frame-property fitting reuses the property head schema, but the
+    head pools an un-normalized frame embedding + fparam where tanh saturates
+    (collapsing to a constant), so it defaults to GELU instead of tanh.
+    """
+    args = fitting_property()
+    for arg in args:
+        if arg.name == "activation_function":
+            arg.default = "gelu"
+    return args
 
 
 @fitting_args_plugin.register("polar", doc=doc_polar)

@@ -379,6 +379,10 @@ class DPATrainer:
             # Grouped data pools frame embeddings per assembly, so the head and
             # loss switch to the group_property variants (same property schema).
             fn["type"] = "group_property"
+            # The grouped head consumes an un-normalized frame embedding + fparam;
+            # tanh saturates at that scale and the head collapses to a constant.
+            # Default to GELU (a user override via fitting_net_params still wins).
+            fn["activation_function"] = "gelu"
         # NB: dim_case_embd is intentionally NOT injected for FT/LP. The paper
         # qm9_gap input.json omits it: single-task `--finetune` (without
         # --model-branch) copies only the backbone and random-inits the

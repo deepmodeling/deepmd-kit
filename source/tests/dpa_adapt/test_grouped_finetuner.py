@@ -55,6 +55,9 @@ def test_grouped_training_strategy_uses_group_property_config(monkeypatch, tmp_p
     assert cfg["model"]["type_map"] == _FULL_TYPE_MAP
     assert cfg["model"]["fitting_net"]["type"] == "group_property"
     assert cfg["model"]["fitting_net"]["property_name"] == "overpotential"
+    # Grouped head defaults to GELU (tanh saturates on the un-normalized
+    # embedding+fparam input and collapses predictions to a constant).
+    assert cfg["model"]["fitting_net"]["activation_function"] == "gelu"
     assert cfg["loss"]["type"] == "group_property"
 
 
