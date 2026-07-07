@@ -145,11 +145,12 @@ class DeepProperty(DeepEval):
         print(f"Nframes == {nframes}")
         if nframes != 3:
             raise RuntimeError(f"Expected nframes == 3, got {nframes}")
-        scores = property.mean(axis=1)                           # (3,)
+        scores = property.mean(axis=1)  # (3,)
         # If you want to favor *smaller* values (e.g., energies), use: scores = -scores
-        w = np.exp(scores - scores.max()); w /= w.sum()          # (3,)
-        avg = (w[:, None] * property).sum(axis=0, keepdims=True) # (1, D)
-        property[:] = np.repeat(avg, nframes, axis=0)            # (3, D)
+        w = np.exp(scores - scores.max())
+        w /= w.sum()  # (3,)
+        avg = (w[:, None] * property).sum(axis=0, keepdims=True)  # (1, D)
+        property[:] = np.repeat(avg, nframes, axis=0)  # (3, D)
         # --------------------------------------------------------
 
         if atomic:
