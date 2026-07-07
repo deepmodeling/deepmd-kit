@@ -80,6 +80,43 @@ def _coords(nframes, natoms):
     return torch.rand(nframes, natoms, 3, dtype=torch.float64)
 
 
+def test_group_property_model_passes_charge_spin_as_descriptor_fparam():
+    class _ChargeSpinDescriptor(_StubDescriptor):
+        add_chg_spin_ebd = True
+
+        def __init__(self, dim: int = 2) -> None:
+            super().__init__(dim)
+            self.default_chg_spin = [0.0, 1.0]
+            self.seen_fparam = None
+
+        def forward(self, ext_coord, ext_atype, nlist, mapping=None, fparam=None):
+            assert fparam is not None
+            self.seen_fparam = fparam.detach().clone()
+            return super().forward(ext_coord, ext_atype, nlist, mapping=mapping)
+
+    descriptor = _ChargeSpinDescriptor()
+    model = GroupPropertyModel(
+        descriptor=descriptor,
+        fitting=_fitting(),
+        type_map=["A", "B"],
+    )
+    out = model(
+        _coords(2, 2),
+        torch.tensor([[0, 1], [0, 1]]),
+        box=None,
+        group_id=torch.tensor([[0], [1]]),
+        weight=torch.ones(2, 1),
+        pool_mask=torch.ones(2, 2),
+    )
+    assert torch.isfinite(out["y"]).all()
+    assert descriptor.seen_fparam is not None
+    assert descriptor.seen_fparam.shape == (2, 2)
+    assert torch.allclose(
+        descriptor.seen_fparam,
+        torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float64),
+    )
+
+
 # --------------------------------------------------------------------------- C
 def test_masked_mean_model_divides_by_mask_sum():
     model = _model(_fitting())

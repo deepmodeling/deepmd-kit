@@ -195,19 +195,39 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
 
     @torch.jit.export
     def has_chg_spin_ebd(self) -> bool:
-        return bool(getattr(self.descriptor, "add_chg_spin_ebd", False))
+        if bool(getattr(self.descriptor, "add_chg_spin_ebd", False)):
+            return True
+        return (
+            getattr(self.descriptor, "chg_embedding", None) is not None
+            and getattr(self.descriptor, "spin_embedding", None) is not None
+        )
 
     @torch.jit.export
     def has_default_chg_spin(self) -> bool:
         if not self.has_chg_spin_ebd():
             return False
-        return self.descriptor.has_default_chg_spin()
+        has_default = getattr(self.descriptor, "has_default_chg_spin", None)
+        if has_default is not None:
+            return has_default()
+        return getattr(self.descriptor, "default_chg_spin", None) is not None
 
     @torch.jit.export
     def get_default_chg_spin(self) -> torch.Tensor | None:
-        if self.has_default_chg_spin():
-            return self.descriptor.get_default_chg_spin()
-        return None
+        if not self.has_default_chg_spin():
+            return None
+        get_default = getattr(self.descriptor, "get_default_chg_spin", None)
+        if get_default is not None:
+            return get_default()
+        default_chg_spin = getattr(self.descriptor, "default_chg_spin", None)
+        if default_chg_spin is None:
+            return None
+        if isinstance(default_chg_spin, torch.Tensor):
+            return default_chg_spin
+        return torch.tensor(
+            default_chg_spin,
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
+        )
 
     @torch.jit.export
     def has_message_passing(self) -> bool:
@@ -250,17 +270,42 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
             )
         )
         descriptor_atype = extended_atype.clamp_min(0)
-        if self.has_chg_spin_ebd() and charge_spin is None:
-            default_chg_spin = self.get_default_chg_spin()
-            if default_chg_spin is not None:
-                default_chg_spin = default_chg_spin.to(device=extended_coord.device)
-                charge_spin = torch.tile(default_chg_spin.unsqueeze(0), [nframes, 1])
+        descriptor_kwargs = {"mapping": mapping}
+        if self.has_chg_spin_ebd():
+            if charge_spin is None:
+                default_chg_spin = self.get_default_chg_spin()
+                if default_chg_spin is None:
+                    default_chg_spin = extended_coord.new_tensor([0.0, 1.0])
+                charge_spin = default_chg_spin
+            if charge_spin is not None:
+                charge_spin = charge_spin.to(
+                    device=extended_coord.device,
+                    dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+                )
+                if charge_spin.dim() == 1:
+                    if charge_spin.numel() != 2:
+                        raise ValueError(
+                            "charge_spin must have shape (2,) or (nframes, 2)."
+                        )
+                    charge_spin = charge_spin.unsqueeze(0)
+                if charge_spin.dim() != 2 or charge_spin.shape[1] != 2:
+                    raise ValueError(
+                        "charge_spin must have shape (2,) or (nframes, 2)."
+                    )
+                if charge_spin.shape[0] == 1 and nframes != 1:
+                    charge_spin = charge_spin.expand(nframes, -1)
+                elif charge_spin.shape[0] != nframes:
+                    raise ValueError(
+                        "charge_spin must have one row or match the number of frames."
+                    )
+                # DPA3 descriptors consume charge/spin through their fparam slot.
+                # The group-level fparam argument is reserved for the fitting net.
+                descriptor_kwargs["fparam"] = charge_spin
         descriptor, _rot_mat, _g2, _h2, _sw = self.descriptor(
             extended_coord,
             descriptor_atype,
             nlist,
-            mapping=mapping,
-            charge_spin=charge_spin if self.has_chg_spin_ebd() else None,
+            **descriptor_kwargs,
         )
         if descriptor is None:
             raise RuntimeError("Descriptor returned None for group_property.")
