@@ -46,6 +46,8 @@ from deepmd.jax.env import (
 from deepmd.jax.train.trainer import (
     DPTrainer,
     _copy_matching_state_tree,
+    _merge_descriptor_stats,
+    _merge_fitting_param_stats,
     _scale_by_global_learning_rate,
 )
 from deepmd.jax.utils.finetune import (
@@ -56,6 +58,9 @@ from deepmd.jax.utils.serialization import (
 )
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
 )
 
 MODEL_SE_E2_A = {
@@ -387,6 +392,92 @@ def test_jax_trainer_applies_shared_dict_links() -> None:
     assert model_a.get_descriptor() is model_b.get_descriptor()
     assert model_a.get_fitting_net() is not model_b.get_fitting_net()
     assert model_a.get_fitting_net().nets is model_b.get_fitting_net().nets
+
+
+class _FakeEnvMatStatSe:
+    def __init__(self, descriptor) -> None:
+        self.descriptor = descriptor
+        self.stats = {}
+
+    def __call__(self) -> tuple[np.ndarray, np.ndarray]:
+        stat = self.stats["env"]
+        return (
+            np.asarray([stat.compute_avg()], dtype=np.float64),
+            np.asarray([stat.compute_std()], dtype=np.float64),
+        )
+
+
+class _DescriptorWithStats:
+    def __init__(self, stats: dict[str, StatItem]) -> None:
+        self.stats = stats
+        self.davg = np.asarray([0.0], dtype=np.float64)
+        self.dstd = np.asarray([1.0], dtype=np.float64)
+
+
+def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
+    """Shared descriptor merge recomputes weighted avg/std for nested stats."""
+    base = _DescriptorWithStats({"env": StatItem(number=2, sum=4, squared_sum=10)})
+    link = _DescriptorWithStats({"env": StatItem(number=4, sum=20, squared_sum=104)})
+    base.se_atten = _DescriptorWithStats(
+        {"env": StatItem(number=2, sum=6, squared_sum=18)}
+    )
+    link.se_atten = _DescriptorWithStats(
+        {"env": StatItem(number=4, sum=28, squared_sum=200)}
+    )
+
+    with patch("deepmd.dpmodel.utils.env_mat_stat.EnvMatStatSe", _FakeEnvMatStatSe):
+        _merge_descriptor_stats(base, link, model_prob=0.5)
+
+    np.testing.assert_allclose(base.davg, [3.5])
+    np.testing.assert_allclose(base.dstd, [np.sqrt(3.25)])
+    np.testing.assert_allclose(base.se_atten.davg, [5.0])
+    np.testing.assert_allclose(base.se_atten.dstd, [np.sqrt(4.5)])
+    assert base.stats["env"].number == 4
+    assert base.se_atten.stats["env"].number == 4
+
+
+class _FittingWithStats:
+    def __init__(self, param_stats: dict[str, list[StatItem]]) -> None:
+        self.numb_fparam = len(param_stats.get("fparam", []))
+        self.numb_aparam = len(param_stats.get("aparam", []))
+        self.fparam_avg = jnp.asarray(np.zeros(self.numb_fparam))
+        self.fparam_inv_std = jnp.asarray(np.ones(self.numb_fparam))
+        self.aparam_avg = jnp.asarray(np.zeros(self.numb_aparam))
+        self.aparam_inv_std = jnp.asarray(np.ones(self.numb_aparam))
+        self._param_stats = param_stats
+
+    def get_param_stats(self) -> dict[str, list[StatItem]]:
+        return self._param_stats
+
+
+def test_jax_shared_fitting_stats_merge_weighted_values() -> None:
+    """Shared fitting merge recomputes avg and protected inverse std."""
+    base = _FittingWithStats(
+        {
+            "fparam": [StatItem(number=2, sum=4, squared_sum=10)],
+            "aparam": [StatItem(number=2, sum=4, squared_sum=8)],
+        }
+    )
+    link = _FittingWithStats(
+        {
+            "fparam": [StatItem(number=4, sum=20, squared_sum=104)],
+            "aparam": [StatItem(number=2, sum=4, squared_sum=8)],
+        }
+    )
+
+    _merge_fitting_param_stats(
+        base,
+        link,
+        model_prob=0.5,
+        protection=0.25,
+    )
+
+    np.testing.assert_allclose(np.asarray(base.fparam_avg), [3.5])
+    np.testing.assert_allclose(np.asarray(base.fparam_inv_std), [1.0 / np.sqrt(3.25)])
+    np.testing.assert_allclose(np.asarray(base.aparam_avg), [2.0])
+    np.testing.assert_allclose(np.asarray(base.aparam_inv_std), [4.0])
+    assert base._param_stats["fparam"][0].number == 4
+    assert base._param_stats["aparam"][0].number == 3
 
 
 def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> None:
