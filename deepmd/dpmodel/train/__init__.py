@@ -20,6 +20,8 @@ from .trainer import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    change_model_out_bias,
+    change_model_out_bias_by_task,
 )
 
 __all__ = [
@@ -34,6 +36,8 @@ __all__ = [
     "TrainingTask",
     "TrainingTaskCollection",
     "TrainingTaskConfig",
+    "change_model_out_bias",
+    "change_model_out_bias_by_task",
     "iter_training_task_configs",
     "make_task_maps",
     "print_data_summaries",

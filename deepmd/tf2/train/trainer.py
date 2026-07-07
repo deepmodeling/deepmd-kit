@@ -40,6 +40,7 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    change_model_out_bias_by_task,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -1261,12 +1262,12 @@ class Trainer(AbstractTrainer):
             self.summary_writer.flush()
 
     def _change_bias_after_training(self) -> None:
-        log.info("Changing output bias after training.")
-        for model_key in self.model_keys:
-            self.models[model_key].change_out_bias(
-                self._sample_funcs[model_key],
-                bias_adjust_mode="change-by-statistic",
-            )
+        change_model_out_bias_by_task(
+            self.models,
+            self._sample_funcs,
+            self.model_keys,
+            bias_adjust_mode="change-by-statistic",
+        )
 
     def get_data(
         self,
