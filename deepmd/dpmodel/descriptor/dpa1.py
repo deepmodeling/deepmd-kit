@@ -432,9 +432,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         The graph-native lower (``call_graph``) covers the factorizable path
         AND transformer attention (``attn_layer >= 0``, NeighborGraph PR-D)
-        with concat type-embedding and no type exclusion. Remaining ineligible
-        configs (``tebd_input_mode == "strip"``, ``exclude_types``) fall back
-        to the legacy dense path, so those models keep working unchanged.
+        with concat OR strip type-embedding. Remaining ineligible configs
+        (``exclude_types``, and compressed descriptors) fall back to the legacy
+        dense path, so those models keep working unchanged.
 
         Eligibility does NOT imply numerical interchangeability with the
         dense route for every config: with ``smooth_type_embedding=True``
@@ -442,8 +442,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         differs from the dense lower by up to ~1e-4 (see the Notes of
         :meth:`call_graph`).
         """
+        # compressed descriptors have no graph kernel (geo/tebd tabulation is
+        # dense-only); keep them on the legacy dense path.
+        if self.compress:
+            return False
+        # exclude_types stays dense (graph exclusion is owned elsewhere); strip is
+        # now graph-eligible (per-edge factorized embedding, no neighbor coupling).
         return (
-            self.se_atten.tebd_input_mode == "concat"
+            self.se_atten.tebd_input_mode in ("concat", "strip")
             and not self.se_atten.exclude_types
         )
 
@@ -575,7 +581,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
         # graph-eligible configs route through the graph-native adapter (decision
         # #14: graph = single math source, dense call = thin adapter). Ineligible
-        # configs (attention, strip tebd, exclude_types) and the ghost case with
+        # configs (exclude_types, compressed descriptors) and the ghost case with
         # no mapping fall back to the legacy dense body. The graph needs `mapping`
         # to fold ghosts to local owners; without it only nall == nloc is valid.
         if self.uses_graph_lower() and (mapping is not None or nall == nloc):

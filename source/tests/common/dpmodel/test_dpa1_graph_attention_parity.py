@@ -214,17 +214,46 @@ class TestGraphEligibility:
     def test_attention_concat_is_graph_eligible(self) -> None:
         assert _make(2).uses_graph_lower()
 
-    def test_strip_mode_stays_dense(self) -> None:
-        """se_atten_v2 (tebd_input_mode='strip') is NOT graph-eligible yet:
-        strip-mode graph support is a later PR; it must keep the dense route
-        (the PR-D plan's 'se_atten_v2 inherits for free' did not hold).
+    def test_se_atten_v2_is_graph_eligible(self) -> None:
+        """se_atten_v2 (tebd_input_mode='strip', smooth=True) is now graph-eligible.
+
+        It is a DescrptDPA1 subclass with no exclude_types and no routing override,
+        so admitting strip closes the 'se_atten_v2 is dense-only' gap. (Was: strip
+        stayed dense.)
         """
         from deepmd.dpmodel.descriptor.se_atten_v2 import (
             DescrptSeAttenV2,
         )
 
         dd = DescrptSeAttenV2(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
-        assert not dd.uses_graph_lower()
+        assert dd.uses_graph_lower() is True
+
+    def test_se_atten_v2_graph_equals_dense(self) -> None:
+        """The graph-routed se_atten_v2 ``call`` is bit-exact with ``_call_dense``
+        (the ``static_nnei`` adapter reproduces the dense phantom terms despite
+        smooth=True) at a non-binding sel.
+        """
+        from deepmd.dpmodel.descriptor.se_atten_v2 import (
+            DescrptSeAttenV2,
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nloc = 4
+        coord = rng.normal(size=(1, nloc, 3)) * 1.5
+        atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+        dd = DescrptSeAttenV2(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
+        assert dd.uses_graph_lower() is True
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord, atype, dd.get_rcut(), dd.get_sel(), mixed_types=True, box=None
+        )
+        routed = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        dense = dd._call_dense(ext_coord, ext_atype, nlist)
+        assert len(routed) == len(dense)
+        for r, d in zip(routed, dense, strict=True):
+            if r is None:
+                assert d is None
+                continue
+            np.testing.assert_allclose(r, d, rtol=1e-12, atol=1e-12)
 
 
 class TestBindingSelDivergence:
