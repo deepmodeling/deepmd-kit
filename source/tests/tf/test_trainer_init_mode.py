@@ -10,8 +10,9 @@ initializer, using the mode strings ``RunOptions`` actually produces.
 """
 
 import types
-import unittest
 from unittest import (
+    TestCase,
+    main,
     mock,
 )
 
@@ -50,7 +51,7 @@ def _dispatch(init_mode: str) -> str | None:
     return None
 
 
-class TestTrainerInitMode(unittest.TestCase):
+class TestTrainerInitMode(TestCase):
     def test_init_from_model_uses_ckpt(self) -> None:
         # RunOptions sets this string for `dp train --init-model`; it must reach
         # _init_from_ckpt so compressed-checkpoint metadata is pre-inspected.
@@ -70,4 +71,4 @@ class TestTrainerInitMode(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
