@@ -1415,7 +1415,7 @@ class Trainer(AbstractTrainer):
             None,
         )
         if not callable(translated_output_def):
-            return model_ret
+            return self._match_label_shapes(model_ret, label_dict)
         output_defs = translated_output_def()
         model_pred = {}
         for output_key, output_def in output_defs.items():
@@ -1434,7 +1434,36 @@ class Trainer(AbstractTrainer):
             and "virial" not in model_pred
         ):
             model_pred["virial"] = label_dict["virial"]
-        return model_pred
+        return self._match_label_shapes(model_pred, label_dict)
+
+    @classmethod
+    def _match_label_shapes(
+        cls,
+        model_dict: dict[str, Any],
+        label_dict: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Match equivalent flattened model outputs to label tensor shapes."""
+        if label_dict is None:
+            return model_dict
+        force_hat = model_dict.get("force")
+        force = label_dict.get("force")
+        if force_hat is None or force is None:
+            return model_dict
+        force_hat_shape = cls._static_shape(force_hat)
+        force_shape = cls._static_shape(force)
+        if (
+            force_hat_shape is None
+            or force_shape is None
+            or force_hat_shape == force_shape
+            or np.prod(force_hat_shape, dtype=np.int64)
+            != np.prod(force_shape, dtype=np.int64)
+        ):
+            return model_dict
+        model_dict = dict(model_dict)
+        model_dict["force"] = to_tensorflow_array(
+            tf.reshape(to_tf_tensor(force_hat), force_shape)
+        )
+        return model_dict
 
     @classmethod
     def _match_output_rank(cls, value: Any, output_def: Any) -> Any:
@@ -1451,6 +1480,23 @@ class Trainer(AbstractTrainer):
                 value = tf.squeeze(value, axis=axis)
             else:
                 value = squeeze(axis)
+
+    @staticmethod
+    def _static_shape(value: Any) -> tuple[int, ...] | None:
+        shape = getattr(value, "shape", None)
+        if shape is None:
+            return None
+        dims = []
+        try:
+            iterator = iter(shape)
+        except TypeError:
+            return None
+        for dim in iterator:
+            dim = getattr(dim, "value", dim)
+            if not isinstance(dim, int):
+                return None
+            dims.append(dim)
+        return tuple(dims)
 
     @staticmethod
     def _shape_rank(value: Any) -> int | None:

@@ -201,6 +201,18 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         import torch
 
         return torch.index_add(x, 0, indices, values)
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1, 1))
+        values_tensor = values.unwrap()
+        updates = tf.scatter_nd(
+            indices_tensor,
+            values_tensor,
+            tf.shape(x_tensor, out_type=tf.int64),
+        )
+        return xp.asarray(x_tensor + updates)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
@@ -270,6 +282,18 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
         return torch.scatter_reduce(
             x, 0, index, values, reduce="amax", include_self=True
         )
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        reduced = tf.math.unsorted_segment_max(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        return xp.asarray(tf.maximum(x_tensor, reduced))
     else:
         # Fallback for array_api_strict: basic indexing only.
         n = indices.shape[0]
