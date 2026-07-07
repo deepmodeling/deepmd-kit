@@ -7,8 +7,9 @@ by the context manager, and that ``close()`` never *materializes* a session that
 was not already created.
 """
 
-import unittest
 from unittest import (
+    TestCase,
+    main,
     mock,
 )
 
@@ -22,7 +23,7 @@ from deepmd.tf.infer.deep_eval import (
 )
 
 
-class TestTFDeepEvalClose(unittest.TestCase):
+class TestTFDeepEvalClose(TestCase):
     """The TF backends own a cached ``tf.Session`` that must be closeable."""
 
     # both the modern backend and the legacy one used by DeepDipole/DeepPolar
@@ -63,7 +64,7 @@ class TestTFDeepEvalClose(unittest.TestCase):
                 fake_sess.close.assert_called_once()
 
 
-class TestDeepEvalWrapperClose(unittest.TestCase):
+class TestDeepEvalWrapperClose(TestCase):
     """The high-level ``DeepEval`` wrapper forwards close() to its backend."""
 
     def _bare_wrapper(self) -> DeepEvalWrapper:
@@ -88,7 +89,7 @@ class TestDeepEvalWrapperClose(unittest.TestCase):
         obj.deep_eval.close.assert_called_once()
 
 
-class TestDeepEvalBackendBaseClose(unittest.TestCase):
+class TestDeepEvalBackendBaseClose(TestCase):
     """The backend base close() is a no-op so session-less backends comply."""
 
     def test_base_close_is_noop(self) -> None:
@@ -98,4 +99,4 @@ class TestDeepEvalBackendBaseClose(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

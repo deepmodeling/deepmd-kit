@@ -110,4 +110,9 @@ class EwaldRecp:
         self.close()
 
     def __del__(self) -> None:
-        self.close()
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
