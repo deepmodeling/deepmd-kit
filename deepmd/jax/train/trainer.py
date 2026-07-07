@@ -733,10 +733,8 @@ class DPTrainer(AbstractTrainer):
         """Persist a JAX checkpoint for a one-based step."""
         self._save_checkpoint(step)
 
-    def run(self, tasks: TrainingTaskCollection | None = None) -> None:
+    def run(self, tasks: TrainingTaskCollection) -> None:
         """Run JAX training through the backend-independent trainer loop."""
-        if tasks is None:
-            tasks = self.training_tasks
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
         super().run(tasks)
@@ -747,12 +745,26 @@ class DPTrainer(AbstractTrainer):
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
 
     def _change_bias_after_training(self) -> None:
-        change_model_out_bias_by_task(
-            self.models,
-            self._sample_funcs,
-            self.model_keys,
-            bias_adjust_mode="change-by-statistic",
+        if self.rank_context.is_chief:
+            change_model_out_bias_by_task(
+                self.models,
+                self._sample_funcs,
+                self.model_keys,
+                bias_adjust_mode="change-by-statistic",
+            )
+        if self.rank_context.world_size <= 1:
+            return
+        from jax.experimental import (
+            multihost_utils,
         )
+
+        for model_key in self.model_keys:
+            _, state = nnx.split(self.models[model_key])
+            state = multihost_utils.broadcast_one_to_all(
+                state.to_pure_dict(),
+                is_source=self.rank_context.is_chief,
+            )
+            nnx.update(self.models[model_key], state)
 
     def run_full_validation(
         self,

@@ -25,6 +25,8 @@ import numpy as np
 import optax
 
 from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+    RankContext,
     TrainEntrypointOptions,
 )
 from deepmd.jax.entrypoints.freeze import (
@@ -39,6 +41,7 @@ from deepmd.jax.entrypoints.train import (
 )
 from deepmd.jax.env import (
     jnp,
+    nnx,
 )
 from deepmd.jax.train.trainer import (
     DPTrainer,
@@ -332,6 +335,73 @@ def test_jax_full_validation_hook_uses_display_step() -> None:
     assert calls[0]["display_step"] == 1
     assert calls[0]["lr"] == 0.25
     assert save_calls == [(Path("best.jax"), 0.25, 99)]
+
+
+class _BiasModel(nnx.Module):
+    def __init__(self, value: float) -> None:
+        self.bias = nnx.Param(jnp.asarray([value]))
+
+
+def _bias_sync_trainer(rank: int) -> DPTrainer:
+    trainer = DPTrainer.__new__(DPTrainer)
+    trainer.rank_context = RankContext(rank=rank, world_size=2)
+    trainer.models = {DEFAULT_TASK_KEY: _BiasModel(0.0)}
+    trainer._sample_funcs = {DEFAULT_TASK_KEY: object()}
+    trainer.model_keys = [DEFAULT_TASK_KEY]
+    return trainer
+
+
+def test_jax_change_bias_after_training_broadcasts_chief_state() -> None:
+    """Rank 0 recomputes post-training bias and broadcasts the resulting state."""
+    trainer = _bias_sync_trainer(rank=0)
+
+    def change_bias(models, *args, **kwargs) -> None:
+        del args, kwargs
+        nnx.update(models[DEFAULT_TASK_KEY], {"bias": jnp.asarray([3.0])})
+
+    with (
+        patch(
+            "deepmd.jax.train.trainer.change_model_out_bias_by_task",
+            side_effect=change_bias,
+        ) as change_model_out_bias_by_task,
+        patch(
+            "jax.experimental.multihost_utils.broadcast_one_to_all",
+            side_effect=lambda state, **kwargs: state,
+        ) as broadcast_one_to_all,
+    ):
+        trainer._change_bias_after_training()
+
+    change_model_out_bias_by_task.assert_called_once()
+    broadcast_one_to_all.assert_called_once()
+    assert broadcast_one_to_all.call_args.kwargs["is_source"] is True
+    np.testing.assert_allclose(
+        np.asarray(trainer.models[DEFAULT_TASK_KEY].bias.value),
+        [3.0],
+    )
+
+
+def test_jax_change_bias_after_training_uses_broadcast_on_peer_rank() -> None:
+    """Peer ranks receive rank-0 post-training bias instead of recomputing it."""
+    trainer = _bias_sync_trainer(rank=1)
+
+    with (
+        patch(
+            "deepmd.jax.train.trainer.change_model_out_bias_by_task",
+        ) as change_model_out_bias_by_task,
+        patch(
+            "jax.experimental.multihost_utils.broadcast_one_to_all",
+            return_value={"bias": jnp.asarray([5.0])},
+        ) as broadcast_one_to_all,
+    ):
+        trainer._change_bias_after_training()
+
+    change_model_out_bias_by_task.assert_not_called()
+    broadcast_one_to_all.assert_called_once()
+    assert broadcast_one_to_all.call_args.kwargs["is_source"] is False
+    np.testing.assert_allclose(
+        np.asarray(trainer.models[DEFAULT_TASK_KEY].bias.value),
+        [5.0],
+    )
 
 
 class TestJAXTraining(unittest.TestCase):
