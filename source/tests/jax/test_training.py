@@ -566,6 +566,8 @@ class TestJAXTraining(unittest.TestCase):
         main(args)
 
         freeze_entrypoint.assert_called_once()
+        self.assertIn("hessian", freeze_entrypoint.call_args.kwargs)
+        self.assertFalse(freeze_entrypoint.call_args.kwargs["hessian"])
 
     def test_hlo_hessian_mode_updates_output_def(self) -> None:
         """HLO output definition should expose Hessian when requested."""
