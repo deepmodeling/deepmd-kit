@@ -16,7 +16,6 @@ from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableDef,
-    PropertyMetadataHolder,
 )
 from deepmd.dpmodel.utils.batch_size import (
     AutoBatchSize,
@@ -43,7 +42,7 @@ def _to_numpy_dict(ret: dict[str, Any]) -> dict[str, np.ndarray]:
     }
 
 
-class TF2SavedModelWrapper(PropertyMetadataHolder, tf.Module):
+class TF2SavedModelWrapper(tf.Module):
     """Small Python wrapper around the exported TensorFlow SavedModel."""
 
     def __init__(self, model: str) -> None:
@@ -163,6 +162,22 @@ class TF2SavedModelWrapper(PropertyMetadataHolder, tf.Module):
 
     def get_default_fparam(self) -> list[float] | None:
         return self.default_fparam
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._var_name is None:
+            raise NotImplementedError
+        return self._var_name
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._task_dim is None:
+            raise NotImplementedError
+        return self._task_dim
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        return self._intensive
 
 
 class DeepEval(DeepEvalBackend):

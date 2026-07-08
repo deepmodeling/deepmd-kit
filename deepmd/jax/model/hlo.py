@@ -10,7 +10,6 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,
-    PropertyMetadataHolder,
 )
 from deepmd.jax.env import (
     jax_export,
@@ -41,7 +40,7 @@ OUTPUT_DEFS = {
 }
 
 
-class HLO(PropertyMetadataHolder, BaseModel):
+class HLO(BaseModel):
     def __init__(
         self,
         stablehlo: bytearray,
@@ -190,7 +189,14 @@ class HLO(PropertyMetadataHolder, BaseModel):
         # property models carry a user-defined output name (``var_name``) that
         # is not in the fixed table; rebuild its def from the persisted metadata.
         if self._var_name is not None and name == self._var_name:
-            return self._property_output_var_def()
+            return OutputVariableDef(
+                self._var_name,
+                shape=[self._task_dim],
+                reducible=True,
+                r_differentiable=False,
+                c_differentiable=False,
+                intensive=self._intensive,
+            )
         raise KeyError(f"Unknown model output variable {name!r}")
 
     def call_lower(
@@ -238,6 +244,22 @@ class HLO(PropertyMetadataHolder, BaseModel):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.dim_aparam
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._var_name is None:
+            raise NotImplementedError
+        return self._var_name
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._task_dim is None:
+            raise NotImplementedError
+        return self._task_dim
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        return self._intensive
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
