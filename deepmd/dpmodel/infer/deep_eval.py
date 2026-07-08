@@ -31,8 +31,27 @@ from deepmd.dpmodel.utils.serialization import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
+from deepmd.infer.deep_dos import (
+    DeepDOS,
+)
+from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
+)
+from deepmd.infer.deep_polar import (
+    DeepPolar,
+)
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
 )
 from deepmd.utils.econf_embd import (
     sort_element_type,
@@ -115,6 +134,26 @@ class DeepEval(DeepEvalBackend):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.dp.has_default_fparam()
+
+    @property
+    def model_type(self) -> type["DeepEvalWrapper"]:
+        """The evaluator of the model type."""
+        model = self.get_model()
+        model_output_type = model.model_output_type()
+        if "energy" in model_output_type:
+            return DeepPot
+        elif "dos" in model_output_type:
+            return DeepDOS
+        elif "dipole" in model_output_type:
+            return DeepDipole
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
+            return DeepPolar
+        elif "wfc" in model_output_type:
+            return DeepWFC
+        elif self._get_property_var_name(model) in model_output_type:
+            return DeepProperty
+        else:
+            raise RuntimeError("Unknown model type")
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
