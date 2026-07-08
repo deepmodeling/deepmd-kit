@@ -151,7 +151,7 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
-You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
+Customized C++ OPs in the PyTorch backend are enabled by default when building the Python interface.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
 :::
 
@@ -196,7 +196,7 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 
 :::{envvar} DP_ENABLE_PYTORCH
 
-**Choices**: `0`, `1`; **Default**: `0`
+**Choices**: `0`, `1`; **Default**: `1`
 
 {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
@@ -370,11 +370,30 @@ The installation requires CMake 3.25.2 or later for all platforms (CPU, CUDA, an
 pip install -U cmake
 ```
 
-You must enable at least one backend.
+For a backend-enabled install, enable at least one backend.
+If you only want backend-neutral C/C++ libraries, use the backend-neutral tab below and provide backend plugins at runtime.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
 We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
+
+:::{tab-item} Backend-neutral C/C++ libraries
+
+To build only `libdeepmd_cc` and `libdeepmd_c` without backend plugins, leave all backend options disabled, or set them explicitly:
+
+```bash
+cmake -DBUILD_CPP_IF=ON -DBUILD_PY_IF=OFF \
+  -DENABLE_TENSORFLOW=OFF -DENABLE_PYTORCH=OFF \
+  -DENABLE_JAX=OFF -DENABLE_PADDLE=OFF \
+  -DALLOW_NO_BACKEND=ON \
+  -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+
+`ALLOW_NO_BACKEND=ON` is required as an explicit opt-in so CMake can distinguish this layout from an accidental build with all backends disabled.
+This install does not include backend plugins.
+Use backend plugin libraries from a backend-enabled build or package at runtime, either by placing them next to the installed C/C++ libraries or by setting {envvar}`DP_BACKEND_PLUGIN_PATH`.
+See [C/C++ backend plugins](../inference/cxx.md#backend-plugins) for runtime plugin discovery.
+:::
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
@@ -456,6 +475,14 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 {{ paddle_icon }} Whether building the Paddle backend.
 :::
 
+:::{cmake:variable} ALLOW_NO_BACKEND
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+Allow building backend-neutral C/C++ libraries with all backend options disabled.
+Set this to `ON` only when you plan to provide backend plugin libraries at runtime, for example next to `libdeepmd_cc`/`libdeepmd_c` or through {envvar}`DP_BACKEND_PLUGIN_PATH`.
+:::
+
 :::{cmake:variable} TENSORFLOW_ROOT
 
 **Type**: `PATH`
@@ -532,6 +559,14 @@ There's no need for building TensorFlow's C++ interface.
 
 {{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required).
 There's no need for downloading PyTorch's C++ libraries.
+:::
+
+:::{cmake:variable} DEEPMD_BYPASS_TORCH_CUDA_CHECK
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `ON`
+
+{{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when CMake cannot find CUDAToolkit/`nvcc` and DeePMD-kit is not building CUDA support.
+This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
 :::
 
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION

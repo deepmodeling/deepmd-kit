@@ -32,6 +32,41 @@ from .model import (
 DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
+def _translate_energy_keys(
+    model_ret: dict[str, torch.Tensor],
+    *,
+    do_grad_r: bool,
+    do_grad_c: bool,
+    do_atomic_virial: bool,
+    local: bool,
+) -> dict[str, torch.Tensor]:
+    """Map internal fitting keys -> public energy-model keys (shared by the
+    dense and graph ``forward_lower`` export traces).
+
+    Operates on plain dicts (make_fx-safe). ``local=True`` is the GRAPH path
+    (per-node ``N == sum(n_node)`` local atoms, no ghost/extended region) and
+    emits ``force``/``atom_virial``; ``local=False`` is the DENSE extended-region
+    path and emits ``extended_force``/``extended_virial`` (folded to local by
+    ``communicate_extended_output`` at inference).
+    """
+    out: dict[str, torch.Tensor] = {}
+    out["atom_energy"] = model_ret["energy"]
+    out["energy"] = model_ret["energy_redu"]
+    if do_grad_r:
+        out["force" if local else "extended_force"] = model_ret[
+            "energy_derv_r"
+        ].squeeze(-2)
+    if do_grad_c:
+        out["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+        if do_atomic_virial:
+            out["atom_virial" if local else "extended_virial"] = model_ret[
+                "energy_derv_c"
+            ].squeeze(-2)
+    if "mask" in model_ret:
+        out["mask"] = model_ret["mask"]
+    return out
+
+
 @BaseModel.register("ener")
 @BaseModel.register("sezm_ener")
 @BaseModel.register("dpa4_ener")
@@ -229,21 +264,115 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 aparam,
                 charge_spin,
             )
-            model_predict: dict[str, torch.Tensor] = {}
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
-            if do_grad_r:
-                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
-            if do_grad_c:
-                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = model_ret[
-                        "energy_derv_c"
-                    ].squeeze(-2)
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-            return model_predict
+            return _translate_energy_keys(
+                model_ret,
+                do_grad_r=do_grad_r,
+                do_grad_c=do_grad_c,
+                do_atomic_virial=do_atomic_virial,
+                local=False,
+            )
 
         return make_fx(fn, **make_fx_kwargs)(
             extended_coord, extended_atype, nlist, mapping, fparam, aparam, charge_spin
+        )
+
+    def forward_lower_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace ``forward_common_lower_graph`` into an exportable module with
+        public output keys.
+
+        Delegates to ``forward_common_lower_graph_exportable`` for tracing,
+        then translates the internal keys to the ``forward_lower`` convention.
+
+        Parameters
+        ----------
+        atype
+            (N,) flat local atom types, ``N == sum(n_node)``.
+        n_node
+            (nf,) per-frame local atom counts.
+        edge_index
+            (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+        edge_vec
+            (E, 3) neighbor-minus-center edge vectors (sample for tracing).
+        edge_mask
+            (E,) valid-edge mask (sample for tracing).
+        fparam, aparam, do_atomic_virial, charge_spin
+            As in ``forward_lower``.
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``
+            (e.g. ``tracing_mode="symbolic"``).
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module whose ``forward`` accepts
+            ``(atype, n_node, edge_index, edge_vec, edge_mask,
+            fparam, aparam, charge_spin)`` and returns a dict with the
+            public keys: ``atom_energy``, ``energy``, ``force``,
+            ``virial``, ``atom_virial`` (the last only when
+            ``do_atomic_virial``).  Unlike the dense
+            :meth:`forward_lower_exportable` (which emits ``extended_force`` /
+            ``extended_virial`` over the ghost-padded extended region), the
+            graph path is LOCAL-only (``N == sum(n_node)`` nodes, no ghosts),
+            so it emits ``force`` / ``atom_virial`` directly.
+        """
+        traced = self.forward_common_lower_graph_exportable(
+            atype,
+            n_node,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            do_atomic_virial=do_atomic_virial,
+            **make_fx_kwargs,
+        )
+
+        # Translate internal keys to public convention.
+        # Capture model config at trace time via closures.
+        do_grad_r = self.do_grad_r("energy")
+        do_grad_c = self.do_grad_c("energy")
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            model_ret = traced(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                fparam,
+                aparam,
+                charge_spin,
+            )
+            return _translate_energy_keys(
+                model_ret,
+                do_grad_r=do_grad_r,
+                do_grad_c=do_grad_c,
+                do_atomic_virial=do_atomic_virial,
+                local=True,
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin
         )

@@ -2,24 +2,11 @@
 """
 SO(3)-equivariant linear layers for DPA4/SeZM.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.so3``.
-It defines the channel-only and focus-aware linear maps used by the DPA4
-SO(3) feature transformations. All three pt classes are ported:
-``FocusLinear`` (used by ``so2``, ``grid_net``, ``activation``),
-``ChannelLinear`` (used by ``so2``, ``grid_net``), and ``SO3Linear``
-(used by ``so2``, ``ffn``).
+This module defines the channel-only and focus-aware linear maps used by SeZM
+SO(3) feature transformations.
 
-Serialization contract: ``SO3Linear`` mirrors the pt ``serialize()`` format
-exactly (same config and ``@variables`` keys), so pt ``serialize()`` output
-deserializes directly. The pt ``FocusLinear`` and ``ChannelLinear`` define no
-``serialize()`` (they only appear nested inside larger modules' state_dicts);
-their dpmodel ``serialize()``/``deserialize()`` use ``@variables`` keys equal
-to the pt ``state_dict`` key names (``weight``, ``bias``) so that pt
-state-dict fragments load directly.
-
-Weight initialization is distribution-equivalent to the pt version (drawn
-from ``np.random.default_rng`` instead of the torch generator stream), the
-same convention as ``utils.init_trunc_normal_fan_in_out``.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.so3``.
 """
 
 from __future__ import (
@@ -74,21 +61,21 @@ class FocusLinear(NativeOP):
 
     Parameters
     ----------
-    in_channels : int
+    in_channels
         Input feature dimension.
-    out_channels : int
+    out_channels
         Output feature dimension.
-    n_focus : int
+    n_focus
         Number of focus streams.
-    precision : str
+    precision
         Parameter precision.
-    bias : bool
+    bias
         Whether to use bias.
-    trainable : bool
+    trainable
         Whether parameters are trainable.
-    seed : int | list[int] | None
+    seed
         Random seed for initialization.
-    init_std : float | None
+    init_std
         If given, use normal(0, init_std) instead of default uniform init.
         Useful for gate projections where small initial logits are desired.
     """
@@ -129,11 +116,9 @@ class FocusLinear(NativeOP):
 
     def call(self, x: Any) -> Any:
         """
-        Apply the per-focus linear projection.
-
         Parameters
         ----------
-        x : Array
+        x
             Input array with shape (B, F, Cin).
 
         Returns
@@ -159,11 +144,7 @@ class FocusLinear(NativeOP):
         return out
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the FocusLinear to a dict.
-
-        The pt ``FocusLinear`` has no ``serialize()``; the ``@variables`` keys
-        here match the pt ``state_dict`` key names (``weight``, ``bias``).
-        """
+        """Serialize the FocusLinear to a dict."""
         variables = {"weight": to_numpy_array(self.weight)}
         if self.use_bias:
             variables["bias"] = to_numpy_array(self.bias)
@@ -203,15 +184,9 @@ class FocusLinear(NativeOP):
             seed=config.get("seed"),
         )
         prec = PRECISION_DICT[obj.precision.lower()]
-        weight = np.asarray(variables["weight"], dtype=prec)
-        if weight.shape != obj.weight.shape:
-            raise ValueError(
-                f"weight shape {weight.shape} does not match "
-                f"the expected shape {obj.weight.shape}"
-            )
-        obj.weight = weight
+        obj.weight = np.asarray(variables["weight"], dtype=prec)
         if obj.use_bias:
-            obj.bias = np.asarray(variables["bias"], dtype=prec).reshape(obj.bias.shape)
+            obj.bias = np.asarray(variables["bias"], dtype=prec)
         return obj
 
 
@@ -228,19 +203,19 @@ class ChannelLinear(NativeOP):
 
     Parameters
     ----------
-    in_channels : int
+    in_channels
         Input feature dimension.
-    out_channels : int
+    out_channels
         Output feature dimension.
-    precision : str
+    precision
         Parameter precision.
-    bias : bool
+    bias
         Whether to use bias.
-    trainable : bool
+    trainable
         Whether parameters are trainable.
-    seed : int | list[int] | None
+    seed
         Random seed for initialization.
-    init_std : float | None
+    init_std
         If given, use normal(0, init_std) instead of default uniform init.
         Useful for gate projections where small initial logits are desired.
     """
@@ -277,11 +252,9 @@ class ChannelLinear(NativeOP):
 
     def call(self, x: Any) -> Any:
         """
-        Apply the channel-only linear projection.
-
         Parameters
         ----------
-        x : Array
+        x
             Input array with shape ``(..., C_in)``.
 
         Returns
@@ -298,11 +271,7 @@ class ChannelLinear(NativeOP):
         return out
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the ChannelLinear to a dict.
-
-        The pt ``ChannelLinear`` has no ``serialize()``; the ``@variables``
-        keys here match the pt ``state_dict`` key names (``weight``, ``bias``).
-        """
+        """Serialize the ChannelLinear to a dict."""
         variables = {"weight": to_numpy_array(self.weight)}
         if self.use_bias:
             variables["bias"] = to_numpy_array(self.bias)
@@ -340,15 +309,9 @@ class ChannelLinear(NativeOP):
             seed=config.get("seed"),
         )
         prec = PRECISION_DICT[obj.precision.lower()]
-        weight = np.asarray(variables["weight"], dtype=prec)
-        if weight.shape != obj.weight.shape:
-            raise ValueError(
-                f"weight shape {weight.shape} does not match "
-                f"the expected shape {obj.weight.shape}"
-            )
-        obj.weight = weight
+        obj.weight = np.asarray(variables["weight"], dtype=prec)
         if obj.use_bias:
-            obj.bias = np.asarray(variables["bias"], dtype=prec).reshape(obj.bias.shape)
+            obj.bias = np.asarray(variables["bias"], dtype=prec)
         return obj
 
 
@@ -356,8 +319,9 @@ class SO3Linear(NativeOP):
     """
     Focus-aware degree-wise linear self-interaction.
 
-    The key insight is that weights are shared across all ``m`` components
-    within each ``l`` block.
+    This vectorized implementation avoids Python loops by using ``torch.einsum``
+    and ``index_select``. The key insight is that weights are shared across all
+    ``m`` components within each ``l`` block.
 
     Notes
     -----
@@ -365,28 +329,29 @@ class SO3Linear(NativeOP):
     - Bias storage: ``(F*C_out,)``, only applied to ``l=0`` scalar components.
     - Runtime view restores weights to ``(lmax+1, C_in, F, C_out)`` via reshape.
     - ``expand_index`` maps each packed ``(l,m)`` position to its ``l`` value.
-    - The pt einsum ``ndfi,difo->ndfo`` is expressed as a broadcast batched
-      matmul, which keeps the whole multi-focus path vectorized.
+    - Einsum ``ndfi,difo->ndfo`` keeps the whole multi-focus path vectorized.
+    - In HybridMuon slice mode, each ``(C_in, F*C_out)`` slice gets independent
+      NS update with stable rectangular scaling.
 
     Parameters
     ----------
-    lmax : int
+    lmax
         Maximum spherical harmonic degree.
-    in_channels : int
+    in_channels
         Number of input channels per (l, m) coefficient.
-    out_channels : int
+    out_channels
         Number of output channels per (l, m) coefficient.
-    n_focus : int
+    n_focus
         Number of focus streams.
-    precision : str
+    precision
         Parameter precision.
-    mlp_bias : bool
+    mlp_bias
         Whether to use bias for l=0 (scalar) components.
-    trainable : bool
+    trainable
         Whether parameters are trainable.
-    seed : int | list[int] | None
+    seed
         Random seed for weight initialization.
-    init_std : float | None
+    init_std
         If given, use normal(0, init_std) for all weights instead of default
         trunc-normal fan-in/fan-out init. Use 0.0 for zero initialization.
     """
@@ -448,11 +413,9 @@ class SO3Linear(NativeOP):
 
     def call(self, x: Any) -> Any:
         """
-        Apply the degree-wise linear self-interaction.
-
         Parameters
         ----------
-        x : Array
+        x
             Input features with shape (N, D, F, C_in) where D=(lmax+1)^2.
 
         Returns
@@ -473,7 +436,7 @@ class SO3Linear(NativeOP):
         expand_index = xp_asarray_nodetach(
             xp, self.expand_index, device=array_api_compat.device(x)
         )
-        weight_expanded = xp.take(weight, expand_index, axis=0)
+        weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
         # einsum "ndfi,difo->ndfo" as a broadcast batched matmul:
@@ -489,13 +452,14 @@ class SO3Linear(NativeOP):
                 xp, self.bias[...], device=array_api_compat.device(x)
             )
             bias = xp.reshape(bias, (self.n_focus, self.out_channels))
-            out0 = out[:, :1, :, :] + bias[None, None, ...]
-            out = xp.concat([out0, out[:, 1:, :, :]], axis=1) if self.lmax > 0 else out0
+            out = xp.concat(
+                [out[:, :1, :, :] + bias[None, None, ...], out[:, 1:, :, :]], axis=1
+            )
 
         return out
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the SO3Linear to a dict (pt-compatible format)."""
+        """Serialize the SO3Linear to a dict."""
         variables = {"weight": to_numpy_array(self.weight)}
         if self.mlp_bias:
             variables["bias"] = to_numpy_array(self.bias)
@@ -538,16 +502,8 @@ class SO3Linear(NativeOP):
             seed=config.get("seed"),
         )
         prec = PRECISION_DICT[obj.precision.lower()]
-        expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
-            raise ValueError("expand_index does not match the lmax-derived table")
-        weight = np.asarray(variables["weight"], dtype=prec)
-        if weight.shape != obj.weight.shape:
-            raise ValueError(
-                f"weight shape {weight.shape} does not match "
-                f"the expected shape {obj.weight.shape}"
-            )
-        obj.weight = weight
+        obj.expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
+        obj.weight = np.asarray(variables["weight"], dtype=prec)
         if obj.mlp_bias:
-            obj.bias = np.asarray(variables["bias"], dtype=prec).reshape(obj.bias.shape)
+            obj.bias = np.asarray(variables["bias"], dtype=prec)
         return obj

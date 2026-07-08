@@ -77,6 +77,9 @@ from .descriptor import (
 from .se import (
     DescrptSe,
 )
+from .stat import (
+    load_or_compute_se_input_stats,
+)
 
 
 @Descriptor.register("se_e2_a")
@@ -374,7 +377,8 @@ class DescrptSeA(DescrptSe):
         **kwargs
             Additional keyword arguments.
         """
-        if True:
+
+        def compute_stats() -> dict[str, Any]:
             sumr = []
             suma = []
             sumn = []
@@ -398,7 +402,16 @@ class DescrptSeA(DescrptSe):
                 "sumr2": sumr2,
                 "suma2": suma2,
             }
-            self.merge_input_stats(stat_dict)
+            return stat_dict
+
+        stat_dict = load_or_compute_se_input_stats(
+            self,
+            kwargs.get("stat_file_path"),
+            last_dim=4,
+            compute=compute_stats,
+            mixed_types=False,
+        )
+        self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
         """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
@@ -1430,7 +1443,11 @@ class DescrptSeA(DescrptSe):
         with tf.control_dependencies([atype_equal]):
             aatype = atype[0, :]
         ghost_atype = aatype[natoms[0] :]
-        _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
+        # Dense per-type ghost counts: the ghost region is sorted ascending by
+        # type (see DeepSpinTF::extend), but a type may be absent. bincount with
+        # minlength keeps the count vector indexable by type id, whereas
+        # tf.unique_with_counts drops absent types and shifts every offset.
+        ghost_natoms = tf.math.bincount(ghost_atype, minlength=self.ntypes)
         ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
         ghost_natoms_index += natoms[0]
         for i in range(self.ntypes):

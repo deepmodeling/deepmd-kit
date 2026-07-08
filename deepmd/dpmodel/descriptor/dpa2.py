@@ -936,7 +936,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             mapping_ext = xp.tile(
                 xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1])
             )
+            mapping_mask = mapping_ext >= 0
+            mapping_ext = xp.where(
+                mapping_mask, mapping_ext, xp.zeros_like(mapping_ext)
+            )
             g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+            g1_ext = xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
         else:
             # parallel mode: hand the local-only g1 to the repformer block;
             # its per-layer override fills ghosts via the MPI exchange.

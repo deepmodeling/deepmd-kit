@@ -35,7 +35,7 @@ jobs:
             enable_pytorch: false
             enable_paddle: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -111,7 +111,7 @@ jobs:
   pass:
     name: Pass testing C++
     needs: [testcc]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed

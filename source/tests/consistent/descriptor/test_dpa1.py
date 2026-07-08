@@ -21,6 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -37,6 +38,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_atten import DescrptDPA1Compat as DescrptDPA1TF
 else:
     DescrptDPA1TF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1TF2
+else:
+    DescrptDPA1TF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.dpa1 import DescrptDPA1 as DescriptorDPA1JAX
 else:
@@ -403,7 +408,36 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             )
         )
 
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            type_one_side,
+            attn,
+            attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            ln_eps,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return not INSTALLED_TF2 or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            temperature,
+        )
+
     tf_class = DescrptDPA1TF
+    tf2_class = DescrptDPA1TF2
     dp_class = DescrptDPA1DP
     pt_class = DescrptDPA1PT
     pt_expt_class = DescrptDPA1PTExpt
@@ -521,6 +555,16 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

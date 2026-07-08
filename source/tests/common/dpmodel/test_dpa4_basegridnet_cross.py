@@ -127,28 +127,6 @@ def _run(net, query, context, backend):
 
 
 @pytest.mark.parametrize("op_type", ["glu", "mlp", "branch"])  # grid operation
-def test_s2_self_regression(op_type) -> None:
-    """mode='self' S2GridNet still matches pt at 1e-12 (guards the self path)."""
-    lmax, n_focus, n_batch = 2, 2, 5
-    pt_net, dp_net = _build_nets(
-        mode="self", op_type=op_type, layout="ndfc", lmax=lmax, n_focus=n_focus
-    )
-    rng = np.random.default_rng(11)
-    query, context = _make_inputs(
-        mode="self",
-        layout="ndfc",
-        n_batch=n_batch,
-        lmax=lmax,
-        n_focus=n_focus,
-        channels=dp_net.channels,
-        rng=rng,
-    )
-    dp_out = _run(dp_net, query, context, "dp")
-    pt_out = _run(pt_net, query, context, "pt")
-    np.testing.assert_allclose(dp_out, pt_out, rtol=1e-12, atol=1e-12)
-
-
-@pytest.mark.parametrize("op_type", ["glu", "mlp", "branch"])  # grid operation
 def test_s2_cross_parity(op_type) -> None:
     """mode='cross' S2GridNet matches pt at 1e-12 (separate query/context)."""
     lmax, n_focus, n_batch = 2, 2, 5

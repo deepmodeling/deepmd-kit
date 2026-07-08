@@ -190,6 +190,11 @@ void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
  */
 void load_op_library();
 
+/**
+ * @brief Dynamically load the OP library required by a backend.
+ */
+void load_op_library(DPBackend backend);
+
 /** @struct deepmd::deepmd_exception
  **/
 

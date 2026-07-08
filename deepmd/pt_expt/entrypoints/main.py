@@ -2,9 +2,11 @@
 """Training entrypoint for the pt_expt backend."""
 
 import argparse
-import json
 import logging
 import os
+from dataclasses import (
+    replace,
+)
 from pathlib import (
     Path,
 )
@@ -14,6 +16,14 @@ from typing import (
 
 import h5py
 
+from deepmd.dpmodel.train import (
+    AbstractTrainEntrypoint,
+    TrainEntrypointOptions,
+    TrainingTaskConfig,
+    iter_training_task_configs,
+    make_task_maps,
+    print_data_summaries,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
 )
@@ -23,12 +33,6 @@ from deepmd.pt_expt.train import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
-from deepmd.utils.argcheck import (
-    normalize,
-)
-from deepmd.utils.compat import (
-    update_deepmd_input,
-)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
     get_data,
@@ -37,8 +41,18 @@ from deepmd.utils.data_system import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
+
+_PT_EXPT_MODEL_SUFFIXES = (".pt", ".pte", ".pt2")
+
+
+def _ensure_pt_expt_model_suffix(model_path: str | None) -> str | None:
+    """Append the default checkpoint suffix when a model path is a prefix."""
+    if model_path is not None and not model_path.endswith(_PT_EXPT_MODEL_SUFFIXES):
+        return f"{model_path}.pt"
+    return model_path
 
 
 def _update_changed_model_tensors(
@@ -150,6 +164,21 @@ def _build_data_system(
     )
 
 
+def _ensure_stat_file_path(stat_file_path: str | None) -> DPPath | None:
+    """Create a stat-file target and return a DPPath wrapper."""
+    if stat_file_path is None:
+        return None
+    path = Path(stat_file_path)
+    if not path.exists():
+        if stat_file_path.endswith((".h5", ".hdf5")):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with h5py.File(path, "w"):
+                pass
+        else:
+            path.mkdir(parents=True, exist_ok=True)
+    return DPPath(stat_file_path, "a")
+
+
 def get_trainer(
     config: dict[str, Any],
     init_model: str | None = None,
@@ -159,74 +188,42 @@ def get_trainer(
     shared_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
-    model_params = config["model"]
     training_params = config["training"]
-    multi_task = "model_dict" in model_params
+    multi_task = "model_dict" in config["model"]
 
     data_seed = training_params.get("seed", None)
 
-    if not multi_task:
-        type_map = model_params["type_map"]
-
-        # ----- training data ------------------------------------------------
-        training_dataset_params = training_params["training_data"]
+    def factory(
+        task_config: TrainingTaskConfig,
+    ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, DPPath | None]:
+        type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
-            training_dataset_params, type_map, seed=data_seed
+            dict(task_config.training_data_params), type_map, seed=data_seed
+        )
+        validation_data = None
+        if task_config.validation_data_params is not None:
+            validation_data = _build_data_system(
+                dict(task_config.validation_data_params), type_map, seed=data_seed
+            )
+        return (
+            train_data,
+            validation_data,
+            _ensure_stat_file_path(task_config.stat_file),
         )
 
-        # ----- validation data ----------------------------------------------
-        validation_data = None
-        validation_dataset_params = training_params.get("validation_data", None)
-        if validation_dataset_params is not None:
-            validation_data = _build_data_system(
-                validation_dataset_params, type_map, seed=data_seed
-            )
-
-        # ----- stat file path -----------------------------------------------
-        stat_file_path = training_params.get("stat_file", None)
-        if stat_file_path is not None:
-            if not Path(stat_file_path).exists():
-                if stat_file_path.endswith((".h5", ".hdf5")):
-                    with h5py.File(stat_file_path, "w"):
-                        pass
-                else:
-                    Path(stat_file_path).mkdir(parents=True, exist_ok=True)
-            stat_file_path = DPPath(stat_file_path, "a")
+    train_data_map, validation_data_map, stat_file_path_map = make_task_maps(
+        config, factory
+    )
+    print_data_summaries(train_data_map, validation_data_map)
+    if multi_task:
+        train_data = train_data_map
+        validation_data = validation_data_map
+        stat_file_path = stat_file_path_map
     else:
-        # Multi-task: build per-task data systems
-        train_data = {}
-        validation_data = {}
-        stat_file_path = {}
-        for model_key in model_params["model_dict"]:
-            type_map = model_params["model_dict"][model_key]["type_map"]
-            data_params = training_params["data_dict"][model_key]
-
-            # training data
-            train_data[model_key] = _build_data_system(
-                data_params["training_data"], type_map, seed=data_seed
-            )
-
-            # validation data
-            vd_params = data_params.get("validation_data", None)
-            if vd_params is not None:
-                validation_data[model_key] = _build_data_system(
-                    vd_params, type_map, seed=data_seed
-                )
-            else:
-                validation_data[model_key] = None
-
-            # stat file
-            _sf = data_params.get("stat_file", None)
-            if _sf is not None:
-                if not Path(_sf).exists():
-                    if _sf.endswith((".h5", ".hdf5")):
-                        with h5py.File(_sf, "w"):
-                            pass
-                    else:
-                        Path(_sf).mkdir(parents=True, exist_ok=True)
-                stat_file_path[model_key] = DPPath(_sf, "a")
-            else:
-                stat_file_path[model_key] = None
+        task_key = next(iter(train_data_map))
+        train_data = train_data_map[task_key]
+        validation_data = validation_data_map[task_key]
+        stat_file_path = stat_file_path_map[task_key]
 
     trainer = training.Trainer(
         config,
@@ -240,6 +237,201 @@ def get_trainer(
         shared_links=shared_links,
     )
     return trainer
+
+
+class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for pt_expt."""
+
+    def is_built_with_cuda(self) -> bool:
+        """Check if PyTorch was built with CUDA."""
+        import torch
+
+        return torch.version.cuda is not None
+
+    def is_built_with_rocm(self) -> bool:
+        """Check if PyTorch was built with ROCm."""
+        import torch
+
+        return torch.version.hip is not None
+
+    def get_compute_device(self) -> str:
+        """Get the selected compute device."""
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        return str(DEVICE)
+
+    def get_ngpus(self) -> int:
+        """Get the number of visible CUDA devices."""
+        import torch
+
+        return torch.cuda.device_count()
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        import torch
+
+        return {
+            "Backend": "PyTorch Experimental",
+            "PT Ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+        }
+
+    def get_device_name(self) -> str | None:
+        """Return the current CUDA device name when available."""
+        import torch
+
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(torch.cuda.current_device())
+        return None
+
+
+class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
+    """pt_expt implementation of the common training entrypoint pipeline."""
+
+    def __init__(self) -> None:
+        self.finetune_links: dict[str, Any] | None = None
+        self.shared_links: dict[str, Any] | None = None
+        self._owns_process_group = False
+
+    def prepare_options(
+        self,
+        options: TrainEntrypointOptions,
+    ) -> TrainEntrypointOptions:
+        """Normalize checkpoint prefixes accepted by the train CLI."""
+        return replace(
+            options,
+            init_model=_ensure_pt_expt_model_suffix(options.init_model),
+            restart=_ensure_pt_expt_model_suffix(options.restart),
+        )
+
+    def preprocess_config(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+    ) -> dict[str, Any]:
+        """Apply pt_expt multi-task, finetune, and pretrained-model preprocessing."""
+        import torch
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        self.finetune_links = None
+        self.shared_links = None
+
+        if self.is_multi_task(config):
+            from deepmd.pt_expt.utils.multi_task import (
+                preprocess_shared_params,
+            )
+
+            config["model"], self.shared_links = preprocess_shared_params(
+                config["model"]
+            )
+            if "RANDOM" in config["model"]["model_dict"]:
+                raise ValueError("Model name can not be 'RANDOM' in multi-task mode!")
+
+        if options.finetune is not None:
+            from deepmd.pt_expt.utils.finetune import (
+                get_finetune_rules,
+            )
+
+            config["model"], self.finetune_links = get_finetune_rules(
+                options.finetune,
+                config["model"],
+                model_branch=options.model_branch,
+                change_model_params=options.use_pretrain_script,
+            )
+
+        if options.init_model is not None and options.use_pretrain_script:
+            init_state_dict = torch.load(
+                options.init_model, map_location=DEVICE, weights_only=True
+            )
+            if "model" in init_state_dict:
+                init_state_dict = init_state_dict["model"]
+            config["model"] = init_state_dict["_extra_state"]["model_params"]
+
+        return config
+
+    def update_neighbor_stat(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+        *,
+        multi_task: bool,
+    ) -> tuple[dict[str, Any], None]:
+        """Update pt_expt descriptor selections from neighbor statistics."""
+        log.info(
+            "Calculate neighbor statistics... "
+            "(add --skip-neighbor-stat to skip this step)"
+        )
+        from deepmd.pt_expt.model import (
+            BaseModel,
+        )
+
+        for task_config in iter_training_task_configs(config):
+            type_map = task_config.model_params.get("type_map")
+            train_data = _get_neighbor_stat_data(
+                dict(task_config.training_data_params), type_map
+            )
+            updated_model_params, _ = BaseModel.update_sel(
+                train_data, type_map, dict(task_config.model_params)
+            )
+            if multi_task:
+                config["model"]["model_dict"][task_config.key] = updated_model_params
+            else:
+                config["model"] = updated_model_params
+        return config, None
+
+    def print_summary(self) -> None:
+        """Print pt_expt backend summary."""
+        SummaryPrinter()()
+
+    def setup_run(
+        self,
+        options: TrainEntrypointOptions,
+        config: dict[str, Any],
+    ) -> None:
+        """Initialize pt_expt distributed training when launched by torchrun/srun."""
+        self._owns_process_group = False
+        if os.environ.get("LOCAL_RANK") is not None:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                return
+            dist.init_process_group(backend="cuda:nccl,cpu:gloo")
+            self._owns_process_group = True
+
+    def teardown_run(
+        self,
+        options: TrainEntrypointOptions,
+        config: dict[str, Any],
+    ) -> None:
+        """Destroy the pt_expt distributed process group if this entrypoint made one."""
+        if not self._owns_process_group:
+            return
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            dist.destroy_process_group()
+        self._owns_process_group = False
+
+    def run_training(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+        neighbor_stat: Any,
+    ) -> None:
+        """Build and run the pt_expt trainer."""
+        trainer = get_trainer(
+            config,
+            options.init_model,
+            options.restart,
+            finetune_model=options.finetune,
+            finetune_links=self.finetune_links,
+            shared_links=self.shared_links,
+        )
+        trainer.run()
 
 
 def train(
@@ -273,120 +465,25 @@ def train(
     output : str
         Where to dump the normalised config.
     """
-    import torch
-
-    from deepmd.common import (
-        j_loader,
-    )
-    from deepmd.pt_expt.utils.env import (
-        DEVICE,
-    )
-
-    log.info("Configuration path: %s", input_file)
-    config = j_loader(input_file)
-
-    # suffix fix
-    if init_model is not None and not init_model.endswith(".pt"):
-        init_model += ".pt"
-    if restart is not None and not restart.endswith(".pt"):
-        restart += ".pt"
-
-    # Multi-task detection and shared params preprocessing
-    multi_task = "model_dict" in config.get("model", {})
-    shared_links = None
-    if multi_task:
-        from deepmd.pt_expt.utils.multi_task import (
-            preprocess_shared_params,
-        )
-
-        config["model"], shared_links = preprocess_shared_params(config["model"])
-        assert "RANDOM" not in config["model"]["model_dict"], (
-            "Model name can not be 'RANDOM' in multi-task mode!"
-        )
-
-    # update fine-tuning config
-    finetune_links = None
-    if finetune is not None:
-        from deepmd.pt_expt.utils.finetune import (
-            get_finetune_rules,
-        )
-
-        config["model"], finetune_links = get_finetune_rules(
-            finetune,
-            config["model"],
+    PTExptTrainEntrypoint().run(
+        TrainEntrypointOptions(
+            input_file=input_file,
+            output=output,
+            init_model=init_model,
+            restart=restart,
+            finetune=finetune,
             model_branch=model_branch,
-            change_model_params=use_pretrain_script,
+            use_pretrain_script=use_pretrain_script,
+            skip_neighbor_stat=skip_neighbor_stat,
         )
-
-    # update init_model config if --use-pretrain-script
-    if init_model is not None and use_pretrain_script:
-        init_state_dict = torch.load(init_model, map_location=DEVICE, weights_only=True)
-        if "model" in init_state_dict:
-            init_state_dict = init_state_dict["model"]
-        config["model"] = init_state_dict["_extra_state"]["model_params"]
-
-    # argcheck
-    config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-    config = normalize(config, multi_task=multi_task)
-
-    # neighbour stat
-    if not skip_neighbor_stat:
-        log.info(
-            "Calculate neighbor statistics... "
-            "(add --skip-neighbor-stat to skip this step)"
-        )
-        from deepmd.pt_expt.model import (
-            BaseModel,
-        )
-
-        if not multi_task:
-            type_map = config["model"].get("type_map")
-            train_data = _get_neighbor_stat_data(
-                config["training"]["training_data"], type_map
-            )
-            config["model"], _ = BaseModel.update_sel(
-                train_data, type_map, config["model"]
-            )
-        else:
-            for model_key in config["model"]["model_dict"]:
-                type_map = config["model"]["model_dict"][model_key]["type_map"]
-                train_data = _get_neighbor_stat_data(
-                    config["training"]["data_dict"][model_key]["training_data"],
-                    type_map,
-                )
-                config["model"]["model_dict"][model_key], _ = BaseModel.update_sel(
-                    train_data,
-                    type_map,
-                    config["model"]["model_dict"][model_key],
-                )
-
-    with open(output, "w") as fp:
-        json.dump(config, fp, indent=4)
-
-    import torch.distributed as dist
-
-    if os.environ.get("LOCAL_RANK") is not None:
-        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
-
-    try:
-        trainer = get_trainer(
-            config,
-            init_model,
-            restart,
-            finetune_model=finetune,
-            finetune_links=finetune_links,
-            shared_links=shared_links,
-        )
-        trainer.run()
-    finally:
-        if dist.is_available() and dist.is_initialized():
-            dist.destroy_process_group()
+    )
 
 
 def freeze(
     model: str,
     output: str = "frozen_model.pte",
     head: str | None = None,
+    lower_kind: str = "nlist",
 ) -> None:
     """Freeze a pt_expt checkpoint into a .pte exported model.
 
@@ -398,6 +495,19 @@ def freeze(
         Path for the output .pte file.
     head : str or None
         Head to freeze in multi-task mode.
+    lower_kind : str
+        Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
+        or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
+        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``:
+        dpa1/se_atten with concat type embedding and no ``exclude_types``,
+        attention layers included) and selects the C++ graph inference path;
+        the per-atom virial is enabled for it (near-free in the graph path:
+        one extra scatter off the shared single backward). NOTE: for
+        ``smooth_type_embedding=True`` the carry-all graph attention
+        intentionally drops the dense layout's sel-padding terms from the
+        softmax denominator, so graph-form results are sel-independent and
+        differ from the legacy dense lower by up to ~1e-4 (see
+        ``DescrptDPA1.call_graph``).
     """
     import torch
 
@@ -458,12 +568,36 @@ def freeze(
         single_model_params = model_params
 
     m.eval()
+
+    # The graph lower is opt-in and only valid for graph-eligible models
+    # (dpa1 with concat tebd and no type exclusion; attention layers included
+    # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
+    # fast with a clear message rather than emitting a broken .pt2. Enable the
+    # per-atom virial for the graph form -- it is near-free there (one extra
+    # scatter off the single shared backward).
+    do_atomic_virial = False
+    if lower_kind == "graph":
+        from deepmd.pt_expt.train.training import (
+            _model_uses_graph_lower,
+        )
+
+        if not _model_uses_graph_lower(m):
+            raise ValueError(
+                "lower_kind='graph' requires a graph-eligible model "
+                "(mixed_types and a descriptor exposing uses_graph_lower()==True, "
+                "currently dpa1 with tebd_input_mode='concat' and no "
+                "exclude_types). Use lower_kind='nlist' for this model."
+            )
+        do_atomic_virial = True
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
+        do_atomic_virial=do_atomic_virial,
+        lower_kind=lower_kind,
     )
-    log.info("Saved frozen model to %s", output)
+    log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
 
 def change_bias(
@@ -701,9 +835,19 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
                     f"Checkpoint path '{model_path}' does not exist."
                 )
             FLAGS.model = str(model_path)
+        _lower_kind = getattr(FLAGS, "lower_kind", "nlist")
         if not FLAGS.output.endswith((".pte", ".pt2")):
-            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
-        freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
+            # Default suffix: .pt2 for the graph export (an AOTI .pt2 archive is
+            # what the C++ graph path consumes), .pte otherwise. Explicit user
+            # .pte / .pt2 suffixes are preserved for both.
+            _default_suffix = ".pt2" if _lower_kind == "graph" else ".pte"
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(_default_suffix))
+        freeze(
+            model=FLAGS.model,
+            output=FLAGS.output,
+            head=FLAGS.head,
+            lower_kind=_lower_kind,
+        )
     elif FLAGS.command == "change-bias":
         change_bias(
             input_file=FLAGS.INPUT,

@@ -11,10 +11,12 @@
       "channels": 32,
       "n_radial": 16,
       "use_env_seed": true,
+      "edge_cartesian": false,
+      "node_cartesian": "none",
       "lmax": 3,
       "mmax": 1,
       "n_blocks": 2,
-      "so2_layers": 3,
+      "mixing_layers": 3,
       "radial_so2_mode": "degree_channel",
       "radial_so2_rank": 1,
       "n_focus": 2,
@@ -99,6 +101,7 @@
     "numb_steps": 2000000,
     "gradient_max_norm": 5.0,
     "save_freq": 2000,
+    "save_dir": "ckpt",
     "max_ckpt_keep": 3,
     "enable_ema": true,
     "ema_decay": 0.999,
@@ -119,6 +122,8 @@
   },
   "validating": {
     "compiled_infer": false,
-    "tf32_infer": false
+    "tf32_infer": false,
+    "amp_infer": false,
+    "save_best_dir": "ckpt_best"
   }
 }

@@ -34,15 +34,17 @@ class MapAparamOp : public OpKernel {
     const Tensor& natoms_tensor = context->input(context_input_index++);
 
     // set size of the sample
-    OP_REQUIRES(context, (aparam_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of aparam should be 2"));
+    OP_REQUIRES(
+        context, (aparam_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of aparam should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -53,10 +55,12 @@ class MapAparamOp : public OpKernel {
     int numb_aparam = nall > 0 ? aparam_tensor.shape().dim_size(1) / nall : 0;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
-                errors::InvalidArgument("number of neighbors should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nnei == n_a_sel + n_r_sel),
+        deepmd::tf_compat::InvalidArgument("number of neighbors should match"));
 
     // Create an output tensor
     TensorShape output_shape;

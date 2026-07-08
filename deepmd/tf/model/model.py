@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import logging
 from abc import (
     ABC,
@@ -76,6 +77,9 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
@@ -141,7 +145,8 @@ class Model(ABC, make_plugin_registry("model")):
         if isinstance(spin, Spin):
             self.spin = spin
         elif spin is not None:
-            self.spin = Spin(**spin)
+            spin_fields = set(inspect.signature(Spin).parameters)
+            self.spin = Spin(**{k: v for k, v in spin.items() if k in spin_fields})
         else:
             self.spin = None
         self.compress = compress
@@ -473,7 +478,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the number of types."""
 
     @abstractmethod
-    def data_stat(self, data: dict) -> None:
+    def data_stat(self, data: dict, stat_file_path: DPPath | None = None) -> None:
         """Data staticis."""
 
     def get_feed_dict(

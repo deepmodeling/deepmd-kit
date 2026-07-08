@@ -19,6 +19,12 @@ from .attn_res import (
 from .block import (
     SeZMInteractionBlock,
 )
+from .cartesian import (
+    EdgeCartesianTensorProduct,
+    NodeCartesianTensorProduct,
+    build_cartesian_basis,
+    build_edge_cartesian_tensors,
+)
 from .dens import (
     ForceEmbedding,
     SeZMDenoisingHead,
@@ -38,6 +44,7 @@ from .embedding import (
     EnvironmentInitialEmbedding,
     GeometricInitialEmbedding,
     SeZMTypeEmbedding,
+    SpinEmbedding,
 )
 from .ffn import (
     EquivariantFFN,
@@ -135,6 +142,7 @@ __all__ = [
     "ChargeSpinEmbedding",
     "DepthAttnRes",
     "DynamicRadialDegreeMixer",
+    "EdgeCartesianTensorProduct",
     "EdgeFeatureCache",
     "EnvironmentInitialEmbedding",
     "EquivariantFFN",
@@ -148,6 +156,7 @@ __all__ = [
     "InnerClamp",
     "LoRASO2",
     "LoRASO3",
+    "NodeCartesianTensorProduct",
     "RMSNorm",
     "RadialBasis",
     "RadialMLP",
@@ -165,11 +174,14 @@ __all__ = [
     "SeZMDirectForceHead",
     "SeZMInteractionBlock",
     "SeZMTypeEmbedding",
+    "SpinEmbedding",
     "SwiGLU",
     "WignerDCalculator",
     "apply_lora_to_sezm",
+    "build_cartesian_basis",
     "build_edge_cache",
     "build_edge_cache_from_edges",
+    "build_edge_cartesian_tensors",
     "build_edge_quaternion",
     "build_edge_type_feat",
     "build_gie_zonal_index",

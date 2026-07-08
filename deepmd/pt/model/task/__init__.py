@@ -21,6 +21,9 @@ from .fitting import (
 from .polarizability import (
     PolarFittingNet,
 )
+from .population import (
+    PopulationFittingNet,
+)
 from .property import (
     PropertyFittingNet,
 )
@@ -40,6 +43,7 @@ __all__ = [
     "EnergyFittingNetDirect",
     "Fitting",
     "PolarFittingNet",
+    "PopulationFittingNet",
     "PropertyFittingNet",
     "SeZMEnergyFittingNet",
     "TypePredictNet",

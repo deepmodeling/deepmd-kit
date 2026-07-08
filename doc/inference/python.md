@@ -34,6 +34,15 @@ descriptors = dp.eval_descriptor(coord, cell, atype)
 
 where `descriptors` is the descriptor matrix of the system. This can also be done using the command line interface `dp eval-desc` as described in the [test documentation](../test/test.md).
 
+:::{note}
+`eval_descriptor` is the descriptor-only interface supported across backends. In
+the PyTorch backend, [`eval_embedding`](embedding.md) additionally returns the
+descriptor, per-atom feature, and per-structure feature in a single forward pass.
+PyTorch descriptor/embedding APIs accept `dtype="fp32"`, `"fp64"`, or `"native"`;
+`eval_descriptor` defaults to `native`, while `eval_embedding` defaults to
+`fp32`.
+:::
+
 Furthermore, one can use the python interface to calculate model deviation.
 
 ```python

@@ -50,6 +50,9 @@ from .descriptor import (
 from .se import (
     DescrptSe,
 )
+from .stat import (
+    load_or_compute_se_input_stats,
+)
 
 
 @Descriptor.register("se_e2_r")
@@ -274,17 +277,27 @@ class DescrptSeR(DescrptSe):
         **kwargs
             Additional keyword arguments.
         """
-        sumr = []
-        sumn = []
-        sumr2 = []
-        for cc, bb, tt, nn, mm in zip(
-            data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
-        ):
-            sysr, sysr2, sysn = self._compute_dstats_sys_se_r(cc, bb, tt, nn, mm)
-            sumr.append(sysr)
-            sumn.append(sysn)
-            sumr2.append(sysr2)
-        stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
+
+        def compute_stats() -> dict[str, Any]:
+            sumr = []
+            sumn = []
+            sumr2 = []
+            for cc, bb, tt, nn, mm in zip(
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
+            ):
+                sysr, sysr2, sysn = self._compute_dstats_sys_se_r(cc, bb, tt, nn, mm)
+                sumr.append(sysr)
+                sumn.append(sysn)
+                sumr2.append(sysr2)
+            return {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
+
+        stat_dict = load_or_compute_se_input_stats(
+            self,
+            kwargs.get("stat_file_path"),
+            last_dim=1,
+            compute=compute_stats,
+            mixed_types=False,
+        )
         self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:

@@ -141,7 +141,13 @@ def edge_schema_from_extended(
         edge_scatter_index,
     )
     schema.coord = coord[:, :nloc, :].contiguous() if scatter_to_local else coord
-    schema.atype = atype[:, :nloc]
+    # The local-atom slice is a stride-(nall, 1) view when nloc < nall (always so
+    # with ghost atoms, and for the spin path where the source carries 2*nall
+    # columns). The compiled core flattens ``atype`` via ``reshape(-1)``, which
+    # ``torch.compile`` lowers to ``aten.view`` and rejects on a non-contiguous
+    # layout under symbolic shapes. Materialize a contiguous copy here, mirroring
+    # ``coord`` above.
+    schema.atype = atype[:, :nloc].contiguous()
     return schema
 
 

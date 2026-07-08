@@ -8,6 +8,7 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
+    NamedTuple,
 )
 
 import numpy as np
@@ -307,8 +308,8 @@ def save_txt_file(
     append : bool, optional
         if true file will be appended instead of overwriting, by default False
     """
-    flags = "ab" if append else "w"
-    with fname.open(flags) as fp:
+    flags = "a" if append else "w"
+    with fname.open(flags, encoding="utf-8") as fp:
         np.savetxt(fp, data, header=header)
 
 
@@ -413,6 +414,8 @@ def _write_energy_test_details(
     reference_virial: np.ndarray | None,
     prediction_virial: np.ndarray | None,
     out_put_spin: bool,
+    reference_stress: np.ndarray | None = None,
+    prediction_stress: np.ndarray | None = None,
     reference_force_real: np.ndarray | None = None,
     prediction_force_real: np.ndarray | None = None,
     reference_force_magnetic: np.ndarray | None = None,
@@ -521,6 +524,26 @@ def _write_energy_test_details(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
+    if (reference_stress is None) != (prediction_stress is None):
+        raise ValueError(
+            "Stress detail output requires both reference and prediction stresses."
+        )
+    if reference_stress is not None and prediction_stress is not None:
+        ps = np.concatenate(
+            (
+                np.reshape(reference_stress, [-1, 9]),
+                np.reshape(prediction_stress, [-1, 9]),
+            ),
+            axis=1,
+        )
+        save_txt_file(
+            detail_path.with_suffix(".s.out"),
+            ps,
+            header=f"{system} (eV/Å^3): data_sxx data_sxy data_sxz data_syx "
+            "data_syy data_syz data_szx data_szy data_szz pred_sxx pred_sxy pred_sxz "
+            "pred_syx pred_syy pred_syz pred_szx pred_szy pred_szz",
+            append=append_detail,
+        )
     if reference_hessian is not None and prediction_hessian is not None:
         hessian_detail = np.concatenate(
             (
@@ -535,6 +558,47 @@ def _write_energy_test_details(
             header=f"{system}: data_h pred_h (3Na*3Na matrix in row-major order)",
             append=append_detail,
         )
+
+
+class _OptionalEnerOutputs(NamedTuple):
+    """The optional trailing outputs of ``DeepPot.eval`` (``None`` when absent)."""
+
+    atom_energy: "np.ndarray | None"
+    atom_virial: "np.ndarray | None"
+    force_mag: "np.ndarray | None"
+    mask_mag: "np.ndarray | None"
+    hessian: "np.ndarray | None"
+
+
+def _split_optional_ener_outputs(
+    ret: tuple,
+    *,
+    has_atom_ener: bool,
+    has_spin: bool,
+    has_hessian: bool,
+    numb_test: int,
+) -> _OptionalEnerOutputs:
+    """Split the optional trailing outputs of ``DeepPot.eval``.
+
+    ``DeepPot.eval`` appends its optional outputs after ``(energy, force,
+    virial)`` in a fixed order: atomic ``(atom_energy, atom_virial)``, then spin
+    ``(force_mag, mask_mag)``, then ``hessian``. Read them by advancing an index
+    through the tuple in that same order, so the hessian slot is not confused
+    with atomic energy/virial or spin outputs when those are also present.
+    """
+    atom_energy = atom_virial = force_mag = mask_mag = hessian = None
+    idx = 3
+    if has_atom_ener:
+        atom_energy = ret[idx].reshape([numb_test, -1])
+        atom_virial = ret[idx + 1].reshape([numb_test, -1])
+        idx += 2
+    if has_spin:
+        force_mag = ret[idx].reshape([numb_test, -1])
+        mask_mag = ret[idx + 1].reshape([numb_test, -1])
+        idx += 2
+    if has_hessian:
+        hessian = ret[idx].reshape([numb_test, -1])
+    return _OptionalEnerOutputs(atom_energy, atom_virial, force_mag, mask_mag, hessian)
 
 
 def test_ener(
@@ -662,28 +726,17 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
-    hessian = None
-    force_m = None
-    mask_mag = None
-    if dp.has_hessian:
-        hessian = ret[3]
-        hessian = hessian.reshape([numb_test, -1])
-    if has_atom_ener:
-        ae = ret[3]
-        av = ret[4]
-        ae = ae.reshape([numb_test, -1])
-        av = av.reshape([numb_test, -1])
-        if dp.has_spin:
-            force_m = ret[5]
-            force_m = force_m.reshape([numb_test, -1])
-            mask_mag = ret[6]
-            mask_mag = mask_mag.reshape([numb_test, -1])
-    else:
-        if dp.has_spin:
-            force_m = ret[3]
-            force_m = force_m.reshape([numb_test, -1])
-            mask_mag = ret[4]
-            mask_mag = mask_mag.reshape([numb_test, -1])
+    optional_outputs = _split_optional_ener_outputs(
+        ret,
+        has_atom_ener=has_atom_ener,
+        has_spin=dp.has_spin,
+        has_hessian=dp.has_hessian,
+        numb_test=numb_test,
+    )
+    ae = optional_outputs.atom_energy
+    force_m = optional_outputs.force_mag
+    mask_mag = optional_outputs.mask_mag
+    hessian = optional_outputs.hessian
     out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
     spin_metrics = None
     force_r = None
@@ -760,6 +813,8 @@ def test_ener(
             mae_fw = weighted_force_metrics.mae
             rmse_fw = weighted_force_metrics.rmse
 
+    prediction_stress = None
+    reference_stress = None
     if data.pbc and not out_put_spin and find_virial == 1:
         if shared_metrics.virial is None or shared_metrics.virial_per_atom is None:
             raise RuntimeError("Virial metrics are unavailable for dp test.")
@@ -767,6 +822,18 @@ def test_ener(
         rmse_v = shared_metrics.virial.rmse
         mae_va = shared_metrics.virial_per_atom.mae
         rmse_va = shared_metrics.virial_per_atom.rmse
+        # Stress sigma = -virial / volume, in eV/Å^3 (tensile-positive convention).
+        volume = np.abs(np.linalg.det(box.reshape([numb_test, 3, 3]))).reshape(
+            [numb_test, 1]
+        )
+        prediction_stress = -virial / volume
+        reference_stress = -test_data["virial"][:numb_test] / volume
+        stress_metrics = compute_error_stat(prediction_stress, reference_stress)
+        mae_s = stress_metrics.mae
+        rmse_s = stress_metrics.rmse
+        dict_to_return.update(
+            stress_metrics.as_weighted_average_errors("mae_s", "rmse_s")
+        )
 
     hessian_metrics = None
     if dp.has_hessian:
@@ -832,6 +899,8 @@ def test_ener(
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
         log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
+        log.info(f"Stress MAE         : {mae_s:e} eV/Å^3")
+        log.info(f"Stress RMSE        : {rmse_s:e} eV/Å^3")
     if has_atom_ener:
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
@@ -856,6 +925,8 @@ def test_ener(
             prediction_force=force,
             reference_virial=test_data["virial"][:numb_test],
             prediction_virial=virial,
+            reference_stress=reference_stress,
+            prediction_stress=prediction_stress,
             out_put_spin=out_put_spin,
             reference_force_real=test_force_r,
             prediction_force_real=force_r,
@@ -901,6 +972,9 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
         log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
         log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
         log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
+    if "rmse_s" in avg:
+        log.info(f"Stress MAE         : {avg['mae_s']:e} eV/Å^3")
+        log.info(f"Stress RMSE        : {avg['rmse_s']:e} eV/Å^3")
     if "rmse_h" in avg:
         log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/Å^2")
         log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/Å^2")

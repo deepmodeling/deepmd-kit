@@ -52,7 +52,7 @@ void DeepSpinPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorch);
   int gpu_num = torch::cuda::device_count();
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;

@@ -52,16 +52,17 @@ class SoftMinSwitchOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of type should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of type should be 2"));
     OP_REQUIRES(context, (rij_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of rij should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of rij should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -73,23 +74,28 @@ class SoftMinSwitchOp : public OpKernel {
     assert(sel_r.size() == ntypes);
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == type_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == rij_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("shape of type should be nall"));
     OP_REQUIRES(
-        context,
-        (3 * static_cast<int64_t>(nnei) * nloc ==
-         rij_tensor.shape().dim_size(1)),
-        errors::InvalidArgument("shape of rij should be 3 * nloc * nnei"));
+        context, (nframes == type_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == rij_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nall == type_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("shape of type should be nall"));
+    OP_REQUIRES(context,
+                (3 * static_cast<int64_t>(nnei) * nloc ==
+                 rij_tensor.shape().dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "shape of rij should be 3 * nloc * nnei"));
     OP_REQUIRES(
         context,
         (static_cast<int64_t>(nnei) * nloc == nlist_tensor.shape().dim_size(1)),
-        errors::InvalidArgument("shape of nlist should be nloc * nnei"));
+        deepmd::tf_compat::InvalidArgument(
+            "shape of nlist should be nloc * nnei"));
 
     // Create an output tensor
     TensorShape sw_value_shape;

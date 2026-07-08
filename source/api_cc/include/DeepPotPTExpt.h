@@ -290,6 +290,36 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const std::vector<double>& charge_spin,
                            const bool atomic) override;
 
+  /**
+   * @brief Fully device-resident edge inference for single-domain SeZM/DPA4.
+   *
+   * Runs the exported model directly on a GPU-built compact edge schema,
+   * keeping coordinates, the edge graph and the outputs on the device.  All
+   * pointers reference GPU memory on the model's device.  ``edge_index`` is the
+   * flattened [2, nedge] local edge graph (row 0 = neighbor/source, row 1 =
+   * center/destination); ``edge_vec`` is the matching minimum-image bond vector
+   * ``r_neighbor - r_center``.  Outputs are written device-to-device.
+   *
+   * @param[out] d_atom_energy Per-atom energy, GPU [nloc].
+   * @param[out] d_force Per-atom force, GPU [nloc * 3] row-major.
+   * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
+   * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
+   * @param[in] d_atype Local atom types, GPU [nloc].
+   * @param[in] d_edge_index Local edge graph, GPU [2 * nedge].
+   * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
+   * @param[in] nloc Number of local atoms.
+   * @param[in] nedge Number of physical edges (dummy edges added internally).
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge) override;
+
  private:
   bool inited;
   int ntypes;
@@ -308,10 +338,12 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool do_atomic_virial;  // whether model was exported with atomic virial corr
   int nnei;               // expected nlist nnei dimension (= sum(sel))
   bool lower_input_is_edge_ = false;
+  bool lower_input_is_graph_ = false;
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;         // cached mapping tensor (LAMMPS path)
-  at::Tensor firstneigh_tensor;      // cached nlist tensor (LAMMPS path)
-  at::Tensor edge_index_tensor;      // cached local edge graph (LAMMPS path)
+  at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
+  std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
+  at::Tensor firstneigh_tensor;        // cached nlist tensor (LAMMPS path)
+  at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional second AOTInductor artifact for the multi-rank GNN code
@@ -399,6 +431,30 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& charge_spin);
 
   /**
+   * @brief Run a NeighborGraph-schema ``.pt2`` (lower_input_kind="graph").
+   *
+   * Positional AOTI input order matches the Python export ABI:
+   * ``(atype, n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
+   * [charge_spin])``.  Unlike the edge schema there is no ``coord`` and no
+   * ``edge_scatter_index`` input; node count is carried by ``n_node`` and the
+   * geometry is fully described by ``edge_vec``.
+   *
+   * @param[in] atype Per-node local types, shape ``(N,)`` int64.
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Folded edge graph ``(2, E)`` int64 [src, dst].
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   */
+  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
+                                             const torch::Tensor& n_node,
+                                             const torch::Tensor& edge_index,
+                                             const torch::Tensor& edge_vec,
+                                             const torch::Tensor& edge_mask,
+                                             const torch::Tensor& fparam,
+                                             const torch::Tensor& aparam,
+                                             const torch::Tensor& charge_spin);
+
+  /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.
    *
    * @param[in] base 4-6 base inputs (coord, atype, nlist, mapping,
@@ -413,6 +469,30 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& atype,
       const torch::Tensor& nlist,
       const torch::Tensor& mapping,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
+   * @brief Run the with-comm edge (SeZM) ``.pt2`` artifact with comm tensors.
+   *
+   * The edge schema indexes the extended node set, so ``edge_index`` and
+   * ``edge_scatter_index`` coincide. ``atype`` carries owned atoms (fitting,
+   * energy read-out) while ``extended_atype`` embeds ghost neighbours.
+   *
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.
+   */
+  std::vector<torch::Tensor> run_model_edges_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& extended_atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin,
