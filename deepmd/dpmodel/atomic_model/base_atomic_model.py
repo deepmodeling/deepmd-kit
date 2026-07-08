@@ -301,7 +301,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         # nlist-BUILD transform (decision #18/A4, same as the graph route):
         # already folded into the nlist by the NeighborList builders (Python)
         # or ``applyPairExclusionNlist`` (C++ ingestion); this method consumes
-        # a pre-excluded nlist.
+        # a pre-excluded nlist.  Fail-safe (eager only): guard against a caller
+        # that skipped the build seam, which would silently INCLUDE excluded
+        # pairs (fail-open).
+        self._assert_nlist_pair_excluded(nlist, extended_atype)
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
@@ -364,6 +367,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         # graph-BUILD transform (decision #18) already folded into
         # ``graph.edge_mask`` by the NeighborGraph builder (Python) or
         # ``applyPairExclusion`` (C++); this method consumes a pre-excluded graph.
+        # Fail-safe (eager only): guard against a caller that skipped the build
+        # seam, which would silently INCLUDE excluded pairs (fail-open).
+        self._assert_graph_pair_excluded(graph, atype_clamped)
         ret_dict = self.forward_atomic_graph(
             graph,
             atype_clamped,
@@ -372,6 +378,63 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             charge_spin=charge_spin,
         )
         return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+
+    def _assert_nlist_pair_excluded(self, nlist: Array, extended_atype: Array) -> None:
+        """Fail-safe: assert the nlist reaching the dense seam is pre-excluded.
+
+        Decision #18/A4 makes the build seam the SOLE owner of model-level
+        ``pair_exclude_types``; this method no longer re-applies it. A caller
+        that skips the build seam would therefore silently INCLUDE excluded
+        pairs (fail-open) -- the dangerous direction for an exclusion feature.
+        This guard turns that into a loud error.
+
+        Eager (numpy) only: it is a data-dependent check, so it is skipped under
+        ``torch.export`` / jax ``jit`` (where it cannot be traced) and in
+        compiled production. The C++ / exported-``.pt2`` ingestion paths are
+        covered by their own ingestion-site regression tests instead.
+        """
+        if self.pair_excl is None or not array_api_compat.is_numpy_array(nlist):
+            return
+        xp = array_api_compat.array_namespace(nlist)
+        # keep == 0 marks an excluded type pair; a pre-excluded nlist has already
+        # set those neighbours to -1, so any *real* (>= 0) neighbour with keep==0
+        # is a leak (the build seam was skipped).
+        keep = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)
+        leaked = xp.astype(nlist != -1, xp.bool) & (keep == 0)
+        if bool(xp.any(leaked)):
+            n_leak = int(xp.sum(xp.astype(leaked, xp.int64)))
+            raise AssertionError(
+                f"forward_common_atomic received a nlist that is NOT "
+                f"pair-excluded: {n_leak} excluded-type neighbour(s) still "
+                "present. Model-level pair_exclude_types is a nlist-BUILD "
+                "transform (decision #18/A4) -- apply it at neighbor-list build "
+                "(Python builders / C++ applyPairExclusionNlist); this seam does "
+                "not re-apply it."
+            )
+
+    def _assert_graph_pair_excluded(self, graph: "NeighborGraph", atype: Array) -> None:
+        """Fail-safe graph analogue of :meth:`_assert_nlist_pair_excluded`.
+
+        A pre-excluded graph has ``edge_mask == False`` on every excluded edge,
+        so any *active* edge whose type pair is excluded is a leak. Eager
+        (numpy) only, for the same reasons.
+        """
+        if self.pair_excl is None or not array_api_compat.is_numpy_array(
+            graph.edge_mask
+        ):
+            return
+        xp = array_api_compat.array_namespace(graph.edge_mask)
+        keep = self.pair_excl.build_edge_exclude_mask(graph.edge_index, atype)
+        leaked = xp.astype(graph.edge_mask, xp.bool) & (keep == 0)
+        if bool(xp.any(leaked)):
+            n_leak = int(xp.sum(xp.astype(leaked, xp.int64)))
+            raise AssertionError(
+                f"forward_common_atomic_graph received a graph that is NOT "
+                f"pair-excluded: {n_leak} excluded-type edge(s) still active. "
+                "Model-level pair_exclude_types is a graph-BUILD transform "
+                "(decision #18) -- apply it at graph build (Python builders / "
+                "C++ applyPairExclusion); this seam does not re-apply it."
+            )
 
     def _finalize_atomic_ret(
         self, ret_dict: dict, atom_mask: Array, atype: Array

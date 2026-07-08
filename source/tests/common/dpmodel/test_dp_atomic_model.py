@@ -79,8 +79,15 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             md0.reinit_pair_exclude(pair_excl)
             md1 = DPAtomicModel.deserialize(md0.serialize())
 
-            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
-            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
+            # forward_common_atomic consumes a pre-excluded nlist (decision
+            # #18/A4). md0 and md1 share the same pair_excl (deserialized), so
+            # fold it into the nlist once; the serialize/deserialize consistency
+            # check is unaffected by which (identical) nlist both consume.
+            nlist = self.nlist
+            if md0.pair_excl is not None:
+                nlist = apply_pair_exclusion_nlist(nlist, self.atype_ext, md0.pair_excl)
+            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, nlist)
+            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, nlist)
 
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
 

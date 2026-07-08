@@ -168,11 +168,13 @@ def test_model_pair_exclude_types_graph_matches_dense():
 
 
 def test_model_pair_exclude_applied_at_build_not_in_lower():
-    """Seam contract (decision #18): model-level pair_exclude is a graph-BUILD
-    transform. The graph lower must NOT re-apply it — it consumes whatever
-    ``edge_mask`` the builder produced. Feeding a NON-excluded graph to the lower
-    on a model that HAS ``pair_exclude_types`` yields the SAME result as a model
-    with no exclusion; the exclusion only takes effect when applied at build.
+    """Seam contract + fail-safe (decision #18): model-level pair_exclude is a
+    graph-BUILD transform; the graph lower does NOT re-apply it. Because the
+    consume-time backstop was removed, the lower would otherwise be fail-OPEN
+    (a non-excluded input silently INCLUDES excluded pairs). To keep that from
+    being silent, the lower guards its input (eager): feeding a NON-excluded
+    graph to a model that HAS ``pair_exclude_types`` RAISES. Applying exclusion
+    at BUILD is the correct path and changes the lower's output.
     """
     rng = np.random.default_rng(4)
     nloc = 6
@@ -193,21 +195,13 @@ def test_model_pair_exclude_applied_at_build_not_in_lower():
         "edge_vec": ng_raw.edge_vec,
         "edge_mask": ng_raw.edge_mask,
     }
-    out_with_excl_model = model.call_lower_graph(**kw)
-    # clear the model-level exclusion; the lower output must be UNCHANGED, proving
-    # the lower never consulted ``pair_excl`` (exclusion is not applied here).
-    model.atomic_model.reinit_pair_exclude([])
-    assert model.atomic_model.pair_excl is None
-    out_no_excl_model = model.call_lower_graph(**kw)
-    np.testing.assert_allclose(
-        np.asarray(out_with_excl_model["energy_redu"]),
-        np.asarray(out_no_excl_model["energy_redu"]),
-        rtol=1e-12,
-        atol=1e-12,
-    )
+    # Fail-safe: the lower refuses a non-excluded graph (contract boundary) —
+    # the excluded (0, 1) pairs are within rcut here, so at least one leaks.
+    with pytest.raises(AssertionError, match="NOT pair-excluded"):
+        model.call_lower_graph(**kw)
 
-    # Positive control: applying exclusion at BUILD (excluded edge_mask) DOES
-    # change the same lower's output.
+    # Positive control: applying exclusion at BUILD (excluded edge_mask) passes
+    # the guard AND changes the output vs the same lower with no exclusion.
     ng_excl = build_neighbor_graph(
         coord, atype, box, model.get_rcut(), pair_excl=PairExcludeMask(2, [(0, 1)])
     )
@@ -218,6 +212,11 @@ def test_model_pair_exclude_applied_at_build_not_in_lower():
         edge_vec=ng_excl.edge_vec,
         edge_mask=ng_excl.edge_mask,
     )
+    # No-exclusion reference: clearing pair_excl makes the raw graph valid again
+    # (guard skipped when pair_excl is None), so the lower runs on it.
+    model.atomic_model.reinit_pair_exclude([])
+    assert model.atomic_model.pair_excl is None
+    out_no_excl_model = model.call_lower_graph(**kw)
     assert not np.allclose(
         np.asarray(out_built_excl["energy_redu"]),
         np.asarray(out_no_excl_model["energy_redu"]),
@@ -227,12 +226,13 @@ def test_model_pair_exclude_applied_at_build_not_in_lower():
 
 
 def test_model_pair_exclude_applied_at_build_not_in_dense_lower():
-    """Dense-route seam contract (decision #18/A4, mirror of the graph test):
-    model-level pair_exclude is a nlist-BUILD transform. The dense lower
-    (``call_lower``) must NOT re-apply it — it consumes whatever nlist the
-    builder produced. Feeding a RAW nlist to the lower on a model that HAS
-    ``pair_exclude_types`` yields the SAME result as a model with no exclusion;
-    the exclusion only takes effect when folded in at build.
+    """Dense-route seam contract + fail-safe (decision #18/A4, mirror of the
+    graph test): model-level pair_exclude is a nlist-BUILD transform; the dense
+    lower (``call_lower``) does NOT re-apply it. With the consume-time backstop
+    removed, a non-excluded nlist would silently INCLUDE excluded pairs, so the
+    lower guards its input (eager): feeding a RAW nlist to a model that HAS
+    ``pair_exclude_types`` RAISES. Folding exclusion in at BUILD is correct and
+    changes the output.
     """
     from deepmd.dpmodel.utils.nlist import (
         apply_pair_exclusion_nlist,
@@ -258,25 +258,20 @@ def test_model_pair_exclude_applied_at_build_not_in_dense_lower():
         mixed_types=True,
         box=box,
     )
-    # EnergyModel.call_lower translates keys: reduced energy -> "energy"
-    out_with_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
-    # clear the model-level exclusion; the lower output must be UNCHANGED,
-    # proving the lower never consulted ``pair_excl``.
-    model.atomic_model.reinit_pair_exclude([])
-    assert model.atomic_model.pair_excl is None
-    out_no_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
-    np.testing.assert_allclose(
-        np.asarray(out_with_excl_model["energy"]),
-        np.asarray(out_no_excl_model["energy"]),
-        rtol=1e-12,
-        atol=1e-12,
-    )
+    # Fail-safe: the lower refuses a non-excluded nlist (contract boundary).
+    with pytest.raises(AssertionError, match="NOT pair-excluded"):
+        model.call_lower(coord_ext, atype_ext, nlist, mapping)
 
-    # Positive control: folding the exclusion in at BUILD changes the output.
+    # Positive control: folding the exclusion in at BUILD passes the guard AND
+    # changes the output vs the same lower with no exclusion.
     nlist_excl = apply_pair_exclusion_nlist(
         nlist, atype_ext, PairExcludeMask(2, [(0, 1)])
     )
     out_built_excl = model.call_lower(coord_ext, atype_ext, nlist_excl, mapping)
+    # No-exclusion reference: clearing pair_excl makes the raw nlist valid again.
+    model.atomic_model.reinit_pair_exclude([])
+    assert model.atomic_model.pair_excl is None
+    out_no_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
     assert not np.allclose(
         np.asarray(out_built_excl["energy"]),
         np.asarray(out_no_excl_model["energy"]),
