@@ -479,7 +479,9 @@ def test_pt_expt_multiframe_equivalence(name: str) -> None:
         )
 
 
-@pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
+@pytest.mark.parametrize(
+    "name", [n for n in ALL_MODELS if n != "se_atten_v2"]
+)  # descriptor family
 def test_default_fallback(name: str) -> None:
     """``neighbor_list=None`` dispatches to the same DefaultNeighborList builder.
 
@@ -491,6 +493,19 @@ def test_default_fallback(name: str) -> None:
     GNN message-passing scatter (atomic adds) is not bit-reproducible run-to-run,
     so the virial can differ by ~1 ULP between the passes (a real dispatch bug
     would differ by orders of magnitude more).
+
+    ``se_atten_v2`` is excluded: that equivalence assumption only holds for the
+    DENSE-nlist route.  For a ``mixed_types`` descriptor with
+    ``uses_graph_lower() == True``, passing an explicit ``neighbor_list`` forces
+    the dense route (``call_common``'s ``neighbor_list is not None`` branch),
+    while ``None`` lets pt_expt's default-flip (decision #17) route to the
+    carry-all graph instead -- two genuinely different algorithms, not two
+    evaluations of one. ``se_atten_v2`` hardcodes ``smooth_type_embedding=True``
+    (unlike ``model_dpa1`` above, which pins it ``False`` for exactly this
+    reason), so graph and dense intentionally diverge here (NeighborGraph PR-D:
+    dense keeps sel-padding phantom terms in the attention softmax denominator,
+    the graph route does not) -- there is no tolerance that would make this a
+    meaningful dispatch-equivalence check for it.
     """
     coord_np, atype_np, box_np = _system()
     md = get_model(copy.deepcopy(ALL_MODELS[name])).to(env.DEVICE)
