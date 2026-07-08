@@ -61,6 +61,10 @@ class HLO(BaseModel):
         # new in v3.1.1
         has_default_fparam: bool = False,
         default_fparam: list[float] | None = None,
+        # property models only
+        var_name: str | None = None,
+        task_dim: int | None = None,
+        intensive: bool = False,
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
@@ -84,6 +88,9 @@ class HLO(BaseModel):
         self.model_def_script = model_def_script
         self._has_default_fparam = has_default_fparam
         self.default_fparam = default_fparam
+        self._var_name = var_name
+        self._task_dim = task_dim
+        self._intensive = intensive
 
     def __call__(
         self,
@@ -171,8 +178,26 @@ class HLO(BaseModel):
 
     def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
-            FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
+            FittingOutputDef(
+                [self._output_var_def(tt) for tt in self.model_output_type()]
+            )
         )
+
+    def _output_var_def(self, name: str) -> OutputVariableDef:
+        if name in OUTPUT_DEFS:
+            return OUTPUT_DEFS[name]
+        # property models carry a user-defined output name (``var_name``) that
+        # is not in the fixed table; rebuild its def from the persisted metadata.
+        if self._var_name is not None and name == self._var_name:
+            return OutputVariableDef(
+                self._var_name,
+                shape=[self._task_dim],
+                reducible=True,
+                r_differentiable=False,
+                c_differentiable=False,
+                intensive=self._intensive,
+            )
+        raise KeyError(f"Unknown model output variable {name!r}")
 
     def call_lower(
         self,
@@ -219,6 +244,22 @@ class HLO(BaseModel):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.dim_aparam
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._var_name is None:
+            raise NotImplementedError
+        return self._var_name
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._task_dim is None:
+            raise NotImplementedError
+        return self._task_dim
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        return self._intensive
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

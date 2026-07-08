@@ -25,24 +25,8 @@ from deepmd.dpmodel.utils.serialization import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.infer.deep_dipole import (
-    DeepDipole,
-)
-from deepmd.infer.deep_dos import (
-    DeepDOS,
-)
-from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
-)
-from deepmd.infer.deep_polar import (
-    DeepPolar,
-)
-from deepmd.infer.deep_pot import (
-    DeepPot,
-)
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
 )
 from deepmd.jax.common import (
     to_jax_array,
@@ -149,23 +133,6 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.get_dim_aparam()
 
-    @property
-    def model_type(self) -> type["DeepEvalWrapper"]:
-        """The evaluator of the model type."""
-        model_output_type = self.dp.model_output_type()
-        if "energy" in model_output_type:
-            return DeepPot
-        elif "dos" in model_output_type:
-            return DeepDOS
-        elif "dipole" in model_output_type:
-            return DeepDipole
-        elif "polar" in model_output_type or "polarizability" in model_output_type:
-            return DeepPolar
-        elif "wfc" in model_output_type:
-            return DeepWFC
-        else:
-            raise RuntimeError("Unknown model type")
-
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
@@ -270,6 +237,12 @@ class DeepEval(DeepEvalBackend):
         out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, request_defs
         )
+        # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
+        # its tuple, which would make ``zip`` iterate over the array's frame
+        # axis. Re-wrap so the request-def names line up (a single request def
+        # arises for global-only DOS/property inference at atomic=False).
+        if not isinstance(out, tuple):
+            out = (out,)
         return dict(
             zip(
                 [x.name for x in request_defs],

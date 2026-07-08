@@ -360,9 +360,65 @@ class DeepEvalBackend(ABC):
         return np.all(np.equal(atom_types, atom_types[0])).item()
 
     @property
-    @abstractmethod
     def model_type(self) -> type["DeepEval"]:
-        """The the evaluator of the model type."""
+        """The evaluator of the model type.
+
+        The default dispatch inspects the model output types (and, for
+        property models, the property variable name) exposed by
+        :meth:`get_model`. Backends with additional model types (e.g.
+        ``global_polar`` or ``population``) may override this.
+        """
+        # Imported lazily: these wrappers import ``DeepEvalBackend`` /
+        # ``DeepEval`` from this module, so a top-level import would be circular.
+        from deepmd.infer.deep_dipole import (
+            DeepDipole,
+        )
+        from deepmd.infer.deep_dos import (
+            DeepDOS,
+        )
+        from deepmd.infer.deep_polar import (
+            DeepPolar,
+        )
+        from deepmd.infer.deep_pot import (
+            DeepPot,
+        )
+        from deepmd.infer.deep_property import (
+            DeepProperty,
+        )
+        from deepmd.infer.deep_wfc import (
+            DeepWFC,
+        )
+
+        model = self.get_model()
+        model_output_type = model.model_output_type()
+        if "energy" in model_output_type:
+            return DeepPot
+        elif "dos" in model_output_type:
+            return DeepDOS
+        elif "dipole" in model_output_type:
+            return DeepDipole
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
+            return DeepPolar
+        elif "wfc" in model_output_type:
+            return DeepWFC
+        # property models use a user-defined output name. ``get_var_name`` may be
+        # absent (dpmodel/pt live models expose it only on property models) or
+        # present-but-unimplemented (jax/tf2 artifacts always define it and raise
+        # NotImplementedError otherwise), so probe defensively.
+        elif self._get_property_var_name(model) in model_output_type:
+            return DeepProperty
+        else:
+            raise RuntimeError("Unknown model type")
+
+    @staticmethod
+    def _get_property_var_name(model: Any) -> str | None:
+        """Return the property variable name of ``model``, or ``None``."""
+        if not hasattr(model, "get_var_name"):
+            return None
+        try:
+            return model.get_var_name()
+        except NotImplementedError:
+            return None
 
     @abstractmethod
     def get_sel_type(self) -> list[int]:
@@ -401,7 +457,24 @@ class DeepEvalBackend(ABC):
         return False
 
     def get_var_name(self) -> str:
-        """Get the name of the fitting property."""
+        """Get the name of the fitting property (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_var_name"):
+            return model.get_var_name()
+        raise NotImplementedError
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_task_dim"):
+            return model.get_task_dim()
+        raise NotImplementedError
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_intensive"):
+            return model.get_intensive()
         raise NotImplementedError
 
     @abstractmethod

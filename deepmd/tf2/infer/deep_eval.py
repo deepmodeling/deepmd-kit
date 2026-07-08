@@ -23,24 +23,8 @@ from deepmd.dpmodel.utils.batch_size import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.infer.deep_dipole import (
-    DeepDipole,
-)
-from deepmd.infer.deep_dos import (
-    DeepDOS,
-)
-from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
-)
-from deepmd.infer.deep_polar import (
-    DeepPolar,
-)
-from deepmd.infer.deep_pot import (
-    DeepPot,
-)
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
 )
 
 if TYPE_CHECKING:
@@ -92,6 +76,22 @@ class TF2SavedModelWrapper(tf.Module):
             self.model.get_default_fparam().numpy().tolist()
             if hasattr(self.model, "get_default_fparam")
             else None
+        )
+        # property models only (absent for other model types).
+        self._var_name = (
+            self.model.get_var_name().numpy().decode()
+            if hasattr(self.model, "get_var_name")
+            else None
+        )
+        self._task_dim = (
+            self.model.get_task_dim().numpy().item()
+            if hasattr(self.model, "get_task_dim")
+            else None
+        )
+        self._intensive = (
+            self.model.get_intensive().numpy().item()
+            if hasattr(self.model, "get_intensive")
+            else False
         )
 
     def __call__(
@@ -163,6 +163,22 @@ class TF2SavedModelWrapper(tf.Module):
     def get_default_fparam(self) -> list[float] | None:
         return self.default_fparam
 
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._var_name is None:
+            raise NotImplementedError
+        return self._var_name
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._task_dim is None:
+            raise NotImplementedError
+        return self._task_dim
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        return self._intensive
+
 
 class DeepEval(DeepEvalBackend):
     """TensorFlow 2 SavedModel backend implementation of DeepEval."""
@@ -210,21 +226,6 @@ class DeepEval(DeepEvalBackend):
     def has_default_fparam(self) -> bool:
         return self.dp.has_default_fparam()
 
-    @property
-    def model_type(self) -> type["DeepEvalWrapper"]:
-        model_output_type = self.dp.model_output_type()
-        if "energy" in model_output_type:
-            return DeepPot
-        if "dos" in model_output_type:
-            return DeepDOS
-        if "dipole" in model_output_type:
-            return DeepDipole
-        if "polar" in model_output_type or "polarizability" in model_output_type:
-            return DeepPolar
-        if "wfc" in model_output_type:
-            return DeepWFC
-        raise RuntimeError("Unknown model type")
-
     def get_sel_type(self) -> list[int]:
         return self.dp.get_sel_type()
 
@@ -258,6 +259,12 @@ class DeepEval(DeepEvalBackend):
         out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, request_defs
         )
+        # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
+        # its tuple, which would make ``zip`` iterate over the array's frame
+        # axis. Re-wrap so the request-def names line up (a single request def
+        # arises for global-only DOS/property inference at atomic=False).
+        if not isinstance(out, tuple):
+            out = (out,)
         return dict(zip([x.name for x in request_defs], out, strict=True))
 
     def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
