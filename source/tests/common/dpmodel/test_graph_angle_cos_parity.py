@@ -349,3 +349,57 @@ def test_graph_angle_cos_torch_matches_numpy():
     cos_t_np = cos_t.numpy()
 
     np.testing.assert_allclose(cos_t_np, cos_np, rtol=1e-14, atol=1e-14)
+
+
+# ---------------------------------------------------------------------------
+# autograd safety: safe_for_vector_norm on the sole geometry leaf
+# ---------------------------------------------------------------------------
+
+
+def test_graph_angle_cos_zero_edge_grad_is_finite():
+    """A zero-length edge_vec must back-prop a finite gradient, not NaN.
+
+    ``graph_angle_cos`` normalizes with ``safe_for_vector_norm`` (mirroring
+    dpa3 ``cosine_ij``, repflows.py:642-643), whose gradient is 0 at
+    ``||v|| == 0``. Plain ``xp.linalg.vector_norm`` back-props ``NaN`` there
+    under jax (see the jax FAQ the safe_gradient module cites). ``edge_vec`` is
+    the sole autograd leaf, so we pin that a zero-length edge -- which a padding
+    angle can point at -- keeps the geometry-path gradient finite.
+
+    jax (not torch) is the discriminating backend: torch's ``vector_norm``
+    already defines a 0 subgradient at zero, but jax's does not, so the same
+    construction with plain ``vector_norm`` under jax DOES produce a NaN
+    gradient -- confirming this test actually exercises the safe path.
+    """
+    import pytest
+
+    jax = pytest.importorskip("jax")
+    # deepmd.jax.env enables float64 (x64) so this matches the fp64 value path.
+    from deepmd.jax.env import (
+        jnp,
+    )
+
+    # angle 0 pairs edge 0 (zero-length) with edge 1 (unit x); the zero edge is
+    # exactly the ||v||==0 case that plain vector_norm cannot differentiate.
+    angle_index = jnp.asarray([[0], [1]], dtype=jnp.int64)
+
+    def loss_safe(edge_vec):
+        return jnp.sum(graph_angle_cos(angle_index, edge_vec))
+
+    edge_vec = jnp.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=jnp.float64)
+    grad_safe = jax.grad(loss_safe)(edge_vec)
+    assert bool(jnp.all(jnp.isfinite(grad_safe))), grad_safe
+
+    # discrimination: plain vector_norm on the same leaf yields a NaN gradient
+    # under jax, confirming the assertion above actually exercises the safe path.
+    eps = 1e-6
+
+    def loss_unsafe(edge_vec):
+        va = jnp.take(edge_vec, angle_index[0, :], axis=0)
+        vb = jnp.take(edge_vec, angle_index[1, :], axis=0)
+        na = va / (jnp.linalg.vector_norm(va, axis=-1, keepdims=True) + eps)
+        nb = vb / (jnp.linalg.vector_norm(vb, axis=-1, keepdims=True) + eps)
+        return jnp.sum(jnp.sum(na * nb, axis=-1) * (1.0 - eps))
+
+    grad_unsafe = jax.grad(loss_unsafe)(edge_vec)
+    assert not bool(jnp.all(jnp.isfinite(grad_unsafe)))

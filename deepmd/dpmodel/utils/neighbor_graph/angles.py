@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 import dataclasses
 
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
+)
+
 from .graph import (
     GraphLayout,
     NeighborGraph,
@@ -77,10 +81,13 @@ def build_angle_index(
     # a_rcut edge gate: only edges within a_rcut may participate in an angle.
     # Strict `<` (not the edge channel's `<= rcut`, builder.py:284) is
     # intentional: it mirrors dpa3's dense angle gate exactly
-    # (`a_dist_mask = dist < self.a_rcut`, repflows.py:598), so an edge
-    # sitting exactly at a_rcut is excluded from angles the same way dense
-    # excludes it, even though it would still be kept as an edge.
-    dist = xp.linalg.vector_norm(edge_vec, axis=-1)  # (E,)
+    # (`a_dist_mask = safe_for_vector_norm(diff, axis=-1) < self.a_rcut`,
+    # repflows.py:598), so an edge sitting exactly at a_rcut is excluded from
+    # angles the same way dense excludes it, even though it would still be kept
+    # as an edge. `safe_for_vector_norm` (not plain `vector_norm`) matches dpa3
+    # value-for-value and keeps the gate off the NaN-gradient path shared with
+    # the normalization below.
+    dist = safe_for_vector_norm(edge_vec, axis=-1)  # (E,)
     a_edge_mask = xp.astype(edge_mask, xp.bool) & (dist < a_rcut)
     # compact eager form only (static_nnei not exposed until angle export is
     # needed, PR-G). dst = edge_index[1, :] per the [src, dst] SoA convention.
@@ -182,8 +189,13 @@ def graph_angle_cos(angle_index: Array, edge_vec: Array, eps: float = 1e-6) -> A
     xp = array_api_compat.array_namespace(edge_vec)
     va = xp.take(edge_vec, angle_index[0, :], axis=0)  # (A, 3)
     vb = xp.take(edge_vec, angle_index[1, :], axis=0)  # (A, 3)
-    na = va / (xp.linalg.vector_norm(va, axis=-1, keepdims=True) + eps)
-    nb = vb / (xp.linalg.vector_norm(vb, axis=-1, keepdims=True) + eps)
+    # safe_for_vector_norm (not plain vector_norm) mirrors dpa3 exactly
+    # (repflows.py:642-643) and gives a 0 gradient at ||v||==0 instead of NaN;
+    # edge_vec is the sole autograd leaf, so this removes a latent NaN-gradient
+    # landmine on the geometry path (values are identical for real, non-zero
+    # edges, so fp64 dense/se_t parity is unchanged).
+    na = va / (safe_for_vector_norm(va, axis=-1, keepdims=True) + eps)
+    nb = vb / (safe_for_vector_norm(vb, axis=-1, keepdims=True) + eps)
     return xp.sum(na * nb, axis=-1) * (1.0 - eps)
 
 
