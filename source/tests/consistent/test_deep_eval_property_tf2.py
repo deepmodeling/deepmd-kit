@@ -17,9 +17,6 @@ from pathlib import (
 
 import numpy as np
 
-from deepmd.backend.backend import (
-    Backend,
-)
 from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.infer.deep_eval import (
     DeepEval,
@@ -28,7 +25,9 @@ from deepmd.infer.deep_property import (
     DeepProperty,
 )
 
-INSTALLED_TF2 = Backend.get_backend("tf2")().is_available()
+from .common import (
+    INSTALLED_TF2,
+)
 
 
 def _property_model_config() -> dict:
