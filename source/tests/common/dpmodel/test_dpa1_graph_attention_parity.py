@@ -253,6 +253,7 @@ class TestGraphEligibility:
             if r is None:
                 assert d is None
                 continue
+            assert not np.any(np.isnan(r))
             np.testing.assert_allclose(r, d, rtol=1e-12, atol=1e-12)
 
 
