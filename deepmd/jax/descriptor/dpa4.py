@@ -66,7 +66,8 @@ register_dpmodel_mapping(
 class RadialMLP(RadialMLPDP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.net = nnx.List([self._convert_layer(layer) for layer in self.net])
+        converted = [self._convert_layer(layer) for layer in self.net]
+        self.net = nnx.List(converted) if hasattr(nnx, "List") else converted
 
     @staticmethod
     def _convert_layer(layer: Any) -> Any:

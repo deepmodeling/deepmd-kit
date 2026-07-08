@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     ClassVar,
 )
 
@@ -50,5 +49,4 @@ register_dpmodel_mapping(
 @BaseFitting.register("sezm_ener")
 @flax_module
 class SeZMEnergyFittingNet(SeZMEnergyFittingNetDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        return super().__setattr__(name, value)
+    pass
