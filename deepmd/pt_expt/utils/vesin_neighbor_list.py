@@ -79,10 +79,10 @@ class VesinNeighborList(NeighborList):
             When provided, excluded type pairs are erased from the returned
             neighbor list (entries set to ``-1``) by
             :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
-            The atomic-model seam applies the same filter as an idempotent
-            backstop, so passing ``pair_excl`` here is a build-time
-            optimization that avoids re-scanning per forward call.
-            ``return_mode='edges'`` does not support ``pair_excl``; a
+            This is the OWNING application site (decision #18/A4): the exported
+            lower (``forward_common_atomic``) no longer re-applies model-level
+            ``pair_exclude_types`` -- it is applied once here at nlist BUILD
+            time. ``return_mode='edges'`` does not support ``pair_excl``; a
             :class:`NotImplementedError` is raised in that combination.
         """
         if return_mode == "edges" and pair_excl is not None:

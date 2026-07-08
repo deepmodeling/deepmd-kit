@@ -468,8 +468,10 @@ def make_model(
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             rcut = self.get_rcut()
-            # Model-level pair_exclude_types — apply at build time so the seam
-            # backstop in forward_atomic_graph acts as an idempotent identity.
+            # Model-level pair_exclude_types is a graph-BUILD transform
+            # (decision #18): apply it here, at the single owning site, so the
+            # exported lower (forward_common_atomic_graph, which no longer
+            # re-applies it) consumes a pre-excluded edge_mask.
             pair_excl = getattr(self.atomic_model, "pair_excl", None)
             if method == "dense":
                 ng = build_neighbor_graph(cc, atype, bb, rcut, pair_excl=pair_excl)

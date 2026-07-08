@@ -207,6 +207,11 @@ void DeepPotPTExpt::init(const std::string& model,
   // (decision #18/A4): the C++ ingestion seam is the single application site
   // (applyPairExclusion graph / applyPairExclusionNlist dense); the exported
   // lowers consume pre-excluded inputs and never re-apply it.
+  //
+  // Upload the table to the model device ONCE here (device is fixed by
+  // ``gpu_id`` / ``gpu_enabled``), so the per-step seam helpers only
+  // ``index_select`` it -- no per-``compute()`` CPU clone + H2D copy.  Leave
+  // ``pair_exclude_table_`` undefined (=> identity) when there is no exclusion.
   {
     std::vector<std::pair<int, int>> pair_exclude_types;
     if (metadata.obj_val.count("pair_exclude_types")) {
@@ -214,8 +219,20 @@ void DeepPotPTExpt::init(const std::string& model,
         pair_exclude_types.emplace_back(v[0].as_int(), v[1].as_int());
       }
     }
-    pair_exclude_table_ =
+    std::vector<int> tbl =
         deepmd::buildPairExcludeTable(ntypes, pair_exclude_types);
+    if (!tbl.empty()) {
+      torch::Device device(torch::kCUDA, gpu_id);
+      if (!gpu_enabled) {
+        device = torch::Device(torch::kCPU);
+      }
+      pair_exclude_table_ =
+          torch::from_blob(tbl.data(),
+                           {static_cast<std::int64_t>(tbl.size())},
+                           torch::TensorOptions().dtype(torch::kInt32))
+              .clone()
+              .to(device);
+    }
   }
   if (has_comm_artifact_) {
     try {
@@ -839,8 +856,19 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             aparam_tensor, charge_spin_tensor, comm_tensors);
       }
     } else {
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+      // never re-applies it.  The multi-rank (with-comm) dense route shares the
+      // same dense nlist as the single-rank path below, so it applies the SAME
+      // seam -- otherwise a message-passing .pt2 with pair_exclude_types would
+      // silently include excluded pairs on the with-comm path (multi-rank !=
+      // single-rank).  The cross-rank ghost exchange happens inside
+      // run_model_with_comm and does not change the nlist's meaning, so
+      // pre-excluding it is correct per rank.
+      const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+          firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
       flat_outputs = run_model_with_comm(
-          coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+          coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
           fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
     }
   } else {
@@ -906,8 +934,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and
-      // never re-applies it; this is the single application site on the C++
-      // dense route.
+      // never re-applies it.  Single-rank dense application site; the
+      // multi-rank (with-comm) dense sibling above applies the same seam.
       const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
           firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
       flat_outputs =

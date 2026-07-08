@@ -331,14 +331,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   // continue to work; GNN archives must be regenerated to opt into
   // the fail-fast guard against the silent-corruption bug.
   bool has_message_passing_ = false;
-  // Flat (ntypes+1)^2 model-level pair-type keep table, rebuilt in ``init``
-  // from the ``pair_exclude_types`` metadata field (see
-  // ``deepmd::buildPairExcludeTable``).  Empty => no model-level exclusion.
-  // Exclusion is a BUILD-time transform (decision #18/A4): the C++ ingestion
-  // seam is the single application site (``applyPairExclusion`` graph /
-  // ``applyPairExclusionNlist`` dense); the exported .pt2 lowers consume
-  // pre-excluded inputs and never re-apply it.
-  std::vector<int> pair_exclude_table_;
+  // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
+  // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
+  // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
+  // exclusion (identity).  The device is fixed at ``init`` (``gpu_id`` /
+  // ``gpu_enabled``), so the seam helpers ``index_select`` it directly with no
+  // per-step CPU clone / H2D upload.  Exclusion is a BUILD-time transform
+  // (decision #18/A4): the C++ ingestion seam is the single application site
+  // (``applyPairExclusion`` graph / ``applyPairExclusionNlist`` dense); the
+  // exported .pt2 lowers consume pre-excluded inputs and never re-apply it.
+  torch::Tensor pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

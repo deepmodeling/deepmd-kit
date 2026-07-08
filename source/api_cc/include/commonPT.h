@@ -517,39 +517,37 @@ inline std::vector<int> buildPairExcludeTable(
  *
  * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
  * exported ``.pt2`` graph lower consumes a pre-excluded ``edge_mask`` and
- * never re-applies it, so this call is the SINGLE application site on the
- * C++ graph route.
+ * never re-applies it, so the C++ ingestion seam is the sole owner: this helper
+ * is called once on each dispatched graph run path (single-rank and the
+ * non-message-passing multi-rank extended-region path), never twice on the same
+ * tensors.
  *
  * @param edge_index (2, E) int64 ``[src, dst]``; src = neighbor, dst = center.
  * @param edge_mask (E,) bool real-vs-padding mask to be ANDed in place.
  * @param atype (N,) int64 flat node types (clamped >= 0).
- * @param type_mask_table Flat ``(ntypes+1)^2`` table from
- *   ``buildPairExcludeTable``.  Empty => identity (returns ``edge_mask``).
+ * @param type_mask_table Device-resident flat ``(ntypes+1)^2`` int32 keep table
+ *   uploaded once in ``init`` (``buildPairExcludeTable`` + one H2D copy).  An
+ *   UNDEFINED tensor => identity (returns ``edge_mask``), mirroring the old
+ *   empty-vector early-exit.  Already on the model device (== ``edge_mask``
+ *   device), so ``index_select`` needs no per-call transfer.
  * @param ntypes Number of real atom types.
  * @return New ``edge_mask`` with excluded edges cleared.
  */
 inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
                                         const torch::Tensor& edge_mask,
                                         const torch::Tensor& atype,
-                                        const std::vector<int>& type_mask_table,
+                                        const torch::Tensor& type_mask_table,
                                         const int ntypes) {
-  if (type_mask_table.empty()) {
+  if (!type_mask_table.defined()) {
     return edge_mask;
   }
-  const auto device = edge_mask.device();
   const auto src = edge_index.index({0});  // (E,) neighbour
   const auto dst = edge_index.index({1});  // (E,) center
   const auto src_t = atype.index_select(0, src);
   const auto dst_t = atype.index_select(0, dst);
   // type_ij = atype[dst] * (ntypes + 1) + atype[src]  (matches Python)
   const auto type_ij = dst_t * (ntypes + 1) + src_t;
-  const auto table =
-      torch::from_blob(const_cast<int*>(type_mask_table.data()),
-                       {static_cast<std::int64_t>(type_mask_table.size())},
-                       torch::TensorOptions().dtype(torch::kInt32))
-          .clone()
-          .to(device);
-  const auto keep = table.index_select(0, type_ij).to(torch::kBool);
+  const auto keep = type_mask_table.index_select(0, type_ij).to(torch::kBool);
   return torch::logical_and(edge_mask, keep);
 }
 
@@ -563,25 +561,27 @@ inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
  *
  * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
  * exported ``.pt2`` dense lower consumes a pre-excluded nlist and never
- * re-applies it, so this call is the SINGLE application site on the C++
- * dense route.
+ * re-applies it, so the C++ ingestion seam is the sole owner: this helper is
+ * called once on each dispatched dense run path (single-rank ``run_model`` and
+ * multi-rank ``run_model_with_comm``), never twice on the same tensors.
  *
  * @param nlist (nf, nloc, nnei) int64 neighbour list; ``-1`` == empty slot.
  * @param atype_ext (nf, nall) int64 extended atom types.
- * @param type_mask_table Flat ``(ntypes+1)^2`` table from
- *   ``buildPairExcludeTable``.  Empty => identity (returns ``nlist``).
+ * @param type_mask_table Device-resident flat ``(ntypes+1)^2`` int32 keep table
+ *   uploaded once in ``init``.  An UNDEFINED tensor => identity (returns
+ *   ``nlist``).  Already on the model device (== ``nlist`` device), so
+ *   ``index_select`` needs no per-call transfer.
  * @param ntypes Number of real atom types.
  * @return New neighbour list with excluded entries set to ``-1``.
  */
 inline torch::Tensor applyPairExclusionNlist(
     const torch::Tensor& nlist,
     const torch::Tensor& atype_ext,
-    const std::vector<int>& type_mask_table,
+    const torch::Tensor& type_mask_table,
     const int ntypes) {
-  if (type_mask_table.empty()) {
+  if (!type_mask_table.defined()) {
     return nlist;
   }
-  const auto device = nlist.device();
   const std::int64_t nf = nlist.size(0);
   const std::int64_t nloc = nlist.size(1);
   const std::int64_t nnei = nlist.size(2);
@@ -598,14 +598,8 @@ inline torch::Tensor applyPairExclusionNlist(
   // type_ij = type_i * (ntypes + 1) + type_j  (matches Python: type_i already
   // scaled above; here just add the neighbour type).
   const auto type_ij = type_i.unsqueeze(2) + type_j;  // (nf, nloc, nnei)
-  const auto table =
-      torch::from_blob(const_cast<int*>(type_mask_table.data()),
-                       {static_cast<std::int64_t>(type_mask_table.size())},
-                       torch::TensorOptions().dtype(torch::kInt32))
-          .clone()
-          .to(device);
-  const auto keep =
-      table.index_select(0, type_ij.reshape({-1})).reshape({nf, nloc, nnei});
+  const auto keep = type_mask_table.index_select(0, type_ij.reshape({-1}))
+                        .reshape({nf, nloc, nnei});
   return torch::where(keep == 1, nlist, torch::full_like(nlist, -1));
 }
 
