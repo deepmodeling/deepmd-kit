@@ -941,6 +941,10 @@ class SO2Convolution(NativeOP):
         If True, apply cross-focus softmax competition in SO(2) local layout.
         Competition logits are constructed only from l=0 scalar channels and the
         resulting invariant weights are broadcast to all (l, m) components.
+    focus_norm
+        If True, RMS-normalize the competition l=0 scalars before the softmax.
+        Those scalars are envelope-gated and vanish at the cutoff, so ``False``
+        drops the norm to keep the competition smooth there.
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm as pre-norm before
         each SO(2) mixing layer. The last SO(2) layer always uses Identity.
@@ -1056,6 +1060,7 @@ class SO2Convolution(NativeOP):
         n_focus: int = 1,
         focus_dim: int = 0,
         focus_compete: bool = True,
+        focus_norm: bool = True,
         so2_norm: bool = False,
         mixing_layers: int = 4,
         so2_attn_res: str = "none",
@@ -1105,6 +1110,7 @@ class SO2Convolution(NativeOP):
         self.hidden_channels = int(self.n_focus * self.so2_focus_dim)
         self.use_hidden_projection = self.hidden_channels != self.channels
         self.focus_compete = bool(focus_compete)
+        self.focus_norm = bool(focus_norm)
         self.focus_softmax_tau = 1.0
         self.focus_label_smoothing = 0.02
         self.so2_norm = bool(so2_norm)
@@ -1367,13 +1373,17 @@ class SO2Convolution(NativeOP):
         self.adamw_focus_compete_w: np.ndarray | None = None
         self.focus_compete_bias: np.ndarray | None = None
         if self.focus_compete and self.n_focus > 1:
-            self.focus_compete_norm = ScalarRMSNorm(
-                channels=self.so2_focus_dim,
-                n_focus=self.n_focus,
-                eps=self.eps,
-                precision=self.compute_precision,
-                trainable=trainable,
-            )
+            # ``focus_norm=False`` drops the competition-input RMSNorm (which
+            # would cross its eps floor as the envelope-gated scalars vanish at
+            # rcut); the competition weights then decay smoothly to uniform.
+            if self.focus_norm:
+                self.focus_compete_norm = ScalarRMSNorm(
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    eps=self.eps,
+                    precision=self.compute_precision,
+                    trainable=trainable,
+                )
             self.adamw_focus_compete_w = (
                 np.random.default_rng(child_seed(seed_gate, 4))
                 .normal(
@@ -2381,10 +2391,13 @@ class SO2Convolution(NativeOP):
         """
         xp = array_api_compat.array_namespace(focus_gate_src)
         device = array_api_compat.device(focus_gate_src)
+        focus_in = xp.astype(
+            focus_gate_src, get_xp_precision(xp, self.compute_precision)
+        )
+        if self.focus_norm:
+            focus_in = self.focus_compete_norm(focus_in)
         focus_logits = xp.sum(
-            self.focus_compete_norm(
-                xp.astype(focus_gate_src, get_xp_precision(xp, self.compute_precision))
-            )
+            focus_in
             * xp.permute_dims(
                 xp_asarray_nodetach(xp, self.adamw_focus_compete_w[...], device=device),
                 (1, 0),
@@ -2706,6 +2719,7 @@ class SO2Convolution(NativeOP):
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
+                "focus_norm": self.focus_norm,
                 "so2_norm": self.so2_norm,
                 "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
