@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from importlib import (
+    import_module,
+)
+
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import (
     SwiGLU,
@@ -19,11 +23,12 @@ from ..common import (
     array_api_strict_module,
     register_dpmodel_mapping,
 )
-from ..utils import exclude_mask as _strict_exclude_mask  # noqa: F401
-from ..utils import network as _strict_network  # noqa: F401
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+import_module("..utils.exclude_mask", __package__)
+import_module("..utils.network", __package__)
 
 
 @BaseDescriptor.register("SeZM")

@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from importlib import (
+    import_module,
+)
 from typing import (
     ClassVar,
 )
@@ -13,9 +16,9 @@ from deepmd.dpmodel.fitting.dpa4_ener import (
 
 from ..common import (
     array_api_strict_module,
-    register_dpmodel_mapping,
 )
-from ..utils import network as _strict_network  # noqa: F401
+
+import_module("..utils.network", __package__)
 
 
 @array_api_strict_module
@@ -33,14 +36,3 @@ class SeZMNetworkCollection(SeZMNetworkCollectionDP):
 @array_api_strict_module
 class SeZMEnergyFittingNet(SeZMEnergyFittingNetDP):
     pass
-
-
-register_dpmodel_mapping(
-    GLUFittingNetDP,
-    lambda v: GLUFittingNet.deserialize(v.serialize()),
-)
-
-register_dpmodel_mapping(
-    SeZMNetworkCollectionDP,
-    lambda v: SeZMNetworkCollection.deserialize(v.serialize()),
-)
