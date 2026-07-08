@@ -74,7 +74,12 @@ def build_angle_index(
         Shape (A,) boolean mask for valid angles.
     """
     xp = array_api_compat.array_namespace(edge_index)
-    # a_rcut edge gate: only edges within a_rcut may participate in an angle
+    # a_rcut edge gate: only edges within a_rcut may participate in an angle.
+    # Strict `<` (not the edge channel's `<= rcut`, builder.py:284) is
+    # intentional: it mirrors dpa3's dense angle gate exactly
+    # (`a_dist_mask = dist < self.a_rcut`, repflows.py:598), so an edge
+    # sitting exactly at a_rcut is excluded from angles the same way dense
+    # excludes it, even though it would still be kept as an edge.
     dist = xp.linalg.vector_norm(edge_vec, axis=-1)  # (E,)
     a_edge_mask = xp.astype(edge_mask, xp.bool) & (dist < a_rcut)
     # compact eager form only (static_nnei not exposed until angle export is
@@ -185,10 +190,17 @@ def graph_angle_cos(angle_index: Array, edge_vec: Array, eps: float = 1e-6) -> A
 def angle_to_edge_sum(data: Array, angle_index: Array, num_edges: int) -> Array:
     """Aggregate per-angle data to the angle's query edge (edge_a).
 
+    Unlike ``edge_force_virial``, this does NOT take an ``angle_mask`` and
+    does not zero padding internally: guard angles point at edge
+    ``pad_value`` (an in-range real edge, e.g. edge 0), so their ``data``
+    lands on that edge unless already zeroed. Callers MUST zero ``data`` at
+    padded angle slots (``data * angle_mask``) before calling this.
+
     Parameters
     ----------
     data : Array
-        Shape (A,) or (A, ...) per-angle data to aggregate.
+        Shape (A,) or (A, ...) per-angle data to aggregate. Must already be
+        zero at padded (``angle_mask == False``) slots.
     angle_index : Array
         Shape (2, A) angle index pairs into edges.
     num_edges : int
@@ -207,10 +219,17 @@ def angle_to_node_sum(
 ) -> Array:
     """Aggregate per-angle data to the shared center (dst of edge_a).
 
+    Unlike ``edge_force_virial``, this does NOT take an ``angle_mask`` and
+    does not zero padding internally: guard angles point at node
+    ``edge_index[1, pad_value]`` (an in-range real node), so their ``data``
+    lands on that node unless already zeroed. Callers MUST zero ``data`` at
+    padded angle slots (``data * angle_mask``) before calling this.
+
     Parameters
     ----------
     data : Array
-        Shape (A,) or (A, ...) per-angle data to aggregate.
+        Shape (A,) or (A, ...) per-angle data to aggregate. Must already be
+        zero at padded (``angle_mask == False``) slots.
     angle_index : Array
         Shape (2, A) angle index pairs into edges.
     edge_index : Array
