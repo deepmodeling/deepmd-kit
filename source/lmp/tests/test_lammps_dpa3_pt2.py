@@ -35,6 +35,16 @@ pb_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa
 pb_file_mpi = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3_mpi.pt2"
 )
+# Same as deeppot_dpa3_mpi.pt2 but with model-level pair_exclude_types=[[0,1]]
+# (identical weights). Used to check that model-level exclusion survives the
+# dense multi-rank (run_model_with_comm) path; deeppot_dpa3_mpi.pt2 is its
+# no-exclusion baseline. Produced by source/tests/infer/gen_dpa3.py.
+pb_file_pairexcl_mpi = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "deeppot_dpa3_pairexcl_mpi.pt2"
+)
 ref_file = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3.expected"
 )
@@ -537,6 +547,50 @@ def test_pair_deepmd_mpi_dpa3() -> None:
         expected_v,
         atol=1e-8,
         rtol=0,
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.skipif(
+    not pb_file_pairexcl_mpi.exists(),
+    reason="gen_dpa3.py pair-exclude .pt2 fixture not generated",
+)
+def test_pair_deepmd_mpi_dpa3_pairexcl_matches_single_rank() -> None:
+    """Model-level ``pair_exclude_types`` must survive the dense multi-rank
+    (with-comm) path (cell 3).
+
+    DPA3 is message-passing, so ``use_loc_mapping=False`` routes multi-rank
+    through ``run_model_with_comm`` (the dense with-comm lower).  Decision
+    #18/A4 removed exclusion from the exported lower, so it must be applied at
+    the C++ ingestion seam (``applyPairExclusionNlist``) on THIS path too --
+    otherwise a message-passing model with ``pair_exclude_types`` silently
+    includes excluded pairs multi-rank (multi-rank != single-rank).
+
+    Two checks:
+      1. MP (``-n 2``) ≡ SP (``-n 1``) on the excluded archive.
+      2. The excluded run differs from the SAME-weights no-exclusion baseline
+         (``deeppot_dpa3_mpi.pt2``), so a silently-dropped exclusion on BOTH
+         ranks cannot pass check 1 trivially.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_pairexcl_mpi)
+    out_ref = _run_mpi_subprocess(nprocs=1, pb_path=pb_file_pairexcl_mpi)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+
+    # Exclusion must be ACTIVE on the with-comm path: energy must differ from
+    # the same-weights no-exclusion baseline (O-H pairs dropped).
+    out_none = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_mpi)
+    assert abs(out_mpi["pe"] - out_none["pe"]) > 1e-6, (
+        "pair_exclude_types had no effect on the dense multi-rank path "
+        f"(|E_excl - E_none| = {abs(out_mpi['pe'] - out_none['pe']):.2e})"
     )
 
 

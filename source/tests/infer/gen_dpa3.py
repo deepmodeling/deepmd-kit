@@ -111,6 +111,33 @@ def main():
         pt2_mpi_path, copy.deepcopy(data_mpi), do_atomic_virial=True
     )
 
+    # Multi-rank variant WITH model-level ``pair_exclude_types`` — same weights
+    # as ``deeppot_dpa3_mpi.pt2`` above (pair_exclude_types is a build-time
+    # nlist mask, NOT a descriptor weight), so that model is the exact
+    # no-exclusion baseline.  Exercises the C++ dense multi-rank
+    # (``run_model_with_comm``) pair-exclusion seam: DPA3 is message-passing, so
+    # use_loc_mapping=False routes multi-rank through ``run_model_with_comm``,
+    # where model-level exclusion must be applied at the C++ ingestion seam
+    # (the exported lower no longer bakes it in; decision #18/A4).
+    # See test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_pairexcl_*.
+    config_pairexcl_mpi = copy.deepcopy(config_mpi)
+    config_pairexcl_mpi["pair_exclude_types"] = [[0, 1]]
+    model_pairexcl_mpi = get_model(copy.deepcopy(config_pairexcl_mpi))
+    data_pairexcl_mpi = {
+        "model": model_pairexcl_mpi.serialize(),
+        "model_def_script": config_pairexcl_mpi,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    pt2_pairexcl_mpi_path = os.path.join(base_dir, "deeppot_dpa3_pairexcl_mpi.pt2")
+    print(f"Exporting to {pt2_pairexcl_mpi_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        pt2_pairexcl_mpi_path,
+        copy.deepcopy(data_pairexcl_mpi),
+        do_atomic_virial=True,
+    )
+
     # Float32 multi-rank variant — same architecture as the float64
     # MPI fixture but with ``precision: float32``.  Used by
     # source/lmp/tests/test_lammps_dpa3_pt2_fp32.py to validate that
