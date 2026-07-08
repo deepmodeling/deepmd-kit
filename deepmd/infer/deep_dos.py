@@ -124,19 +124,13 @@ class DeepDOS(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        # Prefer summing the atomic `dos` output when it is present, preserving
-        # the original global DOS for backends that always return it (TF, PT),
-        # whose reduced output is not necessarily the plain sum of the atomic
-        # DOS. The dpmodel and JAX backends omit the atomic `dos` when
-        # atomic=False, so fall back to the reduced `dos_redu` there (reading
-        # `dos` unconditionally would raise KeyError).
-        if "dos" in results:
-            atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
-            energy = np.sum(atomic_energy, axis=1)
-            if atomic:
-                return (energy, atomic_energy)
-            return (energy,)
         energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
+        if atomic:
+            atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
+            return (
+                energy,
+                atomic_energy,
+            )
         return (energy,)
 
     def get_numb_dos(self) -> int:
