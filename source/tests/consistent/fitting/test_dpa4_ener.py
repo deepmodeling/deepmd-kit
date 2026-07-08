@@ -28,22 +28,53 @@ from .common import (
     FittingTest,
 )
 
-if INSTALLED_PT:
-    import torch
+torch = None
+PT_DEVICE = None
+PT_EXPT_DEVICE = None
+SeZMEnerFittingPT = None
+SeZMEnerFittingPTExpt = None
 
-    from deepmd.pt.model.task.sezm_ener import SeZMEnergyFittingNet as SeZMEnerFittingPT
-    from deepmd.pt.utils.env import DEVICE as PT_DEVICE
-else:
-    SeZMEnerFittingPT = None
-if INSTALLED_PT_EXPT:
-    import torch
 
-    from deepmd.pt_expt.fitting.dpa4_ener import (
-        SeZMEnergyFittingNet as SeZMEnerFittingPTExpt,
-    )
-    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
-else:
-    SeZMEnerFittingPTExpt = None
+def _get_sezm_ener_fitting_pt() -> type | None:
+    global PT_DEVICE, SeZMEnerFittingPT, torch
+    if not INSTALLED_PT:
+        return None
+    if SeZMEnerFittingPT is None:
+        import torch as torch_module
+
+        from deepmd.pt.model.task.sezm_ener import (
+            SeZMEnergyFittingNet,
+        )
+        from deepmd.pt.utils.env import (
+            DEVICE,
+        )
+
+        torch = torch_module
+        PT_DEVICE = DEVICE
+        SeZMEnerFittingPT = SeZMEnergyFittingNet
+    return SeZMEnerFittingPT
+
+
+def _get_sezm_ener_fitting_pt_expt() -> type | None:
+    global PT_EXPT_DEVICE, SeZMEnerFittingPTExpt, torch
+    if not INSTALLED_PT_EXPT:
+        return None
+    if SeZMEnerFittingPTExpt is None:
+        import torch as torch_module
+
+        from deepmd.pt_expt.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        torch = torch_module
+        PT_EXPT_DEVICE = DEVICE
+        SeZMEnerFittingPTExpt = SeZMEnergyFittingNet
+    return SeZMEnerFittingPTExpt
+
+
 if INSTALLED_TF2:
     from deepmd.tf2.common import (
         to_tensorflow_array,
@@ -81,21 +112,30 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
 
     @property
     def skip_pt(self) -> bool:
-        return CommonTest.skip_pt
+        return CommonTest.skip_pt or _get_sezm_ener_fitting_pt() is None
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        return not INSTALLED_PT_EXPT or _get_sezm_ener_fitting_pt_expt() is None
+
+    @property
+    def pt_class(self) -> type | None:
+        return _get_sezm_ener_fitting_pt()
+
+    @property
+    def pt_expt_class(self) -> type | None:
+        return _get_sezm_ener_fitting_pt_expt()
 
     skip_dp = False
     skip_tf = True
     skip_tf2 = not INSTALLED_TF2 or SeZMEnerFittingTF2 is None
     skip_jax = True
     skip_pd = True
-    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = True
 
     tf_class = SeZMEnerFittingTF
     tf2_class = SeZMEnerFittingTF2
     dp_class = SeZMEnerFittingDP
-    pt_class = SeZMEnerFittingPT
-    pt_expt_class = SeZMEnerFittingPTExpt
     jax_class = None
     pd_class = None
     array_api_strict_class = None

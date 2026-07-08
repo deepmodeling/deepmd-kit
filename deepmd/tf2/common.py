@@ -361,10 +361,12 @@ def tf2_module(module: type[T]) -> type[T]:
 
         def __getattribute__(self, name: str) -> Any:
             if not name.startswith("_tf2_"):
-                array_attrs = object.__getattribute__(
-                    self,
-                    "_tf2_array_variable_attr_names",
-                )()
+                try:
+                    array_attrs = object.__getattribute__(
+                        self, "_tf2_array_variable_attrs"
+                    )
+                except AttributeError:
+                    array_attrs = ()
                 if name in array_attrs:
                     storage_name = object.__getattribute__(
                         self,
@@ -373,10 +375,12 @@ def tf2_module(module: type[T]) -> type[T]:
                     variable = object.__getattribute__(self, storage_name)
                     return None if variable is None else to_tensorflow_array(variable)
 
-                list_attrs = object.__getattribute__(
-                    self,
-                    "_tf2_array_variable_list_attr_names",
-                )()
+                try:
+                    list_attrs = object.__getattribute__(
+                        self, "_tf2_array_variable_list_attrs"
+                    )
+                except AttributeError:
+                    list_attrs = ()
                 if name in list_attrs:
                     storage_name = object.__getattribute__(
                         self,

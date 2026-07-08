@@ -293,7 +293,21 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
             indices_tensor,
             tf.shape(x_tensor, out_type=tf.int64)[0],
         )
-        return xp.asarray(tf.maximum(x_tensor, reduced))
+        segment_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(indices_tensor, dtype=tf.int32),
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        touched = segment_counts > 0
+        touched_shape = tf.concat(
+            [
+                tf.reshape(tf.shape(x_tensor, out_type=tf.int64)[0], (1,)),
+                tf.ones(tf.rank(x_tensor) - 1, dtype=tf.int64),
+            ],
+            axis=0,
+        )
+        touched = tf.reshape(touched, touched_shape)
+        return xp.asarray(tf.where(touched, tf.maximum(x_tensor, reduced), x_tensor))
     else:
         # Fallback for array_api_strict: basic indexing only.
         n = indices.shape[0]

@@ -14,7 +14,11 @@ from .dpa1 import (
 
 @BaseDescriptor.register("se_atten_v2")
 class DescrptSeAttenV2(DescrptDPA1, DescrptSeAttenV2DP):
-    pass
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
+        obj = DescrptSeAttenV2DP.deserialize.__func__(cls, data)
+        obj._refresh_tf2_trackable_lists()
+        return obj
 
 
 register_dpmodel_mapping(

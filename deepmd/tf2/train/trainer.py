@@ -1489,7 +1489,7 @@ class Trainer(AbstractTrainer):
         dims = []
         try:
             iterator = iter(shape)
-        except TypeError:
+        except (TypeError, ValueError):
             return None
         for dim in iterator:
             dim = getattr(dim, "value", dim)
