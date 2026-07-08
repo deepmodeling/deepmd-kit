@@ -227,8 +227,7 @@ void DeepPotPTExpt::init(const std::string& model,
         device = torch::Device(torch::kCPU);
       }
       pair_exclude_table_ =
-          torch::from_blob(tbl.data(),
-                           {static_cast<std::int64_t>(tbl.size())},
+          torch::from_blob(tbl.data(), {static_cast<std::int64_t>(tbl.size())},
                            torch::TensorOptions().dtype(torch::kInt32))
               .clone()
               .to(device);
@@ -868,8 +867,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
           firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
       flat_outputs = run_model_with_comm(
-          coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
-          fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
+          coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor, fparam_tensor,
+          aparam_tensor, charge_spin_tensor, comm_tensors);
     }
   } else {
     if (lower_input_is_edge_) {
