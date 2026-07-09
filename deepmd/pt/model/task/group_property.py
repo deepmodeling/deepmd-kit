@@ -63,8 +63,19 @@ class GroupPropertyFittingNet(Fitting):
         type_map: list[str] | None = None,
         numb_fparam: int = 0,
         group_reduce: str = "mean",
-        **kwargs: Any,
+        seed: int | None = None,
+        # Injected unconditionally by the generic model-building path
+        # (deepmd.pt.model.model._get_standard_model_components) for every
+        # fitting type; "type" selects this class via the Fitting registry
+        # and "mixed_types" is the descriptor's own property (read via
+        # GroupPropertyModel.mixed_types()), so neither is used here. Kept
+        # as explicit, named, no-op parameters -- not **kwargs -- so any
+        # other unrecognized field fails loudly instead of being silently
+        # accepted and ignored.
+        type: str = "group_property",
+        mixed_types: bool = True,
     ) -> None:
+        del type, mixed_types
         super().__init__()
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
@@ -76,9 +87,7 @@ class GroupPropertyFittingNet(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.type_map = list(type_map or [])
-        self.trainable = (
-            all(trainable) if isinstance(trainable, list) else bool(trainable)
-        )
+        self.seed = seed
         self.numb_fparam = int(numb_fparam)
         if group_reduce not in ("mean", "sum"):
             raise ValueError(
@@ -94,11 +103,27 @@ class GroupPropertyFittingNet(Fitting):
         # Per-group side features (fparam) are concatenated to the aggregated
         # group embedding, so the fitting input widens by ``numb_fparam``.
         dims = [dim_descrpt + self.numb_fparam, *self.neuron, task_dim]
-        layers: list[torch.nn.Module] = []
-        for ii in range(len(dims) - 1):
-            layers.append(torch.nn.Linear(dims[ii], dims[ii + 1], dtype=self.prec))
-            if ii < len(dims) - 2:
-                layers.append(_activation(self.activation_function))
+
+        def _build_layers() -> list[torch.nn.Module]:
+            layers: list[torch.nn.Module] = []
+            for ii in range(len(dims) - 1):
+                layers.append(torch.nn.Linear(dims[ii], dims[ii + 1], dtype=self.prec))
+                if ii < len(dims) - 2:
+                    layers.append(_activation(self.activation_function))
+            return layers
+
+        if seed is None:
+            # No seed requested: draw from (and advance) the caller's global
+            # RNG stream exactly as an unseeded torch.nn.Linear always does.
+            layers = _build_layers()
+        else:
+            # Seed only this net's own initialization, without disturbing the
+            # caller's global RNG state (torch.nn.Linear.reset_parameters()
+            # has no generator= argument, so fork-then-seed is the way to
+            # scope a seed to a plain nn.Linear-based net).
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                layers = _build_layers()
         self.network = torch.nn.Sequential(*layers).to(env.DEVICE)
         # Task E (route 3): group_property does NOT init the output bias from
         # label statistics.  The property path's frame-level stat would count each
@@ -112,8 +137,23 @@ class GroupPropertyFittingNet(Fitting):
                 "group_property output bias is zero-initialized (label-stat bias "
                 "init is disabled for grouped labels); training may need more steps."
             )
-        for param in self.parameters():
-            param.requires_grad = self.trainable
+
+        linear_layers = [m for m in self.network if isinstance(m, torch.nn.Linear)]
+        if isinstance(trainable, list):
+            if len(trainable) != len(linear_layers):
+                raise ValueError(
+                    f"trainable has {len(trainable)} entries; expected "
+                    f"{len(linear_layers)} (one per Linear layer, i.e. "
+                    "len(neuron)+1)."
+                )
+            self.trainable = trainable
+            for layer, layer_trainable in zip(linear_layers, trainable, strict=True):
+                for param in layer.parameters():
+                    param.requires_grad = bool(layer_trainable)
+        else:
+            self.trainable = bool(trainable)
+            for param in self.parameters():
+                param.requires_grad = self.trainable
 
     def forward(self, group_embedding: torch.Tensor) -> torch.Tensor:
         return self.network(group_embedding.to(self.prec))

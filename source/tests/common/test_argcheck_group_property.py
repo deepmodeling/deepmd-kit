@@ -5,6 +5,13 @@ argcheck schema for the ``group_property`` fitting type reused the
 check ``dp --pt train`` runs on every ``input.json``) rejected
 ``group_reduce`` as an unknown key -- even though ``group_reduce="sum"`` is
 a supported, tested code path once past validation.
+
+The same reused schema also let a config set ``numb_aparam``,
+``default_fparam``, ``dim_case_embd``, ``resnet_dt``, ``intensive``, or
+``distinguish_types`` -- fields GroupPropertyFittingNet has no wiring for --
+and pass strict validation while silently doing nothing. Those fields are
+removed from the group_property schema so setting one is now a validation
+error like any other typo, not a silent no-op.
 """
 
 from __future__ import (
@@ -60,6 +67,40 @@ def test_group_property_still_defaults_activation_to_gelu():
     # gelu-default override.
     out = _normalize_and_check({"type": "group_property", "property_name": "y"})
     assert out["activation_function"] == "gelu"
+
+
+def test_unsupported_property_fields_are_removed_from_the_schema():
+    names = {arg.name for arg in fitting_group_property()}
+    for unsupported in (
+        "numb_aparam",
+        "default_fparam",
+        "dim_case_embd",
+        "resnet_dt",
+        "intensive",
+        "distinguish_types",
+    ):
+        assert unsupported not in names
+
+
+def test_setting_an_unsupported_field_fails_strict_validation():
+    for unsupported, value in (
+        ("numb_aparam", 3),
+        ("resnet_dt", False),
+        ("intensive", True),
+        ("distinguish_types", False),
+    ):
+        payload = {
+            "type": "group_property",
+            "property_name": "y",
+            unsupported: value,
+        }
+        normalized = _fitting_net_schema().normalize_value(payload)
+        try:
+            _fitting_net_schema().check_value(normalized, strict=True)
+        except ArgumentKeyError:
+            pass
+        else:
+            raise AssertionError(f"expected {unsupported!r} to fail strict check")
 
 
 def test_group_reduce_key_was_rejected_by_the_reused_property_schema():

@@ -2834,13 +2834,32 @@ def fitting_group_property() -> list[Argument]:
     It also adds ``group_reduce``, the frame-embedding -> group-embedding
     reduction (mean or weighted sum), which GroupPropertyFittingNet supports
     but the reused property schema has no field for.
+
+    GroupPropertyFittingNet is a small, standalone MLP (it does not go
+    through the shared GeneralFitting base class other fitting nets use), so
+    several property-schema fields have no effect on it: ``numb_aparam``
+    (there is no per-atom input at group level), ``default_fparam``,
+    ``dim_case_embd`` (no multitask case embedding), ``resnet_dt`` (plain
+    Linear layers, no residual connections), ``intensive`` and
+    ``distinguish_types`` (the group-level output bias is always
+    zero-initialized rather than set from per-type label statistics -- see
+    GroupPropertyFittingNet.get_out_bias). Removing them makes setting one an
+    immediate, clear validation error instead of a silently ignored no-op.
     """
     doc_group_reduce = (
         "How per-frame embeddings are reduced to one per-group embedding: "
         "`mean` (weight-normalized average) or `sum` (weighted sum, for "
         "extensive group properties)."
     )
-    args = fitting_property()
+    _unsupported = {
+        "numb_aparam",
+        "default_fparam",
+        "dim_case_embd",
+        "resnet_dt",
+        "intensive",
+        "distinguish_types",
+    }
+    args = [arg for arg in fitting_property() if arg.name not in _unsupported]
     for arg in args:
         if arg.name == "activation_function":
             arg.default = "gelu"
