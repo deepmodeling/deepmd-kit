@@ -11,6 +11,8 @@ implementation cannot express:
   weights are trainable parameters (the dpmodel list mixes modules with a bare
   activation function, which the generic conversion cannot turn into a
   ``ModuleList``).
+- :mod:`wignerd` -- opt-in fused Triton monomial fast path for the Wigner-D
+  ``l = 2`` contraction and the shared ``l >= 3`` monomial kernels.
 
 Importing this package registers the dpmodel -> pt_expt converters (via
 ``torch_module``), so the auto-wrapped descriptor tree picks up these subclasses
@@ -21,4 +23,5 @@ from . import (  # noqa: F401
     block,
     radial,
     so2,
+    wignerd,
 )

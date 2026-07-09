@@ -31,10 +31,38 @@ endif(BUILD_PY_IF)
 
 if(PACKAGE_C)
   message(STATUS "Packaging C API library")
+  set(PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES
+      ""
+      CACHE STRING
+            "Additional file(GET_RUNTIME_DEPENDENCIES) pre-exclude regexes")
+  set(PACKAGE_C_RUNTIME_DEPENDENCY_POST_EXCLUDE_REGEXES
+      ""
+      CACHE STRING
+            "Additional file(GET_RUNTIME_DEPENDENCIES) post-exclude regexes")
+  set(PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES_DEFAULT
+      "libgcc_s\\.so.*"
+      "libstdc\\+\\+\\.so.*"
+      "libm\\.so.*"
+      "libdl\\.so.*"
+      "librt\\.so.*"
+      "libc\\.so.*"
+      "libpthread\\.so.*"
+      "ld-.*\\.so.*"
+      "libgomp\\.so.*")
+  set(PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES_ALL
+      ${PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES_DEFAULT}
+      ${PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES})
   get_property(DEEPMD_BACKEND_PLUGIN_TARGETS GLOBAL
                PROPERTY DEEPMD_BACKEND_PLUGIN_TARGETS)
-  set(PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${libname}>"
-                                  "$<TARGET_FILE:${LIB_DEEPMD_OP}>")
+  set(PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${libname}>")
+  if(TARGET ${LIB_DEEPMD_OP})
+    list(APPEND PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${LIB_DEEPMD_OP}>")
+  endif()
+  foreach(_target deepmd_op_pt deepmd_op_pd)
+    if(TARGET ${_target})
+      list(APPEND PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${_target}>")
+    endif()
+  endforeach()
   foreach(_target ${DEEPMD_BACKEND_PLUGIN_TARGETS})
     list(APPEND PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${_target}>")
   endforeach()
@@ -43,23 +71,21 @@ if(PACKAGE_C)
   # follow pypa/auditwheel convention
   install(CODE "set(_dp_runtime_libraries ${PACKAGE_C_RUNTIME_LIBRARIES_CODE})")
   install(
+    CODE "set(_dp_package_c_lib_dir [==[${CMAKE_BINARY_DIR}/libdeepmd_c/lib]==])
+set(_dp_runtime_pre_exclude_regexes [==[${PACKAGE_C_RUNTIME_DEPENDENCY_PRE_EXCLUDE_REGEXES_ALL}]==])
+set(_dp_runtime_post_exclude_regexes [==[${PACKAGE_C_RUNTIME_DEPENDENCY_POST_EXCLUDE_REGEXES}]==])"
+  )
+  install(
     CODE [[
     file(GET_RUNTIME_DEPENDENCIES
       LIBRARIES ${_dp_runtime_libraries}
       RESOLVED_DEPENDENCIES_VAR _r_deps
-      PRE_EXCLUDE_REGEXES "libgcc_s\\.so.*"
-                          "libstdc\\+\\+\\.so.*"
-                          "libm\\.so.*"
-                          "libdl\\.so.*"
-                          "librt\\.so.*"
-                          "libc\\.so.*"
-                          "libpthread\\.so.*"
-                          "ld-.*\\.so.*"
-                          "libgomp\\.so.*"
+      PRE_EXCLUDE_REGEXES ${_dp_runtime_pre_exclude_regexes}
+      POST_EXCLUDE_REGEXES ${_dp_runtime_post_exclude_regexes}
       )
     message(STATUS "Runtime dependencies: ${_r_deps}")
     foreach(_file ${_r_deps})
-      file(INSTALL ${_file} DESTINATION libdeepmd_c/lib
+      file(INSTALL ${_file} DESTINATION "${_dp_package_c_lib_dir}"
         FOLLOW_SYMLINK_CHAIN
       )
     endforeach()
@@ -67,8 +93,16 @@ if(PACKAGE_C)
   install(FILES ${INC_SRC}
           DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/include/deepmd)
   install(TARGETS ${libname} DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
-  install(TARGETS ${LIB_DEEPMD_OP}
-          DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
+  if(TARGET ${LIB_DEEPMD_OP})
+    install(TARGETS ${LIB_DEEPMD_OP}
+            DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
+  endif()
+  foreach(_target deepmd_op_pt deepmd_op_pd)
+    if(TARGET ${_target})
+      install(TARGETS ${_target}
+              DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
+    endif()
+  endforeach()
   foreach(_target ${DEEPMD_BACKEND_PLUGIN_TARGETS})
     install(TARGETS ${_target} DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
   endforeach()

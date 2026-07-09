@@ -8,6 +8,7 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
+    NamedTuple,
 )
 
 import numpy as np
@@ -559,6 +560,47 @@ def _write_energy_test_details(
         )
 
 
+class _OptionalEnerOutputs(NamedTuple):
+    """The optional trailing outputs of ``DeepPot.eval`` (``None`` when absent)."""
+
+    atom_energy: "np.ndarray | None"
+    atom_virial: "np.ndarray | None"
+    force_mag: "np.ndarray | None"
+    mask_mag: "np.ndarray | None"
+    hessian: "np.ndarray | None"
+
+
+def _split_optional_ener_outputs(
+    ret: tuple,
+    *,
+    has_atom_ener: bool,
+    has_spin: bool,
+    has_hessian: bool,
+    numb_test: int,
+) -> _OptionalEnerOutputs:
+    """Split the optional trailing outputs of ``DeepPot.eval``.
+
+    ``DeepPot.eval`` appends its optional outputs after ``(energy, force,
+    virial)`` in a fixed order: atomic ``(atom_energy, atom_virial)``, then spin
+    ``(force_mag, mask_mag)``, then ``hessian``. Read them by advancing an index
+    through the tuple in that same order, so the hessian slot is not confused
+    with atomic energy/virial or spin outputs when those are also present.
+    """
+    atom_energy = atom_virial = force_mag = mask_mag = hessian = None
+    idx = 3
+    if has_atom_ener:
+        atom_energy = ret[idx].reshape([numb_test, -1])
+        atom_virial = ret[idx + 1].reshape([numb_test, -1])
+        idx += 2
+    if has_spin:
+        force_mag = ret[idx].reshape([numb_test, -1])
+        mask_mag = ret[idx + 1].reshape([numb_test, -1])
+        idx += 2
+    if has_hessian:
+        hessian = ret[idx].reshape([numb_test, -1])
+    return _OptionalEnerOutputs(atom_energy, atom_virial, force_mag, mask_mag, hessian)
+
+
 def test_ener(
     dp: "DeepPot",
     data: DeepmdData,
@@ -684,28 +726,17 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
-    hessian = None
-    force_m = None
-    mask_mag = None
-    if dp.has_hessian:
-        hessian = ret[3]
-        hessian = hessian.reshape([numb_test, -1])
-    if has_atom_ener:
-        ae = ret[3]
-        av = ret[4]
-        ae = ae.reshape([numb_test, -1])
-        av = av.reshape([numb_test, -1])
-        if dp.has_spin:
-            force_m = ret[5]
-            force_m = force_m.reshape([numb_test, -1])
-            mask_mag = ret[6]
-            mask_mag = mask_mag.reshape([numb_test, -1])
-    else:
-        if dp.has_spin:
-            force_m = ret[3]
-            force_m = force_m.reshape([numb_test, -1])
-            mask_mag = ret[4]
-            mask_mag = mask_mag.reshape([numb_test, -1])
+    optional_outputs = _split_optional_ener_outputs(
+        ret,
+        has_atom_ener=has_atom_ener,
+        has_spin=dp.has_spin,
+        has_hessian=dp.has_hessian,
+        numb_test=numb_test,
+    )
+    ae = optional_outputs.atom_energy
+    force_m = optional_outputs.force_mag
+    mask_mag = optional_outputs.mask_mag
+    hessian = optional_outputs.hessian
     out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
     spin_metrics = None
     force_r = None

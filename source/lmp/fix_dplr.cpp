@@ -652,7 +652,7 @@ void FixDPLR::post_force(int vflag) {
     for (int ii = 0; ii < nlocal; ++ii) {
       double tmpf[3];
       for (int dd = 0; dd < 3; ++dd) {
-        tmpf[dd] = q[ii] * efield[dd] * force->qe2f;
+        tmpf[dd] = q[ii] * efield[dd];
       }
       for (int dd = 0; dd < 3; ++dd) {
         dfele[ii * 3 + dd] += tmpf[dd];

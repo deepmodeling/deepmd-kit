@@ -79,8 +79,10 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 descriptors. On the conservative **energy** path it is only an initial
 neighbor-search capacity that grows on demand, so it never truncates the
 neighbor list and you do not need to size it to the true maximum neighbor count.
-Only the denoising (`dens`) and spin paths cap the list at `sum(sel)`. You can
-also set `sel` to `auto` or `auto:factor` to size it from the training data.
+The native spin scheme shares this energy path, so it grows on demand too; only
+the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
+`sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
+the training data.
 :::
 
 ### Main options
@@ -174,8 +176,77 @@ default training path. See `examples/water/dpa4/input_dens.json` for an example.
 
 ### Spin
 
-DPA4/SeZM supports the DeePMD-kit spin convention. Keep the model type and add
-the standard `model.spin` block:
+DPA4/SeZM supports the DeePMD-kit spin convention through the standard
+`model.spin` block. Two schemes are available, selected by `model.spin.scheme`:
+
+- `native` — the per-atom spin vector enters the descriptor as an
+  equivariant feature, and the magnetic force is the spin gradient of the
+  energy. No virtual atoms are introduced, so the neighbor list and type map
+  keep their real-system sizes.
+- `deepspin` (default) — the classical DeepSpin representation, in which each
+  magnetic atom is paired with a virtual atom displaced along its spin. It is
+  the default, so a `model.spin` block without an explicit `scheme` reproduces
+  the classical behaviour shared with every non-SeZM spin model.
+
+Both schemes train against the conservative `ener_spin` loss, share the same
+`spin` / `force_mag` data convention, and are not combined with the `dens` mode.
+Because the dataset and loss are identical, switching `scheme` does not require
+any change to the data or the loss block. Complete inputs are in
+`examples/spin/dpa4/`: `input.json` for the native scheme and
+`input-deepspin.json` for the deepspin scheme. See
+[training spin energy models](train-energy-spin.md) for the general workflow.
+
+`use_spin` accepts a per-type boolean list or, to avoid enumerating a large
+`type_map`, the list of magnetic species as type indices or element symbols
+(e.g. `"use_spin": ["Fe"]`), expanded against `type_map`. For the native scheme,
+`model.spin.allow_missing_label` additionally admits training systems that lack a
+`spin` data file by filling their spin with zeros; since a zero spin reduces the
+native descriptor to its spin-free form, a model can be trained on a mixture of
+spin-labelled and spin-free systems, or pretrained on spin-free data and
+fine-tuned on spin-labelled data without changing its type map or parameters.
+
+#### Native scheme
+
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "scheme": "native"
+    },
+    "descriptor": {
+      "rcut": 6.0
+    }
+  }
+}
+```
+
+`use_spin` marks which atom types carry spin. Both the conservative force and
+the magnetic force come from a single energy gradient:
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+\qquad
+\mathbf{F}^{\mathrm{mag}}_i = -\frac{\partial E}{\partial \mathbf{s}_i},
+```
+
+where $\mathbf{s}_i$ is the input spin vector. The model does not rescale the
+spin internally, so $\mathbf{s}_i$ keeps the dataset's `spin` convention and the
+magnetic force is reported in the matching units of `force_mag` -- there is no
+`virtual_scale` factor in this scheme. The magnetic force is reported on the
+magnetic atom types only, matching the `force_mag` label. The native scheme
+relies on the descriptor's angular degrees to represent the spin direction, so
+it requires `lmax >= 1` (the default).
+
+#### DeepSpin virtual-atom scheme (default)
 
 ```json
 {
@@ -192,7 +263,8 @@ the standard `model.spin` block:
       ],
       "virtual_scale": [
         0.314
-      ]
+      ],
+      "scheme": "deepspin"
     },
     "descriptor": {
       "sel": 120,
@@ -202,9 +274,10 @@ the standard `model.spin` block:
 }
 ```
 
-The spin path uses the conservative `ener_spin` loss and is not combined with
-the `dens` mode. See [training spin energy models](train-energy-spin.md) and
-`examples/water/dpa4/input-spin.json`.
+The `deepspin` scheme augments each magnetic atom with a virtual atom at
+`coord + spin * virtual_scale`, which doubles the internal neighbor capacity and
+type map. `virtual_scale` is required by this scheme and ignored by the native
+scheme.
 
 ### Multi-task / shared fitting
 
@@ -294,29 +367,36 @@ Three options control training precision and the compiled path:
 Inference behavior is controlled by environment variables, each with an
 equivalent input-file option used during training validation:
 
-| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                            |
-| -------------------- | --------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                              |
-| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                    |
-| `DP_TRITON_INFER`    | —                           | off           | Fused block-diagonal Triton kernels for the SO(2) Wigner-D rotation (CUDA eval only). Lower latency and peak memory, numerically equivalent to the dense path with full float32 accumulation. Compatible with `DP_COMPILE_INFER`. |
+| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference when `descriptor.use_amp=true`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). `1`: universal fused kernels, numerically equivalent to the dense path with full float32 accumulation. `2`: adds the table-configured fused SO(2) value path and edge-block backward kernels (still exact float32). `3`: additionally runs the SO(2) mixing stack on fp16 tensor cores with split compensation — roughly float32-level accuracy (maximum force deviation about 4e-6 eV/Å on a 4-thousand-atom system) at a substantial speedup; only shapes validated by the tuning sweep are affected. Levels 2 and 3 read launch tables tuned per GPU model (H20 ships built in); on other GPUs the kernels fall back to conservative configurations, and `dp --pt freeze` tunes the missing entries automatically on the local GPU before exporting (a one-off sweep of a few minutes, baked into the `.pt2`). |
 
-Accepted boolean values are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`.
+Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
+`0`/`false`/`no`/`off`; `DP_TRITON_INFER` accepts only the numeric levels.
 Shell exports take precedence over the input-file options and over values
 written in the input; they are read when the model is constructed and changing
 them afterward has no effect.
 
 For molecular dynamics and other workflows sensitive to the smoothness of the
-potential energy surface, keep `DP_TF32_INFER=0`. `DP_TRITON_INFER=1` retains
-full float32 accumulation regardless of `DP_TF32_INFER` and is therefore safe
-for those workflows.
+potential energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+`DP_AMP_INFER` can coexist with `DP_TF32_INFER`, but bf16 autocast dominates
+the eligible operations it covers, so TF32 usually adds little extra throughput
+there. `DP_TRITON_INFER` levels `1` and `2` retain full float32 accumulation
+regardless of the precision policy and are therefore safe for those workflows;
+level `3` perturbs forces at the 2^-22 rounding scale (three orders of
+magnitude finer than TF32) and is the recommended fast setting once validated
+for the target system.
 
 :::{important}
 Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`) and
-the matmul precision (`DP_TF32_INFER`) are captured into the graph at export
-time and are **not** re-evaluated when the `.pt2` is later loaded by ASE or
-LAMMPS. A frozen `.pt2` runs a forward-only package, so training-time
-memory-saving switches do not apply to it.
+an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
+matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
+captured into the graph at export time and are **not** re-evaluated when the
+`.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+package, so training-time memory-saving switches do not apply to it.
 :::
 
 ### Hardware selection

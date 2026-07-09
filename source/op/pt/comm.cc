@@ -354,6 +354,22 @@ class Border : public torch::autograd::Function<Border> {
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
     }
+    // When the forward ran swaps it overwrites every ghost row
+    // (g_out[ghost] = g_in[owner]), so a ghost INPUT value never reaches the
+    // output and its gradient is exactly zero. The reverse-comm loop above has
+    // already routed every ghost output-gradient into its owner row, but it
+    // leaves the upstream ghost-row gradients in ``d_local_g1_tensor``
+    // untouched. Zeroing them is what makes this the true Jacobian-vector
+    // product: without it the op returns a spurious
+    // dL/dg_in[ghost] = dL/dg_out[ghost], which is harmless for an
+    // edge-geometry leaf (ghost rows feed no edge there) but corrupts any
+    // per-node leaf that flows through the exchanged features (e.g. the native
+    // spin magnitude/direction carried in the node state). With ``nswap == 0``
+    // the forward is the identity and the ghost inputs are preserved, so the
+    // gradient passes through unchanged.
+    if (nswap > 0 && nghost > 0) {
+      d_local_g1_tensor.slice(0, nlocal, ntotal).zero_();
+    }
 #ifdef USE_MPI
     // Drain pending eager-send ACKs before returning — see forward_t
     // for the full rationale.  Backward has the same asymmetric

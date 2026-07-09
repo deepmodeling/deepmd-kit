@@ -78,7 +78,7 @@ from torch.library import (
     wrap_triton,
 )
 
-from ..indexing import (
+from deepmd.pt.model.descriptor.sezm_nn.indexing import (
     build_m_major_index,
 )
 

@@ -191,10 +191,15 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   std::vector<std::string> type_map;
   std::vector<std::string> output_keys;
   bool do_atomic_virial;  // whether model was exported with atomic virial corr
-  int nnei;               // expected nlist nnei dimension (= sum(sel))
+  // Whether the exported graph consumes the compact edge schema (native spin,
+  // shared with DeepPotPTExpt) rather than the deepspin-scheme nlist contract.
+  bool lower_input_is_edge_ = false;
+  int nnei;  // expected nlist nnei dimension (= sum(sel))
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;     // cached mapping tensor (LAMMPS path)
-  at::Tensor firstneigh_tensor;  // cached nlist tensor (LAMMPS path)
+  at::Tensor mapping_tensor;         // cached mapping tensor (LAMMPS path)
+  at::Tensor firstneigh_tensor;      // cached nlist tensor (LAMMPS path)
+  at::Tensor edge_index_tensor;      // cached local-folded edges (edge path)
+  at::Tensor edge_index_ext_tensor;  // cached extended edges (edge path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional with-comm artifact for multi-rank GNN spin inference.
   bool has_comm_artifact_ = false;
@@ -211,6 +216,39 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
                                        const torch::Tensor& aparam);
+
+  /**
+   * @brief Run the native-spin edge artifact: the energy edge schema plus the
+   * per-local-atom spin leaf.
+   */
+  std::vector<torch::Tensor> run_model_edges(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam);
+
+  /**
+   * @brief Run the native-spin parallel edge artifact: the energy edge
+   * with-comm schema (coord and extended types span the extended node set)
+   * plus the EXTENDED per-node spin leaf, then the 8 border_op comm tensors.
+   */
+  std::vector<torch::Tensor> run_model_edges_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& extended_atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const std::vector<at::Tensor>& comm_tensors);
 
   /**
    * @brief Run with-comm spin artifact: 5-7 base inputs (incl.

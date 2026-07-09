@@ -75,7 +75,7 @@ if TYPE_CHECKING:
         Callable,
     )
 
-GridNetLayout = Literal["ndfc", "nfdc", "flat"]
+GridNetLayout = Literal["ndfc", "nfdc", "fndc", "flat"]
 GridNetMode = Literal["self", "cross"]
 GridNetOp = Literal["glu", "mlp", "branch"]
 
@@ -655,8 +655,10 @@ class BaseGridNet(NativeOP):
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
         self.precision = precision
         self.layout = str(layout).lower()
-        if self.layout not in {"ndfc", "nfdc", "flat"}:
-            raise ValueError("`layout` must be one of 'ndfc', 'nfdc', or 'flat'")
+        if self.layout not in {"ndfc", "nfdc", "fndc", "flat"}:
+            raise ValueError(
+                "`layout` must be one of 'ndfc', 'nfdc', 'fndc', or 'flat'"
+            )
         if self.mode == "self" and self.layout == "flat":
             raise ValueError("`layout='flat'` is only supported for cross grid nets")
         self.mlp_bias = bool(mlp_bias)
@@ -927,11 +929,17 @@ class BaseGridNet(NativeOP):
         )
 
     def _to_ndfc(self, value: Any) -> tuple[Any, tuple[int, ...]]:
+        # All grid operations run in the canonical ``(N, D, F, C)`` layout; the
+        # ``fndc`` re-orientation folds the focus-major SO(2) mixing layout into the
+        # same transpose the ``nfdc`` path performs, so the grid compute below is
+        # identical regardless of the caller's layout.
         xp = array_api_compat.array_namespace(value)
         if self.layout == "ndfc":
             return value, tuple(value.shape)
         if self.layout == "nfdc":
             return xp.permute_dims(value, (0, 2, 1, 3)), tuple(value.shape)
+        if self.layout == "fndc":
+            return xp.permute_dims(value, (1, 2, 0, 3)), tuple(value.shape)
         n_batch, coeff_dim, _ = value.shape
         return (
             xp.reshape(value, (n_batch, coeff_dim, self.n_focus, -1)),
@@ -948,6 +956,8 @@ class BaseGridNet(NativeOP):
             return value
         if self.layout == "nfdc":
             return xp.permute_dims(value, (0, 2, 1, 3))
+        if self.layout == "fndc":
+            return xp.permute_dims(value, (2, 0, 1, 3))
         n_batch, coeff_dim, _ = shape_info
         return xp.reshape(value, (n_batch, coeff_dim, -1))
 

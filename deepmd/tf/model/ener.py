@@ -549,7 +549,11 @@ class EnerModel(StandardModel):
         loc_force = self.natoms_match(force, natoms)
         aatype = atype[0, :]
         ghost_atype = aatype[natoms[0] :]
-        _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
+        # Dense per-type ghost counts: the ghost region is sorted ascending by
+        # type (see DeepSpinTF::extend), but a type may be absent. bincount with
+        # minlength keeps the count vector indexable by type id, whereas
+        # tf.unique_with_counts drops absent types and shifts every offset.
+        ghost_natoms = tf.math.bincount(ghost_atype, minlength=self.ntypes)
         ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
         ghost_natoms_index += natoms[0]
 

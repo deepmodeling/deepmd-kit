@@ -123,6 +123,7 @@
   "validating": {
     "compiled_infer": false,
     "tf32_infer": false,
+    "amp_infer": false,
     "save_best_dir": "ckpt_best"
   }
 }

@@ -91,7 +91,7 @@ class TestDpa1GraphLower:
             [[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device
         )
 
-    def _make_model(self) -> EnergyModel:
+    def _make_model(self, attn_layer: int = 0, smooth: bool = False) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
@@ -100,9 +100,13 @@ class TestDpa1GraphLower:
             neuron=[3, 6],
             axis_neuron=2,
             attn=4,
-            attn_layer=0,  # graph lower only supports attn_layer == 0
+            attn_layer=attn_layer,
             attn_dotr=True,
             attn_mask=False,
+            # smooth attention keeps sel-padding in the dense softmax
+            # denominator; the carry-all graph drops it BY DESIGN (PR-D), so
+            # exact graph-vs-dense parity requires smooth=False here.
+            smooth_type_embedding=smooth,
             activation_function="tanh",
             set_davg_zero=False,
             type_one_side=True,
@@ -165,13 +169,16 @@ class TestDpa1GraphLower:
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
         return ext_coord, ext_atype, nlist_t, mapping_t
 
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
     @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
-    def test_force_virial_parity_vs_legacy(self, periodic, do_av) -> None:
+    def test_force_virial_parity_vs_legacy(self, periodic, do_av, attn_layer) -> None:
         """Graph lower energy/force/virial/atom_virial == legacy dense lower on
         the SAME neighbor set (regime-1 graph from from_dense_quartet).
+        attn_layer=2 exercises graph attention through model-level autograd
+        (smooth=False: exact carry-all parity regime, NeighborGraph PR-D).
         """
-        model = self._make_model()
+        model = self._make_model(attn_layer=attn_layer)
         model.eval()
         tol = (
             {"rtol": 1e-12, "atol": 1e-12}
@@ -230,3 +237,152 @@ class TestDpa1GraphLower:
             )
             graph_av = graph["energy_derv_c"].reshape(nf, nloc, 1, 9)
             torch.testing.assert_close(graph_av, legacy_av_local, **tol)
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_graph_lower_symbolic_trace(self, attn_layer) -> None:
+        """``forward_lower_graph_exportable`` traces symbolically for BOTH the
+        factorizable (attn_layer=0) and attention (attn_layer=2) graph lowers,
+        and the traced module reproduces the eager graph lower bit-tight.
+
+        attn_layer > 0 exercises the carry-all compact pair enumeration
+        (``center_edge_pairs`` with ``static_nnei=None``) under make_fx
+        symbolic tracing: its ``nonzero``/tensor-``repeat`` output sizes are
+        UNBACKED SymInts, registered via ``xp_hint_dynamic_size`` — the
+        mechanism that makes the attention graph lower ``.pt2``-exportable.
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        # The real .pt2 export (``deserialize_to_file``) traces on CPU: it does
+        # ``model.to("cpu")`` and builds CPU synthetic inputs. Mirror that here so
+        # model params and the traced inputs share a device -- otherwise, on a
+        # CUDA runner, the CUDA params meet the CPU graph tensors and FakeTensor
+        # device propagation raises for aten.index_select.
+        model = self._make_model(attn_layer=attn_layer).to("cpu")
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            ei,
+            ev,
+            em,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+        )
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
+
+    def test_smooth_attention_divergence_pinned(self) -> None:
+        """End-to-end: the pt_expt DEFAULT route (carry-all graph) diverges
+        from the dense route for ``smooth_type_embedding=True`` + attention —
+        nonzero and bounded by the documented ~1e-4 magnitude.
+
+        The carry-all graph drops sel-padding phantom terms from the smooth
+        attention softmax denominator BY DESIGN (NeighborGraph PR-D), while
+        the dense path keeps them, so dense output is sel-dependent.  This
+        test pins that divergence at the public model forward so a future
+        refactor cannot silently change the carry-all smooth semantics.
+        ``neighbor_graph_method="legacy"`` is the escape hatch restoring the
+        dense numbers; the parity tests above cover the smooth=False regime
+        where the two routes agree bit-tight.
+        """
+        model = self._make_model(attn_layer=2, smooth=True)
+        model.eval()
+        coord = self.coord.clone().requires_grad_(True)
+        box = self.cell.reshape(1, 9)
+        # None = the default flip: graph-eligible mixed_types -> carry-all graph
+        graph = model.call_common(coord, self.atype, box, neighbor_graph_method=None)
+        dense = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        e_diff = (graph["energy_redu"] - dense["energy_redu"]).abs().max().item()
+        f_diff = (graph["energy_derv_r"] - dense["energy_derv_r"]).abs().max().item()
+        # nonzero: well above fp64 accumulation noise of a bit-tight parity
+        assert e_diff > 1e-10, f"expected smooth divergence, got {e_diff:.3e}"
+        # bounded: the documented magnitude is ~1e-4; 1e-3 leaves headroom
+        assert e_diff < 1e-3, f"smooth divergence too large: {e_diff:.3e}"
+        assert f_diff < 1e-3, f"smooth force divergence too large: {f_diff:.3e}"
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_graph_route_float32(self, attn_layer) -> None:
+        """A float32 model runs the graph route and matches the dense route.
+
+        The descriptor-level ``call_graph`` casts ``edge_vec`` to the
+        descriptor precision manually (``@cast_precision`` cannot see inside
+        the NeighborGraph dataclass); without it, fp32 models crash with a
+        double-vs-float matmul on the graph route while the dense route works.
+        fp32 accumulation-order differences bound the tolerance (1e-6/1e-5),
+        per the fp32-computation guidance.
+        """
+        from deepmd.pt_expt.descriptor.dpa1 import DescrptDPA1 as _D
+        from deepmd.pt_expt.fitting import InvarFitting as _F
+
+        ds = _D(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.nt,
+            neuron=[3, 6],
+            axis_neuron=2,
+            attn=4,
+            attn_layer=attn_layer,
+            attn_dotr=True,
+            smooth_type_embedding=False,
+            precision="float32",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        ft = _F(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=True,
+            precision="float32",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        model = EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+        model.eval()
+        graph = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.cell.reshape(1, 9),
+            neighbor_graph_method="dense",
+        )
+        dense = model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.cell.reshape(1, 9),
+            neighbor_graph_method="legacy",
+        )
+        tol = {"rtol": 1e-5, "atol": 1e-6}
+        torch.testing.assert_close(graph["energy_redu"], dense["energy_redu"], **tol)
+        torch.testing.assert_close(
+            graph["energy_derv_r"], dense["energy_derv_r"], **tol
+        )

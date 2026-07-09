@@ -90,6 +90,18 @@ def get_xp_precision(
         raise ValueError(f"unsupported precision {precision} for {xp}")
 
 
+def to_numpy_dtype(dtype: Any) -> np.dtype:
+    """Normalize backend dtype objects to a NumPy dtype."""
+    dtype = getattr(dtype, "as_numpy_dtype", dtype)
+    try:
+        return np.dtype(dtype)
+    except TypeError:
+        dtype_name = getattr(dtype, "name", None)
+        if dtype_name is not None:
+            return np.dtype(dtype_name)
+        raise
+
+
 class NativeOP(ABC):
     """The unit operation of a native model."""
 

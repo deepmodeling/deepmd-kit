@@ -979,29 +979,35 @@ class WignerDCalculator(NativeOP):
         q: Any,
         max_power: int,
     ) -> Any:
-        """Precompute powers ``q_i^k`` as a dense table with shape ``(4, max_power+1, E)``."""
+        """Precompute powers ``q_i^k`` as a dense table with shape ``(4, max_power+1, E)``.
+
+        The table is built by an explicit multiply chain: a ``cumprod`` over
+        the short power axis lowers to a scan whose forward and leave-one-out
+        backward cost several milliseconds per model call at typical edge
+        counts, whereas the unrolled chain stays a fusable pointwise sequence.
+        """
         xp = array_api_compat.array_namespace(q)
-        device = array_api_compat.device(q)
-        n_edge = q.shape[0]
         components = xp.permute_dims(q, (1, 0))
-        ones = xp.ones((4, n_edge), dtype=q.dtype, device=device)
+        ones = xp.ones_like(components)
         if max_power == 0:
-            return xp.reshape(ones, (4, 1, n_edge))
-        # Cumulative products built by iterated multiplication (``max_power`` is a
-        # compile-time constant, so the unrolled loop is export-friendly).
-        levels = [ones]
-        acc = ones
-        for _ in range(max_power):
-            acc = acc * components
-            levels.append(acc)
-        return xp.stack(levels, axis=1)
+            return ones[:, None, :]
+        powers = [ones, components]
+        for _ in range(max_power - 1):
+            powers.append(powers[-1] * components)
+        return xp.stack(powers, axis=1)
 
     @staticmethod
     def _build_monomial_matrix(
         powers: Any,
         monomial_exponents: Any,
     ) -> Any:
-        """Assemble the monomial design matrix for one fixed degree by gather/prod."""
+        """Assemble the monomial design matrix for one fixed degree.
+
+        The four gathered factor rows are combined by explicit multiplies:
+        ``prod(dim=0)`` lowers to a ``cumprod`` scan pair (forward plus
+        leave-one-out backward) on the large ``(4, M, E)`` intermediate,
+        while two multiply levels keep the chain pointwise and fusable.
+        """
         xp = array_api_compat.array_namespace(powers)
         n_mono = monomial_exponents.shape[0]
         n_edge = powers.shape[-1]
@@ -1010,7 +1016,25 @@ class WignerDCalculator(NativeOP):
             (4, n_mono, n_edge),
         )
         selected = xp_take_along_axis(powers, gather_idx, axis=1)
-        return xp.permute_dims(xp.prod(selected, axis=0), (1, 0))
+        product = (selected[0] * selected[1]) * (selected[2] * selected[3])
+        return xp.permute_dims(product, (1, 0))
+
+    def _monomial_matrix(
+        self,
+        edge_quaternion: Any,
+        exp_name: str,
+        max_power: int,
+    ) -> Any:
+        """Evaluate one degree kernel's monomial basis via the dense power-table chain."""
+        xp = array_api_compat.array_namespace(edge_quaternion)
+        device = array_api_compat.device(edge_quaternion)
+        powers = self._precompute_powers(edge_quaternion, max_power)
+        return self._build_monomial_matrix(
+            powers,
+            xp_asarray_nodetach(
+                xp, getattr(self.small_order_kernels, exp_name), device=device
+            ),
+        )
 
     def _compute_l1_block(self, edge_quaternion: Any) -> Any:
         """Compute the vector block directly from the Cartesian rotation matrix."""
@@ -1048,11 +1072,7 @@ class WignerDCalculator(NativeOP):
         xp = array_api_compat.array_namespace(edge_quaternion)
         device = array_api_compat.device(edge_quaternion)
         n_edge = edge_quaternion.shape[0]
-        powers = self._precompute_powers(edge_quaternion, 6)
-        monomials = self._build_monomial_matrix(
-            powers,
-            xp_asarray_nodetach(xp, self.small_order_kernels.exp_l3, device=device),
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l3", 6)
         c = xp_asarray_nodetach(
             xp,
             self.small_order_kernels.C_l3,
@@ -1070,11 +1090,7 @@ class WignerDCalculator(NativeOP):
         xp = array_api_compat.array_namespace(edge_quaternion)
         device = array_api_compat.device(edge_quaternion)
         n_edge = edge_quaternion.shape[0]
-        powers = self._precompute_powers(edge_quaternion, 8)
-        monomials = self._build_monomial_matrix(
-            powers,
-            xp_asarray_nodetach(xp, self.small_order_kernels.exp_l4, device=device),
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l4", 8)
         c = xp_asarray_nodetach(
             xp,
             self.small_order_kernels.C_combined_l3l4,
@@ -1091,11 +1107,7 @@ class WignerDCalculator(NativeOP):
         xp = array_api_compat.array_namespace(edge_quaternion)
         device = array_api_compat.device(edge_quaternion)
         n_edge = edge_quaternion.shape[0]
-        powers = self._precompute_powers(edge_quaternion, 10)
-        monomials = self._build_monomial_matrix(
-            powers,
-            xp_asarray_nodetach(xp, self.small_order_kernels.exp_l5, device=device),
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l5", 10)
         c = xp_asarray_nodetach(
             xp,
             self.small_order_kernels.C_l5,
@@ -1113,11 +1125,7 @@ class WignerDCalculator(NativeOP):
         xp = array_api_compat.array_namespace(edge_quaternion)
         device = array_api_compat.device(edge_quaternion)
         n_edge = edge_quaternion.shape[0]
-        powers = self._precompute_powers(edge_quaternion, 12)
-        monomials = self._build_monomial_matrix(
-            powers,
-            xp_asarray_nodetach(xp, self.small_order_kernels.exp_l6, device=device),
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l6", 12)
         c = xp_asarray_nodetach(
             xp,
             self.small_order_kernels.C_combined_l5l6,

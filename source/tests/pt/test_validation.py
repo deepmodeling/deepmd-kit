@@ -20,11 +20,17 @@ from dargs.dargs import (
     ArgumentValueError,
 )
 
+from deepmd.pt.model.model import (
+    get_model,
+)
 from deepmd.pt.train.validation import (
     BEST_METRIC_NAME_INFO_KEY,
     TOPK_RECORDS_INFO_KEY,
     FullValidator,
     resolve_full_validation_start_step,
+)
+from deepmd.pt.utils.env import (
+    DEVICE,
 )
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
@@ -32,9 +38,14 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.utils.argcheck import (
     normalize,
 )
+from deepmd.utils.eval_metrics import (
+    SPIN_FULL_VALIDATION_PROFILE,
+    compute_full_validation_spin_metrics,
+)
 
 from .model.test_permutation import (
     model_se_e2_a,
+    model_spin,
 )
 
 
@@ -173,6 +184,21 @@ def _make_single_task_config() -> dict:
             "full_val_start": 0.0,
         },
     }
+
+
+def _make_spin_task_config() -> dict:
+    config = _make_single_task_config()
+    config["loss"] = {
+        "type": "ener_spin",
+        "start_pref_e": 1.0,
+        "limit_pref_e": 1.0,
+        "start_pref_fr": 1.0,
+        "limit_pref_fr": 1.0,
+        "start_pref_fm": 1.0,
+        "limit_pref_fm": 1.0,
+    }
+    config["validating"]["validation_metric"] = "FR:MAE"
+    return config
 
 
 class TestValidationHelpers(unittest.TestCase):
@@ -450,6 +476,15 @@ class TestValidationHelpers(unittest.TestCase):
 
 
 class TestValidationArgcheck(unittest.TestCase):
+    def test_normalize_accepts_amp_infer(self) -> None:
+        config = _make_single_task_config()
+        normalized = normalize(config)
+        self.assertFalse(normalized["validating"]["amp_infer"])
+
+        config["validating"]["amp_infer"] = True
+        normalized = normalize(config)
+        self.assertTrue(normalized["validating"]["amp_infer"])
+
     def test_normalize_rejects_missing_validation_data(self) -> None:
         config = _make_single_task_config()
         del config["training"]["validation_data"]
@@ -490,3 +525,140 @@ class TestValidationArgcheck(unittest.TestCase):
         config["validating"]["max_best_ckpt"] = 0
         with self.assertRaisesRegex(ArgumentValueError, "max_best_ckpt"):
             normalize(config)
+
+    def test_normalize_accepts_spin_force_metric(self) -> None:
+        config = _make_spin_task_config()
+        normalized = normalize(config)
+        self.assertEqual(normalized["validating"]["validation_metric"], "FR:MAE")
+
+    def test_normalize_rejects_energy_force_metric_for_spin(self) -> None:
+        config = _make_spin_task_config()
+        config["validating"]["validation_metric"] = "F:MAE"
+        with self.assertRaisesRegex(ValueError, "spin training"):
+            normalize(config)
+
+    def test_normalize_rejects_spin_force_metric_for_energy(self) -> None:
+        config = _make_single_task_config()
+        config["validating"]["validation_metric"] = "FR:MAE"
+        with self.assertRaisesRegex(ValueError, "energy training"):
+            normalize(config)
+
+    def test_normalize_rejects_inactive_spin_prefactor_metric(self) -> None:
+        config = _make_spin_task_config()
+        config["validating"]["validation_metric"] = "FM:RMSE"
+        config["loss"]["limit_pref_fm"] = 0.0
+        with self.assertRaisesRegex(ValueError, "start_pref_fm"):
+            normalize(config)
+
+
+class TestFullValidationMetricProfiles(unittest.TestCase):
+    def test_spin_profile_splits_real_and_magnetic_forces(self) -> None:
+        prediction = {
+            "energy": np.array([[6.0]]),
+            "force": np.array([[1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0]]),
+            "force_mag": np.array(
+                [[10.0, 10.0, 10.0, 99.0, 99.0, 99.0, 20.0, 20.0, 20.0]]
+            ),
+            "mask_mag": np.array([[True, False, True]]),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_force_mag": 1.0,
+            "energy": np.array([[0.0]]),
+            "force": np.zeros((1, 9)),
+            "force_mag": np.zeros((1, 9)),
+        }
+        metrics = compute_full_validation_spin_metrics(
+            prediction, test_data, natoms=3, has_pbc=False
+        )
+        # Energy is normalized per atom: |6| / 3 = 2.
+        self.assertAlmostEqual(metrics["mae_e_per_atom"][0], 2.0)
+        self.assertAlmostEqual(metrics["rmse_e_per_atom"][0], 2.0)
+        # Real force spans all three atoms (nine components).
+        self.assertAlmostEqual(metrics["mae_fr"][0], 2.0)
+        self.assertAlmostEqual(metrics["rmse_fr"][0], np.sqrt(42.0 / 9.0))
+        self.assertEqual(metrics["mae_fr"][1], 9.0)
+        # Magnetic force only sees masked atoms 0 and 2 (six components).
+        self.assertAlmostEqual(metrics["mae_fm"][0], 15.0)
+        self.assertAlmostEqual(metrics["rmse_fm"][0], np.sqrt(250.0))
+        self.assertEqual(metrics["mae_fm"][1], 6.0)
+
+    def test_spin_profile_omits_magnetic_force_when_unavailable(self) -> None:
+        prediction = {
+            "energy": np.array([[3.0]]),
+            "force": np.zeros((1, 9)),
+            "force_mag": np.zeros((1, 9)),
+            "mask_mag": np.array([[True, False, True]]),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_force_mag": 0.0,
+            "energy": np.array([[0.0]]),
+            "force": np.zeros((1, 9)),
+        }
+        metrics = compute_full_validation_spin_metrics(
+            prediction, test_data, natoms=3, has_pbc=False
+        )
+        self.assertIn("mae_fr", metrics)
+        self.assertNotIn("mae_fm", metrics)
+
+    def test_predict_outputs_emits_real_and_magnetic_forces(self) -> None:
+        model = get_model(deepcopy(model_spin)).to(DEVICE)
+        nframes = 2
+        natoms = 5
+        rng = np.random.default_rng(0)
+        coord = 3.0 * rng.random((nframes, natoms * 3))
+        atom_types = np.tile(np.array([0, 0, 0, 1, 1]), (nframes, 1))
+        box = np.tile((np.eye(3) * 6.0).reshape(9), (nframes, 1))
+        spin = 0.5 * rng.random((nframes, natoms * 3))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": False,
+                        "max_best_ckpt": 1,
+                        "validation_metric": "FR:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=model,
+                    state_store={},
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=False,
+                )
+                self.assertIs(validator.profile, SPIN_FULL_VALIDATION_PROFILE)
+                prediction = validator._predict_outputs(
+                    coord=coord,
+                    atom_types=atom_types,
+                    box=box,
+                    fparam=None,
+                    aparam=None,
+                    spin=spin,
+                    include_virial=False,
+                    natoms=natoms,
+                    nframes=nframes,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(prediction["energy"].shape, (nframes, 1))
+        self.assertEqual(prediction["force"].shape, (nframes, natoms * 3))
+        self.assertEqual(prediction["force_mag"].shape, (nframes, natoms * 3))
+        self.assertEqual(prediction["mask_mag"].shape, (nframes, natoms))
+        self.assertNotIn("virial", prediction)
+        # use_spin=[True, False, False] makes only type-0 atoms magnetic.
+        expected_mask = np.tile(
+            np.array([True, True, True, False, False]), (nframes, 1)
+        )
+        np.testing.assert_array_equal(
+            prediction["mask_mag"].astype(bool), expected_mask
+        )
