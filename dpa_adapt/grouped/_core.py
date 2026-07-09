@@ -323,10 +323,16 @@ class Assembly:
 
         manifest_groups = []
         systems: list[str] = []
+        used_system_names: set[str] = set()
         for group_idx, group in enumerate(self.groups):
-            system_path = systems_root / _safe_name(
-                group.key, fallback=f"group_{group_idx}"
-            )
+            base_name = _safe_name(group.key, fallback=f"group_{group_idx}")
+            system_name = base_name
+            suffix = 1
+            while system_name in used_system_names:
+                system_name = f"{base_name}_{suffix}"
+                suffix += 1
+            used_system_names.add(system_name)
+            system_path = systems_root / system_name
             _write_group_system(
                 group,
                 group_idx=group_idx,

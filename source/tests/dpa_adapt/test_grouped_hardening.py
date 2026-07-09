@@ -160,3 +160,30 @@ def test_padding_coords_are_non_physical(tmp_path):
     assert (
         np.linalg.norm(coord[0][pad][0]) > 20.0
     )  # far outside the 20 A box, not origin
+
+
+def test_write_disambiguates_groups_with_colliding_sanitized_names(tmp_path):
+    """Two group keys that sanitize to the same directory name must not
+    overwrite one another; each gets its own system dir and both labels
+    survive in the manifest.
+    """
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
+
+    a = Assembly(target="y", type_map=["H", "O"])
+    g1 = a.group(key="group!!", label=1.0)
+    g1.add([[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"])
+    g2 = a.group(key="group??", label=2.0)
+    g2.add([[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"])
+
+    res = a.write(tmp_path / "out")
+
+    systems = res["systems"]
+    assert len(systems) == len(set(systems)) == 2
+
+    labels = sorted(
+        float(np.load(tmp_path / "out" / s / "set.000" / "y.npy").reshape(-1)[0])
+        for s in systems
+    )
+    assert labels == [1.0, 2.0]

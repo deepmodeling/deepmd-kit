@@ -199,6 +199,86 @@ def test_group_property_model_pool_is_nan_safe_for_virtual_atoms() -> None:
     assert out["target"].shape[0] == 1
 
 
+def test_group_property_model_honors_descriptor_mixed_types_contract(
+    monkeypatch,
+) -> None:
+    """``forward`` must build the neighbor list with the descriptor's own
+    ``mixed_types()`` value, not a hard-coded ``True``, so descriptors that
+    require type-distinguished neighbor lists get one.
+    """
+    torch, GroupPropertyModel, GroupPropertyFittingNet = (
+        _require_group_property_backend()
+    )
+    import deepmd.pt.model.model.group_property_model as gpm_module
+
+    class _NonMixedDescriptor(torch.nn.Module):
+        def get_rcut(self) -> float:
+            return 6.0
+
+        def get_sel(self) -> list[int]:
+            return [8]
+
+        def mixed_types(self) -> bool:
+            return False
+
+        def forward(
+            self,
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping=None,
+            charge_spin=None,
+        ):
+            nframes, nall = extended_atype.shape
+            return (
+                torch.ones(nframes, nall, 4, dtype=extended_coord.dtype),
+                None,
+                None,
+                None,
+                None,
+            )
+
+    fitting = GroupPropertyFittingNet(
+        ntypes=3,
+        dim_descrpt=4,
+        property_name="target",
+        task_dim=1,
+        neuron=[4],
+    )
+    model = GroupPropertyModel(
+        descriptor=_NonMixedDescriptor(),
+        fitting=fitting,
+        type_map=["C", "O", "H"],
+    )
+    assert model.mixed_types() is False
+
+    seen_mixed_types = []
+    real_fn = gpm_module.extend_input_and_build_neighbor_list
+
+    def _spy(*args, **kwargs):
+        seen_mixed_types.append(kwargs.get("mixed_types"))
+        return real_fn(*args, **kwargs)
+
+    monkeypatch.setattr(gpm_module, "extend_input_and_build_neighbor_list", _spy)
+
+    coord = torch.tensor([[[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]]])
+    atype = torch.tensor([[0, 1]])
+    group_id = torch.tensor([[0]])
+    weight = torch.tensor([[1.0]])
+    pool_mask = torch.tensor([[1.0, 1.0]])
+
+    model(
+        coord,
+        atype,
+        box=None,
+        group_id=group_id,
+        weight=weight,
+        pool_mask=pool_mask,
+    )
+
+    assert seen_mixed_types == [False]
+
+
 def test_masked_mean_pool_is_nan_safe() -> None:
     """Standalone check of the model's NaN-safe masked mean pool.
 

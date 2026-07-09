@@ -265,7 +265,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
-                mixed_types=True,
+                mixed_types=self.mixed_types(),
                 box=box,
             )
         )
