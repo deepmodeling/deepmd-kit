@@ -99,14 +99,13 @@ class TestDpa1DescriptorCallGraph:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            {"tebd_input_mode": "strip"},  # strip tebd: graph unsupported -> dense
             {"exclude_types": [(0, 1)]},  # type exclusion: graph unsupported -> dense
         ],
     )
     def test_ineligible_config_falls_back_to_dense(self, kwargs) -> None:
-        """attn_layer=0 configs the graph can't handle (strip tebd, exclude_types)
-        must report uses_graph_lower()=False and run the dense body without
-        raising (regression: Task-3 routing previously raised NotImplementedError).
+        """attn_layer=0 configs the graph can't handle (exclude_types) must report
+        uses_graph_lower()=False and run the dense body without raising (strip is
+        now graph-eligible; its routing + parity is covered by TestDpa1StripRouting).
         """
         dd = DescrptDPA1(
             rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0, **kwargs
@@ -200,3 +199,89 @@ class TestDpa1DescriptorCallGraph:
         n = atype_local.shape[0]
         assert grrg.shape[0] == n and grrg.ndim == 2
         assert rot_mat.shape[0] == n and rot_mat.ndim == 3
+
+
+class TestDpa1StripRouting:
+    """Strip is now graph-eligible: ``uses_graph_lower()`` admits it, ``call``
+    routes through the graph adapter, and the adapter (``static_nnei``) is
+    bit-exact with the legacy ``_call_dense`` for EVERY strip config -- including
+    ``smooth_type_embedding=True`` at ``attn_layer>0`` (the adapter reproduces
+    the dense phantom-neighbor terms, unlike the direct carry-all ``call_graph``).
+    """
+
+    def setup_method(self) -> None:
+        rng = np.random.default_rng(7)
+        self.nloc = 4
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+
+    def _make(self, type_one_side: bool, smooth: bool, attn_layer: int) -> DescrptDPA1:
+        return DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[20],  # non-binding
+            ntypes=2,
+            attn_layer=attn_layer,
+            axis_neuron=2,
+            neuron=[6, 12],
+            tebd_input_mode="strip",
+            type_one_side=type_one_side,
+            smooth_type_embedding=smooth,
+            resnet_dt=False,
+        )
+
+    def test_uses_graph_lower_strip_gate(self) -> None:
+        """The gate admits non-compressed strip; excludes compressed and exclude_types."""
+        dd = self._make(type_one_side=False, smooth=True, attn_layer=2)
+        assert dd.uses_graph_lower() is True  # strip is now graph-eligible
+        # negative contract: compression keeps the descriptor on the dense path
+        dd.compress = True
+        assert dd.uses_graph_lower() is False
+        dd.compress = False
+        # negative contract: exclude_types still forces dense (separate feature,
+        # owned by the pair-exclude PR; strip does NOT change its eligibility)
+        dd_excl = DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[20],
+            ntypes=2,
+            attn_layer=2,
+            tebd_input_mode="strip",
+            exclude_types=[(0, 1)],
+            resnet_dt=False,
+        )
+        assert dd_excl.uses_graph_lower() is False
+
+    @pytest.mark.parametrize("type_one_side", [False, True])  # strip table branch
+    @pytest.mark.parametrize(
+        "smooth", [False, True]
+    )  # switch-smoothing + smooth attention
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # no-attn and multi-layer attention
+    def test_call_strip_graph_equals_dense(
+        self, type_one_side, smooth, attn_layer
+    ) -> None:
+        """The routed ``call`` (graph adapter) is bit-exact with ``_call_dense``."""
+        dd = self._make(type_one_side, smooth, attn_layer)
+        assert dd.uses_graph_lower() is True  # precondition: call routes to graph
+        (
+            ext_coord,
+            ext_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        routed = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        dense = dd._call_dense(ext_coord, ext_atype, nlist)
+        assert len(routed) == len(dense)
+        for r, d in zip(routed, dense, strict=True):
+            if r is None:
+                assert d is None
+                continue
+            assert not np.any(np.isnan(r))
+            np.testing.assert_allclose(r, d, rtol=1e-12, atol=1e-12)

@@ -252,8 +252,9 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize("tm", ["concat", "strip"])  # tebd_input_mode
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph(self, prec) -> None:
+    def test_make_fx_graph(self, prec, tm) -> None:
         """make_fx (export-readiness) of the attn_layer=0 GRAPH forward.
 
         For ``attn_layer == 0`` the dense ``forward`` routes through the
@@ -275,6 +276,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             self.sel_mix,
             self.nt,
             attn_layer=0,
+            tebd_input_mode=tm,
             precision=prec,
             seed=GLOBAL_SEED,
         ).to(self.device)
@@ -311,9 +313,10 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize("tm", ["concat", "strip"])  # tebd_input_mode
     @pytest.mark.parametrize("smooth", [False, True])  # smooth attention branch
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph_attn(self, prec, smooth) -> None:
+    def test_make_fx_graph_attn(self, prec, smooth, tm) -> None:
         """make_fx (export-readiness) of the GRAPH forward with attention.
 
         MERGE BLOCKER (NeighborGraph PR-D): pt_expt compiled training routes
@@ -335,6 +338,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             self.sel_mix,
             self.nt,
             attn_layer=2,
+            tebd_input_mode=tm,
             attn_dotr=True,
             smooth_type_embedding=smooth,
             precision=prec,

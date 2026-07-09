@@ -177,7 +177,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return 0
+        return self.dp.get_numb_dos()
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
