@@ -33,9 +33,6 @@ from deepmd.dpmodel.utils.neighbor_list import (
     EdgeNeighborList,
     NeighborList,
 )
-from deepmd.pt.utils.region import (
-    normalize_coord,
-)
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_neighbor_matrix,
 )
@@ -164,74 +161,25 @@ class NvNeighborList(NeighborList):
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`. The
         returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``.
         """
-        from nvalchemiops.torch.neighbors import (
-            neighbor_list,
+        device = coord.device
+        nf, nloc = atype.shape[:2]
+        target_neighbors = int(sum(sel))
+        coord = coord.reshape(nf, nloc, 3)
+        periodic = box is not None
+
+        # Delegate the raw search to the shared helper in nv_graph_builder.
+        # Function-level import avoids a module-level pt -> pt_expt cycle while
+        # keeping the search logic in exactly one place (graph-builder primary,
+        # legacy strategy is the deprecation-bound caller).
+        from deepmd.pt_expt.utils.nv_graph_builder import (
+            nv_search_matrix,
         )
 
-        device = coord.device
+        coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
+            coord, box, rcut, start_capacity=target_neighbors
+        )
+
         with _input_device_context(device):
-            nf, nloc = atype.shape[:2]
-            target_neighbors = int(sum(sel))
-            search_capacity = target_neighbors
-            total_atoms = nf * nloc
-            coord = coord.reshape(nf, nloc, 3)
-            periodic = box is not None
-            if not periodic:
-                cell = None
-                pbc = None
-            else:
-                cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
-                coord = normalize_coord(coord, cell)
-                pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
-            positions_for_nlist = coord.reshape(total_atoms, 3).detach()
-            batch_idx = torch.arange(
-                nf, dtype=torch.int32, device=device
-            ).repeat_interleave(nloc)
-            batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
-            method = choose_nv_nlist_method(nloc, periodic=periodic, device=device)
-
-            # ``batch_naive`` otherwise derives ``max_atoms_per_system`` from
-            # ``batch_ptr`` with a ``.max().item()`` device->host sync on every
-            # call. Our batches are homogeneous (``nloc`` atoms per frame), so the
-            # value is known on the host; passing it explicitly removes that
-            # per-call sync. ``batch_cell_list`` neither accepts the argument nor
-            # has a ``**kwargs`` catch-all, so the override is guarded on method.
-            extra_nl_kwargs: dict[str, Any] = {}
-            if method == "batch_naive":
-                extra_nl_kwargs["max_atoms_per_system"] = int(nloc)
-
-            # Grow the search capacity until all neighbors fit so the distance-sort
-            # below selects the true nearest ``sum(sel)``.
-            while True:
-                nlist_result = neighbor_list(
-                    positions_for_nlist,
-                    float(rcut),
-                    cell=cell,
-                    pbc=pbc,
-                    batch_idx=batch_idx,
-                    batch_ptr=batch_ptr,
-                    method=method,
-                    max_neighbors=int(search_capacity),
-                    return_neighbor_list=False,
-                    wrap_positions=False,
-                    **extra_nl_kwargs,
-                )
-                if len(nlist_result) == 2:
-                    neighbor_matrix, num_neighbors = nlist_result
-                    shifts = torch.zeros(
-                        (*neighbor_matrix.shape, 3),
-                        dtype=torch.int32,
-                        device=device,
-                    )
-                else:
-                    neighbor_matrix, num_neighbors, shifts = nlist_result
-                max_found = (
-                    int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
-                )
-                if max_found <= search_capacity:
-                    break
-                search_capacity = max(max_found, _grow_search_capacity(search_capacity))
-
             if return_mode == "edges":
                 return edge_schema_from_neighbor_matrix(
                     coord=coord,

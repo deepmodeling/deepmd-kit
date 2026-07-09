@@ -211,6 +211,25 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         return x
 
 
+def xp_hint_dynamic_size(x: Array) -> None:
+    """Mark a data-dependent leading dimension as a valid size for torch.export.
+
+    Under symbolic tracing (``make_fx`` / ``torch.export``) the length of a
+    data-dependent array (e.g. the output of ``nonzero`` or a tensor-``repeat``)
+    is an UNBACKED SymInt; guarding Python control flow or allocations on it
+    raises ``GuardOnDataDependentSymNode``. ``torch._check_is_size`` registers
+    the ``>= 0`` size hint that lets the tracer treat it as a proper dimension
+    (recorded as a ``sym_constrain_range_for_size`` node, preserved by AOTI).
+
+    No-op for numpy / jax / eager-torch concrete shapes — safe to call
+    unconditionally from dpmodel code (torch imported lazily, torch arrays only).
+    """
+    if array_api_compat.is_torch_array(x):
+        import torch
+
+        torch._check_is_size(x.shape[0])
+
+
 def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
     """Segment max-assign of values into x at the specified indices.
 

@@ -88,3 +88,28 @@ class TestAseCarryAll(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_ase_excludes_virtual_atoms_like_dense(self) -> None:
+        """Virtual atoms (atype < 0) excluded as center AND neighbor.
+
+        The dense reference builder filters virtual atoms during construction;
+        the geometric ASE search is type-blind, so the builder must post-filter
+        to keep the World-2 "same neighbor set" contract (OutisLi, #5714).
+        """
+        pytest.importorskip("ase")
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+            build_neighbor_graph_ase,
+        )
+
+        rng = np.random.default_rng(5)
+        coord = rng.normal(size=(1, 8, 3)) * 2.0
+        atype = np.array([[0, 1, -1, 0, 1, -1, 0, 1]], dtype=np.int64)
+        box = np.eye(3)[None] * 8.0
+        ng_ase = build_neighbor_graph_ase(coord, atype, box, rcut=4.0)
+        ng_ref = build_neighbor_graph(coord, atype, box, rcut=4.0)
+        self.assertEqual(self._sets(ng_ase, 8), self._sets(ng_ref, 8))
+        # no real edge touches a virtual atom
+        ei = ng_ase.edge_index[:, ng_ase.edge_mask]
+        flat_atype = atype.reshape(-1)
+        assert np.all(flat_atype[ei[0]] >= 0) and np.all(flat_atype[ei[1]] >= 0)

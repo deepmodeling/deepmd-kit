@@ -30,6 +30,13 @@ OUTPUT_DEFS = {
         r_differentiable=True,
         c_differentiable=True,
     ),
+    "dos": OutputVariableDef(
+        "dos",
+        shape=[-1],
+        reducible=True,
+        r_differentiable=False,
+        c_differentiable=False,
+    ),
     "mask": OutputVariableDef(
         "mask",
         shape=[1],
@@ -61,6 +68,7 @@ class HLO(BaseModel):
         # new in v3.1.1
         has_default_fparam: bool = False,
         default_fparam: list[float] | None = None,
+        numb_dos: int = 0,
         # property models only
         var_name: str | None = None,
         task_dim: int | None = None,
@@ -88,6 +96,7 @@ class HLO(BaseModel):
         self.model_def_script = model_def_script
         self._has_default_fparam = has_default_fparam
         self.default_fparam = default_fparam
+        self.numb_dos = numb_dos
         self._var_name = var_name
         self._task_dim = task_dim
         self._intensive = intensive
@@ -236,6 +245,10 @@ class HLO(BaseModel):
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
+
+    def get_numb_dos(self) -> int:
+        """Get the number of DOS."""
+        return self.numb_dos
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

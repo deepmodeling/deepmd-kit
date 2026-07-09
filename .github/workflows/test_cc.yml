@@ -111,7 +111,7 @@ jobs:
   pass:
     name: Pass testing C++
     needs: [testcc]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed

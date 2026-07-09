@@ -116,10 +116,12 @@ def test_border_op_backward_direct(dtype: torch.dtype) -> None:
 
 def test_border_op_backward_accumulation_semantics() -> None:
     """Single-rank self-exchange backward: each ghost slot's grad is
-    accumulated into the local atom whose index sendlist points to.
+    accumulated into the local atom whose index sendlist points to, and the
+    ghost rows are zeroed.
 
-    Reference: for forward ``g_ext[nloc + i] = g[sendlist[i]]``, the
-    reverse is ``grad_g[sendlist[i]] += grad_g_ext[nloc + i]``.
+    Reference: for forward ``g_ext[nloc + i] = g[sendlist[i]]``, the reverse is
+    ``grad_g[sendlist[i]] += grad_g_ext[nloc + i]`` with ``grad_g[ghost] = 0``
+    (the forward overwrites the ghost INPUT rows, so they carry no gradient).
     """
     nloc, nghost = 4, 4
     nall = nloc + nghost
@@ -164,13 +166,15 @@ def test_border_op_backward_accumulation_semantics() -> None:
         comm[7],
     )
 
-    # Expected: grad_g_local += grad_g_ext[nloc:] indexed by sendlist.
-    # Ghost rows pass through unchanged (the C++ backward does not
-    # zero them; the wrapper's autograd consumer is F.pad whose
-    # backward drops them anyway).
+    # Expected: grad_g_local += grad_g_ext[nloc:] indexed by sendlist, and the
+    # ghost rows are zero. The forward overwrites every ghost row
+    # (g_ext[ghost] = g[owner]), so a ghost INPUT never reaches the output and
+    # its gradient is exactly zero -- the backward zeros those rows to return
+    # the true Jacobian-vector product.
     expected = grad_g1_orig.clone()
     for i, src_local_idx in enumerate(sendlist_indices.tolist()):
         expected[src_local_idx] += grad_g1_orig[nloc + i]
+    expected[nloc:] = 0.0
     np.testing.assert_allclose(
         grad_in.numpy(),
         expected.numpy(),
@@ -241,8 +245,14 @@ def test_border_op_export_autograd(dtype: torch.dtype) -> None:
         atol=atol,
         rtol=rtol,
     )
-    # Ghost rows of grad_in are not semantically meaningful: in
-    # production the wrapper's input is ``F.pad(node_ebd, value=0)``
-    # so the ghost-row gradient is consumed by ``F.pad``'s backward
-    # (which drops it).  The C++ backward leaves them as the upstream
-    # grad (here, ones), but we don't assert on it.
+    # Ghost INPUT rows are overwritten by the forward exchange, so the corrected
+    # C++ backward returns zero there (the true VJP). In production the DPA2/DPA3
+    # wrappers feed ``F.pad(node_ebd, value=0)`` whose backward also drops these
+    # rows, so they are insensitive to the ghost gradient; SeZM feeds real
+    # per-node features through the exchange and is not.
+    np.testing.assert_allclose(
+        grad_in[nloc:].numpy(),
+        np.zeros((nghost, n_dim), dtype=grad_in.detach().numpy().dtype),
+        atol=atol,
+        rtol=rtol,
+    )

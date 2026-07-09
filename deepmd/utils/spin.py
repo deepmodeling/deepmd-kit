@@ -30,18 +30,25 @@ class Spin:
                 The virtual coordinate is defined as the real coordinate plus spin * virtual_scale.
                 List of float values with shape of [ntypes] or [ntypes_spin] or one single float value for all types,
                 only used when use_spin is True for each atom type.
+    allow_missing_label: bool
+                Whether a training system that lacks a ``spin`` data file is admitted by
+                filling its per-atom spin with zeros instead of raising. Supported only by
+                the SeZM/DPA4 spin model. As a data-loading option it is excluded from
+                serialization.
     """
 
     def __init__(
         self,
         use_spin: list[bool],
         virtual_scale: list[float] | float,
+        allow_missing_label: bool = False,
     ) -> None:
         type_dtype = np.int32
         self.ntypes_real = len(use_spin)
         self.ntypes_spin = use_spin.count(True)
         self.use_spin = np.array(use_spin)
         self.spin_mask = self.use_spin.astype(np.int64)
+        self.allow_missing_label = bool(allow_missing_label)
         self.ntypes_real_and_spin = self.ntypes_real + self.ntypes_spin
         self.ntypes_placeholder = self.ntypes_real - self.ntypes_spin
         self.ntypes_input = 2 * self.ntypes_real  # with placeholder for input types

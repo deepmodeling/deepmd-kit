@@ -275,19 +275,26 @@ def make_model(
             coord
                 The coordinates of the atoms.
                 shape: nf x (nloc x 3)
+
             atype
                 The type of atoms. shape: nf x nloc
+
             box
                 The simulation box. shape: nf x 9
+
             fparam
                 frame parameter. nf x ndf
+
             aparam
                 atomic parameter. nf x nloc x nda
+
             do_atomic_virial
                 If calculate the atomic virial.
+
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+
             neighbor_list
                 Neighbor-list construction strategy for the DENSE-nlist path
                 only.  ``None`` uses the default all-pairs builder; an
@@ -296,6 +303,7 @@ def make_model(
                 is consumed by the dense lower; supplying it forces the dense
                 route (see below) and it is rejected together with an explicit
                 ``neighbor_graph_method``.
+
             neighbor_graph_method
                 Selects the lower the model routes through.  The option strings
                 refer to the neighbor-GRAPH builder, NOT the legacy dense nlist:
@@ -313,10 +321,14 @@ def make_model(
 
                 The graph routes (``"dense"``/``"ase"``, and the pt_expt
                 default-flip) require a ``mixed_types`` descriptor with a graph
-                lower (dpa1 ``attn_layer == 0``).  At non-binding ``sel`` the
-                graph matches the dense path exactly; at binding ``sel`` the
-                carry-all graph keeps neighbors the dense path truncates, so the
-                energy intentionally differs.
+                lower (dpa1/se_atten with concat type embedding and no
+                ``exclude_types``; attention layers included).  At non-binding
+                ``sel`` the graph matches the dense path exactly for the
+                non-smooth branch; at binding ``sel`` the carry-all graph keeps
+                neighbors the dense path truncates, and for
+                ``smooth_type_embedding=True`` the graph drops the dense
+                layout's sel-padding softmax terms, so the energy intentionally
+                differs (sel-independent graph semantics).
 
             Returns
             -------
@@ -463,7 +475,8 @@ def make_model(
                 ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
             else:
                 raise ValueError(
-                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                    f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "
+                    "supports 'dense'/'ase' only ('vesin'/'nv' require the pt_expt backend)."
                 )
             xp = array_api_compat.array_namespace(atype)
             nf, nloc = atype.shape[:2]
@@ -687,7 +700,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
         ) -> dict[str, Array]:
-            """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
+            """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
             The PRIMARY directly-callable graph interface (spec decision #14).
             Casts inputs/outputs to/from the model precision exactly like the
@@ -994,6 +1007,10 @@ def make_model(
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
+
+        def get_numb_dos(self) -> int:
+            """Get the number of DOS. Zero for models without a DOS output."""
+            return 0
 
         def has_default_fparam(self) -> bool:
             """Check if the model has default frame parameters."""

@@ -93,6 +93,19 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
+    def close(self) -> None:
+        """Release resources held by the backend.
+
+        The base implementation does nothing. Backends that hold persistent
+        resources (such as a TensorFlow session) should override it.
+        """
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
     def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
@@ -579,6 +592,16 @@ class DeepEval(ABC):
         )
         if self.deep_eval.get_has_spin() and hasattr(self, "output_def_mag"):
             self.deep_eval.output_def = self.output_def_mag
+
+    def close(self) -> None:
+        """Close the underlying backend evaluator, releasing its resources."""
+        self.deep_eval.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
 
     @property
     @abstractmethod

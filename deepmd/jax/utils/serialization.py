@@ -310,6 +310,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),
+            "numb_dos": model.get_numb_dos(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
             "sel_type": model.get_sel_type(),

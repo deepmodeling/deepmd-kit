@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import os
 from collections.abc import (
     Callable,
+    Mapping,
+)
+from copy import (
+    deepcopy,
+)
+from pathlib import (
+    Path,
 )
 from typing import (
     Any,
@@ -12,6 +18,9 @@ import numpy as np
 import tensorflow as tf
 
 from deepmd._vendors import ndtensorflow as xp
+from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+)
 from deepmd.tf2.common import (
     unwrap_value,
 )
@@ -21,17 +30,21 @@ from deepmd.tf2.make_model import (
 from deepmd.tf2.model.base_model import (
     BaseModel,
 )
+from deepmd.tf2.model.model import (
+    get_model,
+)
+from deepmd.tf2.train.trainer import (
+    TF2_TRAINING_STATE_FILE,
+)
 from deepmd.tf2.utils._dpmodel import (
     format_nlist,
 )
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
-
-
-def _default_jit_compile() -> bool:
-    return _env_flag("DP_JIT")
+from deepmd.tf2.utils.jit import (
+    default_jit_compile,
+)
+from deepmd.tf2.utils.multi_task import (
+    apply_shared_links,
+)
 
 
 class _ExportConstantArray:
@@ -260,7 +273,7 @@ def deserialize_to_savedmodel(
 ) -> None:
     """Deserialize the dictionary to a TensorFlow SavedModel directory."""
     if jit_compile is None:
-        jit_compile = _default_jit_compile()
+        jit_compile = default_jit_compile()
 
     # Import model registrations before deserializing the dpmodel payload.
     import deepmd.tf2.model.model  # noqa: F401
@@ -550,9 +563,157 @@ def deserialize_to_savedmodel(
 
 
 def serialize_from_file(model_file: str) -> dict:
-    """Serialize a TF2 SavedModel to a dictionary.
+    """Serialize a TF2 training checkpoint to a DeePMD model dictionary.
 
-    SavedModel does not currently carry enough structured variable metadata to
-    round-trip back to the DeePMD dictionary format.
+    TensorFlow SavedModel exports are inference artifacts and do not currently
+    carry enough structured variable metadata to round-trip back to DeePMD's
+    dictionary format.  The lossless source for TF2 is the ``.tf2``
+    CheckpointManager directory written by ``dp --tf2 train``.
     """
-    raise ValueError(f"TF2 backend cannot serialize {model_file!r} to a model dict")
+    path = Path(model_file)
+    if str(path).lower().endswith(".savedmodeltf"):
+        raise ValueError(
+            "TF2 SavedModel files cannot be serialized back to a DeePMD model "
+            "dict. Use the .tf2 training checkpoint directory or checkpoint "
+            "prefix instead."
+        )
+    checkpoint_path, state = _load_checkpoint_state(path)
+    model_def_script = state["model_def_script"]
+    models = _restore_models_from_checkpoint(checkpoint_path, model_def_script, state)
+    model_payload = _serialize_models(models, model_def_script)
+    min_nbor_dist = _normalize_json_value(state.get("min_nbor_dist"))
+    data = {
+        "backend": "TensorFlow2",
+        "model": model_payload,
+        "model_def_script": model_def_script,
+        "shared_links": state.get("shared_links"),
+        "@variables": {
+            "current_step": int(state.get("current_step", 0)),
+        },
+        "min_nbor_dist": min_nbor_dist,
+    }
+    if state.get("full_validation"):
+        data["full_validation"] = state["full_validation"]
+    return data
+
+
+class _TaskModelContainer(tf.Module):
+    """Track task-keyed TF modules with the same object graph as training."""
+
+    def __init__(self, models: Mapping[str, tf.Module]) -> None:
+        super().__init__(name="models")
+        self.task_keys = tuple(models)
+        for index, key in enumerate(self.task_keys):
+            setattr(self, f"task_{index}", models[key])
+
+
+def _load_checkpoint_state(path: Path) -> tuple[str, dict[str, Any]]:
+    checkpoint_path, state_dir = _resolve_checkpoint_path(path)
+    state_path = state_dir / TF2_TRAINING_STATE_FILE
+    if not state_path.is_file():
+        raise FileNotFoundError(
+            f"Cannot find TF2 checkpoint metadata {state_path!s}. "
+            "Only checkpoints produced by the TF2 trainer can be frozen or "
+            "compressed losslessly."
+        )
+    with state_path.open() as fp:
+        state = json.load(fp)
+    if state.get("backend") != "TensorFlow2":
+        raise ValueError(f"{state_path!s} is not a TensorFlow2 training state file.")
+    if "model_def_script" not in state:
+        raise ValueError(f"{state_path!s} does not contain model_def_script.")
+    return checkpoint_path, state
+
+
+def _resolve_checkpoint_path(path: Path) -> tuple[str, Path]:
+    candidates = [path]
+    if not str(path).endswith(".tf2"):
+        candidates.append(Path(f"{path}.tf2"))
+    for candidate in candidates:
+        if candidate.is_dir():
+            latest = tf.train.latest_checkpoint(str(candidate))
+            if latest is not None:
+                return latest, candidate
+    for candidate in candidates:
+        if candidate.is_dir():
+            raise FileNotFoundError(
+                f"Cannot find a latest TF2 checkpoint in directory {str(candidate)!r}."
+            )
+    if path.is_file() or Path(f"{path}.index").is_file():
+        return str(path), path.parent
+    raise FileNotFoundError(
+        f"Cannot find TF2 checkpoint {str(path)!r}. Expected a CheckpointManager "
+        "directory ending with .tf2 or a checkpoint prefix."
+    )
+
+
+def _restore_models_from_checkpoint(
+    checkpoint_path: str,
+    model_def_script: dict[str, Any],
+    state: dict[str, Any],
+) -> dict[str, BaseModel]:
+    models = _build_models(model_def_script)
+    _set_min_nbor_dist(models, state.get("min_nbor_dist"))
+    apply_shared_links(models, state.get("shared_links"), resume=True)
+    container = _TaskModelContainer(models)
+    checkpoint = tf.train.Checkpoint(model=container)
+    _materialize_module_variables(container)
+    restore_status = checkpoint.restore(checkpoint_path).expect_partial()
+    _materialize_module_variables(container)
+    restore_status.assert_existing_objects_matched()
+    return models
+
+
+def _materialize_module_variables(module: tf.Module) -> None:
+    """Touch tracked variables before validating checkpoint restore status."""
+    tuple(module.variables)
+    tuple(module.trainable_variables)
+
+
+def _build_models(model_def_script: dict[str, Any]) -> dict[str, BaseModel]:
+    if "model_dict" in model_def_script:
+        return {
+            model_key: get_model(deepcopy(model_def_script["model_dict"][model_key]))
+            for model_key in model_def_script["model_dict"]
+        }
+    return {DEFAULT_TASK_KEY: get_model(deepcopy(model_def_script))}
+
+
+def _serialize_models(
+    models: dict[str, BaseModel],
+    model_def_script: dict[str, Any],
+) -> dict[str, Any]:
+    if "model_dict" in model_def_script:
+        return {
+            "model_dict": {
+                model_key: models[model_key].serialize()
+                for model_key in model_def_script["model_dict"]
+            }
+        }
+    return models[DEFAULT_TASK_KEY].serialize()
+
+
+def _set_min_nbor_dist(
+    models: dict[str, BaseModel],
+    min_nbor_dist: Any,
+) -> None:
+    if min_nbor_dist is None:
+        return
+    if isinstance(min_nbor_dist, Mapping):
+        for model_key, value in min_nbor_dist.items():
+            if value is not None and model_key in models:
+                models[model_key].min_nbor_dist = float(value)
+        return
+    models[DEFAULT_TASK_KEY].min_nbor_dist = float(min_nbor_dist)
+
+
+def _normalize_json_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _normalize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_json_value(item) for item in value]
+    if value is None:
+        return None
+    if hasattr(value, "item"):
+        return value.item()
+    return value
