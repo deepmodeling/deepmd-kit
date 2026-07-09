@@ -182,6 +182,22 @@ class EnvMatStatSe(EnvMatStat):
         ``-1`` in the pre-excluded ``nlist``) carry ``edge_mask=False`` and are
         zeroed -- so the ``(E, 4)`` output reshapes 1:1 back to the dense
         ``(nf, nloc, nsel, 4)`` env-matrix tensor.
+
+        Parameters
+        ----------
+        extended_coord
+            extended coordinates, shape: nf x (nall x 3).
+        extended_atype
+            extended atom types, shape: nf x nall.
+        mapping
+            extended-to-local index mapping, shape: nf x nall.
+        nlist
+            pre-excluded neighbor list, shape: nf x nloc x nsel.
+
+        Returns
+        -------
+        env_mat
+            the environment matrix, shape: nf x nloc x nsel x last_dim.
         """
         xp = array_api_compat.array_namespace(extended_coord, nlist)
         dev = array_api_compat.device(extended_coord)

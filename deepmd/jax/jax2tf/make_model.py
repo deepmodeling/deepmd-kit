@@ -62,13 +62,7 @@ def model_call_from_call_lower(
     do_atomic_virial: bool = False,
     pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, tf.Tensor]:
-    """Return model prediction from lower interface.
-
-    ``pair_excl`` is the model-level pair-type exclusion mask. Exclusion is a
-    nlist-BUILD transform (decision #18/A4): it is folded into the nlist here,
-    in the traced TF wrapper, because the lower JAX model consumes a
-    pre-excluded nlist and never re-applies it.
-    """
+    """Return model prediction from lower interface."""
     atype_shape = tf.shape(atype)
     nframes, nloc = atype_shape[0], atype_shape[1]
     cc, bb, fp, ap = coord, box, fparam, aparam

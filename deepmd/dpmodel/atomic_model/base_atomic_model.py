@@ -392,6 +392,20 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ``torch.export`` / jax ``jit`` (where it cannot be traced) and in
         compiled production. The C++ / exported-``.pt2`` ingestion paths are
         covered by their own ingestion-site regression tests instead.
+
+        Parameters
+        ----------
+        nlist
+            neighbor list, shape: nf x nloc x nsel; ``-1`` marks empty slots.
+        extended_atype
+            extended atom types, shape: nf x nall.
+
+        Raises
+        ------
+        AssertionError
+            if a real (``>= 0``) neighbour carries an excluded type pair, i.e.
+            the build seam was skipped. Only when ``self.pair_excl`` is set and
+            ``nlist`` is a numpy array.
         """
         if self.pair_excl is None or not array_api_compat.is_numpy_array(nlist):
             return
@@ -418,6 +432,21 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         A pre-excluded graph has ``edge_mask == False`` on every excluded edge,
         so any *active* edge whose type pair is excluded is a leak. Eager
         (numpy) only, for the same reasons.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph reaching the graph seam; only ``edge_mask`` and
+            ``edge_index`` are inspected.
+        atype
+            flat local node types, shape: N (clamped ``>= 0``).
+
+        Raises
+        ------
+        AssertionError
+            if an active edge (``edge_mask`` True) carries an excluded type
+            pair. Only when ``self.pair_excl`` is set and ``graph.edge_mask``
+            is a numpy array.
         """
         if self.pair_excl is None or not array_api_compat.is_numpy_array(
             graph.edge_mask
