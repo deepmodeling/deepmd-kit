@@ -24,6 +24,13 @@ from deepmd.utils.version import (
 )
 
 
+def _array_device_or_none(array: Array) -> Any:
+    try:
+        return array_api_compat.device(array)
+    except AttributeError:
+        return None
+
+
 class TypeEmbedNet(NativeOP):
     r"""Type embedding network.
 
@@ -104,7 +111,7 @@ class TypeEmbedNet(NativeOP):
                 xp.eye(
                     self.ntypes,
                     dtype=sample_array.dtype,
-                    device=array_api_compat.device(sample_array),
+                    device=_array_device_or_none(sample_array),
                 )
             )
         else:
@@ -113,7 +120,7 @@ class TypeEmbedNet(NativeOP):
             embed_pad = xp.zeros(
                 (1, embed.shape[-1]),
                 dtype=embed.dtype,
-                device=array_api_compat.device(embed),
+                device=_array_device_or_none(embed),
             )
             embed = xp.concat([embed, embed_pad], axis=0)
         return embed

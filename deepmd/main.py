@@ -327,7 +327,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="frozen_model",
-        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
+        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: suffix is .savedmodeltf; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
     )
     parser_frz.add_argument(
         "-n",
@@ -605,14 +605,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--input",
         default="frozen_model",
         type=str,
-        help="The original frozen model, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
+        help="The original frozen model or checkpoint, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: .tf2 checkpoint directory or checkpoint prefix; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-o",
         "--output",
         default="frozen_model_compressed",
         type=str,
-        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
+        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: suffix is .savedmodeltf; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-s",
@@ -658,6 +658,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="The training script of the input frozen model",
+    )
+    parser_compress.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="Task head (alias: model branch) to compress if in multi-task mode.",
     )
 
     # * print docs script **************************************************************

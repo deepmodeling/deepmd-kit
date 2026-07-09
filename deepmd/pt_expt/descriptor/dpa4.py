@@ -11,8 +11,8 @@ from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProduc
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
-    WignerDCalculator as WignerDCalculatorDP,
+from deepmd.kernels.utils import (
+    use_amp_infer,
 )
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
@@ -23,20 +23,6 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
-)
-
-
-@torch_module
-class WignerDCalculator(WignerDCalculatorDP):
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.call(*args, **kwargs)
-
-
-# WignerDCalculator.deserialize raises NotImplementedError by design (its
-# tables are derived constants); rebuild from the stored constructor args.
-register_dpmodel_mapping(
-    WignerDCalculatorDP,
-    lambda v: WignerDCalculator(v.lmax, eps=v.eps, precision=v.precision),
 )
 
 
@@ -117,6 +103,12 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     ),
     # dpa4_nn.embedding
     "SeZMTypeEmbedding": ("adam_type_embedding",),
+    # dpa4_nn.embedding (native spin): these are nn.Parameter in pt but land as
+    # numpy->buffer in dpmodel; mag_layer1/2 are NativeLayer and auto-promote,
+    # and _promote_trainable skips a missing buffer, so no-spin configs (where
+    # spin_scale is absent) stay safe.
+    "SpinEmbedding": ("adam_spin_vec_weight", "adam_spin_nbr_weight"),
+    "EnvironmentInitialEmbedding": ("spin_scale",),
     # dpa4_nn.attn_res
     "DepthAttnRes": ("adamw_pseudo_query",),
     # dpa4_nn.grid_net (residual_scale is None when disabled; _promote_trainable
@@ -172,6 +164,7 @@ class DescrptDPA4(DescrptDPA4DP):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
 
     @classmethod
@@ -195,10 +188,16 @@ class DescrptDPA4(DescrptDPA4DP):
         config flag and never autocasts (array-API has no autocast), so the
         real automatic mixed precision lives here. ``x`` is the node-feature
         tensor entering the blocks; its device equals the working device, so
-        autocast engages only when ``self.use_amp`` is set, the module is in
-        training mode, and the inputs live on a CUDA device.
+        autocast engages when ``self.use_amp`` is set, the inputs live on a
+        CUDA device, and either the module is training or eval-time AMP was
+        opted in through ``DP_AMP_INFER`` (captured once at construction as
+        ``self.use_amp_infer``).
         """
-        if self.use_amp and self.training and x.device.type == "cuda":
+        if (
+            self.use_amp
+            and x.device.type == "cuda"
+            and (self.training or self.use_amp_infer)
+        ):
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 return super()._forward_blocks(x, *args, **kwargs)
         return super()._forward_blocks(x, *args, **kwargs)

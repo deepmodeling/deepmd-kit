@@ -169,8 +169,6 @@ def _build_single(
     non-differentiable); the returned ``extended_coord`` is rebuilt from
     ``positions`` so gradients flow to the local atoms and box.
     """
-    import vesin.torch
-
     device = positions.device
     nsel = sum(sel)
     nloc = positions.shape[0]
@@ -191,20 +189,18 @@ def _build_single(
         cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
     )
 
-    # Pin the default device to the input's device: vesin.torch allocates some
-    # internal tensors on the ambient default device, which may be a fake/other
-    # device in some contexts (e.g. tests set a placeholder CUDA default).  The
-    # search runs on detached inputs -- it is non-differentiable.
-    nl = vesin.torch.NeighborList(cutoff=rcut, full_list=True)
-    with torch.device(device):
-        ii, jj, ss = nl.compute(
-            points=positions.detach(),
-            box=box.detach(),
-            periodic=periodic,
-            quantities="ijS",
-        )
-    ii = ii.to(torch.int64)
-    jj = jj.to(torch.int64)
+    # Delegate the raw search to the shared helper in vesin_graph_builder
+    # (function-level import: legacy module depends on graph module lazily to
+    # avoid a module-level cycle — vesin_graph_builder imports
+    # is_vesin_torch_available from this module).
+    from deepmd.pt_expt.utils.vesin_graph_builder import (
+        vesin_search_ijs,
+    )
+
+    ii, jj, ss = vesin_search_ijs(
+        positions.detach(), cell if periodic else None, periodic, rcut, device
+    )
+    # ss is int64 from the helper; cast to float here for later ``ss @ box`` math.
     ss = ss.to(positions.dtype)
 
     # ghost atoms: neighbors reached through a non-zero periodic shift.  Rebuild
@@ -271,8 +267,6 @@ def _build_single_edges(
     sel: list[int],
 ) -> EdgeNeighborList:
     """Single-frame ``vesin`` output converted directly to edge vectors."""
-    import vesin.torch
-
     device = positions.device
     nsel = sum(sel)
     nloc = positions.shape[0]
@@ -288,21 +282,18 @@ def _build_single_edges(
         )
 
     periodic = cell is not None
-    box = (
-        cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
+    from deepmd.pt_expt.utils.vesin_graph_builder import (
+        vesin_search_ijs,
     )
-    nl = vesin.torch.NeighborList(cutoff=rcut, full_list=True)
-    with torch.device(device):
-        ii, jj, ss = nl.compute(
-            points=positions.detach(),
-            box=box.detach(),
-            periodic=periodic,
-            quantities="ijS",
-        )
+
+    ii, jj, ss = vesin_search_ijs(
+        positions.detach(), cell if periodic else None, periodic, rcut, device
+    )
+    # ss is int64 from the helper; edge_schema_from_ij_shifts accepts int shifts.
     return edge_schema_from_ij_shifts(
         positions=positions,
         atype=atype,
-        cell=box if periodic else None,
+        cell=cell,
         ii=ii,
         jj=jj,
         shifts=ss,

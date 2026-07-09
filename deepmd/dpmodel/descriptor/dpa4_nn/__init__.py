@@ -41,6 +41,7 @@ from .embedding import (
     EnvironmentInitialEmbedding,
     GeometricInitialEmbedding,
     SeZMTypeEmbedding,
+    SpinEmbedding,
 )
 from .ffn import (
     EquivariantFFN,
@@ -158,6 +159,7 @@ __all__ = [
     "ScalarRMSNorm",
     "SeZMInteractionBlock",
     "SeZMTypeEmbedding",
+    "SpinEmbedding",
     "SwiGLU",
     "WignerDCalculator",
     "apply_lora_to_sezm",

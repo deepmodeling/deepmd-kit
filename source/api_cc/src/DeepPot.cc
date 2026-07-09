@@ -564,6 +564,49 @@ template void DeepPot::compute_mixed_type<float>(
     const std::vector<float>& aparam,
     const std::vector<double>& charge_spin);
 
+void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
+                                       double* d_force,
+                                       double* d_atom_virial,
+                                       const double* d_coord,
+                                       const int* d_atype,
+                                       const int* d_edge_index,
+                                       const double* d_edge_vec,
+                                       const int nloc,
+                                       const int nedge) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)nloc;
+  (void)nedge;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu (GPU-resident edge inference) is only supported by "
+      "the "
+      "PyTorch Exportable (.pt2) backend.");
+}
+
+void DeepPot::compute_edges_gpu(double* d_atom_energy,
+                                double* d_force,
+                                double* d_atom_virial,
+                                const double* d_coord,
+                                const int* d_atype,
+                                const int* d_edge_index,
+                                const double* d_edge_vec,
+                                const int nloc,
+                                const int nedge) {
+  // Polymorphic dispatch to the loaded backend: the PyTorch Exportable backend
+  // overrides ``compute_edges_gpu``; other backends inherit the throwing
+  // default. This replaces a ``dynamic_cast`` into the PyTorch-heavy
+  // ``DeepPotPTExpt``, which the "load backends as plugins" refactor made
+  // uncompilable in the backend-agnostic ``libdeepmd_cc`` (it does not link
+  // PyTorch), so the cast branch was always stubbed out.
+  dp->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                        d_edge_index, d_edge_vec, nloc, nedge);
+}
+
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
 DeepPotModelDevi::DeepPotModelDevi() {

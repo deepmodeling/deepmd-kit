@@ -4,11 +4,15 @@ from deepmd.dpmodel.descriptor.se_atten_v2 import DescrptSeAttenV2 as DescrptSeA
 from ..common import (
     register_dpmodel_mapping,
 )
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .dpa1 import (
     DescrptDPA1,
 )
 
 
+@BaseDescriptor.register("se_atten_v2")
 class DescrptSeAttenV2(DescrptDPA1, DescrptSeAttenV2DP):
     pass
 

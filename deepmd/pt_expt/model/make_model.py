@@ -292,7 +292,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            """Graph-native lower with autograd force/virial (PR-A: dpa1 ``attn_layer==0``).
+            """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
             OUTPUT-AGNOSTIC: runs the graph descriptor + fitting forward with
             ``edge_vec`` as the autograd leaf (via the inherited
@@ -456,14 +456,38 @@ def make_model(
                 build_neighbor_graph_ase,
             )
 
+            # mirror the dpmodel guard: _resolve_graph_method's eligibility
+            # check only protects the default (None) path; an EXPLICIT
+            # neighbor_graph_method would otherwise reach the builders for
+            # descriptors without a graph lower.
+            descriptor = getattr(self.atomic_model, "descriptor", None)
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if not (self.mixed_types() and uses_graph_lower()):
+                raise NotImplementedError(
+                    "neighbor_graph_method requires a mixed_types descriptor with a "
+                    "graph lower (e.g. dpa1 attn_layer=0)"
+                )
             rcut = self.get_rcut()
             if method == "dense":
                 ng = build_neighbor_graph(cc, atype, bb, rcut)
             elif method == "ase":
                 ng = build_neighbor_graph_ase(cc, atype, bb, rcut)
+            elif method == "vesin":
+                from deepmd.pt_expt.utils.vesin_graph_builder import (
+                    build_neighbor_graph_vesin,
+                )
+
+                ng = build_neighbor_graph_vesin(cc, atype, bb, rcut)
+            elif method == "nv":
+                from deepmd.pt_expt.utils.nv_graph_builder import (
+                    build_neighbor_graph_nv,
+                )
+
+                ng = build_neighbor_graph_nv(cc, atype, bb, rcut)
             else:
                 raise ValueError(
-                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                    f"unknown neighbor_graph_method {method!r}; "
+                    "use 'dense', 'ase', 'vesin', or 'nv'"
                 )
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)

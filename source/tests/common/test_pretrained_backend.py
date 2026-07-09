@@ -10,6 +10,9 @@ from deepmd.backend.backend import (
 from deepmd.backend.pretrained import (
     PretrainedBackend,
 )
+from deepmd.backend.suffix import (
+    format_model_suffix,
+)
 from deepmd.pretrained.deep_eval import (
     parse_pretrained_alias,
 )
@@ -65,3 +68,45 @@ class TestPretrainedBackend(unittest.TestCase):
         )
 
         self.assertIs(PretrainedBackend().deep_eval, PretrainedDeepEvalBackend)
+
+    def test_format_model_suffix_keeps_pretrained_alias(self) -> None:
+        # CLI deep-eval commands normalize `-m` through format_model_suffix
+        # (strict_prefer=False). A pretrained alias must be recognized and
+        # returned unchanged so PretrainedBackend can resolve it, matching the
+        # endswith-based detection in Backend.detect_backend_by_model. Before
+        # the fix these were mangled (e.g. "DPA-3.2-5M" -> "DPA-3.2-5M.pth")
+        # because only Path(...).suffix was compared against the alias list.
+        for alias in ("DPA-3.2-5M", "DPA3-Omol-Large", "dpa-3.2-5m"):
+            self.assertEqual(
+                format_model_suffix(
+                    alias,
+                    feature=Backend.Feature.DEEP_EVAL,
+                    preferred_backend="pytorch",
+                    strict_prefer=False,
+                ),
+                alias,
+            )
+
+    def test_format_model_suffix_keeps_regular_suffix(self) -> None:
+        # Control: an ordinary backend suffix is still returned unchanged.
+        self.assertEqual(
+            format_model_suffix(
+                "model.pth",
+                feature=Backend.Feature.DEEP_EVAL,
+                preferred_backend="pytorch",
+                strict_prefer=False,
+            ),
+            "model.pth",
+        )
+
+    def test_format_model_suffix_appends_for_unknown(self) -> None:
+        # Control: a genuinely unknown name still gets the preferred suffix.
+        self.assertEqual(
+            format_model_suffix(
+                "model",
+                feature=Backend.Feature.DEEP_EVAL,
+                preferred_backend="pytorch",
+                strict_prefer=False,
+            ),
+            "model" + PretrainedBackend.get_backend("pytorch").suffixes[0],
+        )
