@@ -248,10 +248,9 @@ class EnergyStdLoss(TaskLoss):
             _nf = maskf.shape[0]
             _nloc = maskf.shape[1]
         else:
+            # inv, _nf, _nloc are only read inside ``if maskf is not None`` guards,
+            # so leaving them unset here is safe (and avoids dead-store warnings).
             maskf = None
-            inv = None
-            _nf = None
-            _nloc = None
         # Normalization exponent controls loss scaling with system size:
         # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
         # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
