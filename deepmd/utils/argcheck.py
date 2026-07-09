@@ -2830,11 +2830,29 @@ def fitting_group_property() -> list[Argument]:
     """Grouped frame-property fitting reuses the property head schema, but the
     head pools an un-normalized frame embedding + fparam where tanh saturates
     (collapsing to a constant), so it defaults to GELU instead of tanh.
+
+    It also adds ``group_reduce``, the frame-embedding -> group-embedding
+    reduction (mean or weighted sum), which GroupPropertyFittingNet supports
+    but the reused property schema has no field for.
     """
+    doc_group_reduce = (
+        "How per-frame embeddings are reduced to one per-group embedding: "
+        "`mean` (weight-normalized average) or `sum` (weighted sum, for "
+        "extensive group properties)."
+    )
     args = fitting_property()
     for arg in args:
         if arg.name == "activation_function":
             arg.default = "gelu"
+    args.append(
+        Argument(
+            "group_reduce",
+            str,
+            optional=True,
+            default="mean",
+            doc=doc_group_reduce,
+        )
+    )
     return args
 
 
