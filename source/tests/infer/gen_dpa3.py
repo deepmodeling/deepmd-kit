@@ -111,32 +111,40 @@ def main():
         pt2_mpi_path, copy.deepcopy(data_mpi), do_atomic_virial=True
     )
 
-    # Multi-rank variant WITH model-level ``pair_exclude_types`` — same weights
-    # as ``deeppot_dpa3_mpi.pt2`` above (pair_exclude_types is a build-time
-    # nlist mask, NOT a descriptor weight), so that model is the exact
-    # no-exclusion baseline.  Exercises the C++ dense multi-rank
-    # (``run_model_with_comm``) pair-exclusion seam: DPA3 is message-passing, so
-    # use_loc_mapping=False routes multi-rank through ``run_model_with_comm``,
-    # where model-level exclusion must be applied at the C++ ingestion seam
-    # (the exported lower no longer bakes it in; decision #18/A4).
+    # Multi-rank variant WITH model-level ``pair_exclude_types`` — derived
+    # CHEAPLY from ``deeppot_dpa3_mpi.pt2`` by patching the exclusion list into
+    # the archive, with NO second inductor compile.  Model-level exclusion is a
+    # BUILD-time transform (decision #18/A4) applied at the C++ ingestion seam
+    # (``applyPairExclusionNlist``, from ``metadata.json``) and the Python
+    # DeepEval build seam (from the serialized ``model.json``); it is NOT baked
+    # into the exported graph, so the compiled AOTI artifact (incl. the nested
+    # with-comm ``.pt2``) is byte-identical to the baseline.  Only the two JSON
+    # blobs that carry ``pair_exclude_types`` differ -- patch both so the C++
+    # and Python paths agree.  ``deeppot_dpa3_mpi.pt2`` is the exact no-exclusion
+    # baseline.  (Verified bit-identical to a full recompile via DeepEval.)
     # See test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_pairexcl_*.
-    config_pairexcl_mpi = copy.deepcopy(config_mpi)
-    config_pairexcl_mpi["pair_exclude_types"] = [[0, 1]]
-    model_pairexcl_mpi = get_model(copy.deepcopy(config_pairexcl_mpi))
-    data_pairexcl_mpi = {
-        "model": model_pairexcl_mpi.serialize(),
-        "model_def_script": config_pairexcl_mpi,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
+    import json
+    import zipfile
+
     pt2_pairexcl_mpi_path = os.path.join(base_dir, "deeppot_dpa3_pairexcl_mpi.pt2")
-    print(f"Exporting to {pt2_pairexcl_mpi_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(
-        pt2_pairexcl_mpi_path,
-        copy.deepcopy(data_pairexcl_mpi),
-        do_atomic_virial=True,
+    print(  # noqa: T201
+        f"Deriving {pt2_pairexcl_mpi_path} from {pt2_mpi_path} "
+        "(pair_exclude_types patch, no recompile) ..."
     )
+    pair_exclude_types = [[0, 1]]
+    with zipfile.ZipFile(pt2_mpi_path) as zin:
+        entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    with zipfile.ZipFile(pt2_pairexcl_mpi_path, "w") as zout:
+        for info, blob in entries:
+            if info.filename == "model/extra/metadata.json":
+                meta = json.loads(blob)
+                meta["pair_exclude_types"] = pair_exclude_types
+                blob = json.dumps(meta).encode()
+            elif info.filename == "model/extra/model.json":
+                mdl = json.loads(blob)
+                mdl["model"]["pair_exclude_types"] = pair_exclude_types
+                blob = json.dumps(mdl).encode()
+            zout.writestr(info, blob)
 
     # Float32 multi-rank variant — same architecture as the float64
     # MPI fixture but with ``precision: float32``.  Used by
