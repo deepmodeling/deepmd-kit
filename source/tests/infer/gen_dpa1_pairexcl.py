@@ -3,11 +3,17 @@
 """Generate DPA1 test models carrying model-level ``pair_exclude_types``.
 
 Produces two graph-eligible DPA1(attn_layer=0) models with identical weights,
-one exported through each C++ ingestion route, plus a no-exclusion baseline:
+one per C++ ingestion route, plus a no-exclusion baseline:
 
   - deeppot_dpa1_pairexcl_graph.pt2  (lower_kind="graph", pair_exclude=[[0,1]])
   - deeppot_dpa1_pairexcl_nlist.pt2  (lower_kind="nlist", pair_exclude=[[0,1]])
   - deeppot_dpa1_pairexcl_none.pt2   (lower_kind="graph", NO exclusion)
+
+Only two inductor compiles are needed: the graph baseline (``_none``) and the
+nlist route (``_nlist``). ``_graph`` has the same weights and lower_kind as
+``_none`` and differs only in the exclusion list, so it is DERIVED from
+``_none`` by patching the archive (``gen_common.derive_pair_exclude_pt2``) --
+no third compile.
 
 The pair models exercise the C++ pair-exclusion ownership (decision #18/A4:
 exclusion is a BUILD-time transform on BOTH routes) plus the
@@ -45,6 +51,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from gen_common import (
+    derive_pair_exclude_pt2,
     ensure_inductor_compiler,
     load_custom_ops,
     write_expected_ref,
@@ -134,19 +141,31 @@ def main():
 
     # ---- Pair-exclusion models (graph + dense routes) ----
     exclude_types = [[0, 1]]
-    data_e = build_data(exclude_types)
-    for lower_kind, tag in (("graph", "graph"), ("nlist", "nlist")):
+    # graph route: SAME weights + graph lower as the no-exclusion baseline
+    # above, only the exclusion list differs -> derive by patching the archive,
+    # NO second inductor compile. See gen_common.derive_pair_exclude_pt2.
+    graph_pt2 = os.path.join(base_dir, "deeppot_dpa1_pairexcl_graph.pt2")
+    print(  # noqa: T201
+        f"Deriving {graph_pt2} from {none_pt2} "
+        "(pair_exclude_types patch, no recompile) ..."
+    )
+    derive_pair_exclude_pt2(none_pt2, graph_pt2, exclude_types)
+    # nlist route: a DIFFERENT lower_kind (a different exported graph) that the
+    # graph baseline cannot supply -> compile it.
+    nlist_pt2 = os.path.join(base_dir, "deeppot_dpa1_pairexcl_nlist.pt2")
+    print(  # noqa: T201
+        f"Exporting to {nlist_pt2} (lower_kind='nlist', "
+        f"pair_exclude_types={exclude_types}) ..."
+    )
+    pt_expt_deserialize_to_file(
+        nlist_pt2,
+        copy.deepcopy(build_data(exclude_types)),
+        do_atomic_virial=True,
+        lower_kind="nlist",
+    )
+    # Eval + activeness check + reference sidecar for both routes.
+    for tag in ("graph", "nlist"):
         pt2_path = os.path.join(base_dir, f"deeppot_dpa1_pairexcl_{tag}.pt2")
-        print(  # noqa: T201
-            f"Exporting to {pt2_path} (lower_kind='{lower_kind}', "
-            f"pair_exclude_types={exclude_types}) ..."
-        )
-        pt_expt_deserialize_to_file(
-            pt2_path,
-            copy.deepcopy(data_e),
-            do_atomic_virial=True,
-            lower_kind=lower_kind,
-        )
         dp_e = DeepPot(pt2_path)
         e_e1, f_e1, v_e1, ae_e1, av_e1 = dp_e.eval(coord, box, atype, atomic=True)
         e_enp, f_enp, v_enp, ae_enp, av_enp = dp_e.eval(coord, None, atype, atomic=True)

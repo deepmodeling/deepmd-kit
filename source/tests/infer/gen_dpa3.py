@@ -17,6 +17,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from gen_common import (
+    derive_pair_exclude_pt2,
     ensure_inductor_compiler,
     load_custom_ops,
     write_expected_ref,
@@ -113,38 +114,16 @@ def main():
 
     # Multi-rank variant WITH model-level ``pair_exclude_types`` — derived
     # CHEAPLY from ``deeppot_dpa3_mpi.pt2`` by patching the exclusion list into
-    # the archive, with NO second inductor compile.  Model-level exclusion is a
-    # BUILD-time transform (decision #18/A4) applied at the C++ ingestion seam
-    # (``applyPairExclusionNlist``, from ``metadata.json``) and the Python
-    # DeepEval build seam (from the serialized ``model.json``); it is NOT baked
-    # into the exported graph, so the compiled AOTI artifact (incl. the nested
-    # with-comm ``.pt2``) is byte-identical to the baseline.  Only the two JSON
-    # blobs that carry ``pair_exclude_types`` differ -- patch both so the C++
-    # and Python paths agree.  ``deeppot_dpa3_mpi.pt2`` is the exact no-exclusion
-    # baseline.  (Verified bit-identical to a full recompile via DeepEval.)
-    # See test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_pairexcl_*.
-    import json
-    import zipfile
-
+    # the archive, with NO second inductor compile (same weights + lower_kind,
+    # only the exclusion list differs).  ``deeppot_dpa3_mpi.pt2`` is the exact
+    # no-exclusion baseline.  See ``derive_pair_exclude_pt2`` for why this is
+    # sound, and test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_pairexcl_*.
     pt2_pairexcl_mpi_path = os.path.join(base_dir, "deeppot_dpa3_pairexcl_mpi.pt2")
     print(  # noqa: T201
         f"Deriving {pt2_pairexcl_mpi_path} from {pt2_mpi_path} "
         "(pair_exclude_types patch, no recompile) ..."
     )
-    pair_exclude_types = [[0, 1]]
-    with zipfile.ZipFile(pt2_mpi_path) as zin:
-        entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
-    with zipfile.ZipFile(pt2_pairexcl_mpi_path, "w") as zout:
-        for info, blob in entries:
-            if info.filename == "model/extra/metadata.json":
-                meta = json.loads(blob)
-                meta["pair_exclude_types"] = pair_exclude_types
-                blob = json.dumps(meta).encode()
-            elif info.filename == "model/extra/model.json":
-                mdl = json.loads(blob)
-                mdl["model"]["pair_exclude_types"] = pair_exclude_types
-                blob = json.dumps(mdl).encode()
-            zout.writestr(info, blob)
+    derive_pair_exclude_pt2(pt2_mpi_path, pt2_pairexcl_mpi_path, [[0, 1]])
 
     # Float32 multi-rank variant — same architecture as the float64
     # MPI fixture but with ``precision: float32``.  Used by
