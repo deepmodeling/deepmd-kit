@@ -24,12 +24,16 @@ from deepmd.pt.utils.grouped import (
     POOL_MASK_KEY,
     distributed_grouped_frame_batches,
     group_data_requirements,
+    load_group_ids_for_system,
     normalize_group_id_tensor,
     normalize_pool_mask_tensor,
     normalize_weight_tensor,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -250,3 +254,85 @@ def test_dploaderset_enables_group_batches_for_group_requirements(tmp_path) -> N
         batch[GROUP_ID_KEY].reshape(-1).tolist() for batch in data.dataloaders[0]
     ]
     assert batches == [[0, 0], [1, 1], [2]]
+
+
+def test_dploaderset_missing_group_id_falls_back_to_one_group_per_frame(
+    tmp_path,
+) -> None:
+    """When group_id.npy is absent, the sampler must batch by ordinary
+    batch_size (one group per frame) -- the same "no explicit grouping"
+    semantics GroupPropertyLoss.forward falls back to (torch.arange(nframes))
+    -- instead of treating the whole system as a single group, which would
+    ignore batch_size and (with fewer frames than ranks) break DDP.
+    """
+    system = tmp_path / "sys"
+    set_dir = system / "set.000"
+    set_dir.mkdir(parents=True)
+    (system / "type.raw").write_text("0\n0\n")
+    (system / "type_map.raw").write_text("H\n")
+    np.save(set_dir / "coord.npy", np.zeros((5, 6), dtype=np.float64))
+    np.save(set_dir / "box.npy", np.tile(np.eye(3).reshape(1, 9), (5, 1)))
+    np.save(set_dir / "target.npy", np.array([[1.0], [2.0], [3.0], [4.0], [5.0]]))
+    np.save(set_dir / f"{GROUP_WEIGHT_KEY}.npy", np.ones(5))
+    np.save(set_dir / f"{POOL_MASK_KEY}.npy", np.ones((5, 2)))
+    # deliberately no group_id.npy
+
+    data = DpLoaderSet([str(system)], batch_size=2, type_map=["H"], shuffle=False)
+    req = [DataRequirementItem("target", ndof=1, atomic=False, must=True)]
+    req.extend(group_data_requirements())
+    data.add_data_requirement(req)
+    # Batch *composition* (frame count per batch) is what the sampler fallback
+    # controls; the raw GROUP_ID_KEY tensor content is separately defaulted to
+    # 0 by the data-requirement default and is not what this fallback governs
+    # (GroupPropertyLoss ignores that default via its own find_group_id check
+    # and recomputes one-group-per-frame itself).
+    batch_sizes = [batch["coord"].shape[0] for batch in data.dataloaders[0]]
+    # 5 frames, each its own group, batch_size=2 -> 2,2,1 (not one batch of 5)
+    assert batch_sizes == [2, 2, 1]
+
+
+def test_load_group_ids_for_system_returns_none_when_missing(tmp_path) -> None:
+    set_dir = tmp_path / "set.000"
+    set_dir.mkdir(parents=True)
+
+    class _FakeDataSystem:
+        dirs = (DPPath(str(set_dir)),)
+
+    assert load_group_ids_for_system(_FakeDataSystem()) is None
+
+
+def test_load_group_ids_for_system_reads_filesystem_and_hdf5(tmp_path) -> None:
+    """``load_group_ids_for_system`` must read group_id.npy through the
+    system's own DPPath ``dirs`` (backend-aware) so HDF5-backed systems are
+    supported the same way as on-disk ones, not silently reported as missing
+    because a plain filesystem glob can't see inside an HDF5 archive.
+    """
+    # on-disk
+    set_dir = tmp_path / "os_sys" / "set.000"
+    set_dir.mkdir(parents=True)
+    np.save(set_dir / f"{GROUP_ID_KEY}.npy", np.array([0, 0, 1]))
+
+    class _FakeOSDataSystem:
+        dirs = (DPPath(str(set_dir)),)
+
+    ids = load_group_ids_for_system(_FakeOSDataSystem())
+    assert ids is not None
+    assert ids.tolist() == [0, 0, 1]
+
+    # HDF5-backed: writing and reading go through the same cached h5py.File
+    # handle (DPH5Path caches by (path, mode)), so use "a" consistently.
+    import h5py
+
+    h5file = str(tmp_path / "sys.h5")
+    with h5py.File(h5file, "w") as f:
+        pass
+    h5_root = DPPath(h5file, "a")
+    h5_set_dir = h5_root / "set.000"
+    (h5_set_dir / f"{GROUP_ID_KEY}.npy").save_numpy(np.array([2, 2, 3]))
+
+    class _FakeH5DataSystem:
+        dirs = (h5_set_dir,)
+
+    ids = load_group_ids_for_system(_FakeH5DataSystem())
+    assert ids is not None
+    assert ids.tolist() == [2, 2, 3]

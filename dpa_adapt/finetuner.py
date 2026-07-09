@@ -105,6 +105,11 @@ def _pool_descriptor(descrpt: Any, primitives: Any, mask: Any = None) -> Any:
     if mask is not None:
         m = mask.to(dtype=descrpt.dtype, device=descrpt.device).unsqueeze(-1)
         count = m.sum(dim=1).clamp_min(1.0)
+        # Sanitize masked (virtual/padding) rows to a finite value before any
+        # reduction below.  Multiplying a non-finite descriptor by a zero
+        # mask keeps 0 * NaN == NaN, which would poison the whole frame's
+        # pooled feature instead of just dropping the masked atom.
+        descrpt = torch.where(m > 0, descrpt, torch.zeros_like(descrpt))
 
     parts = []
     for prim in primitives:
@@ -179,6 +184,38 @@ def _pool_mask_for_system(system: Any, n_frames: int, n_atoms: int) -> Any:
         # frame-count mismatch, or no virtual atoms -> nothing to mask out.
         return None
     return mask
+
+
+def _real_atom_types_for_system(
+    system: Any, n_frames: int, n_atoms: int
+) -> np.ndarray | None:
+    """Per-frame ``(n_frames, n_atoms)`` local atom types for a grouped system.
+
+    Grouped systems write a uniform ``type.raw`` placeholder and store the
+    real, per-frame local atom-type indices (including ``-1`` for virtual
+    padding atoms) in ``set.*/real_atom_types.npy``. Returns ``None`` for
+    non-grouped systems or when a complete, frame-aligned array cannot be
+    built, so callers fall back to the constant-per-system ``atom_types``.
+    """
+    source = _get_source(system)
+    if source is None:
+        return None
+    chunks: list[np.ndarray] = []
+    for set_dir in sorted(Path(source).glob("set.*")):
+        real_types_path = set_dir / "real_atom_types.npy"
+        if not real_types_path.is_file():
+            return None
+        arr = np.asarray(np.load(real_types_path), dtype=np.int64)
+        arr = arr.reshape(arr.shape[0], -1)
+        if arr.shape[1] != n_atoms:
+            return None
+        chunks.append(arr)
+    if not chunks:
+        return None
+    real_types = np.concatenate(chunks, axis=0)
+    if real_types.shape[0] != n_frames:
+        return None
+    return real_types
 
 
 def _load_labels(
@@ -776,6 +813,19 @@ class _FrozenSklearnPipeline:
 
         return local_to_global[atom_types]
 
+    def remap_atom_types_preserving_padding(
+        self, atom_types: np.ndarray, system: dpdata.System
+    ) -> np.ndarray:
+        """Like :meth:`remap_atom_types`, but keeps ``-1`` (virtual/padding
+        atom) entries untouched instead of wrapping them to the last
+        checkpoint type via numpy's negative-index fancy indexing.
+        """
+        real = atom_types >= 0
+        remapped = np.full_like(atom_types, -1)
+        if real.any():
+            remapped[real] = self.remap_atom_types(atom_types[real], system)
+        return remapped
+
     # ------------------------------------------------------------------
     # Feature extraction  (extract_features_cached is on DPAFineTuner
     # so that patches on DPAFineTuner._extract_features are honoured)
@@ -814,8 +864,22 @@ class _FrozenSklearnPipeline:
             n_frames = coords.shape[0]
             n_atoms = len(atom_types)
 
-            # Remap local atom-type indices to checkpoint-global indices.
-            atom_types_global = self.remap_atom_types(atom_types, system)
+            # Grouped (heterogeneous) systems write a uniform type.raw
+            # placeholder and store the real, per-frame local atom types
+            # (with -1 padding) in real_atom_types.npy. Use those per-frame
+            # types when present instead of tiling the single, uniform
+            # atom_types array -- otherwise every atom in every frame would
+            # be described as if it had the placeholder's type.
+            real_atom_types = _real_atom_types_for_system(system, n_frames, n_atoms)
+            if real_atom_types is not None:
+                atom_types_global = self.remap_atom_types_preserving_padding(
+                    real_atom_types, system
+                )
+            else:
+                # Remap local atom-type indices to checkpoint-global indices.
+                atom_types_global = np.tile(
+                    self.remap_atom_types(atom_types, system), (n_frames, 1)
+                )
 
             # Non-periodic structures must NOT use all-zero box:
             # the descriptor produces NaN in that case.
@@ -831,7 +895,7 @@ class _FrozenSklearnPipeline:
                 device=self._device,
             ).requires_grad_(True)
             atype_t = torch.tensor(
-                np.tile(atom_types_global, (n_frames, 1)),
+                atom_types_global,
                 dtype=torch.long,
                 device=self._device,
             )

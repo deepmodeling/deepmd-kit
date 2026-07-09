@@ -97,6 +97,41 @@ def test_pool_descriptor_byte_identical_to_legacy():
         assert torch.equal(new, legacy(spec)), spec
 
 
+def test_pool_descriptor_is_nan_safe_for_masked_atoms():
+    """A non-finite descriptor on a masked (virtual/padding) atom must not
+    poison the pooled feature: ``descrpt * mask`` keeps ``0 * NaN == NaN``,
+    which would corrupt the whole frame instead of just dropping that atom.
+    """
+    torch = pytest.importorskip("torch")
+    torch.set_default_device("cpu")
+    from dpa_adapt.finetuner import (
+        _pool_descriptor,
+    )
+
+    # frame 0: atoms 0,1 kept ([1,2],[3,4]); atom 2 excluded and carries NaN.
+    # frame 1: all 3 atoms kept, no NaN.
+    descrpt = torch.tensor(
+        [
+            [[1.0, 2.0], [3.0, 4.0], [float("nan"), float("nan")]],
+            [[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]],
+        ]
+    )
+    mask = torch.tensor([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
+
+    for spec in ("mean", "sum", "mean+std", "mean+std+max+min"):
+        out = _pool_descriptor(descrpt, parse_pooling(spec), mask=mask)
+        assert torch.isfinite(out).all(), spec
+
+    mean = _pool_descriptor(descrpt, parse_pooling("mean"), mask=mask)
+    # frame 0 mean over the two kept atoms: ([1,2]+[3,4])/2 = [2,3]
+    assert torch.allclose(mean[0], torch.tensor([2.0, 3.0]))
+    # frame 1 unaffected: mean over all 3 kept atoms
+    assert torch.allclose(mean[1], torch.tensor([2.0, 2.0]))
+
+    summ = _pool_descriptor(descrpt, parse_pooling("sum"), mask=mask)
+    assert torch.allclose(summ[0], torch.tensor([4.0, 6.0]))
+
+
 def test_pooling_primitives_canonical_constant():
     # guards against accidental reordering that would shift feature columns
     assert POOLING_PRIMITIVES == ("mean", "sum", "std", "max", "min")

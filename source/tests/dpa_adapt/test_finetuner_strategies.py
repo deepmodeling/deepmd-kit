@@ -501,3 +501,79 @@ def test_extract_features_detaches_grad_tensors_before_numpy(monkeypatch):
     features = ft.extract_features([FakeSystem()])
 
     np.testing.assert_allclose(features, np.array([[2.0, 4.0, 6.0]]))
+
+
+def test_extract_features_uses_per_frame_real_atom_types_for_grouped_systems(
+    monkeypatch,
+):
+    """Grouped systems store a uniform ``type.raw`` placeholder and the real,
+    per-frame local types (with ``-1`` padding) in ``real_atom_types.npy``.
+    ``extract_features`` must feed the model those per-frame types instead of
+    tiling the single, uniform ``atom_types`` array -- otherwise every atom in
+    every frame is described as if it had the placeholder's type.
+    """
+    import numpy as np
+    import torch
+
+    from dpa_adapt import finetuner as finetuner_mod
+
+    seen_atype = []
+
+    class FakeExtractor:
+        def __init__(self, model):
+            self.model = model
+
+        def _enable_hook(self):
+            pass
+
+        def _disable_hook(self):
+            pass
+
+        def _run_forward(self, coord_t, atype_t, box_t):
+            seen_atype.append(atype_t.clone())
+            return torch.zeros(
+                atype_t.shape[0], atype_t.shape[1], 1, dtype=coord_t.dtype
+            )
+
+    class FakeSystem:
+        orig = "fake"
+
+        def __init__(self):
+            self.data = {"atom_names": ["H", "O", "N"]}
+
+    # frame 0: H, O, padding; frame 1: H, O, N -- deliberately NOT what the
+    # uniform placeholder (all zeros) would tile.
+    real_types = np.array([[0, 1, -1], [0, 1, 2]], dtype=np.int64)
+
+    monkeypatch.setattr(finetuner_mod, "_DescriptorExtraction", FakeExtractor)
+    monkeypatch.setattr(
+        finetuner_mod,
+        "_load_npy_system",
+        lambda system: (
+            np.zeros((2, 3, 3)),
+            np.tile(np.eye(3).ravel(), (2, 1)),
+            np.array([0, 0, 0], dtype=np.int64),
+        ),
+    )
+    monkeypatch.setattr(
+        finetuner_mod,
+        "_real_atom_types_for_system",
+        lambda system, n_frames, n_atoms: real_types,
+    )
+
+    ft = finetuner_mod._FrozenSklearnPipeline(
+        pretrained="fake.pt",
+        model_branch=None,
+        predictor_type="linear",
+        pooling="mean",
+        seed=42,
+    )
+    ft._model = object()
+    ft._device = torch.device("cpu")
+    ft.type_map = ["H", "O", "N"]
+    ft._checkpoint_type_map = ["H", "O", "N"]
+
+    ft.extract_features([FakeSystem()])
+
+    assert len(seen_atype) == 1
+    np.testing.assert_array_equal(seen_atype[0].numpy(), real_types)

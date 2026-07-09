@@ -5,9 +5,6 @@ from __future__ import (
     annotations,
 )
 
-from pathlib import (
-    Path,
-)
 from typing import (
     TYPE_CHECKING,
 )
@@ -20,6 +17,10 @@ from deepmd.utils.data import (
 
 if TYPE_CHECKING:
     import torch
+
+    from deepmd.utils.data import (
+        DeepmdData,
+    )
 
 GROUP_ID_KEY = "group_id"
 GROUP_WEIGHT_KEY = "weight"
@@ -90,15 +91,19 @@ def normalize_pool_mask_tensor(
     return pool_mask[:, :, 0]
 
 
-def load_group_ids_for_system(system: str | Path) -> np.ndarray | None:
+def load_group_ids_for_system(data_system: DeepmdData) -> np.ndarray | None:
     """Load frame-level group ids from a DeePMD system, if present.
 
-    The returned ids follow DeePMD frame order across sorted ``set.*``
-    directories.  Missing data returns ``None`` so callers can fall back to
-    ordinary frame batching.
+    Reads ``set.*/group_id.npy`` through the system's own sorted ``dirs``
+    (``DPPath`` set directories, resolved once by ``DeepmdData.__init__``)
+    instead of re-globbing a raw filesystem path, so HDF5-backed systems are
+    checked the same way as on-disk ones: a plain ``pathlib.Path.glob`` can't
+    see inside an HDF5 archive and would silently -- and incorrectly -- report
+    an in-data ``group_id`` as missing.  The returned ids follow DeePMD frame
+    order across those sets.  Missing data returns ``None`` so callers can
+    fall back to ordinary frame batching.
     """
-    system_path = Path(system)
-    set_dirs = sorted(system_path.glob("set.*"))
+    set_dirs = data_system.dirs
     if not set_dirs:
         return None
 
@@ -107,7 +112,7 @@ def load_group_ids_for_system(system: str | Path) -> np.ndarray | None:
         path = set_dir / f"{GROUP_ID_KEY}.npy"
         if not path.is_file():
             return None
-        arr = np.asarray(np.load(str(path))).reshape(-1)
+        arr = np.asarray(path.load_numpy()).reshape(-1)
         chunks.append(arr.astype(np.int64, copy=False))
     return np.concatenate(chunks) if chunks else None
 

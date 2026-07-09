@@ -188,12 +188,17 @@ class DpLoaderSet(Dataset):
             system_sampler = None
             batch_sampler = None
             if self._group_complete_batches:
-                group_ids = load_group_ids_for_system(system.system)
+                group_ids = load_group_ids_for_system(system.data_system)
                 if group_ids is None:
-                    # group_id is an optional data requirement with default 0.
-                    # The sampler must mirror that default, otherwise DDP would
-                    # split the implicit single group across ranks.
-                    group_ids = np.zeros((len(system),), dtype=np.int64)
+                    # GroupPropertyLoss falls back to one group per frame
+                    # (torch.arange(nframes)) when group_id is absent, i.e.
+                    # "no explicit grouping" means every frame stands alone.
+                    # Mirror that here: treating a whole system as a single
+                    # group instead would silently merge unrelated frames
+                    # into one oversized batch (ignoring batch_size) and can
+                    # break DDP by handing an implicit single group to more
+                    # ranks than it has frames for.
+                    group_ids = np.arange(len(system), dtype=np.int64)
                 if distributed:
                     batch_sampler = GroupDistributedBatchSampler(
                         group_ids,
