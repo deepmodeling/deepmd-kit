@@ -115,14 +115,80 @@ def _first_set_dir(systems: list) -> str | None:
     return None
 
 
-def _systems_are_grouped(systems: list) -> bool:
-    """A system set is grouped when its frames carry the group markers."""
-    setdir = _first_set_dir(systems)
-    if setdir is None:
-        return False
-    return all(
+def _all_set_dirs(systems: list) -> list[str]:
+    """Return every ``set.*`` directory across the resolved systems, in order."""
+    dirs: list[str] = []
+    for sysdir in systems:
+        dirs.extend(sorted(_glob.glob(os.path.join(sysdir, "set.*"))))
+    return dirs
+
+
+def _set_marker_status(setdir: str) -> bool | None:
+    """Whether one ``set.*`` directory carries the group markers.
+
+    Returns ``True`` when all of ``_GROUP_MARKERS`` are present, ``False``
+    when none are, and ``None`` for a partial set (some but not all) -- a
+    partial set is always an error, independent of any other set.
+    """
+    present = [
         os.path.isfile(os.path.join(setdir, f"{name}.npy")) for name in _GROUP_MARKERS
+    ]
+    if all(present):
+        return True
+    if not any(present):
+        return False
+    return None
+
+
+def _systems_are_grouped(*labeled_systems: tuple[str, list]) -> bool:
+    """Whether the given (label, systems) groups are grouped training data.
+
+    Scans *every* ``set.*`` directory of *every* given system list -- not
+    just the first set of the first system -- and requires all of them to
+    agree. Checking only the first set previously meant: a later system
+    that had markers when the first one didn't left grouped mode disabled
+    (and that system silently dropped its labels), while a later system
+    *missing* markers when the first one had them enabled grouped mode and
+    then failed, or trained inconsistently, once that system was reached.
+    Any partial marker set, or any mix of grouped and ungrouped sets across
+    the given system lists (e.g. grouped train_systems with ungrouped
+    valid_systems), raises a clear error instead of guessing.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
     )
+
+    grouped_dirs: list[str] = []
+    ungrouped_dirs: list[str] = []
+    partial_dirs: list[str] = []
+    for label, systems in labeled_systems:
+        for setdir in _all_set_dirs(systems):
+            status = _set_marker_status(setdir)
+            if status is True:
+                grouped_dirs.append(f"{label}:{setdir}")
+            elif status is False:
+                ungrouped_dirs.append(f"{label}:{setdir}")
+            else:
+                partial_dirs.append(f"{label}:{setdir}")
+
+    if partial_dirs:
+        raise DPADataError(
+            "Inconsistent grouped markers: the following set.* directories "
+            f"have only some of {_GROUP_MARKERS} (all three, or none, are "
+            "required):\n  " + "\n  ".join(partial_dirs[:10])
+        )
+    if grouped_dirs and ungrouped_dirs:
+        raise DPADataError(
+            "Inconsistent grouped markers across systems: "
+            f"{len(grouped_dirs)} set.* director{'y' if len(grouped_dirs) == 1 else 'ies'} "
+            f"carry {_GROUP_MARKERS} and {len(ungrouped_dirs)} do not. Mixing "
+            "grouped and ungrouped systems in the same train/valid run is "
+            "not supported.\n  grouped, e.g.:\n    "
+            + "\n    ".join(grouped_dirs[:5])
+            + "\n  ungrouped, e.g.:\n    "
+            + "\n    ".join(ungrouped_dirs[:5])
+        )
+    return bool(grouped_dirs)
 
 
 def _detect_fparam_dim(systems: list) -> int:
@@ -407,7 +473,10 @@ class DPATrainer:
             return
         train_sys = self._expand_systems(self.train_systems, "train_systems")
         if self.grouped is None:
-            self.grouped = _systems_are_grouped(train_sys)
+            valid_sys = self._expand_systems(self.valid_systems, "valid_systems")
+            self.grouped = _systems_are_grouped(
+                ("train_systems", train_sys), ("valid_systems", valid_sys)
+            )
         if self.grouped and not self.fparam_dim:
             self.fparam_dim = _detect_fparam_dim(train_sys)
 
