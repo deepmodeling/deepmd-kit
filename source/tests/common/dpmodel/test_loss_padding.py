@@ -14,6 +14,7 @@ NP = 5   # padded width (nloc)
 """
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.loss.dos import (
     DOSLoss,
@@ -2093,6 +2094,121 @@ class TestDPModelEnerSpinLossForceMagMSEGradAccum:
 
         def make_padded():
             # Pad frame A force_mag to NP width; ghost slots are zero (non-magnetic)
+            fm_A_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_A_pad[:_NM] = fm_A[:_NM]
+            fm_A_hat_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_A_hat_pad[:_NM] = fm_A_hat[:_NM]
+            fm_B_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_B_pad[:_NM] = fm_B[:_NM]
+            fm_B_hat_pad = np.zeros((NP, 3), dtype=np.float64)
+            fm_B_hat_pad[:_NM] = fm_B_hat[:_NM]
+            fm_pad = np.stack([fm_A_pad, fm_B_pad], axis=0)  # [2, NP, 3]
+            fm_hat_pad = np.stack([fm_A_hat_pad, fm_B_hat_pad], axis=0)
+            pred = {
+                "energy": np.zeros((2, 1), dtype=np.float64),
+                "force_mag": fm_pad,
+                "mask_mag": _MASK_MAG_PAD_SPIN,  # ghost atoms have mask_mag=False
+                "mask": _MASK_PAD_SPIN,
+            }
+            lbl = {
+                "force_mag": fm_hat_pad,
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: self._loss_fn(self._make_loss(), mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+
+class TestDPModelEnerSpinLossForceMagMAEGradAccum:
+    """force_mag MAE (dpmodel) FAILS the grad-accum invariant by a known 2x factor.
+
+    Unlike the MSE path, ``force_mag`` MAE reduces with ``xp.sum`` over frames
+    instead of a frame-wise mean, so a padded ``[A+B]`` batch (nf=2) yields twice
+    the mean-of-frames reference. This is a pre-existing frame-normalization
+    artifact, NOT a ghost-atom padding bug (padding is correctly excluded via
+    ``mask_mag``); see the module NOTE above. The test is ``xfail(strict=True)``
+    so the debt is tracked in CI and self-heals: if ``force_mag`` MAE is switched
+    to a frame-wise mean, this test XPASSes and strict mode turns that into a
+    failure that flags the marker for removal.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func="mae",
+        )
+
+    def _loss_fn(self, loss_obj, model_pred, label, natoms):
+        loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="force_mag MAE sums over frames (2x factor for nf=2); "
+        "pre-existing frame-normalization inconsistency tracked for follow-up.",
+    )
+    def test_mae_grad_accum(self):
+        """force_mag MAE violates the frame-average invariant (documented follow-up)."""
+        fm_A = _rnd(NA, 3)
+        fm_A_hat = _rnd(NA, 3)
+        fm_B = _rnd(NB, 3)
+        fm_B_hat = _rnd(NB, 3)
+
+        def make_A():
+            fm_A_full = np.zeros((NA, 3), dtype=np.float64)
+            fm_A_full[:_NM] = fm_A[:_NM]
+            fm_A_hat_full = np.zeros((NA, 3), dtype=np.float64)
+            fm_A_hat_full[:_NM] = fm_A_hat[:_NM]
+            pred = {
+                "energy": np.zeros((1, 1), dtype=np.float64),
+                "force_mag": fm_A_full[None],  # [1, NA, 3]
+                "mask_mag": _MASK_MAG_A,
+            }
+            lbl = {
+                "force_mag": fm_A_hat_full[None],
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NA
+
+        def make_B():
+            fm_B_full = np.zeros((NB, 3), dtype=np.float64)
+            fm_B_full[:_NM] = fm_B[:_NM]
+            fm_B_hat_full = np.zeros((NB, 3), dtype=np.float64)
+            fm_B_hat_full[:_NM] = fm_B_hat[:_NM]
+            pred = {
+                "energy": np.zeros((1, 1), dtype=np.float64),
+                "force_mag": fm_B_full[None],  # [1, NB, 3]
+                "mask_mag": _MASK_MAG_B,
+            }
+            lbl = {
+                "force_mag": fm_B_hat_full[None],
+                "find_force_mag": 1.0,
+                "find_energy": 0.0,
+                "find_force": 0.0,
+                "find_virial": 0.0,
+            }
+            return pred, lbl, NB
+
+        def make_padded():
             fm_A_pad = np.zeros((NP, 3), dtype=np.float64)
             fm_A_pad[:_NM] = fm_A[:_NM]
             fm_A_hat_pad = np.zeros((NP, 3), dtype=np.float64)

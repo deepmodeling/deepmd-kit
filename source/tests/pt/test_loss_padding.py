@@ -13,6 +13,7 @@ assert_grad_accum_invariant  -- reusable by Tasks 2-5 to check the
 """
 
 import numpy as np
+import pytest
 import torch
 
 from deepmd.pt.loss.dos import (
@@ -2006,6 +2007,97 @@ class TestPTEnerSpinLossForceMagMSEGradAccum:
     def test_mse_grad_accum(self):
         """force_mag MSE (NM equal per frame, ghost atoms non-magnetic) meets invariant."""
         # Only magnetic-atom slots (first NM_PT) have non-zero values; others zero.
+        fm_A = _rnd_t(_NM_PT, 3)
+        fm_A_hat = _rnd_t(_NM_PT, 3)
+        fm_B = _rnd_t(_NM_PT, 3)
+        fm_B_hat = _rnd_t(_NM_PT, 3)
+
+        def make_A():
+            fm_A_full = torch.zeros(NA, 3, dtype=torch.float64, device="cpu")
+            fm_A_full[:_NM_PT] = fm_A
+            fm_A_hat_full = torch.zeros(NA, 3, dtype=torch.float64, device="cpu")
+            fm_A_hat_full[:_NM_PT] = fm_A_hat
+            mp = {
+                "force_mag": fm_A_full.unsqueeze(0),  # [1, NA, 3]
+                "mask_mag": _MASK_MAG_A_PT,
+            }
+            lb = {"force_mag": fm_A_hat_full.unsqueeze(0), "find_force_mag": 1.0}
+            return mp, lb, NA
+
+        def make_B():
+            fm_B_full = torch.zeros(NB, 3, dtype=torch.float64, device="cpu")
+            fm_B_full[:_NM_PT] = fm_B
+            fm_B_hat_full = torch.zeros(NB, 3, dtype=torch.float64, device="cpu")
+            fm_B_hat_full[:_NM_PT] = fm_B_hat
+            mp = {
+                "force_mag": fm_B_full.unsqueeze(0),  # [1, NB, 3]
+                "mask_mag": _MASK_MAG_B_PT,
+            }
+            lb = {"force_mag": fm_B_hat_full.unsqueeze(0), "find_force_mag": 1.0}
+            return mp, lb, NB
+
+        def make_padded():
+            fm_A_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_A_pad[:_NM_PT] = fm_A
+            fm_A_hat_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_A_hat_pad[:_NM_PT] = fm_A_hat
+            fm_B_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_B_pad[:_NM_PT] = fm_B
+            fm_B_hat_pad = torch.zeros(NP, 3, dtype=torch.float64, device="cpu")
+            fm_B_hat_pad[:_NM_PT] = fm_B_hat
+            mp = {
+                "force_mag": torch.stack([fm_A_pad, fm_B_pad], dim=0),  # [2, NP, 3]
+                "mask_mag": _MASK_MAG_PAD_SPIN_PT,
+                "mask": _MASK_PAD_SPIN_PT,
+            }
+            lb = {
+                "force_mag": torch.stack([fm_A_hat_pad, fm_B_hat_pad], dim=0),
+                "find_force_mag": 1.0,
+            }
+            return mp, lb, NP
+
+        assert_grad_accum_invariant(
+            lambda mp, lb, na: _spin_loss_fn(self._make_loss(), mp, lb, na),
+            make_A,
+            make_B,
+            make_padded,
+        )
+
+
+class TestPTEnerSpinLossForceMagMAEGradAccum:
+    """force_mag MAE (pt) FAILS the grad-accum invariant by a known 2x factor.
+
+    Unlike the MSE path, ``force_mag`` MAE reduces with ``.sum()`` over frames
+    instead of a frame-wise mean, so a padded ``[A+B]`` batch (nf=2) yields twice
+    the mean-of-frames reference. This is a pre-existing frame-normalization
+    artifact, NOT a ghost-atom padding bug (padding is correctly excluded via
+    ``mask_mag``); see the module NOTE above. The test is ``xfail(strict=True)``
+    so the debt is tracked in CI and self-heals: if ``force_mag`` MAE is switched
+    to a frame-wise mean, this test XPASSes and strict mode turns that into a
+    failure that flags the marker for removal.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossPT(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=0.0,
+            limit_pref_fr=0.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            loss_func="mae",
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="force_mag MAE sums over frames (2x factor for nf=2); "
+        "pre-existing frame-normalization inconsistency tracked for follow-up.",
+    )
+    def test_mae_grad_accum(self):
+        """force_mag MAE violates the frame-average invariant (documented follow-up)."""
         fm_A = _rnd_t(_NM_PT, 3)
         fm_A_hat = _rnd_t(_NM_PT, 3)
         fm_B = _rnd_t(_NM_PT, 3)
