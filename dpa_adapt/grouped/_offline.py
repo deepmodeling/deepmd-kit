@@ -52,7 +52,7 @@ class GroupedDataset:
         pretrained: str,
         model_branch: str | None = None,
         type_map: list[str] | tuple[str, ...] | None = None,
-        target_key: str = "property",
+        target_key: str | list[str] = "property",
         fmt: str | None = None,
         cache: bool = True,
     ) -> None:
@@ -60,7 +60,11 @@ class GroupedDataset:
         self.pretrained = pretrained
         self.model_branch = model_branch
         self.type_map = list(type_map) if type_map else None
-        self.target_key = _resolve_label_key(target_key)
+        # target_key may be a single string or a list (multi-property), same
+        # CLI convention as the non-grouped _load_labels(): --target-key a,b
+        # is split into a list before reaching here.
+        keys = [target_key] if isinstance(target_key, str) else list(target_key)
+        self.target_keys = [_resolve_label_key(key) for key in keys]
         self.fmt = fmt
         self.cache = cache
 
@@ -87,7 +91,7 @@ class GroupedDataset:
                     "set.*/group_id.npy can be read."
                 )
             source_path = Path(source)
-            system_frames = _read_system_group_rows(source_path, self.target_key)
+            system_frames = _read_system_group_rows(source_path, self.target_keys)
             # group_id.npy is scoped to one DeePMD system.  Many assembly writers
             # naturally use group_id=0 in every system, so remap each system's
             # local ids into a process-wide id space before offline aggregation.
@@ -217,8 +221,16 @@ def _unique_paths(paths: Iterable[Path]) -> list[Path]:
 
 
 def _read_system_group_rows(
-    source_path: Path, target_key: str
+    source_path: Path, target_keys: list[str]
 ) -> list[tuple[int, float, np.ndarray]]:
+    """Read (group_id, weight, label) rows for one system.
+
+    *target_keys* mirrors the non-grouped ``_load_labels()`` multi-property
+    convention: one label column is read per key from ``set.*/{key}.npy``.
+    A single key keeps that column's own shape (unchanged from before
+    multi-target support); several keys are stacked into one row per frame,
+    same as ``_load_labels()``'s ``np.column_stack``.
+    """
     rows: list[tuple[int, float, np.ndarray]] = []
     set_dirs = sorted(source_path.glob("set.*"))
     if not set_dirs:
@@ -227,14 +239,20 @@ def _read_system_group_rows(
     for set_dir in set_dirs:
         group_id_path = set_dir / "group_id.npy"
         weight_path = set_dir / "weight.npy"
-        label_path = set_dir / f"{target_key}.npy"
-        missing = [str(p) for p in (group_id_path, label_path) if not p.is_file()]
+        label_paths = [set_dir / f"{key}.npy" for key in target_keys]
+        missing = [str(p) for p in (group_id_path, *label_paths) if not p.is_file()]
         if missing:
             raise DPADataError(f"Grouped input is missing required files: {missing}.")
 
         group_ids = np.asarray(np.load(str(group_id_path)), dtype=np.int64).reshape(-1)
-        labels = np.asarray(np.load(str(label_path)))
-        n_frames = labels.shape[0]
+        label_arrays = [np.asarray(np.load(str(path))) for path in label_paths]
+        n_frames = label_arrays[0].shape[0]
+        for key, arr, path in zip(target_keys, label_arrays, label_paths, strict=True):
+            if arr.shape[0] != n_frames:
+                raise DPADataError(
+                    f"{path} has {arr.shape[0]} frames; expected {n_frames} "
+                    f"(from {label_paths[0]}, key={target_keys[0]!r} vs {key!r})."
+                )
         if weight_path.is_file():
             weight = np.asarray(np.load(str(weight_path)), dtype=float).reshape(-1)
         else:
@@ -248,11 +266,17 @@ def _read_system_group_rows(
                 f"{weight_path} has shape {weight.shape}; expected ({n_frames},)."
             )
         for frame_idx in range(n_frames):
+            if len(label_arrays) == 1:
+                label = np.asarray(label_arrays[0][frame_idx])
+            else:
+                label = np.concatenate(
+                    [np.asarray(arr[frame_idx]).reshape(-1) for arr in label_arrays]
+                )
             rows.append(
                 (
                     int(group_ids[frame_idx]),
                     float(weight[frame_idx]),
-                    np.asarray(labels[frame_idx]),
+                    label,
                 )
             )
     return rows

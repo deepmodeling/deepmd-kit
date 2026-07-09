@@ -86,6 +86,36 @@ def test_grouped_dataset_weighted_embedding(monkeypatch, tmp_path):
     np.testing.assert_allclose(dataset.get_labels(), np.array([2.5]))
 
 
+def test_grouped_dataset_target_key_list_stacks_multi_property_labels(
+    monkeypatch, tmp_path
+):
+    """The CLI's --target-key a,b (comma-separated) reaches GroupedDataset as
+    target_key=["a", "b"]; each key must be read from its own set.*/{key}.npy
+    and stacked into one (n_groups, 2) label column per group, the same
+    convention the non-grouped _load_labels() multi-property path uses.
+    """
+    parent = tmp_path / "data"
+    sys_a = _write_system(parent, "a", group_id=0, weight=[1.0], n_frames=1)
+    # two extra label columns beyond the default energy/property ones
+    np.save(sys_a / "set.000" / "gap.npy", np.array([1.5]))
+    np.save(sys_a / "set.000" / "homo.npy", np.array([-4.0]))
+
+    def fake_load_or_extract(systems, **kwargs):
+        return np.ones((1, 2))
+
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        fake_load_or_extract,
+    )
+
+    dataset = GroupedDataset(
+        str(parent), pretrained="fake.pt", target_key=["gap", "homo"]
+    )
+
+    assert dataset.get_labels().shape == (1, 2)
+    np.testing.assert_allclose(dataset.get_labels(), np.array([[1.5, -4.0]]))
+
+
 def test_grouped_dataset_group_ids_are_scoped_per_system(monkeypatch, tmp_path):
     parent = tmp_path / "data"
     sys_a = _write_system(parent, "a", label=1.0, group_id=0, weight=[0.7])
