@@ -122,6 +122,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
         add_chg_spin_ebd: bool = False,
+        default_chg_spin: list[float] | None = None,
     ) -> None:
         super().__init__()
 
@@ -167,6 +168,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            sequential_update=self.repflow_args.sequential_update,
             use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
@@ -177,6 +179,11 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
 
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
+        if default_chg_spin is not None and len(default_chg_spin) != 2:
+            raise ValueError(
+                "default_chg_spin must have exactly 2 values [charge, spin]"
+            )
+        self.default_chg_spin = default_chg_spin
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -447,6 +454,23 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         stddev_list = [self.repflows.stddev]
         return mean_list, stddev_list
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input."""
+        return 2 if self.add_chg_spin_ebd else 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether default charge_spin values are set."""
+        return self.default_chg_spin is not None
+
+    def get_default_chg_spin(self) -> paddle.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.default_chg_spin is None:
+            return None
+        return paddle.to_tensor(
+            self.default_chg_spin,
+            dtype=self.prec,
+        )
+
     def serialize(self) -> dict:
         repflows = self.repflows
         data = {
@@ -465,6 +489,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
         }
@@ -541,7 +566,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-        fparam: paddle.Tensor | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> tuple[
         paddle.Tensor,
         paddle.Tensor | None,
@@ -593,11 +618,11 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             node_ebd_ext = self.type_embedding(extended_atype)
 
         if self.add_chg_spin_ebd:
-            assert fparam is not None
+            assert charge_spin is not None
             assert self.chg_embedding is not None
             assert self.spin_embedding is not None
-            charge = fparam[:, 0].to(dtype=paddle.int64) + 100
-            spin = fparam[:, 1].to(dtype=paddle.int64)
+            charge = charge_spin[:, 0].to(dtype=paddle.int64) + 100
+            spin = charge_spin[:, 1].to(dtype=paddle.int64)
             chg_ebd = self.chg_embedding(charge)
             spin_ebd = self.spin_embedding(spin)
             sys_cs_embd = self.act(

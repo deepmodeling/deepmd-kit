@@ -284,19 +284,26 @@ def make_model(
             coord
                 The coordinates of the atoms.
                 shape: nf x (nloc x 3)
+
             atype
                 The type of atoms. shape: nf x nloc
+
             box
                 The simulation box. shape: nf x 9
+
             fparam
                 frame parameter. nf x ndf
+
             aparam
                 atomic parameter. nf x nloc x nda
+
             do_atomic_virial
                 If calculate the atomic virial.
+
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+
             neighbor_list
                 Neighbor-list construction strategy for the DENSE-nlist path
                 only.  ``None`` uses the default all-pairs builder; an
@@ -305,6 +312,7 @@ def make_model(
                 is consumed by the dense lower; supplying it forces the dense
                 route (see below) and it is rejected together with an explicit
                 ``neighbor_graph_method``.
+
             neighbor_graph_method
                 Selects the lower the model routes through.  The option strings
                 refer to the neighbor-GRAPH builder, NOT the legacy dense nlist:
@@ -1019,6 +1027,10 @@ def make_model(
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
+
+        def get_numb_dos(self) -> int:
+            """Get the number of DOS. Zero for models without a DOS output."""
+            return 0
 
         def has_default_fparam(self) -> bool:
             """Check if the model has default frame parameters."""

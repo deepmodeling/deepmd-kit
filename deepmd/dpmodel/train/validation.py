@@ -33,20 +33,15 @@ from deepmd.utils.argcheck import (
     resolve_full_validation_start_step,
 )
 from deepmd.utils.eval_metrics import (
-    FULL_VALIDATION_METRIC_FAMILY_BY_KEY,
-    FULL_VALIDATION_METRIC_KEY_MAP,
+    ENERGY_FULL_VALIDATION_PROFILE,
 )
 
 log = logging.getLogger(__name__)
 
-LOG_COLUMN_ORDER = [
-    ("E_MAE", "mae_e_per_atom"),
-    ("E_RMSE", "rmse_e_per_atom"),
-    ("F_MAE", "mae_f"),
-    ("F_RMSE", "rmse_f"),
-    ("V_MAE", "mae_v_per_atom"),
-    ("V_RMSE", "rmse_v_per_atom"),
-]
+# The backend-independent validator drives only energy-type models: the JAX
+# backend has no spin model, so it is bound to the energy full-validation
+# profile. Spin support is decided by the per-backend profile selection.
+FULL_VALIDATION_PROFILE = ENERGY_FULL_VALIDATION_PROFILE
 
 TOPK_RECORDS_INFO_KEY = "full_validation_topk_records"
 BEST_METRIC_NAME_INFO_KEY = "full_validation_metric"
@@ -61,11 +56,6 @@ VAL_LOG_SIGNIFICANT_DIGITS = 5
 VAL_LOG_COLUMN_GAP = "   "
 VAL_LOG_HEADER_PREFIX = "# "
 VAL_LOG_DATA_PREFIX = "  "
-METRIC_LOG_UNIT_MAP = {
-    "e": ("meV/atom", 1000.0),
-    "f": ("meV/Å", 1000.0),
-    "v": ("meV/atom", 1000.0),
-}
 
 
 @dataclass(frozen=True)
@@ -120,15 +110,14 @@ def resolve_best_checkpoint_dir(
 def parse_validation_metric(metric: str) -> tuple[str, str]:
     """Parse the configured full validation metric."""
     normalized_metric = normalize_full_validation_metric(metric)
-    if normalized_metric not in FULL_VALIDATION_METRIC_KEY_MAP:
-        supported_metrics = ", ".join(
-            item.upper() for item in FULL_VALIDATION_METRIC_KEY_MAP
-        )
+    metric_key_map = FULL_VALIDATION_PROFILE.metric_key_map
+    if normalized_metric not in metric_key_map:
+        supported_metrics = ", ".join(item.upper() for item in metric_key_map)
         raise ValueError(
             "validating.validation_metric must be one of "
             f"{supported_metrics}, got {metric!r}."
         )
-    return normalized_metric, FULL_VALIDATION_METRIC_KEY_MAP[normalized_metric]
+    return normalized_metric, metric_key_map[normalized_metric]
 
 
 def format_metric_for_log(
@@ -136,7 +125,7 @@ def format_metric_for_log(
 ) -> tuple[str, float, str]:
     """Format a full validation metric for user-facing logging."""
     metric_family, metric_kind = metric_name.split(":")
-    metric_unit, metric_scale = METRIC_LOG_UNIT_MAP[metric_family]
+    metric_unit, metric_scale = FULL_VALIDATION_PROFILE.unit_by_family[metric_family]
     metric_label = f"{metric_family.upper()}:{metric_kind.upper()}"
     return metric_label, metric_value * metric_scale, metric_unit
 
@@ -145,10 +134,10 @@ def format_metric_value_for_table(
     metric_key: str, metric_value: float
 ) -> tuple[float, str]:
     """Format one table metric value and its unit for `val.log`."""
-    metric_family = FULL_VALIDATION_METRIC_FAMILY_BY_KEY.get(metric_key)
+    metric_family = FULL_VALIDATION_PROFILE.metric_family_by_key.get(metric_key)
     if metric_family is None:
         raise ValueError(f"Unknown full validation metric key: {metric_key}")
-    metric_unit, metric_scale = METRIC_LOG_UNIT_MAP[metric_family]
+    metric_unit, metric_scale = FULL_VALIDATION_PROFILE.unit_by_family[metric_family]
     return metric_value * metric_scale, metric_unit
 
 
@@ -196,6 +185,7 @@ class FullValidatorBase(ABC):
         stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
         emit_best_save_log: bool = True,
     ) -> None:
+        self.profile = FULL_VALIDATION_PROFILE
         self.state_store = state_store
         self.rank = rank
         self.checkpoint_dir = (
@@ -242,7 +232,7 @@ class FullValidatorBase(ABC):
             restart_training and self.full_val_file.exists()
         )
         self.table_column_specs = []
-        for column_name, metric_key in LOG_COLUMN_ORDER:
+        for column_name, metric_key in self.profile.column_order:
             _, metric_unit = format_metric_value_for_table(metric_key, 1.0)
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(
@@ -540,10 +530,7 @@ class FullValidatorBase(ABC):
                 for _, header_label, column_width in self.table_column_specs:
                     header += VAL_LOG_COLUMN_GAP + f"{header_label:^{column_width}s}"
                 header += "\n"
-                header += (
-                    "# E uses per-atom energy, F uses component-wise force errors, "
-                    "and V uses virial normalized by natoms.\n"
-                )
+                header += self.profile.log_header_note
                 fout.write(header)
                 self._should_write_header = False
                 self._write_mode = "a"

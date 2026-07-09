@@ -259,8 +259,9 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
     @pytest.mark.parametrize(
         "excl_types", [[], [(0, 1)]]
     )  # no exclusion / type-0-1 pair exclusion
+    @pytest.mark.parametrize("tm", ["concat", "strip"])  # tebd_input_mode
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph(self, prec, excl_types) -> None:
+    def test_make_fx_graph(self, prec, tm, excl_types) -> None:
         """make_fx (export-readiness) of the attn_layer=0 GRAPH forward.
 
         For ``attn_layer == 0`` the dense ``forward`` routes through the
@@ -284,6 +285,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             self.sel_mix,
             self.nt,
             attn_layer=0,
+            tebd_input_mode=tm,
             precision=prec,
             exclude_types=excl_types,
             seed=GLOBAL_SEED,
@@ -324,9 +326,10 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
     @pytest.mark.parametrize(
         "excl_types", [[], [(0, 1)]]
     )  # no exclusion / type-0-1 pair exclusion
+    @pytest.mark.parametrize("tm", ["concat", "strip"])  # tebd_input_mode
     @pytest.mark.parametrize("smooth", [False, True])  # smooth attention branch
     @pytest.mark.parametrize("prec", ["float64"])  # precision
-    def test_make_fx_graph_attn(self, prec, smooth, excl_types) -> None:
+    def test_make_fx_graph_attn(self, prec, smooth, tm, excl_types) -> None:
         """make_fx (export-readiness) of the GRAPH forward with attention.
 
         MERGE BLOCKER (NeighborGraph PR-D): pt_expt compiled training routes
@@ -351,6 +354,7 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             self.sel_mix,
             self.nt,
             attn_layer=2,
+            tebd_input_mode=tm,
             attn_dotr=True,
             smooth_type_embedding=smooth,
             precision=prec,
