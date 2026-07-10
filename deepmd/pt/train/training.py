@@ -1616,26 +1616,20 @@ class Trainer:
                     def log_loss_train(
                         _loss: Any, _more_loss: Any, _task_key: str = "Default"
                     ) -> dict:
-                        results = {}
                         if not self.multi_task:
-                            # Use accumulated average loss for single task
-                            for item in self.train_loss_accu:
-                                results[item] = (
-                                    self.train_loss_accu[item]
-                                    / self.step_count_in_interval
-                                )
-                        else:
-                            # Use accumulated average loss for multi-task
-                            if (
-                                _task_key in self.train_loss_accu
-                                and _task_key in self.step_count_per_task
-                            ):
-                                for item in self.train_loss_accu[_task_key]:
-                                    results[item] = (
-                                        self.train_loss_accu[_task_key][item]
-                                        / self.step_count_per_task[_task_key]
-                                    )
-                        return results
+                            return {
+                                item: value / self.step_count_in_interval
+                                for item, value in self.train_loss_accu.items()
+                            }
+
+                        task_losses = self.train_loss_accu.get(_task_key, {})
+                        step_count = self.step_count_per_task.get(_task_key, 0)
+                        if step_count == 0:
+                            return dict.fromkeys(task_losses, float("nan"))
+                        return {
+                            item: value / step_count
+                            for item, value in task_losses.items()
+                        }
                 else:
 
                     def log_loss_train(
