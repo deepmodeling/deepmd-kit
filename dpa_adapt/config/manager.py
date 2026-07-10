@@ -8,20 +8,42 @@ from typing import (
 from dpa_adapt._backend import (
     resolve_dp_command,
 )
+from dpa_adapt.mft import (
+    _PROPERTY_LIKE_DOWNSTREAM_TYPES,
+)
+
+
+def _aux_dim_case_embd(t: Any) -> int:
+    """dim_case_embd required on the DOWNSTREAM head to share a descriptor
+    with the aux branch.
+
+    Read from the aux branch's own (ckpt-derived) ``fitting_net_params``
+    rather than hardcoded: it must equal the branch count of whatever
+    multi-task checkpoint the aux branch was itself pretrained as part of
+    (deepmd-kit's multi-task trainer requires every model_dict branch to
+    declare the same dim_case_embd -- see
+    deepmd.pt.train.training.get_case_embd_config). That count is 31 for
+    DPA-3.1-3M but differs for other checkpoints (e.g. 23 for the
+    OMol25/Organic_Reactions/ODAC23 checkpoint); hardcoding 31 silently
+    mismatches every checkpoint that isn't DPA-3.1-3M. Falls back to 0 (no
+    case embedding, matching the aux branch) when the aux fitting_net has
+    none, e.g. a single-task-pretrained checkpoint.
+    """
+    return (getattr(t, "fitting_net_params", None) or {}).get("dim_case_embd", 0)
+
 
 # Default property-head architecture for MFT DOWNSTREAM when
 # downstream_task_type="property". Mirrors DPATrainer.DEFAULT_FITTING_NET
-# (trainer.py L64-70) plus dim_case_embd=31, which the DPA-3.1-3M ckpt
-# requires for the case-embedding layer in multi-task mode. (DPATrainer is
-# single-task and doesn't need this field; in MFT the descriptor is shared
-# across branches so the property head must declare it.)
+# (trainer.py L64-70). dim_case_embd is added dynamically by
+# _build_property_fitting_net via _aux_dim_case_embd, not baked in here:
+# DPATrainer is single-task and doesn't need this field at all, while MFT's
+# correct value depends on which checkpoint is being finetuned.
 _PROPERTY_FITTING_NET_BASE = {
     "type": "property",
     "neuron": [240, 240, 240],
     "activation_function": "tanh",
     "resnet_dt": True,
     "precision": "float32",
-    "dim_case_embd": 31,
 }
 
 
@@ -40,6 +62,9 @@ def _build_property_fitting_net(t: Any) -> dict:
             "seed": t.seed,
         }
     )
+    dim_case_embd = _aux_dim_case_embd(t)
+    if dim_case_embd:
+        fn["dim_case_embd"] = dim_case_embd
     if getattr(t, "fparam_dim", 0) > 0:
         fn["numb_fparam"] = t.fparam_dim
     return fn
@@ -53,6 +78,57 @@ def _build_property_loss() -> dict:
     """
     return {
         "type": "property",
+        "loss_func": "mse",
+        "metric": ["mae", "rmse"],
+        "beta": 1.0,
+    }
+
+
+# Default group_property-head architecture for MFT DOWNSTREAM when
+# downstream_task_type="group_property". Independent of
+# _PROPERTY_FITTING_NET_BASE (not a trimmed copy of it): GroupPropertyFittingNet
+# is a small standalone MLP, not built on GeneralFitting, so several
+# property-schema fields (resnet_dt, intensive, ...) don't exist on it and
+# dargs strict-mode rejects them outright rather than ignoring them -- see
+# deepmd.utils.argcheck.fitting_group_property. dim_case_embd is added
+# dynamically by _build_group_property_fitting_net via _aux_dim_case_embd,
+# not baked in here, for the same reason as the property head.
+_GROUP_PROPERTY_FITTING_NET_BASE = {
+    "type": "group_property",
+    "neuron": [240, 240, 240],
+    "activation_function": "gelu",
+    "precision": "float32",
+}
+
+
+def _build_group_property_fitting_net(t: Any) -> dict:
+    """Construct a group_property fitting_net dict from a tuner's params."""
+    fn = dict(_GROUP_PROPERTY_FITTING_NET_BASE)
+    fn.update(
+        {
+            "property_name": t.property_name,
+            "task_dim": t.task_dim,
+            "group_reduce": getattr(t, "group_reduce", "mean"),
+            "seed": t.seed,
+        }
+    )
+    dim_case_embd = _aux_dim_case_embd(t)
+    if dim_case_embd:
+        fn["dim_case_embd"] = dim_case_embd
+    if getattr(t, "fparam_dim", 0) > 0:
+        fn["numb_fparam"] = t.fparam_dim
+    return fn
+
+
+def _build_group_property_loss() -> dict:
+    """group_property-task loss for DOWNSTREAM.
+
+    deepmd.utils.argcheck.loss_group_property() reuses loss_property()'s
+    schema verbatim, so this only differs from _build_property_loss() by
+    ``type``.
+    """
+    return {
+        "type": "group_property",
         "loss_func": "mse",
         "metric": ["mae", "rmse"],
         "beta": 1.0,
@@ -81,26 +157,36 @@ class MFTConfigManager:
             if getattr(t, "fitting_net_params", None)
             else {"type": "ener"}
         )
-        # DOWNSTREAM branch: ener (legacy, sensitivity-analysis callers) or
-        # property (paper-faithful BOOM eval). Default 'ener' for back-compat
-        # with FakeTuners and existing callers that don't set the attr.
+        # DOWNSTREAM branch: ener (legacy, sensitivity-analysis callers),
+        # property (paper-faithful BOOM eval), or group_property (grouped/
+        # assembly targets, e.g. OER overpotential). Default 'ener' for
+        # back-compat with FakeTuners and existing callers that don't set
+        # the attr.
         downstream_task_type = getattr(t, "downstream_task_type", "ener")
-        is_property = downstream_task_type == "property"
-        # Branch key for the downstream head. Paper qm9_gap/mft uses "property";
-        # legacy ener mode keeps "DOWNSTREAM" so mp_data sensitivity-analysis
-        # configs stay byte-for-byte unchanged (renaming would break the branch
-        # name in their already-trained ckpts).
-        downstream_key = "property" if is_property else "DOWNSTREAM"
-        if is_property:
+        # Both property and group_property get a fresh, RANDOM-initialized
+        # downstream head sized by property_name/task_dim and follow the
+        # qm9_gap paper-alignment defaults below; only legacy ener mode
+        # reuses the aux branch's own fitting_net/finetune_head.
+        is_random_downstream = downstream_task_type in _PROPERTY_LIKE_DOWNSTREAM_TYPES
+        # Branch key for the downstream head. Paper qm9_gap/mft uses the task
+        # type itself ("property" / "group_property"); legacy ener mode keeps
+        # "DOWNSTREAM" so mp_data sensitivity-analysis configs stay
+        # byte-for-byte unchanged (renaming would break the branch name in
+        # their already-trained ckpts).
+        downstream_key = downstream_task_type if is_random_downstream else "DOWNSTREAM"
+        if downstream_task_type == "property":
             downstream_fitting_net = _build_property_fitting_net(t)
             downstream_loss = _build_property_loss()
+        elif downstream_task_type == "group_property":
+            downstream_fitting_net = _build_group_property_fitting_net(t)
+            downstream_loss = _build_group_property_loss()
         else:
             downstream_fitting_net = aux_fitting_net
             downstream_loss = dict(_ENER_LOSS)
 
-        # Paper qm9_gap/mft alignment is applied ONLY in property mode. The
-        # legacy ener path (mp_data sensitivity analysis) stays byte-for-byte
-        # unchanged.
+        # Paper qm9_gap/mft alignment is applied to both property and
+        # group_property downstream modes. The legacy ener path (mp_data
+        # sensitivity analysis) stays byte-for-byte unchanged.
         descriptor = {
             "type": "dpa3",
             "repflow": {
@@ -130,7 +216,9 @@ class MFTConfigManager:
                 "optim_update": True,
                 "use_exp_switch": True,
             },
-            "activation_function": "silut:3.0" if is_property else "custom_silu:3.0",
+            "activation_function": "silut:3.0"
+            if is_random_downstream
+            else "custom_silu:3.0",
             "precision": "float32",
             "use_tebd_bias": False,
             "concat_output_tebd": False,
@@ -139,15 +227,16 @@ class MFTConfigManager:
             "trainable": True,
             "use_econf_tebd": False,
         }
-        if is_property:
+        if is_random_downstream:
             descriptor["repflow"]["fix_stat_std"] = 0.3
 
-        # MFT branch heads. In property mode the paper pins finetune_head:
-        # the aux head loads from its named branch, the downstream property
-        # head is RANDOM-initialized (paper Eq 12). Legacy ener mode keeps the
-        # original layout (no finetune_head on aux; downstream = aux branch),
-        # including key order, so the emitted JSON is byte-for-byte unchanged.
-        if is_property:
+        # MFT branch heads. In property/group_property mode the paper pins
+        # finetune_head: the aux head loads from its named branch, the
+        # downstream head is RANDOM-initialized (paper Eq 12). Legacy ener
+        # mode keeps the original layout (no finetune_head on aux; downstream
+        # = aux branch), including key order, so the emitted JSON is
+        # byte-for-byte unchanged.
+        if is_random_downstream:
             aux_head = {
                 "type_map": "type_map",
                 "descriptor": "dpa3_descriptor",
@@ -176,22 +265,23 @@ class MFTConfigManager:
         decay_steps = (
             t.decay_steps
             if getattr(t, "decay_steps", None) is not None
-            else (1000 if is_property else 5000)
+            else (1000 if is_random_downstream else 5000)
         )
         # Per-branch batch sizes: explicit override wins, then paper defaults
-        # for property mode, then the single batch_size for legacy ener mode.
+        # for property/group_property mode, then the single batch_size for
+        # legacy ener mode.
         aux_batch = getattr(t, "aux_batch_size", None) or (
-            "auto:128" if is_property else t.batch_size
+            "auto:128" if is_random_downstream else t.batch_size
         )
         downstream_batch = getattr(t, "downstream_batch_size", None) or (
-            "auto:512" if is_property else t.batch_size
+            "auto:512" if is_random_downstream else t.batch_size
         )
         # Paper default 0.5/0.5; aux_prob (default 0.5) controls the split, the
         # downstream share is the complement. Legacy keeps downstream at 1.0.
         aux_prob = float(t.aux_prob)
         if not 0.0 <= aux_prob <= 1.0:
             raise ValueError(f"aux_prob must be in [0, 1]; got {t.aux_prob!r}.")
-        downstream_prob = (1.0 - aux_prob) if is_property else 1.0
+        downstream_prob = (1.0 - aux_prob) if is_random_downstream else 1.0
 
         aux_systems = t.aux_data if isinstance(t.aux_data, list) else [t.aux_data]
         train_systems = (
@@ -233,7 +323,7 @@ class MFTConfigManager:
                 "batch_size": downstream_batch,
             }
 
-        if is_property:
+        if is_random_downstream:
             # Paper qm9_gap: gradient clipping at 5.0.
             training["gradient_max_norm"] = 5.0
 
