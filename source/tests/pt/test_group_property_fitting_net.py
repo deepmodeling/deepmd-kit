@@ -39,7 +39,6 @@ def test_unsupported_property_options_are_rejected_not_ignored():
     for bad_kwarg in (
         "numb_aparam",
         "default_fparam",
-        "dim_case_embd",
         "resnet_dt",
         "intensive",
         "distinguish_types",
@@ -96,3 +95,63 @@ def test_trainable_list_wrong_length_raises():
 def test_trainable_bool_still_applies_uniformly():
     fn = _make(trainable=False)
     assert not any(p.requires_grad for p in fn.parameters())
+
+
+def test_fparam_branch_encodes_side_features_before_fusion():
+    fn = _make(numb_fparam=3, fparam_neuron=[5], neuron=[7])
+    assert fn.fparam_neuron == [5]
+    assert isinstance(fn.fparam_network[0], torch.nn.Linear)
+    assert fn.fparam_network[0].in_features == 3
+    assert fn.fparam_network[0].out_features == 5
+    assert fn.network[0].in_features == 4 + 5
+    out = fn(torch.zeros(2, 4 + 3))
+    assert out.shape == (2, 1)
+
+
+def test_fparam_branch_requires_fparam_columns():
+    with pytest.raises(ValueError, match="fparam_neuron"):
+        _make(numb_fparam=0, fparam_neuron=[5])
+
+
+def test_dim_case_embd_defaults_to_disabled():
+    fn = _make()
+    assert fn.dim_case_embd == 0
+    assert fn.case_embd is None
+    assert fn.network[0].in_features == 4  # dim_descrpt only
+
+
+def test_dim_case_embd_widens_first_layer_and_inits_zero():
+    fn = _make(dim_case_embd=5)
+    assert fn.network[0].in_features == 4 + 5  # dim_descrpt + dim_case_embd
+    assert fn.case_embd.shape == (5,)
+    assert torch.equal(fn.case_embd, torch.zeros(5))
+
+
+def test_set_case_embd_produces_one_hot_row():
+    fn = _make(dim_case_embd=4)
+    fn.set_case_embd(2)
+    assert torch.equal(fn.case_embd, torch.eye(4)[2])
+
+
+def test_set_case_embd_changes_forward_output():
+    fn = _make(dim_case_embd=3, seed=42)
+    group_embedding = torch.rand(2, 4)
+    out_before = fn(group_embedding).detach().clone()
+    fn.set_case_embd(1)
+    out_after = fn(group_embedding).detach().clone()
+    assert not torch.allclose(out_before, out_after)
+
+
+def test_dim_case_embd_combines_with_fparam_neuron():
+    fn = _make(numb_fparam=3, fparam_neuron=[5], dim_case_embd=4, neuron=[7])
+    # dim_descrpt(4) + fparam_neuron out(5) + dim_case_embd(4)
+    assert fn.network[0].in_features == 4 + 5 + 4
+    fn.set_case_embd(0)
+    out = fn(torch.zeros(2, 4 + 3))
+    assert out.shape == (2, 1)
+
+
+def test_serialize_round_trips_dim_case_embd():
+    fn = _make(dim_case_embd=6)
+    assert fn.serialize()["dim_case_embd"] == 6
+    assert _make().serialize()["dim_case_embd"] == 0

@@ -62,6 +62,8 @@ class GroupPropertyFittingNet(Fitting):
         trainable: bool | list[bool] = True,
         type_map: list[str] | None = None,
         numb_fparam: int = 0,
+        fparam_neuron: list[int] | None = None,
+        dim_case_embd: int = 0,
         group_reduce: str = "mean",
         seed: int | None = None,
         # Injected unconditionally by the generic model-building path
@@ -89,6 +91,23 @@ class GroupPropertyFittingNet(Fitting):
         self.type_map = list(type_map or [])
         self.seed = seed
         self.numb_fparam = int(numb_fparam)
+        self.fparam_neuron = list(fparam_neuron or [])
+        if self.fparam_neuron and self.numb_fparam <= 0:
+            raise ValueError("fparam_neuron requires numb_fparam > 0.")
+        self.dim_case_embd = int(dim_case_embd)
+        if self.dim_case_embd > 0:
+            # One-hot branch identifier for multi-task training, where several
+            # fitting nets (e.g. an MFT aux ener head and this group_property
+            # head) share one descriptor and need to stay distinguishable; see
+            # set_case_embd. Concatenated onto the group embedding in
+            # forward(), so it counts toward the first Linear layer's input
+            # width below.
+            self.register_buffer(
+                "case_embd",
+                torch.zeros(self.dim_case_embd, dtype=self.prec, device=env.DEVICE),
+            )
+        else:
+            self.case_embd = None
         if group_reduce not in ("mean", "sum"):
             raise ValueError(
                 f"group_reduce must be 'mean' or 'sum'; got {group_reduce!r}."
@@ -100,22 +119,43 @@ class GroupPropertyFittingNet(Fitting):
         #           for additive-property semantics only.
         self.group_reduce = group_reduce
 
-        # Per-group side features (fparam) are concatenated to the aggregated
-        # group embedding, so the fitting input widens by ``numb_fparam``.
-        dims = [dim_descrpt + self.numb_fparam, *self.neuron, task_dim]
+        # Per-group side features (fparam) can either be concatenated directly
+        # to the aggregated group embedding (default/backward-compatible path),
+        # or first encoded through a small fparam-only branch.  The branch helps
+        # when low-dimensional experimental conditions (salt/concentration/pH)
+        # would otherwise be numerically drowned by a high-dimensional structural
+        # embedding in the first fused Linear layer.
+        fparam_out_dim = (
+            self.fparam_neuron[-1] if self.fparam_neuron else self.numb_fparam
+        )
+        dims = [
+            dim_descrpt + fparam_out_dim + self.dim_case_embd,
+            *self.neuron,
+            task_dim,
+        ]
 
-        def _build_layers() -> list[torch.nn.Module]:
+        def _build_mlp(
+            dims: list[int], *, activate_last: bool = False
+        ) -> list[torch.nn.Module]:
             layers: list[torch.nn.Module] = []
             for ii in range(len(dims) - 1):
                 layers.append(torch.nn.Linear(dims[ii], dims[ii + 1], dtype=self.prec))
-                if ii < len(dims) - 2:
+                if activate_last or ii < len(dims) - 2:
                     layers.append(_activation(self.activation_function))
             return layers
+
+        def _build_layers() -> tuple[list[torch.nn.Module], list[torch.nn.Module]]:
+            fparam_layers = (
+                _build_mlp([self.numb_fparam, *self.fparam_neuron], activate_last=True)
+                if self.fparam_neuron
+                else []
+            )
+            return fparam_layers, _build_mlp(dims)
 
         if seed is None:
             # No seed requested: draw from (and advance) the caller's global
             # RNG stream exactly as an unseeded torch.nn.Linear always does.
-            layers = _build_layers()
+            fparam_layers, layers = _build_layers()
         else:
             # Seed only this net's own initialization, without disturbing the
             # caller's global RNG state (torch.nn.Linear.reset_parameters()
@@ -123,7 +163,8 @@ class GroupPropertyFittingNet(Fitting):
             # scope a seed to a plain nn.Linear-based net).
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(seed)
-                layers = _build_layers()
+                fparam_layers, layers = _build_layers()
+        self.fparam_network = torch.nn.Sequential(*fparam_layers).to(env.DEVICE)
         self.network = torch.nn.Sequential(*layers).to(env.DEVICE)
         # Task E (route 3): group_property does NOT init the output bias from
         # label statistics.  The property path's frame-level stat would count each
@@ -156,7 +197,22 @@ class GroupPropertyFittingNet(Fitting):
                 param.requires_grad = self.trainable
 
     def forward(self, group_embedding: torch.Tensor) -> torch.Tensor:
-        return self.network(group_embedding.to(self.prec))
+        group_embedding = group_embedding.to(self.prec)
+        if self.fparam_neuron:
+            descrpt = group_embedding[:, : self.dim_descrpt]
+            fparam = group_embedding[:, self.dim_descrpt :]
+            if fparam.shape[-1] != self.numb_fparam:
+                raise ValueError(
+                    f"expected {self.numb_fparam} fparam columns, got {fparam.shape[-1]}"
+                )
+            group_embedding = torch.cat([descrpt, self.fparam_network(fparam)], dim=-1)
+        if self.dim_case_embd > 0:
+            case_embd = self.case_embd.to(
+                dtype=group_embedding.dtype, device=group_embedding.device
+            )
+            case_embd = case_embd.unsqueeze(0).expand(group_embedding.shape[0], -1)
+            group_embedding = torch.cat([group_embedding, case_embd], dim=-1)
+        return self.network(group_embedding)
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -192,6 +248,18 @@ class GroupPropertyFittingNet(Fitting):
     ) -> None:
         self.type_map = list(type_map)
 
+    def set_case_embd(self, case_idx: int) -> None:
+        """
+        Set the case (branch) embedding of this fitting net by the given
+        case_idx, concatenated with the aggregated group embedding and fed
+        into the fitting net. Used to keep multiple fitting nets
+        distinguishable when they share one descriptor in multi-task
+        training.
+        """
+        self.case_embd = torch.eye(
+            self.dim_case_embd, dtype=self.prec, device=env.DEVICE
+        )[case_idx]
+
     def compute_input_stats(self, *args: Any, **kwargs: Any) -> None:
         return None
 
@@ -203,6 +271,8 @@ class GroupPropertyFittingNet(Fitting):
             "property_name": self.var_name,
             "task_dim": self.task_dim,
             "numb_fparam": self.numb_fparam,
+            "fparam_neuron": self.fparam_neuron,
+            "dim_case_embd": self.dim_case_embd,
             "group_reduce": self.group_reduce,
             "neuron": self.neuron,
             "activation_function": self.activation_function,

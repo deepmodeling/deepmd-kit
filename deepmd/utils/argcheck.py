@@ -2839,22 +2839,32 @@ def fitting_group_property() -> list[Argument]:
     through the shared GeneralFitting base class other fitting nets use), so
     several property-schema fields have no effect on it: ``numb_aparam``
     (there is no per-atom input at group level), ``default_fparam``,
-    ``dim_case_embd`` (no multitask case embedding), ``resnet_dt`` (plain
-    Linear layers, no residual connections), ``intensive`` and
-    ``distinguish_types`` (the group-level output bias is always
-    zero-initialized rather than set from per-type label statistics -- see
-    GroupPropertyFittingNet.get_out_bias). Removing them makes setting one an
-    immediate, clear validation error instead of a silently ignored no-op.
+    ``resnet_dt`` (plain Linear layers, no residual connections),
+    ``intensive`` and ``distinguish_types`` (the group-level output bias is
+    always zero-initialized rather than set from per-type label statistics --
+    see GroupPropertyFittingNet.get_out_bias). Removing them makes setting
+    one an immediate, clear validation error instead of a silently ignored
+    no-op.
+
+    ``dim_case_embd`` IS supported (unlike the fields above): it lets a
+    group_property head share a descriptor with another fitting net in
+    multi-task training (e.g. MFT jointly training a downstream
+    group_property head and an auxiliary ener head) by giving each branch a
+    distinct one-hot case embedding.
     """
     doc_group_reduce = (
         "How per-frame embeddings are reduced to one per-group embedding: "
         "`mean` (weight-normalized average) or `sum` (weighted sum, for "
         "extensive group properties)."
     )
+    doc_fparam_neuron = (
+        "Hidden sizes for an optional fparam-only branch before fusing fparam "
+        "with the aggregated group embedding. Empty list keeps the historical "
+        "direct concatenation path."
+    )
     _unsupported = {
         "numb_aparam",
         "default_fparam",
-        "dim_case_embd",
         "resnet_dt",
         "intensive",
         "distinguish_types",
@@ -2863,6 +2873,15 @@ def fitting_group_property() -> list[Argument]:
     for arg in args:
         if arg.name == "activation_function":
             arg.default = "gelu"
+    args.append(
+        Argument(
+            "fparam_neuron",
+            list[int],
+            optional=True,
+            default=[],
+            doc=doc_fparam_neuron,
+        )
+    )
     args.append(
         Argument(
             "group_reduce",

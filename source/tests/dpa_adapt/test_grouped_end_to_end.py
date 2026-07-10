@@ -426,3 +426,64 @@ def test_group_property_model_rejects_inconsistent_group_fparam() -> None:
             weight=torch.tensor([[0.5], [0.5]]),
             pool_mask=torch.ones(2, 3),
         )
+
+
+def test_group_property_model_set_case_embd_proxies_to_fitting_net() -> None:
+    """GroupPropertyModel does not go through make_model() (unlike
+    EnergyModel/PropertyModel), so it does not inherit the generic
+    model -> atomic_model -> fitting_net set_case_embd chain for free.  The
+    multi-task trainer calls ``model.set_case_embd(idx)`` on every branch
+    when any branch declares ``dim_case_embd`` (e.g. an MFT run sharing a
+    descriptor between a group_property head and an ener head); this must
+    reach the real fitting net, not silently no-op.
+    """
+    torch, GroupPropertyModel, GroupPropertyFittingNet = (
+        _require_group_property_backend()
+    )
+
+    dim = 4
+    fitting = GroupPropertyFittingNet(
+        ntypes=2,
+        dim_descrpt=dim,
+        property_name="y",
+        task_dim=1,
+        neuron=[4],
+        dim_case_embd=3,
+    )
+
+    class _ConstDescriptor(torch.nn.Module):
+        def get_rcut(self) -> float:
+            return 6.0
+
+        def get_sel(self) -> list[int]:
+            return [8]
+
+        def mixed_types(self) -> bool:
+            return True
+
+        def forward(
+            self, extended_coord, extended_atype, nlist, mapping=None, charge_spin=None
+        ):
+            nframes, nall = extended_atype.shape
+            desc = torch.ones(nframes, nall, dim, dtype=extended_coord.dtype)
+            return desc, None, None, None, None
+
+    model = GroupPropertyModel(
+        descriptor=_ConstDescriptor(), fitting=fitting, type_map=["A", "B"]
+    )
+
+    model.set_case_embd(2)
+    assert torch.equal(fitting.case_embd, torch.eye(3)[2])
+
+    coord = torch.rand(2, 3, 3, dtype=torch.float64)
+    atype = torch.tensor([[0, 1, 0], [0, 1, 1]])
+    out = model(
+        coord,
+        atype,
+        box=None,
+        group_id=torch.tensor([[0], [1]]),
+        weight=torch.tensor([[1.0], [1.0]]),
+        pool_mask=torch.ones(2, 3),
+    )
+    assert torch.isfinite(out["y"]).all()
+    assert out["y"].shape[0] == 2

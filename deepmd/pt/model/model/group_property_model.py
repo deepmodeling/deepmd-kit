@@ -115,6 +115,15 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
     def get_fitting_net(self):  # noqa: ANN201
         return self.fitting_net
 
+    def set_case_embd(self, case_idx: int) -> None:
+        """Set the case (branch) embedding of this model by the given
+        case_idx, used to distinguish branches that share a descriptor in
+        multi-task training. GroupPropertyModel does not go through
+        make_model(), so it does not inherit the generic model ->
+        atomic_model -> fitting_net proxy chain and forwards directly.
+        """
+        self.fitting_net.set_case_embd(case_idx)
+
     @torch.jit.export
     def get_task_dim(self) -> int:
         return self.fitting_net.task_dim

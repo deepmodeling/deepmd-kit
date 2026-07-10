@@ -7,11 +7,18 @@ check ``dp --pt train`` runs on every ``input.json``) rejected
 a supported, tested code path once past validation.
 
 The same reused schema also let a config set ``numb_aparam``,
-``default_fparam``, ``dim_case_embd``, ``resnet_dt``, ``intensive``, or
-``distinguish_types`` -- fields GroupPropertyFittingNet has no wiring for --
-and pass strict validation while silently doing nothing. Those fields are
-removed from the group_property schema so setting one is now a validation
-error like any other typo, not a silent no-op.
+``default_fparam``, ``resnet_dt``, ``intensive``, or ``distinguish_types`` --
+fields GroupPropertyFittingNet has no wiring for -- and pass strict
+validation while silently doing nothing. Those fields are removed from the
+group_property schema so setting one is now a validation error like any
+other typo, not a silent no-op.
+
+``dim_case_embd`` was originally removed for the same reason, but
+GroupPropertyFittingNet later gained real support for it (a one-hot branch
+identifier, concatenated onto the group embedding) so that a group_property
+head can share a descriptor with another fitting net in multi-task training
+(e.g. MFT). It is back in the schema and is exercised below instead of
+being asserted-absent.
 """
 
 from __future__ import (
@@ -74,12 +81,28 @@ def test_unsupported_property_fields_are_removed_from_the_schema():
     for unsupported in (
         "numb_aparam",
         "default_fparam",
-        "dim_case_embd",
         "resnet_dt",
         "intensive",
         "distinguish_types",
     ):
         assert unsupported not in names
+
+
+def test_dim_case_embd_argument_is_declared():
+    names = [arg.name for arg in fitting_group_property()]
+    assert "dim_case_embd" in names
+
+
+def test_dim_case_embd_passes_strict_validation():
+    out = _normalize_and_check(
+        {"type": "group_property", "property_name": "y", "dim_case_embd": 31}
+    )
+    assert out["dim_case_embd"] == 31
+
+
+def test_dim_case_embd_defaults_to_zero_when_omitted():
+    out = _normalize_and_check({"type": "group_property", "property_name": "y"})
+    assert out["dim_case_embd"] == 0
 
 
 def test_setting_an_unsupported_field_fails_strict_validation():
