@@ -15,8 +15,8 @@ import unittest
 from pathlib import (
     Path,
 )
-from unittest import (
-    mock,
+from unittest.mock import (
+    patch,
 )
 
 from deepmd.jax.train.trainer import (
@@ -38,9 +38,9 @@ class TestCheckpointPointer(unittest.TestCase):
         trainer = DPTrainer.__new__(DPTrainer)
         trainer.save_ckpt = save_ckpt
         with (
-            mock.patch.object(DPTrainer, "_write_checkpoint"),
-            mock.patch.object(DPTrainer, "_cleanup_old_checkpoints"),
-            mock.patch("deepmd.jax.train.trainer._link_checkpoint"),
+            patch.object(DPTrainer, "_write_checkpoint"),
+            patch.object(DPTrainer, "_cleanup_old_checkpoints"),
+            patch("deepmd.jax.train.trainer._link_checkpoint"),
         ):
             trainer._save_checkpoint(1)
 
