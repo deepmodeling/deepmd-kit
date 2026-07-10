@@ -2,7 +2,9 @@
 #pragma once
 
 #include <iostream>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AtomMap.h"
@@ -271,5 +273,51 @@ void fold_back(std::vector<VT>& out,
       }
     }
   }
+}
+
+/**
+ * @brief Build the flat ``(ntypes+1)^2`` pair-type keep table.
+ *
+ * Inference-path mirror of the Python ``PairExcludeMask`` constructor
+ * (``deepmd/dpmodel/utils/exclude_mask.py``).  The table is row-major over
+ * ``[tj][ti]`` (flat index ``tj * (ntypes+1) + ti``); an entry is ``0`` when
+ * the ordered pair ``(ti, tj)`` is excluded and ``1`` otherwise.  Both ``(ti,
+ * tj)`` and ``(tj, ti)`` are inserted into the exclude set, so the table is
+ * symmetric.  Type ``ntypes`` is the reserved virtual-atom row/column.
+ *
+ * Returns an empty vector when ``exclude_types`` is empty, so callers can treat
+ * an empty table as "no exclusion" (identity) just like the Python
+ * ``pair_excl is None`` early-exit.
+ *
+ * This lives in the backend-agnostic ``common.h`` (not ``commonPT.h``) so both
+ * the libtorch apply-helpers (``applyPairExclusion*`` in ``commonPT.h``) and
+ * the torch-free TF-C-API ``DeepPotJAX`` ingestion seam share one canonical
+ * table builder.
+ *
+ * @param ntypes Number of real atom types.
+ * @param exclude_types List of excluded ``(ti, tj)`` type pairs.
+ */
+inline std::vector<int> buildPairExcludeTable(
+    const int ntypes, const std::vector<std::pair<int, int>>& exclude_types) {
+  if (exclude_types.empty()) {
+    return {};
+  }
+  const int n1 = ntypes + 1;
+  std::set<std::pair<int, int>> excl;
+  for (const auto& tt : exclude_types) {
+    excl.insert({tt.first, tt.second});
+    excl.insert({tt.second, tt.first});
+  }
+  // type_mask[tj][ti] == 0 iff (ti, tj) is excluded (mirrors the Python
+  // list comprehension in PairExcludeMask.__init__, reshape(-1)).
+  std::vector<int> type_mask(static_cast<size_t>(n1) * n1, 1);
+  for (int tj = 0; tj < n1; ++tj) {
+    for (int ti = 0; ti < n1; ++ti) {
+      if (excl.count({ti, tj})) {
+        type_mask[static_cast<size_t>(tj) * n1 + ti] = 0;
+      }
+    }
+  }
+  return type_mask;
 }
 }  // namespace deepmd

@@ -295,6 +295,21 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         tf_model.get_sel = get_sel
 
         @tf.function
+        def get_pair_exclude_types() -> tf.Tensor:
+            # Model-level pair_exclude_types, exported FLAT [ti0, tj0, ti1, tj1,
+            # ...] so the C++ ingestion seam (DeepPotJAX) can fold exclusion into
+            # the LAMMPS nlist before the traced call_lower_* consumes it
+            # (decision #18/A4). The upper ``call`` already pre-excludes its
+            # freshly built nlist. Guard atomic_model: test doubles may lack it.
+            pet = getattr(
+                getattr(model, "atomic_model", None), "pair_exclude_types", []
+            )
+            flat = [int(t) for pair in (pet or []) for t in pair]
+            return tf.constant(flat, dtype=tf.int64)
+
+        tf_model.get_pair_exclude_types = get_pair_exclude_types
+
+        @tf.function
         def get_model_def_script() -> tf.Tensor:
             return tf.constant(
                 json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string

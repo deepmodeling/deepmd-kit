@@ -15,6 +15,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -600,6 +601,23 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   } catch (tf_function_not_found& e) {
     has_default_fparam_ = false;
   }
+  try {
+    // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1, ...].
+    // Fold exclusion into the LAMMPS nlist at ingestion (decision #18/A4); the
+    // exported call_lower_* consumes a pre-excluded nlist. Models exported
+    // before this getter existed baked exclusion into the graph, so a missing
+    // getter (=> empty table => identity here) is correct for them.
+    std::vector<int64_t> pet_flat = get_vector<int64_t>(
+        ctx, "get_pair_exclude_types", func_vector, device, status);
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
+      pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
+                                      static_cast<int>(pet_flat[ii + 1]));
+    }
+    pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
+  } catch (tf_function_not_found& e) {
+    pair_exclude_table_.clear();
+  }
   inited = true;
 }
 
@@ -862,6 +880,32 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
         nlist[ii * max_size + jj] = nlist_data.jlist[ii][jj];
       } else {
         nlist[ii * max_size + jj] = -1;
+      }
+    }
+  }
+  // Model-level pair exclusion (decision #18/A4): erase excluded-type
+  // neighbours to -1 before the exported call_lower_* consumes the nlist. This
+  // is the torch-free twin of applyPairExclusionNlist (commonPT.h), operating
+  // on the plain C++ nlist vector because DeepPotJAX uses the TF C API. Empty
+  // table => identity. center type ti = atype[ii]; neighbour type tj =
+  // atype[nb]; drop when keep-table[ti*(ntypes+1)+tj] == 0 (center*(n1)+nbr,
+  // matching applyPairExclusionNlist / buildPairExcludeTable).
+  if (!pair_exclude_table_.empty()) {
+    const int n1 = ntypes + 1;
+    for (int ii = 0; ii < nloc_real; ii++) {
+      const int ti = atype[ii];
+      for (int jj = 0; jj < static_cast<int>(max_size); jj++) {
+        const int64_t nb = nlist[ii * max_size + jj];
+        if (nb < 0) {
+          continue;
+        }
+        const int tj = atype[nb];
+        if (tj < 0) {
+          continue;  // padding slot; nothing to exclude
+        }
+        if (pair_exclude_table_[static_cast<size_t>(ti) * n1 + tj] == 0) {
+          nlist[ii * max_size + jj] = -1;
+        }
       }
     }
   }

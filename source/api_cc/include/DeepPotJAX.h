@@ -201,6 +201,11 @@ class DeepPotJAX : public DeepPotBackend {
   bool do_message_passing;
   // has default fparam
   bool has_default_fparam_;
+  // Model-level pair-exclusion keep table (flat (ntypes+1)^2), built once in
+  // init from the exported ``get_pair_exclude_types``. Empty => no exclusion.
+  // The exported ``call_lower_*`` consumes a pre-excluded nlist (decision
+  // #18/A4), so this ingestion seam folds exclusion into the LAMMPS nlist.
+  std::vector<int> pair_exclude_table_;
   // whether SavedModel execution goes through XLA and benefits from shape
   // padding; true for JAX/jax2tf XlaCallModule and TF2 jit_compile exports
   bool uses_xla_compilation_ = false;
