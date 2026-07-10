@@ -176,10 +176,11 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf2(self) -> bool:
-        return not INSTALLED_TF2 or (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        # tf2 folds model-level pair_exclude_types into the nlist at BUILD time
+        # (decision #18/A4): the eager upper path (dp_model.call_common) passes
+        # pair_excl through, so exclusion IS exercised here — do not skip it (it
+        # is the regression guard for that path).
+        return not INSTALLED_TF2
 
     @property
     def skip_jax(self) -> bool:
@@ -411,10 +412,9 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf2(self) -> bool:
-        return not INSTALLED_TF2 or (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        # See TestEner.skip_tf2: tf2 supports model-level pair_exclude_types via
+        # the build seam, so exclusion is exercised (regression guard).
+        return not INSTALLED_TF2
 
     @property
     def skip_jax(self) -> bool:
