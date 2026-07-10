@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
 #include <iostream>
 #include <set>
 #include <string>
@@ -319,5 +320,59 @@ inline std::vector<int> buildPairExcludeTable(
     }
   }
   return type_mask;
+}
+
+/**
+ * @brief Dense-nlist pair-type exclusion on a plain flat ``int64`` neighbour
+ *        list: erase excluded-type neighbours to ``-1`` in place.
+ *
+ * Torch-free twin of ``applyPairExclusionNlist`` (``commonPT.h``, which works
+ * on
+ * ``torch::Tensor``); used by the TF-C-API ``DeepPotJAX`` ingestion seam, which
+ * cannot depend on libtorch.  Same keep-table convention as
+ * ``buildPairExcludeTable`` / ``applyPairExclusionNlist``: keep index
+ * ``center_type * (ntypes+1) + neighbour_type``.  An empty ``type_mask_table``
+ * is identity (no-op), mirroring the ``pair_excl is None`` early-exit.
+ *
+ * Exclusion is a BUILD-time transform (decision #18/A4): the exported
+ * ``call_lower_*`` consumes a pre-excluded nlist and never re-applies it, so
+ * this is the single application site for the JAX/tf2 SavedModel LAMMPS path.
+ *
+ * @param nlist Flat ``nloc * max_size`` neighbour list (extended-space indices;
+ *   ``-1`` == empty slot), modified in place.
+ * @param atype Extended atom types; ``atype[i] >= 0`` for real atoms.  Indexed
+ *   by the centre id ``ii < nloc`` and by each neighbour id in ``nlist``.
+ * @param type_mask_table Flat ``(ntypes+1)^2`` keep table from
+ *   ``buildPairExcludeTable``.  Empty => identity.
+ * @param ntypes Number of real atom types.
+ * @param nloc Number of local (centre) atoms.
+ * @param max_size Neighbours per centre (row stride of ``nlist``).
+ */
+inline void applyPairExcludeNlistVec(std::vector<std::int64_t>& nlist,
+                                     const std::vector<int>& atype,
+                                     const std::vector<int>& type_mask_table,
+                                     const int ntypes,
+                                     const int nloc,
+                                     const int max_size) {
+  if (type_mask_table.empty()) {
+    return;
+  }
+  const int n1 = ntypes + 1;
+  for (int ii = 0; ii < nloc; ++ii) {
+    const int ti = atype[ii];  // centre type
+    for (int jj = 0; jj < max_size; ++jj) {
+      const std::int64_t nb = nlist[static_cast<size_t>(ii) * max_size + jj];
+      if (nb < 0) {
+        continue;  // empty slot
+      }
+      const int tj = atype[static_cast<size_t>(nb)];  // neighbour type
+      if (tj < 0) {
+        continue;  // padding atom; nothing to exclude
+      }
+      if (type_mask_table[static_cast<size_t>(ti) * n1 + tj] == 0) {
+        nlist[static_cast<size_t>(ii) * max_size + jj] = -1;
+      }
+    }
+  }
 }
 }  // namespace deepmd

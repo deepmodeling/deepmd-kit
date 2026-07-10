@@ -884,31 +884,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     }
   }
   // Model-level pair exclusion (decision #18/A4): erase excluded-type
-  // neighbours to -1 before the exported call_lower_* consumes the nlist. This
-  // is the torch-free twin of applyPairExclusionNlist (commonPT.h), operating
-  // on the plain C++ nlist vector because DeepPotJAX uses the TF C API. Empty
-  // table => identity. center type ti = atype[ii]; neighbour type tj =
-  // atype[nb]; drop when keep-table[ti*(ntypes+1)+tj] == 0 (center*(n1)+nbr,
-  // matching applyPairExclusionNlist / buildPairExcludeTable).
-  if (!pair_exclude_table_.empty()) {
-    const int n1 = ntypes + 1;
-    for (int ii = 0; ii < nloc_real; ii++) {
-      const int ti = atype[ii];
-      for (int jj = 0; jj < static_cast<int>(max_size); jj++) {
-        const int64_t nb = nlist[ii * max_size + jj];
-        if (nb < 0) {
-          continue;
-        }
-        const int tj = atype[nb];
-        if (tj < 0) {
-          continue;  // padding slot; nothing to exclude
-        }
-        if (pair_exclude_table_[static_cast<size_t>(ti) * n1 + tj] == 0) {
-          nlist[ii * max_size + jj] = -1;
-        }
-      }
-    }
-  }
+  // neighbours to -1 before the exported call_lower_* consumes the nlist.
+  // applyPairExcludeNlistVec (common.h) is the torch-free twin of
+  // applyPairExclusionNlist (commonPT.h); empty table => identity.
+  applyPairExcludeNlistVec(nlist, atype, pair_exclude_table_, ntypes, nloc_real,
+                           static_cast<int>(max_size));
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
   std::vector<int64_t> mapping_shape = {nframes, nall_model};
