@@ -6,6 +6,15 @@ verify the loss on a padded multi-frame batch equals mean(per_frame_loss).
 
 The dpmodel losses accept numpy arrays (via the array_api_compat backend).
 
+Scope / follow-ups (mixed_type padding fix, PR #5738)
+----------------------------------------------------
+- The TF backend loss is not covered here and still has the mixed_type
+  dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
+- The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
+  tracked in deepmodeling/deepmd-kit#5761.
+- ``ener_spin``'s ``force_mag`` MAE frame-normalization debt is tracked by the
+  ``xfail(strict=True)`` test below (self-heals once fixed).
+
 Constants
 ---------
 NA = 3   # real atoms in the short frame

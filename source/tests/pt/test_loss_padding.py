@@ -10,6 +10,15 @@ Harness
 assert_grad_accum_invariant  -- reusable by Tasks 2-5 to check the
     grad-accumulation invariant: loss on a padded multi-frame batch must equal
     mean_over_frames(per_frame_loss).
+
+Scope / follow-ups (mixed_type padding fix, PR #5738)
+----------------------------------------------------
+- The TF backend loss is not covered here and still has the mixed_type
+  dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
+- The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
+  tracked in deepmodeling/deepmd-kit#5761.
+- ``ener_spin``'s ``force_mag`` MAE frame-normalization debt is tracked by the
+  ``xfail(strict=True)`` test below (self-heals once fixed).
 """
 
 import numpy as np
