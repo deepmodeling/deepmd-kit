@@ -48,6 +48,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -743,6 +746,12 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif (
+            self._dpmodel is not None
+            and hasattr(self._dpmodel, "get_var_name")
+            and self._dpmodel.get_var_name() in model_output_type
+        ):
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -763,6 +772,33 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         return 0
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+            return self._dpmodel.get_var_name()
+        raise NotImplementedError(
+            "get_var_name is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+            return self._dpmodel.get_task_dim()
+        raise NotImplementedError(
+            "get_task_dim is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+            return self._dpmodel.get_intensive()
+        raise NotImplementedError(
+            "get_intensive is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
