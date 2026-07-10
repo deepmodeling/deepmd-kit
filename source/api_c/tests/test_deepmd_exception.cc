@@ -59,12 +59,15 @@ TEST(TestChargeSpinValidation, empty_values_use_model_default_path) {
   EXPECT_TRUE(tiled.empty());
 }
 
-TEST(TestChargeSpinValidation, rejects_values_for_unsupported_model) {
+TEST(TestChargeSpinValidation, ignores_values_for_unsupported_model) {
   std::vector<double> charge_spin = {1.0, 2.0};
   std::vector<double> tiled;
 
-  EXPECT_THROW(deepmd::hpp::validate_charge_spin(charge_spin, 0, 1, tiled),
-               deepmd::hpp::deepmd_exception);
+  const double* result =
+      deepmd::hpp::validate_charge_spin(charge_spin, 0, 1, tiled);
+
+  EXPECT_EQ(result, nullptr);
+  EXPECT_TRUE(tiled.empty());
 }
 
 TEST(TestChargeSpinValidation, rejects_invalid_size) {

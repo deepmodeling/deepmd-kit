@@ -467,9 +467,10 @@ inline std::vector<double> make_charge_spin_input(
     const std::vector<double>& default_chg_spin) {
   if (dchgspin == 0) {
     if (!charge_spin.empty()) {
-      throw deepmd::deepmd_exception(
-          "charge_spin was provided, but this model does not support "
-          "charge/spin conditioning");
+      std::cerr << "WARNING: charge_spin was provided, but this model does "
+                   "not support charge/spin conditioning. The provided "
+                   "charge_spin will be ignored."
+                << std::endl;
     }
     if (!default_chg_spin.empty()) {
       throw deepmd::deepmd_exception(

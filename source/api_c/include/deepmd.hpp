@@ -884,9 +884,11 @@ inline const FPTYPE* validate_charge_spin(
     return nullptr;
   }
   if (dchgspin == 0) {
-    throw deepmd::hpp::deepmd_exception(
-        "charge_spin was provided, but this model does not support "
-        "charge/spin conditioning");
+    std::cerr << "WARNING: charge_spin was provided, but this model does not "
+                 "support charge/spin conditioning. The provided charge_spin "
+                 "will be ignored."
+              << std::endl;
+    return nullptr;
   }
   const size_t dim = static_cast<size_t>(dchgspin);
   const size_t expected_size = static_cast<size_t>(nframes) * dim;
