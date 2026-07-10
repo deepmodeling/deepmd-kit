@@ -324,6 +324,28 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
 
         tf_model.get_default_fparam = get_default_fparam
 
+        # property models: persist the output name/dimension/intensiveness so
+        # the evaluator can dispatch to DeepProperty and reshape the output.
+        if hasattr(model, "get_var_name"):
+
+            @tf.function
+            def get_var_name() -> tf.Tensor:
+                return tf.constant(model.get_var_name(), dtype=tf.string)
+
+            tf_model.get_var_name = get_var_name
+
+            @tf.function
+            def get_task_dim() -> tf.Tensor:
+                return tf.constant(model.get_task_dim(), dtype=tf.int64)
+
+            tf_model.get_task_dim = get_task_dim
+
+            @tf.function
+            def get_intensive() -> tf.Tensor:
+                return tf.constant(model.get_intensive(), dtype=tf.bool)
+
+            tf_model.get_intensive = get_intensive
+
         tf.saved_model.save(
             tf_model,
             model_file,
