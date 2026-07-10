@@ -22,7 +22,11 @@ from collections.abc import (
     Callable,
     Iterator,
     Mapping,
+    MutableMapping,
     Sequence,
+)
+from copy import (
+    deepcopy,
 )
 from dataclasses import (
     dataclass,
@@ -38,6 +42,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
@@ -50,6 +57,53 @@ log = logging.getLogger(__name__)
 LossResults = dict[str, float]
 TaskResults = dict[str, LossResults | None]
 DisplayResults = LossResults | TaskResults
+
+
+def change_model_out_bias(
+    model: Any,
+    sample_func: Callable[[], Any],
+    *,
+    bias_adjust_mode: str = "change-by-statistic",
+    recompute_input_stats: bool = False,
+) -> Any:
+    """Change one model's output bias and log the before/after values."""
+    old_bias = deepcopy(model.get_out_bias())
+    model.change_out_bias(
+        sample_func,
+        bias_adjust_mode=bias_adjust_mode,
+    )
+    new_bias = deepcopy(model.get_out_bias())
+
+    if recompute_input_stats and bias_adjust_mode == "set-by-statistic":
+        model.get_fitting_net().compute_input_stats(sample_func)
+
+    model_type_map = model.get_type_map()
+    log.info(
+        f"Change output bias of {model_type_map!s} "
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    )
+    return model
+
+
+def change_model_out_bias_by_task(
+    models: MutableMapping[str, Any],
+    sample_funcs: Mapping[str, Callable[[], Any]],
+    model_keys: Sequence[str],
+    *,
+    bias_adjust_mode: str = "change-by-statistic",
+    recompute_input_stats: bool = False,
+) -> MutableMapping[str, Any]:
+    """Change output bias for all requested training-task models."""
+    log.info("Changing output bias after training.")
+    for model_key in model_keys:
+        models[model_key] = change_model_out_bias(
+            models[model_key],
+            sample_funcs[model_key],
+            bias_adjust_mode=bias_adjust_mode,
+            recompute_input_stats=recompute_input_stats,
+        )
+    return models
 
 
 @dataclass(frozen=True)

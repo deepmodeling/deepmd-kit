@@ -28,6 +28,9 @@ import torch
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.train import (
+    change_model_out_bias,
+)
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
     resolve_model_prob,
@@ -2618,24 +2621,13 @@ def model_change_out_bias(
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
 ) -> Any:
-    old_bias = deepcopy(_model.get_out_bias())
-    _model.change_out_bias(
-        _sample_func,
-        bias_adjust_mode=_bias_adjust_mode,
-    )
-    new_bias = deepcopy(_model.get_out_bias())
-
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
     )
 
-    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
-        _model.get_fitting_net().compute_input_stats(_sample_func)
-
-    model_type_map = _model.get_type_map()
-    log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    return change_model_out_bias(
+        _model,
+        _sample_func,
+        bias_adjust_mode=_bias_adjust_mode,
+        recompute_input_stats=isinstance(_model, DPModelCommon),
     )
-    return _model
