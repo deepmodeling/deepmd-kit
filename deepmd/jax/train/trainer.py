@@ -841,8 +841,14 @@ class DPTrainer(AbstractTrainer):
         log.info(f"Trained model has been saved to: {ckpt_path!s}")
         _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
         self._cleanup_old_checkpoints()
-        with open("checkpoint", "w") as fp:
-            fp.write(f"{self.save_ckpt}.jax")
+        # Write the pointer next to the checkpoint prefix, with a value relative
+        # to that directory (basename only). The freeze entrypoint looks for the
+        # pointer inside the folder it is given and resolves the value relative
+        # to it, so a directory-valued save_ckpt would otherwise be unresolvable.
+        ckpt_dir = Path(self.save_ckpt).parent
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        with open(ckpt_dir / "checkpoint", "w") as fp:
+            fp.write(f"{Path(self.save_ckpt).name}.jax")
 
     def _save_full_validation_checkpoint(
         self,
