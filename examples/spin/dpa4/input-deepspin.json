@@ -1,5 +1,5 @@
 {
-  "_comment": "DPA4/SeZM spin-energy training example using the DeePMD spin convention.",
+  "_comment": "DPA4/SeZM spin-energy training example using the virtual-atom (DeepSpin) scheme; see input.json for the native scheme.",
   "model": {
     "type": "DPA4",
     "type_map": [
@@ -7,12 +7,13 @@
       "O"
     ],
     "spin": {
+      "scheme": "deepspin",
+      "virtual_scale": [
+        0.314
+      ],
       "use_spin": [
         true,
         false
-      ],
-      "virtual_scale": [
-        0.314
       ]
     },
     "descriptor": {
@@ -82,14 +83,14 @@
     "stat_file": "./dpa4_spin.hdf5",
     "training_data": {
       "systems": [
-        "../../spin/data_reformat/data_0",
-        "../../spin/data_reformat/data_1"
+        "../data_reformat/data_0",
+        "../data_reformat/data_1"
       ],
       "batch_size": 1
     },
     "validation_data": {
       "systems": [
-        "../../spin/data_reformat/data_2"
+        "../data_reformat/data_2"
       ],
       "batch_size": 1,
       "numb_batch": 1

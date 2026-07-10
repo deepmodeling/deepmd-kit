@@ -132,3 +132,74 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
             DeepPot(p, neighbor_graph_method="vesin")
         # the default stays accepted (no behavior change)
         DeepPot(p)
+
+
+class _FakeDesc:
+    def __init__(self, n_attn: int) -> None:
+        self._n = n_attn
+
+    def get_numb_attn_layer(self) -> int:
+        return self._n
+
+
+class _FakeAtomicModel:
+    def __init__(self, n_attn: int) -> None:
+        self.descriptor = _FakeDesc(n_attn)
+
+
+class _FakeModel:
+    def __init__(self, n_attn: int) -> None:
+        self.atomic_model = _FakeAtomicModel(n_attn)
+
+
+@pytest.mark.parametrize(
+    "version", ["2.5.1", "2.5.1+cu124"]
+)  # torch below the 2.6 floor
+def test_graph_trace_version_guard_rejects_attention_on_old_torch(
+    monkeypatch, version
+) -> None:
+    """attn_layer > 0 on torch < 2.6 fails fast with a clear message."""
+    import torch
+
+    from deepmd.pt_expt.utils.serialization import (
+        check_graph_trace_torch_version,
+    )
+
+    monkeypatch.setattr(torch, "__version__", version)
+    with pytest.raises(RuntimeError, match=r"torch >= 2\.6"):
+        check_graph_trace_torch_version(_FakeModel(2))
+
+
+@pytest.mark.parametrize(
+    ("version", "n_attn"),
+    [
+        ("2.5.1", 0),  # old torch OK without attention (backed symbols only)
+        ("2.6.0", 2),  # floor version with attention
+        ("2.10.0+cu126", 2),  # current torch with attention, local suffix
+    ],
+)
+def test_graph_trace_version_guard_passes(monkeypatch, version, n_attn) -> None:
+    """No-attention models and torch >= 2.6 pass the guard silently."""
+    import torch
+
+    from deepmd.pt_expt.utils.serialization import (
+        check_graph_trace_torch_version,
+    )
+
+    monkeypatch.setattr(torch, "__version__", version)
+    check_graph_trace_torch_version(_FakeModel(n_attn))
+
+
+def test_graph_trace_version_guard_tolerates_no_descriptor(monkeypatch) -> None:
+    """Composite models without a single descriptor pass (dense route anyway)."""
+    import torch
+
+    from deepmd.pt_expt.utils.serialization import (
+        check_graph_trace_torch_version,
+    )
+
+    class _NoDesc:
+        pass
+
+    monkeypatch.setattr(torch, "__version__", "2.5.1")
+    check_graph_trace_torch_version(_NoDesc())

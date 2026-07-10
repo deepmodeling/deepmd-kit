@@ -284,7 +284,7 @@ class DeepEval(DeepEvalBackend):
         if callable(self_built) and self_built():
             # The model builds its own neighbor list and runs the native path;
             # an external strategy would bypass it, so always use native.
-            log.info(
+            log.debug(
                 "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
                 nlist_backend,
                 type(inner).__name__,

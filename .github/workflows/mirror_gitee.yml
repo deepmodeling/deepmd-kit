@@ -16,7 +16,7 @@ concurrency:
 jobs:
   git-mirror:
     if: github.repository_owner == 'deepmodeling'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - uses: wearerequired/git-mirror-action@v1
         env:

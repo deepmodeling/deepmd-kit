@@ -39,7 +39,7 @@ Design goals
 
 Inference-only contract
 -----------------------
-The operator is opt-in through ``DP_TRITON_INFER`` and is only used in
+The operator is opt-in through ``DP_TRITON_INFER >= 1`` and is only used in
 evaluation, where the force is obtained from ``autograd.grad(energy, coord)``.
 The backward therefore returns gradients with respect to ``compact`` and
 ``x_local`` (both of which carry a path to the coordinates) and ``None`` for

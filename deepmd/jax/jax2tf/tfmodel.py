@@ -98,6 +98,15 @@ class TFModelWrapper(tf.Module):
             if hasattr(self.model, "get_default_chg_spin")
             else None
         )
+        # property models only (absent for other model types).
+        if hasattr(self.model, "get_var_name"):
+            self._var_name = self.model.get_var_name().numpy().decode()
+            self._task_dim = self.model.get_task_dim().numpy().item()
+            self._intensive = self.model.get_intensive().numpy().item()
+        else:
+            self._var_name = None
+            self._task_dim = None
+            self._intensive = False
 
     def __call__(
         self,
@@ -207,8 +216,26 @@ class TFModelWrapper(tf.Module):
 
     def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
-            FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
+            FittingOutputDef(
+                [self._output_var_def(tt) for tt in self.model_output_type()]
+            )
         )
+
+    def _output_var_def(self, name: str) -> OutputVariableDef:
+        if name in OUTPUT_DEFS:
+            return OUTPUT_DEFS[name]
+        # property models carry a user-defined output name (``var_name``) that
+        # is not in the fixed table; rebuild its def from the persisted metadata.
+        if self._var_name is not None and name == self._var_name:
+            return OutputVariableDef(
+                self._var_name,
+                shape=[self._task_dim],
+                reducible=True,
+                r_differentiable=False,
+                c_differentiable=False,
+                intensive=self._intensive,
+            )
+        raise KeyError(f"Unknown model output variable {name!r}")
 
     def call_lower(
         self,
@@ -427,3 +454,19 @@ class TFModelWrapper(tf.Module):
         if charge_spin.shape[0] != nframes:
             raise ValueError("charge_spin first dimension must match nframes.")
         return charge_spin
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._var_name is None:
+            raise NotImplementedError
+        return self._var_name
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._task_dim is None:
+            raise NotImplementedError
+        return self._task_dim
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        return self._intensive

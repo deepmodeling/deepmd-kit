@@ -1,7 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 import math
+import os
 import unittest
+from contextlib import (
+    nullcontext,
+)
+from types import (
+    SimpleNamespace,
+)
+from unittest import (
+    mock,
+)
 
 import torch
 
@@ -16,6 +26,7 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     NodeCartesianTensorProduct,
     SeZMDirectForceHead,
     SO2Linear,
+    SpinEmbedding,
     WignerDCalculator,
     build_cartesian_basis,
     build_edge_cartesian_tensors,
@@ -160,6 +171,37 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
 
+    def test_amp_infer_env_controls_eval_autocast(self) -> None:
+        """Inference AMP is sampled from env and still gated by ``use_amp``."""
+        with mock.patch.dict(os.environ, {"DP_AMP_INFER": "1"}, clear=False):
+            enabled_model = DescrptSeZM(**_descriptor_kwargs(use_amp=True))
+            disabled_model = DescrptSeZM(**_descriptor_kwargs(use_amp=False))
+
+        enabled_model.eval()
+        disabled_model.eval()
+
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with enabled_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_called_once_with(
+            device_type="cuda",
+            dtype=torch.bfloat16,
+            enabled=True,
+        )
+
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with disabled_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_not_called()
+
+        with mock.patch.dict(os.environ, {"DP_AMP_INFER": "0"}, clear=False):
+            default_model = DescrptSeZM(**_descriptor_kwargs(use_amp=True))
+        default_model.eval()
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with default_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_not_called()
+
     def test_cartesian_config_wiring(self) -> None:
         """Each Cartesian/mixing config builds the intended submodules.
 
@@ -283,6 +325,112 @@ class TestDescrptSeZM(_SeZMTestCase):
                 )
                 self.assertEqual(desc.shape, (1, 2, 4))
                 self.assertTrue(torch.all(torch.isfinite(desc)))
+
+    def test_zero_block_descriptor(self) -> None:
+        """``n_blocks=0`` builds the interaction-free descriptor end to end.
+
+        Covers the schedule collapse (empty schedules, backbone degrees falling
+        back to ``lmax`` plus ``extra_node_l``, no blocks), both forward entry
+        points, the conservative-force path, and serialization. The
+        coordinate-carrying paths (FiLM, GIE, read-out) are zero-initialized, so
+        a parameter perturbation activates them before the force check;
+        ``so3_readout`` glu/mlp fold the GIE ``l>0`` geometry into the scalar,
+        while ``none`` keeps only the env-seed scalar.
+        """
+        dtype = torch.float32
+        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=dtype)
+        atol, rtol = _forward_tols(dtype)
+        for readout, extra in (("mlp", 0), ("glu", 0), ("none", 0), ("mlp", 1)):
+            with self.subTest(so3_readout=readout, extra_node_l=extra):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        l_schedule=None,
+                        n_blocks=0,
+                        lmax=2,
+                        mmax=1,
+                        kmax=1,
+                        extra_node_l=extra,
+                        use_env_seed=True,
+                        so3_readout=readout,
+                    )
+                )
+                # Empty schedules; backbone degrees collapse onto lmax(+extra).
+                self.assertEqual(model.n_blocks, 0)
+                self.assertEqual(model.l_schedule, [])
+                self.assertEqual(model.m_schedule, [])
+                self.assertEqual(len(model.blocks), 0)
+                self.assertEqual(model.node_init_lmax, 2 + extra)
+                self.assertEqual(model.node_readout_lmax, 2 + extra)
+                self.assertTrue(model.use_gie)
+
+                # Activate the zero-initialized geometry paths so the force check
+                # exercises genuine coordinate dependence rather than the
+                # all-zero gradient seen at initialization.
+                torch.manual_seed(0)
+                with torch.no_grad():
+                    for param in model.parameters():
+                        param.add_(torch.randn_like(param) * 0.2)
+
+                extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+                desc, *_ = model(extended_coord, atype, nlist)
+                self.assertEqual(desc.shape, (1, 2, 4))
+                self.assertTrue(torch.all(torch.isfinite(desc)))
+                desc.sum().backward()
+                self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
+                self.assertGreater(extended_coord.grad.abs().max().item(), 0.0)
+
+                # Serialization restores the empty schedule and reproduces output.
+                data = model.serialize()
+                self.assertEqual(data["config"]["n_blocks"], 0)
+                self.assertEqual(data["config"]["l_schedule"], [])
+                restored = DescrptSeZM.deserialize(data)
+                desc2, *_ = restored(coord.reshape(1, -1), atype, nlist)
+                torch.testing.assert_close(desc.detach(), desc2, atol=atol, rtol=rtol)
+
+                # Sparse-edge entry point: the latent keeps the initial degree
+                # ``(node_init_lmax + 1) ** 2`` since no pyramid shrinks it.
+                flat = coord.reshape(-1, 3)
+                edge_index = torch.tensor(
+                    [[1, 0], [0, 1]], dtype=torch.long, device=self.device
+                )
+                edge_vec = flat[edge_index[0]] - flat[edge_index[1]]
+                edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
+                desc_e, latent = model.forward_with_edges(
+                    extended_coord=coord.reshape(1, -1),
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=edge_vec,
+                    edge_mask=edge_mask,
+                )
+                self.assertEqual(desc_e.shape, (1, 2, 4))
+                self.assertEqual(latent.shape, (2, (2 + extra + 1) ** 2, 1, 4))
+
+    def test_zero_block_without_env_seed_is_geometry_free(self) -> None:
+        """Without env-seed the zero-block descriptor loses all geometry.
+
+        With no blocks, no env FiLM, and no GIE, the scalar output depends only
+        on the type embedding and is independent of the coordinates. This
+        documents that ``use_env_seed=True`` is required for a meaningful
+        zero-block descriptor, since the single ``use_env_seed`` switch gates the
+        only geometry source (GIE).
+        """
+        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=torch.float32)
+        model = DescrptSeZM(
+            **_descriptor_kwargs(
+                l_schedule=None,
+                n_blocks=0,
+                lmax=2,
+                use_env_seed=False,
+                so3_readout="mlp",
+            )
+        )
+        self.assertFalse(model.use_gie)
+        extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+        desc, *_ = model(extended_coord, atype, nlist)
+        self.assertTrue(torch.all(torch.isfinite(desc)))
+        # The descriptor does not depend on coordinates, so there is no force path.
+        (grad,) = torch.autograd.grad(desc.sum(), extended_coord, allow_unused=True)
+        self.assertIsNone(grad)
 
     def test_forward_with_descriptor_variants(self) -> None:
         """Test forward/backward smoke paths for compact descriptor variants."""
@@ -616,6 +764,15 @@ class TestDescrptSeZM(_SeZMTestCase):
                 radial_mlp=[6],
                 ffn_neurons=8,
             ),
+            "native_spin": _descriptor_kwargs(
+                precision="float32",
+                channels=4,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
+                use_spin=[True, False],
+                use_env_seed=True,
+            ),
         }
         dtype = PRECISION_DICT["float32"]
         for case_name, model_kwargs in cases.items():
@@ -749,6 +906,190 @@ class TestDescrptSeZM(_SeZMTestCase):
                 rtol=forward_rtol,
                 msg="Smooth weight differs for models with same seed",
             )
+
+
+class TestSeZMSpinEmbedding(_SeZMTestCase):
+    """Test the native per-atom spin embedding and its descriptor injection."""
+
+    def _spin_edges(
+        self, dtype: torch.dtype
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """A two-atom edge system with one magnetic and one non-magnetic atom."""
+        coord = torch.tensor(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=dtype, device=self.device
+        ).view(1, -1, 3)
+        atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
+        edge_index = torch.tensor(
+            [[1, 0], [0, 1]], dtype=torch.long, device=self.device
+        )
+        edge_vec = torch.tensor(
+            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], dtype=dtype, device=self.device
+        )
+        edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
+        return coord, atype, edge_index, edge_vec, edge_mask
+
+    def test_cart_to_l1_intertwines_wigner_rotation(self) -> None:
+        """The l=1 spin map must rotate with the descriptor's Wigner-D block."""
+        dtype = torch.float64
+        module = SpinEmbedding(
+            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=1
+        ).to(self.device)
+        cart_to_l1 = module.cart_to_l1
+        # cart_to_l1 == sqrt(2) * S with S the unit l=1 basis of WignerDCalculator.
+        expected = math.sqrt(2.0) * torch.tensor(
+            [[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]],
+            dtype=dtype,
+            device=self.device,
+        )
+        torch.testing.assert_close(cart_to_l1, expected, atol=1e-12, rtol=1e-12)
+
+        quat = _random_quaternion(5, device=self.device, dtype=dtype)
+        rot = quaternion_to_rotation_matrix(quat)  # (5, 3, 3)
+        wigner = WignerDCalculator(lmax=1, dtype=dtype).to(self.device)
+        d_full, _ = wigner(quat)
+        d1 = d_full[:, 1:4, 1:4]  # (5, 3, 3)
+        vec = torch.randn(5, 3, dtype=dtype, device=self.device)
+        # cart_to_l1(R v) == D1 (cart_to_l1 v)
+        lhs = torch.einsum(
+            "dk,bk->bd", cart_to_l1, torch.einsum("bij,bj->bi", rot, vec)
+        )
+        rhs = torch.einsum("bij,bj->bi", d1, torch.einsum("dk,bk->bd", cart_to_l1, vec))
+        torch.testing.assert_close(lhs, rhs, atol=1e-10, rtol=1e-10)
+
+    def test_spin_embedding_smooth_and_masked(self) -> None:
+        """l=1 is linear in spin (zero at s=0); non-magnetic types are gated off."""
+        dtype = torch.float64
+        module = SpinEmbedding(
+            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=2
+        ).to(self.device)
+        atype = torch.tensor([0, 0, 1], device=self.device)
+        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
+
+        # Linear in spin: vector(0) == 0 and vector(2 s) == 2 vector(s).
+        zero_scalar, zero_vec = module(torch.zeros_like(spin), atype)
+        self.assertTrue(torch.allclose(zero_vec, torch.zeros_like(zero_vec)))
+        _, vec1 = module(spin, atype)
+        _, vec2 = module(2.0 * spin, atype)
+        torch.testing.assert_close(vec2, 2.0 * vec1, atol=1e-12, rtol=1e-12)
+
+        # Non-magnetic type (index 1) is gated to exactly zero on both branches.
+        scalar, vector = module(spin, atype)
+        self.assertTrue(torch.allclose(scalar[2], torch.zeros_like(scalar[2])))
+        self.assertTrue(torch.allclose(vector[2], torch.zeros_like(vector[2])))
+
+        # The l=0 magnitude branch is smooth at s=0: its spin gradient vanishes.
+        spin_leaf = torch.zeros(2, 3, dtype=dtype, device=self.device).requires_grad_(
+            True
+        )
+        scalar0, _ = module(spin_leaf, torch.tensor([0, 0], device=self.device))
+        (grad,) = torch.autograd.grad(scalar0.sum(), spin_leaf)
+        self.assertTrue(torch.allclose(grad, torch.zeros_like(grad), atol=1e-12))
+
+    def test_edge_l1_equivariance_and_masking(self) -> None:
+        """The per-edge neighbor-spin l=1 message rotates as l=1, is linear and masked."""
+        dtype = torch.float64
+        module = SpinEmbedding(
+            ntypes=2, channels=4, use_spin=[True, False], dtype=dtype, seed=3
+        ).to(self.device)
+        # Perturb the per-type neighbor weight off zero so the map is non-trivial.
+        with torch.no_grad():
+            module.adam_spin_nbr_weight.copy_(
+                torch.randn_like(module.adam_spin_nbr_weight)
+            )
+        atype = torch.tensor([0, 0, 1], device=self.device)  # node 2 is non-magnetic
+        # Edges 0, 1 have magnetic sources; edge 2's source (node 2) is not.
+        src = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
+        edge_cache = SimpleNamespace(
+            src=src,
+            edge_env=torch.rand(3, 1, dtype=dtype, device=self.device) + 0.1,
+        )
+        spin = torch.randn(3, 3, dtype=dtype, device=self.device)
+
+        msg = module.edge_l1(spin, atype, edge_cache)  # (E, 3, C)
+        self.assertEqual(msg.shape, (3, 3, module.channels))
+
+        # Linear in spin: zero at s=0 and homogeneous of degree one.
+        zero = module.edge_l1(torch.zeros_like(spin), atype, edge_cache)
+        self.assertTrue(torch.allclose(zero, torch.zeros_like(zero)))
+        msg2 = module.edge_l1(2.0 * spin, atype, edge_cache)
+        torch.testing.assert_close(msg2, 2.0 * msg, atol=1e-12, rtol=1e-12)
+
+        # The non-magnetic source (edge 2) contributes exactly zero.
+        torch.testing.assert_close(msg[2], torch.zeros_like(msg[2]))
+        self.assertGreater(msg[0].abs().max().item(), 0.0)
+
+        # l=1 equivariance: rotating the spin rotates each edge message by D^1(R),
+        # the packed Wigner-D block conjugate to cart_to_l1.
+        quat = _random_quaternion(1, device=self.device, dtype=dtype)
+        rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
+        d1 = module.cart_to_l1 @ rot @ torch.linalg.inv(module.cart_to_l1)
+        msg_rot = module.edge_l1(
+            torch.einsum("ij,nj->ni", rot, spin), atype, edge_cache
+        )
+        expected = torch.einsum("de,nec->ndc", d1, msg)
+        torch.testing.assert_close(msg_rot, expected, atol=1e-10, rtol=1e-10)
+
+    def test_descriptor_spin_joint_rotation_invariance(self) -> None:
+        """The scalar descriptor is invariant under a joint rotation of geometry and spin.
+
+        Covers both spin injection routes by toggling ``use_env_seed``: the
+        env-seed branch adds the neighbor spin to the environment matrix, while
+        the backbone branch carries the on-site and neighbor-aggregated l=1.
+        """
+        dtype = torch.float64
+        coord, atype, edge_index, edge_vec, edge_mask = self._spin_edges(dtype)
+        spin = torch.zeros(1, 2, 3, dtype=dtype, device=self.device)
+        spin[0, 0] = torch.tensor([0.3, -0.7, 0.5], dtype=dtype, device=self.device)
+        quat = _random_quaternion(1, device=self.device, dtype=dtype)
+        rot = quaternion_to_rotation_matrix(quat)[0]  # (3, 3)
+
+        for use_env_seed in (False, True):
+            with self.subTest(use_env_seed=use_env_seed):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        precision="float64",
+                        use_spin=[True, False],
+                        use_env_seed=use_env_seed,
+                        seed=7,
+                    )
+                )
+                # Perturb away from the near-identity initialization so the
+                # rotation check exercises a non-trivial spin-dependent
+                # descriptor (env-seed output_proj is otherwise zero-init).
+                torch.manual_seed(0)
+                with torch.no_grad():
+                    for p in model.parameters():
+                        p.copy_(torch.randn_like(p) * 0.1)
+                model.eval()
+
+                desc, _ = model.forward_with_edges(
+                    extended_coord=coord,
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=edge_vec,
+                    edge_mask=edge_mask,
+                    spin=spin,
+                )
+                desc_rot, _ = model.forward_with_edges(
+                    extended_coord=coord,
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=torch.einsum("ij,ej->ei", rot, edge_vec),
+                    edge_mask=edge_mask,
+                    spin=torch.einsum("ij,nkj->nki", rot, spin),
+                )
+                torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
+
+                # Spin actually changes the descriptor (injection is not a no-op).
+                desc_zero, _ = model.forward_with_edges(
+                    extended_coord=coord,
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=edge_vec,
+                    edge_mask=edge_mask,
+                    spin=torch.zeros_like(spin),
+                )
+                self.assertFalse(torch.allclose(desc, desc_zero, atol=1e-6))
 
 
 class TestBuildEdgeQuaternion(_SeZMTestCase):
@@ -1160,16 +1501,18 @@ class TestSO2LinearEquivariance(_SeZMTestCase):
             )
 
             dim_red = so2_linear.reduced_dim
+            # SO2Linear consumes the focus-major ``(F, E, D_m, C)`` contract, so
+            # the edge axis (the per-edge z-rotation batch) is axis 1.
             x = torch.randn(
-                batch, 1, dim_red, channels_in, device=self.device, dtype=dtype
+                1, batch, dim_red, channels_in, device=self.device, dtype=dtype
             )
 
             angles = torch.rand(batch, device=self.device, dtype=dtype) * 2 * 3.14159
             Z = self._build_m_major_z_rotation(angles, lmax, mmax)
 
-            x_rotated = torch.einsum("bij,bfjc->bfic", Z, x)
+            x_rotated = torch.einsum("eij,fejc->feic", Z, x)
             lhs = so2_linear(x_rotated)
-            rhs = torch.einsum("bij,bfjc->bfic", Z, so2_linear(x))
+            rhs = torch.einsum("eij,fejc->feic", Z, so2_linear(x))
 
             torch.testing.assert_close(
                 lhs,

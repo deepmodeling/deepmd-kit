@@ -48,6 +48,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -740,6 +743,12 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif (
+            self._dpmodel is not None
+            and hasattr(self._dpmodel, "get_var_name")
+            and self._dpmodel.get_var_name() in model_output_type
+        ):
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -760,6 +769,33 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         return 0
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+            return self._dpmodel.get_var_name()
+        raise NotImplementedError(
+            "get_var_name is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+            return self._dpmodel.get_task_dim()
+        raise NotImplementedError(
+            "get_task_dim is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+            return self._dpmodel.get_intensive()
+        raise NotImplementedError(
+            "get_intensive is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
@@ -1620,17 +1656,40 @@ class DeepEval(DeepEvalBackend):
 
         charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
 
-        # Call the model with spin.
-        model_inputs = (
-            ext_coord_t,
-            ext_atype_t,
-            ext_spin_t,
-            nlist_t,
-            mapping_t,
-            fparam_t,
-            aparam_t,
-            charge_spin_t,
-        )
+        # Build the lower inputs for the model's spin ABI. The native scheme
+        # shares the energy edge contract and feeds the owned-atom spins (the
+        # descriptor only needs local spins; ghost neighbours resolve to their
+        # local owners). The deepspin scheme keeps the extended nlist contract.
+        if self.metadata.get("lower_input_kind") == "edge_vec":
+            edge_schema = edge_schema_from_extended(
+                ext_coord_t,
+                ext_atype_t[:, :natoms],
+                nlist_t,
+                mapping_t,
+            )
+            model_inputs = (
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                spin_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
+        else:
+            model_inputs = (
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

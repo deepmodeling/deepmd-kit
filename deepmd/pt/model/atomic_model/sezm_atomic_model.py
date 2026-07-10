@@ -733,9 +733,8 @@ class SeZMAtomicModel(DPAtomicModel):
         """Reconstruct SeZM `dens`-head kwargs from energy head and descriptor."""
         descriptor = self.descriptor
         kwargs = self._build_ener_fitting_kwargs()
-        node_l_schedule = getattr(descriptor, "node_l_schedule", descriptor.l_schedule)
-        kwargs["condition_lmax"] = int(node_l_schedule[0])
-        kwargs["latent_lmax"] = int(node_l_schedule[-1])
+        kwargs["condition_lmax"] = int(descriptor.node_init_lmax)
+        kwargs["latent_lmax"] = int(descriptor.node_readout_lmax)
         kwargs["channels"] = int(descriptor.channels)
         return kwargs
 

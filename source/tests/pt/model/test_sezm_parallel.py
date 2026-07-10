@@ -355,15 +355,102 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
         torch.testing.assert_close(par, ref, rtol=1e-8, atol=1e-9)
 
 
+class TestSeZMNativeSpinParallelParity(unittest.TestCase):
+    """Parallel native-spin magnetic force must fold to the single-domain value.
+
+    The local spin feeds the extended spin at the owner row and at every ghost
+    copy, so by the chain rule the single-domain magnetic force ``-dE/ds_local``
+    equals the parallel per-node magnetic force ``-dE/ds_ext`` summed over each
+    owner and its ghost copies. This pins ``border_op``'s backward as the exact
+    Jacobian-vector product for a per-node leaf -- the regime the energy and
+    conservative-force parity tests cannot exercise, because ghost nodes carry
+    no edge-geometry leaf (they are never edge centres) and so a wrong ghost-row
+    gradient there dead-ends instead of corrupting the force.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        ensure_comm_registered()
+
+    def _native_spin_model(self, device: torch.device) -> torch.nn.Module:
+        params = _tiny_parallel_model_params()
+        params["type_map"] = ["Ni", "O"]
+        params["spin"] = {"scheme": "native", "use_spin": [True, False]}
+        model = get_model(params)
+        model.eval()
+        model.to(device)
+        return model
+
+    def test_native_spin_mag_force_fold_parity_cpu(self) -> None:
+        device = torch.device("cpu")
+        model = self._native_spin_model(device)
+        _perturb_descriptor(model.atomic_model.descriptor)
+        sysm = _build_extended_system(model, device)
+        nloc, nall, mapping = sysm["nloc"], sysm["nall"], sysm["mapping"]
+        comm = _self_comm_dict(mapping, nloc, nall)
+
+        rng = np.random.default_rng(7)
+        atype_np = sysm["atype"][0].cpu().numpy()
+        magnetic = atype_np == 0
+        local_spin = np.zeros((1, nloc, 3))
+        local_spin[0, magnetic] = rng.standard_normal((int(magnetic.sum()), 3))
+        ls = torch.tensor(local_spin, dtype=torch.float64, device=device)
+        es = torch.gather(ls, 1, mapping.unsqueeze(-1).expand(-1, -1, 3))
+
+        single = model.forward_common_lower(
+            sysm["coord"],
+            sysm["atype"],
+            sysm["edge_index"],
+            sysm["edge_vec"],
+            sysm["edge_scatter_index"],
+            sysm["edge_mask"],
+            spin=ls,
+        )
+        par = model.forward_common_lower(
+            sysm["coord"],
+            sysm["atype"],
+            sysm["edge_scatter_index"],
+            sysm["edge_vec"],
+            sysm["edge_scatter_index"],
+            sysm["edge_mask"],
+            comm_dict=comm,
+            extended_atype=sysm["extended_atype"],
+            spin=es,
+        )
+        m_single = single["energy_derv_r_mag"].squeeze(-2)[0]  # (nloc, 3)
+        m_par = par["energy_derv_r_mag"].squeeze(-2)[0]  # (nall, 3)
+        m_par_folded = torch.zeros(nloc, 3, dtype=m_par.dtype, device=device)
+        m_par_folded.index_add_(0, mapping[0], m_par)
+
+        # Reject the degenerate zero-spin-force regime so the assertion below can
+        # never pass vacuously on a geometry-independent (untrained) model.
+        self.assertGreater(m_single.abs().max().item(), 1e-3)
+        torch.testing.assert_close(m_par_folded, m_single, rtol=1e-8, atol=1e-9)
+
+
 class TestSeZMEdgeParallelCapability(unittest.TestCase):
-    """The with-comm export predicate gates bridging and spin out."""
+    """The with-comm export predicate admits the edge_vec contract.
+
+    Plain energy and native spin both use the edge_vec lower interface and are
+    rank-decomposable, so they support the with-comm artifact; only analytical
+    bridging (Source Freeze Propagation) is gated out.
+    """
 
     def test_plain_model_supports_edge_parallel(self) -> None:
         model = _build_model(torch.device("cpu"))
         self.assertTrue(model.supports_edge_parallel())
+        self.assertEqual(model.export_lower_input_kind(), "edge_vec")
         self.assertTrue(
             model.atomic_model.descriptor.has_message_passing_across_ranks()
         )
+
+    def test_native_spin_supports_edge_parallel(self) -> None:
+        params = _tiny_parallel_model_params()
+        params["type_map"] = ["Ni", "O"]
+        params["spin"] = {"scheme": "native", "use_spin": [True, False]}
+        model = get_model(params)
+        self.assertTrue(model.supports_edge_parallel())
+        self.assertEqual(model.export_lower_input_kind(), "edge_vec")
 
     def test_bridging_model_fails_fast(self) -> None:
         # ZBL needs real element symbols for its analytical pair potential.

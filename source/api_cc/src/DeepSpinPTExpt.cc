@@ -163,6 +163,15 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
 
+  // Native spin shares the energy edge ABI; the deepspin scheme keeps the nlist
+  // contract. Pre-edge spin archives lack the field and default to nlist.
+  if (metadata.obj_val.count("lower_input_kind")) {
+    lower_input_is_edge_ =
+        metadata["lower_input_kind"].as_string() == "edge_vec";
+  } else {
+    lower_input_is_edge_ = false;
+  }
+
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
     type_map.push_back(v.as_string());
@@ -257,6 +266,88 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model(
     inputs.push_back(charge_spin);
   }
   return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepSpinPTExpt::run_model_edges(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_scatter_index,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& spin,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam) {
+  // Native-spin edge ABI: the energy edge inputs followed by the
+  // per-local-atom spin leaf, then the optional fparam / aparam / charge_spin.
+  std::vector<torch::Tensor> inputs = {
+      coord, atype, edge_index, edge_vec, edge_scatter_index, edge_mask, spin};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
+  return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepSpinPTExpt::run_model_edges_with_comm(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& extended_atype,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_scatter_index,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& spin,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "DeepSpinPTExpt::run_model_edges_with_comm called but the with-comm "
+        "artifact is not available. Either the .pt2 file has no with-comm "
+        "artifact compiled, or the artifact was present in the .pt2 metadata "
+        "but failed to load at init time (see earlier stderr log). Multi-rank "
+        "LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "DeepSpinPTExpt::run_model_edges_with_comm: comm_tensors must contain "
+        "exactly 8 tensors. Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  // Native-spin parallel ABI: the energy edge with-comm inputs (coord and the
+  // extended types span the extended node set) followed by the EXTENDED
+  // per-node spin leaf, then the optional fparam / aparam / charge_spin, then
+  // the eight border_op communication tensors.
+  std::vector<torch::Tensor> inputs = {coord,      atype,    extended_atype,
+                                       edge_index, edge_vec, edge_scatter_index,
+                                       edge_mask,  spin};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& t : comm_tensors) {
+    inputs.push_back(t);
+  }
+  return with_comm_loader->run(inputs);
 }
 
 std::vector<torch::Tensor> DeepSpinPTExpt::run_model_with_comm(
@@ -482,13 +573,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
-    nlist_data.padding();
 
-    // Rebuild mapping tensor.  Phantom slots (when phantom_n > 0) get
-    // identity entries — they index into their own row and never appear
-    // in any other atom's nlist (their nlist rows are all -1 below).
+    // Rebuild mapping.  Phantom slots (when phantom_n > 0) get identity
+    // entries — they index into their own row and never appear in any other
+    // atom's nlist (their nlist rows are all -1 below).
+    std::vector<std::int64_t> mapping(nall_real);
     if (lmp_list.mapping) {
-      std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < phantom_n; ii++) {
         mapping[ii] = ii;
       }
@@ -504,36 +594,49 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         mapping[ii] =
             fwd_map[lmp_list.mapping[bkw_map[ii - phantom_n]]] + phantom_n;
       }
-      mapping_tensor =
-          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-              .clone()
-              .to(device);
     } else {
       // Identity fallback.  See DeepPotPTExpt::compute_inner for the
       // invariant rationale: this branch is only reached when the
       // model is non-message-passing, nghost==0, or use_with_comm is
       // true (border_op fills ghosts); other configurations were
       // rejected by the fail-fast above.
-      std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;
       }
-      mapping_tensor =
-          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-              .clone()
-              .to(device);
     }
+    mapping_tensor =
+        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+            .clone()
+            .to(device);
 
-    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
-    // Phantom rows (all -1) are prepended below so the AOTI graph sees
-    // nloc == phantom_n + nloc_real_orig instead of 0.
-    firstneigh_tensor =
-        createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
-    if (phantom_n > 0) {
-      auto phantom_rows = torch::full(
-          {1, phantom_n, nnei}, static_cast<std::int64_t>(-1),
-          torch::TensorOptions().dtype(torch::kInt64).device(device));
-      firstneigh_tensor = torch::cat({phantom_rows, firstneigh_tensor}, 1);
+    if (lower_input_is_edge_) {
+      // Native spin reuses the energy edge ABI: cache only the real skin
+      // topology and recompute the model-cutoff edge vectors on-device every
+      // step (see DeepPotPTExpt.cc).  Single-rank folds ghost neighbours onto
+      // their local owners (``fold_to_local=true``); multi-rank indexes the
+      // extended node set directly (``fold_to_local=false``) so ghost node
+      // features -- including the per-node spin embedding -- can be exchanged
+      // across ranks via border_op.
+      const auto edge_tensors = createEdgeTensors(
+          nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
+          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
+          /*fold_to_local=*/!use_with_comm);
+      edge_index_tensor = edge_tensors.edge_index;
+      edge_index_ext_tensor = edge_tensors.edge_index_ext;
+    } else {
+      nlist_data.padding();
+      // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+      // Phantom rows (all -1) are prepended below so the AOTI graph sees
+      // nloc == phantom_n + nloc_real_orig instead of 0.
+      firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
+                              .to(torch::kInt64)
+                              .to(device);
+      if (phantom_n > 0) {
+        auto phantom_rows = torch::full(
+            {1, phantom_n, nnei}, static_cast<std::int64_t>(-1),
+            torch::TensorOptions().dtype(torch::kInt64).device(device));
+        firstneigh_tensor = torch::cat({phantom_rows, firstneigh_tensor}, 1);
+      }
     }
   }
 
@@ -599,7 +702,39 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   if (use_with_comm) {
     bool has_null_atoms = (nall_real < nall);
     std::vector<at::Tensor> comm_tensors;
-    if (has_null_atoms) {
+    if (phantom_n > 0) {
+      // Empty subdomain: the phantom prefix shifts every node index by
+      // ``phantom_n`` (received ghost features land at [phantom_n, nall)), so
+      // the forwarded send-list -- built in the real-atom node space, remapped
+      // when NULL-type atoms were filtered -- is offset to match.  Without the
+      // offset border_op forwards the zeroed phantom slots instead of the
+      // relayed ghost features (see DeepPotPTExpt.cc for the full rationale).
+      if (has_null_atoms) {
+        deepmd::remap_comm_sendlist(remapped_sendlist, remapped_sendnum,
+                                    remapped_recvnum, lmp_list, fwd_map);
+      } else {
+        remapped_sendlist.resize(lmp_list.nswap);
+        remapped_sendnum.assign(lmp_list.sendnum,
+                                lmp_list.sendnum + lmp_list.nswap);
+        remapped_recvnum.assign(lmp_list.recvnum,
+                                lmp_list.recvnum + lmp_list.nswap);
+        for (int iswap = 0; iswap < lmp_list.nswap; ++iswap) {
+          remapped_sendlist[iswap].assign(
+              lmp_list.sendlist[iswap],
+              lmp_list.sendlist[iswap] + lmp_list.sendnum[iswap]);
+        }
+      }
+      remapped_sendlist_ptrs.resize(lmp_list.nswap);
+      for (int iswap = 0; iswap < lmp_list.nswap; ++iswap) {
+        for (int& idx : remapped_sendlist[iswap]) {
+          idx += phantom_n;
+        }
+        remapped_sendlist_ptrs[iswap] = remapped_sendlist[iswap].data();
+      }
+      comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
+          lmp_list, remapped_sendlist_ptrs.data(), remapped_sendnum.data(),
+          remapped_recvnum.data(), phantom_n, nghost_real);
+    } else if (has_null_atoms) {
       comm_tensors =
           deepmd::ptexpt::build_comm_tensors_positional_with_virtual_atoms(
               lmp_list, fwd_map, nloc, nghost_real, remapped_sendlist,
@@ -609,9 +744,56 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
           nghost_real);
     }
-    flat_outputs = run_model_with_comm(
-        coord_Tensor, atype_Tensor, spin_Tensor, firstneigh_tensor,
-        mapping_tensor, fparam_tensor, aparam_tensor, comm_tensors);
+    if (lower_input_is_edge_) {
+      // Native spin multi-rank: edges index the extended node set
+      // (fold_to_local=false above), the EXTENDED per-node spin feeds the
+      // descriptor (ghost spins arrive via the LAMMPS sp forward-comm), and
+      // border_op exchanges ghost node features between interaction blocks.
+      // The conservative and magnetic forces both return extended and are
+      // folded onto owners by the LAMMPS force / spin reverse-comm.
+      if (phantom_n > 0) {
+        // Empty rank: coord/atype/spin already carry the phantom prefix; supply
+        // two masked self-edges (edge_mask=false) so the graph runs at
+        // nedge>=2 / nloc>=2 with zero physical contribution.  Real ghost
+        // features still arrive via border_op at slots [phantom_n, nall).
+        const auto bool_option =
+            torch::TensorOptions().device(torch::kCPU).dtype(torch::kBool);
+        at::Tensor ph_edge_index = torch::zeros({2, 2}, int_option).to(device);
+        at::Tensor ph_edge_vec = torch::zeros({2, 3}, options).to(device);
+        at::Tensor ph_edge_mask = torch::zeros({2}, bool_option).to(device);
+        flat_outputs = run_model_edges_with_comm(
+            coord_Tensor, atype_Tensor.slice(1, 0, nloc), atype_Tensor,
+            ph_edge_index, ph_edge_vec, ph_edge_index, ph_edge_mask,
+            spin_Tensor, fparam_tensor, aparam_tensor, comm_tensors);
+      } else {
+        const auto edge_tensors =
+            compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                               coord_Tensor, static_cast<double>(rcut));
+        flat_outputs = run_model_edges_with_comm(
+            coord_Tensor, atype_Tensor.slice(1, 0, nloc), atype_Tensor,
+            edge_tensors.edge_index, edge_tensors.edge_vec,
+            edge_tensors.edge_index_ext, edge_tensors.edge_mask, spin_Tensor,
+            fparam_tensor, aparam_tensor, comm_tensors);
+      }
+    } else {
+      flat_outputs = run_model_with_comm(
+          coord_Tensor, atype_Tensor, spin_Tensor, firstneigh_tensor,
+          mapping_tensor, fparam_tensor, aparam_tensor, comm_tensors);
+    }
+  } else if (lower_input_is_edge_) {
+    // Native spin edge path (single-rank): recompute the model-cutoff edge
+    // vectors from the cached skin topology and feed only the owned-atom
+    // spins; the conservative force stays extended (folded back like the
+    // energy model), while the magnetic force is already per-local-atom
+    // (zero-padded to nall inside the graph).
+    const auto edge_tensors =
+        compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                           coord_Tensor, static_cast<double>(rcut));
+    flat_outputs = run_model_edges(
+        coord_Tensor, atype_Tensor.slice(1, 0, nloc), edge_tensors.edge_index,
+        edge_tensors.edge_vec, edge_tensors.edge_index_ext,
+        edge_tensors.edge_mask, spin_Tensor.slice(1, 0, nloc), fparam_tensor,
+        aparam_tensor);
   } else {
     flat_outputs =
         run_model(coord_Tensor, atype_Tensor, spin_Tensor, firstneigh_tensor,
@@ -887,14 +1069,23 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
-  // Flatten raw nlist — the .pt2 model sorts by distance on-device.
-  at::Tensor nlist_tensor =
-      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
+  at::Tensor nlist_tensor;
+  EdgeTensorPack edge_tensors;
+  if (lower_input_is_edge_) {
+    // Native spin edge ABI: build the full edge schema once (no cached skin
+    // topology in the standalone path), folding ghosts onto local owners.
+    edge_tensors = createEdgeTensors(nlist_raw, coord_cpy_d, mapping_64, nloc,
+                                     nall, device);
+  } else {
+    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+    nlist_tensor =
+        createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
+  }
 
   // Build fparam/aparam tensors
   auto valuetype_options = std::is_same<VALUETYPE, float>::value
@@ -936,10 +1127,20 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // 5. Run the .pt2 model (7 args for spin)
-  auto flat_outputs =
-      run_model(coord_Tensor, atype_Tensor, spin_Tensor, nlist_tensor,
-                mapping_tensor, fparam_tensor, aparam_tensor);
+  // 5. Run the .pt2 model: native spin uses the energy edge ABI plus the
+  // owned-atom spins; the deepspin scheme keeps the 7-arg nlist contract.
+  std::vector<torch::Tensor> flat_outputs;
+  if (lower_input_is_edge_) {
+    flat_outputs = run_model_edges(
+        coord_Tensor, atype_Tensor.slice(1, 0, nloc), edge_tensors.edge_index,
+        edge_tensors.edge_vec, edge_tensors.edge_index_ext,
+        edge_tensors.edge_mask, spin_Tensor.slice(1, 0, nloc), fparam_tensor,
+        aparam_tensor);
+  } else {
+    flat_outputs =
+        run_model(coord_Tensor, atype_Tensor, spin_Tensor, nlist_tensor,
+                  mapping_tensor, fparam_tensor, aparam_tensor);
+  }
 
   // 6. Extract outputs
   std::map<std::string, torch::Tensor> output_map;
