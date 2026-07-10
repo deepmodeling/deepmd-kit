@@ -751,8 +751,14 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
+  std::vector<int> atype_input(static_cast<size_t>(nframes) * nloc_real);
+  for (int ff = 0; ff < nframes; ++ff) {
+    std::copy(atype.begin(), atype.end(),
+              atype_input.begin() + static_cast<size_t>(ff) * nloc_real);
+  }
   std::vector<int64_t> atype_shape = {nframes, nloc_real};
-  input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
+  input_list[1] =
+      add_input(op, atype_input, atype_shape, data_tensor[1], status);
   // box
   int box_size = box_double.size() > 0 ? 3 : 0;
   std::vector<int64_t> box_shape = {nframes, box_size, box_size};
