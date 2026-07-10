@@ -23,6 +23,32 @@ def serialize_from_file(model_file: str) -> dict:
     raise NotImplementedError("Paddle do not support jit.export yet.")
 
 
+def _fparam_aparam_input_specs(model: "paddle.nn.Layer") -> tuple:
+    """Return the fparam/aparam static ``InputSpec``s for jit export.
+
+    A spec is returned only when the model actually uses the corresponding
+    input (nonzero ``get_dim_fparam``/``get_dim_aparam``); otherwise ``None`` is
+    returned so the frozen signature keeps that argument optional.
+    """
+    from paddle.static import (
+        InputSpec,
+    )
+
+    dim_fparam = model.get_dim_fparam()
+    dim_aparam = model.get_dim_aparam()
+    fparam_spec = (
+        InputSpec([-1, dim_fparam], dtype="float64", name="fparam")
+        if dim_fparam > 0
+        else None
+    )
+    aparam_spec = (
+        InputSpec([-1, -1, dim_aparam], dtype="float64", name="aparam")
+        if dim_aparam > 0
+        else None
+    )
+    return fparam_spec, aparam_spec
+
+
 def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a model file.
 
@@ -57,6 +83,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         InputSpec,
     )
 
+    # include fparam/aparam in the static signature when the model uses them
+    fparam_spec, aparam_spec = _fparam_aparam_input_specs(model)
+
     """ example output shape and dtype of forward
     atom_energy: fetch_name_0 (1, 6, 1) float64
     atom_virial: fetch_name_1 (1, 6, 1, 9) float64
@@ -72,8 +101,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             InputSpec([-1, -1, 3], dtype="float64", name="coord"),
             InputSpec([-1, -1], dtype="int64", name="atype"),
             InputSpec([-1, 9], dtype="float64", name="box"),
-            None,
-            None,
+            fparam_spec,
+            aparam_spec,
             True,
         ],
     )
@@ -92,8 +121,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             InputSpec([-1, -1], dtype="int32", name="atype"),
             InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
             None,
-            None,
-            None,
+            fparam_spec,
+            aparam_spec,
             True,
             None,
         ],
