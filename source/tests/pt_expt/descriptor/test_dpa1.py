@@ -139,12 +139,18 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
         dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
         dd0 = dd0.eval()
-        inputs = (
-            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-            torch.tensor(self.atype_ext, dtype=int, device=self.device),
-            torch.tensor(self.nlist, dtype=int, device=self.device),
-        )
-        torch.export.export(dd0, inputs)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+        # Dense route: no mapping -> legacy dense exclusion mask.
+        torch.export.export(dd0, (coord_ext, atype_ext, nlist))
+        # Graph route: passing ``mapping`` selects the graph lower, so the
+        # exclude_types case exercises the graph-native ``apply_pair_exclusion``
+        # (``build_edge_exclude_mask``) path, not just the dense fallback. The
+        # mixin's nall(4) > nloc(3) requires a real mapping (identity would
+        # index out of range).
+        mapping = torch.tensor(self.mapping, dtype=int, device=self.device)
+        torch.export.export(dd0, (coord_ext, atype_ext, nlist, mapping))
 
     @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
     def test_compressed_forward(self, prec) -> None:
