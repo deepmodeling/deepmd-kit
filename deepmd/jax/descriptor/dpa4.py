@@ -10,7 +10,6 @@ from typing import (
 import numpy as np
 
 import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
-import deepmd.jax.utils.network as _jax_network  # noqa: F401
 from deepmd.dpmodel.common import (
     NativeOP,
 )
