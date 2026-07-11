@@ -85,6 +85,7 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
 
     def __init__(self) -> None:
         self.finetune_links: dict[str, Any] | None = None
+        self.shared_links: dict[str, Any] | None = None
 
     def validate_options(
         self,
@@ -96,10 +97,6 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
             raise NotImplementedError(
                 "JAX training does not support init_frz_model yet"
             )
-        if self.is_multi_task(config) and config["model"].get("shared_dict"):
-            raise NotImplementedError(
-                "JAX multi-task training does not support shared_dict yet"
-            )
 
     def preprocess_config(
         self,
@@ -108,6 +105,8 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
     ) -> dict[str, Any]:
         """Apply JAX fine-tuning and pretrained-script preprocessing."""
         self.finetune_links = None
+        self.shared_links = None
+
         if options.finetune is not None:
             from deepmd.jax.utils.finetune import (
                 get_finetune_rules,
@@ -122,6 +121,17 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
         elif options.init_model is not None and options.use_pretrain_script:
             model_data = serialize_from_file(options.init_model)
             config["model"] = model_data["model_def_script"]
+        if self.is_multi_task(config):
+            if config["model"].get("shared_dict"):
+                from deepmd.jax.utils.multi_task import (
+                    preprocess_shared_params,
+                )
+
+                config["model"], self.shared_links = preprocess_shared_params(
+                    config["model"]
+                )
+            if "RANDOM" in config["model"]["model_dict"]:
+                raise ValueError("Model name can not be 'RANDOM' in multi-task mode!")
         return config
 
     def update_neighbor_stat(
@@ -154,6 +164,7 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
             restart=options.restart,
             finetune_model=options.finetune,
             finetune_links=self.finetune_links,
+            shared_links=self.shared_links,
         )
         if neighbor_stat is not None:
             model.set_min_nbor_dist(neighbor_stat)

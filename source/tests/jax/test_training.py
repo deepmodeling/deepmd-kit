@@ -11,6 +11,9 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
@@ -46,6 +49,8 @@ from deepmd.jax.env import (
 from deepmd.jax.train.trainer import (
     DPTrainer,
     _copy_matching_state_tree,
+    _merge_descriptor_stats,
+    _merge_fitting_param_stats,
     _scale_by_global_learning_rate,
 )
 from deepmd.jax.utils.finetune import (
@@ -56,6 +61,9 @@ from deepmd.jax.utils.serialization import (
 )
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
 )
 
 MODEL_SE_E2_A = {
@@ -160,6 +168,59 @@ def _minimal_jax_config(model_params: dict) -> dict:
     }
 
 
+def _minimal_jax_multitask_config(model_params: dict) -> dict:
+    return {
+        "model": model_params,
+        "training": {
+            "numb_steps": 1,
+            "data_dict": {
+                "task_a": {"training_data": {}},
+                "task_b": {"training_data": {}},
+            },
+        },
+        "learning_rate": {
+            "type": "exp",
+            "start_lr": 0.001,
+            "stop_lr": 1e-8,
+            "decay_steps": 1,
+        },
+        "loss_dict": {
+            "task_a": {},
+            "task_b": {},
+        },
+    }
+
+
+def _shared_jax_model_config(*, share_fitting: bool = True) -> dict:
+    shared_dict: dict = {
+        "shared_type_map": ["O", "H", "B"],
+        "shared_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+    }
+    fitting_ref_a: dict | str = deepcopy(MODEL_SE_E2_A["fitting_net"])
+    fitting_ref_b: dict | str = deepcopy(MODEL_SE_E2_A["fitting_net"])
+    if share_fitting:
+        shared_dict["shared_fitting"] = deepcopy(MODEL_SE_E2_A["fitting_net"])
+        fitting_ref_a = "shared_fitting"
+        fitting_ref_b = "shared_fitting"
+    return {
+        "shared_dict": shared_dict,
+        "model_dict": {
+            "task_a": {
+                "type_map": "shared_type_map",
+                "descriptor": "shared_descriptor",
+                "fitting_net": fitting_ref_a,
+                "data_stat_nbatch": 1,
+            },
+            "task_b": {
+                "type_map": "shared_type_map",
+                "descriptor": "shared_descriptor",
+                "fitting_net": fitting_ref_b,
+                "data_stat_nbatch": 1,
+            },
+        },
+    }
+
+
 @patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
 @patch("deepmd.jax.train.trainer.DPTrainer._deserialize_models")
 @patch("deepmd.jax.train.trainer.serialize_from_file")
@@ -215,6 +276,211 @@ def test_jax_restart_uses_checkpoint_model_script(
     assert trainer.model_def_script == checkpoint_model
     assert trainer.model_params_by_task["Default"] == checkpoint_model
     assert trainer.start_step == 7
+
+
+def test_jax_train_entrypoint_preprocesses_shared_dict() -> None:
+    """JAX multi-task preprocessing expands shared_dict references."""
+    entrypoint = JAXTrainEntrypoint()
+    config = {
+        "model": _shared_jax_model_config(),
+        "training": {},
+    }
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(input_file="input.json"),
+    )
+
+    model_dict = updated["model"]["model_dict"]
+    assert model_dict["task_a"]["type_map"] == ["O", "H", "B"]
+    assert model_dict["task_b"]["descriptor"]["type"] == "se_e2_a"
+    assert entrypoint.shared_links is not None
+    assert set(entrypoint.shared_links) == {"shared_descriptor", "shared_fitting"}
+
+
+def test_jax_train_entrypoint_keeps_multitask_without_shared_dict() -> None:
+    """JAX multi-task configs without shared_dict keep the existing path."""
+    entrypoint = JAXTrainEntrypoint()
+    config = {
+        "model": {
+            "model_dict": {
+                "task_a": deepcopy(MODEL_SE_E2_A),
+                "task_b": deepcopy(MODEL_SE_E2_A),
+            },
+        },
+        "training": {},
+    }
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(input_file="input.json"),
+    )
+
+    assert updated["model"]["model_dict"]["task_a"]["type_map"] == ["O", "H", "B"]
+    assert entrypoint.shared_links is None
+
+
+@patch("deepmd.jax.entrypoints.train.serialize_from_file")
+def test_jax_train_entrypoint_preprocesses_shared_dict_after_model_replacement(
+    serialize_from_file,
+) -> None:
+    """JAX shared links match the final model after pretrain-script replacement."""
+    input_model = {
+        "shared_dict": {
+            "input_type_map": ["input"],
+            "input_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+        },
+        "model_dict": {
+            "task_a": {
+                "type_map": "input_type_map",
+                "descriptor": "input_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+            "task_b": {
+                "type_map": "input_type_map",
+                "descriptor": "input_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+        },
+    }
+    checkpoint_model = {
+        "shared_dict": {
+            "checkpoint_type_map": ["O", "H", "B"],
+            "checkpoint_descriptor": deepcopy(MODEL_SE_E2_A["descriptor"]),
+        },
+        "model_dict": {
+            "task_a": {
+                "type_map": "checkpoint_type_map",
+                "descriptor": "checkpoint_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+            "task_b": {
+                "type_map": "checkpoint_type_map",
+                "descriptor": "checkpoint_descriptor",
+                "fitting_net": deepcopy(MODEL_SE_E2_A["fitting_net"]),
+            },
+        },
+    }
+    serialize_from_file.return_value = {
+        "model_def_script": checkpoint_model,
+    }
+    entrypoint = JAXTrainEntrypoint()
+    config = {"model": input_model, "training": {}}
+
+    updated = entrypoint.preprocess_config(
+        config,
+        TrainEntrypointOptions(
+            input_file="input.json",
+            init_model="model.jax",
+            use_pretrain_script=True,
+        ),
+    )
+
+    assert updated["model"]["model_dict"]["task_a"]["type_map"] == ["O", "H", "B"]
+    assert entrypoint.shared_links is not None
+    assert set(entrypoint.shared_links) == {"checkpoint_descriptor"}
+    assert "input_descriptor" not in entrypoint.shared_links
+
+
+def test_jax_trainer_applies_shared_dict_links() -> None:
+    """Trainer-level sharing links descriptor and fitting-net parameters."""
+    trainer = DPTrainer(
+        _minimal_jax_multitask_config(_shared_jax_model_config()),
+    )
+
+    trainer._share_model_params(resume=True)
+
+    model_a = trainer.models["task_a"]
+    model_b = trainer.models["task_b"]
+    assert model_a.get_descriptor() is model_b.get_descriptor()
+    assert model_a.get_fitting_net() is not model_b.get_fitting_net()
+    assert model_a.get_fitting_net().nets is model_b.get_fitting_net().nets
+
+
+class _FakeEnvMatStatSe:
+    def __init__(self, descriptor) -> None:
+        self.descriptor = descriptor
+        self.stats = {}
+
+    def __call__(self) -> tuple[np.ndarray, np.ndarray]:
+        stat = self.stats["env"]
+        return (
+            np.asarray([stat.compute_avg()], dtype=np.float64),
+            np.asarray([stat.compute_std()], dtype=np.float64),
+        )
+
+
+class _DescriptorWithStats:
+    def __init__(self, stats: dict[str, StatItem]) -> None:
+        self.stats = stats
+        self.davg = np.asarray([0.0], dtype=np.float64)
+        self.dstd = np.asarray([1.0], dtype=np.float64)
+
+
+def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
+    """Shared descriptor merge recomputes weighted avg/std for nested stats."""
+    base = _DescriptorWithStats({"env": StatItem(number=2, sum=4, squared_sum=10)})
+    link = _DescriptorWithStats({"env": StatItem(number=4, sum=20, squared_sum=104)})
+    base.se_atten = _DescriptorWithStats(
+        {"env": StatItem(number=2, sum=6, squared_sum=18)}
+    )
+    link.se_atten = _DescriptorWithStats(
+        {"env": StatItem(number=4, sum=28, squared_sum=200)}
+    )
+
+    with patch("deepmd.dpmodel.utils.env_mat_stat.EnvMatStatSe", _FakeEnvMatStatSe):
+        _merge_descriptor_stats(base, link, model_prob=0.5)
+
+    np.testing.assert_allclose(base.davg, [3.5])
+    np.testing.assert_allclose(base.dstd, [np.sqrt(3.25)])
+    np.testing.assert_allclose(base.se_atten.davg, [5.0])
+    np.testing.assert_allclose(base.se_atten.dstd, [np.sqrt(4.5)])
+    assert base.stats["env"].number == 4
+    assert base.se_atten.stats["env"].number == 4
+
+
+class _FittingWithStats:
+    def __init__(self, param_stats: dict[str, list[StatItem]]) -> None:
+        self.numb_fparam = len(param_stats.get("fparam", []))
+        self.numb_aparam = len(param_stats.get("aparam", []))
+        self.fparam_avg = jnp.asarray(np.zeros(self.numb_fparam))
+        self.fparam_inv_std = jnp.asarray(np.ones(self.numb_fparam))
+        self.aparam_avg = jnp.asarray(np.zeros(self.numb_aparam))
+        self.aparam_inv_std = jnp.asarray(np.ones(self.numb_aparam))
+        self._param_stats = param_stats
+
+    def get_param_stats(self) -> dict[str, list[StatItem]]:
+        return self._param_stats
+
+
+def test_jax_shared_fitting_stats_merge_weighted_values() -> None:
+    """Shared fitting merge recomputes avg and protected inverse std."""
+    base = _FittingWithStats(
+        {
+            "fparam": [StatItem(number=2, sum=4, squared_sum=10)],
+            "aparam": [StatItem(number=2, sum=4, squared_sum=8)],
+        }
+    )
+    link = _FittingWithStats(
+        {
+            "fparam": [StatItem(number=4, sum=20, squared_sum=104)],
+            "aparam": [StatItem(number=2, sum=4, squared_sum=8)],
+        }
+    )
+
+    _merge_fitting_param_stats(
+        base,
+        link,
+        model_prob=0.5,
+        protection=0.25,
+    )
+
+    np.testing.assert_allclose(np.asarray(base.fparam_avg), [3.5])
+    np.testing.assert_allclose(np.asarray(base.fparam_inv_std), [1.0 / np.sqrt(3.25)])
+    np.testing.assert_allclose(np.asarray(base.aparam_avg), [2.0])
+    np.testing.assert_allclose(np.asarray(base.aparam_inv_std), [4.0])
+    assert base._param_stats["fparam"][0].number == 4
+    assert base._param_stats["aparam"][0].number == 3
 
 
 def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> None:
@@ -499,17 +765,6 @@ class TestJAXTraining(unittest.TestCase):
                     init_frz_model="frozen_model.pb",
                 ),
                 "init_frz_model",
-            ),
-            (
-                {
-                    "model": {
-                        "model_dict": {"task": {}},
-                        "shared_dict": {"shared": {}},
-                    },
-                    "training": {},
-                },
-                TrainEntrypointOptions(input_file="input.json"),
-                "shared_dict",
             ),
         ]
 
