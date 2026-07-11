@@ -248,7 +248,7 @@ def test_forward_common_atomic_can_skip_virial_derivative() -> None:
 def test_model_call_from_call_lower_uses_tf2_native_communicate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    make_model_module = importlib.import_module("deepmd.tf2.model.make_model")
     captured: dict[str, Any] = {}
 
     def fake_communicate(
@@ -341,7 +341,7 @@ def test_model_call_from_call_lower_uses_tf2_native_communicate(
 def test_model_call_from_call_lower_reshapes_coord_corr_for_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    make_model_module = importlib.import_module("deepmd.tf2.model.make_model")
     captured: dict[str, Any] = {}
 
     def fake_communicate(
@@ -494,7 +494,7 @@ def test_prepare_lower_inputs_folds_in_pair_exclusion() -> None:
     from deepmd.dpmodel.utils.exclude_mask import (
         PairExcludeMask,
     )
-    from deepmd.tf2.make_model import (
+    from deepmd.tf2.model.make_model import (
         prepare_lower_inputs,
     )
 

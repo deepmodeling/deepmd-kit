@@ -249,8 +249,13 @@ def prepare_lower_inputs(
 
     uses_native_nlist_builder = neighbor_list is None
     if neighbor_list is not None:
+        # The BUILDER owns model-level pair exclusion (same convention as
+        # dpmodel/pt_expt make_model). The keyword is passed only when set, so
+        # legacy custom strategies keep working without exclusion and fail
+        # loudly (TypeError) with it instead of silently including pairs.
+        excl_kwargs = {} if pair_excl is None else {"pair_excl": pair_excl}
         extended_coord, extended_atype, nlist, mapping = neighbor_list.build(
-            cc, atype, bb, rcut, sel
+            cc, atype, bb, rcut, sel, **excl_kwargs
         )
     else:
         has_pbc = _box_has_pbc(bb)
@@ -274,6 +279,11 @@ def prepare_lower_inputs(
             extended_atype = to_tensorflow_array(extended_atype_tensor)
             nlist = to_tensorflow_array(nlist_tensor)
             mapping = to_tensorflow_array(mapping_tensor)
+        if pair_excl is not None:
+            # Native inline builder: exclude at BUILD time, mirroring
+            # DefaultNeighborList.build on the dpmodel path (the custom-builder
+            # branch above already excluded inside build()).
+            nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     if coord_corr is not None:
         coord_corr = xp.reshape(coord_corr, (nframes, nloc, 3))
@@ -286,8 +296,6 @@ def prepare_lower_inputs(
         extended_coord_corr = None
     if uses_native_nlist_builder and not mixed_types:
         nlist = nlist_distinguish_types(nlist, extended_atype, sel)
-    if pair_excl is not None:
-        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     return (
         extended_coord,
         extended_atype,

@@ -60,7 +60,7 @@ from deepmd.tf2.common import (
 from deepmd.tf2.env import (
     tf,
 )
-from deepmd.tf2.make_model import (
+from deepmd.tf2.model.make_model import (
     prepare_lower_inputs,
 )
 from deepmd.tf2.model.model import (

@@ -23,11 +23,11 @@ from deepmd.tf2.env import (
     tf,
     xp,
 )
-from deepmd.tf2.make_model import (
-    model_call_from_call_lower as tf2_model_call_from_call_lower,
-)
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
+)
+from deepmd.tf2.model.make_model import (
+    model_call_from_call_lower as tf2_model_call_from_call_lower,
 )
 from deepmd.tf2.utils.jit import (
     default_jit_compile,

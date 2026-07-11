@@ -24,11 +24,11 @@ from deepmd.dpmodel.train import (
 from deepmd.tf2.common import (
     unwrap_value,
 )
-from deepmd.tf2.make_model import (
-    model_call_from_call_lower,
-)
 from deepmd.tf2.model.base_model import (
     BaseModel,
+)
+from deepmd.tf2.model.make_model import (
+    model_call_from_call_lower,
 )
 from deepmd.tf2.model.model import (
     get_model,
