@@ -1005,6 +1005,11 @@ class DeepEval(DeepEvalBackend):
             # ``eval_descriptor`` calling the descriptor directly -- receive the
             # type-distinguished nlist a non-mixed-type descriptor expects.  The
             # main eval path is unaffected (its ``format_nlist`` re-formats).
+            # The BUILDER owns exclusion. ``_nlist_builder`` is always our own
+            # VesinNeighborList (never user-injected), so the keyword is passed
+            # directly -- the conditional-kwargs idiom in dpmodel/tf2 make_model
+            # exists only for third-party NeighborList strategies injected via
+            # the public ``neighbor_list=`` parameter.
             extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
                 coords, atom_types, cells, rcut, sel, pair_excl=pair_excl
             )
