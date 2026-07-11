@@ -20,6 +20,7 @@ where one atom has neighbors and another does not.
 import numpy as np
 import tensorflow as tf
 
+import deepmd.tf.op  # noqa: F401
 from deepmd.tf.env import (
     op_module,
     tf as dp_tf,
@@ -124,8 +125,9 @@ class TestSoftMinSwitchEmptyNeighbors(tf.test.TestCase):
         # Both atoms must produce finite results.
         self.assertTrue(np.all(np.isfinite(v_val)), f"sw_value not finite: {v_val}")
         self.assertTrue(np.all(np.isfinite(d_val)), f"sw_deriv not finite: {d_val}")
-        # Atom 1 (isolated) must have a zero switch value.
+        # Atom 1 (isolated) must have zero switch value and derivatives.
         np.testing.assert_allclose(v_val[0, 1], 0.0, rtol=0, atol=0)
+        np.testing.assert_allclose(d_val[0, 3:6], 0.0, rtol=0, atol=0)
         # Atom 0 (with a neighbor within rmin=1.0) must have switch value 1.
         np.testing.assert_allclose(v_val[0, 0], 1.0, rtol=1e-5, atol=1e-5)
 
