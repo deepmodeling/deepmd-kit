@@ -887,6 +887,13 @@ class Trainer(AbstractTrainer):
                 fparam=fp,
                 aparam=ap,
                 charge_spin=cs,
+                # Model-level pair exclusion is a nlist-BUILD transform
+                # (decision #18/A4): the compiled lower consumes a pre-excluded
+                # nlist, so fold exclusion in here at the compiled-training
+                # prepare seam. Guard atomic_model for test doubles.
+                pair_excl=getattr(
+                    getattr(model, "atomic_model", None), "pair_excl", None
+                ),
             )
 
         return compiled_prepare_lower_batch

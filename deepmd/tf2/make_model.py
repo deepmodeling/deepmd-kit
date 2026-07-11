@@ -131,14 +131,11 @@ def model_call_from_call_lower(
         coord_corr_for_virial=coord_corr_for_virial,
         charge_spin=charge_spin,
         neighbor_list=neighbor_list,
+        # Model-level pair exclusion is folded into the nlist inside
+        # prepare_lower_inputs (single owner), so the compiled-training prepare
+        # step gets the same pre-excluded nlist as this upper call.
+        pair_excl=pair_excl,
     )
-    if pair_excl is not None:
-        # Model-level pair exclusion is a nlist-BUILD transform (decision
-        # #18/A4): fold it into the freshly built nlist here (already an
-        # ndtensorflow array, so no wrap/unwrap) via the canonical dpmodel
-        # helper, before the lower consumes it. Identity when nothing is
-        # excluded.
-        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
     if pass_lower_kwargs:
         if nlist_is_formatted:
@@ -183,6 +180,7 @@ def prepare_lower_inputs(
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[
     Array,
     Array,
@@ -194,7 +192,14 @@ def prepare_lower_inputs(
     Array | None,
     bool,
 ]:
-    """Build lower-interface tensors outside the train-step compiler boundary."""
+    """Build lower-interface tensors outside the train-step compiler boundary.
+
+    Model-level ``pair_exclude_types`` is a nlist-BUILD transform (decision
+    #18/A4): when ``pair_excl`` is provided it is folded into the freshly built
+    nlist here, so EVERY caller (the eager/compiled upper call and the compiled
+    training prepare step) gets a pre-excluded nlist and the lower never
+    re-applies it.
+    """
     cc = to_tensorflow_array(coord)
     atype = to_tensorflow_array(atype)
     bb = to_tensorflow_array(box)
@@ -281,6 +286,8 @@ def prepare_lower_inputs(
         extended_coord_corr = None
     if uses_native_nlist_builder and not mixed_types:
         nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+    if pair_excl is not None:
+        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     return (
         extended_coord,
         extended_atype,
