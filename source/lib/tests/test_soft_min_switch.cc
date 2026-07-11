@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#include <cfenv>
-#include <cmath>
 #include <gtest/gtest.h>
 
+#include <cfenv>
+#include <cmath>
 #include <iostream>
 #include <vector>
 

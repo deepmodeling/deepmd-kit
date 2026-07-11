@@ -23,8 +23,8 @@ import tensorflow as tf
 import deepmd.tf.op  # noqa: F401
 from deepmd.tf.env import (
     op_module,
-    tf as dp_tf,
 )
+from deepmd.tf.env import tf as dp_tf
 
 
 class TestSoftMinSwitchEmptyNeighbors(tf.test.TestCase):
