@@ -130,20 +130,22 @@ def model_call_from_call_lower(
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
-    extended_coord, extended_atype, nlist, mapping = builder.build(
-        cc, atype, bb, rcut, sel
-    )
-    if pair_excl is not None:
-        # Model-level pair exclusion is a nlist-BUILD transform (decision
-        # #18/A4): apply it centrally on the returned quartet rather than inside
-        # ``builder.build(...)``, so custom NeighborList strategies keep the
-        # published ``build(coord, atype, box, rcut, sel, return_mode=...)``
-        # signature (passing ``pair_excl`` would raise TypeError on them).
-        from deepmd.dpmodel.utils.nlist import (
-            apply_pair_exclusion_nlist,
+    if pair_excl is None:
+        # Old published build() signature: custom NeighborList strategies that
+        # predate the pair_excl keyword keep working for every model without
+        # exclusion.
+        extended_coord, extended_atype, nlist, mapping = builder.build(
+            cc, atype, bb, rcut, sel
         )
-
-        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
+    else:
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): the BUILDER owns it (mirroring build_neighbor_graph on the
+        # graph path), so the lower always consumes a pre-excluded nlist. A
+        # legacy custom builder without the pair_excl keyword fails loudly here
+        # (TypeError) instead of silently including excluded pairs.
+        extended_coord, extended_atype, nlist, mapping = builder.build(
+            cc, atype, bb, rcut, sel, pair_excl=pair_excl
+        )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
         xp = array_api_compat.array_namespace(coord_corr_for_virial)
