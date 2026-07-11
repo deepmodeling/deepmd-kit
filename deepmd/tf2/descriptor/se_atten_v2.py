@@ -16,9 +16,7 @@ from .dpa1 import (
 class DescrptSeAttenV2(DescrptDPA1, DescrptSeAttenV2DP):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
-        obj = DescrptSeAttenV2DP.deserialize.__func__(cls, data)
-        obj._refresh_tf2_trackable_lists()
-        return obj
+        return DescrptSeAttenV2DP.deserialize.__func__(cls, data)
 
 
 register_dpmodel_mapping(

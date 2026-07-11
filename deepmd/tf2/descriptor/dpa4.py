@@ -34,8 +34,6 @@ from deepmd.tf2.common import (
 from deepmd.tf2.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from deepmd.tf2.utils import exclude_mask as _tf2_exclude_mask  # noqa: F401
-from deepmd.tf2.utils import network as _tf2_network  # noqa: F401
 
 
 @tf2_module
@@ -111,6 +109,8 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     "SO3Linear": ("weight", "bias"),
     "FocusLinear": ("weight", "bias"),
     "ChannelLinear": ("weight", "bias"),
+    "FrameContract": ("weight",),
+    "FrameExpand": ("weight",),
     "SO2Linear": ("weight_m0", "bias0"),
     "DynamicRadialDegreeMixer": ("weight", "channel_basis"),
     "SO2Convolution": (
@@ -130,6 +130,7 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
 }
 
 _TRAINABLE_LIST_ATTRS: dict[str, tuple[str, ...]] = {
+    "SeZMInteractionBlock": ("adam_ffn_layer_scales",),
     "SO2Linear": ("weight_m",),
     "SO2Convolution": ("adam_so2_layer_scales",),
 }

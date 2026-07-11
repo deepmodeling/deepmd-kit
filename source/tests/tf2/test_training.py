@@ -851,6 +851,45 @@ def test_model_ret_translation_uses_translated_output_def() -> None:
     }
 
 
+def test_model_ret_translation_reshapes_equivalent_force_layout() -> None:
+    """A flattened label shape should reshape an equivalent model force."""
+    trainer = object.__new__(Trainer)
+    trainer.models = {"energy": SimpleNamespace()}
+    force = tf.reshape(tf.range(6, dtype=tf.float64), (1, 2, 3))
+    model_ret = {"force": force}
+
+    translated = Trainer._translate_model_ret_to_loss_dict(
+        trainer,
+        "energy",
+        model_ret,
+        label_dict={"force": tf.zeros((1, 6), dtype=tf.float64)},
+    )
+
+    assert translated is not model_ret
+    assert tuple(translated["force"].shape) == (1, 6)
+    np.testing.assert_array_equal(
+        to_tf_tensor(translated["force"]).numpy(), [[0, 1, 2, 3, 4, 5]]
+    )
+
+
+def test_model_ret_translation_preserves_matching_force_layout() -> None:
+    """An already matching force tensor should remain untouched."""
+    trainer = object.__new__(Trainer)
+    trainer.models = {"energy": SimpleNamespace()}
+    force = tf.zeros((1, 2, 3), dtype=tf.float64)
+    model_ret = {"force": force}
+
+    translated = Trainer._translate_model_ret_to_loss_dict(
+        trainer,
+        "energy",
+        model_ret,
+        label_dict={"force": tf.ones((1, 2, 3), dtype=tf.float64)},
+    )
+
+    assert translated is model_ret
+    assert translated["force"] is force
+
+
 def test_model_ret_translation_only_uses_label_virial_when_not_requested() -> None:
     trainer = object.__new__(Trainer)
     trainer.models = {

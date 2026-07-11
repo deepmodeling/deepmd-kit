@@ -122,8 +122,8 @@ def get_sezm_model(data: dict) -> BaseModel:
         raise NotImplementedError("DPA4/SeZM preset_out_bias is not supported in TF2.")
 
     data.pop("type", None)
-    data.setdefault("descriptor", {})
-    data.setdefault("fitting_net", {})
+    data["descriptor"] = data.get("descriptor") or {}
+    data["fitting_net"] = data.get("fitting_net") or {}
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
     if data["descriptor"]["type"] not in ("dpa4", "DPA4", "sezm", "SeZM"):

@@ -18,7 +18,6 @@ from deepmd.tf2.common import (
 from deepmd.tf2.fitting.base_fitting import (
     BaseFitting,
 )
-from deepmd.tf2.utils import network as _tf2_network  # noqa: F401
 
 
 @tf2_module
