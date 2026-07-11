@@ -24,11 +24,11 @@ from deepmd.dpmodel.train import (
 from deepmd.tf2.common import (
     unwrap_value,
 )
-from deepmd.tf2.make_model import (
-    model_call_from_call_lower,
-)
 from deepmd.tf2.model.base_model import (
     BaseModel,
+)
+from deepmd.tf2.model.make_model import (
+    model_call_from_call_lower,
 )
 from deepmd.tf2.model.model import (
     get_model,
@@ -390,6 +390,12 @@ def deserialize_to_savedmodel(
                     fparam=fparam,
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # the traced lower consumes a pre-excluded nlist. Guard
+                    # atomic_model too: test doubles (DummyModel) lack it.
+                    pair_excl=getattr(
+                        getattr(model, "atomic_model", None), "pair_excl", None
+                    ),
                 )
             )
 
@@ -502,6 +508,20 @@ def deserialize_to_savedmodel(
         return tf.constant(model.get_sel(), dtype=tf.int64)
 
     tf_model.get_sel = get_sel
+
+    @tf.function
+    def get_pair_exclude_types() -> tf.Tensor:
+        # Model-level pair_exclude_types, exported FLAT [ti0, tj0, ti1, tj1, ...]
+        # so the C++ ingestion seam (DeepPotJAX, which also consumes the tf2
+        # ``.savedmodel``) can fold exclusion into the LAMMPS nlist before the
+        # traced call_lower_* consumes it (decision #18/A4). The compiled ``call``
+        # already pre-excludes its freshly built nlist. Guard atomic_model: test
+        # doubles may lack it.
+        pet = getattr(getattr(model, "atomic_model", None), "pair_exclude_types", [])
+        flat = [int(t) for pair in (pet or []) for t in pair]
+        return tf.constant(flat, dtype=tf.int64)
+
+    tf_model.get_pair_exclude_types = get_pair_exclude_types
 
     @tf.function
     def get_model_def_script() -> tf.Tensor:

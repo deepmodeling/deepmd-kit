@@ -586,8 +586,8 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
     :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
     for ``neighbor_graph_method is None`` (the training default): a model is
     graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding
-    and no ``exclude_types``; attention layers included).
+    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding;
+    attention layers included).
 
     When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
     so the compiled path matches eager training (which already default-flips to
@@ -940,6 +940,9 @@ class _CompiledModel(torch.nn.Module):
             rcut,
             sel,
             distinguish_types=False,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
+            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1153,8 +1156,12 @@ class _CompiledModel(torch.nn.Module):
                 )
 
         # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
-        # uncompiled ``_call_common_graph`` builder so the two paths match.
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        # uncompiled ``_call_common_graph`` builder so the two paths match. Model-
+        # level pair_exclude is a graph-BUILD transform (decision #18): fold it
+        # into edge_mask here so the compiled lower consumes a pre-excluded graph
+        # (the lower no longer re-applies it), matching the eager path exactly.
+        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).

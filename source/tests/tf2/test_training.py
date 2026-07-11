@@ -248,7 +248,7 @@ def test_forward_common_atomic_can_skip_virial_derivative() -> None:
 def test_model_call_from_call_lower_uses_tf2_native_communicate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    make_model_module = importlib.import_module("deepmd.tf2.model.make_model")
     captured: dict[str, Any] = {}
 
     def fake_communicate(
@@ -341,7 +341,7 @@ def test_model_call_from_call_lower_uses_tf2_native_communicate(
 def test_model_call_from_call_lower_reshapes_coord_corr_for_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    make_model_module = importlib.import_module("deepmd.tf2.make_model")
+    make_model_module = importlib.import_module("deepmd.tf2.model.make_model")
     captured: dict[str, Any] = {}
 
     def fake_communicate(
@@ -479,6 +479,47 @@ def test_tf2_dp_model_call_common_uses_tf2_helper(
     assert captured["pass_lower_kwargs"] is True
     assert captured["call_lower"] == model.call_common_lower
     assert isinstance(to_tf_tensor(captured["coord"]), tf.Tensor)
+
+
+def test_prepare_lower_inputs_folds_in_pair_exclusion() -> None:
+    """prepare_lower_inputs pre-excludes the nlist (the compiled-training seam).
+
+    The compiled training path (``_make_compiled_prepare_lower_batch`` ->
+    ``prepare_lower_inputs``) feeds the lower directly, and the lower no longer
+    re-applies model-level ``pair_exclude_types`` (decision #18/A4). A non-vacuous
+    check: a type-[0, 1] pair within the cutoff yields a real cross-type
+    neighbour with NO exclusion, and that neighbour must be erased to -1 once the
+    (0, 1) exclusion is folded in here.
+    """
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+    from deepmd.tf2.model.make_model import (
+        prepare_lower_inputs,
+    )
+
+    coord = tf.constant([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]], dtype=tf.float64)
+    atype = tf.constant([[0, 1]], dtype=tf.int32)
+    kwargs = {
+        "rcut": 6.0,
+        "sel": [10, 10],
+        "mixed_types": False,
+        "coord": coord,
+        "atype": atype,
+        "box": None,
+        "fparam": None,
+        "aparam": None,
+    }
+
+    nlist_base = np.asarray(prepare_lower_inputs(**kwargs)[2])
+    # non-vacuous: the type-0 and type-1 atoms ARE within the cutoff, so without
+    # exclusion each has the other as a real (>= 0) neighbour.
+    assert (nlist_base >= 0).any()
+
+    pair_excl = PairExcludeMask(2, [[0, 1]])
+    nlist_excl = np.asarray(prepare_lower_inputs(pair_excl=pair_excl, **kwargs)[2])
+    # the only neighbours are cross-type (0, 1) pairs, so exclusion erases them.
+    assert (nlist_excl == -1).all()
 
 
 def test_tf2_dp_model_call_common_lower_does_not_forward_do_deriv_c() -> None:

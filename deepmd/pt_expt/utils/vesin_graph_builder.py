@@ -19,8 +19,14 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import array_api_compat
 import torch
@@ -28,6 +34,7 @@ import torch
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     neighbor_graph_from_ijs,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
@@ -89,11 +96,40 @@ def build_neighbor_graph_vesin(
     box: Any | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using vesin.torch's O(N) cell list.
 
     Mirrors :func:`deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`
     but runs on the input tensor's device via ``vesin.torch``.
+
+    Parameters
+    ----------
+    coord
+        (nf, nloc, 3) or (nf, nloc*3) local coordinates (torch tensor).
+    atype
+        (nf, nloc) local atom types; ``type < 0`` marks a virtual atom.
+    box
+        (nf, 3, 3) simulation cell, or ``None`` for non-periodic.
+    rcut
+        cutoff radius.
+    layout
+        edge-axis length policy; ``None`` => dynamic with ``min_edges`` guards.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
+
+    Returns
+    -------
+    graph
+        The carry-all :class:`NeighborGraph` over the LOCAL atoms.
     """
     if not is_vesin_torch_available():
         raise ImportError(
@@ -162,6 +198,10 @@ def build_neighbor_graph_vesin(
     # (grad-carrying). Unlike the nv builder, vesin's cell list handles
     # out-of-cell (unwrapped) positions natively, so no normalize_coord is
     # needed and S is consistent with the original coords as searched.
-    return neighbor_graph_from_ijs(
+    graph = neighbor_graph_from_ijs(
         i_all, j_all, S_all, coord, box, nf_all, nloc, layout=layout
     )
+    if pair_excl is not None:
+        at_flat = torch.as_tensor(atype, device=dev).reshape(-1)
+        graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
+    return graph
