@@ -289,6 +289,103 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return fit_ret
 
+    def forward_common_atomic_flat(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_batch: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor,
+        batch: torch.Tensor,
+        ptr: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        extended_ptr: torch.Tensor | None = None,
+        central_ext_index: torch.Tensor | None = None,
+        nlist_ext: torch.Tensor | None = None,
+        a_nlist: torch.Tensor | None = None,
+        a_nlist_ext: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        a_nlist_mask: torch.Tensor | None = None,
+        edge_index: torch.Tensor | None = None,
+        angle_index: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Forward pass with flat mixed-nloc batch format."""
+        if self.do_grad_r() or self.do_grad_c():
+            extended_coord.requires_grad_(True)
+
+        nframes = ptr.numel() - 1
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                charge_spin = torch.tile(
+                    default_cs_tensor.to(device=extended_coord.device).unsqueeze(0),
+                    [nframes, 1],
+                )
+
+        descriptor_out = self.descriptor.forward_flat(
+            extended_coord,
+            extended_atype,
+            extended_batch,
+            nlist,
+            mapping,
+            batch,
+            ptr,
+            fparam=fparam,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
+            central_ext_index=central_ext_index,
+            nlist_ext=nlist_ext,
+            a_nlist=a_nlist,
+            a_nlist_ext=a_nlist_ext,
+            nlist_mask=nlist_mask,
+            a_nlist_mask=a_nlist_mask,
+            edge_index=edge_index,
+            angle_index=angle_index,
+        )
+
+        descriptor = descriptor_out.get("descriptor")
+        rot_mat = descriptor_out.get("rot_mat")
+        g2 = descriptor_out.get("g2")
+        h2 = descriptor_out.get("h2")
+
+        if central_ext_index is None:
+            from deepmd.pt.utils.nlist import (
+                get_central_ext_index,
+            )
+
+            central_ext_index = get_central_ext_index(extended_batch, ptr)
+        atype = extended_atype[central_ext_index]
+
+        fit_ret = self.fitting_net.forward_flat(
+            descriptor,
+            atype,
+            batch,
+            ptr,
+            gr=rot_mat,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=aparam,
+        )
+        fit_ret = self.apply_out_stat(fit_ret, atype)
+
+        atom_mask = self.make_atom_mask(atype).to(torch.int32)
+        if self.atom_excl is not None:
+            atom_mask *= self.atom_excl(atype.unsqueeze(0)).squeeze(0)
+
+        for kk in fit_ret.keys():
+            out_shape = fit_ret[kk].shape
+            out_shape2 = 1
+            for ss in out_shape[1:]:
+                out_shape2 *= ss
+            fit_ret[kk] = (
+                fit_ret[kk].reshape([out_shape[0], out_shape2]) * atom_mask[:, None]
+            ).view(out_shape)
+        fit_ret["mask"] = atom_mask
+
+        return fit_ret
+
     def has_embedding(self) -> bool:
         """A standard descriptor-fitting atomic model supports embeddings."""
         return True

@@ -73,30 +73,44 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        mixed_batch: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
-        model_ret = self.forward_common(
-            coord,
-            atype,
-            box,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
-            charge_spin=charge_spin,
-        )
+        if not torch.jit.is_scripting() and mixed_batch is not None:
+            model_ret = self.forward_common_flat(
+                coord=coord,
+                atype=atype,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                do_atomic_virial=do_atomic_virial,
+                mixed_batch=mixed_batch,
+            )
+        else:
+            model_ret = self.forward_common(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+            )
         if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["atom_energy"] = model_ret["energy"]
             model_predict["energy"] = model_ret["energy_redu"]
             if self.do_grad_r("energy"):
                 model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+            else:
+                if "dforce" in model_ret:
+                    model_predict["force"] = model_ret["dforce"]
             if self.do_grad_c("energy"):
                 model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
                         -2
                     )
-            else:
-                model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
             if self._hessian_enabled:
@@ -104,6 +118,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
+
         return model_predict
 
     @torch.jit.export

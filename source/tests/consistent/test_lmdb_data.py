@@ -19,6 +19,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
 try:
     from deepmd.pt.utils.lmdb_dataset import (
         LmdbDataset,
+        _collate_lmdb_mixed_batch,
     )
 
     INSTALLED_PT = True
@@ -221,6 +222,48 @@ class TestLmdbDataConsistency(unittest.TestCase):
             self.assertEqual(reader.batch_sizes, ds.batch_sizes)
             self.assertEqual(reader.mixed_batch, ds.mixed_batch)
             self.assertFalse(reader.mixed_batch)
+
+    def test_mixed_batch_same_frame_data(self):
+        """Reader and dataset produce identical frames when mixed_batch is enabled."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            reader = LmdbDataReader(
+                path, self._type_map, batch_size=2, mixed_batch=True
+            )
+            ds = LmdbDataset(path, self._type_map, batch_size=2, mixed_batch=True)
+            self.assertTrue(reader.mixed_batch)
+            self.assertTrue(ds.mixed_batch)
+            for i in range(len(reader)):
+                _assert_frames_equal(self, reader[i], ds[i], i)
+
+    def test_mixed_batch_collate_matches_reader_concatenation(self):
+        """Mixed-batch PT collation preserves dpmodel reader frame order."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            reader = LmdbDataReader(
+                path, self._type_map, batch_size=3, mixed_batch=True
+            )
+            ds = LmdbDataset(path, self._type_map, batch_size=3, mixed_batch=True)
+            frame_ids = [0, 1, 4]
+            batch = _collate_lmdb_mixed_batch([ds[ii] for ii in frame_ids])
+
+            np.testing.assert_array_equal(
+                batch["coord"].numpy(),
+                np.concatenate([reader[ii]["coord"] for ii in frame_ids], axis=0),
+            )
+            np.testing.assert_array_equal(
+                batch["atype"].numpy(),
+                np.concatenate([reader[ii]["atype"] for ii in frame_ids], axis=0),
+            )
+            np.testing.assert_array_equal(
+                batch["force"].numpy(),
+                np.concatenate([reader[ii]["force"] for ii in frame_ids], axis=0),
+            )
+            expected_ptr = [0]
+            for ii in frame_ids:
+                expected_ptr.append(expected_ptr[-1] + reader[ii]["coord"].shape[0])
+            self.assertEqual(batch["ptr"].tolist(), expected_ptr)
+            self.assertEqual(batch["batch"].tolist(), [0] * 6 + [1] * 6 + [2] * 9)
 
 
 if __name__ == "__main__":
