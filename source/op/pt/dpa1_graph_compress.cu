@@ -331,12 +331,20 @@ __device__ __forceinline__ long edge_at_csr_position(
   return static_cast<long>(destination_order[position]);
 }
 
+template <bool Masked>
 __device__ __forceinline__ bool edge_is_active(long edge,
                                                const bool* edge_mask) {
-  return edge_mask == nullptr || edge_mask[edge];
+  if constexpr (Masked) {
+    return edge_mask[edge];
+  }
+  return true;
 }
 
-template <int Width, bool Canonical, typename index_t, int MinimumBlocks>
+template <int Width,
+          bool Canonical,
+          bool Masked,
+          typename index_t,
+          int MinimumBlocks>
 __global__
 __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     long node_count,
@@ -397,7 +405,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     for (long position = begin + half; position < end; position += 2) {
       const long edge =
           edge_at_csr_position<Canonical>(position, destination_order);
-      if (!edge_is_active(edge, edge_mask)) {
+      if (!edge_is_active<Masked>(edge, edge_mask)) {
         continue;
       }
       EdgeEnvironment environment{};
@@ -448,7 +456,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     for (long position = begin; position < end; ++position) {
       const long edge =
           edge_at_csr_position<Canonical>(position, destination_order);
-      if (!edge_is_active(edge, edge_mask)) {
+      if (!edge_is_active<Masked>(edge, edge_mask)) {
         continue;
       }
       EdgeEnvironment environment{};
@@ -578,7 +586,11 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
   }
 }
 
-template <int Width, bool Canonical, typename index_t, int MinimumBlocks>
+template <int Width,
+          bool Canonical,
+          bool Masked,
+          typename index_t,
+          int MinimumBlocks>
 __global__
 __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     long node_count,
@@ -723,7 +735,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     for (long position = begin + half; position < end; position += 2) {
       const long edge =
           edge_at_csr_position<Canonical>(position, destination_order);
-      if (!edge_is_active(edge, edge_mask)) {
+      if (!edge_is_active<Masked>(edge, edge_mask)) {
         if (half_lane == 0) {
           edge_gradient[edge * 3 + 0] = 0.0f;
           edge_gradient[edge * 3 + 1] = 0.0f;
@@ -801,7 +813,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     for (long position = begin; position < end; ++position) {
       const long edge =
           edge_at_csr_position<Canonical>(position, destination_order);
-      if (!edge_is_active(edge, edge_mask)) {
+      if (!edge_is_active<Masked>(edge, edge_mask)) {
         if (lane == 0) {
           edge_gradient[edge * 3 + 0] = 0.0f;
           edge_gradient[edge * 3 + 1] = 0.0f;
@@ -897,7 +909,11 @@ __global__ void zero_padding_kernel(
   }
 }
 
-template <int Width, typename index_t, bool Canonical, int MinimumBlocks>
+template <int Width,
+          typename index_t,
+          bool Canonical,
+          bool Masked,
+          int MinimumBlocks>
 void launch_forward_variant(long node_count,
                             int threads,
                             int ntypes,
@@ -934,7 +950,7 @@ void launch_forward_variant(long node_count,
   const int warps_per_block = threads / kWarpSize;
   const int blocks =
       static_cast<int>((node_count + warps_per_block - 1) / warps_per_block);
-  compressed_forward_kernel<Width, Canonical, index_t, MinimumBlocks>
+  compressed_forward_kernel<Width, Canonical, Masked, index_t, MinimumBlocks>
       <<<blocks, threads, 0, stream>>>(
           node_count, ntypes, one_side, smooth, axis,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
@@ -952,7 +968,7 @@ void launch_forward_variant(long node_count,
           moment.data_ptr<float>());
 }
 
-template <int Width, typename index_t, bool Canonical>
+template <int Width, typename index_t, bool Canonical, bool Masked>
 void launch_forward(long node_count,
                     int ntypes,
                     bool one_side,
@@ -995,7 +1011,8 @@ void launch_forward(long node_count,
       Canonical ? 1 : 0,
       static_cast<int>(sizeof(index_t)),
       (one_side ? 1 : 0) | (smooth ? 2 : 0) |
-          (concatenate_type_embedding ? 4 : 0) | (write_rotation ? 8 : 0),
+          (concatenate_type_embedding ? 4 : 0) | (write_rotation ? 8 : 0) |
+          (Masked ? 16 : 0),
       concatenate_type_embedding ? type_embedding_dim : 0,
       type_count_class(ntypes),
       workload_size_class(node_count, properties.multiProcessorCount),
@@ -1003,7 +1020,7 @@ void launch_forward(long node_count,
   };
   const auto launch = [&](const LaunchConfig& config, long count) {
     if (config.resource == ResourcePolicy::kOccupancy) {
-      launch_forward_variant<Width, index_t, Canonical, 4>(
+      launch_forward_variant<Width, index_t, Canonical, Masked, 4>(
           count, config.threads, ntypes, one_side, smooth, axis,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
           rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
@@ -1011,7 +1028,7 @@ void launch_forward(long node_count,
           destination_row_ptr, atype, type_embedding, average, inverse_stddev,
           table, gate_table, descriptor, rotation, moment, stream);
     } else {
-      launch_forward_variant<Width, index_t, Canonical, 2>(
+      launch_forward_variant<Width, index_t, Canonical, Masked, 2>(
           count, config.threads, ntypes, one_side, smooth, axis,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
           rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
@@ -1026,7 +1043,11 @@ void launch_forward(long node_count,
   COMPRESS_CHECK_LAUNCH("dpa1_graph_compress forward");
 }
 
-template <int Width, typename index_t, bool Canonical, int MinimumBlocks>
+template <int Width,
+          typename index_t,
+          bool Canonical,
+          bool Masked,
+          int MinimumBlocks>
 void launch_backward_variant(long node_count,
                              int threads,
                              long edge_count,
@@ -1062,7 +1083,7 @@ void launch_backward_variant(long node_count,
   const int warps_per_block = threads / kWarpSize;
   const int blocks =
       static_cast<int>((node_count + warps_per_block - 1) / warps_per_block);
-  compressed_backward_kernel<Width, Canonical, index_t, MinimumBlocks>
+  compressed_backward_kernel<Width, Canonical, Masked, index_t, MinimumBlocks>
       <<<blocks, threads, 0, stream>>>(
           node_count, edge_count, ntypes, one_side, smooth, axis,
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
@@ -1079,7 +1100,7 @@ void launch_backward_variant(long node_count,
           edge_gradient.data_ptr<float>());
 }
 
-template <int Width, typename index_t, bool Canonical>
+template <int Width, typename index_t, bool Canonical, bool Masked>
 void launch_backward(long node_count,
                      long edge_count,
                      int ntypes,
@@ -1121,7 +1142,7 @@ void launch_backward(long node_count,
       Canonical ? 1 : 0,
       static_cast<int>(sizeof(index_t)),
       (one_side ? 1 : 0) | (smooth ? 2 : 0) |
-          (rotation_gradient != nullptr ? 8 : 0),
+          (rotation_gradient != nullptr ? 8 : 0) | (Masked ? 16 : 0),
       descriptor_stride,
       type_count_class(ntypes),
       workload_size_class(node_count, properties.multiProcessorCount),
@@ -1129,7 +1150,7 @@ void launch_backward(long node_count,
   };
   const auto launch = [&](const LaunchConfig& config, long count) {
     if (config.resource == ResourcePolicy::kOccupancy) {
-      launch_backward_variant<Width, index_t, Canonical, 4>(
+      launch_backward_variant<Width, index_t, Canonical, Masked, 4>(
           count, config.threads, edge_count, ntypes, one_side, smooth, axis,
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
           lower, upper, table_max, stride0, stride1, descriptor_gradient,
@@ -1137,7 +1158,7 @@ void launch_backward(long node_count,
           destination_order, destination_row_ptr, atype, average,
           inverse_stddev, table, gate_table, edge_gradient, stream);
     } else {
-      launch_backward_variant<Width, index_t, Canonical, 2>(
+      launch_backward_variant<Width, index_t, Canonical, Masked, 2>(
           count, config.threads, edge_count, ntypes, one_side, smooth, axis,
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
           lower, upper, table_max, stride0, stride1, descriptor_gradient,
@@ -1166,6 +1187,7 @@ void dispatch_forward(int width,
                       bool smooth,
                       int axis,
                       bool canonical,
+                      bool masked,
                       bool concatenate_type_embedding,
                       bool write_rotation,
                       int type_embedding_dim,
@@ -1195,8 +1217,17 @@ void dispatch_forward(int width,
                       cudaStream_t stream) {
 #define DISPATCH_WIDTH(value)                                               \
   if (width == value) {                                                     \
-    if (canonical) {                                                        \
-      launch_forward<value, index_t, true>(                                 \
+    if (canonical && !masked) {                                             \
+      launch_forward<value, index_t, true, false>(                          \
+          node_count, ntypes, one_side, smooth, axis,                       \
+          concatenate_type_embedding, write_rotation, type_embedding_dim,   \
+          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
+          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,     \
+          destination_order, destination_row_ptr, atype, type_embedding,    \
+          average, inverse_stddev, table, gate_table, descriptor, rotation, \
+          moment, stream);                                                  \
+    } else if (canonical) {                                                 \
+      launch_forward<value, index_t, true, true>(                           \
           node_count, ntypes, one_side, smooth, axis,                       \
           concatenate_type_embedding, write_rotation, type_embedding_dim,   \
           rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
@@ -1205,7 +1236,7 @@ void dispatch_forward(int width,
           average, inverse_stddev, table, gate_table, descriptor, rotation, \
           moment, stream);                                                  \
     } else {                                                                \
-      launch_forward<value, index_t, false>(                                \
+      launch_forward<value, index_t, false, true>(                          \
           node_count, ntypes, one_side, smooth, axis,                       \
           concatenate_type_embedding, write_rotation, type_embedding_dim,   \
           rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
@@ -1235,6 +1266,7 @@ void dispatch_backward(int width,
                        bool smooth,
                        int axis,
                        bool canonical,
+                       bool masked,
                        int descriptor_stride,
                        float rcut,
                        float rcut_smooth,
@@ -1262,8 +1294,16 @@ void dispatch_backward(int width,
                        cudaStream_t stream) {
 #define DISPATCH_WIDTH(value)                                                  \
   if (width == value) {                                                        \
-    if (canonical) {                                                           \
-      launch_backward<value, index_t, true>(                                   \
+    if (canonical && !masked) {                                                \
+      launch_backward<value, index_t, true, false>(                            \
+          node_count, edge_count, ntypes, one_side, smooth, axis,              \
+          descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
+          lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
+          rotation_gradient, moment, edge_vec, edge_index, edge_mask,          \
+          destination_order, destination_row_ptr, atype, average,              \
+          inverse_stddev, table, gate_table, edge_gradient, stream);           \
+    } else if (canonical) {                                                    \
+      launch_backward<value, index_t, true, true>(                             \
           node_count, edge_count, ntypes, one_side, smooth, axis,              \
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
           lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
@@ -1271,7 +1311,7 @@ void dispatch_backward(int width,
           destination_order, destination_row_ptr, atype, average,              \
           inverse_stddev, table, gate_table, edge_gradient, stream);           \
     } else {                                                                   \
-      launch_backward<value, index_t, false>(                                  \
+      launch_backward<value, index_t, false, true>(                            \
           node_count, edge_count, ntypes, one_side, smooth, axis,              \
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
           lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
@@ -1394,8 +1434,9 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
     using index_t = decltype(index_tag);
     dispatch_forward<index_t>(
         width, node_count, ntypes, type_one_side != 0, smooth != 0,
-        static_cast<int>(axis), canonical, concatenate_type_embedding != 0,
-        write_rotation != 0, type_embedding_dim, static_cast<float>(rcut),
+        static_cast<int>(axis), canonical, edge_mask.numel() != 0,
+        concatenate_type_embedding != 0, write_rotation != 0,
+        type_embedding_dim, static_cast<float>(rcut),
         static_cast<float>(rcut_smooth), static_cast<float>(protection),
         static_cast<float>(1.0 / neighbors), static_cast<float>(lower),
         static_cast<float>(upper), static_cast<float>(table_max),
@@ -1470,7 +1511,7 @@ torch::Tensor dpa1_graph_compress_backward(
     using index_t = decltype(index_tag);
     dispatch_backward<index_t>(
         width, node_count, edge_count, ntypes, type_one_side != 0, smooth != 0,
-        static_cast<int>(axis), canonical,
+        static_cast<int>(axis), canonical, edge_mask.numel() != 0,
         static_cast<int>(descriptor_gradient_float.size(1)),
         static_cast<float>(rcut), static_cast<float>(rcut_smooth),
         static_cast<float>(protection), static_cast<float>(1.0 / neighbors),
