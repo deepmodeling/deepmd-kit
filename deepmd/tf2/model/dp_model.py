@@ -110,8 +110,11 @@ def make_tf2_dp_model_from_dpmodel(
                 # Model-level pair exclusion is a nlist-BUILD transform
                 # (decision #18/A4): fold it into the freshly built nlist here so
                 # the live/eager TF2 upper path matches the SavedModel export and
-                # the other backends. Identity when nothing is excluded.
-                pair_excl=getattr(self.atomic_model, "pair_excl", None),
+                # the other backends. Identity when nothing is excluded. Guard
+                # atomic_model too: test doubles may lack it.
+                pair_excl=getattr(
+                    getattr(self, "atomic_model", None), "pair_excl", None
+                ),
                 pass_lower_kwargs=True,
             )
             return self._output_type_cast(model_predict, input_prec)
