@@ -599,6 +599,25 @@ class TestJAXTraining(unittest.TestCase):
             {odef.category for odef in request_defs},
         )
 
+    def test_deep_eval_skips_hessian_for_standard_model(self) -> None:
+        """Standard JAX evaluation should not request Hessian outputs."""
+        hlo = object.__new__(HLO)
+        hlo._model_output_type = ["energy"]
+        hlo.model_def_script = json.dumps({"hessian_mode": False})
+        deep_eval = object.__new__(DeepEval)
+        deep_eval.output_def = hlo.model_output_def()
+        deep_eval.dp = SimpleNamespace(
+            get_model_def_script=lambda: json.dumps({"hessian_mode": False})
+        )
+
+        request_defs = deep_eval._get_request_defs(atomic=False)
+
+        self.assertFalse(deep_eval.get_has_hessian())
+        self.assertNotIn(
+            OutputVariableCategory.DERV_R_DERV_R,
+            {odef.category for odef in request_defs},
+        )
+
 
 def test_jax_finetune_state_copy_preserves_random_fitting_target_leaves() -> None:
     """Random fitting should copy descriptor leaves only."""
