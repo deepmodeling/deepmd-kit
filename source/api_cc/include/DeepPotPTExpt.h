@@ -332,6 +332,18 @@ class DeepPotPTExpt : public DeepPotBackend {
                          const std::vector<double>& aparam,
                          const int nall_nodes,
                          const InputNlist* comm_nlist) override;
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const std::int64_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::int64_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage) override;
   /**
    * @brief FP32 edge-vector overload for compressed graph artifacts.
    *
@@ -359,6 +371,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @brief Whether the loaded graph artifact consumes FP32 edge vectors.
    */
   bool uses_fp32_edge_vectors() const override;
+  bool uses_canonical_graph_inference() const override;
 
  private:
   template <typename EDGE_TYPE>
@@ -375,6 +388,19 @@ class DeepPotPTExpt : public DeepPotBackend {
                               const std::vector<double>& aparam,
                               const int nall_nodes,
                               const InputNlist* comm_nlist);
+  void compute_canonical_graph_gpu_impl(
+      double* d_atom_energy,
+      double* d_force,
+      double* d_atom_virial,
+      const std::int64_t* d_atype,
+      const std::int64_t* d_source,
+      const float* d_edge_vec,
+      const std::int64_t* d_destination_row_ptr,
+      const std::int64_t* d_source_row_ptr,
+      const std::int64_t* d_source_order,
+      const int nloc,
+      const int nall_nodes,
+      const std::int64_t edge_storage);
   bool inited;
   int ntypes;
   int dfparam;
@@ -393,6 +419,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   int nnei;               // expected nlist nnei dimension (= sum(sel))
   bool lower_input_is_edge_ = false;
   bool lower_input_is_graph_ = false;
+  bool lower_input_is_canonical_ = false;
   bool graph_edge_fp32_ = false;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
@@ -514,6 +541,16 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin);
+
+  std::vector<torch::Tensor> run_model_canonical_graph(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& source,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& source_order);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.

@@ -137,6 +137,7 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepPot& dp = this->dp;
   EXPECT_FALSE(dp.supports_device_edge_inference());
+  EXPECT_FALSE(dp.uses_canonical_graph_inference());
   double ener;
   std::vector<VALUETYPE> force, virial;
   dp.compute(ener, force, virial, coord, atype, box);

@@ -498,6 +498,90 @@ def build_synthetic_graph_inputs(
     )
 
 
+def build_synthetic_canonical_graph_inputs(
+    model: torch.nn.Module,
+    e_max: int,
+    *,
+    device: torch.device,
+) -> tuple[torch.Tensor, ...]:
+    """Build the compact canonical trace inputs for compressed DPA1."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max,
+        dtype=torch.float32,
+        edge_dtype=torch.float32,
+        device=device,
+        want_fparam=False,
+        want_aparam=False,
+        want_charge_spin=False,
+    )
+    (
+        atype,
+        n_node,
+        n_local,
+        edge_index,
+        edge_vec,
+        edge_mask,
+        destination_order,
+        destination_row_ptr,
+        source_row_ptr,
+        source_order,
+        _fparam,
+        _aparam,
+        _charge_spin,
+    ) = sample
+    graph = NeighborGraph(
+        n_node=n_node,
+        edge_index=edge_index,
+        edge_vec=edge_vec,
+        edge_mask=edge_mask,
+        n_local=n_local,
+        destination_order=destination_order,
+        destination_row_ptr=destination_row_ptr,
+        source_row_ptr=source_row_ptr,
+        source_order=source_order,
+        destination_sorted=True,
+    )
+    compact = canonical_graph_from_neighbor_graph(graph)
+    return (
+        atype,
+        compact.n_node,
+        compact.n_local,
+        compact.source,
+        compact.edge_vec,
+        compact.destination_row_ptr,
+        compact.source_row_ptr,
+        compact.source_order,
+    )
+
+
+def _build_canonical_graph_dynamic_shapes(
+    *sample_inputs: torch.Tensor,
+) -> tuple:
+    """Build dynamic shapes for the eight-tensor compact deployment ABI."""
+    del sample_inputs
+    nframes_dim = torch.export.Dim("nframes", min=1)
+    node_dim = torch.export.Dim("n_node_total", min=1)
+    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
+    return (
+        {0: node_dim},
+        {0: nframes_dim},
+        {0: nframes_dim},
+        {0: edge_storage_dim},
+        {0: edge_storage_dim},
+        {0: node_dim + 1},
+        {0: node_dim + 1},
+        {0: edge_storage_dim},
+    )
+
+
 def _build_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
 ) -> tuple:
@@ -665,7 +749,7 @@ def _graph_edge_dtype(model: torch.nn.Module, lower_kind: str) -> str:
     descriptor_block = getattr(descriptor, "se_atten", None)
     statistics = getattr(descriptor_block, "mean", None)
     if (
-        lower_kind == "graph"
+        lower_kind in ("graph", "dpa1_canonical")
         and bool(getattr(descriptor, "geo_compress", False))
         and isinstance(statistics, torch.Tensor)
         and statistics.dtype == torch.float32
@@ -689,7 +773,9 @@ def _supports_graph_export(model: torch.nn.Module) -> bool:
 
 
 def _collect_metadata(
-    model: torch.nn.Module, is_spin: bool = False, lower_kind: str = "nlist"
+    model: torch.nn.Module,
+    is_spin: bool = False,
+    lower_kind: str = "nlist",
 ) -> dict:
     """Collect metadata from the model for C++ inference.
 
@@ -807,7 +893,7 @@ def _collect_metadata(
     #   "nlist" → dense quartet (extended_coord, extended_atype, nlist, mapping)
     #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
     # The C++ loader branches on this to build the matching inputs.
-    meta["lower_input_kind"] = "graph" if lower_kind == "graph" else "nlist"
+    meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = _graph_edge_dtype(model, lower_kind)
     return meta
 
@@ -923,11 +1009,13 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     )
 
     model = BaseModel.deserialize(data["model"])
-    return (
-        "graph"
-        if _model_uses_graph_lower(model) and _supports_graph_export(model)
-        else "nlist"
-    )
+    if _model_uses_graph_lower(model) and _supports_graph_export(model):
+        from deepmd.kernels.cuda.dpa1.canonical import (
+            canonical_model_eligible,
+        )
+
+        return "dpa1_canonical" if canonical_model_eligible(model) else "graph"
+    return "nlist"
 
 
 def deserialize_to_file(
@@ -981,7 +1069,7 @@ def deserialize_to_file(
     # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
     # operators, while the per-atom virial is mandatory for the LAMMPS Kokkos
     # consumer.
-    if lower_kind == "graph":
+    if lower_kind in ("graph", "dpa1_canonical"):
         do_atomic_virial = True
         ctx: contextlib.AbstractContextManager = _cuda_infer_at_least_2()
     else:
@@ -989,11 +1077,19 @@ def deserialize_to_file(
     with ctx:
         if model_file.endswith(".pt2"):
             _deserialize_to_file_pt2(
-                model_file, data, model_json_override, do_atomic_virial, lower_kind
+                model_file,
+                data,
+                model_json_override,
+                do_atomic_virial,
+                lower_kind,
             )
         else:
             _deserialize_to_file_pte(
-                model_file, data, model_json_override, do_atomic_virial, lower_kind
+                model_file,
+                data,
+                model_json_override,
+                do_atomic_virial,
+                lower_kind,
             )
 
 
@@ -1082,11 +1178,14 @@ def _trace_and_export(
     run_autotune(model, target_device)
 
     # 2. Collect metadata
-    metadata = _collect_metadata(model, is_spin=is_spin, lower_kind=lower_kind)
+    metadata = _collect_metadata(
+        model,
+        is_spin=is_spin,
+        lower_kind=lower_kind,
+    )
 
-    # Graph-form export uses the ghost-free NeighborGraph schema with a dynamic
-    # edge axis and an energy-model output contract.
-    if lower_kind == "graph":
+    # Graph-form exports use a dynamic edge axis and an energy-model contract.
+    if lower_kind in ("graph", "dpa1_canonical"):
         import math
 
         check_graph_trace_torch_version(model)
@@ -1099,94 +1198,71 @@ def _trace_and_export(
                 "graph-form .pt2 export does not support the with-comm artifact "
                 "required for multi-rank message passing"
             )
-        if not hasattr(model, "forward_lower_graph_exportable"):
+        canonical = lower_kind == "dpa1_canonical"
+        required_method = (
+            "forward_lower_canonical_graph_exportable"
+            if canonical
+            else "forward_lower_graph_exportable"
+        )
+        if not hasattr(model, required_method):
             raise NotImplementedError(
-                f"model {type(model).__name__} has no "
-                "forward_lower_graph_exportable; graph-form .pt2 export "
-                "requires an energy model"
+                f"model {type(model).__name__} has no {required_method}"
+            )
+        if canonical:
+            from deepmd.kernels.cuda.dpa1.canonical import (
+                canonical_model_eligible,
             )
 
-        # The AOTI artifact accepts any edge
-        # count, so there is no capacity to bake. The trace sample is built at a
-        # concrete, padded edge size only to keep the trace tensors distinct
-        # from the other dynamic dims (nframes=2, N=14) under torch.export's
-        # duck-sizing; the value itself does NOT constrain runtime.
+            if not canonical_model_eligible(model):
+                raise NotImplementedError(
+                    "compact canonical export requires an eligible compressed "
+                    "DPA1 energy model"
+                )
+
         nloc_sample = 7
         nnei = sum(model.get_sel())
         e_sample = math.ceil(1.25 * nloc_sample * nnei)
-
-        # make_fx traces on CPU. Conditioning inputs retain the model-agnostic
-        # float64 ABI; compressed DPA1 graph geometry enters directly in its
-        # float32 compute precision, as recorded in metadata.
-        edge_dtype = (
-            torch.float32
-            if metadata["graph_edge_dtype"] == "float32"
-            else torch.float64
-        )
-        sample_inputs = build_synthetic_graph_inputs(
-            model,
-            e_max=e_sample,
-            nframes=2,
-            nloc=nloc_sample,
-            dtype=torch.float64,
-            edge_dtype=edge_dtype,
-            device=torch.device("cpu"),
-        )
-
-        (
-            atype_g,
-            n_node_g,
-            n_local_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            destination_order_g,
-            destination_row_ptr_g,
-            source_row_ptr_g,
-            source_order_g,
-            fparam_g,
-            aparam_g,
-            charge_spin_g,
-        ) = sample_inputs
-
-        # Trace via make_fx on CPU (decomposes autograd.grad into aten ops).
-        traced = model.forward_lower_graph_exportable(
-            atype_g,
-            n_node_g,
-            n_local_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            destination_order_g,
-            destination_row_ptr_g,
-            source_row_ptr_g,
-            source_order_g,
-            fparam=fparam_g,
-            aparam=aparam_g,
-            do_atomic_virial=do_atomic_virial,
-            charge_spin=charge_spin_g,
-            destination_sorted=True,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-        )
-        sample_out = traced(
-            atype_g,
-            n_node_g,
-            n_local_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            destination_order_g,
-            destination_row_ptr_g,
-            source_row_ptr_g,
-            source_order_g,
-            fparam_g,
-            aparam_g,
-            charge_spin_g,
-        )
+        if canonical:
+            sample_inputs = build_synthetic_canonical_graph_inputs(
+                model,
+                e_sample,
+                device=torch.device("cpu"),
+            )
+            traced = model.forward_lower_canonical_graph_exportable(
+                *sample_inputs,
+                do_atomic_virial=do_atomic_virial,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+            dynamic_shapes = _build_canonical_graph_dynamic_shapes(*sample_inputs)
+        else:
+            edge_dtype = (
+                torch.float32
+                if metadata["graph_edge_dtype"] == "float32"
+                else torch.float64
+            )
+            sample_inputs = build_synthetic_graph_inputs(
+                model,
+                e_max=e_sample,
+                nframes=2,
+                nloc=nloc_sample,
+                dtype=torch.float64,
+                edge_dtype=edge_dtype,
+                device=torch.device("cpu"),
+            )
+            traced = model.forward_lower_graph_exportable(
+                *sample_inputs[:10],
+                fparam=sample_inputs[10],
+                aparam=sample_inputs[11],
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=sample_inputs[12],
+                destination_sorted=True,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+            dynamic_shapes = _build_graph_dynamic_shapes(*sample_inputs)
+        sample_out = traced(*sample_inputs)
         output_keys = list(sample_out.keys())
-
-        dynamic_shapes = _build_graph_dynamic_shapes(*sample_inputs)
         exported = torch.export.export(
             traced,
             sample_inputs,

@@ -379,6 +379,49 @@ struct GraphTensorPack {
   torch::Tensor source_order;
 };
 
+struct CanonicalGraphTensorPack {
+  torch::Tensor atype;
+  torch::Tensor n_node;
+  torch::Tensor n_local;
+  torch::Tensor source;
+  torch::Tensor edge_vec;
+  torch::Tensor destination_row_ptr;
+  torch::Tensor source_row_ptr;
+  torch::Tensor source_order;
+};
+
+inline CanonicalGraphTensorPack compactCanonicalGraph(
+    const GraphTensorPack& graph) {
+  const std::int64_t edge_count =
+      graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
+          .item<std::int64_t>();
+  const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  auto source = torch::zeros({storage_count},
+                             graph.edge_index.options().dtype(torch::kInt64));
+  auto edge_vec = torch::zeros({storage_count, 3},
+                               graph.edge_vec.options().dtype(torch::kFloat32));
+  auto source_order = torch::arange(
+      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  if (edge_count > 0) {
+    source.slice(0, 0, edge_count)
+        .copy_(graph.edge_index.select(0, 0)
+                   .slice(0, 0, edge_count)
+                   .to(torch::kInt64));
+    edge_vec.slice(0, 0, edge_count)
+        .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
+    source_order.slice(0, 0, edge_count)
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+  }
+  return {graph.atype,
+          graph.n_node,
+          graph.n_local,
+          source,
+          edge_vec,
+          graph.destination_row_ptr,
+          graph.source_row_ptr,
+          source_order};
+}
+
 /**
  * @brief Build destination/source CSR views of an edge pack.
  *

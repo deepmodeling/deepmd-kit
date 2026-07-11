@@ -30,6 +30,8 @@ Usage and pitfalls
 import torch
 
 __all__ = [
+    "canonical_edge_force_virial",
+    "canonical_op_available",
     "edge_force_virial",
     "ensure_registered",
     "op_available",
@@ -41,6 +43,12 @@ _registered = False
 def op_available() -> bool:
     """Whether the C++ ``deepmd::edge_force_virial`` op is loaded."""
     op = getattr(torch.ops.deepmd, "edge_force_virial", None)
+    return isinstance(op, torch._ops.OpOverloadPacket)
+
+
+def canonical_op_available() -> bool:
+    """Whether the compact canonical force operator is loaded."""
+    op = getattr(torch.ops.deepmd, "canonical_edge_force_virial", None)
     return isinstance(op, torch._ops.OpOverloadPacket)
 
 
@@ -57,6 +65,25 @@ def _fake(
     node_capacity: int,
     want_atom_virial: bool,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    n_frame = n_node_per_frame.shape[0]
+    return (
+        g_e.new_empty(node_capacity, 3),
+        g_e.new_empty(node_capacity if want_atom_virial else 0, 3, 3),
+        g_e.new_empty(n_frame, 3, 3),
+    )
+
+
+def _canonical_fake(
+    g_e: torch.Tensor,
+    edge_vec: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    node_capacity: int,
+    want_atom_virial: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    del edge_vec, destination_row_ptr, source_row_ptr, source_order
     n_frame = n_node_per_frame.shape[0]
     return (
         g_e.new_empty(node_capacity, 3),
@@ -93,6 +120,64 @@ def _cpu(
     return force, atom_virial, virial
 
 
+def _canonical_cpu(
+    g_e: torch.Tensor,
+    edge_vec: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    node_capacity: int,
+    want_atom_virial: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    physical_edge_count = int(destination_row_ptr[-1].item())
+    node_count = destination_row_ptr.shape[0] - 1
+    destination = torch.repeat_interleave(
+        torch.arange(node_count, dtype=torch.int64, device=edge_vec.device),
+        destination_row_ptr[1:] - destination_row_ptr[:-1],
+        output_size=physical_edge_count,
+    )
+    source_by_row = torch.repeat_interleave(
+        torch.arange(node_count, dtype=torch.int64, device=edge_vec.device),
+        source_row_ptr[1:] - source_row_ptr[:-1],
+        output_size=physical_edge_count,
+    )
+    source = torch.zeros(
+        edge_vec.shape[0],
+        dtype=torch.int64,
+        device=edge_vec.device,
+    )
+    source[source_order[:physical_edge_count].to(torch.int64)] = source_by_row
+    destination_storage = torch.zeros_like(source)
+    destination_storage[:physical_edge_count] = destination
+    edge_index = torch.stack((source, destination_storage))
+    edge_mask = (
+        torch.arange(
+            edge_vec.shape[0],
+            dtype=torch.int64,
+            device=edge_vec.device,
+        )
+        < physical_edge_count
+    )
+    return _cpu(
+        g_e,
+        edge_vec,
+        edge_index,
+        edge_mask,
+        torch.arange(
+            edge_vec.shape[0],
+            dtype=source_order.dtype,
+            device=edge_vec.device,
+        ),
+        destination_row_ptr,
+        source_row_ptr,
+        source_order,
+        n_node_per_frame,
+        node_capacity,
+        want_atom_virial,
+    )
+
+
 _cpu_library: torch.library.Library | None = None
 
 
@@ -105,8 +190,18 @@ def ensure_registered() -> None:
     if _registered or not op_available():
         return
     torch.library.register_fake("deepmd::edge_force_virial")(_fake)
+    if canonical_op_available():
+        torch.library.register_fake("deepmd::canonical_edge_force_virial")(
+            _canonical_fake
+        )
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("edge_force_virial", _cpu, "CPU")
+    if canonical_op_available():
+        _cpu_library.impl(
+            "canonical_edge_force_virial",
+            _canonical_cpu,
+            "CPU",
+        )
     _registered = True
 
 
@@ -169,6 +264,53 @@ def edge_force_virial(
         edge_index.contiguous(),
         edge_mask.contiguous(),
         destination_order.contiguous(),
+        destination_row_ptr.contiguous(),
+        source_row_ptr.contiguous(),
+        source_order.contiguous(),
+        n_node_per_frame,
+        node_capacity,
+        want_atom_virial,
+    )
+
+
+def canonical_edge_force_virial(
+    g_e: torch.Tensor,
+    edge_vec: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    node_capacity: int,
+    want_atom_virial: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Assemble force and virial from a compact canonical edge stream.
+
+    Parameters
+    ----------
+    g_e
+        Per-edge energy gradient with shape ``(S, 3)``.
+    edge_vec
+        Per-edge displacement with shape ``(S, 3)``.
+    destination_row_ptr, source_row_ptr
+        Destination and source CSR offsets with shape ``(N + 1,)``.
+    source_order
+        Edge storage positions grouped by source with shape ``(S,)``.
+    n_node_per_frame
+        Per-frame node counts with shape ``(nf,)``.
+    node_capacity
+        Flat node count ``N``.
+    want_atom_virial
+        Whether to materialize the per-node virial.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        Force, optional atom virial, and frame virial.
+    """
+    ensure_registered()
+    return torch.ops.deepmd.canonical_edge_force_virial(
+        g_e.contiguous(),
+        edge_vec.contiguous(),
         destination_row_ptr.contiguous(),
         source_row_ptr.contiguous(),
         source_order.contiguous(),

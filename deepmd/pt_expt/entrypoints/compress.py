@@ -127,7 +127,7 @@ def enable_compression(
         deserialize_to_file(
             output,
             {"model": compressed_model_dict, "model_def_script": model_def_script},
-            lower_kind="graph",
+            lower_kind="auto",
         )
     else:
         log.info("Re-exporting compressed model...")

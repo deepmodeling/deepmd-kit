@@ -138,6 +138,31 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
   EXPECT_EQ(out.numneigh[3], 1);
 }
 
+TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
+  GraphTensorPack graph;
+  graph.atype = torch::tensor({0}, torch::kInt64);
+  graph.n_node = torch::tensor({1}, torch::kInt64);
+  graph.n_local = torch::tensor({1}, torch::kInt64);
+  graph.edge_index = torch::tensor({{0, 0, 0}, {0, 0, 0}}, torch::kInt64);
+  graph.edge_vec = torch::tensor(
+      {{1.5, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, torch::kFloat64);
+  graph.edge_mask = torch::tensor({true, false, false}, torch::kBool);
+  graph.destination_order = torch::tensor({0, 1, 2}, torch::kInt64);
+  graph.destination_row_ptr = torch::tensor({0, 1}, torch::kInt64);
+  graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
+  graph.source_order = torch::tensor({0, 1, 2}, torch::kInt64);
+
+  const auto compact = compactCanonicalGraph(graph);
+  EXPECT_EQ(compact.source.scalar_type(), torch::kInt64);
+  EXPECT_EQ(compact.source.numel(), 2);
+  EXPECT_EQ(compact.edge_vec.scalar_type(), torch::kFloat32);
+  EXPECT_EQ(compact.edge_vec.size(0), 2);
+  EXPECT_TRUE(
+      torch::equal(compact.source_order, torch::tensor({0, 1}, torch::kInt64)));
+  EXPECT_EQ(compact.destination_row_ptr.select(0, 1).item<std::int64_t>(), 1);
+  EXPECT_EQ(compact.source_row_ptr.select(0, 1).item<std::int64_t>(), 1);
+}
+
 #ifdef BUILD_PYTORCH
 TEST(TestEdgeTensorPack, CreateEdgeTensorsUsesRowCenters) {
   const torch::Device device(torch::kCPU);

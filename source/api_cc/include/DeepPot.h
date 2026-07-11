@@ -343,8 +343,22 @@ class DeepPotBackend : public DeepBaseModelBackend {
                                  const std::vector<double>& aparam,
                                  const int nall_nodes,
                                  const InputNlist* comm_nlist);
+  virtual void compute_canonical_graph_gpu(
+      double* d_atom_energy,
+      double* d_force,
+      double* d_atom_virial,
+      const std::int64_t* d_atype,
+      const std::int64_t* d_source,
+      const float* d_edge_vec,
+      const std::int64_t* d_destination_row_ptr,
+      const std::int64_t* d_source_row_ptr,
+      const std::int64_t* d_source_order,
+      const int nloc,
+      const int nall_nodes,
+      const std::int64_t edge_storage);
   virtual bool supports_device_edge_inference() const;
   virtual bool uses_fp32_edge_vectors() const;
+  virtual bool uses_canonical_graph_inference() const;
 };
 
 /**
@@ -794,6 +808,24 @@ class DeepPot : public DeepBaseModel {
    * @brief Whether the loaded artifact expects FP32 device edge vectors.
    */
   bool uses_fp32_edge_vectors() const;
+
+  /**
+   * @brief Whether the loaded artifact uses the compact canonical graph ABI.
+   */
+  bool uses_canonical_graph_inference() const;
+
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const std::int64_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::int64_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage);
 
   int dim_chg_spin() const;
 

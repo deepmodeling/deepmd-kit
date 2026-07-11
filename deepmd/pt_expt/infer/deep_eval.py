@@ -184,10 +184,9 @@ class DeepEval(DeepEvalBackend):
         # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
         # (_eval_model_graph); fail fast instead of silently ignoring it on
         # nlist-form artifacts (there, the builder knob is nlist_backend).
-        if (
-            neighbor_graph_method != "dense"
-            and getattr(self, "metadata", {}).get("lower_input_kind") != "graph"
-        ):
+        if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
+            "lower_input_kind"
+        ) not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
@@ -1508,7 +1507,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        if self.metadata.get("lower_input_kind") == "graph":
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
             return self._eval_model_graph(
                 coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
@@ -1813,26 +1812,57 @@ class DeepEval(DeepEvalBackend):
             device=DEVICE,
         )
 
-        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
-            fparam, aparam, nframes, natoms, DEVICE
-        )
-        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+        if self.metadata.get("lower_input_kind") == "dpa1_canonical":
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
+            from deepmd.pt_expt.utils.canonical_graph import (
+                canonical_graph_from_neighbor_graph,
+            )
 
-        model_inputs = (
-            atype_t,
-            n_node_t,
-            n_node_t,
-            edge_index_t,
-            edge_vec_t,
-            edge_mask_t,
-            destination_order_t,
-            destination_row_ptr_t,
-            source_row_ptr_t,
-            source_order_t,
-            fparam_t,
-            aparam_t,
-            charge_spin_t,
-        )
+            generic_graph = NeighborGraph(
+                n_node=n_node_t,
+                edge_index=edge_index_t,
+                edge_vec=edge_vec_t,
+                edge_mask=edge_mask_t,
+                n_local=n_node_t,
+                destination_order=destination_order_t,
+                destination_row_ptr=destination_row_ptr_t,
+                source_row_ptr=source_row_ptr_t,
+                source_order=source_order_t,
+                destination_sorted=bool(graph.destination_sorted),
+            )
+            compact = canonical_graph_from_neighbor_graph(generic_graph)
+            model_inputs = (
+                atype_t,
+                compact.n_node,
+                compact.n_local,
+                compact.source,
+                compact.edge_vec,
+                compact.destination_row_ptr,
+                compact.source_row_ptr,
+                compact.source_order,
+            )
+        else:
+            fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+                fparam, aparam, nframes, natoms, DEVICE
+            )
+            charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+            model_inputs = (
+                atype_t,
+                n_node_t,
+                n_node_t,
+                edge_index_t,
+                edge_vec_t,
+                edge_mask_t,
+                destination_order_t,
+                destination_row_ptr_t,
+                source_row_ptr_t,
+                source_order_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

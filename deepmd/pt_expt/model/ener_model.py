@@ -90,6 +90,168 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
+    def forward_lower_canonical_graph(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        source: torch.Tensor,
+        edge_vec: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        *,
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate an eligible compressed DPA1 deployment graph.
+
+        Parameters
+        ----------
+        atype
+            Flat local-plus-halo atom types with shape ``(N,)``, int64.
+        n_node
+            Per-frame total node counts with shape ``(nf,)``, int64.
+        n_local
+            Per-frame owned node counts with shape ``(nf,)``, int64.
+        source
+            Source-node indices with shape ``(S,)``, int32 or int64.
+        edge_vec
+            Destination-major edge vectors with shape ``(S, 3)``, float32.
+        destination_row_ptr
+            Destination CSR offsets with shape ``(N + 1,)``, int64.
+        source_row_ptr
+            Source CSR offsets with shape ``(N + 1,)``, int64.
+        source_order
+            Source-grouped edge positions with shape ``(S,)`` and the same
+            dtype as ``source``.
+        do_atomic_virial
+            Whether to return the per-node virial.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public energy-model outputs on the flat node axis.
+        """
+        from deepmd.kernels.cuda.dpa1.canonical import (
+            canonical_model_eligible,
+            dpa1_canonical_compress_energy_force,
+        )
+        from deepmd.pt_expt.utils.canonical_graph import (
+            DPA1CanonicalGraph,
+            validate_canonical_graph_shapes,
+        )
+
+        if not canonical_model_eligible(self):
+            raise ValueError("model is not eligible for compact canonical deployment")
+        graph = DPA1CanonicalGraph(
+            n_node=n_node,
+            n_local=n_local,
+            source=source,
+            edge_vec=edge_vec,
+            destination_row_ptr=destination_row_ptr,
+            source_row_ptr=source_row_ptr,
+            source_order=source_order,
+        )
+        validate_canonical_graph_shapes(graph, atype.shape[0])
+        atype, output_mask = self.atomic_model._prepare_graph_nodes(
+            n_node,
+            n_local,
+            atype,
+            edge_vec,
+        )
+        descriptor = self.atomic_model.descriptor
+        fitting = self.atomic_model.fitting_net
+        atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
+        energy, atom_energy, force, virial, atom_virial = (
+            dpa1_canonical_compress_energy_force(
+                descriptor,
+                fitting,
+                graph,
+                atype,
+                descriptor.type_embedding.call(),
+                output_mask,
+                atom_bias,
+                do_atomic_virial,
+            )
+        )
+        result = {
+            "atom_energy": atom_energy,
+            "energy": energy,
+            "force": force,
+            "virial": virial,
+            "mask": output_mask.to(torch.int32),
+        }
+        if do_atomic_virial:
+            result["atom_virial"] = atom_virial
+        return result
+
+    def forward_lower_canonical_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        source: torch.Tensor,
+        edge_vec: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        *,
+        do_atomic_virial: bool,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace the compact canonical deployment forward with ``make_fx``.
+
+        Parameters
+        ----------
+        atype, n_node, n_local, source, edge_vec
+            Compact graph node and edge tensors.
+        destination_row_ptr, source_row_ptr, source_order
+            Compact dual-CSR topology.
+        do_atomic_virial
+            Whether the traced output includes per-node virial.
+        **make_fx_kwargs
+            Additional arguments passed to :func:`make_fx`.
+
+        Returns
+        -------
+        torch.nn.Module
+            Traced eight-input compact deployment module.
+        """
+        model = self
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            source: torch.Tensor,
+            edge_vec: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            return model.forward_lower_canonical_graph(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            source,
+            edge_vec,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+        )
+
     def forward(
         self,
         coord: torch.Tensor,

@@ -568,6 +568,125 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         for output32, output64 in zip(outputs32, outputs64, strict=True):
             torch.testing.assert_close(output32, output64, atol=1e-6, rtol=1e-6)
 
+    def test_compact_canonical_descriptor_parity(self) -> None:
+        """Source-only topology matches the generic canonical operator."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            canonicalize_neighbor_graph,
+        )
+        from deepmd.kernels.cuda.dpa1.canonical import (
+            ensure_registered,
+        )
+        from deepmd.kernels.cuda.dpa1.graph_compress import (
+            dpa1_graph_compress,
+        )
+        from deepmd.pt_expt.utils.canonical_graph import (
+            canonical_graph_from_neighbor_graph,
+        )
+
+        des = _build_compressed_dpa1(self.device, [16, 32, 64])
+        graph, atype, _ = self._graph_and_dense(des)
+        graph = canonicalize_neighbor_graph(
+            dataclasses.replace(graph, n_local=graph.n_node),
+            atype.shape[0],
+        )
+        compact = canonical_graph_from_neighbor_graph(graph)
+        type_embedding = des.type_embedding.call()
+        se = des.se_atten
+        inverse_stddev = torch.reciprocal(se.stddev[:, 0, :]).contiguous()
+        lower, upper, table_max, stride0, stride1 = (
+            float(value) for value in des.compress_info[0].tolist()[:5]
+        )
+
+        generic_descriptor, _ = dpa1_graph_compress(
+            des,
+            graph,
+            atype,
+            type_embedding,
+        )
+        ensure_registered()
+        descriptor, _rotation, moment = torch.ops.deepmd.dpa1_canonical_compress(
+            compact.edge_vec,
+            compact.source,
+            compact.destination_row_ptr,
+            atype,
+            type_embedding,
+            se.mean[:, 0, :].contiguous(),
+            inverse_stddev,
+            des.compress_data[0].contiguous(),
+            des.type_embd_data.contiguous(),
+            int(se.type_one_side),
+            int(des.concat_output_tebd),
+            0,
+            int(se.smooth),
+            int(se.axis_neuron),
+            lower,
+            upper,
+            table_max,
+            stride0,
+            stride1,
+            float(se.rcut),
+            float(se.rcut_smth),
+            float(se.env_protection),
+            float(se.nnei),
+        )
+        torch.testing.assert_close(descriptor, generic_descriptor)
+
+        cotangent = torch.linspace(
+            0.5,
+            1.5,
+            descriptor.numel(),
+            dtype=descriptor.dtype,
+            device=descriptor.device,
+        ).reshape(descriptor.shape)
+        generic_edge_vec = graph.edge_vec.detach().requires_grad_(True)
+        generic_graph = dataclasses.replace(graph, edge_vec=generic_edge_vec)
+        generic_value, _ = dpa1_graph_compress(
+            des,
+            generic_graph,
+            atype,
+            type_embedding,
+        )
+        (generic_gradient,) = torch.autograd.grad(
+            (generic_value * cotangent).sum(),
+            generic_edge_vec,
+        )
+        compact_gradient = torch.ops.deepmd.dpa1_canonical_compress_backward(
+            cotangent,
+            None,
+            moment,
+            compact.edge_vec,
+            compact.source,
+            compact.destination_row_ptr,
+            atype,
+            se.mean[:, 0, :].contiguous(),
+            inverse_stddev,
+            des.compress_data[0].contiguous(),
+            des.type_embd_data.contiguous(),
+            int(se.type_one_side),
+            int(se.smooth),
+            int(se.axis_neuron),
+            lower,
+            upper,
+            table_max,
+            stride0,
+            stride1,
+            float(se.rcut),
+            float(se.rcut_smth),
+            float(se.env_protection),
+            float(se.nnei),
+        )
+        physical_edge_count = int(compact.destination_row_ptr[-1].item())
+        torch.testing.assert_close(
+            compact_gradient[:physical_edge_count],
+            generic_gradient[:physical_edge_count].to(compact_gradient.dtype),
+            atol=1e-6,
+            rtol=1e-5,
+        )
+        torch.testing.assert_close(
+            compact_gradient[physical_edge_count:],
+            torch.zeros_like(compact_gradient[physical_edge_count:]),
+        )
+
     def test_adaptive_resource_selection_large_graph(self) -> None:
         """First-use tuning preserves the reference on a non-trivial graph."""
         generator = torch.Generator(device=self.device).manual_seed(37)
@@ -1364,6 +1483,99 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         torch.testing.assert_close(virial, r_virial, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(atom_vir, r_atom_vir, atol=1e-4, rtol=1e-4)
 
+    def test_compact_canonical_model_trace(self) -> None:
+        """The eight-tensor deployment forward composes under symbolic make_fx."""
+        from deepmd.pt_expt.model import (
+            EnergyModel,
+        )
+        from deepmd.pt_expt.utils.canonical_graph import (
+            canonical_graph_from_neighbor_graph,
+        )
+
+        descriptor = _build_compressed_dpa1(
+            self.device,
+            [16, 32, 64],
+            act="silu",
+            axis_neuron=16,
+        )
+        fitting = self._build_fitting(descriptor.get_dim_out())
+        model = EnergyModel(
+            descriptor,
+            fitting,
+            type_map=["A", "B"],
+        ).to(self.device)
+        model.eval()
+        graph, atype = self._graph(descriptor)
+        graph = dataclasses.replace(graph, n_local=graph.n_node)
+        compact = canonical_graph_from_neighbor_graph(graph)
+        inputs = (
+            atype,
+            compact.n_node,
+            compact.n_local,
+            compact.source,
+            compact.edge_vec,
+            compact.destination_row_ptr,
+            compact.source_row_ptr,
+            compact.source_order,
+        )
+
+        reference = model.forward_lower_canonical_graph(
+            *inputs,
+            do_atomic_virial=True,
+        )
+        traced = model.forward_lower_canonical_graph_exportable(
+            *inputs,
+            do_atomic_virial=True,
+            tracing_mode="real",
+            _allow_non_fake_inputs=True,
+        )
+        actual = traced(*inputs)
+        self.assertEqual(set(actual), set(reference))
+        for key in actual:
+            torch.testing.assert_close(actual[key], reference[key])
+
+    def test_compact_canonical_torch_export_contract(self) -> None:
+        """torch.export records the fixed eight-tensor deployment ABI."""
+        from deepmd.pt_expt.model import (
+            EnergyModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            _trace_and_export,
+        )
+
+        descriptor = _build_compressed_dpa1(
+            self.device,
+            [16, 32, 64],
+            act="silu",
+            axis_neuron=16,
+        )
+        fitting = self._build_fitting(descriptor.get_dim_out())
+        model = EnergyModel(
+            descriptor,
+            fitting,
+            type_map=["A", "B"],
+        ).to(self.device)
+        model.eval()
+        exported, metadata, _model_json, output_keys = _trace_and_export(
+            {"model": model.serialize()},
+            do_atomic_virial=True,
+            lower_kind="dpa1_canonical",
+        )
+
+        self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
+        self.assertEqual(metadata["graph_edge_dtype"], "float32")
+        self.assertNotIn("graph_index_dtype", metadata)
+        self.assertEqual(
+            output_keys,
+            ["atom_energy", "energy", "force", "virial", "mask", "atom_virial"],
+        )
+        user_inputs = [
+            spec
+            for spec in exported.graph_signature.input_specs
+            if spec.kind.name == "USER_INPUT"
+        ]
+        self.assertEqual(len(user_inputs), 8)
+
     def test_level2_permutation_csr_parity(self) -> None:
         """Level 2 preserves force and virial for an arbitrary edge stream."""
         from deepmd.dpmodel.utils.neighbor_graph import (
@@ -1595,6 +1807,89 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
 
     def test_parity_cuda(self) -> None:
         self._assert_device_parity("cuda")
+
+    def test_compact_canonical_parity(self) -> None:
+        """Source-only force and virial match the generic dual-CSR operator."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            NeighborGraph,
+            build_edge_csr,
+        )
+        from deepmd.kernels.cuda.edge_force_virial import (
+            canonical_edge_force_virial,
+            edge_force_virial,
+        )
+        from deepmd.pt_expt.utils.canonical_graph import (
+            canonical_graph_from_neighbor_graph,
+        )
+
+        (
+            g_e,
+            edge_vec,
+            edge_index,
+            _mask,
+            _dst_order,
+            _dst_row_ptr,
+            _src_row_ptr,
+            _src_order,
+            n_node,
+            total,
+        ) = self._random_graph(torch.device("cuda"))
+        (
+            edge_index,
+            payload,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+        ) = build_edge_csr(
+            edge_index,
+            torch.cat((g_e, edge_vec), dim=1),
+            torch.ones(edge_index.shape[1], dtype=torch.bool, device="cuda"),
+            total,
+            canonicalize=True,
+        )
+        g_e = payload[:, :3].to(torch.float32)
+        edge_vec = payload[:, 3:].to(torch.float32)
+        graph = NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+            n_local=n_node,
+            destination_order=destination_order,
+            destination_row_ptr=destination_row_ptr,
+            source_row_ptr=source_row_ptr,
+            source_order=source_order,
+            destination_sorted=True,
+        )
+        compact = canonical_graph_from_neighbor_graph(graph)
+
+        generic = edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+            n_node,
+            total,
+            True,
+        )
+        canonical = canonical_edge_force_virial(
+            g_e,
+            compact.edge_vec,
+            compact.destination_row_ptr,
+            compact.source_row_ptr,
+            compact.source_order,
+            compact.n_node,
+            total,
+            True,
+        )
+        for actual, expected in zip(canonical, generic, strict=True):
+            torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
     def test_many_small_frames(self) -> None:
         """Frame reduction is valid beyond the CUDA grid-y limit."""

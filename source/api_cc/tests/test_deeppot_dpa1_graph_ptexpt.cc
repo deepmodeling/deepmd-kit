@@ -113,6 +113,7 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist) {
   EXPECT_TRUE(dp.supports_device_edge_inference());
   EXPECT_FALSE(dp_ref.supports_device_edge_inference());
   EXPECT_FALSE(dp.uses_fp32_edge_vectors());
+  EXPECT_FALSE(dp.uses_canonical_graph_inference());
   double ener;
   std::vector<VALUETYPE> force, virial;
   dp.compute(ener, force, virial, coord, atype, box);

@@ -26,6 +26,7 @@
 #include <torch/torch.h>
 
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -175,7 +176,7 @@ __global__ void seed_kernel(long total4,
       make_float4(de * wv.x, de * wv.y, de * wv.z, de * wv.w);
 }
 
-// dpre = dh * adot.
+// Convert dh to dpre in place: dh *= adot.
 __global__ void backward_epilogue_kernel(long total4,
                                          const float* __restrict__ dh,
                                          const float* __restrict__ adot,
@@ -229,7 +230,6 @@ std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
   for (int l = 0; l < n_layer; ++l) {
     width_max = std::max(width_max, (long)ws[l].size(1));
   }
-  auto scratch = torch::empty({n_node, width_max}, f32);
   // Two-slot ping-pong for the activations: layer l writes slot ``l & 1`` while
   // reading the previous layer's slot, so an activation is overwritten only
   // after the next GEMM has consumed it (kernels run in stream order).
@@ -242,14 +242,13 @@ std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
     const int dout = (int)ws[l].size(1);
     float* h = act_slot[l & 1];
     float* adot = saved.data_ptr<float>() + offset[l] * n_node;
-    gemm_nn(stream, cur, ws[l].data_ptr<float>(), scratch.data_ptr<float>(),
-            (int)n_node, dout, din);
+    gemm_nn(stream, cur, ws[l].data_ptr<float>(), h, (int)n_node, dout, din);
     const long total4 = n_node * dout / 4;
     const bool residual = resnets[l] && dout == din;
     auto launch = [&](auto act_tag) {
       layer_epilogue_kernel<decltype(act_tag)::value>
           <<<ceil_div(total4, 256), 256, 0, stream>>>(
-              total4, dout, scratch.data_ptr<float>(),
+              total4, dout, h,
               bs[l].numel() ? bs[l].data_ptr<float>() : nullptr,
               idts[l].numel() ? idts[l].data_ptr<float>() : nullptr, cur,
               residual ? 1 : 0, h, adot);
@@ -276,11 +275,12 @@ std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
 // extent and fitting widths determine the output shape, so the descriptor is
 // not retained solely for shape metadata. Two ping-pong dh buffers walk the
 // layers from the head down.
-torch::Tensor graph_fitting_backward(torch::Tensor d_e,
-                                     torch::Tensor saved,
-                                     std::vector<torch::Tensor> ws,
-                                     std::vector<int64_t> resnets,
-                                     torch::Tensor w_head) {
+void graph_fitting_backward_core(torch::Tensor d_e,
+                                 torch::Tensor saved,
+                                 std::vector<torch::Tensor> ws,
+                                 std::vector<int64_t> resnets,
+                                 torch::Tensor w_head,
+                                 torch::Tensor d_x) {
   long total_width = 0;
   for (const auto& weight : ws) {
     total_width += weight.size(1);
@@ -290,10 +290,15 @@ torch::Tensor graph_fitting_backward(torch::Tensor d_e,
               "the fitting widths");
   const long n_node = saved.numel() / total_width;
   const long input_width = ws[0].size(0);
-  auto d_x = torch::empty({n_node, input_width}, saved.options());
+  TORCH_CHECK(d_x.dim() == 2 && d_x.size(0) == n_node &&
+                  d_x.size(1) == input_width &&
+                  d_x.scalar_type() == torch::kFloat32 && d_x.is_cuda() &&
+                  d_x.is_contiguous(),
+              "graph_fitting_backward: output must be contiguous CUDA "
+              "fp32 with shape (N, input_width)");
   // Guard the empty system before the division by ``n_node`` below.
   if (n_node == 0) {
-    return d_x;
+    return;
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int n_layer = (int)ws.size();
@@ -308,7 +313,6 @@ torch::Tensor graph_fitting_backward(torch::Tensor d_e,
   for (int l = 0; l < n_layer; ++l) {
     width_max = std::max(width_max, (long)ws[l].size(1));
   }
-  auto dpre = torch::empty({n_node, width_max}, f32);
   auto dh = torch::empty({n_node, width_max}, f32);
   auto dh_next = torch::empty({n_node, width_max}, f32);
 
@@ -323,10 +327,6 @@ torch::Tensor graph_fitting_backward(torch::Tensor d_e,
     const int dout = (int)ws[l].size(1);
     const int din = (int)ws[l].size(0);
     const float* adot = saved.data_ptr<float>() + offset[l] * n_node;
-    backward_epilogue_kernel<<<ceil_div(n_node * dout / 4, 256), 256, 0,
-                               stream>>>(
-        n_node * dout / 4, dh.data_ptr<float>(), adot, dpre.data_ptr<float>());
-    FITTING_CHECK_LAUNCH("graph_fitting backward layer");
     float* out = l > 0 ? dh_next.data_ptr<float>() : d_x.data_ptr<float>();
     const bool residual = resnets[l] && dout == din;
     float beta = 0.f;
@@ -336,12 +336,34 @@ torch::Tensor graph_fitting_backward(torch::Tensor d_e,
                       cudaMemcpyDeviceToDevice, stream);
       beta = 1.f;
     }
-    gemm_nt(stream, dpre.data_ptr<float>(), ws[l].data_ptr<float>(), out,
+    backward_epilogue_kernel<<<ceil_div(n_node * dout / 4, 256), 256, 0,
+                               stream>>>(
+        n_node * dout / 4, dh.data_ptr<float>(), adot, dh.data_ptr<float>());
+    FITTING_CHECK_LAUNCH("graph_fitting backward layer");
+    gemm_nt(stream, dh.data_ptr<float>(), ws[l].data_ptr<float>(), out,
             (int)n_node, din, dout, beta);
     if (l > 0) {
       std::swap(dh, dh_next);
     }
   }
+}
+
+torch::Tensor graph_fitting_backward(torch::Tensor d_e,
+                                     torch::Tensor saved,
+                                     std::vector<torch::Tensor> ws,
+                                     std::vector<int64_t> resnets,
+                                     torch::Tensor w_head) {
+  long total_width = 0;
+  for (const auto& weight : ws) {
+    total_width += weight.size(1);
+  }
+  TORCH_CHECK(total_width > 0 && saved.numel() % total_width == 0,
+              "graph_fitting_backward: saved derivative buffer does not match "
+              "the fitting widths");
+  const long n_node = saved.numel() / total_width;
+  auto d_x = torch::empty({n_node, ws[0].size(0)}, saved.options());
+  graph_fitting_backward_core(d_e, saved, std::move(ws), std::move(resnets),
+                              w_head, d_x);
   return d_x;
 }
 

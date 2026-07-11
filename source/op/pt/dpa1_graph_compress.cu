@@ -333,7 +333,7 @@ __device__ __forceinline__ long edge_at_csr_position(
 
 __device__ __forceinline__ bool edge_is_active(long edge,
                                                const bool* edge_mask) {
-  return edge_mask[edge];
+  return edge_mask == nullptr || edge_mask[edge];
 }
 
 template <int Width, bool Canonical, typename index_t, int MinimumBlocks>
@@ -940,8 +940,10 @@ void launch_forward_variant(long node_count,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
           rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
           stride0, stride1, edge_vec.data_ptr<float>(),
-          edge_index.data_ptr<index_t>(), edge_mask.data_ptr<bool>(),
-          destination_order.data_ptr<index_t>(),
+          edge_index.data_ptr<index_t>(),
+          edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
+          destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                    : nullptr,
           destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
           type_embedding.data_ptr<float>(), average.data_ptr<float>(),
           inverse_stddev.data_ptr<float>(), table.data_ptr<float>(),
@@ -1067,8 +1069,10 @@ void launch_backward_variant(long node_count,
           lower, upper, table_max, stride0, stride1,
           descriptor_gradient.data_ptr<float>(), rotation_gradient,
           moment.data_ptr<float>(), edge_vec.data_ptr<float>(),
-          edge_index.data_ptr<index_t>(), edge_mask.data_ptr<bool>(),
-          destination_order.data_ptr<index_t>(),
+          edge_index.data_ptr<index_t>(),
+          edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
+          destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                    : nullptr,
           destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
           average.data_ptr<float>(), inverse_stddev.data_ptr<float>(),
           table.data_ptr<float>(), gate_table.data_ptr<float>(),
@@ -1147,7 +1151,9 @@ void launch_backward(long node_count,
   launch(config, node_count);
   COMPRESS_CHECK_LAUNCH("dpa1_graph_compress backward");
   zero_padding_kernel<Canonical, index_t><<<1, kThreads, 0, stream>>>(
-      node_count, edge_count, destination_order.data_ptr<index_t>(),
+      node_count, edge_count,
+      destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                : nullptr,
       destination_row_ptr.data_ptr<long>(), edge_gradient.data_ptr<float>());
   COMPRESS_CHECK_LAUNCH("dpa1_graph_compress padding");
 }
@@ -1483,6 +1489,86 @@ torch::Tensor dpa1_graph_compress_backward(
   return edge_gradient.to(edge_vec.scalar_type());
 }
 
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_canonical_compress(
+    torch::Tensor edge_vec,
+    torch::Tensor source,
+    torch::Tensor destination_row_ptr,
+    torch::Tensor atype,
+    torch::Tensor type_embedding,
+    torch::Tensor average,
+    torch::Tensor inverse_stddev,
+    torch::Tensor table,
+    torch::Tensor gate_table,
+    int64_t type_one_side,
+    int64_t concatenate_type_embedding,
+    int64_t write_rotation,
+    int64_t smooth,
+    int64_t axis,
+    double lower,
+    double upper,
+    double table_max,
+    double stride0,
+    double stride1,
+    double rcut,
+    double rcut_smooth,
+    double protection,
+    double neighbors) {
+  TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
+              "dpa1_canonical_compress: source and edge_vec storage must "
+              "share the edge axis");
+  TORCH_CHECK(destination_row_ptr.numel() == atype.size(0) + 1,
+              "dpa1_canonical_compress: destination_row_ptr must have N + 1 "
+              "entries");
+  auto edge_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
+  auto destination_order = torch::empty({0}, source.options());
+  return dpa1_graph_compress(
+      edge_vec, source, edge_mask, destination_order, destination_row_ptr,
+      atype, type_embedding, average, inverse_stddev, table, gate_table,
+      type_one_side, concatenate_type_embedding, write_rotation, smooth, axis,
+      true, lower, upper, table_max, stride0, stride1, rcut, rcut_smooth,
+      protection, neighbors);
+}
+
+torch::Tensor dpa1_canonical_compress_backward(
+    torch::Tensor descriptor_gradient,
+    std::optional<torch::Tensor> rotation_gradient,
+    torch::Tensor moment,
+    torch::Tensor edge_vec,
+    torch::Tensor source,
+    torch::Tensor destination_row_ptr,
+    torch::Tensor atype,
+    torch::Tensor average,
+    torch::Tensor inverse_stddev,
+    torch::Tensor table,
+    torch::Tensor gate_table,
+    int64_t type_one_side,
+    int64_t smooth,
+    int64_t axis,
+    double lower,
+    double upper,
+    double table_max,
+    double stride0,
+    double stride1,
+    double rcut,
+    double rcut_smooth,
+    double protection,
+    double neighbors) {
+  TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
+              "dpa1_canonical_compress_backward: source and edge_vec storage "
+              "must share the edge axis");
+  TORCH_CHECK(destination_row_ptr.numel() == atype.size(0) + 1,
+              "dpa1_canonical_compress_backward: destination_row_ptr must "
+              "have N + 1 entries");
+  auto edge_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
+  auto destination_order = torch::empty({0}, source.options());
+  return dpa1_graph_compress_backward(
+      descriptor_gradient, rotation_gradient, moment, edge_vec, source,
+      edge_mask, destination_order, destination_row_ptr, atype, average,
+      inverse_stddev, table, gate_table, type_one_side, smooth, axis, true,
+      lower, upper, table_max, stride0, stride1, rcut, rcut_smooth, protection,
+      neighbors);
+}
+
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
   library.def(
       "dpa1_graph_compress(Tensor edge_vec, Tensor edge_index, "
@@ -1509,4 +1595,26 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "float neighbors) -> Tensor");
   library.impl("dpa1_graph_compress_backward", torch::kCUDA,
                &dpa1_graph_compress_backward);
+  library.def(
+      "dpa1_canonical_compress(Tensor edge_vec, Tensor source, "
+      "Tensor destination_row_ptr, Tensor atype, Tensor type_embedding, "
+      "Tensor average, Tensor inverse_stddev, Tensor table, "
+      "Tensor gate_table, int type_one_side, int concatenate_type_embedding, "
+      "int write_rotation, int smooth, int axis, float lower, float upper, "
+      "float table_max, float stride0, float stride1, float rcut, "
+      "float rcut_smooth, float protection, float neighbors) -> "
+      "(Tensor descriptor, Tensor rotation, Tensor moment)");
+  library.impl("dpa1_canonical_compress", torch::kCUDA,
+               &dpa1_canonical_compress);
+  library.def(
+      "dpa1_canonical_compress_backward(Tensor descriptor_gradient, "
+      "Tensor? rotation_gradient, Tensor moment, Tensor edge_vec, "
+      "Tensor source, Tensor destination_row_ptr, Tensor atype, "
+      "Tensor average, Tensor inverse_stddev, Tensor table, "
+      "Tensor gate_table, int type_one_side, int smooth, int axis, "
+      "float lower, float upper, float table_max, float stride0, "
+      "float stride1, float rcut, float rcut_smooth, float protection, "
+      "float neighbors) -> Tensor");
+  library.impl("dpa1_canonical_compress_backward", torch::kCUDA,
+               &dpa1_canonical_compress_backward);
 }

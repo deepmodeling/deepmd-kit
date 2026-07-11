@@ -19,6 +19,7 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 #ifndef LMP_PAIR_DEEPMD_KOKKOS_H
 #define LMP_PAIR_DEEPMD_KOKKOS_H
 
+#include <cstddef>
 #include <cstdint>
 
 #include "kokkos_base.h"
@@ -27,6 +28,18 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 #include "pair_deepmd.h"
 
 namespace LAMMPS_NS {
+
+template <class DeviceType>
+struct CompactCanonicalGraphWorkspace {
+  Kokkos::View<std::int64_t*, DeviceType> source;
+  Kokkos::View<float*, DeviceType> edge_vec;
+  Kokkos::View<std::int64_t*, DeviceType> destination_row_ptr;
+  Kokkos::View<std::int64_t*, DeviceType> source_counts;
+  Kokkos::View<std::int64_t*, DeviceType> source_row_ptr;
+  Kokkos::View<std::int64_t*, DeviceType> source_cursor;
+  Kokkos::View<std::int64_t*, DeviceType> source_order;
+  std::size_t edge_capacity = 0;
+};
 
 // GPU-resident inference for exported ``.pt2`` models whose forward consumes
 // an explicit edge graph: both the graph-input form (a compact, unpadded
@@ -74,13 +87,18 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // image); domain decomposition keeps the extended local-plus-ghost node set.
   // Public because it launches extended device lambdas, which CUDA forbids
   // inside non-public members.
+  void prepare_model_nodes();
   int build_edges_device();
+  std::int64_t build_canonical_edges_device(
+      CompactCanonicalGraphWorkspace<DeviceType>& workspace);
 
  protected:
   // LAMMPS type (1-based) -> model type, resident on the device.
   Kokkos::View<int*, DeviceType> d_type_map;
   Kokkos::View<int*, DeviceType>
       d_model_type;  // (nnode_model) type per model node
+  Kokkos::View<std::int64_t*, DeviceType>
+      d_model_type_i64;  // compact canonical artifact type per model node
   // Ghost -> local owner fold, rebuilt on the host at each neighbor rebuild.
   DAT::tdual_int_1d k_owner;
   typename AT::t_int_1d d_owner;
@@ -108,6 +126,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   Kokkos::View<double*, DeviceType> d_edge_vec;           // (3 * nedge)
   Kokkos::View<float*, DeviceType>
       d_edge_vec_float;  // (3 * nedge), compressed graph ABI
+  CompactCanonicalGraphWorkspace<DeviceType> canonical_workspace;
 
   // Model outputs on the device. Energy is per local atom; force and virial
   // span the model node set (up to ``nall`` under domain decomposition).
@@ -124,6 +143,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 
   int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32
+  bool canonical_graph;    // compact source-only graph artifact
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // force reverse communication selected host staging

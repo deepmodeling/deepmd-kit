@@ -313,6 +313,36 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
         return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
 
+    def _prepare_graph_nodes(
+        self,
+        n_node: Array,
+        n_local: Array | None,
+        atype: Array,
+        reference: Array,
+    ) -> tuple[Array, Array]:
+        """Apply node masks shared by generic and compact graph forwards."""
+        xp = array_api_compat.array_namespace(reference)
+        atype = xp.asarray(atype, device=array_api_compat.device(reference))
+        atom_mask = self.make_atom_mask(atype)
+        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
+        output_mask = atom_mask
+        if n_local is not None:
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                node_ownership_mask,
+            )
+
+            output_mask = output_mask & node_ownership_mask(
+                n_node,
+                n_local,
+                atype.shape[0],
+            )
+        if self.atom_excl is not None:
+            output_mask = xp.logical_and(
+                output_mask,
+                self.atom_excl.build_type_exclude_mask(atype_clamped),
+            )
+        return atype_clamped, output_mask
+
     def _prepare_graph_inputs(
         self,
         graph: "NeighborGraph",
@@ -320,20 +350,12 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     ) -> tuple["NeighborGraph", Array, Array]:
         """Apply graph masks shared by standard and fused atomic forwards."""
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
-        atom_mask = self.make_atom_mask(atype)  # (N,) bool
-        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
-        output_mask = atom_mask
-        if graph.n_local is not None:
-            from deepmd.dpmodel.utils.neighbor_graph import (
-                node_ownership_mask,
-            )
-
-            output_mask = output_mask & node_ownership_mask(
-                graph.n_node,
-                graph.n_local,
-                atype.shape[0],
-            )
+        atype_clamped, output_mask = self._prepare_graph_nodes(
+            graph.n_node,
+            graph.n_local,
+            atype,
+            graph.edge_vec,
+        )
         if self.pair_excl is not None:
             keep = self.pair_excl.build_edge_exclude_mask(
                 graph.edge_index, atype_clamped
@@ -341,11 +363,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             graph = dataclasses.replace(
                 graph,
                 edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
-            )
-        if self.atom_excl is not None:
-            output_mask = xp.logical_and(
-                output_mask,
-                self.atom_excl.build_type_exclude_mask(atype_clamped),
             )
         return graph, atype_clamped, output_mask
 

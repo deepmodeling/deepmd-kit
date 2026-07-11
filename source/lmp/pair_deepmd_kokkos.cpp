@@ -2,9 +2,11 @@
 #ifdef LMP_KOKKOS
 #include "pair_deepmd_kokkos.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 #include "atom.h"
 #include "atom_kokkos.h"
@@ -34,6 +36,7 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
       nnode_model(0),
       edge_capacity(0),
       edge_vec_fp32(false),
+      canonical_graph(false),
       device_path_ok(false),
       reverse_virial(false),
       reverse_used_host(false) {
@@ -220,6 +223,7 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   request->set_kokkos_host(false);
   request->enable_full();
   edge_vec_fp32 = deep_pot.uses_fp32_edge_vectors();
+  canonical_graph = deep_pot.uses_canonical_graph_inference();
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
   // so comm_reverse_off reserves the classic host buffer for the wider mode.
@@ -243,19 +247,10 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
 
 #ifdef DP_USE_CXX_API
 template <class DeviceType>
-int PairDeepMDKokkos<DeviceType>::build_edges_device() {
+void PairDeepMDKokkos<DeviceType>::prepare_model_nodes() {
   const int nlocal = atom->nlocal;
   const int nall = atom->nlocal + atom->nghost;
 
-  // === Ghost fold / model-node compaction (host, amortized to rebuilds) ===
-  // The graph indexes model nodes. ``loc2model`` maps each atom to its node
-  // (-1 for a NULL/virtual type); ``model2loc`` inverts it with local atoms
-  // ordered first so the energy sum over [0, nloc_model) covers exactly the
-  // local atoms. Single rank folds a ghost neighbour onto the local atom it
-  // images (``owner``, so nnode_model == nloc_model); multi-rank keeps real
-  // ghosts as their own extended nodes (nnode_model > nloc_model) and the
-  // LAMMPS reverse communication later folds their forces back to the owners.
-  // atom->map / tag / type are host structures, rebuilt only at ago == 0.
   if (neighbor->ago == 0 || (int)k_loc2model.extent(0) < nall) {
     if ((int)k_owner.extent(0) < nall) {
       k_owner = DAT::tdual_int_1d("deepmd/kk:owner", nall);
@@ -304,6 +299,40 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
     d_model2loc = k_model2loc.template view<DeviceType>();
   }
 
+  atomKK->sync(execution_space, TYPE_MASK);
+  auto type = atomKK->k_type.template view<DeviceType>();
+  auto type_map = d_type_map;
+  auto model2loc = d_model2loc;
+  if (canonical_graph) {
+    if ((int)d_model_type_i64.extent(0) < nnode_model) {
+      d_model_type_i64 = Kokkos::View<std::int64_t*, DeviceType>(
+          "deepmd/kk:model_type_i64", nall);
+    }
+    auto model_type = d_model_type_i64;
+    Kokkos::parallel_for(
+        "deepmd/kk:mtype_i64", Kokkos::RangePolicy<DeviceType>(0, nnode_model),
+        KOKKOS_LAMBDA(const int m) {
+          model_type(m) = type_map(type(model2loc(m)) - 1);
+        });
+  } else {
+    if ((int)d_model_type.extent(0) < nnode_model) {
+      d_model_type =
+          Kokkos::View<int*, DeviceType>("deepmd/kk:model_type", nall);
+    }
+    auto model_type = d_model_type;
+    Kokkos::parallel_for(
+        "deepmd/kk:mtype", Kokkos::RangePolicy<DeviceType>(0, nnode_model),
+        KOKKOS_LAMBDA(const int m) {
+          model_type(m) = type_map(type(model2loc(m)) - 1);
+        });
+  }
+}
+
+template <class DeviceType>
+int PairDeepMDKokkos<DeviceType>::build_edges_device() {
+  const int nlocal = atom->nlocal;
+  prepare_model_nodes();
+
   // === Neighbor list and atom views on the device ===
   NeighListKokkos<DeviceType>* k_list =
       static_cast<NeighListKokkos<DeviceType>*>(list);
@@ -312,15 +341,13 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
   auto d_neighbors = k_list->d_neighbors;
   auto d_ilist = k_list->d_ilist;
 
-  atomKK->sync(execution_space, X_MASK | TYPE_MASK);
+  atomKK->sync(execution_space, X_MASK);
   auto x = atomKK->k_x.template view<DeviceType>();
-  auto type = atomKK->k_type.template view<DeviceType>();
 
   const double cut = cutoff;
   const double cutsq = cut * cut;
   const bool multi = multi_rank;
   auto owner = d_owner;
-  auto type_map = d_type_map;
   auto loc2model = d_loc2model;
   auto model2loc = d_model2loc;
 
@@ -328,18 +355,7 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
     d_edge_offset = Kokkos::View<std::int64_t*, DeviceType>(
         "deepmd/kk:edge_offset", nlocal + 1);
   }
-  if ((int)d_model_type.extent(0) < nnode_model) {
-    d_model_type = Kokkos::View<int*, DeviceType>("deepmd/kk:model_type", nall);
-  }
   auto edge_offset = d_edge_offset;
-  auto model_type = d_model_type;
-
-  // Model type per node (local first, then ghost for the extended set).
-  Kokkos::parallel_for(
-      "deepmd/kk:mtype", Kokkos::RangePolicy<DeviceType>(0, nnode_model),
-      KOKKOS_LAMBDA(const int m) {
-        model_type(m) = type_map(type(model2loc(m)) - 1);
-      });
 
   // === Pass 1: per-center edge count (0 for a virtual center) ===
   // A neighbour is the ghost's owner node (folded) or the ghost's own node
@@ -482,6 +498,186 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
   }
   return nedge;
 }
+
+template <class DeviceType>
+std::int64_t PairDeepMDKokkos<DeviceType>::build_canonical_edges_device(
+    CompactCanonicalGraphWorkspace<DeviceType>& workspace) {
+  prepare_model_nodes();
+
+  auto* k_list = static_cast<NeighListKokkos<DeviceType>*>(list);
+  const int inum = k_list->inum;
+  auto d_numneigh = k_list->d_numneigh;
+  auto d_neighbors = k_list->d_neighbors;
+  auto d_ilist = k_list->d_ilist;
+  atomKK->sync(execution_space, X_MASK);
+  auto x = atomKK->k_x.template view<DeviceType>();
+  auto owner = d_owner;
+  auto loc2model = d_loc2model;
+  const bool multi = multi_rank;
+  const double cutsq = cutoff * cutoff;
+  const double inv_dist = 1.0 / dist_unit_cvt_factor;
+  const int node_count_int = nnode_model;
+  const std::size_t node_count = static_cast<std::size_t>(node_count_int);
+
+  if (workspace.destination_row_ptr.extent(0) < node_count + 1) {
+    workspace.destination_row_ptr = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_destination_row_ptr", node_count + 1);
+    workspace.source_counts = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_source_counts", node_count);
+    workspace.source_row_ptr = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_source_row_ptr", node_count + 1);
+    workspace.source_cursor = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_source_cursor", node_count);
+  }
+  Kokkos::deep_copy(workspace.destination_row_ptr, std::int64_t{0});
+  Kokkos::deep_copy(workspace.source_counts, std::int64_t{0});
+  if (node_count_int == 0) {
+    return 0;
+  }
+  auto destination_row_ptr = workspace.destination_row_ptr;
+  auto source_counts = workspace.source_counts;
+
+  Kokkos::parallel_for(
+      "deepmd/kk:canonical_count", Kokkos::RangePolicy<DeviceType>(0, inum),
+      KOKKOS_LAMBDA(const int ii) {
+        const int i = d_ilist(ii);
+        const int mi = loc2model(i);
+        if (mi < 0) {
+          return;
+        }
+        const double xi = x(i, 0);
+        const double yi = x(i, 1);
+        const double zi = x(i, 2);
+        const int jnum = d_numneigh(i);
+        std::int64_t count = 0;
+        for (int jj = 0; jj < jnum; ++jj) {
+          int j = d_neighbors(i, jj) & NEIGHMASK;
+          const int mj = loc2model(multi ? j : owner(j));
+          if (mj < 0) {
+            continue;
+          }
+          const double dx = x(j, 0) - xi;
+          const double dy = x(j, 1) - yi;
+          const double dz = x(j, 2) - zi;
+          if (dx * dx + dy * dy + dz * dz < cutsq) {
+            ++count;
+          }
+        }
+        destination_row_ptr(mi) = count;
+      });
+
+  Kokkos::parallel_scan(
+      "deepmd/kk:canonical_destination_scan",
+      Kokkos::RangePolicy<DeviceType>(0, node_count_int),
+      KOKKOS_LAMBDA(const int node, std::int64_t& update, const bool final) {
+        const std::int64_t count = destination_row_ptr(node);
+        if (final) {
+          destination_row_ptr(node) = update;
+        }
+        update += count;
+        if (final && node == node_count_int - 1) {
+          destination_row_ptr(node_count_int) = update;
+        }
+      });
+  std::int64_t edge_count = 0;
+  Kokkos::deep_copy(edge_count, Kokkos::subview(workspace.destination_row_ptr,
+                                                node_count_int));
+  const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  const std::size_t required = static_cast<std::size_t>(storage_count);
+  if (workspace.edge_capacity < required) {
+    const std::size_t slack = required / 8 + 64;
+    if (required > std::numeric_limits<std::size_t>::max() - slack) {
+      error->one(FLERR, "Compact DPA1 graph capacity overflows size_t");
+    }
+    workspace.edge_capacity = required + slack;
+    workspace.source = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_source", workspace.edge_capacity);
+    workspace.edge_vec = Kokkos::View<float*, DeviceType>(
+        "deepmd/kk:canonical_edge_vec", workspace.edge_capacity * 3);
+    workspace.source_order = Kokkos::View<std::int64_t*, DeviceType>(
+        "deepmd/kk:canonical_source_order", workspace.edge_capacity);
+  }
+
+  auto source = workspace.source;
+  auto edge_vec = workspace.edge_vec;
+  Kokkos::parallel_for(
+      "deepmd/kk:canonical_fill", Kokkos::RangePolicy<DeviceType>(0, inum),
+      KOKKOS_LAMBDA(const int ii) {
+        const int i = d_ilist(ii);
+        const int mi = loc2model(i);
+        if (mi < 0) {
+          return;
+        }
+        const double xi = x(i, 0);
+        const double yi = x(i, 1);
+        const double zi = x(i, 2);
+        const int jnum = d_numneigh(i);
+        std::int64_t edge = destination_row_ptr(mi);
+        for (int jj = 0; jj < jnum; ++jj) {
+          int j = d_neighbors(i, jj) & NEIGHMASK;
+          const int mj = loc2model(multi ? j : owner(j));
+          if (mj < 0) {
+            continue;
+          }
+          const double dx = x(j, 0) - xi;
+          const double dy = x(j, 1) - yi;
+          const double dz = x(j, 2) - zi;
+          if (dx * dx + dy * dy + dz * dz < cutsq) {
+            source(edge) = static_cast<std::int64_t>(mj);
+            edge_vec(3 * edge + 0) = static_cast<float>(dx * inv_dist);
+            edge_vec(3 * edge + 1) = static_cast<float>(dy * inv_dist);
+            edge_vec(3 * edge + 2) = static_cast<float>(dz * inv_dist);
+            Kokkos::atomic_fetch_add(&source_counts(mj), std::int64_t{1});
+            ++edge;
+          }
+        }
+      });
+
+  auto source_row_ptr = workspace.source_row_ptr;
+  Kokkos::parallel_scan(
+      "deepmd/kk:canonical_source_scan",
+      Kokkos::RangePolicy<DeviceType>(0, node_count_int),
+      KOKKOS_LAMBDA(const int node, std::int64_t& update, const bool final) {
+        const std::int64_t count = source_counts(node);
+        if (final) {
+          source_row_ptr(node) = update;
+        }
+        update += count;
+        if (final && node == node_count_int - 1) {
+          source_row_ptr(node_count_int) = update;
+        }
+      });
+  Kokkos::deep_copy(
+      workspace.source_cursor,
+      Kokkos::subview(workspace.source_row_ptr,
+                      std::make_pair(std::int64_t{0}, static_cast<std::int64_t>(
+                                                          node_count_int))));
+  auto source_cursor = workspace.source_cursor;
+  auto source_order = workspace.source_order;
+  Kokkos::parallel_for(
+      "deepmd/kk:canonical_source_scatter",
+      Kokkos::RangePolicy<DeviceType, Kokkos::IndexType<std::int64_t>>(
+          0, edge_count),
+      KOKKOS_LAMBDA(const std::int64_t edge) {
+        const auto position =
+            Kokkos::atomic_fetch_add(&source_cursor(source(edge)), 1LL);
+        source_order(position) = edge;
+      });
+  if (storage_count > edge_count) {
+    Kokkos::parallel_for(
+        "deepmd/kk:canonical_guards",
+        Kokkos::RangePolicy<DeviceType, Kokkos::IndexType<std::int64_t>>(
+            edge_count, storage_count),
+        KOKKOS_LAMBDA(const std::int64_t edge) {
+          source(edge) = 0;
+          edge_vec(3 * edge + 0) = 0.0f;
+          edge_vec(3 * edge + 1) = 0.0f;
+          edge_vec(3 * edge + 2) = 0.0f;
+          source_order(edge) = edge;
+        });
+  }
+  return edge_count;
+}
 #endif
 
 template <class DeviceType>
@@ -508,7 +704,12 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     memoryKK->create_kokkos(k_eatom, eatom, maxeatom, "deepmd/kk:eatom");
     d_eatom = k_eatom.template view<DeviceType>();
   }
-  const int nedge = build_edges_device();
+  std::int64_t nedge = 0;
+  if (canonical_graph) {
+    nedge = build_canonical_edges_device(canonical_workspace);
+  } else {
+    nedge = build_edges_device();
+  }
   const int nloc_m = nloc_model;    // local model nodes (energy)
   const int nnode_m = nnode_model;  // total model nodes (force / virial)
 
@@ -592,7 +793,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     comm_ptr = &comm_list;
   }
 
-  if (nloc_m > 0 || comm_ptr != nullptr) {
+  if ((canonical_graph && nnode_m > 0) || nloc_m > 0 || comm_ptr != nullptr) {
     // Fully device-resident inference: raw device pointers in and out. The
     // edge buffers are produced on the Kokkos stream and consumed by the model
     // on PyTorch's stream, and the outputs flow back to the Kokkos scatter, so
@@ -605,18 +806,27 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     // them; edge-input models consume them).
     const double* coord_ptr = has_null_types ? d_coord_model.data() : x.data();
     try {
-      if (edge_vec_fp32) {
-        deep_pot.compute_edges_gpu(d_atom_energy.data(), d_out_force.data(),
-                                   d_atom_virial.data(), coord_ptr,
-                                   d_model_type.data(), d_edge_index.data(),
-                                   d_edge_vec_float.data(), nloc_m, nedge,
-                                   fparam, aparam_step, nnode_m, comm_ptr);
+      if (canonical_graph) {
+        const std::int64_t storage_count = std::max<std::int64_t>(nedge, 2);
+        auto& workspace = canonical_workspace;
+        deep_pot.compute_canonical_graph_gpu(
+            d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
+            d_model_type_i64.data(), workspace.source.data(),
+            workspace.edge_vec.data(), workspace.destination_row_ptr.data(),
+            workspace.source_row_ptr.data(), workspace.source_order.data(),
+            nloc_m, nnode_m, storage_count);
+      } else if (edge_vec_fp32) {
+        deep_pot.compute_edges_gpu(
+            d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
+            coord_ptr, d_model_type.data(), d_edge_index.data(),
+            d_edge_vec_float.data(), nloc_m, static_cast<int>(nedge), fparam,
+            aparam_step, nnode_m, comm_ptr);
       } else {
-        deep_pot.compute_edges_gpu(d_atom_energy.data(), d_out_force.data(),
-                                   d_atom_virial.data(), coord_ptr,
-                                   d_model_type.data(), d_edge_index.data(),
-                                   d_edge_vec.data(), nloc_m, nedge, fparam,
-                                   aparam_step, nnode_m, comm_ptr);
+        deep_pot.compute_edges_gpu(
+            d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
+            coord_ptr, d_model_type.data(), d_edge_index.data(),
+            d_edge_vec.data(), nloc_m, static_cast<int>(nedge), fparam,
+            aparam_step, nnode_m, comm_ptr);
       }
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
