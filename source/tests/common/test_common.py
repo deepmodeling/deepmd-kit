@@ -57,11 +57,12 @@ class TestGetXPPrecision(unittest.TestCase):
         """
         import torch
 
-        xp = array_api_compat.array_namespace(torch.zeros(3))
+        dev = torch.device("cpu")
+        xp = array_api_compat.array_namespace(torch.zeros(3, device=dev))
         result = get_xp_precision(xp, "bfloat16")
         self.assertIs(result, torch.bfloat16)
         # Verify safe_cast_array works with bfloat16 on PyTorch backend
-        t = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+        t = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32, device=dev)
         casted = safe_cast_array(t, "float32", "bfloat16")
         self.assertEqual(casted.dtype, torch.bfloat16)
 
@@ -74,9 +75,10 @@ class TestGetXPPrecision(unittest.TestCase):
         """
         import torch
 
-        xp = array_api_compat.array_namespace(torch.zeros(3))
+        dev = torch.device("cpu")
+        xp = array_api_compat.array_namespace(torch.zeros(3, device=dev))
         bf16 = get_xp_precision(xp, "bfloat16")
-        t = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+        t = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32, device=dev)
         t_bf16 = xp.astype(t, bf16)
         self.assertEqual(t_bf16.dtype, torch.bfloat16)
         # Round-trip back to float32
