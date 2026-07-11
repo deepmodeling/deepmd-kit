@@ -29,36 +29,14 @@ from .common import (
     DescriptorTest,
 )
 
-DescrptDPA4PT = None
-DescrptDPA4PTExpt = None
-
-
-def _get_descrpt_dpa4_pt() -> type | None:
-    global DescrptDPA4PT
-    if not INSTALLED_PT:
-        return None
-    if DescrptDPA4PT is None:
-        from deepmd.pt.model.descriptor.sezm import (
-            DescrptSeZM,
-        )
-
-        DescrptDPA4PT = DescrptSeZM
-    return DescrptDPA4PT
-
-
-def _get_descrpt_dpa4_pt_expt() -> type | None:
-    global DescrptDPA4PTExpt
-    if not INSTALLED_PT_EXPT:
-        return None
-    if DescrptDPA4PTExpt is None:
-        from deepmd.pt_expt.descriptor.dpa4 import (
-            DescrptDPA4,
-        )
-
-        DescrptDPA4PTExpt = DescrptDPA4
-    return DescrptDPA4PTExpt
-
-
+if INSTALLED_PT:
+    from deepmd.pt.model.descriptor.sezm import DescrptSeZM as DescrptDPA4PT
+else:
+    DescrptDPA4PT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
+else:
+    DescrptDPA4PTExpt = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4Strict
 else:
@@ -173,28 +151,19 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
 
     @property
     def skip_pt(self) -> bool:
-        return CommonTest.skip_pt or _get_descrpt_dpa4_pt() is None
-
-    @property
-    def skip_pt_expt(self) -> bool:
-        return not INSTALLED_PT_EXPT or _get_descrpt_dpa4_pt_expt() is None
-
-    @property
-    def pt_class(self) -> type | None:
-        return _get_descrpt_dpa4_pt()
-
-    @property
-    def pt_expt_class(self) -> type | None:
-        return _get_descrpt_dpa4_pt_expt()
+        return CommonTest.skip_pt
 
     skip_dp = False
     skip_tf = True
     skip_jax = True
     skip_pd = True
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptDPA4TF
     dp_class = DescrptDPA4DP
+    pt_class = DescrptDPA4PT
+    pt_expt_class = DescrptDPA4PTExpt
     jax_class = None
     pd_class = None
     array_api_strict_class = DescrptDPA4Strict
