@@ -132,14 +132,11 @@ def model_call_from_call_lower(
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
     # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
-    # the lower always consumes a pre-excluded nlist. The keyword is passed only
-    # when set: custom NeighborList strategies predating it keep working for
-    # every model without exclusion, while a legacy builder combined with a
-    # non-empty exclusion fails loudly (TypeError) instead of silently
-    # including excluded pairs.
-    excl_kwargs = {} if pair_excl is None else {"pair_excl": pair_excl}
+    # the lower always consumes a pre-excluded nlist. ``pair_excl`` is part of
+    # the NeighborList.build() contract; a custom strategy predating it fails
+    # loudly (TypeError) instead of silently including excluded pairs.
     extended_coord, extended_atype, nlist, mapping = builder.build(
-        cc, atype, bb, rcut, sel, **excl_kwargs
+        cc, atype, bb, rcut, sel, pair_excl=pair_excl
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:

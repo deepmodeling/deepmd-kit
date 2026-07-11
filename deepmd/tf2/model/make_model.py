@@ -250,12 +250,11 @@ def prepare_lower_inputs(
     uses_native_nlist_builder = neighbor_list is None
     if neighbor_list is not None:
         # The BUILDER owns model-level pair exclusion (same convention as
-        # dpmodel/pt_expt make_model). The keyword is passed only when set, so
-        # legacy custom strategies keep working without exclusion and fail
-        # loudly (TypeError) with it instead of silently including pairs.
-        excl_kwargs = {} if pair_excl is None else {"pair_excl": pair_excl}
+        # dpmodel/pt_expt make_model). ``pair_excl`` is part of the
+        # NeighborList.build() contract; a custom strategy predating it fails
+        # loudly (TypeError) instead of silently including excluded pairs.
         extended_coord, extended_atype, nlist, mapping = neighbor_list.build(
-            cc, atype, bb, rcut, sel, **excl_kwargs
+            cc, atype, bb, rcut, sel, pair_excl=pair_excl
         )
     else:
         has_pbc = _box_has_pbc(bb)
