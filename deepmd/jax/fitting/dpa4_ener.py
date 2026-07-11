@@ -3,7 +3,6 @@ from typing import (
     ClassVar,
 )
 
-import deepmd.jax.utils.network as _jax_network  # noqa: F401
 from deepmd.dpmodel.fitting.dpa4_ener import GLUFittingNet as GLUFittingNetDP
 from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,

@@ -10,6 +10,9 @@ before the factory runs; the factory is exposed when called with a raw dict.
 """
 
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 from deepmd.jax.model.ener_model import (
     EnergyModel,
@@ -40,6 +43,16 @@ def _base_config() -> dict:
     }
 
 
+def _base_sezm_config() -> dict:
+    """Return the smallest config needed to exercise DPA4 factory routing."""
+    return {
+        "type": "dpa4",
+        "type_map": ["O", "H"],
+        "descriptor": {"type": "dpa4"},
+        "fitting_net": {"type": "dpa4_ener"},
+    }
+
+
 class TestJAXModelFactoryFittingDefault(unittest.TestCase):
     def test_fitting_net_without_type_defaults_to_ener(self) -> None:
         # fitting_net present but no "type": must default to energy.
@@ -60,6 +73,70 @@ class TestJAXModelFactoryFittingDefault(unittest.TestCase):
         data["fitting_net"]["type"] = "ener"
         model = get_model(data)
         self.assertIsInstance(model, EnergyModel)
+
+
+class TestJAXSeZMModelFactory(unittest.TestCase):
+    @patch("deepmd.jax.model.model.get_standard_model", side_effect=lambda data: data)
+    def test_null_blocks_receive_dpa4_defaults(self, _get_standard_model) -> None:
+        data = _base_sezm_config()
+        data["descriptor"] = None
+        data["fitting_net"] = None
+
+        normalized = get_model(data)
+
+        self.assertEqual(normalized["descriptor"]["type"], "dpa4")
+        self.assertEqual(normalized["fitting_net"]["type"], "dpa4_ener")
+
+    def test_rejects_unsupported_features(self) -> None:
+        cases = (
+            ("spin", {}),
+            ("bridging_method", "linear"),
+            ("lora", {}),
+            ("use_compile", True),
+            ("preset_out_bias", [0.0]),
+        )
+        for key, value in cases:
+            with self.subTest(key=key):
+                data = _base_sezm_config()
+                data[key] = value
+                with self.assertRaises(NotImplementedError):
+                    get_model(data)
+
+    def test_rejects_incompatible_descriptor_and_fitting_types(self) -> None:
+        data = _base_sezm_config()
+        data["descriptor"]["type"] = "se_e2_a"
+        with self.assertRaises(ValueError):
+            get_model(data)
+
+        data = _base_sezm_config()
+        data["fitting_net"]["type"] = "ener"
+        with self.assertRaises(ValueError):
+            get_model(data)
+
+    def test_rejects_mismatched_exclude_types(self) -> None:
+        data = _base_sezm_config()
+        data["descriptor"]["exclude_types"] = [[0, 1]]
+        data["pair_exclude_types"] = [[1, 1]]
+
+        with self.assertRaises(ValueError):
+            get_model(data)
+
+    @patch("deepmd.jax.model.model.get_standard_model", side_effect=lambda data: data)
+    def test_descriptor_exclude_types_feed_standard_model(
+        self,
+        _get_standard_model,
+    ) -> None:
+        data = _base_sezm_config()
+        data["descriptor"] = {
+            "type": "SeZM",
+            "exclude_types": [[0, 1]],
+        }
+        data["fitting_net"]["type"] = "sezm_ener"
+
+        normalized = get_model(data)
+
+        self.assertEqual(normalized["pair_exclude_types"], [[0, 1]])
+        self.assertEqual(normalized["descriptor"]["exclude_types"], [[0, 1]])
 
 
 if __name__ == "__main__":

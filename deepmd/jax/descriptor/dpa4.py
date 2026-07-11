@@ -9,7 +9,6 @@ from typing import (
 
 import numpy as np
 
-import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -113,6 +112,8 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     "SO3Linear": ("weight", "bias"),
     "FocusLinear": ("weight", "bias"),
     "ChannelLinear": ("weight", "bias"),
+    "FrameContract": ("weight",),
+    "FrameExpand": ("weight",),
     "SO2Linear": ("weight_m0", "bias0"),
     "DynamicRadialDegreeMixer": ("weight", "channel_basis"),
     "SO2Convolution": (
@@ -132,6 +133,7 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
 }
 
 _TRAINABLE_LIST_ATTRS: dict[str, tuple[str, ...]] = {
+    "SeZMInteractionBlock": ("adam_ffn_layer_scales",),
     "SO2Linear": ("weight_m",),
     "SO2Convolution": ("adam_so2_layer_scales",),
 }
