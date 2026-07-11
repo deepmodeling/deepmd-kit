@@ -32,20 +32,27 @@ def _load_c_lib():
         if path.exists():
             return ctypes.CDLL(str(path))
     pytest.skip("libdeepmd_c.so not found")
+    return None
 
 
-def test_readfiletochar2_preserves_trailing_whitespace(tmp_path):
-    """Files ending in whitespace must return exact size and bytes."""
+@pytest.fixture(scope="module")
+def c_lib():
+    """Module-scoped fixture that loads the C library and configures
+    the DP_ReadFileToChar2 / DP_DeleteChar signatures once.
+    """
     lib = _load_c_lib()
-
-    # Set up function signatures -------------------------------------------
-    # Use c_void_p for the return type so ctypes does not truncate the
-    # buffer at the first null byte (c_char_p would do that).
-    lib.DP_ReadFileToChar2.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
+    lib.DP_ReadFileToChar2.argtypes = [
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_int),
+    ]
     lib.DP_ReadFileToChar2.restype = ctypes.c_void_p
     lib.DP_DeleteChar.argtypes = [ctypes.c_void_p]
     lib.DP_DeleteChar.restype = None
+    return lib
 
+
+def test_readfiletochar2_preserves_trailing_whitespace(tmp_path, c_lib):
+    """Files ending in whitespace must return exact size and bytes."""
     # Write a temporary file whose content ends with " \n" (trailing
     # whitespace).  This is the exact scenario that was broken: the old
     # code trimmed the whitespace but reported the original size.
@@ -54,8 +61,10 @@ def test_readfiletochar2_preserves_trailing_whitespace(tmp_path):
     tmp_file.write_bytes(content)
 
     # Call DP_ReadFileToChar2 ----------------------------------------------
+    # Use c_void_p for the return type so ctypes does not truncate the
+    # buffer at the first null byte (c_char_p would do that).
     size = ctypes.c_int(0)
-    c_buf = lib.DP_ReadFileToChar2(str(tmp_file).encode("utf-8"), ctypes.byref(size))
+    c_buf = c_lib.DP_ReadFileToChar2(str(tmp_file).encode("utf-8"), ctypes.byref(size))
     assert c_buf is not None, "DP_ReadFileToChar2 returned NULL"
 
     size_val = size.value
@@ -78,25 +87,17 @@ def test_readfiletochar2_preserves_trailing_whitespace(tmp_path):
     )
 
     # Clean up the allocated buffer.
-    lib.DP_DeleteChar(c_buf)
+    c_lib.DP_DeleteChar(c_buf)
 
 
-def test_readfiletochar2_preserves_no_trailing_whitespace(tmp_path):
+def test_readfiletochar2_preserves_no_trailing_whitespace(tmp_path, c_lib):
     """Sanity check: files without trailing whitespace still work."""
-    lib = _load_c_lib()
-    # Use c_void_p for the return type so ctypes does not truncate the
-    # buffer at the first null byte (c_char_p would do that).
-    lib.DP_ReadFileToChar2.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
-    lib.DP_ReadFileToChar2.restype = ctypes.c_void_p
-    lib.DP_DeleteChar.argtypes = [ctypes.c_void_p]
-    lib.DP_DeleteChar.restype = None
-
     content = b"hello world"
     tmp_file = tmp_path / "test_no_trailing.txt"
     tmp_file.write_bytes(content)
 
     size = ctypes.c_int(0)
-    c_buf = lib.DP_ReadFileToChar2(str(tmp_file).encode("utf-8"), ctypes.byref(size))
+    c_buf = c_lib.DP_ReadFileToChar2(str(tmp_file).encode("utf-8"), ctypes.byref(size))
     assert size.value == len(content)
     assert ctypes.string_at(c_buf, size.value) == content
-    lib.DP_DeleteChar(c_buf)
+    c_lib.DP_DeleteChar(c_buf)
