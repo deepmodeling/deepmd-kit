@@ -130,22 +130,17 @@ def model_call_from_call_lower(
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
-    if pair_excl is None:
-        # Old published build() signature: custom NeighborList strategies that
-        # predate the pair_excl keyword keep working for every model without
-        # exclusion.
-        extended_coord, extended_atype, nlist, mapping = builder.build(
-            cc, atype, bb, rcut, sel
-        )
-    else:
-        # Model-level pair exclusion is a nlist-BUILD transform (decision
-        # #18/A4): the BUILDER owns it (mirroring build_neighbor_graph on the
-        # graph path), so the lower always consumes a pre-excluded nlist. A
-        # legacy custom builder without the pair_excl keyword fails loudly here
-        # (TypeError) instead of silently including excluded pairs.
-        extended_coord, extended_atype, nlist, mapping = builder.build(
-            cc, atype, bb, rcut, sel, pair_excl=pair_excl
-        )
+    # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
+    # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
+    # the lower always consumes a pre-excluded nlist. The keyword is passed only
+    # when set: custom NeighborList strategies predating it keep working for
+    # every model without exclusion, while a legacy builder combined with a
+    # non-empty exclusion fails loudly (TypeError) instead of silently
+    # including excluded pairs.
+    excl_kwargs = {} if pair_excl is None else {"pair_excl": pair_excl}
+    extended_coord, extended_atype, nlist, mapping = builder.build(
+        cc, atype, bb, rcut, sel, **excl_kwargs
+    )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
         xp = array_api_compat.array_namespace(coord_corr_for_virial)
