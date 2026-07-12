@@ -13,9 +13,9 @@ from deepmd.dpmodel.descriptor.repformers import (
     _cal_hg,
     _cal_grrg,
     _make_nei_g1,
-    graph_cal_grrg,
-    graph_cal_hg,
-    graph_symmetrization_op,
+    _cal_grrg_graph,
+    _cal_hg_graph,
+    symmetrization_op_graph,
     symmetrization_op,
 )
 
@@ -36,10 +36,10 @@ def _mk(seed=0):
 @pytest.mark.parametrize(
     "smooth,use_sqrt_nnei", list(itertools.product([True, False], [True, False]))
 )
-def test_graph_cal_hg_parity(smooth, use_sqrt_nnei):
+def test_cal_hg_graph_parity(smooth, use_sqrt_nnei):
     g, h, mask, sw, n_total, dst = _mk()
     ref = _cal_hg(g, h, mask, sw, smooth=smooth, use_sqrt_nnei=use_sqrt_nnei)
-    got = graph_cal_hg(
+    got = _cal_hg_graph(
         g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
         dst, n_total, NNEI, smooth=smooth, use_sqrt_nnei=use_sqrt_nnei,
     )
@@ -49,10 +49,10 @@ def test_graph_cal_hg_parity(smooth, use_sqrt_nnei):
 
 
 @pytest.mark.parametrize("axis_neuron", [2, 4])
-def test_graph_symmetrization_op_parity(axis_neuron):
+def test_symmetrization_op_graph_parity(axis_neuron):
     g, h, mask, sw, n_total, dst = _mk(1)
     ref = symmetrization_op(g, h, mask, sw, axis_neuron)
-    got = graph_symmetrization_op(
+    got = symmetrization_op_graph(
         g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
         dst, n_total, NNEI, axis_neuron,
     )
@@ -61,15 +61,15 @@ def test_graph_symmetrization_op_parity(axis_neuron):
     )
 
 
-def test_graph_cal_hg_torch():
+def test_cal_hg_graph_torch():
     import torch
 
     g, h, mask, sw, n_total, dst = _mk(2)
-    ref = graph_cal_hg(
+    ref = _cal_hg_graph(
         g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
         dst, n_total, NNEI,
     )
-    got = graph_cal_hg(
+    got = _cal_hg_graph(
         torch.from_numpy(g.reshape(-1, NG)), torch.from_numpy(h.reshape(-1, 3)),
         torch.from_numpy(mask.reshape(-1)), torch.from_numpy(sw.reshape(-1)),
         torch.from_numpy(dst), n_total, NNEI,
@@ -111,7 +111,7 @@ def _mk_g1_nlist(seed=3):
 
 
 @pytest.mark.parametrize("g1_out_conv", [True, False])
-def test_graph_update_g1_conv_parity(g1_out_conv):
+def test_update_g1_conv_graph_parity(g1_out_conv):
     layer = _mk_layer(g1_out_conv)
     g1, nlist, mask, sw, src, dst, n_total = _mk_g1_nlist()
     rng = np.random.default_rng(4)
@@ -119,7 +119,7 @@ def test_graph_update_g1_conv_parity(g1_out_conv):
     g1_ext = g1.reshape(NF, NLOC, 8)
     gg1 = _make_nei_g1(g1_ext, np.where(mask, nlist, 0))
     ref = layer._update_g1_conv(gg1, g2, mask, sw)
-    got = layer._graph_update_g1_conv(
+    got = layer._update_g1_conv_graph(
         np.take(g1, src, axis=0),
         g2.reshape(-1, NG),
         mask.reshape(-1),
@@ -133,13 +133,13 @@ def test_graph_update_g1_conv_parity(g1_out_conv):
     )
 
 
-def test_graph_update_g2_g1g1_parity():
+def test_update_g2_g1g1_graph_parity():
     layer = _mk_layer(True)
     g1, nlist, mask, sw, src, dst, n_total = _mk_g1_nlist(5)
     g1_ext = g1.reshape(NF, NLOC, 8)
     gg1 = _make_nei_g1(g1_ext, np.where(mask, nlist, 0))
     ref = layer._update_g2_g1g1(g1_ext, gg1, mask, sw)
-    got = layer._graph_update_g2_g1g1(
+    got = layer._update_g2_g1g1_graph(
         g1, src, dst, mask.reshape(-1), sw.reshape(-1)
     )
     np.testing.assert_allclose(
@@ -147,14 +147,14 @@ def test_graph_update_g2_g1g1_parity():
     )
 
 
-def test_graph_update_g1_conv_torch():
+def test_update_g1_conv_graph_torch():
     import torch
 
     layer = _mk_layer(True, seed=6)
     g1, nlist, mask, sw, src, dst, n_total = _mk_g1_nlist(7)
     rng = np.random.default_rng(8)
     g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
-    ref = layer._graph_update_g1_conv(
+    ref = layer._update_g1_conv_graph(
         np.take(g1, src, axis=0),
         g2.reshape(-1, NG),
         mask.reshape(-1),
@@ -163,7 +163,7 @@ def test_graph_update_g1_conv_torch():
         n_total,
         NNEI,
     )
-    got = layer._graph_update_g1_conv(
+    got = layer._update_g1_conv_graph(
         torch.from_numpy(np.take(g1, src, axis=0)),
         torch.from_numpy(g2.reshape(-1, NG)),
         torch.from_numpy(mask.reshape(-1)),

@@ -964,7 +964,7 @@ def symmetrization_op(
     return grrg
 
 
-def graph_cal_hg(
+def _cal_hg_graph(
     g: Array,
     h: Array,
     edge_mask: Array,
@@ -1003,7 +1003,7 @@ def graph_cal_hg(
     return hg * invnnei
 
 
-def graph_cal_grrg(hg: Array, axis_neuron: int) -> Array:
+def _cal_grrg_graph(hg: Array, axis_neuron: int) -> Array:
     """Graph twin of :func:`_cal_grrg` (node-local, no neighbor axis)."""
     xp = array_api_compat.array_namespace(hg)
     n, _, ng = hg.shape
@@ -1012,7 +1012,7 @@ def graph_cal_grrg(hg: Array, axis_neuron: int) -> Array:
     return xp.reshape(grrg, (n, axis_neuron * ng))
 
 
-def graph_symmetrization_op(
+def symmetrization_op_graph(
     g: Array,
     h: Array,
     edge_mask: Array,
@@ -1026,11 +1026,11 @@ def graph_symmetrization_op(
     use_sqrt_nnei: bool = True,
 ) -> Array:
     """Graph twin of :func:`symmetrization_op`."""
-    hg = graph_cal_hg(
+    hg = _cal_hg_graph(
         g, h, edge_mask, sw, dst, n_total, nnei,
         smooth=smooth, epsilon=epsilon, use_sqrt_nnei=use_sqrt_nnei,
     )
-    return graph_cal_grrg(hg, axis_neuron)
+    return _cal_grrg_graph(hg, axis_neuron)
 
 
 class Atten2Map(NativeOP):
@@ -1851,7 +1851,7 @@ class RepformerLayer(NativeOP):
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
-    def _graph_update_g1_conv(
+    def _update_g1_conv_graph(
         self,
         gg1: Array,
         g2: Array,
@@ -1936,7 +1936,7 @@ class RepformerLayer(NativeOP):
             ret = _apply_switch(ret, sw)
         return ret
 
-    def _graph_update_g2_g1g1(
+    def _update_g2_g1g1_graph(
         self,
         g1: Array,
         src: Array,
