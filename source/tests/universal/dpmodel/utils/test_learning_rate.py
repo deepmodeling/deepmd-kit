@@ -7,9 +7,11 @@ from deepmd.dpmodel.common import (
     to_numpy_array,
 )
 from deepmd.dpmodel.utils.learning_rate import (
+    BaseLR,
     LearningRateCosine,
     LearningRateExp,
     LearningRateWSD,
+    make_learning_rate_schedule,
 )
 
 
@@ -367,6 +369,29 @@ class TestLearningRateArrayInput(unittest.TestCase):
         np.testing.assert_allclose(lrs[1], 1e-3, rtol=1e-10)
         np.testing.assert_allclose(lrs[2], expected_mid, rtol=1e-10)
         np.testing.assert_allclose(lrs[3], 1e-5, rtol=1e-10)
+
+
+class TestMakeLearningRateSchedule(unittest.TestCase):
+    """Test the shared factory used by backend trainers."""
+
+    def test_dispatches_all_schema_variants_without_mutating_config(self) -> None:
+        """Select exp, cosine, and WSD schedules through ``type``."""
+        schedule_types: list[tuple[str, type[BaseLR]]] = [
+            ("exp", LearningRateExp),
+            ("cosine", LearningRateCosine),
+            ("wsd", LearningRateWSD),
+        ]
+        for schedule_type, expected_class in schedule_types:
+            with self.subTest(schedule_type=schedule_type):
+                params = {
+                    "type": schedule_type,
+                    "start_lr": 1e-3,
+                    "stop_lr": 1e-5,
+                }
+                schedule = make_learning_rate_schedule(params, num_steps=100)
+
+                self.assertIsInstance(schedule, expected_class)
+                self.assertNotIn("num_steps", params)
 
 
 class TestLearningRateBeyondStopSteps(unittest.TestCase):

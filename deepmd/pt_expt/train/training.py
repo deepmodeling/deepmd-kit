@@ -40,7 +40,7 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -1476,9 +1476,9 @@ class Trainer(AbstractTrainer):
             self.model_prob = None
 
         # Learning rate -------------------------------------------------------
-        lr_params = config["learning_rate"].copy()
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
