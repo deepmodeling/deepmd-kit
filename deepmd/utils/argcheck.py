@@ -5525,9 +5525,23 @@ def training_args(
         ),
     ]
 
+    def _validate_stat_file_mode(data: dict[str, Any], scope: str) -> None:
+        if data.get("stat_file_mode") == "read" and not data.get("stat_file"):
+            raise ValueError(
+                f"{scope}.stat_file_mode='read' requires {scope}.stat_file."
+            )
+
     def training_extra_check(data: dict | None) -> bool:
         if data is None:
             return True
+        if multi_task:
+            for model_key, data_dict in data.get("data_dict", {}).items():
+                _validate_stat_file_mode(
+                    data_dict,
+                    f"training.data_dict[{model_key!r}]",
+                )
+        else:
+            _validate_stat_file_mode(data, "training")
         num_steps = data.get("numb_steps")
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})

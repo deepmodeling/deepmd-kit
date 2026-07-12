@@ -17,6 +17,9 @@ from dargs.dargs import (
 from deepmd.pt.entrypoints.main import (
     _prepare_stat_file_path,
 )
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -59,7 +62,7 @@ def test_default_stat_file_mode_remains_writable(tmp_path: Path) -> None:
         _close_stat_path(stat_path)
 
 
-def test_read_stat_file_mode_is_read_only(tmp_path: Path) -> None:
+def test_read_stat_file_mode_reads_existing_cache(tmp_path: Path) -> None:
     stat_file = tmp_path / "stat.hdf5"
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("value", data=[1.0])
@@ -70,8 +73,6 @@ def test_read_stat_file_mode_is_read_only(tmp_path: Path) -> None:
         assert stat_path.mode == "r"
         assert stat_path.root.mode == "r"
         assert (stat_path / "value").load_numpy().tolist() == [1.0]
-        with pytest.raises(ValueError, match="read-only"):
-            (stat_path / "other").save_numpy(np.array([2.0]))
     finally:
         _close_stat_path(stat_path)
 
@@ -80,6 +81,61 @@ def test_read_stat_file_mode_requires_existing_cache(tmp_path: Path) -> None:
     stat_file = tmp_path / "missing.hdf5"
     with pytest.raises(FileNotFoundError, match="does not exist in read mode"):
         _prepare_stat_file_path(str(stat_file), "read")
+
+
+def test_read_stat_file_mode_requires_cache_path() -> None:
+    with pytest.raises(ValueError, match="requires `stat_file`"):
+        _prepare_stat_file_path(None, "read")
+
+
+def test_read_stat_file_mode_rejects_incomplete_statistics_cache(
+    tmp_path: Path,
+) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    with h5py.File(stat_file, "w") as file:
+        file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
+
+    stat_path = _prepare_stat_file_path(str(stat_file), "read")
+    try:
+        with pytest.raises(FileNotFoundError, match="std_atom_energy"):
+            compute_output_stats(
+                lambda: pytest.fail("read-only statistics must not sample data"),
+                ntypes=1,
+                keys=["energy"],
+                stat_file_path=stat_path,
+            )
+    finally:
+        _close_stat_path(stat_path)
+
+
+def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
+    tmp_path: Path,
+) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    with h5py.File(stat_file, "w") as file:
+        file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
+        file.create_dataset("std_atom_energy", data=np.ones((1, 1)))
+
+    reader_one = _prepare_stat_file_path(str(stat_file), "read")
+    DPH5Path._load_h5py.cache_clear()
+    reader_two = _prepare_stat_file_path(str(stat_file), "read")
+    assert isinstance(reader_one, DPH5Path)
+    assert isinstance(reader_two, DPH5Path)
+    try:
+        for reader in (reader_one, reader_two):
+            bias, std = compute_output_stats(
+                lambda: pytest.fail("complete read-only cache must not sample data"),
+                ntypes=1,
+                keys=["energy"],
+                stat_file_path=reader,
+            )
+            assert bias["energy"].shape == (1, 1)
+            assert std["energy"].shape == (1, 1)
+    finally:
+        reader_one.root.close()
+        reader_two.root.close()
+        DPH5Path._load_h5py.cache_clear()
+        DPH5Path._file_keys.cache_clear()
 
 
 def test_stat_file_mode_configuration_validation() -> None:
@@ -94,4 +150,9 @@ def test_stat_file_mode_configuration_validation() -> None:
 
     config["training"]["stat_file_mode"] = "invalid"
     with pytest.raises(ArgumentValueError, match="stat_file_mode"):
+        normalize(config)
+
+    config["training"]["stat_file_mode"] = "read"
+    config["training"].pop("stat_file")
+    with pytest.raises(ValueError, match="stat_file_mode"):
         normalize(config)
