@@ -92,6 +92,41 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
             return concat_switch_virtual(real_ext, virt_ext, real_nloc)
         return exchanged
 
+    def _exchange_ghosts_graph(
+        self,
+        g1: torch.Tensor,
+        comm_dict: dict | None,
+        n_total: int,
+    ) -> torch.Tensor:
+        """Graph-path per-layer halo refresh via ``border_op``.
+
+        Flat single-frame counterpart of :meth:`_exchange_ghosts`: ``g1`` is
+        already ``(N, ng1)`` with ``N == nlocal + nghost`` (owned prefix
+        first), so no squeeze/pad/unsqueeze dance is needed -- ``border_op``
+        overwrites the halo rows ``[nlocal, N)`` in place with the owner
+        rows and returns the same tensor.  Identity without ``comm_dict``
+        (ghost-free Python graphs / extended single-process graphs).  Spin
+        models never route the graph lower (``disable_graph_lower``), so a
+        ``has_spin`` comm_dict reaching here is a programming error.
+        """
+        if comm_dict is None:
+            return super()._exchange_ghosts_graph(g1, comm_dict, n_total)
+        if "has_spin" in comm_dict:
+            raise NotImplementedError(
+                "spin models do not route the graph lower (disable_graph_lower)"
+            )
+        return torch.ops.deepmd_export.border_op(
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+            g1,
+            comm_dict["communicator"],
+            comm_dict["nlocal"],
+            comm_dict["nghost"],
+        )
+
 
 register_dpmodel_mapping(
     DescrptBlockRepformersDP,
