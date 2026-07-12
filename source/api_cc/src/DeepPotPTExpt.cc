@@ -919,6 +919,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // with-comm artifact instead of being read directly from local halo
       // types, so no geometry/mask changes are needed -- only the model
       // entry point (and the appended comm tensors) differ.
+      if (nall_real == 0) {
+        throw deepmd::deepmd_exception(
+            "Multi-rank message-passing graph inference does not yet support "
+            "a rank with zero owned+ghost atoms (the exported graph artifact "
+            "requires at least one node, and skipping the run would desync "
+            "the per-layer MPI halo exchange). Use a domain decomposition "
+            "that keeps every rank non-empty, or a dense .pt2.");
+      }
       const auto edge_tensors =
           compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
                              coord_Tensor, static_cast<double>(rcut));
@@ -1039,7 +1047,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     if (multi_rank) {
       // Extended region (N == nall_real): force is already per-extended-atom,
       // owned energy = sum over local atom energies, no zero-padding.  Ghost
-      // forces fold back via LAMMPS reverse-comm (no with-comm artifact).
+      // forces fold back via LAMMPS reverse-comm (both the plain and with-comm
+      // graph routes).
       deepmd::remap_graph_outputs_to_dense_keys_extended(output_map, nloc,
                                                          nall_real, atomic);
     } else {
