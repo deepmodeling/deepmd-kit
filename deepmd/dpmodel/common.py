@@ -85,7 +85,12 @@ def get_xp_precision(
     elif precision == "global":
         return get_xp_precision(xp, RESERVED_PRECISION_DICT[GLOBAL_NP_FLOAT_PRECISION])
     elif precision == "bfloat16":
-        return ml_dtypes.bfloat16
+        # Return the backend-native bfloat16 dtype when available (e.g. torch.bfloat16),
+        # falling back to ml_dtypes.bfloat16 for NumPy/JAX-compatible namespaces that
+        # do not expose a native bfloat16.  This fixes Code scan #5638: PyTorch tensors
+        # cannot be cast to ml_dtypes.bfloat16 via xp.astype(), but can be cast to the
+        # namespace's own bfloat16.
+        return getattr(xp, "bfloat16", ml_dtypes.bfloat16)
     else:
         raise ValueError(f"unsupported precision {precision} for {xp}")
 
