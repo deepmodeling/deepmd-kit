@@ -20,6 +20,9 @@ from deepmd.jax.model.ener_model import (
 from deepmd.jax.model.model import (
     get_model,
 )
+from deepmd.utils.argcheck import (
+    model_args,
+)
 
 
 def _base_config() -> dict:
@@ -102,6 +105,11 @@ class TestJAXSeZMModelFactory(unittest.TestCase):
                 with self.assertRaises(NotImplementedError):
                     get_model(data)
 
+        data = _base_sezm_config()
+        data["descriptor"]["add_chg_spin_ebd"] = True
+        with self.assertRaises(NotImplementedError):
+            get_model(data)
+
     def test_rejects_incompatible_descriptor_and_fitting_types(self) -> None:
         data = _base_sezm_config()
         data["descriptor"]["type"] = "se_e2_a"
@@ -132,6 +140,21 @@ class TestJAXSeZMModelFactory(unittest.TestCase):
             "exclude_types": [[0, 1]],
         }
         data["fitting_net"]["type"] = "sezm_ener"
+
+        normalized = get_model(data)
+
+        self.assertEqual(normalized["pair_exclude_types"], [[0, 1]])
+        self.assertEqual(normalized["descriptor"]["exclude_types"], [[0, 1]])
+
+    @patch("deepmd.jax.model.model.get_standard_model", side_effect=lambda data: data)
+    def test_normalized_descriptor_exclusions_override_empty_default(
+        self,
+        _get_standard_model,
+    ) -> None:
+        """Argcheck's empty model-level default is not an explicit mismatch."""
+        data = _base_sezm_config()
+        data["descriptor"]["exclude_types"] = [[0, 1]]
+        data = model_args().normalize_value(data, trim_pattern="_.*")
 
         normalized = get_model(data)
 

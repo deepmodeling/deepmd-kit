@@ -71,6 +71,7 @@ from deepmd.jax.model.model import (
     get_model,
 )
 from deepmd.jax.utils.serialization import (
+    _drop_zero_size_array_leaves,
     serialize_from_file,
 )
 from deepmd.utils.argcheck import (
@@ -915,24 +916,6 @@ def _match_label_shapes(
         model_dict = dict(model_dict)
         model_dict["force"] = jnp.reshape(force_hat, force.shape)
     return model_dict
-
-
-_DROP_LEAF = object()
-
-
-def _drop_zero_size_array_leaves(value: Any) -> Any:
-    """Drop zero-size arrays that Orbax cannot serialize."""
-    if isinstance(value, dict):
-        filtered = {}
-        for key, item in value.items():
-            new_item = _drop_zero_size_array_leaves(item)
-            if new_item is not _DROP_LEAF:
-                filtered[key] = new_item
-        return filtered
-    size = getattr(value, "size", None)
-    if size == 0:
-        return _DROP_LEAF
-    return value
 
 
 def _init_empty_state(params: Any) -> optax.EmptyState:

@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
 )
@@ -12,8 +16,67 @@ from deepmd.jax.env import (
     jax,
     jnp,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
-BaseModel = make_base_model()
+
+class BaseModel(make_base_model()):
+    """JAX model registry with adapters for regular PT SeZM checkpoints."""
+
+    _SEZM_MODEL_TYPES = frozenset({"sezm", "dpa4"})
+    _SEZM_ATOMIC_TYPES = frozenset({"sezm_atomic"})
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> "BaseModel":
+        model_type = str(data.get("type", "standard")).lower()
+        if model_type in cls._SEZM_MODEL_TYPES:
+            return cls.deserialize(cls._unwrap_pt_sezm_model(data))
+        if model_type in cls._SEZM_ATOMIC_TYPES:
+            return cls.deserialize(cls._normalize_pt_sezm_atomic(data))
+        return super().deserialize(data)
+
+    @staticmethod
+    def _unwrap_pt_sezm_model(data: dict[str, Any]) -> dict[str, Any]:
+        """Unwrap PT's model-level SeZM schema after validating its extras."""
+        check_version_compatibility(int(data.get("@version", 1)), 1, 1)
+        if str(data.get("bridging_method", "none")).lower() not in ("none", ""):
+            raise NotImplementedError(
+                "PT SeZM/DPA4 checkpoints with bridging are not supported in JAX."
+            )
+        if data.get("lora") is not None:
+            raise NotImplementedError(
+                "PT SeZM/DPA4 checkpoints with LoRA are not supported in JAX."
+            )
+        atomic_model = data.get("atomic_model")
+        if atomic_model is None:
+            raise ValueError("SeZM/DPA4 model data is missing 'atomic_model'.")
+        return atomic_model
+
+    @staticmethod
+    def _normalize_pt_sezm_atomic(data: dict[str, Any]) -> dict[str, Any]:
+        """Convert PT's energy-only ``sezm_atomic`` schema to ``standard``."""
+        data = data.copy()
+        check_version_compatibility(int(data.get("@version", 2)), 3, 2)
+        if data.pop("dens_fitting", None) is not None:
+            raise NotImplementedError(
+                "PT SeZM/DPA4 checkpoints with a dens head are not supported in JAX."
+            )
+        active_mode = data.pop("active_mode", None)
+        if active_mode not in (None, "ener"):
+            raise NotImplementedError(
+                f"PT SeZM/DPA4 active_mode {active_mode!r} is not supported in JAX."
+            )
+        variables = data.get("@variables")
+        if isinstance(variables, dict):
+            data["@variables"] = {
+                key: value
+                for key, value in variables.items()
+                if key in ("out_bias", "out_std")
+            }
+        data["@version"] = 2
+        data["type"] = "standard"
+        return data
 
 
 def forward_common_atomic(

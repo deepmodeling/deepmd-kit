@@ -24,6 +24,7 @@ from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
 from deepmd.jax.common import (
+    ArrayAPIVariable,
     flax_module,
     register_dpmodel_mapping,
     to_jax_array,
@@ -156,25 +157,27 @@ def _is_floating_array(value: Any) -> bool:
     return bool(jnp.issubdtype(value.dtype, jnp.floating))
 
 
-def _as_param(value: Any) -> Any:
-    if isinstance(value, ArrayAPIParam):
+def _as_parameter_variable(value: Any, *, trainable: bool) -> Any:
+    """Track a floating parameter with the requested optimizer visibility."""
+    variable_type = ArrayAPIParam if trainable else ArrayAPIVariable
+    if type(value) is variable_type:
         return value
     if not _is_floating_array(value):
         return value
     if isinstance(value, nnx.Variable):
-        return ArrayAPIParam(value.value)
+        value = value.value
     if isinstance(value, np.ndarray):
-        return ArrayAPIParam(to_jax_array(value))
-    return ArrayAPIParam(value)
+        value = to_jax_array(value)
+    return variable_type(value)
 
 
-def _as_param_list(value: Any) -> Any:
+def _as_parameter_variable_list(value: Any, *, trainable: bool) -> Any:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return value
     promoted = []
     changed = False
     for item in value:
-        new_item = _as_param(item)
+        new_item = _as_parameter_variable(item, trainable=trainable)
         promoted.append(new_item)
         changed = changed or new_item is not item
     if not changed:
@@ -215,38 +218,42 @@ def _iter_object_tree(root: Any) -> Any:
     yield from visit(root)
 
 
-def _promote_trainable(module: Any, names: tuple[str, ...]) -> None:
-    if not getattr(module, "trainable", True):
-        return
+def _promote_parameters(
+    module: Any, names: tuple[str, ...], *, trainable: bool
+) -> None:
     for name in names:
         if not hasattr(module, name):
             continue
         value = getattr(module, name)
-        new_value = _as_param(value)
+        new_value = _as_parameter_variable(value, trainable=trainable)
         if new_value is not value:
             setattr(module, name, new_value)
 
 
-def _promote_trainable_lists(module: Any, names: tuple[str, ...]) -> None:
-    if not getattr(module, "trainable", True):
-        return
+def _promote_parameter_lists(
+    module: Any, names: tuple[str, ...], *, trainable: bool
+) -> None:
     for name in names:
         if not hasattr(module, name):
             continue
         value = getattr(module, name)
-        new_value = _as_param_list(value)
+        new_value = _as_parameter_variable_list(value, trainable=trainable)
         if new_value is not value:
             setattr(module, name, new_value)
 
 
 def _promote_trainable_tree(module: Any) -> Any:
+    root_trainable = bool(getattr(module, "trainable", True))
     for submodule in _iter_object_tree(module):
+        # A frozen descriptor freezes every descendant, including helper
+        # modules such as RadialBasis that do not carry a local flag.
+        trainable = root_trainable and bool(getattr(submodule, "trainable", True))
         names = _TRAINABLE_ATTRS.get(type(submodule).__name__)
         if names is not None:
-            _promote_trainable(submodule, names)
+            _promote_parameters(submodule, names, trainable=trainable)
         list_names = _TRAINABLE_LIST_ATTRS.get(type(submodule).__name__)
         if list_names is not None:
-            _promote_trainable_lists(submodule, list_names)
+            _promote_parameter_lists(submodule, list_names, trainable=trainable)
     return module
 
 
@@ -254,12 +261,16 @@ def _promote_trainable_tree(module: Any) -> Any:
 class SO2Linear(SO2LinearDP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.weight_m = _as_param_list(self.weight_m)
+        self.weight_m = _as_parameter_variable_list(
+            self.weight_m, trainable=bool(self.trainable)
+        )
 
     @classmethod
     def deserialize(cls, data: dict) -> "SO2Linear":
         obj = super().deserialize(data)
-        obj.weight_m = _as_param_list(obj.weight_m)
+        obj.weight_m = _as_parameter_variable_list(
+            obj.weight_m, trainable=bool(obj.trainable)
+        )
         return obj
 
 

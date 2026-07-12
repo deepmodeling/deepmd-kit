@@ -128,6 +128,10 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["fitting_net"] = data.get("fitting_net") or {}
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
+    if data["descriptor"].get("add_chg_spin_ebd"):
+        raise NotImplementedError(
+            "DPA4/SeZM charge/spin conditioning is not supported in JAX."
+        )
     if data["descriptor"]["type"] not in ("dpa4", "DPA4", "sezm", "SeZM"):
         raise ValueError(
             "Model type 'dpa4' requires a DPA4/SeZM descriptor, but got "
@@ -142,8 +146,8 @@ def get_sezm_model(data: dict) -> BaseModel:
     descriptor_exclude_types = [
         list(pair) for pair in (data["descriptor"].get("exclude_types") or [])
     ]
-    if "pair_exclude_types" in data:
-        pair_exclude_types = [list(pair) for pair in (data["pair_exclude_types"] or [])]
+    pair_exclude_types = [list(pair) for pair in (data.get("pair_exclude_types") or [])]
+    if pair_exclude_types:
         if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
             raise ValueError(
                 "DPA4/SeZM pair_exclude_types and descriptor.exclude_types must "

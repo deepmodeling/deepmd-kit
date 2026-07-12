@@ -5,6 +5,12 @@ from deepmd.jax.descriptor.dpa4 import (
     DescrptDPA4,
     _iter_object_tree,
 )
+from deepmd.jax.env import (
+    nnx,
+)
+from deepmd.jax.fitting.dpa4_ener import (
+    SeZMEnergyFittingNet,
+)
 from deepmd.jax.utils.network import (
     ArrayAPIParam,
 )
@@ -56,3 +62,41 @@ def test_optional_dpa4_weights_are_jax_parameters() -> None:
         for block in interaction_blocks
         for scale in block.adam_ffn_layer_scales
     )
+
+
+def test_frozen_descriptor_has_no_optimizer_visible_parameters() -> None:
+    """The root freeze flag must demote every descendant parameter."""
+    descriptor = DescrptDPA4(
+        ntypes=2,
+        sel=4,
+        rcut=4.0,
+        channels=4,
+        n_radial=4,
+        lmax=1,
+        mmax=1,
+        n_blocks=1,
+        grid_branch=0,
+        random_gamma=False,
+        precision="float64",
+        trainable=False,
+        seed=20260712,
+    )
+
+    assert len(nnx.to_flat_state(nnx.state(descriptor, nnx.Param))) == 0
+
+
+def test_frozen_fitting_stays_frozen_after_conversion_round_trip() -> None:
+    """Serialized GLU layers retain the all-false optimizer policy."""
+    fitting = SeZMEnergyFittingNet(
+        ntypes=2,
+        dim_descrpt=4,
+        neuron=[4],
+        trainable=False,
+        precision="float64",
+        mixed_types=True,
+        seed=20260712,
+    )
+    restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
+
+    assert restored.nets[0].trainable == [False, False]
+    assert len(nnx.to_flat_state(nnx.state(restored, nnx.Param))) == 0

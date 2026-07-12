@@ -25,6 +25,23 @@ from deepmd.jax.model.model import (
 )
 
 
+_DROP_ZERO_SIZE_LEAF = object()
+
+
+def _drop_zero_size_array_leaves(value: Any) -> Any:
+    """Remove array leaves Orbax cannot save while preserving tree containers."""
+    if isinstance(value, dict):
+        filtered = {}
+        for key, item in value.items():
+            new_item = _drop_zero_size_array_leaves(item)
+            if new_item is not _DROP_ZERO_SIZE_LEAF:
+                filtered[key] = new_item
+        return filtered
+    if getattr(value, "size", None) == 0:
+        return _DROP_ZERO_SIZE_LEAF
+    return value
+
+
 def _convert_str_to_int_key(item: dict) -> None:
     """Convert Orbax-restored numeric index keys from strings back to ints."""
     for key, value in item.copy().items():
@@ -253,6 +270,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             model = BaseModel.deserialize(data["model"])
             _, state = nnx.split(model)
             state = state.to_pure_dict()
+        state = _drop_zero_size_array_leaves(state)
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
