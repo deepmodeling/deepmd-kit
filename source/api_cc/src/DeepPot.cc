@@ -572,11 +572,40 @@ void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
                                        const int* d_edge_index,
                                        const double* d_edge_vec,
                                        const int nloc,
+                                       const int nedge) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)nloc;
+  (void)nedge;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu (GPU-resident edge inference) is only supported by "
+      "the PyTorch Exportable (.pt2) backend.");
+}
+
+void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
+                                       double* d_force,
+                                       double* d_atom_virial,
+                                       const double* d_coord,
+                                       const int* d_atype,
+                                       const int* d_edge_index,
+                                       const double* d_edge_vec,
+                                       const int nloc,
                                        const int nedge,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam,
                                        const int nall_nodes,
                                        const InputNlist* comm_nlist) {
+  if (fparam.empty() && aparam.empty() &&
+      (nall_nodes == 0 || nall_nodes == nloc) && comm_nlist == nullptr) {
+    compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                      d_edge_index, d_edge_vec, nloc, nedge);
+    return;
+  }
   (void)d_atom_energy;
   (void)d_force;
   (void)d_atom_virial;
@@ -672,9 +701,8 @@ void DeepPot::compute_edges_gpu(double* d_atom_energy,
                                 const double* d_edge_vec,
                                 const int nloc,
                                 const int nedge) {
-  // Parameter-free path: no runtime fparam/aparam, so the model defaults apply.
-  compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
-                    d_edge_index, d_edge_vec, nloc, nedge, {}, {}, 0, nullptr);
+  dp->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                        d_edge_index, d_edge_vec, nloc, nedge);
 }
 
 void DeepPot::compute_edges_gpu(double* d_atom_energy,

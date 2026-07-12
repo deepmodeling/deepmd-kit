@@ -895,6 +895,27 @@ def _collect_metadata(
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = _graph_edge_dtype(model, lower_kind)
+
+    # Model-level pair-type exclusion (``pair_exclude_types``): a list of
+    # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
+    # BUILD-time transform on BOTH routes (decision #18/A4): the exported
+    # lower (graph edge_mask / dense nlist) consumes a pre-excluded input and
+    # never re-applies it, so every feeder — Python builders, DeepEval, C++
+    # ``applyPairExclusion`` / ``applyPairExclusionNlist`` — MUST fold the
+    # exclusion in at build.  This metadata field is what lets external
+    # feeders (C++ ``DeepPotPTExpt::init``, metadata-only DeepEval) rebuild
+    # the mask.  Descriptor-level ``exclude_types`` needs NO metadata: it is
+    # fully inside the compiled artifact.
+    pair_exclude_types: list[list[int]] = []
+    for obj in (
+        getattr(model, "atomic_model", None),
+        model,
+    ):
+        pet = getattr(obj, "pair_exclude_types", None)
+        if pet:
+            pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
+            break
+    meta["pair_exclude_types"] = pair_exclude_types
     return meta
 
 
@@ -1001,15 +1022,15 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
         return lower_kind
     if not model_file.endswith(".pt2") or data["model"].get("type") == "spin_ener":
         return "nlist"
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
+    )
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
-    from deepmd.pt_expt.train.training import (
-        _model_uses_graph_lower,
-    )
 
     model = BaseModel.deserialize(data["model"])
-    if _model_uses_graph_lower(model) and _supports_graph_export(model):
+    if model_uses_graph_lower(model) and _supports_graph_export(model):
         from deepmd.kernels.cuda.dpa1.canonical import (
             canonical_model_eligible,
         )
@@ -1056,7 +1077,7 @@ def deserialize_to_file(
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
         the destination/source CSR views) with a DYNAMIC edge axis ``E``
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
-        ``"auto"`` (used by ``convert-backend``)
+        ``"auto"`` (available through ``convert-backend --lower-kind auto``)
         resolves to ``"graph"`` for an exportable graph-lower ``.pt2`` and
         ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`). A graph lower always
         preserves the fused inference operators (``DP_CUDA_INFER >= 2``) and

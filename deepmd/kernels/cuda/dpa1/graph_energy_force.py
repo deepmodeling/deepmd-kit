@@ -48,8 +48,6 @@ __all__ = [
     "op_available",
 ]
 
-_registered = False
-
 
 def op_available() -> bool:
     """Whether the C++ ``deepmd::dpa1_graph_energy_force`` op is loaded."""
@@ -290,8 +288,8 @@ def ensure_registered() -> None:
     sub-operators must be registered too, since the CPU reference dispatches
     through them.
     """
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     ensure_descriptor_registered()
     ensure_fitting_registered()
@@ -299,7 +297,6 @@ def ensure_registered() -> None:
     torch.library.register_fake("deepmd::dpa1_graph_energy_force")(_fake)
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("dpa1_graph_energy_force", _cpu, "CPU")
-    _registered = True
 
 
 def dpa1_graph_energy_force(

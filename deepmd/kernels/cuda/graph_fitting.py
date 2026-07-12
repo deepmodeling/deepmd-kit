@@ -53,8 +53,6 @@ __all__ = [
     "op_available",
 ]
 
-_registered = False
-
 
 def op_available() -> bool:
     """Whether the C++ ``deepmd::graph_fitting`` op is loaded."""
@@ -247,8 +245,8 @@ def ensure_registered() -> None:
 
     Idempotent; a no-op when the C++ operator library is not loaded.
     """
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     torch.library.register_fake("deepmd::graph_fitting")(_forward_fake)
     torch.library.register_fake("deepmd::graph_fitting_backward")(_backward_fake)
@@ -258,7 +256,6 @@ def ensure_registered() -> None:
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("graph_fitting", _cpu_forward, "CPU")
     _cpu_library.impl("graph_fitting_backward", _cpu_backward, "CPU")
-    _registered = True
 
 
 def graph_fitting(

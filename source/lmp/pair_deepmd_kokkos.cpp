@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef LMP_KOKKOS
+#if defined(LMP_KOKKOS) && defined(DP_USE_CXX_API)
 #include "pair_deepmd_kokkos.h"
 
 #include <algorithm>
@@ -176,11 +176,6 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   // Base setup and the full neighbor-list request.
   PairDeepMD::init_style();
 
-#ifndef DP_USE_CXX_API
-  error->all(FLERR,
-             "pair style deepmd/kk requires the C++ API build of DeePMD "
-             "(compute_edges_gpu is unavailable through the C API).");
-#endif
   // The device edge path requires a GPU execution space and a single model.
   if (std::is_same<DeviceType, LMPHostType>::value) {
     error->all(FLERR, "pair style deepmd/kk runs on the GPU backend only.");
@@ -245,7 +240,6 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   Kokkos::deep_copy(d_type_map, h_type_map);
 }
 
-#ifdef DP_USE_CXX_API
 template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::prepare_model_nodes() {
   const int nlocal = atom->nlocal;
@@ -678,11 +672,9 @@ std::int64_t PairDeepMDKokkos<DeviceType>::build_canonical_edges_device(
   }
   return edge_count;
 }
-#endif
 
 template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
-#ifdef DP_USE_CXX_API
   if (!device_path_ok) {
     error->all(FLERR,
                "pair style deepmd/kk cannot execute this model input schema.");
@@ -962,9 +954,6 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
       reverse_virial = false;
     }
   }
-#else
-  PairDeepMD::compute(eflag, vflag);
-#endif
 }
 
 namespace LAMMPS_NS {
@@ -974,4 +963,4 @@ template class PairDeepMDKokkos<LMPHostType>;
 #endif
 }  // namespace LAMMPS_NS
 
-#endif  // LMP_KOKKOS
+#endif  // LMP_KOKKOS && DP_USE_CXX_API

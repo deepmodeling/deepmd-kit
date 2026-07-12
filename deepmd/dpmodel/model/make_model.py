@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.atomic_model.dp_atomic_model import (
         DPAtomicModel,
     )
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import array_api_compat
 import numpy as np
@@ -85,6 +88,7 @@ def model_call_from_call_lower(
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -109,6 +113,11 @@ def model_call_from_call_lower(
         historical behavior.  An alternative strategy (e.g. an O(N) cell list)
         may be injected to speed up neighbor-list construction; it returns the
         same extended representation, so model outputs are unchanged.
+    pair_excl
+        Model-level pair-type exclusion mask. Exclusion is a nlist-BUILD
+        transform (decision #18/A4): it is folded into the nlist here, at the
+        build seam, and ``call_lower`` consumes a pre-excluded nlist without
+        re-applying it.
 
     Returns
     -------
@@ -121,8 +130,13 @@ def model_call_from_call_lower(
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
+    # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
+    # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
+    # the lower always consumes a pre-excluded nlist. ``pair_excl`` is part of
+    # the NeighborList.build() contract; a custom strategy predating it fails
+    # loudly (TypeError) instead of silently including excluded pairs.
     extended_coord, extended_atype, nlist, mapping = builder.build(
-        cc, atype, bb, rcut, sel
+        cc, atype, bb, rcut, sel, pair_excl=pair_excl
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
@@ -321,9 +335,8 @@ def make_model(
 
                 The graph routes (``"dense"``/``"ase"``, and the pt_expt
                 default-flip) require a ``mixed_types`` descriptor with a graph
-                lower (dpa1/se_atten with concat type embedding and no
-                ``exclude_types``; attention layers included).  At non-binding
-                ``sel`` the graph matches the dense path exactly for the
+                lower (dpa1/se_atten with concat type embedding; attention layers included).
+                At non-binding ``sel`` the graph matches the dense path exactly for the
                 non-smooth branch; at binding ``sel`` the carry-all graph keeps
                 neighbors the dense path truncates, and for
                 ``smooth_type_embedding=True`` the graph drops the dense
@@ -386,6 +399,8 @@ def make_model(
                     coord_corr_for_virial=coord_corr_for_virial,
                     charge_spin=cs,
                     neighbor_list=neighbor_list,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4)
+                    pair_excl=getattr(self.atomic_model, "pair_excl", None),
                 )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -469,10 +484,20 @@ def make_model(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
+            # Model-level ``pair_exclude_types`` is a graph-BUILD transform
+            # (decision #18): apply it here, at the seam where the NeighborGraph
+            # is constructed, so the graph lower / exported ``.pt2`` consumes an
+            # already-excluded ``edge_mask`` and never re-applies it. Mirrors the
+            # pt_expt eager path and the C++ ``applyPairExclusion`` at build.
+            pair_excl = getattr(self.atomic_model, "pair_excl", None)
             if method == "dense":
-                ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             elif method == "ase":
-                ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph_ase(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             else:
                 raise ValueError(
                     f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "

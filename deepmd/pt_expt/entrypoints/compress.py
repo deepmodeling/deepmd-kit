@@ -117,12 +117,12 @@ def enable_compression(
     # trace: those export the UNCOMPRESSED graph and carry the compressed dict in
     # ``model.json`` so ``deserialize()`` restores the compression state for the
     # Python inference path.
-    from deepmd.pt_expt.train.training import (
-        _model_uses_graph_lower,
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
     )
 
     model_def_script = model_dict.get("model_def_script")
-    if output.endswith(".pt2") and _model_uses_graph_lower(model):
+    if output.endswith(".pt2") and model_uses_graph_lower(model):
         log.info("Re-exporting compressed graph...")
         deserialize_to_file(
             output,

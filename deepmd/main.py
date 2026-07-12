@@ -1002,6 +1002,12 @@ def main_parser() -> argparse.ArgumentParser:
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
     parser_convert_backend.add_argument(
+        "--lower-kind",
+        choices=("nlist", "graph", "auto"),
+        default="nlist",
+        help="Lower input schema for pt_expt .pt2/.pte outputs.",
+    )
+    parser_convert_backend.add_argument(
         "--atomic-virial",
         action="store_true",
         default=False,

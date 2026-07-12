@@ -80,6 +80,16 @@ make -j4
 make install
 ```
 
+To build the GPU-resident `pair_style deepmd/kk`, enable both the LAMMPS
+Kokkos package and the DeePMD C++-API integration:
+
+```bash
+cmake -D PKG_KOKKOS=ON -D DEEPMD_LAMMPS_KOKKOS=ON \
+    -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes \
+    -D CMAKE_INSTALL_PREFIX=${deepmd_root} \
+    -D CMAKE_PREFIX_PATH=${deepmd_root} ../cmake
+```
+
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
 ```bash

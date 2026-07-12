@@ -290,6 +290,17 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const std::vector<double>& charge_spin,
                            const bool atomic) override;
 
+  /** @brief Compatibility overload using stored frame and atomic parameters. */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge) override;
+
   /**
    * @brief Fully device-resident inference for exported edge-input or
    * graph-input .pt2 models.
@@ -439,6 +450,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   // ``has_message_passing`` metadata field; archives without it default to
   // non-message-passing.
   bool has_message_passing_ = false;
+  // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
+  // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
+  // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
+  // exclusion (identity).  The device is fixed at ``init`` (``gpu_id`` /
+  // ``gpu_enabled``), so the seam helpers ``index_select`` it directly with no
+  // per-step CPU clone / H2D upload.  Exclusion is a BUILD-time transform
+  // (decision #18/A4): the C++ ingestion seam is the single application site
+  // (``applyPairExclusion`` graph / ``applyPairExclusionNlist`` dense); the
+  // exported .pt2 lowers consume pre-excluded inputs and never re-apply it.
+  torch::Tensor pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

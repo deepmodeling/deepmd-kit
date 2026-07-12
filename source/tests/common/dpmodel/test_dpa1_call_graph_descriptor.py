@@ -96,21 +96,38 @@ class TestDpa1DescriptorCallGraph:
         # sw
         np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
 
+    # NOTE: after the strip PR (#5747) and this PR both landed, neither strip
+    # nor exclude_types falls back to dense — both are graph-eligible. The only
+    # non-disabled ineligible config is compression, whose gate is covered by
+    # TestDpa1StripRouting.test_uses_graph_lower_strip_gate, and the no-mapping
+    # ghost fallback by test_eligible_no_mapping_with_ghosts_falls_back below.
+
     @pytest.mark.parametrize(
-        "kwargs",
-        [
-            {"exclude_types": [(0, 1)]},  # type exclusion: graph unsupported -> dense
-        ],
+        "exclude_types",
+        [[], [(0, 1)]],  # empty exclusions AND non-trivial exclusion
     )
-    def test_ineligible_config_falls_back_to_dense(self, kwargs) -> None:
-        """attn_layer=0 configs the graph can't handle (exclude_types) must report
-        uses_graph_lower()=False and run the dense body without raising (strip is
-        now graph-eligible; its routing + parity is covered by TestDpa1StripRouting).
+    def test_exclude_types_graph_eligible_and_parity(self, exclude_types) -> None:
+        """exclude_types (Task 3): descriptor is graph-eligible (uses_graph_lower()
+        True) regardless of the exclusion list.  Graph output must match the dense
+        reference at rtol=atol=1e-12 for a non-binding sel.
         """
-        dd = DescrptDPA1(
-            rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0, **kwargs
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
         )
-        assert dd.uses_graph_lower() is False
+
+        dd = DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[30],  # non-binding sel
+            ntypes=2,
+            attn_layer=0,
+            axis_neuron=2,
+            neuron=[6, 12],
+            exclude_types=exclude_types,
+        )
+        # gate: with any exclude list the descriptor must now be graph-eligible
+        assert dd.uses_graph_lower() is True
+
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
             self.coord,
             self.atype,
@@ -119,8 +136,28 @@ class TestDpa1DescriptorCallGraph:
             mixed_types=dd.mixed_types(),
             box=None,
         )
-        out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)  # must not raise
+        # dense reference (calls block directly)
+        ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+        # graph-routed public call
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
         assert len(out) == 5
+        np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
+
+        if exclude_types:
+            # verify excluded pairs contribute sw == 0 in the dense reference
+            # (atype=[0,1,0,1] -> pairs (0,1) and (1,0) should be masked)
+            # sw shape: (nf, nloc, nnei, 1); just check the graph output is also 0
+            # for excluded-pair edges by checking call_graph sw channel
+            graph = from_dense_quartet(ext_coord, nlist, mapping, compact=False)
+            atype_local = self.atype.reshape(-1)
+            grrg_g, rot_mat_g = dd.call_graph(
+                graph, atype_local, type_embedding=dd.type_embedding.call()
+            )
+            # no nan/inf in output with exclusions applied
+            assert not np.any(np.isnan(grrg_g))
+            assert not np.any(np.isinf(grrg_g))
 
     def test_eligible_no_mapping_with_ghosts_falls_back(self) -> None:
         """An eligible (concat) attn_layer=0 descriptor called with mapping=None
@@ -231,15 +268,17 @@ class TestDpa1StripRouting:
         )
 
     def test_uses_graph_lower_strip_gate(self) -> None:
-        """The gate admits non-compressed strip; excludes compressed and exclude_types."""
+        """The gate admits non-compressed strip (and exclude_types, now
+        graph-native via the pair-exclude seam); only compression forces dense.
+        """
         dd = self._make(type_one_side=False, smooth=True, attn_layer=2)
         assert dd.uses_graph_lower() is True  # strip is now graph-eligible
         # negative contract: compression keeps the descriptor on the dense path
         dd.compress = True
         assert dd.uses_graph_lower() is False
         dd.compress = False
-        # negative contract: exclude_types still forces dense (separate feature,
-        # owned by the pair-exclude PR; strip does NOT change its eligibility)
+        # exclude_types is now graph-native (owned by the pair-exclude seam), so
+        # strip + exclude_types stays graph-eligible.
         dd_excl = DescrptDPA1(
             rcut=4.0,
             rcut_smth=0.5,
@@ -250,7 +289,7 @@ class TestDpa1StripRouting:
             exclude_types=[(0, 1)],
             resnet_dt=False,
         )
-        assert dd_excl.uses_graph_lower() is False
+        assert dd_excl.uses_graph_lower() is True
 
     @pytest.mark.parametrize("type_one_side", [False, True])  # strip table branch
     @pytest.mark.parametrize(

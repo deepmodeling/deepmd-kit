@@ -21,8 +21,14 @@ from typing import (
 
 import numpy as np
 
+from .csr import (
+    attach_edge_csr,
+)
 from .from_ijs import (
     neighbor_graph_from_ijs,
+)
+from .graph import (
+    apply_pair_exclusion,
 )
 
 if TYPE_CHECKING:
@@ -33,6 +39,7 @@ if TYPE_CHECKING:
     from .graph import (
         GraphLayout,
         NeighborGraph,
+        PairExcludeMask,
     )
 
 
@@ -45,6 +52,8 @@ def build_neighbor_graph_ase(
     *,
     with_csr: bool = False,
     canonicalize: bool = False,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using ASE's O(N) cell-list search.
 
@@ -75,6 +84,14 @@ def build_neighbor_graph_ase(
     canonicalize
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
 
     Returns
     -------
@@ -145,7 +162,7 @@ def build_neighbor_graph_ase(
     i_all, j_all = i_all[keep], j_all[keep]
     S_all, nframe_all = S_all[keep], nframe_all[keep]
 
-    return neighbor_graph_from_ijs(
+    graph = neighbor_graph_from_ijs(
         i_all,
         j_all,
         S_all,
@@ -154,6 +171,13 @@ def build_neighbor_graph_ase(
         nframe_all,
         nloc,
         layout=layout,
-        with_csr=with_csr,
-        canonicalize=canonicalize,
     )
+    if pair_excl is not None:
+        import array_api_compat
+
+        xp = array_api_compat.array_namespace(coord)
+        atype_flat = xp.reshape(xp.asarray(atype), (-1,))
+        graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+    return graph

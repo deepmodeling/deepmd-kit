@@ -572,6 +572,7 @@ def make_model(
                 and cuda_infer_level() >= 1
                 and bool(getattr(descriptor, "geo_compress", False))
             )
+            pair_excl = getattr(self.atomic_model, "pair_excl", None)
             if method == "dense":
                 ng = build_neighbor_graph(
                     cc,
@@ -579,6 +580,7 @@ def make_model(
                     bb,
                     rcut,
                     with_csr=with_csr,
+                    pair_excl=pair_excl,
                 )
             elif method == "ase":
                 ng = build_neighbor_graph_ase(
@@ -587,6 +589,7 @@ def make_model(
                     bb,
                     rcut,
                     with_csr=with_csr,
+                    pair_excl=pair_excl,
                 )
             elif method == "vesin":
                 from deepmd.pt_expt.utils.vesin_graph_builder import (
@@ -599,6 +602,7 @@ def make_model(
                     bb,
                     rcut,
                     with_csr=with_csr,
+                    pair_excl=pair_excl,
                 )
             elif method == "nv":
                 from deepmd.pt_expt.utils.nv_graph_builder import (
@@ -611,6 +615,7 @@ def make_model(
                     bb,
                     rcut,
                     with_csr=with_csr,
+                    pair_excl=pair_excl,
                 )
             else:
                 raise ValueError(

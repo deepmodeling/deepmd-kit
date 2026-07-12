@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// The Kokkos device pair style is compiled only when the LAMMPS KOKKOS package
-// is enabled; without it the translation unit is empty, so the GLOB that adds
-// this file to the build is harmless for non-Kokkos LAMMPS.
-#ifdef LMP_KOKKOS
+// The device pair style requires both LAMMPS Kokkos and the DeePMD C++ API.
+#if defined(LMP_KOKKOS) && defined(DP_USE_CXX_API)
 
 #ifndef LAMMPS_VERSION_NUMBER
 #error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
@@ -154,4 +152,4 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 #endif
 #endif
 
-#endif  // LMP_KOKKOS
+#endif  // LMP_KOKKOS && DP_USE_CXX_API

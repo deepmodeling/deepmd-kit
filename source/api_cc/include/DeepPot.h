@@ -325,6 +325,15 @@ class DeepPotBackend : public DeepBaseModelBackend {
                                  const int* d_edge_index,
                                  const double* d_edge_vec,
                                  const int nloc,
+                                 const int nedge);
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const double* d_edge_vec,
+                                 const int nloc,
                                  const int nedge,
                                  const std::vector<double>& fparam,
                                  const std::vector<double>& aparam,
@@ -732,7 +741,8 @@ class DeepPot : public DeepBaseModel {
    * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
    * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
    * @param[in] d_atype Local atom types, GPU [nloc].
-   * @param[in] d_edge_index Local edge graph, GPU [2 * nedge].
+   * @param[in] d_edge_index Destination-major local edge graph, GPU
+   *   [2 * nedge].
    * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
    * @param[in] nloc Number of local atoms.
    * @param[in] nedge Number of physical edges.

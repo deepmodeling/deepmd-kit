@@ -15,14 +15,18 @@ identical to ``communicate_extended_output``).  Energy, reduced energy and the
 reduced (per-frame) virial are frame/local quantities and compare directly.
 """
 
+import copy
+
 import numpy as np
 import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
     from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
     build_neighbor_list,
     extend_coord_with_ghosts,
 )
@@ -91,7 +95,13 @@ class TestDpa1GraphLower:
             [[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device
         )
 
-    def _make_model(self, attn_layer: int = 0, smooth: bool = False) -> EnergyModel:
+    def _make_model(
+        self,
+        attn_layer: int = 0,
+        smooth: bool = False,
+        pair_excl_types: list | None = None,
+        descr_excl_types: list | None = None,
+    ) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
@@ -111,6 +121,7 @@ class TestDpa1GraphLower:
             set_davg_zero=False,
             type_one_side=True,
             precision="float64",
+            exclude_types=descr_excl_types or [],
             seed=GLOBAL_SEED,
         ).to(self.device)
         ft = InvarFitting(
@@ -122,7 +133,12 @@ class TestDpa1GraphLower:
             precision="float64",
             seed=GLOBAL_SEED,
         ).to(self.device)
-        return EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+        return EnergyModel(
+            ds,
+            ft,
+            type_map=self.type_map,
+            pair_exclude_types=pair_excl_types or [],
+        ).to(self.device)
 
     def _prepare_lower_inputs(self, periodic: bool):
         """Build extended coords, atype, nlist, mapping as torch tensors."""
@@ -172,13 +188,20 @@ class TestDpa1GraphLower:
     @pytest.mark.parametrize("attn_layer", [0, 2])
     @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
     @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
-    def test_force_virial_parity_vs_legacy(self, periodic, do_av, attn_layer) -> None:
+    @pytest.mark.parametrize(
+        "excl_types", [[], [(0, 1)]]
+    )  # no exclusion / type-0-1 pair exclusion
+    def test_force_virial_parity_vs_legacy(
+        self, periodic, do_av, attn_layer, excl_types
+    ) -> None:
         """Graph lower energy/force/virial/atom_virial == legacy dense lower on
         the SAME neighbor set (regime-1 graph from from_dense_quartet).
         attn_layer=2 exercises graph attention through model-level autograd
-        (smooth=False: exact carry-all parity regime).
+        (smooth=False: exact carry-all parity regime, NeighborGraph PR-D).
+        Parametrized over exclude_types: empty list (no exclusion) and
+        [(0,1)] (model-level pair exclusion applied identically on both routes).
         """
-        model = self._make_model(attn_layer=attn_layer)
+        model = self._make_model(attn_layer=attn_layer, pair_excl_types=excl_types)
         model.eval()
         tol = (
             {"rtol": 1e-12, "atol": 1e-12}
@@ -189,6 +212,13 @@ class TestDpa1GraphLower:
         nf = ext_coord.shape[0]
         nloc = self.natoms
 
+        # Model-level pair_exclude is a nlist-BUILD transform (decision
+        # #18/A4): BOTH lowers consume pre-excluded inputs, so fold the
+        # exclusion into the dense nlist here (mirrors the C++
+        # ``applyPairExclusionNlist`` build step).
+        nlist = apply_pair_exclusion_nlist(
+            nlist, ext_atype, model.atomic_model.pair_excl
+        )
         legacy = model.forward_common_lower(
             ext_coord.clone().requires_grad_(True),
             ext_atype,
@@ -202,6 +232,10 @@ class TestDpa1GraphLower:
         # returned edge_vec is already a torch tensor on env.DEVICE.
         ng = from_dense_quartet(ext_coord, nlist, mapping)
         atype_local = ext_atype[:, :nloc].reshape(nf * nloc)
+        # Model-level pair_exclude is a BUILD-time transform (decision #18): the
+        # converter does not bake it in and the lower no longer re-applies it, so
+        # apply it to the graph here (mirrors the C++ ``applyPairExclusion`` step).
+        ng = apply_pair_exclusion(ng, atype_local, model.atomic_model.pair_excl)
         graph = model.forward_common_lower_graph(
             atype_local,
             ng.n_node,
@@ -376,6 +410,129 @@ class TestDpa1GraphLower:
         # bounded: the documented magnitude is ~1e-4; 1e-3 leaves headroom
         assert e_diff < 1e-3, f"smooth divergence too large: {e_diff:.3e}"
         assert f_diff < 1e-3, f"smooth force divergence too large: {f_diff:.3e}"
+
+    def test_pair_exclude_types_graph_vs_legacy(self) -> None:
+        """Model-level pair_exclude_types: graph route and legacy dense agree
+        bit-tight (fp64, 1e-12), AND the excluded model output differs from the
+        no-exclude baseline (exclusion is not vacuous).
+
+        Strategy: build the no-exclude model, serialize it, inject
+        ``pair_exclude_types=[[0,1]]`` into the serialized dict, deserialize
+        to get an exclude model with IDENTICAL weights, then run both routes.
+        """
+        import copy
+
+        # 1. build the reference (no-exclude) model
+        model_ref = self._make_model(attn_layer=0)
+        model_ref.eval()
+
+        # 2. derive the exclude model by patching the serialized dict
+        data = copy.deepcopy(model_ref.serialize())
+        data["pair_exclude_types"] = [[0, 1]]
+        model_excl = EnergyModel.deserialize(data).to(self.device)
+        model_excl.eval()
+
+        tol = (
+            {"rtol": 1e-12, "atol": 1e-12}
+            if self.device.type == "cpu"
+            else {"rtol": 1e-10, "atol": 1e-10}
+        )
+        box = self.cell.reshape(1, 9)
+
+        # 3. graph route (build-time pair exclusion)
+        graph_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # 4. legacy dense route (seam backstop in forward_atomic_graph)
+        legacy_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        # parity: graph == legacy
+        torch.testing.assert_close(
+            graph_out["energy_redu"], legacy_out["energy_redu"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_r"], legacy_out["energy_derv_r"], **tol
+        )
+
+        # 5. reference (no-exclude) via graph route
+        ref_out = model_ref.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # exclusion must have an effect
+        e_diff = (graph_out["energy_redu"] - ref_out["energy_redu"]).abs().max().item()
+        assert e_diff > 1e-10, (
+            f"pair_exclude_types had no effect on energy; diff={e_diff:.3e}"
+        )
+
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    def test_descriptor_exclude_types_graph_vs_legacy(self, attn_layer) -> None:
+        """Descriptor-level exclude_types: graph route and legacy dense agree
+        bit-tight (fp64, 1e-12) when exclusion is on the DESCRIPTOR (not the
+        model pair_exclude_types).  Uses identical weights across both routes;
+        also checks exclusion is non-vacuous vs a no-exclude baseline.
+        """
+        # 1. no-exclude model (graph route = reference)
+        model_ref = self._make_model(attn_layer=attn_layer)
+        model_ref.eval()
+
+        # 2. exclude model: inject exclude_types into the serialized dict
+        data = copy.deepcopy(model_ref.serialize())
+        data["descriptor"]["exclude_types"] = [[0, 1]]
+        model_excl = EnergyModel.deserialize(data).to(self.device)
+        model_excl.eval()
+
+        tol = (
+            {"rtol": 1e-12, "atol": 1e-12}
+            if self.device.type == "cpu"
+            else {"rtol": 1e-10, "atol": 1e-10}
+        )
+        box = self.cell.reshape(1, 9)
+
+        # 3. graph route
+        graph_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        # 4. legacy dense route
+        legacy_out = model_excl.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        torch.testing.assert_close(
+            graph_out["energy_redu"], legacy_out["energy_redu"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_r"], legacy_out["energy_derv_r"], **tol
+        )
+        torch.testing.assert_close(
+            graph_out["energy_derv_c_redu"], legacy_out["energy_derv_c_redu"], **tol
+        )
+
+        # 5. exclusion must be non-vacuous
+        ref_out = model_ref.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        e_diff = (graph_out["energy_redu"] - ref_out["energy_redu"]).abs().max().item()
+        assert e_diff > 1e-10, (
+            f"descriptor exclude_types had no effect on energy; diff={e_diff:.3e}"
+        )
 
     @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
     def test_graph_route_float32(self, attn_layer) -> None:

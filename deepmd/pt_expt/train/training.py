@@ -65,6 +65,9 @@ from deepmd.pt_expt.loss import (
 from deepmd.pt_expt.model import (
     get_model,
 )
+from deepmd.pt_expt.model.graph_lower import (
+    model_uses_graph_lower,
+)
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
@@ -579,44 +582,6 @@ def _finalize_compiled_lower(
     )
 
 
-def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
-    """Whether ``model``'s eager default-flip routes through the GRAPH lower.
-
-    Mirrors the predicate in
-    :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
-    for ``neighbor_graph_method is None`` (the training default): a model is
-    graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding
-    and no ``exclude_types``; attention layers included).
-
-    When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
-    so the compiled path matches eager training (which already default-flips to
-    the carry-all graph forward); when False the dense ``forward_lower`` is
-    compiled (se_e2_a / dpa2 / dpa3 / linear / zbl).
-
-    ASSUMPTION: training uses the default ``neighbor_graph_method`` (None). If a
-    user-facing ``"legacy"`` opt-out is ever plumbed into the trainer, this gate
-    must also honor it (else eager would run dense while the compiled path runs
-    the graph lower, re-introducing the eager!=compiled divergence this fixes).
-    """
-    if not hasattr(model, "mixed_types"):
-        return False
-    try:
-        if not model.mixed_types():
-            return False
-    except (AttributeError, NotImplementedError):
-        return False
-    # Linear / ZBL atomic models have no single ``descriptor`` -> dense.
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph is None:
-        return False
-    try:
-        return bool(uses_graph())
-    except (AttributeError, NotImplementedError):
-        return False
-
-
 def _trace_and_compile_graph(
     model: torch.nn.Module,
     fparam: torch.Tensor | None,
@@ -933,7 +898,7 @@ class _CompiledModel(torch.nn.Module):
         # lower too, otherwise the eager (graph) and compiled (dense) backward
         # gradients diverge at fp64 accumulation and the optimizer amplifies it.
         if self._graph_eligible is None:
-            self._graph_eligible = _model_uses_graph_lower(self.original_model)
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
         if self._graph_eligible:
             return self._forward_graph(
                 coord, atype, box, fparam, aparam, charge_spin, nframes, nloc, rcut
@@ -960,6 +925,9 @@ class _CompiledModel(torch.nn.Module):
             rcut,
             sel,
             distinguish_types=False,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
+            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1173,8 +1141,12 @@ class _CompiledModel(torch.nn.Module):
                 )
 
         # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
-        # uncompiled ``_call_common_graph`` builder so the two paths match.
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        # uncompiled ``_call_common_graph`` builder so the two paths match. Model-
+        # level pair_exclude is a graph-BUILD transform (decision #18): fold it
+        # into edge_mask here so the compiled lower consumes a pre-excluded graph
+        # (the lower no longer re-applies it), matching the eager path exactly.
+        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).

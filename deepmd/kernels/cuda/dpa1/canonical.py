@@ -24,7 +24,6 @@ __all__ = [
     "op_available",
 ]
 
-_registered = False
 _cpu_library: torch.library.Library | None = None
 
 
@@ -254,8 +253,8 @@ def _cpu_backward(*args: Any) -> torch.Tensor:
 
 def ensure_registered() -> None:
     """Register fake and CPU implementations for compact canonical operators."""
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     torch.library.register_fake("deepmd::dpa1_canonical_compress")(_forward_fake)
     torch.library.register_fake("deepmd::dpa1_canonical_compress_backward")(
@@ -268,7 +267,6 @@ def ensure_registered() -> None:
         _cpu_backward,
         "CPU",
     )
-    _registered = True
 
 
 def dpa1_canonical_compress_energy_force(

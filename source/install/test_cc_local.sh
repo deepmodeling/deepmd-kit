@@ -96,7 +96,10 @@ else:
 
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4.py &
 	PID9=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py &
+	PID10=$!
 	wait $PID9
+	wait $PID10
 
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
 	PID7=$!

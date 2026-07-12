@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <cfenv>
+#include <cmath>
 #include <iostream>
+#include <vector>
 
 #include "env_mat.h"
 #include "fmt_nlist.h"
@@ -153,5 +156,36 @@ TEST_F(TestSoftMinSwitch, cpu_num_deriv) {
         EXPECT_LT(fabs(num_deriv - ana_deriv), 1e-5);
       }
     }
+  }
+}
+
+TEST(TestSoftMinSwitchEmptyNeighbors, cpu_empty_neighbor_row) {
+  int nloc = 1;
+  int nnei = 1;
+  double alpha = 0.3;
+  double rmin = 1.0;
+  double rmax = 3.45;
+
+  std::vector<double> sw_value(nloc);
+  std::vector<double> sw_deriv(nloc * nnei * 3);
+  std::vector<double> rij(nloc * nnei * 3, 0.0);
+  std::vector<int> nlist(nloc * nnei, -1);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
+  deepmd::soft_min_switch_cpu<double>(sw_value.data(), sw_deriv.data(),
+                                      rij.data(), nlist.data(), nloc, nnei,
+                                      alpha, rmin, rmax);
+
+  int fe_flags = std::fetestexcept(FE_INVALID);
+  EXPECT_EQ(fe_flags, 0) << "FE_INVALID was raised, indicating a div-by-zero "
+                            "or similar invalid floating-point operation";
+
+  EXPECT_TRUE(std::isfinite(sw_value[0]));
+  EXPECT_DOUBLE_EQ(sw_value[0], 0.0);
+
+  for (int ii = 0; ii < nloc * nnei * 3; ++ii) {
+    EXPECT_TRUE(std::isfinite(sw_deriv[ii]));
+    EXPECT_DOUBLE_EQ(sw_deriv[ii], 0.0);
   }
 }

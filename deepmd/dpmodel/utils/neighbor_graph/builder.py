@@ -39,18 +39,28 @@ from typing import (
 
 import array_api_compat
 
+from deepmd.dpmodel.array_api import (
+    xp_take_first_n,
+)
+
 from .csr import (
+    attach_edge_csr,
     build_edge_csr,
 )
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     pad_and_guard_edges,
 )
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
+    )
+
+    from .graph import (
+        PairExcludeMask,
     )
 
 
@@ -264,6 +274,58 @@ def from_dense_quartet(
         )
 
 
+def graph_from_dense_quartet(
+    coord_ext: Array,
+    atype_ext: Array,
+    nlist: Array,
+    mapping: Array | None,
+) -> tuple[NeighborGraph, Array]:
+    """Shape-static NeighborGraph + flat local center atype from a dense quartet.
+
+    Convenience wrapper over :func:`from_dense_quartet` (``compact=False``) that
+    also fills the ``mapping is None`` identity case (no-PBC, ``nall == nloc``)
+    and derives the ghost-free flat local atom types ``(nf * nloc,)``. Shared by
+    the dpa1 dense->graph forward adapter (``DescrptDPA1._call_graph_adapter``)
+    and the input-stat graph path (``EnvMatStatSe._graph_env_mat``) so both build
+    the graph identically.
+
+    Parameters
+    ----------
+    coord_ext
+        Extended coordinates, ``(nf, nall x 3)`` or ``(nf, nall, 3)``.
+    atype_ext
+        Extended atom types, ``(nf, nall)``.
+    nlist
+        Dense neighbor list into the extended atoms, ``(nf, nloc, nsel)``; ``-1``
+        is padding.
+    mapping
+        Extended -> local-owner index, ``(nf, nall)``; ``None`` means the
+        identity mapping (``nall == nloc``).
+
+    Returns
+    -------
+    graph
+        Shape-static :class:`NeighborGraph` over the LOCAL atoms.
+    atype_local
+        Flat local atom types, ``(nf * nloc,)``.
+    """
+    xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+    dev = array_api_compat.device(coord_ext)
+    nf, nloc, _ = nlist.shape
+    nall = atype_ext.shape[1]
+    coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
+    if mapping is None:
+        # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
+        mapping_g = xp.broadcast_to(
+            xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
+        )
+    else:
+        mapping_g = xp.reshape(mapping, (nf, nall))
+    graph = from_dense_quartet(coord_ext_3, nlist, mapping_g, compact=False)
+    atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
+    return graph, atype_local
+
+
 def build_neighbor_graph(
     coord: Array,
     atype: Array,
@@ -273,6 +335,8 @@ def build_neighbor_graph(
     *,
     with_csr: bool = False,
     canonicalize: bool = False,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph DIRECTLY from coordinates (``dense`` search).
 
@@ -290,6 +354,11 @@ def build_neighbor_graph(
     (correctness oracle); the O(N) ``vesin``/``ase`` backends arrive later behind a
     ``method`` key. Edges map every neighbor to its LOCAL owner
     (``src = mapping[neighbor]``), so the graph is ghost-free.
+
+    When ``pair_excl`` is given, :func:`apply_pair_exclusion` is called as a
+    post-process after the geometric search (the default path). A builder MAY
+    natively fuse the exclusion into its search in a future PR; the contract is
+    set-equality of valid-edge sets with the default post-process path.
 
     Parameters
     ----------
@@ -312,6 +381,14 @@ def build_neighbor_graph(
     canonicalize
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
     """
     from deepmd.dpmodel.utils.nlist import (
         extend_coord_with_ghosts,
@@ -375,36 +452,15 @@ def build_neighbor_graph(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
     n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    if not with_csr:
-        return NeighborGraph(
-            n_node=n_node,
-            edge_index=edge_index,
-            edge_vec=edge_vec,
-            edge_mask=edge_mask,
-        )
-    (
-        edge_index,
-        edge_vec,
-        edge_mask,
-        destination_order,
-        destination_row_ptr,
-        source_row_ptr,
-        source_order,
-    ) = build_edge_csr(
-        edge_index,
-        edge_vec,
-        edge_mask,
-        nf * nloc,
-        canonicalize=canonicalize,
-    )
-    return NeighborGraph(
+    graph = NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
         edge_vec=edge_vec,
         edge_mask=edge_mask,
-        destination_order=destination_order,
-        destination_row_ptr=destination_row_ptr,
-        source_row_ptr=source_row_ptr,
-        source_order=source_order,
-        destination_sorted=canonicalize,
     )
+    if pair_excl is not None:
+        atype_flat = xp.reshape(atype, (-1,))
+        graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    if with_csr:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+    return graph

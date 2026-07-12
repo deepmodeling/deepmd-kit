@@ -69,8 +69,6 @@ __all__ = [
 
 _TILE_EDGES = 128  # matches kTileEdges in dpa1_graph_descriptor.cu
 
-_registered = False
-
 
 def op_available() -> bool:
     """Whether the C++ ``deepmd::dpa1_graph_descriptor`` op is loaded."""
@@ -638,8 +636,8 @@ def ensure_registered() -> None:
     plain pt inference path, which never dispatches here, does not require
     the ops).
     """
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     torch.library.register_fake("deepmd::dpa1_graph_descriptor")(_forward_fake)
     torch.library.register_fake("deepmd::dpa1_graph_descriptor_backward")(
@@ -651,7 +649,6 @@ def ensure_registered() -> None:
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("dpa1_graph_descriptor", _cpu_forward, "CPU")
     _cpu_library.impl("dpa1_graph_descriptor_backward", _cpu_backward, "CPU")
-    _registered = True
 
 
 def _strip_gate_table(se: Any, type_embedding: torch.Tensor) -> torch.Tensor:

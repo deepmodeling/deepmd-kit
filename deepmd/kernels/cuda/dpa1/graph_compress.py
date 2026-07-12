@@ -42,8 +42,6 @@ __all__ = [
 # nothing, and slicing them off the descriptor.
 _KERNEL_WIDTHS = (8, 16, 32, 64, 128, 256)
 
-_registered = False
-
 
 def _bucket_width(ng: int) -> int:
     """Smallest instantiated kernel width that holds ``ng`` channels."""
@@ -645,8 +643,8 @@ def ensure_registered() -> None:
 
     Idempotent; a no-op when the C++ operator library is not loaded.
     """
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     torch.library.register_fake("deepmd::dpa1_graph_compress")(_forward_fake)
     torch.library.register_fake("deepmd::dpa1_graph_compress_backward")(_backward_fake)
@@ -656,7 +654,6 @@ def ensure_registered() -> None:
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("dpa1_graph_compress", _cpu_forward, "CPU")
     _cpu_library.impl("dpa1_graph_compress_backward", _cpu_backward, "CPU")
-    _registered = True
 
 
 def dpa1_graph_compress(

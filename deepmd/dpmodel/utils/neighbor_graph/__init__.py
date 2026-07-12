@@ -24,8 +24,10 @@ from .ase_builder import (
 from .builder import (
     build_neighbor_graph,
     from_dense_quartet,
+    graph_from_dense_quartet,
 )
 from .csr import (
+    attach_edge_csr,
     build_edge_csr,
     canonicalize_neighbor_graph,
 )
@@ -41,6 +43,7 @@ from .from_ijs import (
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
     frame_id_from_n_node,
     node_ownership_mask,
     node_validity_mask,
@@ -63,7 +66,9 @@ __all__ = [
     "angle_padding_fraction",
     "angle_to_edge_sum",
     "angle_to_node_sum",
+    "apply_pair_exclusion",
     "attach_angles",
+    "attach_edge_csr",
     "build_angle_index",
     "build_edge_csr",
     "build_neighbor_graph",
@@ -75,6 +80,7 @@ __all__ = [
     "frame_id_from_n_node",
     "from_dense_quartet",
     "graph_angle_cos",
+    "graph_from_dense_quartet",
     "neighbor_graph_from_ijs",
     "node_ownership_mask",
     "node_validity_mask",

@@ -3,7 +3,9 @@
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
 #include <ATen/core/dispatch/Dispatcher.h>
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #include <ATen/cuda/CUDAContext.h>
+#endif
 #include <c10/core/DeviceGuard.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
@@ -30,6 +32,15 @@ using deepmd::ptexpt::read_zip_entry;
 using namespace deepmd;
 
 namespace {
+
+void synchronize_current_accelerator_stream() {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+  at::cuda::getCurrentCUDAStream().synchronize();
+#else
+  throw deepmd::deepmd_exception(
+      "GPU-resident inference requires a GPU-enabled DeePMD-kit build.");
+#endif
+}
 
 template <typename VALUETYPE>
 at::Tensor make_aparam_tensor(const std::vector<VALUETYPE>& aparam,
@@ -281,6 +292,39 @@ void DeepPotPTExpt::init(const std::string& model,
   // non-message-passing.
   has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
                          metadata["has_message_passing"].as_bool();
+
+  // Model-level pair-type exclusion table.  ``pair_exclude_types`` is a list
+  // of [ti, tj] pairs; rebuild the flat (ntypes+1)^2 keep table exactly like
+  // the Python ``PairExcludeMask`` ctor.  Exclusion is a BUILD-time transform
+  // (decision #18/A4): the C++ ingestion seam is the single application site
+  // (applyPairExclusion graph / applyPairExclusionNlist dense); the exported
+  // lowers consume pre-excluded inputs and never re-apply it.
+  //
+  // Upload the table to the model device ONCE here (device is fixed by
+  // ``gpu_id`` / ``gpu_enabled``), so the per-step seam helpers only
+  // ``index_select`` it -- no per-``compute()`` CPU clone + H2D copy.  Leave
+  // ``pair_exclude_table_`` undefined (=> identity) when there is no exclusion.
+  {
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    if (metadata.obj_val.count("pair_exclude_types")) {
+      for (const auto& v : metadata["pair_exclude_types"].as_array()) {
+        pair_exclude_types.emplace_back(v[0].as_int(), v[1].as_int());
+      }
+    }
+    std::vector<int> tbl =
+        deepmd::buildPairExcludeTable(ntypes, pair_exclude_types);
+    if (!tbl.empty()) {
+      torch::Device device(torch::kCUDA, gpu_id);
+      if (!gpu_enabled) {
+        device = torch::Device(torch::kCPU);
+      }
+      pair_exclude_table_ =
+          torch::from_blob(tbl.data(), {static_cast<std::int64_t>(tbl.size())},
+                           torch::TensorOptions().dtype(torch::kInt32))
+              .clone()
+              .to(device);
+    }
+  }
   if (has_comm_artifact_) {
     try {
       // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
@@ -878,9 +922,20 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             aparam_tensor, charge_spin_tensor, comm_tensors);
       }
     } else {
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+      // never re-applies it.  The multi-rank (with-comm) dense route shares the
+      // same dense nlist as the single-rank path below, so it applies the SAME
+      // seam -- otherwise a message-passing .pt2 with pair_exclude_types would
+      // silently include excluded pairs on the with-comm path (multi-rank !=
+      // single-rank).  The cross-rank ghost exchange happens inside
+      // run_model_with_comm and does not change the nlist's meaning, so
+      // pre-excluding it is correct per rank.
+      const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+          firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
       flat_outputs = run_model_with_comm(
-          coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
-          fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
+          coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor, fparam_tensor,
+          aparam_tensor, charge_spin_tensor, comm_tensors);
     }
   } else {
     if (lower_input_is_edge_) {
@@ -941,7 +996,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       graph_pack.edge_vec = graph_edge_fp32_
                                 ? edge_tensors.edge_vec.to(torch::kFloat32)
                                 : edge_tensors.edge_vec;
-      graph_pack.edge_mask = edge_tensors.edge_mask;
+      graph_pack.edge_mask = deepmd::applyPairExclusion(
+          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+          pair_exclude_table_, ntypes);
       canonicalizeGraphPayload(graph_pack, n_node_count);
       if (lower_input_is_canonical_) {
         const auto compact = compactCanonicalGraph(graph_pack);
@@ -958,9 +1015,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             graph_aparam, charge_spin_tensor);
       }
     } else {
-      flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
-                               mapping_tensor, fparam_tensor, aparam_tensor,
-                               charge_spin_tensor);
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+      // never re-applies it.  Single-rank dense application site; the
+      // multi-rank (with-comm) dense sibling above applies the same seam.
+      const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+          firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
+      flat_outputs =
+          run_model(coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
+                    fparam_tensor, aparam_tensor, charge_spin_tensor);
     }
   }
 
@@ -1315,10 +1378,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                         edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                         fparam_tensor, aparam_tensor, charge_spin_tensor);
   } else if (lower_input_is_graph_ || lower_input_is_canonical_) {
-    const at::Tensor graph_edge_vec =
-        graph_edge_fp32_ ? graph_tensors.edge_vec.to(torch::kFloat32)
-                         : graph_tensors.edge_vec;
-    graph_tensors.edge_vec = graph_edge_vec;
+    graph_tensors.edge_mask = deepmd::applyPairExclusion(
+        graph_tensors.edge_index, graph_tensors.edge_mask, graph_tensors.atype,
+        pair_exclude_table_, ntypes);
+    canonicalizeGraphPayload(graph_tensors, graph_tensors.atype.size(0));
+    if (graph_edge_fp32_) {
+      graph_tensors.edge_vec = graph_tensors.edge_vec.to(torch::kFloat32);
+    }
     if (lower_input_is_canonical_) {
       const auto compact = compactCanonicalGraph(graph_tensors);
       flat_outputs = run_model_canonical_graph(
@@ -1335,8 +1401,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           charge_spin_tensor);
     }
   } else {
+    // Model-level pair exclusion is a BUILD-time transform (decision
+    // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+    // never re-applies it; this is the single application site on the C++
+    // dense route.
+    const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+        nlist_tensor, atype_Tensor, pair_exclude_table_, ntypes);
     flat_outputs =
-        run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,
+        run_model(coord_Tensor, atype_Tensor, excl_nlist, mapping_tensor,
                   fparam_tensor, aparam_tensor, charge_spin_tensor);
   }
 
@@ -2097,18 +2169,26 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
       graph_pack.n_local = n_local;
       graph_pack.edge_index = edge_index;
       graph_pack.edge_vec = edge_vec;
-      graph_pack.edge_mask = edge_mask;
-      using BuildGraphCSR =
-          std::tuple<torch::Tensor, torch::Tensor, torch::Tensor,
-                     torch::Tensor>(torch::Tensor, c10::SymInt, c10::SymInt);
-      static const auto build_graph_csr =
-          c10::Dispatcher::singleton()
-              .findSchemaOrThrow("deepmd::build_graph_csr", "")
-              .typed<BuildGraphCSR>();
-      std::tie(graph_pack.destination_order, graph_pack.destination_row_ptr,
-               graph_pack.source_row_ptr, graph_pack.source_order) =
-          build_graph_csr.call(edge_index, c10::SymInt(nnode),
-                               c10::SymInt(nedge));
+      graph_pack.edge_mask = deepmd::applyPairExclusion(
+          edge_index, edge_mask, graph_pack.atype, pair_exclude_table_, ntypes);
+      if (pair_exclude_table_.defined()) {
+        canonicalizeGraphPayload(graph_pack, nnode);
+      } else {
+        // The device-edge API requires a destination-major physical-edge
+        // prefix. The Kokkos producer satisfies this contract, so the exported
+        // graph's destination-sorted specialization can use identity order.
+        using BuildGraphCSR =
+            std::tuple<torch::Tensor, torch::Tensor, torch::Tensor,
+                       torch::Tensor>(torch::Tensor, c10::SymInt, c10::SymInt);
+        static const auto build_graph_csr =
+            c10::Dispatcher::singleton()
+                .findSchemaOrThrow("deepmd::build_graph_csr", "")
+                .typed<BuildGraphCSR>();
+        std::tie(graph_pack.destination_order, graph_pack.destination_row_ptr,
+                 graph_pack.source_row_ptr, graph_pack.source_order) =
+            build_graph_csr.call(edge_index, c10::SymInt(nnode),
+                                 c10::SymInt(nedge));
+      }
       extract_outputs(
           out,
           run_model_graph(
@@ -2196,7 +2276,7 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
       torch::from_blob(d_force, {nnode, 3}, opt_f64).copy_(force_t);
       torch::from_blob(d_atom_virial, {nnode, 9}, opt_f64).copy_(av);
     }
-    at::cuda::getCurrentCUDAStream().synchronize();
+    synchronize_current_accelerator_stream();
   });
 }
 
@@ -2275,8 +2355,23 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         d_atom_virial, {nall_nodes, 9},
         torch::TensorOptions().dtype(torch::kFloat64).device(device))
         .copy_(atom_virial);
-    at::cuda::getCurrentCUDAStream().synchronize();
+    synchronize_current_accelerator_stream();
   });
+}
+
+void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,
+                                      double* d_force,
+                                      double* d_atom_virial,
+                                      const double* d_coord,
+                                      const int* d_atype,
+                                      const int* d_edge_index,
+                                      const double* d_edge_vec,
+                                      const int nloc,
+                                      const int nedge) {
+  compute_edges_gpu_impl(d_atom_energy, d_force, d_atom_virial, d_coord,
+                         d_atype, d_edge_index, d_edge_vec, nloc, nedge,
+                         /*fparam=*/{}, /*aparam=*/{}, /*nall_nodes=*/0,
+                         /*comm_nlist=*/nullptr);
 }
 
 void DeepPotPTExpt::compute_edges_gpu(double* d_atom_energy,

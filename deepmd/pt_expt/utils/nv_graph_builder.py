@@ -22,14 +22,22 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
+    apply_pair_exclusion,
+    attach_edge_csr,
     neighbor_graph_from_ijs,
 )
 from deepmd.pt.utils.nv_nlist import (
@@ -207,6 +215,8 @@ def build_neighbor_graph_nv(
     *,
     with_csr: bool = False,
     canonicalize: bool = False,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using nvalchemiops' GPU cell list.
 
@@ -228,6 +238,14 @@ def build_neighbor_graph_nv(
     canonicalize
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
 
     Returns
     -------
@@ -239,6 +257,12 @@ def build_neighbor_graph_nv(
     ------
     ImportError
         if ``nvalchemi-toolkit-ops`` (CUDA) is not installed.
+
+    Notes
+    -----
+    The ``pair_excl`` path of this builder has no local oracle set-equality test
+    because nvalchemiops requires CUDA; the set-equality contract must be
+    validated on a GPU box (same pattern as :class:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`).
     """
     if not is_nv_available():
         raise ImportError(
@@ -300,7 +324,7 @@ def build_neighbor_graph_nv(
     center_local, src_local = center_local[keep], src_local[keep]
     shift, frame_idx = shift[keep], frame_idx[keep]
 
-    return neighbor_graph_from_ijs(
+    graph = neighbor_graph_from_ijs(
         center_local,
         src_local,
         shift,
@@ -309,6 +333,10 @@ def build_neighbor_graph_nv(
         frame_idx,
         nloc,
         layout=layout,
-        with_csr=with_csr,
-        canonicalize=canonicalize,
     )
+    if pair_excl is not None:
+        at_flat = torch.as_tensor(atype, device=device).reshape(-1)
+        graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+    return graph

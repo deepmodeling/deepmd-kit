@@ -138,6 +138,7 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
   EXPECT_EQ(out.numneigh[3], 1);
 }
 
+#ifdef BUILD_PYTORCH
 TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   GraphTensorPack graph;
   graph.atype = torch::tensor({0}, torch::kInt64);
@@ -163,7 +164,6 @@ TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   EXPECT_EQ(compact.source_row_ptr.select(0, 1).item<std::int64_t>(), 1);
 }
 
-#ifdef BUILD_PYTORCH
 TEST(TestEdgeTensorPack, CreateEdgeTensorsUsesRowCenters) {
   const torch::Device device(torch::kCPU);
   const std::vector<std::vector<int>> nlist = {{0}, {1}};

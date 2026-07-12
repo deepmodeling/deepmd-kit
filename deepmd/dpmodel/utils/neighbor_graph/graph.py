@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
     )
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 @dataclass
@@ -261,6 +264,136 @@ def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:
     index_in_frame = node_index - xp.take(frame_start, frame_id, axis=0)
     local_count = xp.take(n_local, frame_id, axis=0)
     return index_in_frame < local_count
+
+
+def apply_pair_exclusion(
+    graph: NeighborGraph,
+    atype: Array,
+    pair_excl: PairExcludeMask | None,
+    *,
+    compact: bool = False,
+) -> NeighborGraph:
+    """Canonical pair-type exclusion transform (decision #18).
+
+    ANDs the per-edge type keep-mask into ``graph.edge_mask`` so excluded
+    type pairs contribute exactly zero to every downstream ``segment_sum``.
+    The search stays purely geometric; this transform is applied ONCE at the
+    atomic-model seam (model-level ``pair_exclude_types``) and, for
+    descriptor-level ``exclude_types``, inside the descriptor's graph
+    forward. Identity (returns ``graph`` itself) when ``pair_excl`` is
+    ``None`` or empty.
+
+    Parameters
+    ----------
+    graph
+        The neighbor graph; only ``edge_mask`` (and, if ``compact=True``,
+        ``edge_index``, ``edge_vec``, ``angle_index``, ``angle_mask``) are
+        replaced.
+    atype
+        (N,) flat node types, clamped >= 0 (virtual atoms already handled
+        by the caller / the builders).
+    pair_excl
+        The ``PairExcludeMask`` holding the excluded (ti, tj) set.
+    compact
+        If ``False`` (default), only zero-out masked edges via ``edge_mask``
+        (shape-static; the ONLY mode allowed in compiled / AOTI paths).
+        If ``True``, additionally drop masked edges so the returned graph
+        has no padding on the edge axis (data-dependent shape; eager /
+        dynamic-nedge only). When the graph carries angle fields, angles are
+        remapped onto the compacted edge axis and any angle whose constituent
+        edges were excluded is dropped. ``angle_index`` and ``angle_mask`` must
+        be a consistent pair (both set or both ``None``; matching ``A``);
+        anything else raises ``ValueError``.
+
+    Returns
+    -------
+    NeighborGraph
+        A ``dataclasses.replace`` copy (or the original ``graph`` on early
+        exit) with the exclusion applied. Existing CSR views are cleared
+        because their row pointers depend on the valid-edge mask.
+
+    Notes
+    -----
+    The C++ inference-path mirror is ``applyPairExclusion`` in
+    ``source/api_cc/include/commonPT.h``. It uses the same argument order
+    (edge_index, edge_mask, atype, ...) and the same variable names
+    (``type_ij``, ``keep``): it computes
+    ``type_ij = atype[dst]*(ntypes+1) + atype[src]`` and ANDs the flat
+    ``(ntypes+1)^2`` table lookup into ``edge_mask`` (mask-only mode; no
+    compact variant on the compiled path).
+    """
+    import dataclasses
+
+    if pair_excl is None or len(pair_excl.get_exclude_types()) == 0:
+        return graph
+    xp = array_api_compat.array_namespace(graph.edge_mask)
+    keep = pair_excl.build_edge_exclude_mask(graph.edge_index, atype)
+    out = dataclasses.replace(
+        graph,
+        edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
+        destination_order=None,
+        destination_row_ptr=None,
+        source_row_ptr=None,
+        source_order=None,
+        destination_sorted=False,
+    )
+    if compact:
+        # Angle fields are a coupled pair (produced together by the angle
+        # builder): both present or both None. Fail fast on any inconsistent
+        # state — a partial or shape-mismatched pair is a caller bug that would
+        # otherwise remap silently wrong.
+        has_ai = out.angle_index is not None
+        has_am = out.angle_mask is not None
+        if has_ai != has_am:
+            raise ValueError(
+                "apply_pair_exclusion(compact=True): angle_index and angle_mask "
+                "must both be set or both be None; got "
+                f"angle_index={'set' if has_ai else 'None'}, "
+                f"angle_mask={'set' if has_am else 'None'}."
+            )
+        if has_ai:
+            if out.angle_index.ndim != 2 or out.angle_index.shape[0] != 2:
+                raise ValueError(
+                    "apply_pair_exclusion(compact=True): angle_index must have "
+                    f"shape (2, A); got {tuple(out.angle_index.shape)}."
+                )
+            if out.angle_index.shape[1] != out.angle_mask.shape[0]:
+                raise ValueError(
+                    "apply_pair_exclusion(compact=True): angle_index (2, A) and "
+                    f"angle_mask (A,) disagree on A: {out.angle_index.shape[1]} "
+                    f"vs {out.angle_mask.shape[0]}."
+                )
+        (keep_idx,) = xp.nonzero(out.edge_mask)
+        fields = {
+            "edge_index": out.edge_index[:, keep_idx],
+            "edge_vec": xp.take(out.edge_vec, keep_idx, axis=0),
+            "edge_mask": xp.take(out.edge_mask, keep_idx, axis=0),
+        }
+        if has_ai:
+            # Angles reference PRE-compaction edge positions; remap them to the
+            # compacted axis and drop any angle whose constituent edges were
+            # excluded. ``new_pos`` maps old edge position -> new position via an
+            # exclusive prefix sum over the survivors (-1 for dropped edges).
+            surv = xp.astype(out.edge_mask, out.edge_index.dtype)  # (E,) 0/1
+            rank = xp.cumulative_sum(surv, axis=0) - surv  # survivors before me
+            new_pos = xp.where(out.edge_mask, rank, xp.full_like(rank, -1))
+            a_new = xp.take(new_pos, out.angle_index[0, :], axis=0)
+            b_new = xp.take(new_pos, out.angle_index[1, :], axis=0)
+            both_survive = xp.logical_and(a_new >= 0, b_new >= 0)
+            angle_keep = xp.logical_and(
+                xp.astype(out.angle_mask, xp.bool), both_survive
+            )
+            (angle_keep_idx,) = xp.nonzero(angle_keep)
+            fields["angle_index"] = xp.stack(
+                [
+                    xp.take(a_new, angle_keep_idx, axis=0),
+                    xp.take(b_new, angle_keep_idx, axis=0),
+                ],
+                axis=0,
+            )
+            fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
+        out = dataclasses.replace(out, **fields)
+    return out
 
 
 def node_validity_mask(n_node: Array, n_total: int) -> Array:

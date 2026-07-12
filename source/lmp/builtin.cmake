@@ -58,6 +58,7 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/deepmd_version.h.in"
 file(GLOB DEEPMD_LMP_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp)
 
 find_package(DeePMD REQUIRED)
+option(DEEPMD_LAMMPS_KOKKOS "Build the DeePMD Kokkos pair style" OFF)
 target_sources(
   lammps
   PRIVATE ${DEEPMD_LMP_SRC}
@@ -68,20 +69,26 @@ target_sources(
           ${LAMMPS_SOURCE_DIR}/KSPACE/remap_wrap.cpp
           ${LAMMPS_SOURCE_DIR}/EXTRA-FIX/fix_ttm.cpp # for ttm
 )
-if(PKG_KOKKOS)
-  # The Kokkos device pair style (pair_style deepmd/kk) calls
-  # DeepPot::compute_edges_gpu, which is exposed only by the C++ API; link the
-  # C++ library and select the C++ API headers in pair_deepmd.h / pair_base.h.
+if(DEEPMD_LAMMPS_KOKKOS)
+  if(NOT PKG_KOKKOS)
+    message(FATAL_ERROR "DEEPMD_LAMMPS_KOKKOS requires PKG_KOKKOS")
+  endif()
+  if(NOT TARGET DeePMD::deepmd_cc)
+    message(
+      FATAL_ERROR
+        "DEEPMD_LAMMPS_KOKKOS requires the DeePMD C++ interface target")
+  endif()
   target_link_libraries(lammps PUBLIC DeePMD::deepmd_cc)
   target_compile_definitions(lammps PRIVATE DP_USE_CXX_API)
-  # deepmd_cc exports an interface precompiled header (common.h/device.h) that
-  # lives under <prefix>/include/deepmd; expose that directory (PUBLIC, so the
-  # dependent lmp executable inherits it) to resolve the PCH.
   get_target_property(_deepmd_inc DeePMD::deepmd_cc
                       INTERFACE_INCLUDE_DIRECTORIES)
-  foreach(_inc IN LISTS _deepmd_inc)
-    target_include_directories(lammps PUBLIC "${_inc}/deepmd")
-  endforeach()
+  if(_deepmd_inc AND NOT _deepmd_inc MATCHES "-NOTFOUND$")
+    foreach(_inc IN LISTS _deepmd_inc)
+      if(NOT _inc MATCHES "^\\$<")
+        target_include_directories(lammps PUBLIC "${_inc}/deepmd")
+      endif()
+    endforeach()
+  endif()
 else()
   target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
 endif()

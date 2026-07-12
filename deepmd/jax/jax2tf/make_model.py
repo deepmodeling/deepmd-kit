@@ -11,8 +11,16 @@ AutoGraph before it invokes the jax2tf-converted model body.
 from collections.abc import (
     Callable,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import tensorflow as tf
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -52,6 +60,7 @@ def model_call_from_call_lower(
     fparam: tf.Tensor,
     aparam: tf.Tensor,
     do_atomic_virial: bool = False,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, tf.Tensor]:
     """Return model prediction from lower interface."""
     atype_shape = tf.shape(atype)
@@ -78,6 +87,23 @@ def model_call_from_call_lower(
         # need to be distinguished here
         distinguish_types=False,
     )
+    if pair_excl is not None and len(pair_excl.get_exclude_types()) > 0:
+        # Reuse the canonical dpmodel nlist-BUILD transform (decision #18/A4)
+        # via the vendored ``ndtensorflow`` array-API namespace -- the same way
+        # the TF2 backend (``deepmd/tf2``) runs dpmodel array-API code on
+        # TensorFlow. Unlike the neighbor-list *build* (see the docstring of
+        # ``jax2tf/nlist.py``), the exclusion has no data-dependent Python
+        # control flow: its only branch is on the static ``exclude_types``
+        # config, so it traces cleanly under SavedModel export and does not
+        # need a hand-written TF twin.
+        from deepmd._vendors import ndtensorflow as ndtf
+        from deepmd.dpmodel.utils.nlist import (
+            apply_pair_exclusion_nlist,
+        )
+
+        nlist = apply_pair_exclusion_nlist(
+            ndtf.asarray(nlist), ndtf.asarray(extended_atype), pair_excl
+        ).unwrap()
     extended_coord = tf.reshape(extended_coord, [nframes, -1, 3])
     model_predict_lower = call_lower(
         extended_coord,

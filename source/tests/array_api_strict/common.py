@@ -59,8 +59,10 @@ _REGISTRATION_MODULES = (
     f"{_PACKAGE_ROOT}.descriptor.dpa2",
     f"{_PACKAGE_ROOT}.descriptor.repflows",
     f"{_PACKAGE_ROOT}.descriptor.dpa3",
+    f"{_PACKAGE_ROOT}.descriptor.dpa4",
     f"{_PACKAGE_ROOT}.descriptor.hybrid",
     f"{_PACKAGE_ROOT}.fitting",
+    f"{_PACKAGE_ROOT}.fitting.dpa4_ener",
 )
 
 

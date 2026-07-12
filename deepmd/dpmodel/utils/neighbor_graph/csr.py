@@ -131,6 +131,62 @@ def build_edge_csr(
     )
 
 
+def attach_edge_csr(
+    graph: NeighborGraph,
+    n_nodes: int,
+    canonicalize: bool = False,
+) -> NeighborGraph:
+    """Attach destination/source CSR views to an edge graph.
+
+    Parameters
+    ----------
+    graph : NeighborGraph
+        The graph whose current edge payload and mask define the CSR views.
+    n_nodes : int
+        Number of nodes on the flat graph axis.
+    canonicalize : bool, default: False
+        Whether to reorder the payload into destination-major form.
+
+    Returns
+    -------
+    NeighborGraph
+        A copy carrying CSR views consistent with its edge payload and mask.
+
+    Raises
+    ------
+    ValueError
+        If canonicalization is requested for a graph with angle indices.
+    """
+    if canonicalize and graph.angle_index is not None:
+        raise ValueError("cannot canonicalize a graph with angle indices")
+    (
+        edge_index,
+        edge_vec,
+        edge_mask,
+        destination_order,
+        destination_row_ptr,
+        source_row_ptr,
+        source_order,
+    ) = build_edge_csr(
+        graph.edge_index,
+        graph.edge_vec,
+        graph.edge_mask,
+        n_nodes,
+        canonicalize=canonicalize,
+    )
+    return replace(
+        graph,
+        edge_index=edge_index,
+        edge_vec=edge_vec,
+        edge_mask=edge_mask,
+        destination_order=destination_order,
+        destination_row_ptr=destination_row_ptr,
+        source_row_ptr=source_row_ptr,
+        source_order=source_order,
+        destination_sorted=canonicalize,
+    )
+
+
 def canonicalize_neighbor_graph(
     graph: NeighborGraph,
     n_nodes: int,
@@ -160,31 +216,4 @@ def canonicalize_neighbor_graph(
         If the graph contains angle indices, which would require a matching
         edge-index remapping.
     """
-    if graph.angle_index is not None:
-        raise ValueError("cannot canonicalize a graph with angle indices")
-    (
-        edge_index,
-        edge_vec,
-        edge_mask,
-        destination_order,
-        destination_row_ptr,
-        source_row_ptr,
-        source_order,
-    ) = build_edge_csr(
-        graph.edge_index,
-        graph.edge_vec,
-        graph.edge_mask,
-        n_nodes,
-        canonicalize=True,
-    )
-    return replace(
-        graph,
-        edge_index=edge_index,
-        edge_vec=edge_vec,
-        edge_mask=edge_mask,
-        destination_order=destination_order,
-        destination_row_ptr=destination_row_ptr,
-        source_row_ptr=source_row_ptr,
-        source_order=source_order,
-        destination_sorted=True,
-    )
+    return attach_edge_csr(graph, n_nodes, canonicalize=True)

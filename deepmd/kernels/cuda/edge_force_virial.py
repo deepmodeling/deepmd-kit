@@ -37,8 +37,6 @@ __all__ = [
     "op_available",
 ]
 
-_registered = False
-
 
 def op_available() -> bool:
     """Whether the C++ ``deepmd::edge_force_virial`` op is loaded."""
@@ -186,8 +184,8 @@ def ensure_registered() -> None:
 
     Idempotent; a no-op when the C++ operator library is not loaded.
     """
-    global _registered, _cpu_library
-    if _registered or not op_available():
+    global _cpu_library
+    if _cpu_library is not None or not op_available():
         return
     torch.library.register_fake("deepmd::edge_force_virial")(_fake)
     if canonical_op_available():
@@ -202,7 +200,6 @@ def ensure_registered() -> None:
             _canonical_cpu,
             "CPU",
         )
-    _registered = True
 
 
 def edge_force_virial(
