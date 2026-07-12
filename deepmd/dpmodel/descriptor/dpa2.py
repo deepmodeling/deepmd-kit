@@ -1038,11 +1038,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         build_type_exclude_mask`` short-circuits to an all-ones mask when no
         types are excluded, which is the *only* real/padding mask that code
         path applies at ``attn_layer=0`` (the identity ``NeighborGatedAttention``
-        with zero layers masks nothing). Padding slots read atom-index-0's
-        incidental geometry, so once ``davg != 0`` their ``(em - davg)`` is
-        nonzero too and nothing zeros it before it reaches ``gr`` -- the dense
-        output becomes non-reproducible garbage that depends on which atom
-        happens to sit at extended index 0. This graph path masks/zeros every
+        with zero layers masks nothing). The padding rows' geometry is
+        already weight-zeroed inside ``_make_env_mat``, but ``EnvMat.call``
+        subtracts ``davg`` AFTER that zeroing, so every padding slot carries
+        a deterministic ``-davg/dstd`` residual (padding-count/sel-dependent)
+        that nothing re-masks before it reaches ``gr``. This graph path
+        masks/zeros every
         padding and excluded edge before each ``segment_sum``, so it does NOT
         reproduce that leak. In this regime :meth:`call_graph` (and the dense
         adapter, :meth:`_call_graph_adapter`) deliberately DIFFER from
