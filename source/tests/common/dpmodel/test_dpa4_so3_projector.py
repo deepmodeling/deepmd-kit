@@ -140,10 +140,14 @@ def test_kmax_zero_zonal() -> None:
         projector.to_grid_mat[:, 1:], zonal, atol=1e-14, rtol=1e-14
     )
 
-    # the single-frame projector still round-trips legal coefficients
+    # the single-frame projector still round-trips legal coefficients; the
+    # lmax=6 recovery residual sits at ~1e-12 (float64 re-association in the
+    # Wigner-D monomial products accumulates through the round-trip), so it is
+    # asserted to 1e-11 for the same reason as
+    # ``test_roundtrip_preserves_legal_frame_coeffs``.
     rng = np.random.default_rng(99)
     x = rng.standard_normal((2, projector.coeff_dim, 2)).astype(np.float64)
     mask = _legal_so3_frame_mask(projector)
     x[:, ~mask, :] = 0.0
     y = projector.from_grid(projector.to_grid(x))
-    np.testing.assert_allclose(y[:, mask, :], x[:, mask, :], atol=1e-12, rtol=1e-12)
+    np.testing.assert_allclose(y[:, mask, :], x[:, mask, :], atol=1e-11, rtol=1e-11)

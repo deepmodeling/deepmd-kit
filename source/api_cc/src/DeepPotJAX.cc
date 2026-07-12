@@ -15,6 +15,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -600,6 +601,23 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   } catch (tf_function_not_found& e) {
     has_default_fparam_ = false;
   }
+  try {
+    // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1, ...].
+    // Fold exclusion into the LAMMPS nlist at ingestion (decision #18/A4); the
+    // exported call_lower_* consumes a pre-excluded nlist. Models exported
+    // before this getter existed baked exclusion into the graph, so a missing
+    // getter (=> empty table => identity here) is correct for them.
+    std::vector<int64_t> pet_flat = get_vector<int64_t>(
+        ctx, "get_pair_exclude_types", func_vector, device, status);
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
+      pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
+                                      static_cast<int>(pet_flat[ii + 1]));
+    }
+    pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
+  } catch (tf_function_not_found& e) {
+    pair_exclude_table_.clear();
+  }
   inited = true;
 }
 
@@ -865,6 +883,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
       }
     }
   }
+  // Model-level pair exclusion (decision #18/A4): erase excluded-type
+  // neighbours to -1 before the exported call_lower_* consumes the nlist.
+  // applyPairExcludeNlistVec (common.h) is the torch-free twin of
+  // applyPairExclusionNlist (commonPT.h); empty table => identity.
+  applyPairExcludeNlistVec(nlist, atype, pair_exclude_table_, ntypes, nloc_real,
+                           static_cast<int>(max_size));
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
   std::vector<int64_t> mapping_shape = {nframes, nall_model};

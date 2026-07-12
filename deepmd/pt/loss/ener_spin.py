@@ -23,6 +23,32 @@ from deepmd.utils.version import (
 )
 
 
+def _masked_force_mag_tensors(
+    label: dict[str, torch.Tensor],
+    model_pred: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Collect magnetic-force labels and predictions on spin-active atoms.
+
+    Parameters
+    ----------
+    label : dict[str, torch.Tensor]
+        Batch labels containing ``force_mag``.
+    model_pred : dict[str, torch.Tensor]
+        Model outputs containing ``force_mag`` and ``mask_mag``.
+
+    Returns
+    -------
+    label_fm : torch.Tensor
+        Reference magnetic forces with shape ``(n_mag, 3)``.
+    pred_fm : torch.Tensor
+        Predicted magnetic forces with shape ``(n_mag, 3)``.
+    """
+    atomic_mask = model_pred["mask_mag"].expand(-1, -1, 3)
+    label_fm = label["force_mag"][atomic_mask].reshape(-1, 3)
+    pred_fm = model_pred["force_mag"][atomic_mask].reshape(-1, 3)
+    return label_fm, pred_fm
+
+
 class EnergySpinLoss(TaskLoss):
     def __init__(
         self,
@@ -332,14 +358,9 @@ class EnergySpinLoss(TaskLoss):
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
             find_force_m = label.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_m
-            nframes = model_pred["force_mag"].shape[0]
-            atomic_mask = model_pred["mask_mag"].expand([-1, -1, 3])
-            label_force_mag = label["force_mag"][atomic_mask].view(nframes, -1, 3)
-            model_pred_force_mag = model_pred["force_mag"][atomic_mask].view(
-                nframes, -1, 3
-            )
+            label_fm, pred_fm = _masked_force_mag_tensors(label, model_pred)
             if self.loss_func == "mse":
-                diff_fm = label_force_mag - model_pred_force_mag
+                diff_fm = label_fm - pred_fm
                 l2_force_mag_loss = torch.mean(torch.square(diff_fm))
                 if not self.inference:
                     more_loss["l2_force_m_loss"] = self.display_if_exist(
@@ -362,17 +383,14 @@ class EnergySpinLoss(TaskLoss):
                         mae_fm.detach(), find_force_m
                     )
             elif self.loss_func == "mae":
-                l1_force_mag_loss = F.l1_loss(
-                    label_force_mag, model_pred_force_mag, reduction="none"
-                )
-                more_loss["mae_fm"] = self.display_if_exist(
-                    l1_force_mag_loss.mean().detach(), find_force_m
-                )
                 # Mean over frames, magnetic atoms and xyz (same reduction as
                 # force_mag MSE, force_real MAE and the displayed mae_fm) so the
                 # loss is batch-size independent: a 2-frame batch equals the mean
                 # of the two single-frame losses.
-                l1_force_mag_loss = l1_force_mag_loss.mean()
+                l1_force_mag_loss = torch.mean(torch.abs(label_fm - pred_fm))
+                more_loss["mae_fm"] = self.display_if_exist(
+                    l1_force_mag_loss.detach(), find_force_m
+                )
                 loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
                     GLOBAL_PT_FLOAT_PRECISION
                 )

@@ -1,7 +1,7 @@
-# Install from pre-compiled C library {{ tensorflow_icon }} {{ jax_icon }}
+# Install from pre-compiled C library {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, JAX {{ jax_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}
 :::
 
 DeePMD-kit provides pre-compiled C library package (`libdeepmd_c.tar.gz`) in each [release](https://github.com/deepmodeling/deepmd-kit/releases). It can be used to build the [LAMMPS plugin](./install-lammps.md) and the [i-PI driver](./install-ipi.md), as well as many [third-party software packages](../third-party/out-of-deepmd-kit.md), without building TensorFlow and DeePMD-kit on one's own.
@@ -12,7 +12,17 @@ wget https://github.com/deepmodeling/deepmd-kit/releases/latest/download/libdeep
 tar xzf libdeepmd_c.tar.gz
 ```
 
-The library is built in Linux (GLIBC 2.17) with CUDA 12.2 (`libdeepmd_c.tar.gz`). It's noted that this package does not contain CUDA Toolkit and cuDNN, so one needs to download them from the NVIDIA website.
+The library is built in Linux (GLIBC 2.28) with CUDA 12.9 (`libdeepmd_c.tar.gz`). It's noted that this package does not contain CUDA Toolkit, cuDNN, or PyTorch runtime libraries.
+To use the PyTorch C/C++ backend on Linux, install a libtorch runtime that exactly matches the PyTorch version used to build the package.
+The PyTorch version must match exactly, while the CUDA variant may be omitted only when the target runtime is compatible.
+Make the libtorch `lib` directory discoverable by the dynamic linker, for example by adding it to `LD_LIBRARY_PATH`.
+The C library package includes `download_libtorch.sh`, which downloads and unpacks the matching libtorch runtime and writes `libtorch_env.sh`:
+
+```sh
+cd libdeepmd_c
+./download_libtorch.sh
+. ./libtorch_env.sh
+```
 
 ## Use Pre-compiled C Library to build the LAMMPS plugin and i-PI driver
 

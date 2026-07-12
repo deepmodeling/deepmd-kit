@@ -310,6 +310,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),
+            "numb_dos": model.get_numb_dos(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
             "sel_type": model.get_sel_type(),
@@ -320,6 +321,18 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             "sel": model.get_sel(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
+            # property models: the output name/dimension/intensiveness cannot be
+            # recovered from the StableHLO alone, so persist them for the
+            # evaluator (None for non-property models).
+            "var_name": model.get_var_name()
+            if hasattr(model, "get_var_name")
+            else None,
+            "task_dim": model.get_task_dim()
+            if hasattr(model, "get_task_dim")
+            else None,
+            "intensive": model.get_intensive()
+            if hasattr(model, "get_intensive")
+            else False,
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):

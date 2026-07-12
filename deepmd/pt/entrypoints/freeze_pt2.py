@@ -46,7 +46,11 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    SO2Convolution,
     SO2Linear,
 )
 from deepmd.pt.model.model import (
@@ -270,7 +274,7 @@ def _collect_metadata(
         "ntypes": _get_model_ntypes(model),
         "rcut": float(model.get_rcut()),
         "sel": [int(s) for s in model.get_sel()],
-        "lower_input_kind": "nlist" if is_spin else "edge_vec",
+        "lower_input_kind": model.export_lower_input_kind(),
         "dim_fparam": int(model.get_dim_fparam()),
         "dim_aparam": int(model.get_dim_aparam()),
         "dim_chg_spin": int(model.get_dim_chg_spin()),
@@ -293,6 +297,70 @@ def _collect_metadata(
         metadata["ntypes_spin"] = int(model.spin.get_ntypes_spin())
         metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
     return metadata
+
+
+def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) -> None:
+    """Tune the shape-keyed Triton launch tables for this checkpoint's shapes.
+
+    At ``DP_TRITON_INFER >= 2`` the traced graph bakes launch configurations
+    resolved from the tables in ``deepmd.kernels.triton.sezm.tile_configs``.  Shape keys
+    absent from the built-in tables (an untuned GPU model, or an untuned
+    width/degree) are swept here on the local GPU -- the exact hardware the
+    ``.pt2`` will run on, since AOTInductor artifacts are not portable across
+    GPU models -- and registered for the current process before tracing.
+    Keys already covered cost nothing.
+
+    The fused value-path entries are then rebound: the mixing-stack operator
+    selection (fp32 versus fp16x3) is fixed at construction time, which
+    predates the registrations made here.
+    """
+    if triton_infer_level() < 2:
+        return
+    if target_device.type != "cuda" or not torch.cuda.is_available():
+        return
+    from deepmd.kernels.triton.sezm.so2_value_path import (
+        SO2_VALUE_PATH_TRITON_AVAILABLE,
+        make_triton_value_path,
+    )
+
+    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        return
+    from deepmd.kernels.triton.sezm.sweep_tile_configs import (
+        collect_model_shape_keys,
+        tune_missing_configs,
+    )
+    from deepmd.kernels.triton.sezm.tile_configs import (
+        _builtin_tables,
+    )
+
+    # The built-in tables and the sweep both resolve against the current
+    # device; pin it to the AOTI target so a freeze aimed at a secondary GPU
+    # tunes and looks up the right hardware (mixed-model hosts).
+    if target_device.index is not None:
+        torch.cuda.set_device(target_device)
+        _builtin_tables.cache_clear()
+
+    shape_keys = collect_model_shape_keys(model)
+    registered = tune_missing_configs(
+        shape_keys, level=triton_infer_level(), device=target_device
+    )
+    if registered:
+        log.info(
+            "Registered freshly tuned Triton launch configurations: %s",
+            {family: sorted(entries) for family, entries in registered.items()},
+        )
+    else:
+        log.info(
+            "Triton launch tables already cover this checkpoint's shapes on %s; "
+            "no tuning needed.",
+            torch.cuda.get_device_name(target_device),
+        )
+    # Rebind unconditionally: the fp32-versus-fp16x3 stack selection was made
+    # at construction time, possibly against a different current device's
+    # tables, and must reflect the target device and any fresh registrations.
+    for module in model.modules():
+        if isinstance(module, SO2Convolution) and module.triton_infer_level >= 2:
+            module._triton_value_path = make_triton_value_path(module)
 
 
 # The trace-time sendlist for the with-comm artifact embeds the address of a
@@ -406,8 +474,14 @@ def _make_sample_inputs(
 ) -> tuple[torch.Tensor | None, ...]:
     """Build representative ``forward_common_lower`` inputs for tracing.
 
-    The spin path returns the nlist lower signature; the energy path returns the
-    single-domain edge schema (folded ``edge_index``, extended scatter indices).
+    Three lower ABIs are produced, selected by ``model.export_lower_input_kind()``
+    and whether the model carries spin:
+
+    - virtual spin (``nlist``): the DeepSpin extended-input signature, since the
+      graph expands virtual atoms internally;
+    - native spin (``edge_vec``): the energy edge schema plus the owned-atom
+      spins (the first ``nloc`` extended rows, where ``mapping`` is identity);
+    - energy (``edge_vec``): the plain single-domain edge schema.
     """
     (
         ext_coord,
@@ -419,7 +493,7 @@ def _make_sample_inputs(
         aparam,
         charge_spin,
     ) = _build_sample_extended(model, nframes, nloc, device, has_spin)
-    if has_spin:
+    if has_spin and model.export_lower_input_kind() == "nlist":
         return (
             ext_coord,
             ext_atype,
@@ -437,6 +511,19 @@ def _make_sample_inputs(
         formatted_nlist,
         mapping_t,
     )
+    if has_spin:
+        return (
+            edge_schema.coord,
+            edge_schema.atype,
+            edge_schema.edge_index,
+            edge_schema.edge_vec,
+            edge_schema.edge_scatter_index,
+            edge_schema.edge_mask,
+            ext_spin[:, :nloc],
+            fparam,
+            aparam,
+            charge_spin,
+        )
     return (
         edge_schema.coord,
         edge_schema.atype,
@@ -491,19 +578,22 @@ def _make_comm_sample_inputs(
     The parallel path indexes the extended node set directly, so ``edge_index``
     coincides with ``edge_scatter_index`` (both extended) and ghost features are
     refreshed via ``border_op`` rather than gathered through a folded mapping.
-    The frame axis is fixed at one, matching LAMMPS single-frame inference.
+    The frame axis is fixed at one, matching LAMMPS single-frame inference. The
+    native spin scheme threads the EXTENDED per-node spin (ghost spins ride the
+    same exchange), inserted after ``edge_mask`` to match its with-comm signature.
     """
+    has_spin = _model_has_spin(model)
     (
         ext_coord,
         ext_atype,
         nlist_t,
         mapping_t,
-        _ext_spin,
+        ext_spin,
         fparam,
         aparam,
         charge_spin,
     ) = _build_sample_extended(
-        model, nframes=1, nloc=nloc, device=device, has_spin=False
+        model, nframes=1, nloc=nloc, device=device, has_spin=has_spin
     )
     formatted_nlist: torch.Tensor = model.format_nlist(ext_coord, ext_atype, nlist_t)
     edge_schema = edge_schema_from_extended(
@@ -512,7 +602,7 @@ def _make_comm_sample_inputs(
         formatted_nlist,
         mapping_t,
     )
-    return (
+    edge_inputs = (
         edge_schema.coord,  # (1, nall, 3)
         edge_schema.atype,  # (1, nloc)
         ext_atype,  # (1, nall)
@@ -520,11 +610,11 @@ def _make_comm_sample_inputs(
         edge_schema.edge_vec,
         edge_schema.edge_scatter_index,  # edge_scatter_index: extended (2, E)
         edge_schema.edge_mask,
-        fparam,
-        aparam,
-        charge_spin,
-        *_make_edge_comm_tensors(mapping_t, nloc, device),
     )
+    comm_tensors = _make_edge_comm_tensors(mapping_t, nloc, device)
+    if has_spin:
+        return (*edge_inputs, ext_spin, fparam, aparam, charge_spin, *comm_tensors)
+    return (*edge_inputs, fparam, aparam, charge_spin, *comm_tensors)
 
 
 def _resolve_nframes(
@@ -570,17 +660,24 @@ def _resolve_nframes(
 def _build_dynamic_shapes(
     sample_inputs: tuple[torch.Tensor | None, ...],
 ) -> tuple:
-    """Build positional dynamic-shape constraints for the traced lower input."""
+    """Build positional dynamic-shape constraints for the traced lower input.
+
+    The lower ABI is recovered from the sample structure: a floating-point
+    tensor at index 2 is the extended spin of the deepspin-scheme nlist contract,
+    while an integer ``edge_index`` there marks the edge contract. A native-spin
+    edge sample carries the extra per-local-atom spin tensor, giving it ten
+    positional entries against the energy contract's nine.
+    """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    has_spin = (
-        len(sample_inputs) >= 7
+    nloc_dim = torch.export.Dim("nloc", min=1)
+    nedge_dim = torch.export.Dim("nedge", min=2)
+    is_nlist_spin = (
+        len(sample_inputs) >= 3
         and sample_inputs[2] is not None
         and sample_inputs[2].is_floating_point()
     )
-    nall_dim = torch.export.Dim("nall", min=4 if has_spin else 1)
-    nloc_dim = torch.export.Dim("nloc", min=1)
-    nedge_dim = torch.export.Dim("nedge", min=2)
-    if has_spin:
+    if is_nlist_spin:
+        nall_dim = torch.export.Dim("nall", min=4)
         fparam = sample_inputs[5]
         aparam = sample_inputs[6]
         charge_spin = sample_inputs[7] if len(sample_inputs) == 8 else None
@@ -596,16 +693,36 @@ def _build_dynamic_shapes(
         if len(sample_inputs) == 8:
             shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
         return shapes
-    fparam = sample_inputs[6]
-    aparam = sample_inputs[7]
-    charge_spin = sample_inputs[8] if len(sample_inputs) == 9 else None
-    shapes = (
+
+    nall_dim = torch.export.Dim("nall", min=1)
+    edge_shapes = (
         {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
         {0: nframes_dim, 1: nloc_dim},  # atype
         {1: nedge_dim},  # edge_index
         {0: nedge_dim},  # edge_vec
         {1: nedge_dim},  # edge_scatter_index
         {0: nedge_dim},  # edge_mask
+    )
+    # Native-spin edge contract: extra per-local-atom spin leaf at index 6.
+    is_native_spin = len(sample_inputs) == 10
+    if is_native_spin:
+        fparam, aparam, charge_spin = (
+            sample_inputs[7],
+            sample_inputs[8],
+            sample_inputs[9],
+        )
+        return (
+            *edge_shapes,
+            {0: nframes_dim, 1: nloc_dim},  # spin: (nframes, nloc, 3)
+            {0: nframes_dim} if fparam is not None else None,
+            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
+            {0: nframes_dim} if charge_spin is not None else None,
+        )
+    fparam = sample_inputs[6]
+    aparam = sample_inputs[7]
+    charge_spin = sample_inputs[8] if len(sample_inputs) == 9 else None
+    shapes = (
+        *edge_shapes,
         {0: nframes_dim} if fparam is not None else None,
         {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
     )
@@ -622,15 +739,14 @@ def _build_with_comm_dynamic_shapes(
     The frame axis is fixed at one (LAMMPS single-frame inference), so only
     ``nall``, ``nloc`` and ``nedge`` vary. The eight communication tensors are
     static: ``nswap`` is fixed at LAMMPS init and the graph carries no variation
-    across its value (``border_op`` is opaque to the exported program).
+    across its value (``border_op`` is opaque to the exported program). The
+    native spin contract inserts the extended (nall) spin after ``edge_mask``,
+    giving 19 positional entries against the energy contract's 18.
     """
     nall_dim = torch.export.Dim("nall", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
-    fparam = sample_inputs[7]
-    aparam = sample_inputs[8]
-    charge_spin = sample_inputs[9]
-    base = (
+    edge_base = (
         {1: nall_dim},  # coord: (1, nall, 3)
         {1: nloc_dim},  # atype: (1, nloc)
         {1: nall_dim},  # extended_atype: (1, nall)
@@ -638,6 +754,27 @@ def _build_with_comm_dynamic_shapes(
         {0: nedge_dim},  # edge_vec: (nedge, 3)
         {1: nedge_dim},  # edge_scatter_index: (2, nedge)
         {0: nedge_dim},  # edge_mask: (nedge,)
+    )
+    is_native_spin = len(sample_inputs) == 19
+    if is_native_spin:
+        fparam, aparam, charge_spin = (
+            sample_inputs[8],
+            sample_inputs[9],
+            sample_inputs[10],
+        )
+        base = (
+            *edge_base,
+            {1: nall_dim},  # spin: (1, nall, 3)
+            None if fparam is None else {},  # fparam: (1, ndf) static
+            None if aparam is None else {1: nloc_dim},  # aparam: (1, nloc, nda)
+            None if charge_spin is None else {},  # charge_spin: (1, nchg) static
+        )
+        return (*base, *((None,) * 8))
+    fparam = sample_inputs[7]
+    aparam = sample_inputs[8]
+    charge_spin = sample_inputs[9]
+    base = (
+        *edge_base,
         None if fparam is None else {},  # fparam: (1, ndf) static
         None if aparam is None else {1: nloc_dim},  # aparam: (1, nloc, nda)
         None if charge_spin is None else {},  # charge_spin: (1, nchg) static
@@ -750,6 +887,10 @@ def freeze_sezm_to_pt2(
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag
 
+    # Sweep any Triton launch-table keys this checkpoint needs that are not
+    # covered for the local GPU, so the traced graph bakes tuned launches.
+    _tune_triton_configs(model, target_device)
+
     _, sample_inputs_cpu = _resolve_nframes(
         model,
         nloc=7,
@@ -757,50 +898,11 @@ def freeze_sezm_to_pt2(
         has_spin=is_spin,
     )
 
-    if is_spin:
-        (
-            ext_coord,
-            ext_atype,
-            ext_spin,
-            nlist_t,
-            mapping_t,
-            fparam,
-            aparam,
-            charge_spin,
-        ) = sample_inputs_cpu
-        traced = model.forward_common_lower_exportable(
-            ext_coord,
-            ext_atype,
-            ext_spin,
-            nlist_t,
-            mapping_t,
-            fparam=fparam,
-            aparam=aparam,
-            charge_spin=charge_spin,
-        )
-    else:
-        (
-            coord,
-            atype,
-            edge_index,
-            edge_vec,
-            edge_scatter_index,
-            edge_mask,
-            fparam,
-            aparam,
-            charge_spin,
-        ) = sample_inputs_cpu
-        traced = model.forward_common_lower_exportable(
-            coord,
-            atype,
-            edge_index,
-            edge_vec,
-            edge_scatter_index,
-            edge_mask,
-            fparam=fparam,
-            aparam=aparam,
-            charge_spin=charge_spin,
-        )
+    # Each model's exportable signature matches its sample tuple positionally
+    # (energy / native-spin edge ABI, or virtual-spin nlist ABI), so a single
+    # splat covers all three contracts.
+    log.info("Tracing the lower graph on CPU (make_fx)...")
+    traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
     # Output key order is taken from a concrete run; Python dict order
     # is stable and matches what DeepPotPTExpt::extract_outputs zips
@@ -809,6 +911,7 @@ def freeze_sezm_to_pt2(
         sample_out = traced(*sample_inputs_cpu)
     output_keys = list(sample_out.keys())
 
+    log.info("Exporting the traced graph (torch.export)...")
     exported = torch.export.export(
         traced,
         sample_inputs_cpu,
@@ -828,21 +931,33 @@ def freeze_sezm_to_pt2(
         exported = move_to_device_pass(exported, target_device)
 
     out_path_str = str(out_path)
-    compile_options = build_inductor_compile_options()
+    compile_options = build_inductor_compile_options(inference=True)
     # Keep AOTInductor aligned with the eval compile path.  ``triton.max_tiles=1``
     # keeps data-dependent edge axes on Triton's x grid, whose bound is large
     # enough for production-scale neighbor lists.
+    log.info(
+        "Compiling the AOTInductor package for %s (the slowest freeze stage; "
+        "typically several minutes)...",
+        target_device,
+    )
     with inductor_config.patch({**compile_options, "triton.max_tiles": 1}):
         aoti_compile_and_package(exported, package_path=out_path_str)
 
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
-    # exchanged between interaction blocks. Excluded for spin (nlist lower
-    # interface) and bridging models (Source Freeze Propagation is not
-    # rank-decomposable); those fall back to single-rank inference.
-    with_comm = (not is_spin) and model.supports_edge_parallel()
+    # exchanged between interaction blocks. Gated on the edge_vec lower contract
+    # (energy and native spin), so virtual spin (nlist interface) is excluded;
+    # bridging models report supports_edge_parallel()=False (Source Freeze
+    # Propagation is not rank-decomposable). Both fall back to single-rank.
+    with_comm = (
+        model.export_lower_input_kind() == "edge_vec" and model.supports_edge_parallel()
+    )
     with_comm_bytes: bytes | None = None
     if with_comm:
+        log.info(
+            "Compiling the parallel with-comm artifact (second AOTInductor "
+            "compilation)..."
+        )
         with_comm_bytes = _export_with_comm_artifact(
             model,
             target_device=target_device,
@@ -873,6 +988,27 @@ def freeze_sezm_to_pt2(
         out_path_str,
         target_device,
         output_keys,
+    )
+    log.info(
+        "Thank you for using the DPA4/SeZM model! If it benefits your "
+        "research, please cite the DPA4 paper "
+        "(https://arxiv.org/abs/2606.02419):"
+    )
+    log.info(
+        "\n"
+        "@article{li2026dpa4,\n"
+        "  title = {{DPA4}: Pushing the Accuracy-Cost Frontier of Interatomic "
+        "Potentials with {EMFA} {SO(2)} Convolution},\n"
+        "  author = {Li, Tiancheng and Li, Wentao and Peng, Anyang and "
+        "Xue, Jianming and Zhang, Linfeng and Zhang, Duo and Wang, Han},\n"
+        "  journal = {arXiv preprint arXiv:2606.02419},\n"
+        "  year = {2026},\n"
+        "  eprint = {2606.02419},\n"
+        "  archivePrefix = {arXiv},\n"
+        "  primaryClass = {physics.chem-ph},\n"
+        "  doi = {10.48550/arXiv.2606.02419},\n"
+        "  url = {https://arxiv.org/abs/2606.02419}\n"
+        "}"
     )
 
 

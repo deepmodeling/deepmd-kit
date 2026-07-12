@@ -290,6 +290,36 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const std::vector<double>& charge_spin,
                            const bool atomic) override;
 
+  /**
+   * @brief Fully device-resident edge inference for single-domain SeZM/DPA4.
+   *
+   * Runs the exported model directly on a GPU-built compact edge schema,
+   * keeping coordinates, the edge graph and the outputs on the device.  All
+   * pointers reference GPU memory on the model's device.  ``edge_index`` is the
+   * flattened [2, nedge] local edge graph (row 0 = neighbor/source, row 1 =
+   * center/destination); ``edge_vec`` is the matching minimum-image bond vector
+   * ``r_neighbor - r_center``.  Outputs are written device-to-device.
+   *
+   * @param[out] d_atom_energy Per-atom energy, GPU [nloc].
+   * @param[out] d_force Per-atom force, GPU [nloc * 3] row-major.
+   * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
+   * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
+   * @param[in] d_atype Local atom types, GPU [nloc].
+   * @param[in] d_edge_index Local edge graph, GPU [2 * nedge].
+   * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
+   * @param[in] nloc Number of local atoms.
+   * @param[in] nedge Number of physical edges (dummy edges added internally).
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge) override;
+
  private:
   bool inited;
   int ntypes;
@@ -331,6 +361,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   // continue to work; GNN archives must be regenerated to opt into
   // the fail-fast guard against the silent-corruption bug.
   bool has_message_passing_ = false;
+  // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
+  // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
+  // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
+  // exclusion (identity).  The device is fixed at ``init`` (``gpu_id`` /
+  // ``gpu_enabled``), so the seam helpers ``index_select`` it directly with no
+  // per-step CPU clone / H2D upload.  Exclusion is a BUILD-time transform
+  // (decision #18/A4): the C++ ingestion seam is the single application site
+  // (``applyPairExclusion`` graph / ``applyPairExclusionNlist`` dense); the
+  // exported .pt2 lowers consume pre-excluded inputs and never re-apply it.
+  torch::Tensor pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

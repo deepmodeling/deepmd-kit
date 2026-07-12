@@ -28,6 +28,9 @@ import torch
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.train import (
+    change_model_out_bias,
+)
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
     resolve_model_prob,
@@ -195,6 +198,8 @@ class Trainer:
             infer_env_defaults["DP_COMPILE_INFER"] = "1"
         if bool(validating_params.get("tf32_infer", False)):
             infer_env_defaults["DP_TF32_INFER"] = "1"
+        if bool(validating_params.get("amp_infer", False)):
+            infer_env_defaults["DP_AMP_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -1231,16 +1236,18 @@ class Trainer:
         validating_params: dict[str, Any],
         validation_data: DpLoaderSet | None,
     ) -> FullValidator | None:
-        """Create the runtime EMA full validator when it is active."""
-        if not self._is_validation_requested(
-            validating_params, "full_validation"
-        ) or not validating_params.get("ema_full_validation", False):
+        """Create the runtime EMA full validator when it is active.
+
+        EMA full validation is independent from regular full validation: it
+        can be enabled on its own to validate only the EMA-smoothed model.
+        """
+        if not self._is_validation_requested(validating_params, "ema_full_validation"):
+            return None
+        if self.model_ema is None:
+            # EMA full validation needs the EMA-smoothed model; when EMA is
+            # disabled the option is silently ignored rather than failing.
             return None
         self._raise_if_full_validation_unsupported(validation_data)
-        if self.model_ema is None:
-            raise ValueError(
-                "validating.ema_full_validation requires `training.enable_ema=true`."
-            )
         if validation_data is None:
             raise RuntimeError(
                 "validation_data must be available after EMA full validation checks."
@@ -1292,18 +1299,10 @@ class Trainer:
                 "training; multi-task training is not supported."
             )
 
-        has_spin = getattr(self.model, "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin or isinstance(self.loss, EnergySpinLoss):
+        if not isinstance(self.loss, (EnergyStdLoss, EnergySpinLoss)):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
-                "training; spin-energy training is not supported."
-            )
-
-        if not isinstance(self.loss, EnergyStdLoss):
-            raise ValueError(
-                "validating.full_validation only supports single-task energy training."
+                "or spin-energy training."
             )
 
         if validation_data is None:
@@ -2449,8 +2448,21 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     if callable(has_spin):
         has_spin = has_spin()
     if has_spin:
+        # ``model.spin.allow_missing_label`` relaxes the spin label from mandatory to
+        # optional with a zero default, so a system without a ``spin`` file is filled
+        # with zeros rather than rejected. The flag is read from the model's spin
+        # configuration.
+        allow_missing_spin = getattr(
+            getattr(_model, "spin", None), "allow_missing_label", False
+        )
         spin_requirement_items = [
-            DataRequirementItem("spin", ndof=3, atomic=True, must=True)
+            DataRequirementItem(
+                "spin",
+                ndof=3,
+                atomic=True,
+                must=not allow_missing_spin,
+                default=0.0,
+            )
         ]
         additional_data_requirement += spin_requirement_items
     if _model.has_chg_spin_ebd():
@@ -2609,24 +2621,13 @@ def model_change_out_bias(
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
 ) -> Any:
-    old_bias = deepcopy(_model.get_out_bias())
-    _model.change_out_bias(
-        _sample_func,
-        bias_adjust_mode=_bias_adjust_mode,
-    )
-    new_bias = deepcopy(_model.get_out_bias())
-
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
     )
 
-    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
-        _model.get_fitting_net().compute_input_stats(_sample_func)
-
-    model_type_map = _model.get_type_map()
-    log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    return change_model_out_bias(
+        _model,
+        _sample_func,
+        bias_adjust_mode=_bias_adjust_mode,
+        recompute_input_stats=isinstance(_model, DPModelCommon),
     )
-    return _model

@@ -255,16 +255,7 @@ class DPTrainer:
                 self.model.data_stat(data, stat_file_path=stat_file_path)
 
             # config the init_frz_model command
-            if self.run_opt.init_mode == "init_from_frz_model":
-                self._init_from_frz_model()
-            elif self.run_opt.init_mode == "init_model":
-                self._init_from_ckpt(self.run_opt.init_model)
-            elif self.run_opt.init_mode == "restart":
-                self._init_from_ckpt(self.run_opt.restart)
-            elif self.run_opt.init_mode == "finetune":
-                self._init_from_pretrained_model(
-                    data=data, origin_type_map=origin_type_map
-                )
+            self._init_from_run_opt(data=data, origin_type_map=origin_type_map)
 
             # neighbor_stat is moved to train.py as duplicated
         else:
@@ -879,6 +870,27 @@ class DPTrainer:
             self.place_holders["find_" + kk] = tf.placeholder(
                 tf.float32, name="t_find_" + kk
             )
+
+    def _init_from_run_opt(
+        self,
+        data: DeepmdDataSystem,
+        origin_type_map: list[str] | None = None,
+    ) -> None:
+        """Dispatch checkpoint pre-inspection based on the run-option init mode.
+
+        The mode strings must match the values produced by
+        :class:`deepmd.tf.train.run_options.RunOptions` exactly; a mismatch
+        silently skips the pre-inspection (see ``_init_from_ckpt``) that detects
+        compressed-checkpoint metadata before graph construction.
+        """
+        if self.run_opt.init_mode == "init_from_frz_model":
+            self._init_from_frz_model()
+        elif self.run_opt.init_mode == "init_from_model":
+            self._init_from_ckpt(self.run_opt.init_model)
+        elif self.run_opt.init_mode == "restart":
+            self._init_from_ckpt(self.run_opt.restart)
+        elif self.run_opt.init_mode == "finetune":
+            self._init_from_pretrained_model(data=data, origin_type_map=origin_type_map)
 
     def _init_from_frz_model(self) -> None:
         try:

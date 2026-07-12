@@ -22,6 +22,7 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.common import (
     cast_precision,
     to_numpy_array,
+    to_numpy_dtype,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -431,7 +432,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Store tabulated embedding-net data in the descriptor state."""
         compress_data = []
         compress_info = []
-        dtype = self.davg.dtype
+        dtype = to_numpy_dtype(self.davg.dtype)
         ndim = 1 if self.type_one_side else 2
         for embedding_idx in range(self.ntypes**ndim):
             if self.type_one_side:

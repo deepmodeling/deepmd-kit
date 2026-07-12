@@ -12,7 +12,48 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.utils.multi_task import (
+    apply_shared_links,
+)
+
 log = logging.getLogger(__name__)
+
+
+def _share_descriptor(
+    link_model: torch.nn.Module,
+    link_type: str,
+    link_class: Any,
+    base_class: Any,
+    shared_level: int,
+    model_prob: float,
+    *,
+    resume: bool,
+) -> None:
+    del link_model, link_type
+    link_class.share_params(
+        base_class,
+        shared_level,
+        model_prob=model_prob,
+        resume=resume,
+    )
+
+
+def _share_fitting(
+    link_class: Any,
+    base_class: Any,
+    shared_level: int,
+    model_prob: float,
+    *,
+    protection: float,
+    resume: bool,
+) -> None:
+    link_class.share_params(
+        base_class,
+        shared_level,
+        model_prob=model_prob,
+        protection=protection,
+        resume=resume,
+    )
 
 
 class ModelWrapper(torch.nn.Module):
@@ -83,91 +124,16 @@ class ModelWrapper(torch.nn.Module):
         resume : bool
             Whether resuming from checkpoint.
         """
-        for shared_item in shared_links:
-            shared_base = shared_links[shared_item]["links"][0]
-            class_type_base = shared_base["shared_type"]
-            model_key_base = shared_base["model_key"]
-            shared_level_base = shared_base["shared_level"]
-            if "descriptor" in class_type_base:
-                if class_type_base == "descriptor":
-                    base_class = self.model[model_key_base].get_descriptor()
-                elif "hybrid" in class_type_base:
-                    hybrid_index = int(class_type_base.split("_")[-1])
-                    base_class = (
-                        self.model[model_key_base]
-                        .get_descriptor()
-                        .descrpt_list[hybrid_index]
-                    )
-                else:
-                    raise RuntimeError(f"Unknown class_type {class_type_base}!")
-                for link_item in shared_links[shared_item]["links"][1:]:
-                    class_type_link = link_item["shared_type"]
-                    model_key_link = link_item["model_key"]
-                    shared_level_link = int(link_item["shared_level"])
-                    assert shared_level_link >= shared_level_base, (
-                        "The shared_links must be sorted by shared_level!"
-                    )
-                    assert "descriptor" in class_type_link, (
-                        f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                    )
-                    if class_type_link == "descriptor":
-                        link_class = self.model[model_key_link].get_descriptor()
-                    elif "hybrid" in class_type_link:
-                        hybrid_index = int(class_type_link.split("_")[-1])
-                        link_class = (
-                            self.model[model_key_link]
-                            .get_descriptor()
-                            .descrpt_list[hybrid_index]
-                        )
-                    else:
-                        raise RuntimeError(f"Unknown class_type {class_type_link}!")
-                    frac_prob = (
-                        model_key_prob_map[model_key_link]
-                        / model_key_prob_map[model_key_base]
-                    )
-                    link_class.share_params(
-                        base_class,
-                        shared_level_link,
-                        model_prob=frac_prob,
-                        resume=resume,
-                    )
-                    log.warning(
-                        f"Shared params of {model_key_base}.{class_type_base} "
-                        f"and {model_key_link}.{class_type_link}!"
-                    )
-            else:
-                if hasattr(self.model[model_key_base].atomic_model, class_type_base):
-                    base_class = self.model[model_key_base].atomic_model.__getattr__(
-                        class_type_base
-                    )
-                    for link_item in shared_links[shared_item]["links"][1:]:
-                        class_type_link = link_item["shared_type"]
-                        model_key_link = link_item["model_key"]
-                        shared_level_link = int(link_item["shared_level"])
-                        assert shared_level_link >= shared_level_base, (
-                            "The shared_links must be sorted by shared_level!"
-                        )
-                        assert class_type_base == class_type_link, (
-                            f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                        )
-                        link_class = self.model[
-                            model_key_link
-                        ].atomic_model.__getattr__(class_type_link)
-                        frac_prob = (
-                            model_key_prob_map[model_key_link]
-                            / model_key_prob_map[model_key_base]
-                        )
-                        link_class.share_params(
-                            base_class,
-                            shared_level_link,
-                            model_prob=frac_prob,
-                            protection=data_stat_protect,
-                            resume=resume,
-                        )
-                        log.warning(
-                            f"Shared params of {model_key_base}.{class_type_base} "
-                            f"and {model_key_link}.{class_type_link}!"
-                        )
+        apply_shared_links(
+            self.model,
+            shared_links,
+            share_descriptor=_share_descriptor,
+            share_fitting=_share_fitting,
+            model_key_prob_map=model_key_prob_map,
+            data_stat_protect=data_stat_protect,
+            resume=resume,
+            logger=log,
+        )
 
     def forward(
         self,
