@@ -24,7 +24,6 @@ from deepmd.jax.model.model import (
     get_model,
 )
 
-
 _DROP_ZERO_SIZE_LEAF = object()
 
 

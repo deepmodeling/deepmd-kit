@@ -13,15 +13,11 @@ from deepmd.jax.utils.serialization import (
 from deepmd.jax.utils.serialization import (
     serialize_from_file as serialize_from_jax_file,
 )
-from deepmd.pt.model.model import (
-    get_model as get_pt_model,
-)
+from deepmd.pt.model.model import get_model as get_pt_model
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
-from deepmd.pt.utils.serialization import (
-    serialize_from_file as serialize_from_pt_file,
-)
+from deepmd.pt.utils.serialization import serialize_from_file as serialize_from_pt_file
 from deepmd.utils.argcheck import (
     model_args,
 )
