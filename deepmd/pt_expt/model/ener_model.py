@@ -430,6 +430,18 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             The 8 comm tensors (see ``_make_comm_sample_inputs`` in
             ``serialization.py``), packed into ``comm_dict`` inside the
             traced function.
+
+            Runtime device contract (asymmetric, unlike the dense with-comm
+            artifact where all 8 stay on CPU): ``nlocal`` and ``nghost``
+            must live ON THE MODEL DEVICE, because ``nlocal`` is consumed
+            IN-GRAPH here (the ``n_local`` derivation below becomes a
+            device kernel after ``move_to_device_pass``; a CPU tensor
+            fed to it is read as a device pointer -- CUDA illegal memory
+            access).  The other six are consumed only by the opaque
+            ``border_op`` whose host code dereferences their ``data_ptr``
+            (``send_list`` carries raw host pointers), so they must stay
+            on CPU.  The C++ ``run_model_graph_with_comm`` implements
+            this placement.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).

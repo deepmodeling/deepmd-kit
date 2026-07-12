@@ -478,8 +478,27 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
-  for (const auto& t : comm_tensors) {
-    inputs.push_back(t);
+  // Device placement of the 8 comm tensors is asymmetric on the GRAPH
+  // route.  The exported with-comm graph derives ``n_local`` from the
+  // ``nlocal`` comm tensor IN-GRAPH (``nlocal.reshape(1).to(...)`` feeding
+  // the owned-node energy mask, see
+  // ``forward_lower_graph_exportable_with_comm``), and after
+  // ``move_to_device_pass`` those are device kernels -- feeding a CPU
+  // tensor there makes the kernel read a host pointer as device memory
+  // (CUDA illegal memory access; first observed live in the dpa2 graph
+  // LAMMPS MP test).  So ``nlocal`` / ``nghost`` (indices 6, 7) must be ON
+  // the model device.  The other six comm tensors are consumed ONLY by the
+  // opaque ``deepmd_export::border_op`` whose host code dereferences their
+  // ``data_ptr`` directly (``send_list`` even carries raw host pointers),
+  // so they must STAY on CPU -- same placement the dense with-comm route
+  // uses for all eight.
+  const auto model_device = atype.device();
+  for (size_t i = 0; i < comm_tensors.size(); ++i) {
+    if (i == 6 || i == 7) {
+      inputs.push_back(comm_tensors[i].to(model_device));
+    } else {
+      inputs.push_back(comm_tensors[i]);
+    }
   }
   return with_comm_loader->run(inputs);
 }
