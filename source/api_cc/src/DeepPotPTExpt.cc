@@ -437,6 +437,53 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges_with_comm(
   return with_comm_loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm: comm_tensors must contain exactly 8 "
+        "tensors (send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  // NeighborGraph ABI: (atype, n_node, edge_index, edge_vec, edge_mask,
+  // [fparam], [aparam], [charge_spin], comm_tensors...).  No coord, no
+  // edge_scatter_index -- mirrors run_model_graph with the 8 comm tensors
+  // appended, exactly like run_model_with_comm / run_model_edges_with_comm.
+  std::vector<torch::Tensor> inputs = {atype, n_node, edge_index, edge_vec,
+                                       edge_mask};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& t : comm_tensors) {
+    inputs.push_back(t);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
@@ -542,17 +589,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   //     distinct nodes whose features come from their real halo types).  No
   //     with-comm artifact / no border_op is needed; ghost reaction forces are
   //     folded to their owners by LAMMPS reverse-comm.  Handled below.
-  //   - message-passing graph (DPA2/DPA3, PR-G): would need a with-comm graph
-  //     artifact for cross-rank ghost-feature exchange — not yet supported.
-  //     Fail fast before building any tensors so callers get a clear message
-  //     instead of a wrong answer.
+  //   - message-passing graph (DPA2/DPA3): multi-rank requires a with-comm
+  //     graph artifact for cross-rank ghost-feature exchange
+  //     (``run_model_graph_with_comm``, below).  Fail fast before building any
+  //     tensors when that artifact is missing, so callers get a clear message
+  //     instead of a wrong answer or the loader's own runtime error.
   if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
-    throw deepmd::deepmd_exception(
-        "Multi-rank message-passing graph (NeighborGraph) .pt2 inference is "
-        "not yet supported (PR-G). Non-message-passing graph models (e.g. "
-        "dpa1) run multi-rank on the extended-region single-rank artifact; "
-        "for message-passing models run single-rank, or use a dense/edge "
-        ".pt2 for multi-rank LAMMPS.");
+    if (!has_comm_artifact_ || !with_comm_loader) {
+      throw deepmd::deepmd_exception(
+          "Multi-rank message-passing graph .pt2 inference requires a "
+          "with-comm artifact; re-freeze the model with a deepmd-kit that "
+          "exports it (this .pt2 predates multi-rank graph support).");
+    }
   }
   // Decision matrix (see PR #5450 description):
   //   non-GNN model (has_message_passing_ == false): regular path is
@@ -855,6 +903,40 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
             aparam_tensor, charge_spin_tensor, comm_tensors);
       }
+    } else if (lower_input_is_graph_) {
+      // Message-passing NeighborGraph route (DPA2/DPA3), multi-rank, with-comm
+      // artifact.  Reachable only when the artifact-presence guard earlier in
+      // ``compute_impl`` passed (``has_comm_artifact_ && with_comm_loader``),
+      // which the export pipeline only sets for message-passing models, so
+      // ``use_with_comm`` implies ``has_message_passing_`` here -- non-MP
+      // graph models (dpa1) never carry a comm artifact and take the plain
+      // extended-region branch below instead.
+      //
+      // Topology construction mirrors the non-comm multi-rank graph branch
+      // below exactly (extended region, N == nall_real, node types from the
+      // on-device extended ``atype_Tensor`` slice): ghost nodes are distinct
+      // and their embeddings are filled in-place by ``border_op`` inside the
+      // with-comm artifact instead of being read directly from local halo
+      // types, so no geometry/mask changes are needed -- only the model
+      // entry point (and the appended comm tensors) differ.
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      const std::int64_t n_node_count = nall_real;
+      at::Tensor n_node_tensor =
+          torch::full({1}, n_node_count, int_option).to(device);
+      at::Tensor node_atype =
+          atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported graph lower consumes a pre-excluded edge_mask
+      // and never re-applies it -- same seam as the non-comm graph route.
+      const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
+          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+          pair_exclude_table_, ntypes);
+      flat_outputs = run_model_graph_with_comm(
+          node_atype, n_node_tensor, edge_tensors.edge_index,
+          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor, aparam_tensor,
+          charge_spin_tensor, comm_tensors);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and
@@ -907,11 +989,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // the cached skin topology (edge_index[_ext]_tensor built at ago==0),
       // then assemble the cheap node tensors.  Mirrors the edge path -- no
       // per-step host rebuild / H2D copy.  Single-rank folds ghosts onto local
-      // owners (N == nloc); multi-rank (non-MP only — the fail-fast above
-      // blocks MP graph multi-rank) keeps the extended region (N == nall_real,
-      // node types from the real halo types) so LAMMPS reverse-comm folds ghost
-      // forces back.  The node types come from the on-device extended
-      // atype_Tensor slice (== atype_ext[0:N]); n_node is a 1-element tensor.
+      // owners (N == nloc); multi-rank (reachable here only for non-MP graph
+      // models -- MP graph multi-rank takes the with-comm branch above
+      // instead, keyed off ``use_with_comm``) keeps the extended region
+      // (N == nall_real, node types from the real halo types) so LAMMPS
+      // reverse-comm folds ghost forces back.  The node types come from the
+      // on-device extended atype_Tensor slice (== atype_ext[0:N]); n_node is
+      // a 1-element tensor.
       const auto edge_tensors =
           compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
                              coord_Tensor, static_cast<double>(rcut));

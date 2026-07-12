@@ -509,6 +509,38 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::vector<at::Tensor>& comm_tensors);
 
   /**
+   * @brief Run the with-comm NeighborGraph (message-passing, e.g. DPA2/DPA3)
+   *        ``.pt2`` artifact with comm tensors appended.
+   *
+   * Positional AOTI input order mirrors ``run_model_graph``: ``(atype,
+   * n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
+   * [charge_spin], comm_tensors...)``.  The graph is built on the
+   * EXTENDED region (``fold_to_local=false``): ghost nodes are distinct and
+   * their embeddings are filled in-place by ``border_op`` inside the
+   * exported artifact, exactly as the with-comm dense/edge artifacts do.
+   *
+   * @param[in] atype Per-node local types, shape ``(N,)`` int64, N ==
+   *            nall_real (extended region).
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Folded edge graph ``(2, E)`` int64 [src, dst].
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.
+   */
+  std::vector<torch::Tensor> run_model_graph_with_comm(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
    * @brief Extract outputs from flat tensor list using output_keys.
    */
   void extract_outputs(std::map<std::string, torch::Tensor>& output_map,
