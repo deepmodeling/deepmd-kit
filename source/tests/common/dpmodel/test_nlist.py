@@ -104,6 +104,38 @@ class TestDPModelFormatNlist(unittest.TestCase):
         )
         np.testing.assert_allclose(self.expected_nlist, nlist1)
 
+    def test_nlist_st_sort(self) -> None:
+        """Forced sorting must retain padding when the input is short."""
+        nlist = np.array(
+            [
+                [1, 3, -1, 2],
+                [0, -1, -1, 2],
+                [0, 1, -1, -1],
+            ],
+            dtype=np.int64,
+        ).reshape([1, self.nloc, -1])
+        nlist1 = self.md.format_nlist(
+            self.coord_ext,
+            self.atype_ext,
+            nlist,
+            extra_nlist_sort=True,
+        )
+        np.testing.assert_array_equal(self.expected_nlist, nlist1)
+
+    def test_nlist_st_sort_all_padding(self) -> None:
+        """Forced sorting must also widen an entirely padded short list."""
+        nlist = np.full((self.nf, self.nloc, 1), -1, dtype=np.int64)
+        nlist1 = self.md.format_nlist(
+            self.coord_ext,
+            self.atype_ext,
+            nlist,
+            extra_nlist_sort=True,
+        )
+        np.testing.assert_array_equal(
+            np.full_like(self.expected_nlist, -1),
+            nlist1,
+        )
+
     def test_nlist_lt(self) -> None:
         # n_nnei > nnei
         nlist = np.array(
