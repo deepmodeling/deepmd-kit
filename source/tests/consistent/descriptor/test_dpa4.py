@@ -19,6 +19,7 @@ from deepmd.utils.argcheck import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF2,
@@ -41,6 +42,10 @@ if INSTALLED_TF2:
     from deepmd.tf2.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4TF2
 else:
     DescrptDPA4TF2 = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4Strict
+else:
+    DescrptDPA4Strict = None
 
 # not implemented
 DescrptDPA4TF = None
@@ -159,7 +164,7 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     skip_jax = True
     skip_pd = True
     skip_pt_expt = not INSTALLED_PT_EXPT
-    skip_array_api_strict = True
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptDPA4TF
     tf2_class = DescrptDPA4TF2
@@ -168,7 +173,7 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     pt_expt_class = DescrptDPA4PTExpt
     jax_class = None
     pd_class = None
-    array_api_strict_class = None
+    array_api_strict_class = DescrptDPA4Strict
     args: ClassVar[list] = [
         *descrpt_se_zm_args(),
         Argument("ntypes", int, optional=False),
@@ -244,6 +249,16 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_tf2(self, tf2_obj: Any) -> Any:
         return self.eval_tf2_descriptor(
             tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
             self.natoms,
             self.coords,
             self.atype,

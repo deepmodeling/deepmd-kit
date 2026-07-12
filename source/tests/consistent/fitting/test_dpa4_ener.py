@@ -18,6 +18,7 @@ from deepmd.utils.argcheck import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF2,
@@ -51,6 +52,14 @@ if INSTALLED_TF2:
     from deepmd.tf2.fitting.dpa4_ener import SeZMEnergyFittingNet as SeZMEnerFittingTF2
 else:
     SeZMEnerFittingTF2 = None
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.dpa4_ener import (
+        SeZMEnergyFittingNet as SeZMEnerFittingStrict,
+    )
+else:
+    SeZMEnerFittingStrict = None
 
 # not implemented
 SeZMEnerFittingTF = None
@@ -89,7 +98,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     skip_jax = True
     skip_pd = True
     skip_pt_expt = not INSTALLED_PT_EXPT
-    skip_array_api_strict = True
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = SeZMEnerFittingTF
     tf2_class = SeZMEnerFittingTF2
@@ -98,7 +107,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     pt_expt_class = SeZMEnerFittingPTExpt
     jax_class = None
     pd_class = None
-    array_api_strict_class = None
+    array_api_strict_class = SeZMEnerFittingStrict
     args = fitting_sezm_ener()
 
     def setUp(self) -> None:
@@ -156,6 +165,14 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
             tf2_obj(
                 to_tensorflow_array(self.inputs),
                 to_tensorflow_array(self.atype.reshape(1, -1)),
+            )["energy"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return to_numpy_array(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
             )["energy"]
         )
 

@@ -36,6 +36,10 @@ class DOSModel(DPModelCommon, DPDOSModel_):
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
 
+    def get_numb_dos(self) -> int:
+        """Get the number of DOS for DOSFittingNet."""
+        return self.get_fitting_net().dim_out
+
     def call(
         self,
         coord: Array,

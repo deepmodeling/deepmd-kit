@@ -48,6 +48,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -65,6 +68,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -740,6 +746,12 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif (
+            self._dpmodel is not None
+            and hasattr(self._dpmodel, "get_var_name")
+            and self._dpmodel.get_var_name() in model_output_type
+        ):
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -760,6 +772,33 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         return 0
+
+    def get_var_name(self) -> str:
+        """Get the name of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+            return self._dpmodel.get_var_name()
+        raise NotImplementedError(
+            "get_var_name is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+            return self._dpmodel.get_task_dim()
+        raise NotImplementedError(
+            "get_task_dim is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+            return self._dpmodel.get_intensive()
+        raise NotImplementedError(
+            "get_intensive is only available for property models with the "
+            "reconstructed dpmodel (not in metadata-only mode)."
+        )
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
@@ -954,6 +993,10 @@ class DeepEval(DeepEvalBackend):
         sel = self._sel
         mixed_types = self._mixed_types
 
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): fold it in here; the exported dense lower consumes a
+        # pre-excluded nlist and never re-applies it.
+        pair_excl = self._model_pair_excl()
         if self._nlist_builder is not None:
             # O(N) cell-list strategy (e.g. vesin): builds the same extended
             # representation.  Match the native builder's type handling
@@ -963,7 +1006,7 @@ class DeepEval(DeepEvalBackend):
             # type-distinguished nlist a non-mixed-type descriptor expects.  The
             # main eval path is unaffected (its ``format_nlist`` re-formats).
             extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
-                coords, atom_types, cells, rcut, sel
+                coords, atom_types, cells, rcut, sel, pair_excl=pair_excl
             )
             if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, sel)
@@ -988,6 +1031,7 @@ class DeepEval(DeepEvalBackend):
             rcut,
             sel,
             distinguish_types=not mixed_types,
+            pair_excl=pair_excl,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
         return extended_coord, extended_atype, nlist, mapping
@@ -1047,10 +1091,21 @@ class DeepEval(DeepEvalBackend):
             ext_atypes.append(ea)
             nlists.append(nl)
             mappings.append(mp)
+        extended_atype = np.stack(ext_atypes, axis=0)
+        nlist = np.stack(nlists, axis=0)
+        # Model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4): fold it in here, like the native builder path.
+        from deepmd.dpmodel.utils.nlist import (
+            apply_pair_exclusion_nlist,
+        )
+
+        nlist = apply_pair_exclusion_nlist(
+            nlist, extended_atype, self._model_pair_excl()
+        )
         return (
             np.stack(ext_coords, axis=0),
-            np.stack(ext_atypes, axis=0),
-            np.stack(nlists, axis=0),
+            extended_atype,
+            nlist,
             np.stack(mappings, axis=0),
         )
 
@@ -1795,19 +1850,26 @@ class DeepEval(DeepEvalBackend):
         selection is a pure performance choice and results are unchanged.
         """
         method = self._neighbor_graph_method
+        # Model-level ``pair_exclude_types`` is a graph-BUILD transform
+        # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
+        # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
+        # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
+        pair_excl = self._model_pair_excl()
         if method == "dense":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph,
             )
 
-            return build_neighbor_graph(coord_input, atom_types, box_input, self._rcut)
+            return build_neighbor_graph(
+                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
+            )
         if method == "ase":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph_ase,
             )
 
             return build_neighbor_graph_ase(
-                coord_input, atom_types, box_input, self._rcut
+                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
             )
         if method in ("vesin", "nv"):
             cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
@@ -1824,16 +1886,50 @@ class DeepEval(DeepEvalBackend):
                     build_neighbor_graph_vesin,
                 )
 
-                return build_neighbor_graph_vesin(cc, aa, bb, self._rcut)
+                return build_neighbor_graph_vesin(
+                    cc, aa, bb, self._rcut, pair_excl=pair_excl
+                )
             from deepmd.pt_expt.utils.nv_graph_builder import (
                 build_neighbor_graph_nv,
             )
 
-            return build_neighbor_graph_nv(cc, aa, bb, self._rcut)
+            return build_neighbor_graph_nv(cc, aa, bb, self._rcut, pair_excl=pair_excl)
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
             "use 'dense', 'ase', 'vesin', or 'nv'"
         )
+
+    def _model_pair_excl(self) -> "PairExcludeMask | None":
+        """Model-level ``pair_exclude_types`` as a ``PairExcludeMask`` (or None).
+
+        Applied at graph BUILD time (decision #18), NOT inside the exported
+        ``.pt2`` lower. Reads the excluded pairs from the loaded dpmodel (if any)
+        or the ``pair_exclude_types`` field in ``metadata.json``, and returns a
+        FRESH numpy-backed mask.
+
+        A numpy ``type_mask`` converts cleanly onto whichever namespace/device the
+        builder's ``atype`` uses (dense/ase pass numpy; vesin/nv pass torch). The
+        dpmodel's own ``pair_excl`` is NOT reused: as a pt_expt module attribute
+        its ``type_mask`` is a torch (possibly CUDA) buffer, which cannot convert
+        to a numpy ``atype`` on the dense/ase build path.
+
+        Returns
+        -------
+        PairExcludeMask | None
+            The exclusion mask, or ``None`` when the model excludes no pairs.
+        """
+        from deepmd.dpmodel.utils.exclude_mask import (
+            PairExcludeMask,
+        )
+
+        if self._dpmodel is not None:
+            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pet = pe.get_exclude_types() if pe is not None else []
+        else:
+            pet = self.metadata.get("pair_exclude_types", [])
+        if not pet:
+            return None
+        return PairExcludeMask(len(self._type_map), [tuple(p) for p in pet])
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int

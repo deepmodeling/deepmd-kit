@@ -176,6 +176,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     fparam=fparam,
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # the traced lower consumes a pre-excluded nlist. Guard
+                    # atomic_model too: test doubles (DummyModel) lack it.
+                    pair_excl=getattr(
+                        getattr(model, "atomic_model", None), "pair_excl", None
+                    ),
                 )
 
             return call
@@ -289,6 +295,21 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         tf_model.get_sel = get_sel
 
         @tf.function
+        def get_pair_exclude_types() -> tf.Tensor:
+            # Model-level pair_exclude_types, exported FLAT [ti0, tj0, ti1, tj1,
+            # ...] so the C++ ingestion seam (DeepPotJAX) can fold exclusion into
+            # the LAMMPS nlist before the traced call_lower_* consumes it
+            # (decision #18/A4). The upper ``call`` already pre-excludes its
+            # freshly built nlist. Guard atomic_model: test doubles may lack it.
+            pet = getattr(
+                getattr(model, "atomic_model", None), "pair_exclude_types", []
+            )
+            flat = [int(t) for pair in (pet or []) for t in pair]
+            return tf.constant(flat, dtype=tf.int64)
+
+        tf_model.get_pair_exclude_types = get_pair_exclude_types
+
+        @tf.function
         def get_model_def_script() -> tf.Tensor:
             return tf.constant(
                 json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
@@ -317,6 +338,28 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             return tf.constant(default_fparam, dtype=tf.double)
 
         tf_model.get_default_fparam = get_default_fparam
+
+        # property models: persist the output name/dimension/intensiveness so
+        # the evaluator can dispatch to DeepProperty and reshape the output.
+        if hasattr(model, "get_var_name"):
+
+            @tf.function
+            def get_var_name() -> tf.Tensor:
+                return tf.constant(model.get_var_name(), dtype=tf.string)
+
+            tf_model.get_var_name = get_var_name
+
+            @tf.function
+            def get_task_dim() -> tf.Tensor:
+                return tf.constant(model.get_task_dim(), dtype=tf.int64)
+
+            tf_model.get_task_dim = get_task_dim
+
+            @tf.function
+            def get_intensive() -> tf.Tensor:
+                return tf.constant(model.get_intensive(), dtype=tf.bool)
+
+            tf_model.get_intensive = get_intensive
 
         tf.saved_model.save(
             tf_model,

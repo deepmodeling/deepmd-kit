@@ -23,11 +23,11 @@ from deepmd.tf2.env import (
     tf,
     xp,
 )
-from deepmd.tf2.make_model import (
-    model_call_from_call_lower as tf2_model_call_from_call_lower,
-)
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
+)
+from deepmd.tf2.model.make_model import (
+    model_call_from_call_lower as tf2_model_call_from_call_lower,
 )
 from deepmd.tf2.utils.jit import (
     default_jit_compile,
@@ -107,6 +107,14 @@ def make_tf2_dp_model_from_dpmodel(
                 coord_corr_for_virial=to_tensorflow_array(coord_corr_for_virial),
                 charge_spin=cs,
                 neighbor_list=neighbor_list,
+                # Model-level pair exclusion is a nlist-BUILD transform
+                # (decision #18/A4): fold it into the freshly built nlist here so
+                # the live/eager TF2 upper path matches the SavedModel export and
+                # the other backends. Identity when nothing is excluded. Guard
+                # atomic_model too: test doubles may lack it.
+                pair_excl=getattr(
+                    getattr(self, "atomic_model", None), "pair_excl", None
+                ),
                 pass_lower_kwargs=True,
             )
             return self._output_type_cast(model_predict, input_prec)

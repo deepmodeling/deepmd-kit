@@ -24,9 +24,6 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from deepmd.dpmodel.common import (
-    to_numpy_array,
-)
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
@@ -35,6 +32,8 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    change_model_out_bias,
+    change_model_out_bias_by_task,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -587,8 +586,8 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
     :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
     for ``neighbor_graph_method is None`` (the training default): a model is
     graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding
-    and no ``exclude_types``; attention layers included).
+    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding;
+    attention layers included).
 
     When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
     so the compiled path matches eager training (which already default-flips to
@@ -941,6 +940,9 @@ class _CompiledModel(torch.nn.Module):
             rcut,
             sel,
             distinguish_types=False,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
+            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1154,8 +1156,12 @@ class _CompiledModel(torch.nn.Module):
                 )
 
         # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
-        # uncompiled ``_call_common_graph`` builder so the two paths match.
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        # uncompiled ``_call_common_graph`` builder so the two paths match. Model-
+        # level pair_exclude is a graph-BUILD transform (decision #18): fold it
+        # into edge_mask here so the compiled lower consumes a pre-excluded graph
+        # (the lower no longer re-applies it), matching the eager path exactly.
+        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).
@@ -1350,6 +1356,9 @@ class Trainer(AbstractTrainer):
         self.max_ckpt_keep = int(training_params.get("max_ckpt_keep", 5))
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
+        self.change_bias_after_training = bool(
+            training_params.get("change_bias_after_training", False)
+        )
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
@@ -2139,7 +2148,24 @@ class Trainer(AbstractTrainer):
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
         super().run(self.training_tasks)
+        if self.change_bias_after_training and self.num_steps > self.start_step:
+            self._change_bias_after_training()
+            if self.rank_context.is_chief:
+                self.save_checkpoint(self.num_steps)
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def _change_bias_after_training(self) -> None:
+        if self.rank == 0:
+            change_model_out_bias_by_task(
+                self.models,
+                self._sample_funcs,
+                self.model_keys,
+                bias_adjust_mode="change-by-statistic",
+            )
+        if self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+        self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
     def run_full_validation(
         self,
@@ -2326,27 +2352,16 @@ def model_change_out_bias(
     -------
     The model with updated bias.
     """
-    old_bias = deepcopy(_model.get_out_bias())
-    _model.change_out_bias(
-        _sample_func,
-        bias_adjust_mode=_bias_adjust_mode,
-    )
-    new_bias = deepcopy(_model.get_out_bias())
-
     from deepmd.dpmodel.model.dp_model import (
         DPModelCommon,
     )
 
-    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
-        _model.get_fitting_net().compute_input_stats(_sample_func)
-
-    model_type_map = _model.get_type_map()
-    log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    return change_model_out_bias(
+        _model,
+        _sample_func,
+        bias_adjust_mode=_bias_adjust_mode,
+        recompute_input_stats=isinstance(_model, DPModelCommon),
     )
-    return _model
 
 
 def _get_case_embd_config(

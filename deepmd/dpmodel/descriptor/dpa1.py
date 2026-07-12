@@ -356,6 +356,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.tebd_compress = False
         self.geo_compress = False
         self.compress = False
+        # When set, force the legacy dense lower even if the config would
+        # otherwise be graph-lower eligible (see ``disable_graph_lower``).
+        self._graph_lower_disabled = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -432,9 +435,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         The graph-native lower (``call_graph``) covers the factorizable path
         AND transformer attention (``attn_layer >= 0``, NeighborGraph PR-D)
-        with concat type-embedding and no type exclusion. Remaining ineligible
-        configs (``tebd_input_mode == "strip"``, ``exclude_types``) fall back
-        to the legacy dense path, so those models keep working unchanged.
+        with concat OR strip type-embedding.  ``exclude_types`` is fully
+        supported via
+        :func:`~deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
+        Compressed descriptors are the remaining ineligible config and fall
+        back to the legacy dense path, so those models keep working unchanged.
 
         Eligibility does NOT imply numerical interchangeability with the
         dense route for every config: with ``smooth_type_embedding=True``
@@ -442,10 +447,30 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         differs from the dense lower by up to ~1e-4 (see the Notes of
         :meth:`call_graph`).
         """
-        return (
-            self.se_atten.tebd_input_mode == "concat"
-            and not self.se_atten.exclude_types
-        )
+        if self._graph_lower_disabled:
+            return False
+        # compressed descriptors have no graph kernel (geo/tebd tabulation is
+        # dense-only); keep them on the legacy dense path.
+        if self.compress:
+            return False
+        # strip is graph-eligible (per-edge factorized embedding, no neighbor
+        # coupling); exclude_types is graph-native via ``apply_pair_exclusion``
+        # (owned at this seam). Only compression / the disable flag force dense.
+        return self.se_atten.tebd_input_mode in ("concat", "strip")
+
+    def disable_graph_lower(self) -> None:
+        """Force the legacy dense lower for this descriptor.
+
+        This is an explicit opt-out knob used by contexts where the
+        graph-native lower is unsupported or undesirable (e.g. spin models,
+        whose carry-all routing diverges on sel-binding spin systems and
+        whose ``.pt2``/``.pte`` export trips a torch-inductor scatter/
+        atomic_add CPU codegen assertion).  After calling this,
+        :meth:`uses_graph_lower` returns ``False`` regardless of the
+        descriptor configuration.  The flag is not serialized; it is
+        re-derived structurally at spin-model construction/deserialization.
+        """
+        self._graph_lower_disabled = True
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
@@ -575,9 +600,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
         # graph-eligible configs route through the graph-native adapter (decision
         # #14: graph = single math source, dense call = thin adapter). Ineligible
-        # configs (attention, strip tebd, exclude_types) and the ghost case with
-        # no mapping fall back to the legacy dense body. The graph needs `mapping`
-        # to fold ghosts to local owners; without it only nall == nloc is valid.
+        # configs (compressed descriptors) and the ghost case with no mapping
+        # fall back to the legacy dense body. The graph needs `mapping` to fold
+        # ghosts to local owners; without it only nall == nloc is valid.
         if self.uses_graph_lower() and (mapping is not None or nall == nloc):
             return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
         else:
@@ -626,26 +651,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei x 1
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
-            from_dense_quartet,
+            graph_from_dense_quartet,
         )
 
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        dev = array_api_compat.device(coord_ext)
         nf, nloc, nnei = nlist.shape
-        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
-        coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
-        if mapping is None:
-            # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
-            mapping_g = xp.broadcast_to(
-                xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
-            )
-        else:
-            mapping_g = xp.reshape(mapping, (nf, nall))
-        graph = from_dense_quartet(
-            coord_ext_3, nlist, mapping_g, layout=None, compact=False
+        # shape-static graph + flat local center types from the dense quartet
+        # (shared with the input-stat graph path, see graph_from_dense_quartet).
+        graph, atype_local = graph_from_dense_quartet(
+            coord_ext, atype_ext, nlist, mapping
         )
-        # local atom types, flat (nf * nloc,)
-        atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
         grrg_flat, rot_mat_flat = self.call_graph(
             graph,
             atype_local,
@@ -659,9 +674,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         grrg = xp.reshape(grrg_flat, (nf, nloc, *grrg_flat.shape[1:]))
         rot_mat = xp.reshape(rot_mat_flat, (nf, nloc, *rot_mat_flat.shape[1:]))
         # reconstruct the dense-shaped sw the dense way (env_mat switch masked
-        # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
-        # == nlist != -1, matching DescrptBlockSeAtten.call). A dense-layout
-        # artifact tied to neighbor slots, which the graph does not carry.
+        # where nlist == -1 OR the neighbor pair is type-excluded, matching
+        # DescrptBlockSeAtten.call which erases excluded nlist entries to -1
+        # before computing sw). A dense-layout artifact tied to neighbor slots,
+        # which the graph does not carry.
         _, _, sw = self.se_atten.env_mat.call(
             coord_ext,
             atype_ext,
@@ -671,6 +687,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         nlist_mask = (nlist != -1)[:, :, :, None]
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
+        if self.se_atten.exclude_types:
+            # additionally mask excluded type-pairs (mirrors the block's nlist
+            # erasure: excluded entries become -1 there, so sw is 0 for them).
+            exc_mask = self.se_atten.emask.build_type_exclude_mask(nlist, atype_ext)
+            exc_mask = xp.astype(exc_mask[:, :, :, None], sw.dtype)
+            sw = sw * exc_mask
         sw = xp.reshape(sw, (nf, nloc, nnei, 1))
         return grrg, rot_mat, None, None, sw
 
@@ -680,8 +702,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
     ) -> Array:
-        """Legacy dense descriptor body (the ineligible ``call`` path: attention,
-        strip tebd, exclude_types, or the no-mapping ghost case).
+        """Legacy dense descriptor body (the ineligible ``call`` path:
+        compressed descriptors or the no-mapping ghost case).
 
         Parameters
         ----------
@@ -1377,7 +1399,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             The path to the stat file.
 
         """
-        env_mat_stat = EnvMatStatSe(self)
+        # dpa1's forward computes its env matrix through the NeighborGraph
+        # (from_dense_quartet -> edge_env_mat); run the input stat through the
+        # SAME path so stat and forward share one env-matrix implementation.
+        # Bit-identical to the dense EnvMat (see test_env_mat_stat_graph.py).
+        env_mat_stat = EnvMatStatSe(self, use_graph=True)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         if path is None or not path.is_dir():
@@ -1749,22 +1775,18 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         Notes
         -----
         Known limitations:
-        - ``tebd_input_mode == "concat"`` only (strip mode lands later);
-        - ``exclude_types`` is not yet supported and raises (lands in a later PR).
+        - ``tebd_input_mode`` in {"concat", "strip"}; compressed descriptors stay dense;
+        - ``exclude_types`` is applied graph-natively via ``apply_pair_exclusion``.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
+            apply_pair_exclusion,
             edge_env_mat,
             segment_sum,
         )
 
-        if self.tebd_input_mode not in ["concat"]:
+        if self.tebd_input_mode not in ["concat", "strip"]:
             raise NotImplementedError(
-                "graph path supports tebd_input_mode='concat' only (NeighborGraph PR-A)"
-            )
-        if self.exclude_types:
-            raise NotImplementedError(
-                "graph path does not yet apply exclude_types (NeighborGraph PR-A); "
-                "type exclusion lands in a later PR"
+                f"graph path does not support tebd_input_mode={self.tebd_input_mode!r}"
             )
         if type_embedding is None:
             raise ValueError("type_embedding is required for the graph path")
@@ -1773,9 +1795,15 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # N == sum(graph.n_node) by contract (atype is (N,)); use the static shape
         # value so the kernel stays jit/export-traceable (no concretize of n_node).
         n_total = atype.shape[0]
+        atype = xp.asarray(atype, device=dev)
+        # descriptor-level pair exclusion: same canonical transform as the
+        # model-level ``pair_exclude_types`` (decision #18). Masked edges
+        # contribute zero to every segment_sum below; the dense path's
+        # nlist-erasure + env-mat zeroing is reproduced exactly.
+        # apply_pair_exclusion is a no-op when self.emask has no exclusions.
+        graph = apply_pair_exclusion(graph, atype, self.emask)
         src = graph.edge_index[0, :]
         dst = graph.edge_index[1, :]
-        atype = xp.asarray(atype, device=dev)
         center_type = xp.take(atype, dst, axis=0)  # (E,)
         nei_type = xp.take(atype, src, axis=0)  # (E,)
         # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
@@ -1794,20 +1822,25 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )  # (E, 4), (E, 1) sw zeroed on padding
         # radial channel
         ss = rr[:, 0:1]  # (E, 1)
-        # neighbor / center type embeddings (concat mode); ghost type == owner type
-        # so gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
-        # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES under
-        # torch and severs the type-embedding weight gradient (the tebd net would
-        # never train); type_embedding already lives on the model device.
-        tebd = type_embedding
-        atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
-        if not self.type_one_side:
-            atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
-            ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
-        else:
-            ss = xp.concat([ss, atype_embd_nlist], axis=-1)
-        # embedding net (same weights as the dense path); applies on the last axis
-        gg = self.embeddings[0].call(ss)  # (E, ng)
+        if self.tebd_input_mode == "concat":
+            # neighbor / center type embeddings; ghost type == owner type so
+            # gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
+            # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES
+            # under torch and severs the type-embedding weight gradient (the tebd
+            # net would never train); type_embedding already lives on the device.
+            tebd = type_embedding
+            atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+            if not self.type_one_side:
+                atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+                ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
+            else:
+                ss = xp.concat([ss, atype_embd_nlist], axis=-1)
+            # embedding net (same weights as the dense path); applies on last axis
+            gg = self.embeddings[0].call(ss)  # (E, ng)
+        else:  # strip: factorized gg_s*gg_t + gg_s (per-edge; no neighbor coupling)
+            gg = self._graph_edge_gg_strip(
+                ss, center_type, nei_type, type_embedding, sw_e
+            )
         # transformer attention over each center's edges — mirrors the dense
         # self.dpa1_attention(gg, nlist_mask, input_r, sw), which also runs on
         # the UNMASKED gg (padding rows are neutralized afterwards).
@@ -1834,6 +1867,78 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # the working precision before the descriptor-level @cast_precision.
         rot_mat = gr[:, :, 1:]
         return grrg, rot_mat
+
+    def _graph_edge_gg_strip(
+        self,
+        ss: Array,
+        center_type: Array,
+        nei_type: Array,
+        type_embedding: Array,
+        sw_e: Array,
+    ) -> Array:
+        """Per-edge stripped-tebd embedding, op-for-op vs the dense strip branch.
+
+        Mirrors the ``tebd_input_mode == "strip"`` block of :meth:`call`: the
+        geometric net runs on the radial channel only (``gg_s``), the stripped
+        type-embedding net produces a per-type(-pair) factor (``gg_t``,
+        optionally switch-smoothed), and the two combine as
+        ``gg_s * gg_t + gg_s``. The compression branches (geo/tebd) are NOT
+        reached on the graph route: :meth:`DescrptDPA1.uses_graph_lower`
+        excludes compressed descriptors, so this kernel assumes no compression.
+
+        Parameters
+        ----------
+        ss
+            (E, 1) per-edge radial channel (``rr[:, 0:1]``).
+        center_type
+            (E,) center (dst) LOCAL atom type of each edge.
+        nei_type
+            (E,) neighbor (src) LOCAL atom type of each edge.
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table.
+        sw_e
+            (E, 1) smooth switch, zeroed on padding edges.
+
+        Returns
+        -------
+        gg
+            (E, ng) per-edge embedding feeding the attention / segment_sum.
+        """
+        assert self.embeddings_strip is not None
+        xp = array_api_compat.array_namespace(ss)
+        nt = self.tebd_dim
+        ntypes_with_padding = type_embedding.shape[0]
+        # geometric net on the radial channel only (dense: gg_s = cal_g(ss_scalar))
+        gg_s = self.embeddings[0].call(ss)  # (E, ng)
+        if self.type_one_side:
+            # one-side strip table indexed by NEIGHBOR type only
+            tt_full = self.cal_g_strip(type_embedding, 0)  # (ntypes_pad, ng)
+            gg_t = xp.take(tt_full, nei_type, axis=0)  # (E, ng)
+        else:
+            # two-side type-pair table; row = center * ntypes_pad + nei
+            # (dense builds the same (ntypes_pad**2, 2*nt) table, nei-fastest).
+            type_embedding_nei = xp.tile(
+                xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
+                (ntypes_with_padding, 1, 1),
+            )
+            type_embedding_center = xp.tile(
+                xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
+                (1, ntypes_with_padding, 1),
+            )
+            two_side_type_embedding = xp.reshape(
+                xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                (-1, nt * 2),
+            )
+            tt_full = self.cal_g_strip(
+                two_side_type_embedding, 0
+            )  # (ntypes_pad**2, ng)
+            # int64 for torch take (take_along/take requires Long indices)
+            idx = xp.astype(center_type * ntypes_with_padding + nei_type, xp.int64)
+            gg_t = xp.take(tt_full, idx, axis=0)  # (E, ng)
+        if self.smooth:
+            # dense: gg_t = gg_t * sw (per-neighbor); sw_e is (E, 1), zeroed on padding
+            gg_t = gg_t * sw_e
+        return gg_s * gg_t + gg_s
 
     def _graph_attention(
         self,
