@@ -957,6 +957,7 @@ def test_force_reshape_uses_dynamic_shapes_after_retracing() -> None:
         assert tuple(normalized.shape) == (1, 3 * natoms)
 
 
+@pytest.mark.timeout(180)
 def test_compiled_dpa4_training_step_accepts_two_atom_counts() -> None:
     """Default degree-channel mixing is graph-safe under reduce_retracing."""
     model_params = model_args().normalize_value(
