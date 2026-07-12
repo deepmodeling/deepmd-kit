@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "c_api.h"
 
+#include <limits>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -1535,6 +1536,27 @@ const char* string_to_char(std::string& str) {
   return buffer;
 }
 
+/**
+ * @brief Convert std::string to const char without trimming.
+ *
+ * Unlike string_to_char, this helper preserves every byte of the input,
+ * including trailing whitespace.  This is necessary for file-reading
+ * functions (e.g. DP_ReadFileToChar2) where the reported size must
+ * match the allocated buffer exactly; see issue #5620.
+ *
+ * @param[in] str std::string to be converted (not modified)
+ * @return const char* heap-allocated buffer, caller must DP_DeleteChar
+ */
+const char* string_to_char_exact(const std::string& str) {
+  // copy from string to char* without any trimming
+  const std::string::size_type size = str.size();
+  // +1 for '\0'
+  char* buffer = new char[size + 1];
+  std::copy(str.begin(), str.end(), buffer);
+  buffer[size] = '\0';
+  return buffer;
+}
+
 extern "C" {
 
 const char* DP_NlistCheckOK(DP_Nlist* nlist) {
@@ -2642,7 +2664,8 @@ const char* DP_ReadFileToChar(const char* c_model) {
   std::string model(c_model);
   std::string file_content;
   deepmd::read_file_to_string(model, file_content);
-  return string_to_char(file_content);
+  // Preserve exact bytes — see issue #5620 for why trimming is wrong here.
+  return string_to_char_exact(file_content);
 }
 
 const char* DP_ReadFileToChar2(const char* c_model, int* size) {
@@ -2656,8 +2679,20 @@ const char* DP_ReadFileToChar2(const char* c_model, int* size) {
     *size = -error_message.size();
     return string_to_char(error_message);
   }
-  *size = file_content.size();
-  return string_to_char(file_content);
+  // Record the exact file size before any conversion.  We must use
+  // string_to_char_exact (not string_to_char) so that trailing
+  // whitespace is preserved and the returned buffer has exactly *size
+  // bytes — otherwise the C++ wrapper would reconstruct a string that
+  // over-reads the shorter allocation.  See issue #5620.
+  if (file_content.size() >
+      static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    std::string error_message =
+        "File is too large to be read into a char buffer via this API";
+    *size = -static_cast<int>(error_message.size());
+    return string_to_char(error_message);
+  }
+  *size = static_cast<int>(file_content.size());
+  return string_to_char_exact(file_content);
 }
 
 void DP_SelectByType(const int natoms,
