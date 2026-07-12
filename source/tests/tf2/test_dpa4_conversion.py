@@ -8,8 +8,9 @@ from pathlib import (
     Path,
 )
 
-import deepmd
 import pytest
+
+import deepmd
 
 if os.environ.get("DP_TEST_TF2_ONLY") != "1":
     pytest.skip(

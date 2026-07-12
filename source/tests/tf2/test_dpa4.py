@@ -12,20 +12,20 @@ if os.environ.get("DP_TEST_TF2_ONLY") != "1":
         allow_module_level=True,
     )
 
+from deepmd.tf2.common import (
+    to_tf_tensor,
+    wrap_tensor,
+)
 from deepmd.tf2.descriptor.dpa4 import (
     DescrptDPA4,
     DynamicRadialDegreeMixer,
     _iter_object_tree,
 )
-from deepmd.tf2.fitting.dpa4_ener import (
-    SeZMEnergyFittingNet,
-)
-from deepmd.tf2.common import (
-    to_tf_tensor,
-    wrap_tensor,
-)
 from deepmd.tf2.env import (
     tf,
+)
+from deepmd.tf2.fitting.dpa4_ener import (
+    SeZMEnergyFittingNet,
 )
 
 

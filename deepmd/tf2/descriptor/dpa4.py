@@ -20,10 +20,10 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as RadialMLPDP
-from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
 from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
     DynamicRadialDegreeMixer as DynamicRadialDegreeMixerDP,
 )
+from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
