@@ -512,6 +512,63 @@ def _build_graph_dynamic_shapes(
     )
 
 
+def _build_graph_dynamic_shapes_with_comm(
+    *sample_inputs: torch.Tensor | None,
+) -> tuple:
+    """Build dynamic-shape specs for the with-comm graph-form ``forward_lower`` export.
+
+    Same as :func:`_build_graph_dynamic_shapes` (the flat node axis ``N`` and
+    the edge axis ``E`` stay dynamic — a with-comm graph carries owned PLUS
+    halo nodes in the "owned-prefix" layout, and its edge count is no more
+    bounded than the plain graph's) EXCEPT ``nframes`` (the ``n_node`` axis)
+    is STATIC at ``1``: the pt_expt Repflow/Repformer with-comm override
+    (``_exchange_ghosts`` / ``_exchange_ghosts_graph``) only supports
+    ``nf=1`` (LAMMPS always drives multi-rank inference with one frame).
+    Mirrors the dense with-comm precedent, ``_build_dynamic_shapes``
+    (``with_comm_dict=True`` sets ``nframes_dim = 1``, a plain int, not a
+    ``Dim`` object, so it does not participate in torch.export's
+    duck-sizing).  The 8 trailing comm tensors are all STATIC (``None``):
+    ``nswap`` is baked in at the trace value, same rationale as
+    ``_build_dynamic_shapes``'s with-comm tail.
+
+    Parameters
+    ----------
+    *sample_inputs : torch.Tensor | None
+        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+        charge_spin, send_list, send_proc, recv_proc, send_num, recv_num,
+        communicator, nlocal, nghost)`` — 16 entries matching
+        ``forward_lower_graph_exportable_with_comm``.
+    """
+    fparam = sample_inputs[5]
+    aparam = sample_inputs[6]
+    charge_spin = sample_inputs[7]
+    nframes_val = 1
+    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+    nedge_dim = torch.export.Dim("nedge", min=2)
+    nloc_dim = torch.export.Dim("nloc", min=1)
+    return (
+        {0: n_node_total_dim},  # atype: (N,)
+        {0: nframes_val},  # n_node: (nf,) — nf STATIC at 1
+        {1: nedge_dim},  # edge_index: (2, E) — E dynamic
+        {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
+        {0: nedge_dim},  # edge_mask: (E,) — E dynamic
+        {0: nframes_val} if fparam is not None else None,  # fparam: (nf, ndf)
+        {0: nframes_val, 1: nloc_dim} if aparam is not None else None,  # aparam
+        {0: nframes_val} if charge_spin is not None else None,  # charge_spin
+        # 8 comm tensors: send_list/send_proc/recv_proc/send_num/recv_num
+        # (nswap,), communicator (1,), nlocal/nghost scalar — all static,
+        # nswap baked in at the trace value (see _build_dynamic_shapes).
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+
+
 def _build_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     has_spin: bool = False,
@@ -949,9 +1006,13 @@ def _trace_and_export(
     metadata = _collect_metadata(model, is_spin=is_spin, lower_kind=lower_kind)
 
     # 2b. Graph-form export branch (NeighborGraph schema). The graph path is
-    # LOCAL-only (no ghosts), single-rank, energy-model only in PR-A/PR-B; it
-    # traces ``forward_lower_graph_exportable`` with a DYNAMIC edge axis (B2.0).
-    # The dense (nlist) path below is left byte-unchanged.
+    # LOCAL-only (no ghosts) for single-rank inference, GNN/energy-model only
+    # (PR-A/PR-B); it traces ``forward_lower_graph_exportable`` with a
+    # DYNAMIC edge axis (B2.0). Multi-rank message-passing models (dpa2)
+    # additionally trace ``forward_lower_graph_exportable_with_comm`` when
+    # ``with_comm_dict`` (PR-E task 10) -- the graph there carries owned
+    # PLUS halo nodes (``n_local`` marks the owned prefix). The dense
+    # (nlist) path below is left byte-unchanged.
     if lower_kind == "graph":
         import math
 
@@ -960,16 +1021,19 @@ def _trace_and_export(
             raise NotImplementedError(
                 "graph-form .pt2 export is not supported for spin models"
             )
-        if with_comm_dict:
-            raise NotImplementedError(
-                "graph-form .pt2 export does not support the with-comm artifact "
-                "(multi-rank graph message passing is a later PR)"
-            )
         if not hasattr(model, "forward_lower_graph_exportable"):
             raise NotImplementedError(
                 f"model {type(model).__name__} has no "
                 "forward_lower_graph_exportable; graph-form .pt2 export "
                 "requires an energy model"
+            )
+        if with_comm_dict and not hasattr(
+            model, "forward_lower_graph_exportable_with_comm"
+        ):
+            raise NotImplementedError(
+                f"model {type(model).__name__} has no "
+                "forward_lower_graph_exportable_with_comm; graph-form "
+                "with-comm .pt2 export requires an energy model"
             )
 
         # The edge axis is DYNAMIC (B2.0): the AOTI artifact accepts any edge
@@ -981,55 +1045,130 @@ def _trace_and_export(
         nnei = sum(model.get_sel())
         e_sample = math.ceil(1.25 * nloc_sample * nnei)
 
-        # make_fx traces on CPU; the .pt2 C++ ABI is float64-only.  Pass device
-        # and dtype explicitly instead of mutating the module-level env.DEVICE.
-        sample_inputs = build_synthetic_graph_inputs(
-            model,
-            e_max=e_sample,
-            nframes=2,
-            nloc=nloc_sample,
-            dtype=torch.float64,
-            device=torch.device("cpu"),
-        )
+        if with_comm_dict:
+            # Load libdeepmd_op_pt.so and register border_op fake/autograd
+            # metadata now, mirroring the dense with-comm precedent
+            # (:1146 in the nlist branch below).
+            from deepmd.pt_expt.utils.comm import (
+                ensure_comm_registered,
+            )
 
-        (
-            atype_g,
-            n_node_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            fparam_g,
-            aparam_g,
-            charge_spin_g,
-        ) = sample_inputs
+            ensure_comm_registered()
+            if not _needs_with_comm_artifact(model):
+                raise ValueError(
+                    "with_comm_dict=True requested but the model's "
+                    "descriptor does not need cross-rank message passing "
+                    "(has_message_passing_across_ranks() is False) — "
+                    "there's nothing to compile."
+                )
+            # The pt_expt Repformer with-comm override
+            # (``_exchange_ghosts_graph``) only supports nf=1 (LAMMPS
+            # always drives multi-rank inference with one frame).
+            # ``nloc_sample`` here is the TOTAL flat node count carried by
+            # the graph (owned + halo, "owned-prefix" layout); the comm
+            # sample splits it into an owned prefix and a halo suffix so
+            # the ``n_local`` branch is genuinely exercised at trace time.
+            nghost_sample = 2
+            nlocal_sample = nloc_sample - nghost_sample
 
-        # Trace via make_fx on CPU (decomposes autograd.grad into aten ops).
-        traced = model.forward_lower_graph_exportable(
-            atype_g,
-            n_node_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            fparam=fparam_g,
-            aparam=aparam_g,
-            do_atomic_virial=do_atomic_virial,
-            charge_spin=charge_spin_g,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-        )
-        sample_out = traced(
-            atype_g,
-            n_node_g,
-            edge_index_g,
-            edge_vec_g,
-            edge_mask_g,
-            fparam_g,
-            aparam_g,
-            charge_spin_g,
-        )
-        output_keys = list(sample_out.keys())
+            # make_fx traces on CPU; the .pt2 C++ ABI is float64-only.
+            sample_inputs = build_synthetic_graph_inputs(
+                model,
+                e_max=e_sample,
+                nframes=1,
+                nloc=nloc_sample,
+                dtype=torch.float64,
+                device=torch.device("cpu"),
+            )
+            comm_inputs = _make_comm_sample_inputs(
+                nloc=nlocal_sample,
+                nghost=nghost_sample,
+                device=torch.device("cpu"),
+            )
+            sample_inputs = sample_inputs + comm_inputs
 
-        dynamic_shapes = _build_graph_dynamic_shapes(*sample_inputs)
+            (
+                atype_g,
+                n_node_g,
+                edge_index_g,
+                edge_vec_g,
+                edge_mask_g,
+                fparam_g,
+                aparam_g,
+                charge_spin_g,
+            ) = sample_inputs[:8]
+
+            # Trace via make_fx on CPU (decomposes autograd.grad into aten ops).
+            traced = model.forward_lower_graph_exportable_with_comm(
+                atype_g,
+                n_node_g,
+                edge_index_g,
+                edge_vec_g,
+                edge_mask_g,
+                fparam_g,
+                aparam_g,
+                charge_spin_g,
+                *comm_inputs,
+                do_atomic_virial=do_atomic_virial,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+            sample_out = traced(*sample_inputs)
+            output_keys = list(sample_out.keys())
+
+            dynamic_shapes = _build_graph_dynamic_shapes_with_comm(*sample_inputs)
+        else:
+            # make_fx traces on CPU; the .pt2 C++ ABI is float64-only.  Pass
+            # device and dtype explicitly instead of mutating the
+            # module-level env.DEVICE.
+            sample_inputs = build_synthetic_graph_inputs(
+                model,
+                e_max=e_sample,
+                nframes=2,
+                nloc=nloc_sample,
+                dtype=torch.float64,
+                device=torch.device("cpu"),
+            )
+
+            (
+                atype_g,
+                n_node_g,
+                edge_index_g,
+                edge_vec_g,
+                edge_mask_g,
+                fparam_g,
+                aparam_g,
+                charge_spin_g,
+            ) = sample_inputs
+
+            # Trace via make_fx on CPU (decomposes autograd.grad into aten ops).
+            traced = model.forward_lower_graph_exportable(
+                atype_g,
+                n_node_g,
+                edge_index_g,
+                edge_vec_g,
+                edge_mask_g,
+                fparam=fparam_g,
+                aparam=aparam_g,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin_g,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+            sample_out = traced(
+                atype_g,
+                n_node_g,
+                edge_index_g,
+                edge_vec_g,
+                edge_mask_g,
+                fparam_g,
+                aparam_g,
+                charge_spin_g,
+            )
+            output_keys = list(sample_out.keys())
+
+            dynamic_shapes = _build_graph_dynamic_shapes(*sample_inputs)
+
         exported = torch.export.export(
             traced,
             sample_inputs,
@@ -1403,6 +1542,7 @@ def _deserialize_to_file_pt2(
             model_json_override,
             with_comm_dict=True,
             do_atomic_virial=do_atomic_virial,
+            lower_kind=lower_kind,
         )
         with tempfile.TemporaryDirectory() as td:
             wc_path = os.path.join(td, "forward_lower_with_comm.pt2")

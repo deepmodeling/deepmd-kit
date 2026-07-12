@@ -261,6 +261,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
@@ -282,6 +283,11 @@ class DPAtomicModel(BaseAtomicModel):
         charge_spin
             charge/spin conditioning. Unused by the dpa1 graph path; accepted so
             the interface stays stable for charge/spin-conditioned descriptors.
+        comm_dict
+            MPI communication metadata forwarded to the descriptor's
+            ``call_graph`` (the message-passing part). ``None`` for
+            non-parallel inference (default). Mirrors :meth:`forward_atomic`'s
+            ``comm_dict`` on the dense route.
 
         Returns
         -------
@@ -298,7 +304,7 @@ class DPAtomicModel(BaseAtomicModel):
         xp = array_api_compat.array_namespace(graph.edge_vec)
         type_embedding = self.descriptor.type_embedding.call()
         gg, rot_mat = self.descriptor.call_graph(
-            graph, atype, type_embedding=type_embedding
+            graph, atype, type_embedding=type_embedding, comm_dict=comm_dict
         )
         fparam_node = None
         if fparam is not None:

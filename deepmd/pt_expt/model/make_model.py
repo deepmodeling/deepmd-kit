@@ -292,6 +292,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
             n_local: torch.Tensor | None = None,
+            comm_dict: dict | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
@@ -343,6 +344,17 @@ def make_model(
                 FULL/unmasked. ``None`` (default) is the single-rank/
                 all-owned behavior. See
                 :func:`~deepmd.pt_expt.model.edge_transform_output.fit_output_to_model_output_graph`.
+            comm_dict
+                MPI communication metadata for parallel inference. ``None``
+                (default) for non-parallel inference/training. Forwarded to
+                the atomic model's ``forward_common_atomic_graph``, which
+                drives the descriptor's per-layer cross-rank ghost-feature
+                exchange (``deepmd_export::border_op``, e.g. dpa2's
+                repformer block via
+                :meth:`~deepmd.pt_expt.descriptor.repformers.
+                DescrptBlockRepformers._exchange_ghosts_graph`). Only
+                meaningful for descriptors whose
+                ``has_message_passing_across_ranks()`` is ``True``.
 
             Returns
             -------
@@ -371,6 +383,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
+                comm_dict=comm_dict,
             )
             # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output.
             # Pass directly to the flat-N transform; no rectangular reshape needed.

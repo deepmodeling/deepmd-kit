@@ -760,6 +760,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward.
 
@@ -796,6 +797,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (N,) flat LOCAL atom types where ``N = sum(n_node)``.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        comm_dict
+            MPI communication metadata. Accepted for ABI parity with
+            :meth:`DescrptDPA2.call_graph` (uniform ``forward_atomic_graph``
+            call site), but UNUSED: a single se_atten descriptor has no
+            cross-rank message passing (``has_message_passing_across_ranks()``
+            is ``False``), so this is always ``None`` in practice.
 
         Returns
         -------
