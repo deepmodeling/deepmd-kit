@@ -6,7 +6,6 @@ from mpi_pair_deepmd import (
     run_mpi_pair_deepmd,
 )
 
-
 if __name__ == "__main__":
     run_mpi_pair_deepmd(
         PairStyleConfig(atom_style="atomic", masses=("16", "2"), pair_style="deepmd")
