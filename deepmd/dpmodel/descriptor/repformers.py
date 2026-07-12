@@ -964,6 +964,75 @@ def symmetrization_op(
     return grrg
 
 
+def graph_cal_hg(
+    g: Array,
+    h: Array,
+    edge_mask: Array,
+    sw: Array,
+    dst: Array,
+    n_total: int,
+    nnei: int,
+    smooth: bool = True,
+    epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
+) -> Array:
+    """Graph twin of :func:`_cal_hg`: hg[n, a, b] = sum_{e: dst(e)=n} h_e[a] g_e[b].
+
+    ``nnei`` is the block sel (the smooth-branch normalization constant, spec
+    decision #9: sel = normalization only).
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_sum,
+    )
+
+    xp = array_api_compat.array_namespace(g, h)
+    g = g * xp.astype(edge_mask[:, None], g.dtype)
+    if not smooth:
+        deg = segment_sum(xp.astype(edge_mask, g.dtype), dst, n_total)  # (N,)
+        if not use_sqrt_nnei:
+            invnnei = 1.0 / (epsilon + deg)
+        else:
+            invnnei = 1.0 / (epsilon + xp.sqrt(deg))
+        invnnei = invnnei[:, None, None]
+    else:
+        g = g * sw[:, None]
+        invnnei = (
+            1.0 / float(nnei) if not use_sqrt_nnei else 1.0 / (float(nnei) ** 0.5)
+        )
+    hg = segment_sum(h[:, :, None] * g[:, None, :], dst, n_total)  # (N, 3, ng)
+    return hg * invnnei
+
+
+def graph_cal_grrg(hg: Array, axis_neuron: int) -> Array:
+    """Graph twin of :func:`_cal_grrg` (node-local, no neighbor axis)."""
+    xp = array_api_compat.array_namespace(hg)
+    n, _, ng = hg.shape
+    hgm = hg[..., :axis_neuron]  # (N, 3, axis)
+    grrg = xp.matmul(xp.matrix_transpose(hgm), hg) / (3.0**1)  # (N, axis, ng)
+    return xp.reshape(grrg, (n, axis_neuron * ng))
+
+
+def graph_symmetrization_op(
+    g: Array,
+    h: Array,
+    edge_mask: Array,
+    sw: Array,
+    dst: Array,
+    n_total: int,
+    nnei: int,
+    axis_neuron: int,
+    smooth: bool = True,
+    epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
+) -> Array:
+    """Graph twin of :func:`symmetrization_op`."""
+    hg = graph_cal_hg(
+        g, h, edge_mask, sw, dst, n_total, nnei,
+        smooth=smooth, epsilon=epsilon, use_sqrt_nnei=use_sqrt_nnei,
+    )
+    return graph_cal_grrg(hg, axis_neuron)
+
+
 class Atten2Map(NativeOP):
     def __init__(
         self,
