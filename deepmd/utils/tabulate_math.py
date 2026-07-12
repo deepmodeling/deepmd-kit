@@ -536,7 +536,7 @@ class DPTabulate(BaseTabulate):
                 result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "A":
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
@@ -545,7 +545,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -570,7 +570,7 @@ class DPTabulate(BaseTabulate):
                 result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "R":
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
@@ -579,7 +579,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -607,4 +607,4 @@ class DPTabulate(BaseTabulate):
     @cached_property
     def _n_all_excluded(self) -> int:
         """The number of types excluding all types."""
-        return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
+        return sum(int(self._all_excluded(ii)) for ii in range(self.ntypes))

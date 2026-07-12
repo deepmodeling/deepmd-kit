@@ -118,7 +118,6 @@ class NvnmdConfig:
                 self.init_config_by_version(
                     jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"]
                 )
-        #
         self.config = FioDic().update(jdata, self.config)
         self.config["dscp"] = self.init_dscp(self.config["dscp"], self.config)
         self.config["fitn"] = self.init_fitn(self.config["fitn"], self.config)
@@ -167,7 +166,6 @@ class NvnmdConfig:
         self.config["fitn"] = self.init_fitn(self.config["fitn"], self.config)
         dp_in = {"type_map": fioObj.get(jdata, "type_map", [])}
         self.config["dpin"] = fioObj.update(dp_in, self.config["dpin"])
-        #
         self.init_net_size()
         self.init_value()
 
@@ -290,7 +288,6 @@ class NvnmdConfig:
         rmax = nvnmd_cfg.dscp["rcut"]
         ntype = self.dscp["ntype"]
         dmin = self.dscp["dmin"]
-        #
         s0 = r2s(dmin, rmin, rmax)
         smin_ = -davg[:ntype, 0] / dstd[:ntype, 0]
         smax_ = (s0 - davg[:ntype, 0]) / dstd[:ntype, 0]

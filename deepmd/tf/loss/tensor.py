@@ -26,7 +26,7 @@ class TensorLoss(Loss):
     """Loss function for tensorial properties."""
 
     def __init__(self, jdata: dict | None, **kwarg: Any) -> None:
-        model = kwarg.get("model", None)
+        model = kwarg.get("model")
         if model is not None:
             self.type_sel = model.get_sel_type()
         else:

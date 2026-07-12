@@ -77,7 +77,6 @@ def _mock_extract_features(self, systems):
 
 def _mock_load_descriptor_model(self):
     self._checkpoint_type_map = ["Cu", "O"]
-    return None
 
 
 # ======================================================================

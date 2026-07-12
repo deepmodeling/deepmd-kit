@@ -15,7 +15,6 @@ from deepmd.tf.env import (
     tf,
 )
 
-#
 from deepmd.tf.nvnmd.utils.config import (
     nvnmd_cfg,
 )
@@ -43,7 +42,6 @@ def check_switch_range(davg: np.ndarray, dstd: np.ndarray) -> None:
     ntype = nvnmd_cfg.dscp["ntype"]
     NIDP = nvnmd_cfg.dscp["NIDP"]
     ndescrpt = NIDP * 4
-    #
     namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
     if "train_attr/min_nbor_dist" in namelist:
         min_dist = get_tensor_by_name_from_graph(
@@ -271,7 +269,6 @@ def filter_GR2D(xyz_scatter_1: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
         result = tf.ensure_shape(result, [None, M1, M1])
         # D': natom x (outputs_size x outputs_size_2)
         result = tf.reshape(result, [-1, M1 * M1])
-        #
         index_subset = []
         for ii in range(M1):
             for jj in range(ii, ii + M2):
@@ -301,7 +298,6 @@ def filter_GR2D(xyz_scatter_1: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
         # natom x (outputs_size x outputs_size_2)
         # result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
         result = tf.reshape(result, [-1, M1 * M1])
-        #
         index_subset = []
         for ii in range(M1):
             for jj in range(ii, ii + M2):
