@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "c_api.h"
 
+#include <limits>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -2683,7 +2684,8 @@ const char* DP_ReadFileToChar2(const char* c_model, int* size) {
   // whitespace is preserved and the returned buffer has exactly *size
   // bytes — otherwise the C++ wrapper would reconstruct a string that
   // over-reads the shorter allocation.  See issue #5620.
-  if (file_content.size() > INT_MAX) {
+  if (file_content.size() >
+      static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     std::string error_message =
         "File is too large to be read into a char buffer via this API";
     *size = -static_cast<int>(error_message.size());
