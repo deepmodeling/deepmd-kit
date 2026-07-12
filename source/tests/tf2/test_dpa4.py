@@ -14,6 +14,7 @@ if os.environ.get("DP_TEST_TF2_ONLY") != "1":
 
 from deepmd.tf2.descriptor.dpa4 import (
     DescrptDPA4,
+    DynamicRadialDegreeMixer,
     _iter_object_tree,
 )
 from deepmd.tf2.fitting.dpa4_ener import (
@@ -208,3 +209,31 @@ def test_random_gamma_fails_fast_until_graph_safe_rng_is_supported() -> None:
             random_gamma=True,
             seed=20260712,
         )
+
+
+def test_dynamic_radial_mixer_accepts_unknown_rank_tensor_specs() -> None:
+    """Runtime rank and shape checks support fully unknown TensorSpecs."""
+    mixer = DynamicRadialDegreeMixer(
+        lmax=1,
+        mmax=1,
+        channels=4,
+        mode="degree_channel",
+        rank=0,
+        precision="float64",
+        seed=20260712,
+        trainable=True,
+    )
+
+    @tf.function(
+        input_signature=(
+            tf.TensorSpec(shape=None, dtype=tf.float64),
+            tf.TensorSpec(shape=None, dtype=tf.float64),
+        )
+    )
+    def apply_mixer(x_local: tf.Tensor, radial_feat: tf.Tensor) -> tf.Tensor:
+        return to_tf_tensor(mixer(wrap_tensor(x_local), wrap_tensor(radial_feat)))
+
+    for nedge in (2, 3):
+        inputs = tf.ones((nedge, mixer.reduced_dim, mixer.channels), tf.float64)
+        output = apply_mixer(inputs, inputs)
+        assert tuple(output.shape) == (nedge, mixer.reduced_dim, mixer.channels)

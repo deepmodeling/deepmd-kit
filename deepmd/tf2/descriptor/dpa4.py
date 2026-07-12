@@ -270,15 +270,27 @@ class DynamicRadialDegreeMixer(DynamicRadialDegreeMixerDP):
     def call(self, x_local: Any, radial_feat: Any) -> Any:
         x_tensor = to_tf_tensor(x_local)
         radial_tensor = to_tf_tensor(radial_feat)
-        assertion = tf.debugging.assert_equal(
-            tf.shape(x_tensor),
-            tf.shape(radial_tensor),
-            message="x_local and radial_feat must have the same shape",
+        assertions = (
+            tf.debugging.assert_rank(x_tensor, 3),
+            tf.debugging.assert_rank(radial_tensor, 3),
+            tf.debugging.assert_equal(
+                tf.shape(x_tensor),
+                tf.shape(radial_tensor),
+                message="x_local and radial_feat must have the same shape",
+            ),
+            tf.debugging.assert_equal(tf.shape(x_tensor)[1], self.reduced_dim),
+            tf.debugging.assert_equal(tf.shape(x_tensor)[2], self.channels),
         )
-        with tf.control_dependencies([assertion]):
+        with tf.control_dependencies(assertions):
+            # Runtime assertions establish the contract; ensure_shape carries
+            # the proven rank into ndtensorflow static metadata.
+            x_tensor = tf.ensure_shape(tf.identity(x_tensor), [None, None, None])
+            radial_tensor = tf.ensure_shape(
+                tf.identity(radial_tensor), [None, None, None]
+            )
             return super().call(
-                xp.asarray(tf.identity(x_tensor)),
-                xp.asarray(tf.identity(radial_tensor)),
+                xp.asarray(x_tensor),
+                xp.asarray(radial_tensor),
             )
 
 
