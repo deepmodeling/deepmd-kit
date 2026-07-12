@@ -41,6 +41,9 @@ from deepmd.pt.loss.property import (
 from deepmd.pt.loss.tensor import (
     TensorLoss,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 # ---------------------------------------------------------------------------
 # Constants used by the multi-frame test harness (Tasks 2-5)
@@ -1212,6 +1215,22 @@ PROP_TASK_DIM = 2
 PROP_VAR = "test_prop"
 
 
+# Unlike the other losses, PropertyLoss.forward builds out_std/out_bias (and the
+# loss accumulator) on env.DEVICE and combines them with the *multi-dim*
+# label/pred tensors (and divides pred/label by real_natoms from the mask).  A
+# CPU-input / env.DEVICE-buffer mix therefore raises on GPU CI (a 0-dim CPU
+# scalar is auto-promoted, but a [nf, task_dim] tensor is not), so the property
+# inputs and their masks must live on env.DEVICE.  See #5738.
+def _rnd_t_prop(*shape):
+    """Random float64 tensor on env.DEVICE (PropertyLoss holds device-resident buffers)."""
+    return torch.tensor(
+        RNG.standard_normal(shape), dtype=torch.float64, device=env.DEVICE
+    )
+
+
+_MASK_PAD_PROP = _MASK_PAD_PT.to(env.DEVICE)
+
+
 class TestPTPropertyLossExtensiveGradAccum:
     """Idiom 2 (per-frame real-natoms normalization) for extensive pt PropertyLoss.
 
@@ -1248,7 +1267,7 @@ class TestPTPropertyLossExtensiveGradAccum:
             return (
                 {
                     PROP_VAR: p_A,
-                    "mask": torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+                    "mask": torch.ones(1, NA, dtype=torch.float64, device=env.DEVICE),
                 },
                 {PROP_VAR: l_A.clone()},
                 NA,
@@ -1258,7 +1277,7 @@ class TestPTPropertyLossExtensiveGradAccum:
             return (
                 {
                     PROP_VAR: p_B,
-                    "mask": torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+                    "mask": torch.ones(1, NB, dtype=torch.float64, device=env.DEVICE),
                 },
                 {PROP_VAR: l_B.clone()},
                 NB,
@@ -1268,7 +1287,7 @@ class TestPTPropertyLossExtensiveGradAccum:
             return (
                 {
                     PROP_VAR: torch.cat([p_A, p_B], dim=0),  # [2, task_dim]
-                    "mask": _MASK_PAD_PT,
+                    "mask": _MASK_PAD_PROP,
                 },
                 {PROP_VAR: torch.cat([l_A, l_B], dim=0)},
                 NP,
@@ -1283,36 +1302,36 @@ class TestPTPropertyLossExtensiveGradAccum:
 
     def test_mse_grad_accum(self):
         """MSE extensive property meets the grad-accum invariant."""
-        p_A = _rnd_t(1, PROP_TASK_DIM)
-        l_A = _rnd_t(1, PROP_TASK_DIM)
-        p_B = _rnd_t(1, PROP_TASK_DIM)
-        l_B = _rnd_t(1, PROP_TASK_DIM)
+        p_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        p_B = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_B = _rnd_t_prop(1, PROP_TASK_DIM)
         self._run_invariant(self._make_loss("mse"), p_A, l_A, p_B, l_B)
 
     def test_mae_grad_accum(self):
         """MAE extensive property meets the grad-accum invariant."""
-        p_A = _rnd_t(1, PROP_TASK_DIM)
-        l_A = _rnd_t(1, PROP_TASK_DIM)
-        p_B = _rnd_t(1, PROP_TASK_DIM)
-        l_B = _rnd_t(1, PROP_TASK_DIM)
+        p_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        p_B = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_B = _rnd_t_prop(1, PROP_TASK_DIM)
         self._run_invariant(self._make_loss("mae"), p_A, l_A, p_B, l_B)
 
     def test_smooth_mae_grad_accum(self):
         """smooth_mae extensive property meets the grad-accum invariant."""
-        p_A = _rnd_t(1, PROP_TASK_DIM)
-        l_A = _rnd_t(1, PROP_TASK_DIM)
-        p_B = _rnd_t(1, PROP_TASK_DIM)
-        l_B = _rnd_t(1, PROP_TASK_DIM)
+        p_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_A = _rnd_t_prop(1, PROP_TASK_DIM)
+        p_B = _rnd_t_prop(1, PROP_TASK_DIM)
+        l_B = _rnd_t_prop(1, PROP_TASK_DIM)
         self._run_invariant(self._make_loss("smooth_mae"), p_A, l_A, p_B, l_B)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same extensive-property loss as no mask."""
-        p = _rnd_t(2, PROP_TASK_DIM)
-        l = _rnd_t(2, PROP_TASK_DIM)
+        p = _rnd_t_prop(2, PROP_TASK_DIM)
+        l = _rnd_t_prop(2, PROP_TASK_DIM)
         loss_obj = self._make_loss("mse")
         mp_mask = {
             PROP_VAR: p,
-            "mask": torch.ones(2, NB, dtype=torch.float64, device="cpu"),
+            "mask": torch.ones(2, NB, dtype=torch.float64, device=env.DEVICE),
         }
         mp_nm = {PROP_VAR: p}
         # pt forward mutates label[var_name]; use separate dicts for each call.
@@ -1350,10 +1369,10 @@ class TestPTPropertyLossIntensiveUnaffectedByMask:
 
     def test_intensive_ignores_mask(self):
         """Intensive property: masked batch == unmasked batch."""
-        p = _rnd_t(2, PROP_TASK_DIM)
-        l = _rnd_t(2, PROP_TASK_DIM)
+        p = _rnd_t_prop(2, PROP_TASK_DIM)
+        l = _rnd_t_prop(2, PROP_TASK_DIM)
         loss_obj = self._make_loss()
-        mp_mask = {PROP_VAR: p, "mask": _MASK_PAD_PT}
+        mp_mask = {PROP_VAR: p, "mask": _MASK_PAD_PROP}
         mp_nm = {PROP_VAR: p}
         # Use separate label dicts since pt forward mutates label[var_name].
         lb_m = {PROP_VAR: l.clone()}
