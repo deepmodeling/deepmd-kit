@@ -2236,6 +2236,172 @@ class RepformerLayer(NativeOP):
         g1_new = self.list_update(g1_update, "g1")
         return g1_new, g2_new, h2_new
 
+    def call_graph(
+        self,
+        g1: Array,
+        g2: Array,
+        h2: Array,
+        src: Array,
+        dst: Array,
+        edge_mask: Array,
+        sw: Array,
+        n_total: int,
+        nnei: int,
+        pairs: tuple[Array, Array, Array] | None = None,
+    ) -> tuple[Array, Array, Array]:
+        """Graph twin of :meth:`call`. One residual update of (g1, g2, h2) on
+        the flat node/edge axes; the neighbor axis of every dense reduction is
+        replaced by segment ops over ``dst``.
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+            Unlike :meth:`call`, this is the FULL node channel with no
+            local/ghost slice: ghost-free graphs have no ghosts, and extended
+            (multi-rank) graphs deliberately compute halo rows here and let
+            the later communication step overwrite them.
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        src
+            Source (neighbor) node index of each edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+        n_total
+            Total number of nodes.
+        nnei
+            The block sel (the smooth-branch normalization constant).
+        pairs
+            ``(q_e, k_e, pair_mask)`` from
+            :func:`~deepmd.dpmodel.utils.neighbor_graph.center_edge_pairs`.
+            Required iff ``self.update_g2_has_attn or self.update_h2``.
+
+        Returns
+        -------
+        g1_new : [n_total, ng1]     updated node channel
+        g2_new : [n_edge, ng2]      updated edge channel, invariant
+        h2_new : [n_edge, 3]        updated edge channel, equivariant
+        """
+        xp = array_api_compat.array_namespace(g1, g2, h2)
+        cal_gg1 = (
+            self.update_g1_has_drrd
+            or self.update_g1_has_conv
+            or self.update_g1_has_attn
+            or self.update_g2_has_g1g1
+        )
+        e_tot = g2.shape[0]
+
+        g2_update: list[Array] = [g2]
+        h2_update: list[Array] = [h2]
+        g1_update: list[Array] = [g1]
+        g1_mlp: list[Array] = [g1] if not self.g1_out_mlp else []
+        if self.g1_out_mlp:
+            assert self.g1_self_mlp is not None
+            g1_update.append(self.act(self.g1_self_mlp(g1)))
+
+        gg1 = xp.take(g1, src, axis=0) if cal_gg1 else None  # (E, ng1)
+
+        if self.update_chnnl_2:
+            assert self.linear2 is not None
+            g2_update.append(self.act(self.linear2(g2)))
+
+            if self.update_g2_has_g1g1:
+                assert self.proj_g1g1g2 is not None
+                g2_update.append(
+                    self.proj_g1g1g2(
+                        self._update_g2_g1g1_graph(g1, src, dst, edge_mask, sw)
+                    )
+                )
+
+            if self.update_g2_has_attn or self.update_h2:
+                assert self.attn2g_map is not None
+                assert pairs is not None, (
+                    "center_edge_pairs required for g2 attention on the graph path"
+                )
+                q_e, k_e, pair_mask = pairs
+                AAg = self.attn2g_map.call_graph(
+                    g2, h2, sw, q_e, k_e, pair_mask, e_tot
+                )  # (P, nh)
+                if self.update_g2_has_attn:
+                    assert self.attn2_mh_apply is not None
+                    assert self.attn2_lm is not None
+                    g2_2 = self.attn2_mh_apply.call_graph(AAg, g2, q_e, k_e, e_tot)
+                    g2_update.append(self.attn2_lm(g2_2))
+                if self.update_h2:
+                    assert self.attn2_ev_apply is not None
+                    h2_update.append(
+                        self.attn2_ev_apply.call_graph(AAg, h2, q_e, k_e, e_tot)
+                    )
+
+        if self.update_g1_has_conv:
+            assert gg1 is not None
+            g1_conv = self._update_g1_conv_graph(
+                gg1, g2, edge_mask, sw, dst, n_total, nnei
+            )
+            if not self.g1_out_conv:
+                g1_mlp.append(g1_conv)
+            else:
+                g1_update.append(g1_conv)
+
+        if self.update_g1_has_grrg:
+            g1_mlp.append(
+                symmetrization_op_graph(
+                    g2,
+                    h2,
+                    edge_mask,
+                    sw,
+                    dst,
+                    n_total,
+                    nnei,
+                    self.axis_neuron,
+                    smooth=self.smooth,
+                    epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                )
+            )
+
+        if self.update_g1_has_drrd:
+            assert gg1 is not None
+            g1_mlp.append(
+                symmetrization_op_graph(
+                    gg1,
+                    h2,
+                    edge_mask,
+                    sw,
+                    dst,
+                    n_total,
+                    nnei,
+                    self.axis_neuron,
+                    smooth=self.smooth,
+                    epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                )
+            )
+
+        g1_1 = self.act(self.linear1(xp.concat(g1_mlp, axis=-1)))
+        g1_update.append(g1_1)
+
+        if self.update_g1_has_attn:
+            assert gg1 is not None
+            assert self.loc_attn is not None
+            g1_update.append(
+                self.loc_attn.call_graph(g1, gg1, edge_mask, sw, dst, n_total)
+            )
+
+        if self.update_chnnl_2:
+            g2_new = self.list_update(g2_update, "g2")
+            h2_new = self.list_update(h2_update, "h2")
+        else:
+            g2_new, h2_new = g2, h2
+        g1_new = self.list_update(g1_update, "g1")
+        return g1_new, g2_new, h2_new
+
     def list_update_res_avg(
         self,
         update_list: list[Array],
