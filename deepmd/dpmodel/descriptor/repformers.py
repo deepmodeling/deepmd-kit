@@ -527,6 +527,152 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_ext = xp_take_along_axis(g1, mapping_tiled, axis=1)
         return xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
 
+    def _exchange_ghosts_graph(
+        self,
+        g1: Array,
+        comm_dict: dict | None,
+        n_total: int,
+    ) -> Array:
+        """Per-layer node-channel refresh on the graph path.
+
+        Ghost-free graphs (Python single-rank; src IS the local owner) and
+        extended single-process graphs need NO exchange -- identity. The
+        pt_expt subclass overrides this to overwrite halo rows via
+        ``deepmd_export::border_op`` when ``comm_dict`` is provided (C++
+        multi-rank extended-region graphs).
+        """
+        del n_total
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "comm_dict on the dpmodel graph path requires the pt_expt "
+                "_exchange_ghosts_graph override (MPI border_op)"
+            )
+        return g1
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        g1_input: Array,
+        comm_dict: dict | None = None,
+        static_nnei: int | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
+        """Graph twin of :meth:`call` on the flat node/edge axes.
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph` whose
+            ``edge_index = [src, dst]`` (src = neighbor local owner, dst = center),
+            ``edge_vec = r_src - r_dst`` and ``edge_mask`` marks real edges.
+        atype
+            (N,) flat node atom types (``N = sum(graph.n_node)``).
+        g1_input
+            (N, g1_dim) node channel BEFORE the block activation -- the flat
+            twin of the dense ``atype_embd`` (``atype_embd_ext`` sliced to the
+            first ``nloc`` atoms); the block applies ``self.act`` to it, exactly
+            like the dense body.
+        comm_dict
+            MPI communication metadata forwarded to :meth:`_exchange_ghosts_graph`.
+            ``None`` for non-parallel inference (dpmodel default: identity).
+        static_nnei
+            When the graph uses the shape-static center-major layout
+            (``graph_from_dense_quartet`` / ``from_dense_quartet(compact=False)``,
+            ``E = n_center * nnei``), pass ``nnei`` so the attention edge-pair
+            enumeration stays jit/export-traceable (no ``nonzero``). ``None``
+            (carry-all / compact graphs) selects the dynamic eager form.
+
+        Returns
+        -------
+        g1 : Array
+            (N, dim_out) updated node channel.
+        g2 : Array
+            (E, ng2) updated edge channel, invariant.
+        h2 : Array
+            (E, 3) updated edge channel, equivariant.
+        rot_mat : Array
+            (N, dim_emb, 3) rotationally equivariant single-particle
+            representation.
+        sw : Array
+            (E,) smooth switch, zeroed on padding edges.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            apply_pair_exclusion,
+            center_edge_pairs,
+            edge_env_mat,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec, atype)
+        n_total = atype.shape[0]
+        # descriptor-block exclude_types: same canonical transform as dense
+        # nlist erasure (repformers.call:541-543)
+        graph = apply_pair_exclusion(graph, atype, self.emask)
+        src = graph.edge_index[0, :]
+        dst = graph.edge_index[1, :]
+        center_type = xp.take(atype, dst, axis=0)
+        rr, sw_e = edge_env_mat(
+            graph.edge_vec,
+            center_type,
+            self.mean[:, 0, :],
+            self.stddev[:, 0, :],
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+            edge_mask=graph.edge_mask,
+            return_sw=True,
+        )  # (E, 4), (E, 1)
+        sw = sw_e[:, 0]  # (E,), zeroed on padding
+        g1 = self.act(g1_input)  # (N, g1_dim)
+        if not self.direct_dist:
+            g2, h2 = rr[:, :1], rr[:, 1:]
+        else:
+            g2 = safe_for_vector_norm(graph.edge_vec, axis=-1, keepdims=True)
+            g2 = g2 / self.rcut
+            h2 = graph.edge_vec / self.rcut
+        g2 = self.act(self.g2_embd(g2))  # (E, ng2)
+        pairs = None
+        # DescrptBlockRepformers has no block-wide `update_chnnl_2` (that flag
+        # lives per-layer: the last layer always sets it False, see __init__'s
+        # `update_chnnl_2=(ii != nlayers - 1)`). Precompute the shared
+        # (topology-only) edge pairs iff ANY layer actually consumes them.
+        if any(ll.update_g2_has_attn or ll.update_h2 for ll in self.layers):
+            pairs = center_edge_pairs(
+                dst,
+                graph.edge_mask,
+                n_total,
+                include_self=True,
+                ordered=True,
+                static_nnei=static_nnei,
+            )
+        for ll in self.layers:
+            g1 = self._exchange_ghosts_graph(g1, comm_dict, n_total)
+            g1, g2, h2 = ll.call_graph(
+                g1,
+                g2,
+                h2,
+                src,
+                dst,
+                graph.edge_mask,
+                sw,
+                n_total,
+                self.nnei,
+                pairs,
+            )
+        h2g2 = _cal_hg_graph(
+            g2,
+            h2,
+            graph.edge_mask,
+            sw,
+            dst,
+            n_total,
+            self.nnei,
+            smooth=self.smooth,
+            epsilon=self.epsilon,
+            use_sqrt_nnei=self.use_sqrt_nnei,
+        )  # (N, 3, ng2)
+        rot_mat = xp.matrix_transpose(h2g2)  # (N, ng2, 3)
+        return g1, g2, h2, rot_mat, sw
+
     def call(
         self,
         nlist: Array,
@@ -996,9 +1142,7 @@ def _cal_hg_graph(
         invnnei = invnnei[:, None, None]
     else:
         g = g * sw[:, None]
-        invnnei = (
-            1.0 / float(nnei) if not use_sqrt_nnei else 1.0 / (float(nnei) ** 0.5)
-        )
+        invnnei = 1.0 / float(nnei) if not use_sqrt_nnei else 1.0 / (float(nnei) ** 0.5)
     hg = segment_sum(h[:, :, None] * g[:, None, :], dst, n_total)  # (N, 3, ng)
     return hg * invnnei
 
@@ -1027,8 +1171,16 @@ def symmetrization_op_graph(
 ) -> Array:
     """Graph twin of :func:`symmetrization_op`."""
     hg = _cal_hg_graph(
-        g, h, edge_mask, sw, dst, n_total, nnei,
-        smooth=smooth, epsilon=epsilon, use_sqrt_nnei=use_sqrt_nnei,
+        g,
+        h,
+        edge_mask,
+        sw,
+        dst,
+        n_total,
+        nnei,
+        smooth=smooth,
+        epsilon=epsilon,
+        use_sqrt_nnei=use_sqrt_nnei,
     )
     return _cal_grrg_graph(hg, axis_neuron)
 
@@ -1537,9 +1689,7 @@ class LocalAtten(NativeOP):
         gg1kv = xp.reshape(self.mapkv(gg1), (gg1.shape[0], nd + ni, nh))
         gg1k = gg1kv[:, :nd, :]  # (E, nd, nh)
         gg1v = gg1kv[:, nd:, :]  # (E, ni, nh)
-        attnw = (
-            xp.sum(xp.take(g1q, dst, axis=0) * gg1k, axis=1) / nd**0.5
-        )  # (E, nh)
+        attnw = xp.sum(xp.take(g1q, dst, axis=0) * gg1k, axis=1) / nd**0.5  # (E, nh)
         if self.smooth:
             attnw = (attnw + self.attnw_shift) * sw[:, None] - self.attnw_shift
             attnw = segment_softmax(attnw, dst, n_total)
