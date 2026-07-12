@@ -71,9 +71,11 @@ def segment_softmax(
     """
     xp = array_api_compat.array_namespace(data)
     if mask is not None:
+        # broadcast mask (n,) over any trailing feature dims of data (n, *f)
+        mask_b = xp.reshape(mask, mask.shape + (1,) * (data.ndim - 1))
         # keep masked entries out of the per-segment max: send them to -inf
         neg = xp.full_like(data, -xp.inf)
-        data_for_max = xp.where(mask, data, neg)
+        data_for_max = xp.where(mask_b, data, neg)
     else:
         data_for_max = data
     seg_max = segment_max(data_for_max, segment_ids, num_segments)
@@ -89,7 +91,7 @@ def segment_softmax(
     if mask is not None:
         # defensive no-op after the -inf shift (exp(-inf) == 0); kept so the
         # zero-weight guarantee never depends on the shift implementation
-        ex = ex * xp.astype(mask, ex.dtype)
+        ex = ex * xp.astype(mask_b, ex.dtype)
     denom = segment_sum(ex, segment_ids, num_segments)
     denom_e = xp.take(denom, segment_ids, axis=0)
     safe = xp.where(denom_e > 0, denom_e, xp.ones_like(denom_e))
