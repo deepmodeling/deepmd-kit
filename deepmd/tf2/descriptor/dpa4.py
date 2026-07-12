@@ -21,6 +21,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as RadialMLPDP
 from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
+from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
+    DynamicRadialDegreeMixer as DynamicRadialDegreeMixerDP,
+)
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
@@ -178,13 +181,16 @@ def _iter_object_tree(root: Any) -> Any:
     yield from visit(root)
 
 
-def _enable_tf2_array_variable_attr(module: Any, name: str) -> None:
+def _enable_tf2_parameter_attr(module: Any, name: str, *, trainable: bool) -> None:
     attrs = set(getattr(module, "_tf2_array_variable_attrs", ()))
     if name not in attrs:
         tf.Module.__setattr__(module, "_tf2_array_variable_attrs", attrs | {name})
+    policies = dict(getattr(module, "_tf2_array_variable_trainable", {}))
+    policies[name] = trainable
+    tf.Module.__setattr__(module, "_tf2_array_variable_trainable", policies)
 
 
-def _enable_tf2_array_variable_list_attr(module: Any, name: str) -> None:
+def _enable_tf2_parameter_list_attr(module: Any, name: str, *, trainable: bool) -> None:
     attrs = set(getattr(module, "_tf2_array_variable_list_attrs", ()))
     if name not in attrs:
         tf.Module.__setattr__(
@@ -192,24 +198,27 @@ def _enable_tf2_array_variable_list_attr(module: Any, name: str) -> None:
             "_tf2_array_variable_list_attrs",
             attrs | {name},
         )
+    policies = dict(getattr(module, "_tf2_array_variable_list_trainable", {}))
+    policies[name] = trainable
+    tf.Module.__setattr__(module, "_tf2_array_variable_list_trainable", policies)
 
 
-def _promote_trainable(module: Any, names: tuple[str, ...]) -> None:
-    if not getattr(module, "trainable", True):
-        return
+def _promote_parameters(
+    module: Any, names: tuple[str, ...], *, trainable: bool
+) -> None:
     for name in names:
         if not hasattr(module, name):
             continue
         value = getattr(module, name)
         if not _is_floating_array(value):
             continue
-        _enable_tf2_array_variable_attr(module, name)
+        _enable_tf2_parameter_attr(module, name, trainable=trainable)
         setattr(module, name, value)
 
 
-def _promote_trainable_lists(module: Any, names: tuple[str, ...]) -> None:
-    if not getattr(module, "trainable", True):
-        return
+def _promote_parameter_lists(
+    module: Any, names: tuple[str, ...], *, trainable: bool
+) -> None:
     for name in names:
         if not hasattr(module, name):
             continue
@@ -218,18 +227,20 @@ def _promote_trainable_lists(module: Any, names: tuple[str, ...]) -> None:
             continue
         if not value or not all(_is_floating_array(item) for item in value):
             continue
-        _enable_tf2_array_variable_list_attr(module, name)
+        _enable_tf2_parameter_list_attr(module, name, trainable=trainable)
         setattr(module, name, value)
 
 
 def _promote_trainable_tree(module: Any) -> Any:
+    root_trainable = bool(getattr(module, "trainable", True))
     for submodule in _iter_object_tree(module):
+        trainable = root_trainable and bool(getattr(submodule, "trainable", True))
         names = _TRAINABLE_ATTRS.get(type(submodule).__name__)
         if names is not None:
-            _promote_trainable(submodule, names)
+            _promote_parameters(submodule, names, trainable=trainable)
         list_names = _TRAINABLE_LIST_ATTRS.get(type(submodule).__name__)
         if list_names is not None:
-            _promote_trainable_lists(submodule, list_names)
+            _promote_parameter_lists(submodule, list_names, trainable=trainable)
     return module
 
 
@@ -237,18 +248,43 @@ def _promote_trainable_tree(module: Any) -> Any:
 class SO2Linear(SO2LinearDP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        _promote_trainable_lists(self, ("weight_m",))
+        _promote_parameter_lists(self, ("weight_m",), trainable=bool(self.trainable))
 
     @classmethod
     def deserialize(cls, data: dict) -> "SO2Linear":
         obj = super().deserialize(data)
-        _promote_trainable_lists(obj, ("weight_m",))
+        _promote_parameter_lists(obj, ("weight_m",), trainable=bool(obj.trainable))
         return obj
 
 
 register_dpmodel_mapping(
     SO2LinearDP,
     lambda v: SO2Linear.deserialize(v.serialize()),
+)
+
+
+@tf2_module
+class DynamicRadialDegreeMixer(DynamicRadialDegreeMixerDP):
+    """TF2 mixer with runtime shape checks for generalized edge counts."""
+
+    def call(self, x_local: Any, radial_feat: Any) -> Any:
+        x_tensor = to_tf_tensor(x_local)
+        radial_tensor = to_tf_tensor(radial_feat)
+        assertion = tf.debugging.assert_equal(
+            tf.shape(x_tensor),
+            tf.shape(radial_tensor),
+            message="x_local and radial_feat must have the same shape",
+        )
+        with tf.control_dependencies([assertion]):
+            return super().call(
+                xp.asarray(tf.identity(x_tensor)),
+                xp.asarray(tf.identity(radial_tensor)),
+            )
+
+
+register_dpmodel_mapping(
+    DynamicRadialDegreeMixerDP,
+    lambda v: DynamicRadialDegreeMixer.deserialize(v.serialize()),
 )
 
 
@@ -260,6 +296,11 @@ register_dpmodel_mapping(
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        if self.random_gamma:
+            raise NotImplementedError(
+                "TF2 DPA4 does not yet support graph-safe random_gamma; "
+                "set descriptor.random_gamma to false."
+            )
         _promote_trainable_tree(self)
 
     @classmethod

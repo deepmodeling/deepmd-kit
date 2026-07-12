@@ -108,7 +108,7 @@ def get_zbl_model(data: dict) -> DPZBLModel:
 
 
 def get_sezm_model(data: dict) -> BaseModel:
-    """Build a DPA4/SeZM energy model from the pt-style model config."""
+    """Build a DPA4/SeZM invariant model from the pt-style model config."""
     data = deepcopy(data)
     if "spin" in data:
         raise NotImplementedError("Spin DPA4/SeZM models are not supported in TF2.")
@@ -131,17 +131,21 @@ def get_sezm_model(data: dict) -> BaseModel:
             "Model type 'dpa4' requires a DPA4/SeZM descriptor, but got "
             f"descriptor type '{data['descriptor']['type']}'."
         )
-    if data["fitting_net"]["type"] not in ("dpa4_ener", "sezm_ener"):
+    if data["fitting_net"]["type"] not in (
+        "dpa4_ener",
+        "sezm_ener",
+        "property",
+    ):
         raise ValueError(
-            "Model type 'dpa4' requires the DPA4/SeZM energy fitting net, but got "
+            "Model type 'dpa4' requires a DPA4/SeZM energy or property fitting net, but got "
             f"fitting_net type '{data['fitting_net']['type']}'."
         )
 
     descriptor_exclude_types = [
         list(pair) for pair in (data["descriptor"].get("exclude_types") or [])
     ]
-    if "pair_exclude_types" in data:
-        pair_exclude_types = [list(pair) for pair in (data["pair_exclude_types"] or [])]
+    pair_exclude_types = [list(pair) for pair in (data.get("pair_exclude_types") or [])]
+    if pair_exclude_types:
         if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
             raise ValueError(
                 "DPA4/SeZM pair_exclude_types and descriptor.exclude_types must "

@@ -744,9 +744,22 @@ class DynamicRadialDegreeMixer(NativeOP):
             Invariant radial/type features with shape (E, D_m, C_wide).
         """
         xp = array_api_compat.array_namespace(x_local)
-        if x_local.shape != radial_feat.shape:
+        x_shape = x_local.shape
+        radial_shape = radial_feat.shape
+        if len(x_shape) != len(radial_shape) or any(
+            isinstance(x_dim, (int, np.integer))
+            and isinstance(radial_dim, (int, np.integer))
+            and int(x_dim) != int(radial_dim)
+            for x_dim, radial_dim in zip(x_shape, radial_shape, strict=True)
+        ):
             raise ValueError("`x_local` and `radial_feat` must have the same shape")
-        if x_local.shape[1] != self.reduced_dim or x_local.shape[2] != self.channels:
+        if (
+            isinstance(x_shape[1], (int, np.integer))
+            and int(x_shape[1]) != self.reduced_dim
+        ) or (
+            isinstance(x_shape[2], (int, np.integer))
+            and int(x_shape[2]) != self.channels
+        ):
             raise ValueError("Input shape is incompatible with this mixer")
 
         kernel_flat = self._project_radial(radial_feat)

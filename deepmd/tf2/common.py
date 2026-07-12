@@ -272,30 +272,51 @@ def tf2_module(module: type[T]) -> type[T]:
 
         def _set_tf2_array_variable(self, name: str, value: Any) -> None:
             storage_name = self._tf2_array_variable_storage_name(name)
+            trainable_by_name = object.__getattribute__(self, "__dict__").get(
+                "_tf2_array_variable_trainable", {}
+            )
             if value is None:
                 tf.Module.__setattr__(self, storage_name, None)
+                object.__getattribute__(self, "__dict__").pop(name, None)
                 return
             tensor = to_tf_tensor(value)
             variable = tf.Variable(
                 tensor,
-                trainable=bool(getattr(self, "trainable", True)),
+                trainable=bool(
+                    trainable_by_name.get(
+                        name,
+                        getattr(self, "trainable", True),
+                    )
+                ),
                 name=name,
             )
             tf.Module.__setattr__(self, storage_name, variable)
+            # The variable-backed accessor owns this value now. Keeping the
+            # original eager tensor in the public slot doubles parameter RAM.
+            object.__getattribute__(self, "__dict__").pop(name, None)
 
         def _set_tf2_array_variable_list(self, name: str, value: Any) -> None:
             storage_name = self._tf2_array_variable_list_storage_name(name)
+            trainable_by_name = object.__getattribute__(self, "__dict__").get(
+                "_tf2_array_variable_list_trainable", {}
+            )
             variables = []
             for idx, item in enumerate(value):
                 tensor = to_tf_tensor(item)
                 variables.append(
                     tf.Variable(
                         tensor,
-                        trainable=bool(getattr(self, "trainable", True)),
+                        trainable=bool(
+                            trainable_by_name.get(
+                                name,
+                                getattr(self, "trainable", True),
+                            )
+                        ),
                         name=f"{name}_{idx}",
                     )
                 )
             tf.Module.__setattr__(self, storage_name, variables)
+            object.__getattribute__(self, "__dict__").pop(name, None)
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             tf.Module.__init__(self)

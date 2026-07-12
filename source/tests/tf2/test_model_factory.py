@@ -12,6 +12,12 @@ if os.environ.get("DP_TEST_TF2_ONLY") != "1":
     )
 
 from deepmd.tf2.model import model as model_module
+from deepmd.tf2.model.property_model import (
+    PropertyModel,
+)
+from deepmd.utils.argcheck import (
+    model_args,
+)
 
 
 def _base_sezm_config() -> dict:
@@ -90,3 +96,53 @@ def test_descriptor_exclude_types_feed_standard_model(
 
     assert normalized["pair_exclude_types"] == [[0, 1]]
     assert normalized["descriptor"]["exclude_types"] == [[0, 1]]
+
+
+def test_normalized_descriptor_exclusions_override_empty_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Argcheck's empty model-level default is not an explicit mismatch."""
+    data = _base_sezm_config()
+    data["descriptor"]["exclude_types"] = [[0, 1]]
+    data = model_args().normalize_value(data, trim_pattern="_.*")
+    monkeypatch.setattr(model_module, "get_standard_model", lambda value: value)
+
+    normalized = model_module.get_model(data)
+
+    assert normalized["pair_exclude_types"] == [[0, 1]]
+    assert normalized["descriptor"]["exclude_types"] == [[0, 1]]
+
+
+def test_normalized_dpa4_property_model_is_constructed() -> None:
+    """The schema-supported invariant property route reaches PropertyModel."""
+    data = model_args().normalize_value(
+        {
+            "type": "dpa4",
+            "type_map": ["A", "B"],
+            "descriptor": {
+                "type": "dpa4",
+                "sel": 4,
+                "rcut": 4.0,
+                "channels": 4,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "random_gamma": False,
+                "precision": "float64",
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "property",
+                "property_name": "foo",
+                "task_dim": 3,
+                "intensive": False,
+                "neuron": [4],
+                "precision": "float64",
+                "seed": 1,
+            },
+        },
+        trim_pattern="_.*",
+    )
+
+    assert isinstance(model_module.get_model(data), PropertyModel)

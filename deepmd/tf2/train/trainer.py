@@ -1451,18 +1451,27 @@ class Trainer(AbstractTrainer):
             return model_dict
         force_hat_shape = cls._static_shape(force_hat)
         force_shape = cls._static_shape(force)
+        if force_hat_shape == force_shape and force_hat_shape is not None:
+            return model_dict
         if (
-            force_hat_shape is None
-            or force_shape is None
-            or force_hat_shape == force_shape
-            or np.prod(force_hat_shape, dtype=np.int64)
+            force_hat_shape is not None
+            and force_shape is not None
+            and np.prod(force_hat_shape, dtype=np.int64)
             != np.prod(force_shape, dtype=np.int64)
         ):
             return model_dict
-        model_dict = dict(model_dict)
-        model_dict["force"] = to_tensorflow_array(
-            tf.reshape(to_tf_tensor(force_hat), force_shape)
+        force_hat_tensor = to_tf_tensor(force_hat)
+        force_tensor = to_tf_tensor(force)
+        size_assertion = tf.debugging.assert_equal(
+            tf.size(force_hat_tensor),
+            tf.size(force_tensor),
+            message="model and label force tensors must contain the same values",
         )
+        with tf.control_dependencies([size_assertion]):
+            reshaped_force = tf.reshape(force_hat_tensor, tf.shape(force_tensor))
+        reshaped_force.set_shape(force_tensor.shape)
+        model_dict = dict(model_dict)
+        model_dict["force"] = to_tensorflow_array(reshaped_force)
         return model_dict
 
     @classmethod

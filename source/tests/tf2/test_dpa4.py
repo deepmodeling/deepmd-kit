@@ -16,6 +16,13 @@ from deepmd.tf2.descriptor.dpa4 import (
     DescrptDPA4,
     _iter_object_tree,
 )
+from deepmd.tf2.fitting.dpa4_ener import (
+    SeZMEnergyFittingNet,
+)
+from deepmd.tf2.common import (
+    to_tf_tensor,
+    wrap_tensor,
+)
 from deepmd.tf2.env import (
     tf,
 )
@@ -90,3 +97,114 @@ def test_dpa4_deserialize_refreshes_trackable_state() -> None:
 
     np.testing.assert_equal(restored.serialize(), serialized)
     _assert_optional_weights_are_tracked(restored)
+
+
+def _make_frozen_descriptor(seed: int) -> DescrptDPA4:
+    """Build a frozen descriptor whose complete state must remain trackable."""
+    return DescrptDPA4(
+        ntypes=2,
+        sel=4,
+        rcut=4.0,
+        channels=4,
+        n_radial=4,
+        lmax=1,
+        mmax=1,
+        n_blocks=1,
+        grid_branch=0,
+        random_gamma=False,
+        precision="float64",
+        trainable=False,
+        seed=seed,
+    )
+
+
+def test_frozen_descriptor_tracks_and_restores_every_parameter(tmp_path) -> None:
+    """Frozen leaves are non-trainable variables included in checkpoints."""
+    source = _make_frozen_descriptor(20260712)
+    target = _make_frozen_descriptor(20260713)
+    source_embedding = object.__getattribute__(
+        source.type_embedding, "_tf2_adam_type_embedding_variable"
+    )
+    target_embedding = object.__getattribute__(
+        target.type_embedding, "_tf2_adam_type_embedding_variable"
+    )
+    assert not np.array_equal(source_embedding.numpy(), target_embedding.numpy())
+    assert source.variables
+    assert not source.trainable_variables
+
+    checkpoint_path = tf.train.Checkpoint(descriptor=source).save(
+        str(tmp_path / "descriptor")
+    )
+    tf.train.Checkpoint(descriptor=target).restore(checkpoint_path).assert_consumed()
+
+    np.testing.assert_array_equal(target_embedding.numpy(), source_embedding.numpy())
+
+
+def test_promoted_parameters_release_public_tensor_shadows() -> None:
+    """Variable-backed attributes must not retain their original eager tensors."""
+    descriptor = _make_trainable_descriptor()
+    for module in _iter_object_tree(descriptor):
+        raw_attrs = object.__getattribute__(module, "__dict__")
+        for name in getattr(module, "_tf2_array_variable_attrs", ()):
+            assert name not in raw_attrs
+        for name in getattr(module, "_tf2_array_variable_list_attrs", ()):
+            assert name not in raw_attrs
+
+
+@pytest.mark.parametrize(
+    ("policy", "expected_trainable"),
+    ((False, [False, False, False]), ([False, True], [False, False, True])),
+)
+def test_fitting_trainability_survives_conversion_and_optimizer_step(
+    policy: bool | list[bool],
+    expected_trainable: list[bool],
+) -> None:
+    """Frozen layers stay fixed while an enabled output layer updates."""
+    fitting = SeZMEnergyFittingNet(
+        ntypes=2,
+        dim_descrpt=4,
+        neuron=[4],
+        trainable=policy,
+        precision="float64",
+        mixed_types=True,
+        seed=20260712,
+    )
+    restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
+    assert [variable.trainable for variable in restored.variables] == expected_trainable
+
+    before = [variable.numpy().copy() for variable in restored.variables]
+    with tf.GradientTape() as tape:
+        result = restored(
+            wrap_tensor(tf.ones((1, 2, 4), dtype=tf.float64)),
+            wrap_tensor(tf.zeros((1, 2), dtype=tf.int32)),
+        )
+        loss = tf.reduce_sum(to_tf_tensor(result["energy"]))
+    gradients = tape.gradient(loss, restored.trainable_variables)
+    if restored.trainable_variables:
+        tf.keras.optimizers.SGD(0.1).apply_gradients(
+            zip(gradients, restored.trainable_variables, strict=True)
+        )
+
+    changed = [
+        not np.array_equal(variable.numpy(), original)
+        for variable, original in zip(restored.variables, before, strict=True)
+    ]
+    assert changed == expected_trainable
+
+
+def test_random_gamma_fails_fast_until_graph_safe_rng_is_supported() -> None:
+    """TF2 must not silently disable the default random-roll augmentation."""
+    with pytest.raises(NotImplementedError, match="random_gamma"):
+        DescrptDPA4(
+            ntypes=2,
+            sel=4,
+            rcut=4.0,
+            channels=4,
+            n_radial=4,
+            lmax=1,
+            mmax=1,
+            n_blocks=1,
+            precision="float64",
+            random_gamma=True,
+            seed=20260712,
+        )

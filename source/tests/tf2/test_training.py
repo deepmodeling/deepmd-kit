@@ -49,11 +49,17 @@ from deepmd.tf2.env import (
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
 )
+from deepmd.tf2.model.model import (
+    get_model,
+)
 from deepmd.tf2.train.trainer import (
     Trainer,
 )
 from deepmd.tf2.utils.jit import (
     default_jit_compile,
+)
+from deepmd.utils.argcheck import (
+    model_args,
 )
 
 pytestmark = [
@@ -888,6 +894,106 @@ def test_model_ret_translation_preserves_matching_force_layout() -> None:
 
     assert translated is model_ret
     assert translated["force"] is force
+
+
+def test_force_reshape_uses_dynamic_shapes_after_retracing() -> None:
+    """Generalized atom dimensions still normalize flattened force labels."""
+
+    @tf.function(reduce_retracing=True)
+    def normalize(force: tf.Tensor, label: tf.Tensor) -> tf.Tensor:
+        result = Trainer._match_label_shapes(
+            {"force": wrap_tensor(force)},
+            {"force": label},
+        )
+        return to_tf_tensor(result["force"])
+
+    for natoms in (2, 3):
+        force = tf.reshape(
+            tf.range(3 * natoms, dtype=tf.float64),
+            (1, natoms, 3),
+        )
+        normalized = normalize(force, tf.zeros((1, 3 * natoms), tf.float64))
+        assert tuple(normalized.shape) == (1, 3 * natoms)
+
+
+def test_compiled_dpa4_training_step_accepts_two_atom_counts() -> None:
+    """Default degree-channel mixing is graph-safe under reduce_retracing."""
+    model_params = model_args().normalize_value(
+        {
+            "type": "dpa4",
+            "type_map": ["A", "B"],
+            "descriptor": {
+                "type": "dpa4",
+                "sel": 4,
+                "rcut": 4.0,
+                "channels": 4,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "radial_so2_mode": "degree_channel",
+                "random_gamma": False,
+                "precision": "float64",
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "dpa4_ener",
+                "neuron": [4],
+                "precision": "float64",
+                "seed": 1,
+            },
+        },
+        trim_pattern="_.*",
+    )
+    model = get_model(model_params)
+    optimizer = tf.keras.optimizers.SGD(1.0e-3)
+
+    @tf.function(reduce_retracing=True)
+    def train_step(
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        nlist: tf.Tensor,
+        mapping: tf.Tensor,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
+        with tf.GradientTape() as tape:
+            result = model.call_common_lower(
+                coord,
+                atype,
+                nlist,
+                mapping,
+                None,
+                None,
+            )
+            loss = tf.reduce_sum(to_tf_tensor(result["energy_redu"]))
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(
+            (gradient, variable)
+            for gradient, variable in zip(
+                gradients, model.trainable_variables, strict=True
+            )
+            if gradient is not None
+        )
+        return loss, to_tf_tensor(result["energy_derv_r"])
+
+    def dense_nlist(natoms: int) -> tf.Tensor:
+        rows = []
+        for atom in range(natoms):
+            neighbors = [other for other in range(natoms) if other != atom]
+            rows.append(neighbors + [-1] * (4 - len(neighbors)))
+        return tf.constant([rows], dtype=tf.int64)
+
+    for natoms in (2, 3):
+        coord = tf.reshape(
+            tf.range(3 * natoms, dtype=tf.float64) * 0.1,
+            (1, natoms, 3),
+        )
+        _, force = train_step(
+            coord,
+            tf.zeros((1, natoms), dtype=tf.int32),
+            dense_nlist(natoms),
+            tf.range(natoms, dtype=tf.int64)[tf.newaxis, :],
+        )
+        assert tuple(force.shape) == (1, natoms, 1, 3)
 
 
 def test_model_ret_translation_only_uses_label_virial_when_not_requested() -> None:

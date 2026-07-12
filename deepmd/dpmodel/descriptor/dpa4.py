@@ -1341,13 +1341,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         ]  # list of (E, lmax+1, C)
 
         # === Step 11. Convert to self.dtype and run blocks ===
-        # The block stage is skipped entirely when there are no interaction
-        # blocks (zero-block descriptor) or no valid edges, sparing the working
-        # edge-cache dtype cast that only the blocks consume.
+        # The block stage is skipped entirely for the zero-block descriptor.
+        # Array operations in the blocks also support an empty edge axis; avoid
+        # inspecting that dynamic dimension in Python so TF graphs can retrace
+        # across different atom counts.
         x = xp.astype(x, get_xp_precision(xp, self.precision))  # (N, D, 1, C)
         if force_embedding is not None:
             x = x + xp.astype(force_embedding, get_xp_precision(xp, self.precision))
-        if self.blocks and edge_cache.src.shape[0] > 0:
+        if self.blocks:
             edge_cache = edge_cache_to_dtype(
                 edge_cache, get_xp_precision(xp, self.precision)
             )
