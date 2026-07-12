@@ -100,6 +100,60 @@ from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 log = logging.getLogger(__name__)
 
 
+def _prepare_stat_file_path(
+    stat_file: str | None,
+    stat_file_mode: str = "update",
+) -> DPPath | None:
+    """Prepare a statistics cache with the requested access mode.
+
+    Parameters
+    ----------
+    stat_file
+        Path to an HDF5 statistics file or a directory-based statistics cache.
+    stat_file_mode
+        ``"update"`` creates the cache when needed and permits missing
+        statistics to be written. ``"read"`` requires an existing cache and
+        prevents all writes.
+
+    Returns
+    -------
+    DPPath or None
+        The prepared statistics path, or ``None`` when no cache is configured.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``stat_file_mode`` is ``"read"`` and the cache does not exist.
+    ValueError
+        If the access mode is invalid or read mode has no cache path.
+    """
+    if stat_file_mode not in {"read", "update"}:
+        raise ValueError(
+            "`stat_file_mode` must be either 'read' or 'update', "
+            f"but received {stat_file_mode!r}."
+        )
+    if stat_file is None:
+        if stat_file_mode == "read":
+            raise ValueError("`stat_file_mode='read'` requires `stat_file`.")
+        return None
+
+    path = Path(stat_file)
+    if stat_file_mode == "read":
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Statistics cache {stat_file!r} does not exist in read mode."
+            )
+        return DPPath(stat_file, "r")
+
+    if not path.exists():
+        if stat_file.endswith((".h5", ".hdf5")):
+            with h5py.File(stat_file, "w"):
+                pass
+        else:
+            path.mkdir()
+    return DPPath(stat_file, "a")
+
+
 def _update_changed_model_tensors(
     target_state_dict: dict[str, Any],
     source_state_dict: dict[str, Any],
@@ -166,17 +220,13 @@ def get_trainer(
         training_systems = training_dataset_params["systems"]
 
         # stat files
-        stat_file_path_single = data_dict_single.get("stat_file", None)
         if rank != 0:
             stat_file_path_single = None
-        elif stat_file_path_single is not None:
-            if not Path(stat_file_path_single).exists():
-                if stat_file_path_single.endswith((".h5", ".hdf5")):
-                    with h5py.File(stat_file_path_single, "w") as f:
-                        pass
-                else:
-                    Path(stat_file_path_single).mkdir()
-            stat_file_path_single = DPPath(stat_file_path_single, "a")
+        else:
+            stat_file_path_single = _prepare_stat_file_path(
+                data_dict_single.get("stat_file"),
+                data_dict_single.get("stat_file_mode", "update"),
+            )
 
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
 

@@ -364,6 +364,8 @@ class DPH5Path(DPPath):
         arr : np.ndarray
             NumPy array
         """
+        if self.mode == "r":
+            raise ValueError("Cannot save to read-only path")
         if self._name in self._keys:
             del self.root[self._name]
         self.root.create_dataset(self._name, data=arr)
@@ -480,6 +482,8 @@ class DPH5Path(DPPath):
         exist_ok : bool, optional
             If true, no error will be raised if the target directory already exists.
         """
+        if self.mode == "r":
+            raise ValueError("Cannot mkdir to read-only path")
         if self._name in self._keys:
             if not exist_ok:
                 raise FileExistsError(f"{self} already exists")

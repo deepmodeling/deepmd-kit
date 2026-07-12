@@ -5296,6 +5296,13 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
+    doc_stat_file_mode = (
+        doc_only_pt_supported + "The access mode for `stat_file`. "
+        "`update` creates the cache when needed and writes any missing statistics; "
+        "this is the behavior used when the option is omitted. "
+        "`read` requires a complete existing cache and opens it read-only, allowing "
+        "multiple training processes to share an HDF5 statistics file safely."
+    )
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
@@ -5331,6 +5338,15 @@ def training_args(
         arg_training_data,
         arg_validation_data,
         Argument("stat_file", str, optional=True, doc=doc_stat_file),
+        Argument(
+            "stat_file_mode",
+            str,
+            optional=True,
+            default="update",
+            extra_check=lambda x: x in {"read", "update"},
+            extra_check_errmsg="must be either 'read' or 'update'",
+            doc=doc_stat_file_mode,
+        ),
     ]
     args = (
         data_args
