@@ -16,14 +16,27 @@ import itertools
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.descriptor.dpa2 import (
+    DescrptDPA2,
+    RepformerArgs,
+    RepinitArgs,
+)
 from deepmd.dpmodel.descriptor.repformers import (
     DescrptBlockRepformers,
+)
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
+    build_multiple_neighbor_list,
     extend_input_and_build_neighbor_list,
+    get_multiple_nlist_key,
 )
 
 
@@ -255,3 +268,282 @@ class TestExchangeGhostsGraphSeam:
         g1 = np.random.default_rng(0).normal(size=(5, block.g1_dim))
         with pytest.raises(NotImplementedError):
             block._exchange_ghosts_graph(g1, {"some": "dict"}, n_total=5)
+
+
+# ---------------------------------------------------------------------------
+# Descriptor-level (Task 7): DescrptDPA2.uses_graph_lower / call_graph /
+# _call_graph_adapter / the call() routing gate.
+# ---------------------------------------------------------------------------
+
+
+def _make_dpa2(
+    repinit_rcut: float = 4.0,
+    repinit_nsel: int = 200,
+    repformer_rcut: float = 2.0,
+    repformer_nsel: int = 150,
+    use_three_body: bool = False,
+    ntypes: int = 2,
+    repformer_attn: bool = True,
+    **kwargs,
+) -> DescrptDPA2:
+    repinit_kwargs = {
+        "rcut": repinit_rcut,
+        "rcut_smth": 0.5,
+        "nsel": repinit_nsel,
+        "neuron": [6, 12],
+        "axis_neuron": 2,
+        "tebd_dim": 4,
+        "use_three_body": use_three_body,
+    }
+    if use_three_body:
+        # keep the three-body block's (rcut, nsel) strictly BELOW the
+        # repformer block's in the rcut-sorted nsel-ordering check
+        # (DescrptDPA2.__init__ asserts nsel is non-decreasing with rcut
+        # across repformer/three_body/repinit).
+        repinit_kwargs.update(
+            three_body_rcut=1.0,
+            three_body_rcut_smth=0.3,
+            three_body_sel=5,
+            three_body_neuron=[2, 4],
+        )
+    repinit = RepinitArgs(**repinit_kwargs)
+    repformer = RepformerArgs(
+        rcut=repformer_rcut,
+        rcut_smth=0.5,
+        nsel=repformer_nsel,
+        nlayers=2,
+        g1_dim=6,
+        g2_dim=4,
+        axis_neuron=2,
+        update_g1_has_attn=repformer_attn,
+        update_g2_has_attn=repformer_attn,
+        attn1_hidden=4,
+        attn1_nhead=2,
+        attn2_hidden=4,
+        attn2_nhead=2,
+    )
+    cfg = {
+        "ntypes": ntypes,
+        "repinit": repinit,
+        "repformer": repformer,
+        "precision": "float64",
+        "seed": 42,
+    }
+    cfg.update(kwargs)
+    return DescrptDPA2(**cfg)
+
+
+def _system(seed: int = 0, nf: int = 1, nloc: int = 8, box_size: float = 6.0):
+    """Small 2-type periodic system."""
+    rng = np.random.default_rng(seed)
+    coord = rng.random((nf, nloc, 3)) * box_size
+    atype = rng.integers(0, 2, size=(nf, nloc)).astype(np.int64)
+    box = np.tile((np.eye(3) * box_size).reshape(1, 9), (nf, 1))
+    return coord, atype, box
+
+
+def _dense_quartet(descr: DescrptDPA2, coord, atype, box):
+    return extend_input_and_build_neighbor_list(
+        coord,
+        atype,
+        descr.get_rcut(),
+        descr.get_sel(),
+        mixed_types=descr.mixed_types(),
+        box=box,
+    )
+
+
+class TestDPA2UsesGraphLowerGates:
+    def test_default_true(self) -> None:
+        descr = _make_dpa2()
+        assert descr.uses_graph_lower() is True
+
+    def test_use_three_body_false(self) -> None:
+        descr = _make_dpa2(use_three_body=True)
+        assert descr.uses_graph_lower() is False
+
+    def test_disable_graph_lower(self) -> None:
+        descr = _make_dpa2()
+        assert descr.uses_graph_lower() is True
+        descr.disable_graph_lower()
+        assert descr.uses_graph_lower() is False
+        # sticky: cannot be re-enabled
+        assert descr.uses_graph_lower() is False
+
+    def test_compress_gate(self) -> None:
+        descr = _make_dpa2()
+        assert descr.uses_graph_lower() is True
+        descr.compress = True
+        assert descr.uses_graph_lower() is False
+
+
+class TestDPA2AdapterBitExact:
+    """The money test: the dense->graph adapter must be BIT-EXACT vs the
+    dense body for ANY sel, including a deliberately BINDING repformer sel
+    (the slot mask in ``call_graph``'s ``_block_graph`` replicates
+    ``build_multiple_neighbor_list``'s ``nlist[:, :, :ns]`` slicing).
+    """
+
+    @pytest.mark.parametrize(
+        "repformer_nsel,box_size,nloc,seed",
+        [
+            (150, 6.0, 8, 21),  # non-binding: repformer sel comfortably covers all neighbors
+            (3, 3.0, 12, 22),  # binding: dense cluster, repformer rcut truncates hard
+        ],
+    )
+    def test_adapter_bitexact_any_sel(
+        self, repformer_nsel, box_size, nloc, seed
+    ) -> None:
+        descr = _make_dpa2(repinit_nsel=200, repformer_nsel=repformer_nsel)
+        coord, atype, box = _system(seed=seed, nloc=nloc, box_size=box_size)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+        nf, n_loc, nnei = nlist.shape
+
+        # confirm the "binding" case actually truncates (otherwise the test
+        # would vacuously pass without exercising the slot mask): count real
+        # neighbors within the repformer rcut among ALL nnei outer slots and
+        # compare against the configured repformer nsel.
+        rc = descr.repformers.get_rcut()
+        ns = descr.repformers.get_nsel()
+        full_sub = build_multiple_neighbor_list(ext_coord, nlist, [rc], [nnei])[
+            get_multiple_nlist_key(rc, nnei)
+        ]
+        real_counts = (full_sub >= 0).sum(axis=-1)
+        binds = bool(np.any(real_counts > ns))
+        assert binds == (repformer_nsel == 3)
+
+        dense = descr._call_dense(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter = descr._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
+
+        dense_g1, dense_rot_mat, dense_g2, dense_h2, dense_sw = dense
+        adapter_g1, adapter_rot_mat, adapter_g2, adapter_h2, adapter_sw = adapter
+
+        np.testing.assert_allclose(adapter_g1, dense_g1, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(
+            adapter_rot_mat, dense_rot_mat, rtol=1e-12, atol=1e-12
+        )
+        assert adapter_g2 is None
+        assert adapter_h2 is None
+        assert adapter_sw.shape == dense_sw.shape == (nf, n_loc, ns)
+        np.testing.assert_allclose(adapter_sw, dense_sw, rtol=1e-12, atol=1e-12)
+        assert not np.any(np.isnan(adapter_g1))
+        assert not np.any(np.isnan(adapter_rot_mat))
+
+
+class TestDPA2BlockMaskReplicatesMultipleNlist:
+    def test_block_mask_replicates_multiple_nlist(self) -> None:
+        descr = _make_dpa2(repinit_nsel=200, repformer_nsel=5)
+        coord, atype, box = _system(seed=31, nloc=12, box_size=3.0)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+        nf, nloc, nnei = nlist.shape
+
+        graph, _ = graph_from_dense_quartet(ext_coord, ext_atype, nlist, mapping)
+        dist = np.linalg.norm(np.asarray(graph.edge_vec), axis=-1)
+        edge_mask = np.asarray(graph.edge_mask)
+
+        rc = descr.repformers.get_rcut()
+        ns = descr.repformers.get_nsel()
+        e_ax = edge_mask.shape[0]
+        slot = np.arange(e_ax) % nnei
+        # graph analogue of DescrptDPA2.call_graph's ``_block_graph``: dist
+        # mask always, slot mask when static_nnei (== nnei here) is set.
+        block_mask = edge_mask & (dist <= rc) & (slot < ns)
+        block_mask = block_mask.reshape(nf, nloc, nnei)
+
+        # binding-sel sanity: without the slot cap, more than `ns` neighbors
+        # survive the dist filter for at least one center (otherwise this
+        # test would not exercise the slot mask at all).
+        dist_only_mask = (edge_mask & (dist <= rc)).reshape(nf, nloc, nnei)
+        assert np.any(dist_only_mask.sum(axis=-1) > ns)
+
+        sub_nlist = build_multiple_neighbor_list(ext_coord, nlist, [rc], [ns])[
+            get_multiple_nlist_key(rc, ns)
+        ]
+        expected = np.zeros((nf, nloc, nnei), dtype=bool)
+        expected[:, :, :ns] = sub_nlist >= 0
+        np.testing.assert_array_equal(block_mask, expected)
+
+
+class TestDPA2CallRouting:
+    def test_call_routing_graph_eligible(self) -> None:
+        descr = _make_dpa2(repinit_nsel=200, repformer_nsel=150)
+        assert descr.uses_graph_lower() is True
+        coord, atype, box = _system(seed=41, nloc=8, box_size=6.0)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+
+        called = descr.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter = descr._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
+        for c, a in zip(called, adapter, strict=True):
+            if c is None or a is None:
+                assert c is None and a is None
+            else:
+                np.testing.assert_array_equal(c, a)
+
+    def test_call_routing_three_body_dense(self) -> None:
+        descr = _make_dpa2(repinit_nsel=200, repformer_nsel=150, use_three_body=True)
+        assert descr.uses_graph_lower() is False
+        coord, atype, box = _system(seed=42, nloc=8, box_size=6.0)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+
+        called = descr.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        dense = descr._call_dense(ext_coord, ext_atype, nlist, mapping=mapping)
+        for c, d in zip(called, dense, strict=True):
+            if c is None or d is None:
+                assert c is None and d is None
+            else:
+                np.testing.assert_array_equal(c, d)
+
+
+def _make_energy_model(repinit_nsel: int = 200, repformer_nsel: int = 150) -> EnergyModel:
+    # repformer_attn=False: mirrors test_dpa1_graph_model_energy.py's own
+    # choice of attn_layer=0 for its carry-all parity fixture. The
+    # CARRY-ALL graph builder has no padding slots, so smooth attention's
+    # softmax there is genuinely sel-independent (real neighbors only) --
+    # by design DIFFERENT from the dense body, which keeps sel-padding
+    # slots in its softmax denominator (see DescrptDPA1.call_graph's
+    # Notes). That divergence is intentional and orthogonal to what this
+    # test checks (non-attention carry-all/dense parity at non-binding
+    # sel); the shape-static adapter path (_call_graph_adapter, covered by
+    # TestDPA2AdapterBitExact) is the one that reproduces the dense
+    # attention exactly, including with attention enabled.
+    ds = _make_dpa2(
+        repinit_nsel=repinit_nsel, repformer_nsel=repformer_nsel, repformer_attn=False
+    )
+    ft = InvarFitting(
+        "energy",
+        ds.get_ntypes(),
+        ds.get_dim_out(),
+        1,
+        mixed_types=ds.mixed_types(),
+    )
+    return EnergyModel(ds, ft, type_map=["foo", "bar"])
+
+
+class TestDPA2ModelEnergyCarryAll:
+    """Model-level: ``EnergyModel(dpa2).call_common(...,
+    neighbor_graph_method="dense")`` vs the dense route at NON-binding sel
+    (mirrors ``test_dpa1_graph_model_energy.py``).
+    """
+
+    @pytest.mark.parametrize("periodic", [True, False])
+    def test_energy_parity_non_binding_sel(self, periodic) -> None:
+        rng = np.random.default_rng(51)
+        nloc = 8
+        coord = rng.normal(size=(1, nloc, 3)) * 1.5
+        atype = np.array([[0, 1, 0, 1, 0, 1, 0, 1]], dtype=np.int64)
+        box = None
+        if periodic:
+            # large box so the cell is essentially non-periodic for rcut=4.0
+            box = np.eye(3).reshape(1, 9) * 20.0
+        model = _make_energy_model()
+
+        dense = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
+        graph = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+
+        np.testing.assert_allclose(
+            graph["energy_redu"], dense["energy_redu"], rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_array_equal(graph["mask"], dense["mask"])
