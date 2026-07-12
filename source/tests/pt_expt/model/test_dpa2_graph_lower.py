@@ -213,9 +213,7 @@ class TestDpa2GraphLower:
             neighbor_graph_method="legacy",
         )
         tol = {"rtol": 1e-10, "atol": 1e-10}
-        torch.testing.assert_close(
-            graph["energy_redu"], legacy["energy_redu"], **tol
-        )
+        torch.testing.assert_close(graph["energy_redu"], legacy["energy_redu"], **tol)
         torch.testing.assert_close(
             graph["energy_derv_r"], legacy["energy_derv_r"], **tol
         )
@@ -247,11 +245,13 @@ class TestDpa2GraphLower:
             dtype=torch.int64,
             device=self.device,
         )
-        box = (torch.eye(3, dtype=torch.float64, device=self.device) * box_size).reshape(
-            1, 9
-        )
+        box = (
+            torch.eye(3, dtype=torch.float64, device=self.device) * box_size
+        ).reshape(1, 9)
 
-        model = self._make_model(repformer_nsel=3)  # repinit_nsel stays 200 (non-binding)
+        model = self._make_model(
+            repformer_nsel=3
+        )  # repinit_nsel stays 200 (non-binding)
         model.eval()
 
         graph = model.forward_common(coord.clone().requires_grad_(True), atype, box)
@@ -365,9 +365,7 @@ class TestDpa2GraphLower:
             charge_spin=cs,
         )
         tol = {"rtol": 1e-10, "atol": 1e-10}
-        torch.testing.assert_close(
-            compiled_out["energy"], eager["energy_redu"], **tol
-        )
+        torch.testing.assert_close(compiled_out["energy"], eager["energy_redu"], **tol)
         torch.testing.assert_close(
             compiled_out["force"],
             eager["energy_derv_r"].reshape(compiled_out["force"].shape),
@@ -446,3 +444,141 @@ class TestDpa2GraphLower:
         comm_dict = {"has_spin": torch.ones(1)}
         with pytest.raises(NotImplementedError):
             block._exchange_ghosts_graph(g1, comm_dict, self.natoms)
+
+
+# ---------------------------------------------------------------------------
+# Task 9: owned-node (``n_local``) energy mask in the graph output reduction.
+# ---------------------------------------------------------------------------
+
+
+class TestOwnedNodeMaskEnergyReduction:
+    """``n_local`` (owned-node mask) must exclude halo rows from the
+    DIFFERENTIATED per-frame energy (each halo atom is owned -- and counted
+    -- on another rank), while ``atom_energy`` itself stays FULL and the
+    mask is applied BEFORE ``edge_energy_deriv`` differentiates the summed
+    energy (so ``grad(energy, edge_vec)`` only carries owned-energy terms).
+    """
+
+    def setup_method(self) -> None:
+        self.device = env.DEVICE
+        self.natoms = 6
+        self.nt = 2
+        self.type_map = ["foo", "bar"]
+
+        generator = torch.Generator(device=self.device).manual_seed(GLOBAL_SEED)
+        cell = torch.rand(
+            [3, 3], dtype=torch.float64, device=self.device, generator=generator
+        )
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=self.device)
+        self.cell = cell.unsqueeze(0)  # [1, 3, 3]
+        coord = torch.rand(
+            [self.natoms, 3],
+            dtype=torch.float64,
+            device=self.device,
+            generator=generator,
+        )
+        coord = torch.matmul(coord, cell)
+        self.coord = coord.unsqueeze(0).to(self.device)  # [1, natoms, 3]
+        self.atype = torch.tensor(
+            [[0, 0, 0, 1, 1, 1]], dtype=torch.int64, device=self.device
+        )
+
+    def _make_model(self) -> EnergyModel:
+        ds = _make_dpa2_descriptor(ntypes=self.nt).to(self.device)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+            precision="float64",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        return EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+
+    def _build_graph(self, model: EnergyModel):
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        box = self.cell.reshape(1, 9)
+        return build_neighbor_graph(self.coord, self.atype, box, model.get_rcut())
+
+    def test_owned_mask_energy_reduction(self) -> None:
+        """``energy_redu`` with ``n_local`` == sum(atom_energy[:n_local]);
+        ``atom_energy`` itself stays FULL/unmasked; halo rows [n_local:) of
+        the assembled force are NOT all zero (they still receive src-scatter
+        contributions from OWNED centers' edges).
+        """
+        model = self._make_model()
+        model.eval()
+        ng = self._build_graph(model)
+        atype_flat = self.atype.reshape(-1)
+        n_local_val = 4
+
+        out_full = model.forward_common_lower_graph(
+            atype_flat, ng.n_node, ng.edge_index, ng.edge_vec, ng.edge_mask
+        )
+        n_local = torch.tensor([n_local_val], dtype=torch.int64, device=self.device)
+        out_masked = model.forward_common_lower_graph(
+            atype_flat,
+            ng.n_node,
+            ng.edge_index,
+            ng.edge_vec,
+            ng.edge_mask,
+            n_local=n_local,
+        )
+
+        # atom_energy (per-node) is FULL and byte-identical regardless of n_local.
+        torch.testing.assert_close(out_masked["energy"], out_full["energy"])
+
+        atom_energy = out_full["energy"].reshape(-1)
+        owned_sum = atom_energy[:n_local_val].sum()
+        torch.testing.assert_close(
+            out_masked["energy_redu"].reshape(-1), owned_sum.reshape(1)
+        )
+
+        # halo-row partial forces survive (src-side scatter from owned edges).
+        force = out_masked["energy_derv_r"].reshape(self.natoms, 3)
+        halo_force = force[n_local_val:]
+        assert not torch.allclose(halo_force, torch.zeros_like(halo_force)), (
+            "expected nonzero halo-row partial force from owned-center edges"
+        )
+
+        # ordering check: the masked force must differ from the unmasked
+        # (full-graph) force -- if the mask were applied AFTER
+        # edge_energy_deriv (or not at all), both runs would produce the
+        # identical force since the autograd leaf (edge_vec) is unchanged.
+        force_full = out_full["energy_derv_r"].reshape(self.natoms, 3)
+        assert not torch.allclose(force, force_full), (
+            "masked force must differ from the unmasked force -- the "
+            "owned-node mask must be applied BEFORE edge_energy_deriv"
+        )
+
+    def test_n_local_none_is_byte_identical(self) -> None:
+        """Regression: omitting ``n_local`` (default ``None``) reproduces the
+        pre-Task-9 unmasked reduction exactly.
+        """
+        model = self._make_model()
+        model.eval()
+        ng = self._build_graph(model)
+        atype_flat = self.atype.reshape(-1)
+
+        out_default = model.forward_common_lower_graph(
+            atype_flat, ng.n_node, ng.edge_index, ng.edge_vec, ng.edge_mask
+        )
+        out_explicit_none = model.forward_common_lower_graph(
+            atype_flat,
+            ng.n_node,
+            ng.edge_index,
+            ng.edge_vec,
+            ng.edge_mask,
+            n_local=None,
+        )
+        torch.testing.assert_close(
+            out_default["energy_redu"], out_explicit_none["energy_redu"]
+        )
+        torch.testing.assert_close(out_default["energy"], out_explicit_none["energy"])
+        torch.testing.assert_close(
+            out_default["energy_derv_r"], out_explicit_none["energy_derv_r"]
+        )

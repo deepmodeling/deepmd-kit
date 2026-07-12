@@ -291,6 +291,7 @@ def make_model(
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
+            n_local: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
@@ -332,6 +333,16 @@ def make_model(
             charge_spin
                 charge/spin conditioning. Ignored in PR-A; accepted for ABI
                 stability with charge/spin-conditioned descriptors.
+            n_local
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                are excluded from the DIFFERENTIATED ``<var>_redu`` (and thus
+                from force/virial/atom-virial, which are ``grad`` of that
+                reduction) -- each halo atom is owned, and counted, on
+                another rank. The per-node output (``<var>``) itself stays
+                FULL/unmasked. ``None`` (default) is the single-rank/
+                all-owned behavior. See
+                :func:`~deepmd.pt_expt.model.edge_transform_output.fit_output_to_model_output_graph`.
 
             Returns
             -------
@@ -375,6 +386,7 @@ def make_model(
                 # shape -- avoids a CUDA out-of-bounds device-assert under
                 # dynamic-edge torch.export. See fit_output_to_model_output_graph.
                 node_capacity=atype.shape[0],
+                n_local=n_local,
             )
 
         def _resolve_graph_method(

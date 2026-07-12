@@ -676,8 +676,11 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu`` (see
+                :func:`fit_output_to_model_output_graph`); ``None`` (default)
+                is the single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
@@ -710,6 +713,7 @@ def make_model(
                 self.atomic_output_def(),
                 graph,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                n_local=n_local,
             )
 
         def call_common_lower_graph(
@@ -749,8 +753,10 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu``; ``None`` (default) is the
+                single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam

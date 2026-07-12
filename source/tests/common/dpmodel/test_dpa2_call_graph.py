@@ -27,10 +27,14 @@ from deepmd.dpmodel.descriptor.repformers import (
 from deepmd.dpmodel.fitting import (
     InvarFitting,
 )
+from deepmd.dpmodel.model.edge_transform_output import (
+    node_ownership_mask,
+)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    from_dense_quartet,
     graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -387,7 +391,12 @@ class TestDPA2AdapterBitExact:
     @pytest.mark.parametrize(
         "repformer_nsel,box_size,nloc,seed",
         [
-            (150, 6.0, 8, 21),  # non-binding: repformer sel comfortably covers all neighbors
+            (
+                150,
+                6.0,
+                8,
+                21,
+            ),  # non-binding: repformer sel comfortably covers all neighbors
             (3, 3.0, 12, 22),  # binding: dense cluster, repformer rcut truncates hard
         ],
     )
@@ -584,7 +593,9 @@ class TestDPA2BlockMaskReplicatesMultipleNlist:
         # this test would pass even with a broken slice.
         assert np.any(real_counts > ns)
 
-        graph, atype_local = graph_from_dense_quartet(ext_coord, ext_atype, nlist, mapping)
+        graph, atype_local = graph_from_dense_quartet(
+            ext_coord, ext_atype, nlist, mapping
+        )
 
         # 1) the real, shipped, end-to-end code path.
         g1_full, rot_mat_full, sw_full = descr.call_graph(
@@ -657,7 +668,9 @@ class TestDPA2CallRouting:
                 np.testing.assert_array_equal(c, d)
 
 
-def _make_energy_model(repinit_nsel: int = 200, repformer_nsel: int = 150) -> EnergyModel:
+def _make_energy_model(
+    repinit_nsel: int = 200, repformer_nsel: int = 150
+) -> EnergyModel:
     # repformer_attn=False: mirrors test_dpa1_graph_model_energy.py's own
     # choice of attn_layer=0 for its carry-all parity fixture. The
     # CARRY-ALL graph builder has no padding slots, so smooth attention's
@@ -710,3 +723,131 @@ class TestDPA2ModelEnergyCarryAll:
             graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12
         )
         np.testing.assert_array_equal(graph["mask"], dense["mask"])
+
+
+class TestNodeOwnershipMask:
+    """Direct unit tests of :func:`node_ownership_mask` -- the per-frame
+    block arithmetic (``cumulative_sum``/``take``) is where bugs hide, so
+    this is exercised independently of any model.
+    """
+
+    def test_single_frame(self) -> None:
+        n_node = np.array([5], dtype=np.int64)
+        n_local = np.array([3], dtype=np.int64)
+        mask = node_ownership_mask(n_node, n_local, n_total=5)
+        np.testing.assert_array_equal(mask, np.array([True, True, True, False, False]))
+
+    def test_multi_frame_different_n_local(self) -> None:
+        # frame 0: 3 nodes, owns 2 -> [T, T, F]
+        # frame 1: 2 nodes, owns 1 -> [T, F]
+        n_node = np.array([3, 2], dtype=np.int64)
+        n_local = np.array([2, 1], dtype=np.int64)
+        mask = node_ownership_mask(n_node, n_local, n_total=5)
+        np.testing.assert_array_equal(mask, np.array([True, True, False, True, False]))
+
+    def test_all_owned_is_all_true(self) -> None:
+        n_node = np.array([4, 3], dtype=np.int64)
+        n_local = n_node.copy()
+        mask = node_ownership_mask(n_node, n_local, n_total=7)
+        np.testing.assert_array_equal(mask, np.ones(7, dtype=bool))
+
+    def test_zero_owned_frame(self) -> None:
+        # a frame that owns nothing (all halo) -- degenerate but must not crash.
+        n_node = np.array([2, 3], dtype=np.int64)
+        n_local = np.array([0, 2], dtype=np.int64)
+        mask = node_ownership_mask(n_node, n_local, n_total=5)
+        np.testing.assert_array_equal(mask, np.array([False, False, True, True, False]))
+
+
+class TestOwnedNodeMaskEnergyReduction:
+    """``n_local`` (owned-node mask) in the graph output reduction (Task 9):
+    halo rows (index >= n_local[frame]) must be excluded from the
+    DIFFERENTIATED per-frame energy, while ``atom_energy`` itself stays FULL.
+    """
+
+    def _make_graph_and_model(self, nloc: int = 5, seed: int = 3):
+        rng = np.random.default_rng(seed)
+        coord = rng.normal(size=(1, nloc, 3)) * 1.5
+        atype = np.array([[ii % 2 for ii in range(nloc)]], dtype=np.int64)
+        model = _make_energy_model()
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord,
+            atype,
+            model.get_rcut(),
+            model.get_sel(),
+            mixed_types=model.mixed_types(),
+            box=None,
+        )
+        ng = from_dense_quartet(ext_coord, nlist, mapping)
+        atype_local = ext_atype.reshape(-1)[:nloc]
+        return model, ng, atype_local
+
+    def test_owned_mask_energy_reduction(self) -> None:
+        """1 frame, 5 nodes, n_local=3: energy_redu == sum(atom_energy[:3]),
+        and the difference from the unmasked (``n_local=None``) energy_redu
+        equals sum(atom_energy[3:5]); ``atom_energy`` itself is unchanged.
+        """
+        model, ng, atype_local = self._make_graph_and_model(nloc=5)
+
+        out_full = model.call_lower_graph(
+            atype=atype_local,
+            n_node=ng.n_node,
+            edge_index=ng.edge_index,
+            edge_vec=ng.edge_vec,
+            edge_mask=ng.edge_mask,
+        )
+        n_local = np.array([3], dtype=np.int64)
+        out_masked = model.call_lower_graph(
+            atype=atype_local,
+            n_node=ng.n_node,
+            edge_index=ng.edge_index,
+            edge_vec=ng.edge_vec,
+            edge_mask=ng.edge_mask,
+            n_local=n_local,
+        )
+
+        # atom_energy (per-node) is FULL and byte-identical regardless of n_local.
+        np.testing.assert_allclose(
+            out_masked["energy"], out_full["energy"], rtol=1e-12, atol=1e-12
+        )
+
+        atom_energy = out_full["energy"].reshape(-1)
+        owned_sum = atom_energy[:3].sum()
+        halo_sum = atom_energy[3:].sum()
+
+        np.testing.assert_allclose(
+            out_masked["energy_redu"].reshape(-1),
+            [owned_sum],
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        diff = (out_full["energy_redu"] - out_masked["energy_redu"]).reshape(-1)
+        np.testing.assert_allclose(diff, [halo_sum], rtol=1e-12, atol=1e-12)
+
+    def test_n_local_none_is_byte_identical(self) -> None:
+        """Regression: omitting ``n_local`` (default ``None``) reproduces the
+        pre-Task-9 unmasked reduction exactly.
+        """
+        model, ng, atype_local = self._make_graph_and_model(nloc=5, seed=11)
+
+        out_default = model.call_lower_graph(
+            atype=atype_local,
+            n_node=ng.n_node,
+            edge_index=ng.edge_index,
+            edge_vec=ng.edge_vec,
+            edge_mask=ng.edge_mask,
+        )
+        out_explicit_none = model.call_lower_graph(
+            atype=atype_local,
+            n_node=ng.n_node,
+            edge_index=ng.edge_index,
+            edge_vec=ng.edge_vec,
+            edge_mask=ng.edge_mask,
+            n_local=None,
+        )
+        np.testing.assert_array_equal(
+            out_default["energy_redu"], out_explicit_none["energy_redu"]
+        )
+        np.testing.assert_array_equal(
+            out_default["energy"], out_explicit_none["energy"]
+        )
