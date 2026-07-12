@@ -209,7 +209,7 @@ def test_pair_deepmd_mpi(balance_args: list) -> None:
         pb_file,
         pb_file2,
         md_file,
-        extra_args=balance_args,
+        extra_args=[*balance_args, "--nopbc"],
     )
 
     relative = 1.0

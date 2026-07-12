@@ -142,6 +142,9 @@ def run_mpi_pair_runner(
     The runner output contract is one energy line followed by a rectangular
     per-atom table. ``output_columns`` names and slices that table while each
     model-specific wrapper retains its own defaults and explanatory docstring.
+
+    If ``capture`` is true, skip parsing and return the subprocess result as
+    ``{"returncode": int, "stdout": str, "stderr": str}``.
     """
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         output_path = Path(f.name)
