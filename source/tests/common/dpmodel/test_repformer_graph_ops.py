@@ -350,6 +350,20 @@ _LAYER_CASES = {
         "update_h2": False,
     },
     "no_g1_out": {"g1_out_conv": False, "g1_out_mlp": False},
+    "no_chnnl_2_no_gg1": {
+        # Exercises update_chnnl_2=False (skips g2/h2 updates) and cal_gg1=False (gg1=None).
+        # With g1_out_mlp=False, g1_mlp starts with [g1] identity seed for xp.concat.
+        "update_chnnl_2": False,
+        "update_g1_has_conv": False,
+        "update_g1_has_grrg": False,
+        "update_g1_has_drrd": False,
+        "update_g1_has_attn": False,
+        "update_g2_has_g1g1": False,
+        "update_g2_has_attn": False,
+        "update_h2": False,
+        "g1_out_conv": False,
+        "g1_out_mlp": False,
+    },
 }
 # cases where pairs=None is exercised (neither update_g2_has_attn nor
 # update_h2 is set, so center_edge_pairs is not required)
