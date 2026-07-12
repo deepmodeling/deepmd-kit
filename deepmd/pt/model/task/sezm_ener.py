@@ -243,11 +243,18 @@ class GLUFittingNet(torch.nn.Module):
         super().__init__()
         if neuron is None:
             neuron = []
-        if isinstance(trainable, list):
-            trainable = all(trainable)
         self.in_dim = int(in_dim)
         self.out_dim = int(out_dim)
         self.neuron = [int(nn_dim) for nn_dim in neuron]
+        if isinstance(trainable, bool):
+            self.trainable = [trainable] * (len(self.neuron) + 1)
+        else:
+            self.trainable = [bool(flag) for flag in trainable]
+            if len(self.trainable) != len(self.neuron) + 1:
+                raise ValueError(
+                    "trainable must contain one flag per hidden layer plus "
+                    "one flag for the output layer"
+                )
         self.activation_function = activation_function
         self.resnet_dt = bool(resnet_dt)
         self.precision = precision
@@ -270,7 +277,7 @@ class GLUFittingNet(torch.nn.Module):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     seed=child_seed(seed, layer_idx),
-                    trainable=trainable,
+                    trainable=self.trainable[layer_idx],
                 )
             )
             dim_in = hidden_dim
@@ -285,7 +292,7 @@ class GLUFittingNet(torch.nn.Module):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 seed=child_seed(seed, len(self.neuron)),
-                trainable=trainable,
+                trainable=all(self.trainable),
             )
         else:
             self.case_film = None
@@ -300,11 +307,8 @@ class GLUFittingNet(torch.nn.Module):
             resnet=False,
             precision=self.precision,
             seed=child_seed(seed, len(self.neuron) + int(self.case_film_embd)),
-            trainable=trainable,
+            trainable=self.trainable[-1],
         )
-
-        for param in self.parameters():
-            param.requires_grad = trainable
 
     def _apply_input_film(
         self,
@@ -395,6 +399,8 @@ class GLUFittingNet(torch.nn.Module):
             "descriptor_dim": self.descriptor_dim,
             "dim_case_embd": self.dim_case_embd,
             "case_film_embd": self.case_film_embd,
+            # Keep the per-layer freeze policy stable across backend round trips.
+            "trainable": self.trainable.copy(),
             "@variables": {key: to_numpy_array(value) for key, value in state.items()},
         }
 
