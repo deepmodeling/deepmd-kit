@@ -15,7 +15,6 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-
 from deepmd.tf.nvnmd.utils.config import (
     nvnmd_cfg,
 )
