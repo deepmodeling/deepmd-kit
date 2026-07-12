@@ -43,6 +43,14 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         """Get the name of the property."""
         return self.get_fitting_net().var_name
 
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property."""
+        return self.get_fitting_net().dim_out
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive."""
+        return self.model_output_def()[self.get_var_name()].intensive
+
     def call(
         self,
         coord: Array,

@@ -3,6 +3,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -18,6 +19,7 @@ from deepmd.dpmodel.utils.neighbor_list import (
     NeighborList,
 )
 from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
     nlist_distinguish_types,
 )
 from deepmd.tf2.common import (
@@ -37,6 +39,11 @@ from deepmd.tf2.utils._dpmodel import (
     extend_coord_with_ghosts,
     normalize_coord,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 def _unwrap_tuple(values: tuple[Array, ...]) -> tuple[tf.Tensor, ...]:
@@ -68,6 +75,7 @@ def model_call_from_call_lower(
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
     pass_lower_kwargs: bool = False,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -123,6 +131,10 @@ def model_call_from_call_lower(
         coord_corr_for_virial=coord_corr_for_virial,
         charge_spin=charge_spin,
         neighbor_list=neighbor_list,
+        # Model-level pair exclusion is folded into the nlist inside
+        # prepare_lower_inputs (single owner), so the compiled-training prepare
+        # step gets the same pre-excluded nlist as this upper call.
+        pair_excl=pair_excl,
     )
     lower_kwargs: dict[str, Any] = {"fparam": fp, "aparam": ap}
     if pass_lower_kwargs:
@@ -168,6 +180,7 @@ def prepare_lower_inputs(
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[
     Array,
     Array,
@@ -179,7 +192,14 @@ def prepare_lower_inputs(
     Array | None,
     bool,
 ]:
-    """Build lower-interface tensors outside the train-step compiler boundary."""
+    """Build lower-interface tensors outside the train-step compiler boundary.
+
+    Model-level ``pair_exclude_types`` is a nlist-BUILD transform (decision
+    #18/A4): when ``pair_excl`` is provided it is folded into the freshly built
+    nlist here, so EVERY caller (the eager/compiled upper call and the compiled
+    training prepare step) gets a pre-excluded nlist and the lower never
+    re-applies it.
+    """
     cc = to_tensorflow_array(coord)
     atype = to_tensorflow_array(atype)
     bb = to_tensorflow_array(box)
@@ -229,8 +249,12 @@ def prepare_lower_inputs(
 
     uses_native_nlist_builder = neighbor_list is None
     if neighbor_list is not None:
+        # The BUILDER owns model-level pair exclusion (same convention as
+        # dpmodel/pt_expt make_model). ``pair_excl`` is part of the
+        # NeighborList.build() contract; a custom strategy predating it fails
+        # loudly (TypeError) instead of silently including excluded pairs.
         extended_coord, extended_atype, nlist, mapping = neighbor_list.build(
-            cc, atype, bb, rcut, sel
+            cc, atype, bb, rcut, sel, pair_excl=pair_excl
         )
     else:
         has_pbc = _box_has_pbc(bb)
@@ -254,6 +278,11 @@ def prepare_lower_inputs(
             extended_atype = to_tensorflow_array(extended_atype_tensor)
             nlist = to_tensorflow_array(nlist_tensor)
             mapping = to_tensorflow_array(mapping_tensor)
+        if pair_excl is not None:
+            # Native inline builder: exclude at BUILD time, mirroring
+            # DefaultNeighborList.build on the dpmodel path (the custom-builder
+            # branch above already excluded inside build()).
+            nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     if coord_corr is not None:
         coord_corr = xp.reshape(coord_corr, (nframes, nloc, 3))

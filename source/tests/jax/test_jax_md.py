@@ -109,6 +109,36 @@ def test_dense_neighbor_uses_jax_md_displacement_convention():
     np.testing.assert_allclose(potential(coord, neighbor=neighbor), 0.04, atol=1e-12)
 
 
+def test_dense_neighbor_applies_model_pair_exclusion():
+    """Model-level ``pair_exclude_types`` must be folded into the JAX-MD nlist
+    at the ``call_lower`` ingestion seam (decision #18/A4): the lower no longer
+    re-applies it, so without this the JAX-MD path would silently INCLUDE
+    excluded pairs (fail-open). Types are (0, 1); excluding that pair drops the
+    only edge, so the energy is 0 instead of the 0.04 the same geometry gives
+    without exclusion.
+    """
+    from types import (
+        SimpleNamespace,
+    )
+
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+
+    class ExclEdgeModel(EdgeModel):
+        atomic_model = SimpleNamespace(pair_excl=PairExcludeMask(2, [(0, 1)]))
+
+    disp = lambda ra, rb: (ra - rb) - 10.0 * jnp.round((ra - rb) / 10.0)  # noqa: E731
+    coord = jnp.asarray([[0.1, 0.0, 0.0], [9.9, 0.0, 0.0]])
+    neighbor = DenseNeighbor(jnp.asarray([[1], [0]], dtype=jnp.int32))
+
+    excl = energy_fn(ExclEdgeModel(), [0, 1], displacement_fn=disp)
+    np.testing.assert_allclose(excl(coord, neighbor=neighbor), 0.0, atol=1e-12)
+    # control: identical geometry WITHOUT exclusion keeps the edge (0.04).
+    noexcl = energy_fn(EdgeModel(), [0, 1], displacement_fn=disp)
+    np.testing.assert_allclose(noexcl(coord, neighbor=neighbor), 0.04, atol=1e-12)
+
+
 def test_dense_neighbor_rejects_scalar_metric():
     potential = energy_fn(
         EdgeModel(),
