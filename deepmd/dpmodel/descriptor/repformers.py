@@ -1851,6 +1851,61 @@ class RepformerLayer(NativeOP):
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
+    def _graph_update_g1_conv(
+        self,
+        gg1: Array,
+        g2: Array,
+        edge_mask: Array,
+        sw: Array,
+        dst: Array,
+        n_total: int,
+        nnei: int,
+    ) -> Array:
+        """
+        Graph twin of :meth:`_update_g1_conv` (segment_sum over dst).
+
+        Parameters
+        ----------
+        gg1
+            Edge-wise atomic invariant rep, with shape [n_edge, ng1].
+        g2
+            Edge-wise pair invariant rep, with shape [n_edge, ng2].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        n_total
+            Total number of nodes.
+        nnei
+            The block sel (the smooth-branch normalization constant).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(gg1, g2, edge_mask, sw)
+        assert self.proj_g1g2 is not None
+        if not self.g1_out_conv:
+            # gg1  : n_edge x ng2
+            gg1 = self.proj_g1g2(gg1)
+        # else gg1  : n_edge x ng1
+        gg1 = gg1 * xp.astype(edge_mask[:, None], gg1.dtype)
+        if not self.smooth:
+            # normalized by number of neighbors, not smooth
+            deg = segment_sum(xp.astype(edge_mask, gg1.dtype), dst, n_total)  # (N,)
+            invnnei = (1.0 / (self.epsilon + deg))[:, None]  # (N, 1)
+        else:
+            gg1 = gg1 * sw[:, None]
+            invnnei = 1.0 / float(nnei)
+        if not self.g1_out_conv:
+            # (N, ng2)
+            return segment_sum(g2 * gg1, dst, n_total) * invnnei
+        # (N, ng1)
+        g2p = self.proj_g1g2(g2)
+        return segment_sum(g2p * gg1, dst, n_total) * invnnei
+
     def _update_g2_g1g1(
         self,
         g1: Array,  # nf x nloc x ng1
@@ -1879,6 +1934,38 @@ class RepformerLayer(NativeOP):
         ret = _apply_nlist_mask(ret, nlist_mask)
         if self.smooth:
             ret = _apply_switch(ret, sw)
+        return ret
+
+    def _graph_update_g2_g1g1(
+        self,
+        g1: Array,
+        src: Array,
+        dst: Array,
+        edge_mask: Array,
+        sw: Array,
+    ) -> Array:
+        """
+        Graph twin of :meth:`_update_g2_g1g1`: per-edge g1_center * g1_neighbor.
+
+        Parameters
+        ----------
+        g1
+            Atomic invariant rep, with shape [n_total, ng1].
+        src
+            Source (neighbor) node index of each edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+        """
+        xp = array_api_compat.array_namespace(g1, edge_mask, sw)
+        # (n_edge, ng1)
+        ret = xp.take(g1, dst, axis=0) * xp.take(g1, src, axis=0)
+        ret = ret * xp.astype(edge_mask[:, None], ret.dtype)
+        if self.smooth:
+            ret = ret * sw[:, None]
         return ret
 
     def call(
