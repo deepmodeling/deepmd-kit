@@ -16,7 +16,6 @@ def convert_backend(
     INPUT: str,
     OUTPUT: str,
     atomic_virial: bool = False,
-    lower_kind: str = "nlist",
     **kwargs: Any,
 ) -> None:
     """Convert a model file from one backend to another.
@@ -31,10 +30,6 @@ def convert_backend(
         If True, export .pt2/.pte models with per-atom virial correction.
         This adds ~2.5x inference cost.  Default False.  Silently ignored
         (with a warning) for backends that don't support the flag.
-    lower_kind : str
-        Lower input schema for output backends that support it. ``"nlist"`` is
-        the compatibility default; ``"graph"`` and ``"auto"`` are explicit
-        graph-lowering choices.
     """
     inp_backend: Backend = Backend.detect_backend_by_model(INPUT)()
     out_backend: Backend = Backend.detect_backend_by_model(OUTPUT)()
@@ -46,12 +41,7 @@ def convert_backend(
     sig = inspect.signature(out_hook)
     hook_kwargs: dict[str, Any] = {}
     if "lower_kind" in sig.parameters:
-        hook_kwargs["lower_kind"] = lower_kind
-    elif lower_kind != "nlist":
-        raise ValueError(
-            f"lower_kind={lower_kind!r} is not supported by output backend "
-            f"{out_backend.name}"
-        )
+        hook_kwargs["lower_kind"] = "auto"
     if "do_atomic_virial" in sig.parameters:
         hook_kwargs["do_atomic_virial"] = atomic_virial
     elif atomic_virial:

@@ -3,7 +3,7 @@
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
 #include <ATen/core/dispatch/Dispatcher.h>
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#if defined(GOOGLE_CUDA)
 #include <ATen/cuda/CUDAContext.h>
 #endif
 #include <c10/core/DeviceGuard.h>
@@ -34,8 +34,10 @@ using namespace deepmd;
 namespace {
 
 void synchronize_current_accelerator_stream() {
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#if defined(GOOGLE_CUDA)
   at::cuda::getCurrentCUDAStream().synchronize();
+#elif defined(TENSORFLOW_USE_ROCM)
+  DPErrcheck(gpuDeviceSynchronize());
 #else
   throw deepmd::deepmd_exception(
       "GPU-resident inference requires a GPU-enabled DeePMD-kit build.");

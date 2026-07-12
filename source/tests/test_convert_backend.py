@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
 import pytest
 
 from deepmd.backend.backend import (
@@ -13,19 +9,10 @@ from deepmd.entrypoints.convert_backend import (
 )
 
 
-@pytest.mark.parametrize(
-    ("expected_lower_kind", "kwargs"),
-    [
-        ("nlist", {}),
-        ("graph", {"lower_kind": "graph"}),
-    ],
-)
-def test_convert_backend_lower_kind(
+def test_convert_backend_automatically_selects_lower_kind(
     monkeypatch: pytest.MonkeyPatch,
-    expected_lower_kind: str,
-    kwargs: dict[str, str],
 ) -> None:
-    captured: dict[str, Any] = {}
+    captured: dict[str, object] = {}
 
     class InputBackend:
         name = "input"
@@ -57,7 +44,7 @@ def test_convert_backend_lower_kind(
 
     monkeypatch.setattr(Backend, "detect_backend_by_model", detect_backend)
 
-    convert_backend(INPUT="model.input", OUTPUT="model.output", **kwargs)
+    convert_backend(INPUT="model.input", OUTPUT="model.output")
 
-    assert captured["lower_kind"] == expected_lower_kind
+    assert captured["lower_kind"] == "auto"
     assert captured["do_atomic_virial"] is False

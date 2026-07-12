@@ -1077,11 +1077,10 @@ def deserialize_to_file(
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
         the destination/source CSR views) with a DYNAMIC edge axis ``E``
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
-        ``"auto"`` (available through ``convert-backend --lower-kind auto``)
-        resolves to ``"graph"`` for an exportable graph-lower ``.pt2`` and
-        ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`). A graph lower always
-        preserves the fused inference operators (``DP_CUDA_INFER >= 2``) and
-        the per-atom virial.
+        ``"auto"`` (used by ``convert-backend``) resolves to ``"graph"`` for an
+        exportable graph-lower ``.pt2`` and ``"nlist"`` otherwise (see
+        :func:`_resolve_lower_kind`). A graph lower always preserves the fused
+        inference operators (``DP_CUDA_INFER >= 2``) and the per-atom virial.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     """
