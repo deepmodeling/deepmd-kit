@@ -313,6 +313,36 @@ class TestSeZMNVAlchemiWrapper(_ClearDefaultDeviceTestCase):
         rhs = -(e_plus - e_minus) / 2.0
         torch.testing.assert_close(lhs, rhs, atol=1.0e-8, rtol=1.0e-4)
 
+    def test_stress_rejects_invalid_cell_volume(self) -> None:
+        """Stress fails before division for singular and non-finite cells."""
+        coord, atype, box = self._system()
+        wrapper = DPA4Wrapper(self.model, compute_stress=True)
+        n_node = coord.shape[0]
+        model_output = {
+            "atom_energy": torch.zeros(n_node, dtype=coord.dtype, device=self.device),
+            "extended_force": torch.zeros(
+                n_node, 3, dtype=coord.dtype, device=self.device
+            ),
+            "extended_virial": torch.zeros(
+                n_node, 9, dtype=coord.dtype, device=self.device
+            ),
+        }
+
+        singular_box = box.clone()
+        singular_box[2] = singular_box[1]
+        nonfinite_box = box.clone()
+        nonfinite_box[0, 0] = torch.nan
+        for name, invalid_box in (
+            ("singular", singular_box),
+            ("non-finite", nonfinite_box),
+        ):
+            with self.subTest(cell=name):
+                batch = Batch.from_data_list(
+                    [self._data(coord, atype, invalid_box)], device=self.device
+                )
+                with self.assertRaisesRegex(ValueError, "cell volume must be finite"):
+                    wrapper.adapt_output(model_output, batch)
+
     def test_parity_nonperiodic(self) -> None:
         """Energy / forces match native forward for an open-boundary cluster."""
         coord, atype, _ = self._system()
@@ -388,6 +418,49 @@ class TestSeZMNVAlchemiWrapper(_ClearDefaultDeviceTestCase):
         self.assertEqual(tuple(out.node_embeddings.shape), (coord.shape[0], dim))
         self.assertEqual(tuple(out.graph_embeddings.shape), (1, dim))
         self.assertTrue(torch.isfinite(out.node_embeddings).all())
+
+    def test_pt2_runner_uses_exported_edge_abi(self) -> None:
+        """The wrapper calls AOTI with the exported nine-input edge ABI."""
+        coord, atype, box = self._system()
+        wrapper = DPA4Wrapper(self.model, default_charge_spin=[0.0, 0.0])
+        batch = Batch.from_data_list(
+            [self._data(coord, atype, box)], device=self.device
+        )
+        compute_neighbors(batch, config=wrapper.model_config.neighbor_config)
+        model_inputs = wrapper.adapt_input(batch)
+
+        aoti_output = {
+            "energy": torch.zeros(1, dtype=coord.dtype, device=self.device),
+            "energy_derv_r": torch.zeros(1, dtype=coord.dtype, device=self.device),
+            "energy_derv_c": torch.zeros(1, dtype=coord.dtype, device=self.device),
+        }
+        captured_args: tuple[torch.Tensor | None, ...] = ()
+
+        def fake_runner(*args: torch.Tensor | None) -> dict[str, torch.Tensor]:
+            nonlocal captured_args
+            captured_args = args
+            return aoti_output
+
+        wrapper._aoti_runner = fake_runner
+        normalized = wrapper._run_pt2(model_inputs)
+
+        expected_args = (
+            model_inputs["coord"],
+            model_inputs["atype"],
+            model_inputs["edge_index"],
+            model_inputs["edge_vec"],
+            model_inputs["edge_scatter_index"],
+            model_inputs["edge_mask"],
+            None,
+            None,
+            model_inputs["charge_spin"],
+        )
+        self.assertEqual(len(captured_args), len(expected_args))
+        for actual, expected in zip(captured_args, expected_args, strict=True):
+            self.assertIs(actual, expected)
+        self.assertIs(normalized["atom_energy"], aoti_output["energy"])
+        self.assertIs(normalized["extended_force"], aoti_output["energy_derv_r"])
+        self.assertIs(normalized["extended_virial"], aoti_output["energy_derv_c"])
 
     def test_custom_type_mapping(self) -> None:
         """An explicit atomic-number map reproduces the type-map default."""

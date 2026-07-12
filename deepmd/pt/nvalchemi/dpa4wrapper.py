@@ -410,6 +410,12 @@ class DPA4Wrapper(nn.Module, BaseModelMixin):
                 n_graph, 9, dtype=atom_virial.dtype, device=atom_virial.device
             ).index_add_(0, batch_idx, atom_virial)
             volume = torch.det(cell.to(virial.dtype)).abs().view(n_graph, 1, 1)
+            min_volume = torch.finfo(volume.dtype).eps
+            if bool((~torch.isfinite(volume) | (volume <= min_volume)).any()):
+                raise ValueError(
+                    "Cannot compute stress: cell volume must be finite and "
+                    f"greater than {min_volume}."
+                )
             output["stress"] = (virial.view(n_graph, 3, 3) / volume).to(out_dtype)
         return output
 
