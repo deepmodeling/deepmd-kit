@@ -869,8 +869,8 @@ class TestNormParity:
         torch.testing.assert_close(
             legacy(x),
             unit_scale(x / np.sqrt(legacy.eps)),
-            rtol=1.0e-12,
-            atol=1.0e-12,
+            rtol=PT_RTOL,
+            atol=PT_ATOL,
         )
 
     def test_equivariant_rmsnorm_roundtrip(self) -> None:
