@@ -429,9 +429,84 @@ class TestDPA2AdapterBitExact:
         assert not np.any(np.isnan(adapter_g1))
         assert not np.any(np.isnan(adapter_rot_mat))
 
+    def test_adapter_divergence_davg_nonzero_documented(self) -> None:
+        """Pin the ONE known bit-exactness exception (see the ``Notes``
+        block on :meth:`DescrptDPA2.call_graph`'s docstring): when
+        ``set_davg_zero=False`` (nonzero ``repinit.mean``) AND
+        ``exclude_types == []``, the dense
+        ``DescrptBlockSeAtten.call`` (``attn_layer == 0``, always the case
+        for DPA2's ``repinit``) leaks a padding-slot residual into its
+        output -- ``PairExcludeMask.build_type_exclude_mask`` short-circuits
+        to all-ones when nothing is excluded, so real nlist padding is never
+        zeroed out of ``rr`` before it reaches ``gr``, and once
+        ``mean != 0`` the (masked-to-zero-then-mean-subtracted) padding rows
+        become nonzero garbage that depends on the padding COUNT (i.e. on
+        ``sel``, not on real physics). The graph path masks padding/excluded
+        edges out before every ``segment_sum`` and does not reproduce this
+        leak -- its result is the physically correct one. This regime is
+        NOT covered by ``test_adapter_bitexact_any_sel``'s bit-exactness
+        guarantee, and is not fixed here (pre-existing dense-body bug, see
+        ``.superpowers/sdd/task-7-report.md``'s "Known limitation").
+
+        This test does not attempt to reproduce the "atom-at-extended-
+        index-0" framing verbatim -- the leak is triggered by ANY real nlist
+        padding once ``mean != 0``, independent of where index 0 physically
+        sits (verified empirically: the same small, non-clustered system
+        used elsewhere in this file already has padding, since
+        ``repinit_nsel=200`` comfortably exceeds each atom's real neighbor
+        count). What matters, and what this test pins, is: (a) with
+        ``mean == 0`` (the ``set_davg_zero=True``-equivalent control) the
+        adapter stays 1e-12 bit-exact vs dense, exactly like
+        ``test_adapter_bitexact_any_sel``; (b) with ``mean != 0`` and
+        ``exclude_types == []`` and real padding present, the adapter and
+        dense DIVERGE by a non-trivial amount -- a deliberate, documented
+        record of the dense-side bug, not a regression in the adapter.
+        """
+        repinit_nsel = 200
+        descr = _make_dpa2(repinit_nsel=repinit_nsel, repformer_nsel=150)
+        assert descr.repinit.exclude_types == []
+        coord, atype, box = _system(seed=41, nloc=8, box_size=6.0)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+
+        # self-check: real nlist padding is actually exercised (otherwise
+        # this test would be vacuous -- no padding, nothing to leak).
+        real_counts = (nlist != -1).sum(axis=-1)
+        assert bool(np.any(real_counts < repinit_nsel))
+
+        # control: mean == 0 (fresh descriptor's default, i.e. the
+        # set_davg_zero=True-equivalent state) -> bit-exact, as elsewhere.
+        dense0 = descr._call_dense(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter0 = descr._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
+        np.testing.assert_allclose(adapter0[0], dense0[0], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(adapter0[1], dense0[1], rtol=1e-12, atol=1e-12)
+
+        # set repinit's mean to a nonzero constant (mirrors how other tests
+        # in this file assign davg/dstd directly; slot-independent per
+        # TestRepformersBlockSlotIndependence's proven invariant).
+        nnei_repinit = descr.repinit.get_nsel()
+        descr.repinit.mean = np.full(
+            (descr.ntypes, nnei_repinit, 4), 0.3, dtype=np.float64
+        )
+
+        dense1 = descr._call_dense(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter1 = descr._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
+        max_abs_diff = float(np.max(np.abs(adapter1[0] - dense1[0])))
+        # divergence documented, not a regression: dense leaks a
+        # padding-count-dependent residual that the graph correctly excludes.
+        assert max_abs_diff > 1e-6
+        assert not np.any(np.isnan(adapter1[0]))
+        assert not np.any(np.isnan(adapter1[1]))
+
 
 class TestDPA2BlockMaskReplicatesMultipleNlist:
-    def test_block_mask_replicates_multiple_nlist(self) -> None:
+    def test_block_mask_formula_replicates_multiple_nlist(self) -> None:
+        """Standalone re-implementation of the ``_block_graph`` mask formula
+        (dist filter + slot cap) -- kept as a cheap, fast sanity check of the
+        FORMULA, but it never calls the shipped code, so it cannot catch a
+        regression in ``_block_graph``'s actual slicing/masking. See
+        ``test_block_graph_seam_matches_dense_sub_nlist`` below for the test
+        that exercises the real shipped code path.
+        """
         descr = _make_dpa2(repinit_nsel=200, repformer_nsel=5)
         coord, atype, box = _system(seed=31, nloc=12, box_size=3.0)
         ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
@@ -462,6 +537,94 @@ class TestDPA2BlockMaskReplicatesMultipleNlist:
         expected = np.zeros((nf, nloc, nnei), dtype=bool)
         expected[:, :, :ns] = sub_nlist >= 0
         np.testing.assert_array_equal(block_mask, expected)
+
+    def test_block_graph_seam_matches_dense_sub_nlist(self) -> None:
+        """Exercise the REAL shipped ``_block_graph`` closure (private,
+        reachable only through ``DescrptDPA2.call_graph``) via the public
+        seam, on a fixture where the repformer block's ``(rc, ns)`` genuinely
+        truncate the outer graph.
+
+        Strategy: run the shipped ``descr.call_graph(...)`` end to end (this
+        is what ``_call_graph_adapter`` calls in production), then
+        independently reconstruct a REFERENCE for "what the repformers block
+        saw" by:
+
+        1. Replaying the repinit stage with the SAME public
+           ``descr.repinit.call_graph`` call the shipped code makes
+           (repinit's own ``nsel`` (200) is >= the outer ``static_nnei``
+           here, so ``_block_graph`` takes its mask-only fast path -- no
+           slicing to replicate, just the dist mask), to get the g1 that
+           feeds into repformers.
+        2. Building a graph PRE-TRUNCATED BY HAND to the dense
+           ``build_multiple_neighbor_list`` sub-nlist (the same width-``ns``
+           sub-nlist ``_call_dense`` itself uses), via
+           ``graph_from_dense_quartet``.
+        3. Calling the repformer BLOCK's own public ``call_graph`` on that
+           pre-truncated graph.
+
+        If ``_block_graph``'s internal slice+mask selected exactly the same
+        edges as the dense sub-nlist, the shipped end-to-end output and this
+        by-hand reference must be bit-identical.
+        """
+        import dataclasses
+
+        descr = _make_dpa2(repinit_nsel=200, repformer_nsel=5)
+        assert descr.add_tebd_to_repinit_out is False  # keeps the repinit replay simple
+        coord, atype, box = _system(seed=31, nloc=12, box_size=3.0)
+        ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
+        nf, nloc, nnei = nlist.shape
+
+        rc = descr.repformers.get_rcut()
+        ns = descr.repformers.get_nsel()
+        full_sub = build_multiple_neighbor_list(ext_coord, nlist, [rc], [nnei])[
+            get_multiple_nlist_key(rc, nnei)
+        ]
+        real_counts = (full_sub >= 0).sum(axis=-1)
+        # non-vacuity: the slot cap must actually be exercised, otherwise
+        # this test would pass even with a broken slice.
+        assert np.any(real_counts > ns)
+
+        graph, atype_local = graph_from_dense_quartet(ext_coord, ext_atype, nlist, mapping)
+
+        # 1) the real, shipped, end-to-end code path.
+        g1_full, rot_mat_full, sw_full = descr.call_graph(
+            graph, atype_local, static_nnei=nnei, return_sw=True
+        )
+
+        # 2) replay repinit via the same public call the shipped code makes
+        # (mask-only fast path: repinit's own nsel >= the outer static_nnei).
+        tebd_table = descr.type_embedding.call()
+        dist = np.linalg.norm(np.asarray(graph.edge_vec), axis=-1)
+        repinit_mask = np.asarray(graph.edge_mask) & (dist <= descr.repinit.get_rcut())
+        repinit_graph = dataclasses.replace(graph, edge_mask=repinit_mask)
+        g1_repinit, _ = descr.repinit.call_graph(
+            repinit_graph, atype_local, type_embedding=tebd_table, static_nnei=nnei
+        )
+        g1_repinit = descr.g1_shape_tranform(g1_repinit)
+
+        # 3) hand-pre-truncate to the dense sub-nlist's kept entries, and run
+        # the repformer BLOCK's own public call_graph on it directly.
+        sub_nlist = build_multiple_neighbor_list(ext_coord, nlist, [rc], [ns])[
+            get_multiple_nlist_key(rc, ns)
+        ]
+        graph_ref, atype_local_ref = graph_from_dense_quartet(
+            ext_coord, ext_atype, sub_nlist, mapping
+        )
+        np.testing.assert_array_equal(
+            np.asarray(atype_local_ref), np.asarray(atype_local)
+        )
+        g1_ref, _g2_ref, _h2_ref, rot_mat_ref, sw_ref = descr.repformers.call_graph(
+            graph_ref, atype_local, g1_repinit, comm_dict=None, static_nnei=ns
+        )
+        if descr.concat_output_tebd:
+            g1_inp = np.asarray(tebd_table)[np.asarray(atype_local)]
+            g1_ref = np.concatenate([np.asarray(g1_ref), g1_inp], axis=-1)
+
+        # the shipped internal slice+mask must have selected EXACTLY the
+        # edges the dense sub-nlist keeps -- bit-identical, not just close.
+        np.testing.assert_allclose(g1_full, g1_ref, rtol=0.0, atol=0.0)
+        np.testing.assert_allclose(rot_mat_full, rot_mat_ref, rtol=0.0, atol=0.0)
+        np.testing.assert_allclose(sw_full, sw_ref, rtol=0.0, atol=0.0)
 
 
 class TestDPA2CallRouting:

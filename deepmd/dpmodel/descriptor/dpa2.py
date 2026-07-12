@@ -1027,6 +1027,34 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         repinit through repformers (three-body repinit is graph-ineligible
         and gated out by :meth:`uses_graph_lower`).
 
+        Notes
+        -----
+        **Dense's ``attn_layer=0`` padding-slot leak is intentionally NOT
+        reproduced here.** When ``set_davg_zero=False`` (nonzero ``mean``)
+        AND ``exclude_types == []``, the dense
+        :meth:`DescrptBlockSeAtten.call` that backs ``repinit`` (always
+        ``attn_layer=0`` in DPA2) leaks a data-dependent residual from its
+        padding neighbor slots into the output: ``PairExcludeMask.
+        build_type_exclude_mask`` short-circuits to an all-ones mask when no
+        types are excluded, which is the *only* real/padding mask that code
+        path applies at ``attn_layer=0`` (the identity ``NeighborGatedAttention``
+        with zero layers masks nothing). Padding slots read atom-index-0's
+        incidental geometry, so once ``davg != 0`` their ``(em - davg)`` is
+        nonzero too and nothing zeros it before it reaches ``gr`` -- the dense
+        output becomes non-reproducible garbage that depends on which atom
+        happens to sit at extended index 0. This graph path masks/zeros every
+        padding and excluded edge before each ``segment_sum``, so it does NOT
+        reproduce that leak. In this regime :meth:`call_graph` (and the dense
+        adapter, :meth:`_call_graph_adapter`) deliberately DIFFER from
+        :meth:`_call_dense` -- the graph output is the physically correct
+        one, and the divergence is a pre-existing dense-body bug (present
+        since ``attn_layer=0`` was introduced, not caused by this task) that
+        is documented, not bit-matched, here. Bit-exactness vs the dense body
+        (as exercised by ``TestDPA2AdapterBitExact``) holds in every OTHER
+        regime: ``set_davg_zero=True``, or non-empty ``exclude_types`` (which
+        supplies a real mask independent of ``davg``), or configurations with
+        no padding slots within ``rcut``.
+
         Parameters
         ----------
         graph
