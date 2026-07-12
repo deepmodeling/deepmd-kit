@@ -9,6 +9,10 @@ import numpy as np
 import pytest
 
 from deepmd.dpmodel.descriptor.repformers import (
+    Atten2EquiVarApply,
+    Atten2Map,
+    Atten2MultiHeadApply,
+    LocalAtten,
     RepformerLayer,
     _cal_hg,
     _cal_grrg,
@@ -17,6 +21,9 @@ from deepmd.dpmodel.descriptor.repformers import (
     _cal_hg_graph,
     symmetrization_op_graph,
     symmetrization_op,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    center_edge_pairs,
 )
 
 NF, NLOC, NNEI, NG = 2, 5, 7, 6
@@ -171,5 +178,148 @@ def test_update_g1_conv_graph_torch():
         torch.from_numpy(dst),
         n_total,
         NNEI,
+    )
+    np.testing.assert_allclose(got.numpy(), ref, rtol=1e-12, atol=1e-12)
+
+
+def _pairs(mask, dst, n_total):
+    q_e, k_e, pm = center_edge_pairs(
+        dst,
+        mask.reshape(-1),
+        n_total,
+        include_self=True,
+        ordered=True,
+        static_nnei=NNEI,
+    )
+    return q_e, k_e, pm
+
+
+@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+def test_atten2map_parity(has_gate, smooth):
+    rng = np.random.default_rng(6)
+    a2m = Atten2Map(NG, 4, 2, has_gate=has_gate, smooth=smooth, precision="float64", seed=7)
+    g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
+    h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
+    mask = rng.random((NF, NLOC, NNEI)) > 0.3
+    sw = rng.random((NF, NLOC, NNEI)) * mask
+    n_total = NF * NLOC
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), NNEI)
+    ref = a2m.call(g2, h2, mask, sw)  # (nf, nloc, nnei, nnei, nh)
+    q_e, k_e, pm = _pairs(mask, dst, n_total)
+    got = a2m.call_graph(
+        g2.reshape(-1, NG),
+        h2.reshape(-1, 3),
+        sw.reshape(-1),
+        q_e,
+        k_e,
+        pm,
+        NF * NLOC * NNEI,
+    )  # (P, nh)
+    slot = np.arange(NF * NLOC * NNEI) % NNEI
+    ctr = dst[np.asarray(q_e)]
+    f, l = ctr // NLOC, ctr % NLOC
+    ref_pairs = ref[f, l, slot[np.asarray(q_e)], slot[np.asarray(k_e)], :]
+    # NOTE: even for pairs whose query edge is padding, both sides collapse to
+    # an exact 0.0 (dense: post-softmax where(mask, 0, ...); graph: pair_mask
+    # multiply, and in the smooth branch the fully-masked segment_softmax
+    # group also yields exact 0.0), so no restriction to real-query pairs is
+    # needed here -- verified empirically before relying on it.
+    np.testing.assert_allclose(np.asarray(got), ref_pairs, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+def test_atten2_mh_apply_parity(has_gate, smooth):
+    rng = np.random.default_rng(9)
+    nh = 3
+    a2m = Atten2Map(NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=10)
+    mha = Atten2MultiHeadApply(NG, nh, precision="float64", seed=11)
+    g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
+    h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
+    mask = rng.random((NF, NLOC, NNEI)) > 0.3
+    sw = rng.random((NF, NLOC, NNEI)) * mask
+    n_total = NF * NLOC
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), NNEI)
+    e_tot = NF * NLOC * NNEI
+    ref_AA = a2m.call(g2, h2, mask, sw)  # (nf, nloc, nnei, nnei, nh)
+    ref = mha.call(ref_AA, g2)  # (nf, nloc, nnei, ng2)
+    q_e, k_e, pm = _pairs(mask, dst, n_total)
+    got_AA = a2m.call_graph(
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+    )
+    got = mha.call_graph(got_AA, g2.reshape(-1, NG), q_e, k_e, e_tot)
+    np.testing.assert_allclose(
+        np.asarray(got), ref.reshape(e_tot, NG), rtol=1e-12, atol=1e-12
+    )
+
+
+@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+def test_atten2_ev_apply_parity(has_gate, smooth):
+    rng = np.random.default_rng(12)
+    nh = 3
+    a2m = Atten2Map(NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=13)
+    ev = Atten2EquiVarApply(NG, nh, precision="float64", seed=14)
+    g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
+    h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
+    mask = rng.random((NF, NLOC, NNEI)) > 0.3
+    sw = rng.random((NF, NLOC, NNEI)) * mask
+    n_total = NF * NLOC
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), NNEI)
+    e_tot = NF * NLOC * NNEI
+    ref_AA = a2m.call(g2, h2, mask, sw)  # (nf, nloc, nnei, nnei, nh)
+    ref = ev.call(ref_AA, h2)  # (nf, nloc, nnei, 3)
+    q_e, k_e, pm = _pairs(mask, dst, n_total)
+    got_AA = a2m.call_graph(
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+    )
+    got = ev.call_graph(got_AA, h2.reshape(-1, 3), q_e, k_e, e_tot)
+    np.testing.assert_allclose(
+        np.asarray(got), ref.reshape(e_tot, 3), rtol=1e-12, atol=1e-12
+    )
+
+
+@pytest.mark.parametrize("smooth", [True, False])
+def test_local_atten_parity(smooth):
+    la = LocalAtten(8, 4, 2, smooth=smooth, precision="float64", seed=15)
+    g1, nlist, mask, sw, src, dst, n_total = _mk_g1_nlist(20)
+    g1_ext = g1.reshape(NF, NLOC, 8)
+    gg1 = _make_nei_g1(g1_ext, np.where(mask, nlist, 0))
+    ref = la.call(g1_ext, gg1, mask, sw)  # (nf, nloc, ng1)
+    got = la.call_graph(
+        g1,
+        np.take(g1, src, axis=0),
+        mask.reshape(-1),
+        sw.reshape(-1),
+        dst,
+        n_total,
+    )
+    np.testing.assert_allclose(
+        np.asarray(got), ref.reshape(n_total, 8), rtol=1e-12, atol=1e-12
+    )
+
+
+def test_atten2map_graph_torch():
+    import torch
+
+    rng = np.random.default_rng(16)
+    a2m = Atten2Map(NG, 4, 2, has_gate=True, smooth=True, precision="float64", seed=17)
+    g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
+    h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
+    mask = rng.random((NF, NLOC, NNEI)) > 0.3
+    sw = rng.random((NF, NLOC, NNEI)) * mask
+    n_total = NF * NLOC
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), NNEI)
+    q_e, k_e, pm = _pairs(mask, dst, n_total)
+    e_tot = NF * NLOC * NNEI
+    ref = a2m.call_graph(
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+    )
+    got = a2m.call_graph(
+        torch.from_numpy(g2.reshape(-1, NG)),
+        torch.from_numpy(h2.reshape(-1, 3)),
+        torch.from_numpy(sw.reshape(-1)),
+        torch.from_numpy(q_e),
+        torch.from_numpy(k_e),
+        torch.from_numpy(pm),
+        e_tot,
     )
     np.testing.assert_allclose(got.numpy(), ref, rtol=1e-12, atol=1e-12)

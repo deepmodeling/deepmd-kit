@@ -1123,6 +1123,62 @@ class Atten2Map(NativeOP):
         ret = xp_transpose_01342(ret)
         return ret
 
+    def call_graph(
+        self,
+        g2: Array,
+        h2: Array,
+        sw: Array,
+        q_e: Array,
+        k_e: Array,
+        pair_mask: Array,
+        e_tot: int,
+    ) -> Array:
+        """Graph twin of :meth:`call`: per-pair attention map over edges sharing
+        a center. Dense (nnei, nnei) square -> ordered+self edge pairs; softmax
+        over the key axis -> segment_softmax grouped by the query edge. The
+        dense post-softmax query-row AND key-column zeroing both collapse to
+        ``pair_mask`` (a pair is real iff BOTH edges are real).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_softmax,
+        )
+
+        xp = array_api_compat.array_namespace(g2, h2)
+        e_ax = g2.shape[0]
+        nd, nh = self.hidden_dim, self.head_num
+        g2qk = self.mapqk(g2)  # (E, nd * nh * 2)
+        g2qk = xp.reshape(g2qk, (e_ax, nd, nh * 2))  # heads LAST, dense order
+        g2q = g2qk[:, :, :nh]  # (E, nd, nh)
+        g2k = g2qk[:, :, nh:]  # (E, nd, nh)
+        # per-pair, per-head logits
+        attnw = (
+            xp.sum(xp.take(g2q, q_e, axis=0) * xp.take(g2k, k_e, axis=0), axis=1)
+            / nd**0.5
+        )  # (P, nh)
+        if self.has_gate:
+            gate = xp.sum(
+                xp.take(h2, q_e, axis=0) * xp.take(h2, k_e, axis=0), axis=-1
+            )  # (P,)
+            attnw = attnw * gate[:, None]
+        sw_q = xp.take(sw, q_e, axis=0)  # (P,)
+        sw_k = xp.take(sw, k_e, axis=0)
+        if self.smooth:
+            # padding pairs stay in the denominator at exp(-shift), like dense
+            attnw = (attnw + self.attnw_shift) * sw_q[:, None] * sw_k[
+                :, None
+            ] - self.attnw_shift
+            attnw = segment_softmax(attnw, q_e, e_tot)
+        else:
+            attnw = segment_softmax(attnw, q_e, e_tot, mask=pair_mask)
+        attnw = attnw * xp.astype(pair_mask[:, None], attnw.dtype)
+        if self.smooth:
+            attnw = attnw * sw_q[:, None] * sw_k[:, None]
+        h2h2t = (
+            xp.sum(xp.take(h2, q_e, axis=0) * xp.take(h2, k_e, axis=0), axis=-1)
+            / 3.0**0.5
+        )  # (P,)
+        return attnw * h2h2t[:, None]  # (P, nh)
+
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
 
@@ -1215,6 +1271,23 @@ class Atten2MultiHeadApply(NativeOP):
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
+    def call_graph(
+        self, AA: Array, g2: Array, q_e: Array, k_e: Array, e_tot: int
+    ) -> Array:
+        """Graph twin of :meth:`call`: out[q] = sum_k AA[q,k] g2v[k] per head."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(AA, g2)
+        e_ax, ng2 = g2.shape
+        nh = self.head_num
+        g2v = xp.reshape(self.mapv(g2), (e_ax, ng2, nh))
+        contrib = AA[:, None, :] * xp.take(g2v, k_e, axis=0)  # (P, ng2, nh)
+        ret = segment_sum(contrib, q_e, e_tot)  # (E, ng2, nh)
+        ret = xp.reshape(ret, (e_ax, ng2 * nh))  # nh-fastest == dense reshape
+        return self.head_map(ret)  # (E, ng2)
+
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
 
@@ -1295,6 +1368,19 @@ class Atten2EquiVarApply(NativeOP):
         ret = xp.reshape(ret, (nf, nloc, nnei, 3, nh))
         # nf x nloc x nnei x 3
         return xp.squeeze(self.head_map(ret), axis=-1)
+
+    def call_graph(
+        self, AA: Array, h2: Array, q_e: Array, k_e: Array, e_tot: int
+    ) -> Array:
+        """Graph twin of :meth:`call` (heads applied to the equivariant channel)."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(AA, h2)
+        contrib = AA[:, None, :] * xp.take(h2, k_e, axis=0)[:, :, None]  # (P, 3, nh)
+        ret = segment_sum(contrib, q_e, e_tot)  # (E, 3, nh)
+        return xp.squeeze(self.head_map(ret), axis=-1)  # (E, 3)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -1427,6 +1513,46 @@ class LocalAtten(NativeOP):
         # nf x nloc x ng1
         ret = self.head_map(ret)
         return ret
+
+    def call_graph(
+        self,
+        g1: Array,
+        gg1: Array,
+        edge_mask: Array,
+        sw: Array,
+        dst: Array,
+        n_total: int,
+    ) -> Array:
+        """Graph twin of :meth:`call`: per-center attention over its edges
+        (softmax over the neighbor axis -> segment_softmax over dst).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_softmax,
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(g1, gg1)
+        ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
+        g1q = xp.reshape(self.mapq(g1), (n_total, nd, nh))
+        gg1kv = xp.reshape(self.mapkv(gg1), (gg1.shape[0], nd + ni, nh))
+        gg1k = gg1kv[:, :nd, :]  # (E, nd, nh)
+        gg1v = gg1kv[:, nd:, :]  # (E, ni, nh)
+        attnw = (
+            xp.sum(xp.take(g1q, dst, axis=0) * gg1k, axis=1) / nd**0.5
+        )  # (E, nh)
+        if self.smooth:
+            attnw = (attnw + self.attnw_shift) * sw[:, None] - self.attnw_shift
+            attnw = segment_softmax(attnw, dst, n_total)
+        else:
+            attnw = segment_softmax(attnw, dst, n_total, mask=edge_mask)
+        attnw = attnw * xp.astype(edge_mask[:, None], attnw.dtype)
+        if self.smooth:
+            attnw = attnw * sw[:, None]
+        # out[n, h, :] = sum_{e in n} w[e, h] v[e, :, h]  (head-major, dense order)
+        contrib = attnw[:, :, None] * xp.matrix_transpose(gg1v)  # (E, nh, ni)
+        ret = segment_sum(contrib, dst, n_total)  # (N, nh, ni)
+        ret = xp.reshape(ret, (n_total, nh * ni))
+        return self.head_map(ret)  # (N, ng1)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
