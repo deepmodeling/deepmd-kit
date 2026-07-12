@@ -3,9 +3,6 @@
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
 #include <ATen/core/dispatch/Dispatcher.h>
-#if defined(GOOGLE_CUDA)
-#include <c10/cuda/CUDAStream.h>
-#endif
 #include <c10/core/DeviceGuard.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
@@ -34,9 +31,7 @@ using namespace deepmd;
 namespace {
 
 void synchronize_current_accelerator_stream() {
-#if defined(GOOGLE_CUDA)
-  c10::cuda::getCurrentCUDAStream().synchronize();
-#elif defined(TENSORFLOW_USE_ROCM)
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   DPErrcheck(gpuDeviceSynchronize());
 #else
   throw deepmd::deepmd_exception(
