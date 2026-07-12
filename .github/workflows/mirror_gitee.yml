@@ -1,13 +1,21 @@
 name: Mirror to Gitee Repo
 
+# A ref deletion is also delivered as a push event.  Keeping one trigger avoids
+# launching duplicate mirrors for the same ref change.
 on:
   push:
-    branches-ignore:
-      - "copilot/**"
-      - "dependabot/**"
-      - "pre-commit-ci-update-config"
-  delete:
-  create:
+    # Use positive patterns with exclusions so tag pushes can be listed below.
+    # `branches-ignore` by itself disables all tag-triggered runs.
+    branches:
+      - "**"
+      # GitHub creates these ephemeral refs while testing a merge queue entry.
+      # They are neither source branches nor refs that Gitee should receive.
+      - "!gh-readonly-queue/**"
+      - "!copilot/**"
+      - "!dependabot/**"
+      - "!pre-commit-ci-update-config"
+    tags:
+      - "**"
 
 # Ensures that only one mirror task will run at a time.
 concurrency:
@@ -16,7 +24,8 @@ concurrency:
 jobs:
   git-mirror:
     if: github.repository_owner == 'deepmodeling'
-    runs-on: ubuntu-slim
+    # This is a Docker action; ubuntu-slim does not provide a Docker daemon.
+    runs-on: ubuntu-latest
     steps:
       - uses: wearerequired/git-mirror-action@v1
         env:
