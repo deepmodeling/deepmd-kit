@@ -91,3 +91,19 @@ Model compression is supported when {ref}`repinit/tebd_input_mode <model[standar
 
 An example is given in `examples/water/dpa2/input_torch_compressible.json`.
 The performance improvement will be limited if other parts are more expensive.
+
+## Graph-native inference route (pt_expt) {{ pytorch_icon }}
+
+In the pt_expt backend, a graph-eligible DPA-2 descriptor (`repinit/use_three_body` `false` -- the three-body sub-block is not graph-eligible -- and not compressed) can be frozen through a NeighborGraph-native inference path instead of the legacy dense neighbor-list path:
+
+```bash
+dp --pt_expt freeze -o model.pt2 --lower-kind graph
+```
+
+As with DPA-1's graph path (see [Difference among different backends](train-se-atten.md#difference-among-different-backends)), the graph route considers all neighbors within the cutoff rather than a fixed, padded selection, so its numeric result can differ slightly (down to the AOTInductor floating-point noise floor at non-binding `sel`, larger if `sel` is binding) from the dense/`nlist` path.
+
+DPA-2's repformer block performs message passing (per-layer neighbor feature aggregation), so a graph-frozen `.pt2` archive additionally embeds a with-comm AOTInductor artifact. Multi-rank LAMMPS runs dispatch to this artifact and drive an MPI ghost-atom exchange (`border_op`) once per repformer layer, instead of folding ghosts onto local owners as the non-message-passing (e.g. DPA-1) graph path does. `.pt2` archives frozen with `--lower-kind graph` before this artifact was introduced do not carry it and must be re-frozen to support multi-rank inference.
+
+Per-atom virial on the graph route uses a different (but equally valid) decomposition than the dense path: each edge's full bond-virial contribution is assigned to its source (neighbor) atom, whereas the dense path's autograd-based per-atom decomposition distributes message-passing contributions across atoms differently. For non-message-passing descriptors the two conventions coincide; for DPA-2 they differ elementwise. Only the *total* virial (summed over all atoms) is convention-independent between the two paths; per-atom virial values from the graph and dense routes should not be compared directly.
+
+Multi-rank message-passing inference on the graph route requires every MPI rank to own or ghost at least one atom -- a rank with zero atoms in both categories raises an error rather than silently desynchronizing the collective per-layer ghost exchange. Pick a domain decomposition that keeps every rank non-empty, or use the dense (`nlist`, the default) artifact, which has no such restriction.
