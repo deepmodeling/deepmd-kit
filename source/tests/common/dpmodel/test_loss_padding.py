@@ -12,8 +12,9 @@ Scope / follow-ups (mixed_type padding fix, PR #5738)
   dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
 - The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
   tracked in deepmodeling/deepmd-kit#5761.
-- ``ener_spin``'s ``force_mag`` MAE frame-normalization debt is tracked by the
-  ``xfail(strict=True)`` test below (self-heals once fixed).
+- ``ener_spin``'s ``force_mag`` MAE now uses a batch-size-independent mean
+  reduction (frames/atoms/xyz), consistent with force_mag MSE and force_real
+  MAE; the grad-accum invariant is asserted by the test below.
 
 Constants
 ---------
@@ -23,7 +24,6 @@ NP = 5   # padded width (nloc)
 """
 
 import numpy as np
-import pytest
 
 from deepmd.dpmodel.loss.dos import (
     DOSLoss,
@@ -2021,11 +2021,9 @@ class TestDPModelEnergyLossGenForceGradAccum:
 # ---------------------------------------------------------------------------
 # force_mag MSE grad-accum invariant (NM equal across frames, ghost atoms non-magnetic)
 #
-# NOTE: force_mag MAE (dpmodel) uses xp.sum over frames instead of xp.mean,
-# so MAE force_mag FAILS the invariant with a 2x factor when frames=2.
-# This is a pre-existing frame-normalization artifact independent of ghost-atom
-# masking. Ghost atoms are correctly excluded (mask_mag=0 there). The MAE
-# artifact is reported as NEEDS_CONTEXT in the audit report.
+# NOTE: force_mag MAE (dpmodel) uses a plain mean over frames/atoms/xyz (like
+# force_mag MSE and force_real MAE), so it meets the grad-accum invariant.
+# Ghost atoms are correctly excluded (mask_mag=0 there).
 # ---------------------------------------------------------------------------
 
 
@@ -2137,16 +2135,12 @@ class TestDPModelEnerSpinLossForceMagMSEGradAccum:
 
 
 class TestDPModelEnerSpinLossForceMagMAEGradAccum:
-    """force_mag MAE (dpmodel) FAILS the grad-accum invariant by a known 2x factor.
+    """force_mag MAE (dpmodel) meets the grad-accum invariant.
 
-    Unlike the MSE path, ``force_mag`` MAE reduces with ``xp.sum`` over frames
-    instead of a frame-wise mean, so a padded ``[A+B]`` batch (nf=2) yields twice
-    the mean-of-frames reference. This is a pre-existing frame-normalization
-    artifact, NOT a ghost-atom padding bug (padding is correctly excluded via
-    ``mask_mag``); see the module NOTE above. The test is ``xfail(strict=True)``
-    so the debt is tracked in CI and self-heals: if ``force_mag`` MAE is switched
-    to a frame-wise mean, this test XPASSes and strict mode turns that into a
-    failure that flags the marker for removal.
+    ``force_mag`` MAE now reduces with a plain mean over frames, magnetic atoms
+    and xyz (same reduction as force_mag MSE and force_real MAE), so a padded
+    ``[A+B]`` batch (nf=2) equals the mean of the two single-frame losses and the
+    loss is batch-size independent.
     """
 
     def _make_loss(self):
@@ -2167,13 +2161,8 @@ class TestDPModelEnerSpinLossForceMagMAEGradAccum:
         loss, _ = loss_obj.call(1.0, natoms, model_pred, label)
         return float(loss)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="force_mag MAE sums over frames (2x factor for nf=2); "
-        "pre-existing frame-normalization inconsistency tracked for follow-up.",
-    )
     def test_mae_grad_accum(self):
-        """force_mag MAE violates the frame-average invariant (documented follow-up)."""
+        """force_mag MAE meets the frame-average grad-accum invariant."""
         fm_A = _rnd(NA, 3)
         fm_A_hat = _rnd(NA, 3)
         fm_B = _rnd(NB, 3)

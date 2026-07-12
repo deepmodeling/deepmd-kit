@@ -17,12 +17,12 @@ Scope / follow-ups (mixed_type padding fix, PR #5738)
   dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
 - The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
   tracked in deepmodeling/deepmd-kit#5761.
-- ``ener_spin``'s ``force_mag`` MAE frame-normalization debt is tracked by the
-  ``xfail(strict=True)`` test below (self-heals once fixed).
+- ``ener_spin``'s ``force_mag`` MAE now uses a batch-size-independent mean
+  reduction (frames/atoms/xyz), consistent with force_mag MSE and force_real
+  MAE; the grad-accum invariant is asserted by the test below.
 """
 
 import numpy as np
-import pytest
 import torch
 
 from deepmd.pt.loss.dos import (
@@ -2093,16 +2093,12 @@ class TestPTEnerSpinLossForceMagMSEGradAccum:
 
 
 class TestPTEnerSpinLossForceMagMAEGradAccum:
-    """force_mag MAE (pt) FAILS the grad-accum invariant by a known 2x factor.
+    """force_mag MAE (pt) meets the grad-accum invariant.
 
-    Unlike the MSE path, ``force_mag`` MAE reduces with ``.sum()`` over frames
-    instead of a frame-wise mean, so a padded ``[A+B]`` batch (nf=2) yields twice
-    the mean-of-frames reference. This is a pre-existing frame-normalization
-    artifact, NOT a ghost-atom padding bug (padding is correctly excluded via
-    ``mask_mag``); see the module NOTE above. The test is ``xfail(strict=True)``
-    so the debt is tracked in CI and self-heals: if ``force_mag`` MAE is switched
-    to a frame-wise mean, this test XPASSes and strict mode turns that into a
-    failure that flags the marker for removal.
+    ``force_mag`` MAE now reduces with a plain mean over frames, magnetic atoms
+    and xyz (same reduction as force_mag MSE and force_real MAE), so a padded
+    ``[A+B]`` batch (nf=2) equals the mean of the two single-frame losses and the
+    loss is batch-size independent.
     """
 
     def _make_loss(self):
@@ -2119,13 +2115,8 @@ class TestPTEnerSpinLossForceMagMAEGradAccum:
             loss_func="mae",
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="force_mag MAE sums over frames (2x factor for nf=2); "
-        "pre-existing frame-normalization inconsistency tracked for follow-up.",
-    )
     def test_mae_grad_accum(self):
-        """force_mag MAE violates the frame-average invariant (documented follow-up)."""
+        """force_mag MAE meets the frame-average grad-accum invariant."""
         fm_A = _rnd_t(_NM_PT, 3)
         fm_A_hat = _rnd_t(_NM_PT, 3)
         fm_B = _rnd_t(_NM_PT, 3)

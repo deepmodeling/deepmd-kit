@@ -279,16 +279,14 @@ class EnergySpinLoss(Loss):
                     more_loss["mae_fm"] = self.display_if_exist(mae_fm, find_force_mag)
             elif self.loss_func == "mae":
                 abs_diff_fm = xp.abs(diff_fm)  # [nf, na, 3], zeros for non-magnetic
-                per_atom_fm = xp.sum(abs_diff_fm, axis=-1)  # [nf, na]
-                mask_2d = mask_float[:, :, 0]  # [nf, na]
-                per_frame_sum_fm = xp.sum(per_atom_fm, axis=-1)  # [nf]
-                per_frame_count_fm = xp.sum(mask_2d, axis=-1)  # [nf]
-                l1_force_mag_loss = xp.sum(
-                    per_frame_sum_fm / per_frame_count_fm
-                )  # scalar
+                # Mean over frames, magnetic atoms and xyz (same reduction as
+                # force_mag MSE, force_real MAE and the displayed mae_fm) so the
+                # loss is batch-size independent: a 2-frame batch equals the mean
+                # of the two single-frame losses.
+                l1_force_mag_loss = xp.sum(abs_diff_fm) / (n_valid * 3)
                 loss += pref_fm * l1_force_mag_loss
                 more_loss["mae_fm"] = self.display_if_exist(
-                    xp.sum(abs_diff_fm) / (n_valid * 3), find_force_mag
+                    l1_force_mag_loss, find_force_mag
                 )
 
         if self.has_ae:

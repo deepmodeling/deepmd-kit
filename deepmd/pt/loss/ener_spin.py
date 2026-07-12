@@ -368,7 +368,11 @@ class EnergySpinLoss(TaskLoss):
                 more_loss["mae_fm"] = self.display_if_exist(
                     l1_force_mag_loss.mean().detach(), find_force_m
                 )
-                l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
+                # Mean over frames, magnetic atoms and xyz (same reduction as
+                # force_mag MSE, force_real MAE and the displayed mae_fm) so the
+                # loss is batch-size independent: a 2-frame batch equals the mean
+                # of the two single-frame losses.
+                l1_force_mag_loss = l1_force_mag_loss.mean()
                 loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
                     GLOBAL_PT_FLOAT_PRECISION
                 )
