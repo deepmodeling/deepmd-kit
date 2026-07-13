@@ -2,9 +2,6 @@
 import importlib
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -14,6 +11,10 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from lammps_test_utils import (
+    make_spin_lammps,
+    run_mpi_model_deviation,
 )
 from model_convert import (
     ensure_converted_pb,
@@ -197,27 +198,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("spin")
-    if units == "metal":
-        lammps.neighbor("2.0 bin")
-    else:
-        raise ValueError("units for spin should be metal")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal":
-        lammps.mass("1 58")
-        lammps.mass("2 16")
-    else:
-        raise ValueError("units for spin should be metal")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    else:
-        raise ValueError("units for spin should be metal")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_spin_lammps(data_file, units)
 
 
 @pytest.fixture
@@ -354,24 +335,14 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
-    with tempfile.NamedTemporaryFile() as f:
-        sp.check_call(
-            [
-                "mpirun",
-                "-n",
-                "2",
-                sys.executable,
-                Path(__file__).parent / "run_mpi_pair_deepmd_spin.py",
-                data_file,
-                pb_file,
-                pb_file2,
-                md_file,
-                f.name,
-                *balance_args,
-            ]
-        )
-        arr = np.loadtxt(f.name, ndmin=1)
-    pe = arr[0]
+    pe = run_mpi_model_deviation(
+        Path(__file__).parent / "run_mpi_pair_deepmd_spin.py",
+        data_file,
+        pb_file,
+        pb_file2,
+        md_file,
+        extra_args=balance_args,
+    )
 
     relative = 1.0
     assert pe == pytest.approx(expected_e)
