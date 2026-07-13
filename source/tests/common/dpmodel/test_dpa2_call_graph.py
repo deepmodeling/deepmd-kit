@@ -798,9 +798,7 @@ class TestDPA2AttentionCarryAllSmoothParity:
                 [[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, r, 0.0]]],
                 dtype=np.float64,
             )
-            ret = model.call_common(
-                coord, atype, None, neighbor_graph_method="dense"
-            )
+            ret = model.call_common(coord, atype, None, neighbor_graph_method="dense")
             return float(np.sum(ret["energy_redu"]))
 
         eps = 1e-8
