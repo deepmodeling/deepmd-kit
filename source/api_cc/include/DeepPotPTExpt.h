@@ -534,7 +534,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    *
    * Positional AOTI input order matches the Python export ABI:
    * ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
-   * destination_order, destination_row_ptr, source_row_ptr, source_order,
+   * destination_order, destination_row_ptr, source_order, source_row_ptr,
    * [fparam], [aparam], [charge_spin])``.
    *
    * @param[in] atype Per-node local-plus-halo types, shape ``(N,)`` int64.
@@ -545,8 +545,8 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
    * @param[in] destination_order Destination-grouped edge permutation ``(E,)``.
    * @param[in] destination_row_ptr Destination CSR offsets ``(N + 1,)``.
-   * @param[in] source_row_ptr Source CSR offsets ``(N + 1,)``.
    * @param[in] source_order Source-grouped edge permutation ``(E,)``.
+   * @param[in] source_row_ptr Source CSR offsets ``(N + 1,)``.
    */
   std::vector<torch::Tensor> run_model_graph(
       const torch::Tensor& atype,
@@ -557,8 +557,8 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& edge_mask,
       const torch::Tensor& destination_order,
       const torch::Tensor& destination_row_ptr,
-      const torch::Tensor& source_row_ptr,
       const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin);

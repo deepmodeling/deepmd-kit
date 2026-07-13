@@ -52,8 +52,8 @@ class TestBuildEdgeCSR(unittest.TestCase):
                     result_mask,
                     destination_order,
                     destination_row_ptr,
-                    source_row_ptr,
                     source_order,
+                    source_row_ptr,
                 ) = build_edge_csr(edge_index, edge_vec, edge_mask, n_nodes=3)
 
                 np.testing.assert_array_equal(result_index, edge_index)
@@ -82,8 +82,8 @@ class TestBuildEdgeCSR(unittest.TestCase):
             result_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
         ) = build_edge_csr(
             edge_index,
             edge_vec,
@@ -128,8 +128,8 @@ class TestBuildEdgeCSR(unittest.TestCase):
             edge_mask=np.array([True, True]),
             destination_order=np.array([1, 0], dtype=np.int64),
             destination_row_ptr=np.array([0, 1, 2], dtype=np.int64),
-            source_row_ptr=np.array([0, 1, 2], dtype=np.int64),
             source_order=np.array([0, 1], dtype=np.int64),
+            source_row_ptr=np.array([0, 1, 2], dtype=np.int64),
             destination_sorted=True,
         )
 

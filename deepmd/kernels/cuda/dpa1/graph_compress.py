@@ -839,8 +839,8 @@ def dpa1_graph_compress_energy_force(
     if (
         graph.destination_order is None
         or graph.destination_row_ptr is None
-        or graph.source_row_ptr is None
         or graph.source_order is None
+        or graph.source_row_ptr is None
     ):
         raise ValueError(
             "compressed DPA1 inference requires destination/source CSR topology"
@@ -983,8 +983,8 @@ def dpa1_graph_compress_energy_force(
         graph.edge_mask,
         graph.destination_order,
         graph.destination_row_ptr,
-        graph.source_row_ptr,
         graph.source_order,
+        graph.source_row_ptr,
         graph.n_node,
         node_capacity,
         do_atomic_virial,

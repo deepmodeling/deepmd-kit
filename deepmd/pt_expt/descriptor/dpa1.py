@@ -66,8 +66,8 @@ def _has_graph_fields(graph: Any, fields: tuple[str, ...]) -> bool:
 _DESTINATION_CSR_FIELDS = ("destination_order", "destination_row_ptr")
 _DUAL_CSR_FIELDS = (
     *_DESTINATION_CSR_FIELDS,
-    "source_row_ptr",
     "source_order",
+    "source_row_ptr",
 )
 
 

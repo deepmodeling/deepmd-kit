@@ -134,8 +134,8 @@ def neighbor_graph_from_ijs(
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     ) = build_edge_csr(
         edge_index,
         edge_vec,
@@ -150,7 +150,7 @@ def neighbor_graph_from_ijs(
         edge_mask=edge_mask,
         destination_order=destination_order,
         destination_row_ptr=destination_row_ptr,
-        source_row_ptr=source_row_ptr,
         source_order=source_order,
+        source_row_ptr=source_row_ptr,
         destination_sorted=canonicalize,
     )

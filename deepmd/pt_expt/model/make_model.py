@@ -351,8 +351,8 @@ def make_model(
             edge_mask: torch.Tensor,
             destination_order: torch.Tensor | None = None,
             destination_row_ptr: torch.Tensor | None = None,
-            source_row_ptr: torch.Tensor | None = None,
             source_order: torch.Tensor | None = None,
+            source_row_ptr: torch.Tensor | None = None,
             destination_sorted: bool = False,
             do_atomic_virial: bool = False,
             fparam: torch.Tensor | None = None,
@@ -396,10 +396,10 @@ def make_model(
                 (E,) destination-grouped edge permutation.
             destination_row_ptr
                 (N + 1,) destination CSR offsets into ``destination_order``.
-            source_row_ptr
-                (N + 1,) source CSR offsets into ``source_order``.
             source_order
                 (E,) edge permutation grouped by source node.
+            source_row_ptr
+                (N + 1,) source CSR offsets into ``source_order``.
             destination_sorted
                 Whether the payload is destination-major and
                 ``destination_order`` is the identity permutation.
@@ -436,8 +436,8 @@ def make_model(
                 n_local=n_local,
                 destination_order=destination_order,
                 destination_row_ptr=destination_row_ptr,
-                source_row_ptr=source_row_ptr,
                 source_order=source_order,
+                source_row_ptr=source_row_ptr,
                 destination_sorted=destination_sorted,
             )
             # Level 2 emits force as a value through the inference-only custom
@@ -633,8 +633,8 @@ def make_model(
                 ng.edge_mask,
                 ng.destination_order,
                 ng.destination_row_ptr,
-                ng.source_row_ptr,
                 ng.source_order,
+                ng.source_row_ptr,
                 destination_sorted=ng.destination_sorted,
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
@@ -808,8 +808,8 @@ def make_model(
             edge_mask: torch.Tensor,
             destination_order: torch.Tensor,
             destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
             source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
@@ -837,10 +837,10 @@ def make_model(
             destination_order
                 (E,) identity destination permutation. The exported ABI
                 requires this canonical layout.
-            destination_row_ptr, source_row_ptr
-                (N + 1,) destination/source CSR offsets.
             source_order
                 (E,) source-grouped edge permutation.
+            destination_row_ptr, source_row_ptr
+                (N + 1,) destination/source CSR offsets.
             destination_sorted
                 Static export-time assertion that the payload is
                 destination-major and ``destination_order`` is identity.
@@ -855,8 +855,8 @@ def make_model(
             torch.nn.Module
                 A traced module whose ``forward`` accepts
                 ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
-                destination_order, destination_row_ptr, source_row_ptr,
-                source_order, fparam, aparam, charge_spin)`` and returns a
+                destination_order, destination_row_ptr, source_order,
+                source_row_ptr, fparam, aparam, charge_spin)`` and returns a
                 dict with the same internal keys as
                 ``forward_common_lower_graph``.
             """
@@ -865,8 +865,8 @@ def make_model(
                 edge_mask,
                 destination_order,
                 destination_row_ptr,
-                source_row_ptr,
                 source_order,
+                source_row_ptr,
                 atype.shape[0],
                 destination_sorted=destination_sorted,
             )
@@ -881,8 +881,8 @@ def make_model(
                 edge_mask: torch.Tensor,
                 destination_order: torch.Tensor,
                 destination_row_ptr: torch.Tensor,
-                source_row_ptr: torch.Tensor,
                 source_order: torch.Tensor,
+                source_row_ptr: torch.Tensor,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
@@ -899,8 +899,8 @@ def make_model(
                     edge_mask,
                     destination_order,
                     destination_row_ptr,
-                    source_row_ptr,
                     source_order,
+                    source_row_ptr,
                     destination_sorted=destination_sorted,
                     do_atomic_virial=do_atomic_virial,
                     fparam=fparam,
@@ -917,8 +917,8 @@ def make_model(
                 edge_mask,
                 destination_order,
                 destination_row_ptr,
-                source_row_ptr,
                 source_order,
+                source_row_ptr,
                 fparam,
                 aparam,
                 charge_spin,

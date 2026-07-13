@@ -61,8 +61,8 @@ def _fake(
     edge_mask: torch.Tensor,
     destination_order: torch.Tensor,
     destination_row_ptr: torch.Tensor,
-    source_row_ptr: torch.Tensor,
     source_order: torch.Tensor,
+    source_row_ptr: torch.Tensor,
     atype: torch.Tensor,
     n_node: torch.Tensor,
     ownership: torch.Tensor,
@@ -122,8 +122,8 @@ def _cpu(
     edge_mask: torch.Tensor,
     destination_order: torch.Tensor,
     destination_row_ptr: torch.Tensor,
-    source_row_ptr: torch.Tensor,
     source_order: torch.Tensor,
+    source_row_ptr: torch.Tensor,
     atype: torch.Tensor,
     n_node: torch.Tensor,
     ownership: torch.Tensor,
@@ -269,8 +269,8 @@ def _cpu(
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
         n_node,
         node_capacity,
         do_atomic_virial,
@@ -369,8 +369,8 @@ def dpa1_graph_energy_force(
     if (
         graph.destination_order is None
         or graph.destination_row_ptr is None
-        or graph.source_row_ptr is None
         or graph.source_order is None
+        or graph.source_row_ptr is None
     ):
         raise ValueError(
             "DPA1 fused inference requires destination/source CSR topology"
@@ -381,8 +381,8 @@ def dpa1_graph_energy_force(
         graph.edge_mask.contiguous(),
         graph.destination_order.contiguous(),
         graph.destination_row_ptr.contiguous(),
-        graph.source_row_ptr.contiguous(),
         graph.source_order.contiguous(),
+        graph.source_row_ptr.contiguous(),
         atype.contiguous(),
         graph.n_node,
         ownership.contiguous(),

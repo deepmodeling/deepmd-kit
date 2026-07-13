@@ -377,8 +377,8 @@ struct GraphTensorPack {
   torch::Tensor edge_mask;
   torch::Tensor destination_order;
   torch::Tensor destination_row_ptr;
-  torch::Tensor source_row_ptr;
   torch::Tensor source_order;
+  torch::Tensor source_row_ptr;
 };
 
 struct CanonicalGraphTensorPack {

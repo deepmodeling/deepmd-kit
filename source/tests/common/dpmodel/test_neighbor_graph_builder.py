@@ -124,13 +124,13 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.assertFalse(generic.destination_sorted)
         self.assertIsNone(generic.destination_order)
         self.assertIsNone(generic.destination_row_ptr)
-        self.assertIsNone(generic.source_row_ptr)
         self.assertIsNone(generic.source_order)
+        self.assertIsNone(generic.source_row_ptr)
         self.assertFalse(with_csr.destination_sorted)
         self.assertIsNotNone(with_csr.destination_order)
         self.assertIsNotNone(with_csr.destination_row_ptr)
-        self.assertIsNotNone(with_csr.source_row_ptr)
         self.assertIsNotNone(with_csr.source_order)
+        self.assertIsNotNone(with_csr.source_row_ptr)
         self.assertTrue(canonical.destination_sorted)
         np.testing.assert_array_equal(
             canonical.destination_order,

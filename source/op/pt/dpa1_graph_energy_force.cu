@@ -35,8 +35,8 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
                         torch::Tensor edge_mask,
                         torch::Tensor destination_order,
                         torch::Tensor destination_row_ptr,
-                        torch::Tensor source_row_ptr,
                         torch::Tensor source_order,
+                        torch::Tensor source_row_ptr,
                         torch::Tensor atype,
                         torch::Tensor n_node,
                         torch::Tensor ownership,
@@ -129,10 +129,10 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   // === Step 5. Scatter dE/d(edge_vec) into force / virial / atom virial. ===
   // g_e and edge_vec_f are already in the compute precision; the per-node force
   // is a short neighbor sum and the per-frame virial reduces hierarchically.
-  auto fv =
-      edge_force_virial(g_e, edge_vec_f, edge_index, edge_mask,
-                        destination_order, destination_row_ptr, source_row_ptr,
-                        source_order, n_node, node_capacity, do_atomic_virial);
+  auto fv = edge_force_virial(g_e, edge_vec_f, edge_index, edge_mask,
+                              destination_order, destination_row_ptr,
+                              source_order, source_row_ptr, n_node,
+                              node_capacity, do_atomic_virial);
   return {energy, atom_energy, std::get<0>(fv), std::get<2>(fv),
           std::get<1>(fv)};
 }
@@ -141,7 +141,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.def(
       "dpa1_graph_energy_force(Tensor edge_vec, Tensor edge_index, Tensor "
       "edge_mask, Tensor destination_order, Tensor destination_row_ptr, "
-      "Tensor source_row_ptr, Tensor source_order, Tensor atype, Tensor "
+      "Tensor source_order, Tensor source_row_ptr, Tensor atype, Tensor "
       "n_node, Tensor ownership, Tensor type_embedding, "
       "Tensor davg, Tensor dstd, Tensor w1, Tensor b1, Tensor idt1, Tensor w2, "
       "Tensor "

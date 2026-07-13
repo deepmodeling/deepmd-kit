@@ -61,10 +61,10 @@ class NeighborGraph:
     """(E,) edge permutation grouped by destination; same dtype as edge_index."""
     destination_row_ptr: Array | None = field(default=None, kw_only=True)
     """(N + 1,) int64 offsets into ``destination_order``."""
-    source_row_ptr: Array | None = field(default=None, kw_only=True)
-    """(N + 1,) int64 CSR offsets into ``source_order``."""
     source_order: Array | None = field(default=None, kw_only=True)
     """(E,) source-grouped edge permutation; same dtype as edge_index."""
+    source_row_ptr: Array | None = field(default=None, kw_only=True)
+    """(N + 1,) int64 CSR offsets into ``source_order``."""
     destination_sorted: bool = field(default=False, kw_only=True)
     """Whether the payload is destination-major and destination_order is identity."""
 
@@ -333,8 +333,8 @@ def apply_pair_exclusion(
         edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
         destination_order=None,
         destination_row_ptr=None,
-        source_row_ptr=None,
         source_order=None,
+        source_row_ptr=None,
         destination_sorted=False,
     )
     if compact:

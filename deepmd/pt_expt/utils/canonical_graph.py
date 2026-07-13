@@ -136,8 +136,8 @@ def canonical_graph_from_neighbor_graph(
         raise ValueError("canonical deployment requires destination-major payload")
     if (
         graph.destination_row_ptr is None
-        or graph.source_row_ptr is None
         or graph.source_order is None
+        or graph.source_row_ptr is None
     ):
         raise ValueError("canonical deployment requires destination/source CSR")
     if graph.n_local is None:

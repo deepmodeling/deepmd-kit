@@ -448,8 +448,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         edge_mask: torch.Tensor,
         destination_order: torch.Tensor,
         destination_row_ptr: torch.Tensor,
-        source_row_ptr: torch.Tensor,
         source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
@@ -479,10 +479,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             (E,) valid-edge mask (sample for tracing).
         destination_order
             (E,) destination-grouped edge permutation.
-        destination_row_ptr, source_row_ptr
-            (N + 1,) destination/source CSR offsets.
         source_order
             (E,) source-grouped edge permutation.
+        destination_row_ptr, source_row_ptr
+            (N + 1,) destination/source CSR offsets.
         destination_sorted
             Static export-time assertion that the payload is destination-major
             and ``destination_order`` is identity.
@@ -497,8 +497,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         torch.nn.Module
             A traced module whose ``forward`` accepts
             ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
-            destination_order, destination_row_ptr, source_row_ptr,
-            source_order, fparam, aparam, charge_spin)`` and returns a dict
+            destination_order, destination_row_ptr, source_order,
+            source_row_ptr, fparam, aparam, charge_spin)`` and returns a dict
             with the public keys: ``atom_energy``, ``energy``, ``force``,
             ``virial``, ``atom_virial`` (the last only when
             ``do_atomic_virial``). Unlike the dense
@@ -515,8 +515,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
@@ -539,8 +539,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             edge_mask: torch.Tensor,
             destination_order: torch.Tensor,
             destination_row_ptr: torch.Tensor,
-            source_row_ptr: torch.Tensor,
             source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
             charge_spin: torch.Tensor | None,
@@ -554,8 +554,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 edge_mask,
                 destination_order,
                 destination_row_ptr,
-                source_row_ptr,
                 source_order,
+                source_row_ptr,
                 fparam,
                 aparam,
                 charge_spin,
@@ -577,8 +577,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             fparam,
             aparam,
             charge_spin,

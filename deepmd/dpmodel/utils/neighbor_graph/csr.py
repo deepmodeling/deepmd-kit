@@ -65,11 +65,11 @@ def build_edge_csr(
         dtype as ``edge_index``.
     destination_row_ptr : Array
         Destination CSR offsets with shape ``(N + 1,)`` and dtype int64.
-    source_row_ptr : Array
-        Source CSR offsets with shape ``(N + 1,)`` and dtype int64.
     source_order : Array
         Edge indices grouped by source with shape ``(E,)`` and the same dtype
         as ``edge_index``.
+    source_row_ptr : Array
+        Source CSR offsets with shape ``(N + 1,)`` and dtype int64.
 
     Raises
     ------
@@ -126,8 +126,8 @@ def build_edge_csr(
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     )
 
 
@@ -165,8 +165,8 @@ def attach_edge_csr(
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     ) = build_edge_csr(
         graph.edge_index,
         graph.edge_vec,
@@ -181,8 +181,8 @@ def attach_edge_csr(
         edge_mask=edge_mask,
         destination_order=destination_order,
         destination_row_ptr=destination_row_ptr,
-        source_row_ptr=source_row_ptr,
         source_order=source_order,
+        source_row_ptr=source_row_ptr,
         destination_sorted=canonicalize,
     )
 

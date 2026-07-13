@@ -289,11 +289,11 @@ class TestDpa1GraphCudaDescriptor(unittest.TestCase):
                 if graph.destination_row_ptr is not None
                 else None
             ),
-            source_row_ptr=(
-                graph.source_row_ptr.cpu() if graph.source_row_ptr is not None else None
-            ),
             source_order=(
                 graph.source_order.cpu() if graph.source_order is not None else None
+            ),
+            source_row_ptr=(
+                graph.source_row_ptr.cpu() if graph.source_row_ptr is not None else None
             ),
             n_node=graph.n_node.cpu(),
         )
@@ -479,8 +479,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             edge_mask=graph.edge_mask.cpu(),
             destination_order=graph.destination_order.cpu(),
             destination_row_ptr=graph.destination_row_ptr.cpu(),
-            source_row_ptr=graph.source_row_ptr.cpu(),
             source_order=graph.source_order.cpu(),
+            source_row_ptr=graph.source_row_ptr.cpu(),
             n_node=graph.n_node.cpu(),
         )
         g_cpu = run(des_cpu, graph_cpu, atype.cpu(), tebd.cpu())
@@ -767,8 +767,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
         ) = build_edge_csr(
             graph.edge_index[:, permutation],
             graph.edge_vec[permutation],
@@ -782,8 +782,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             edge_mask=edge_mask,
             destination_order=destination_order,
             destination_row_ptr=destination_row_ptr,
-            source_row_ptr=source_row_ptr,
             source_order=source_order,
+            source_row_ptr=source_row_ptr,
             destination_sorted=False,
         )
         type_embedding = des.type_embedding.call()
@@ -853,8 +853,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             graph,
             destination_order=None,
             destination_row_ptr=None,
-            source_row_ptr=None,
             source_order=None,
+            source_row_ptr=None,
         )
         with _CudaLevel("0"):
             descriptor_ref, rotation_ref = des.call_graph(
@@ -889,8 +889,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             edge_mask=torch.zeros(2, dtype=torch.bool, device=self.device),
             destination_order=order,
             destination_row_ptr=torch.zeros(1, dtype=torch.int64, device=self.device),
-            source_row_ptr=torch.zeros(1, dtype=torch.int64, device=self.device),
             source_order=order,
+            source_row_ptr=torch.zeros(1, dtype=torch.int64, device=self.device),
             destination_sorted=True,
         )
         atype = torch.empty(0, dtype=torch.int64, device=self.device)
@@ -923,8 +923,8 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             edge_mask=torch.zeros(2, dtype=torch.bool),
             destination_order=order,
             destination_row_ptr=torch.zeros(1, dtype=torch.int64),
-            source_row_ptr=torch.zeros(1, dtype=torch.int64),
             source_order=order,
+            source_row_ptr=torch.zeros(1, dtype=torch.int64),
             destination_sorted=True,
         )
         atype = torch.empty(0, dtype=torch.int64)
@@ -1185,8 +1185,8 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.edge_mask,
                 graph.destination_order,
                 graph.destination_row_ptr,
-                graph.source_row_ptr,
                 graph.source_order,
+                graph.source_row_ptr,
                 graph.n_node,
                 n,
                 True,
@@ -1218,8 +1218,8 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                     graph,
                     destination_order=None,
                     destination_row_ptr=None,
-                    source_row_ptr=None,
                     source_order=None,
+                    source_row_ptr=None,
                 )
                 result = des.fused_energy_force_graph(
                     fit,
@@ -1258,8 +1258,8 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             graph.edge_mask,
             graph.destination_order,
             graph.destination_row_ptr,
-            graph.source_row_ptr,
             graph.source_order,
+            graph.source_row_ptr,
         )
 
         with _CudaLevel("1"):
@@ -1328,8 +1328,8 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.edge_mask,
                 graph.destination_order,
                 graph.destination_row_ptr,
-                graph.source_row_ptr,
                 graph.source_order,
+                graph.source_row_ptr,
                 graph.n_node,
                 n_node,
                 True,
@@ -1465,8 +1465,8 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 graph.edge_mask,
                 graph.destination_order,
                 graph.destination_row_ptr,
-                graph.source_row_ptr,
                 graph.source_order,
+                graph.source_row_ptr,
                 graph.n_node,
                 n,
                 True,
@@ -1606,8 +1606,8 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
         ) = build_edge_csr(
             canonical_graph.edge_index[:, permutation],
             canonical_graph.edge_vec[permutation],
@@ -1621,8 +1621,8 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             edge_mask=edge_mask,
             destination_order=destination_order,
             destination_row_ptr=destination_row_ptr,
-            source_row_ptr=source_row_ptr,
             source_order=source_order,
+            source_row_ptr=source_row_ptr,
             destination_sorted=False,
         )
         type_embedding = des.type_embedding.call()
@@ -1668,7 +1668,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             [0, 0, 1, 2, 2, 0, 0], dtype=torch.int64, device="cuda"
         )
         edge_index = torch.stack([source, destination])
-        destination_order, destination_row_ptr, source_row_ptr, source_order = (
+        destination_order, destination_row_ptr, source_order, source_row_ptr = (
             torch.ops.deepmd.build_graph_csr(edge_index, 3, 5)
         )
 
@@ -1722,8 +1722,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             _topology_mask,
             dst_order,
             dst_row_ptr,
-            src_row_ptr,
             src_order,
+            src_row_ptr,
         ) = build_edge_csr(
             edge_index,
             torch.cat([g_e, edge_vec], dim=1),
@@ -1739,8 +1739,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             move(mask),
             move(dst_order),
             move(dst_row_ptr),
-            move(src_row_ptr),
             move(src_order),
+            move(src_row_ptr),
             move(n_node),
             total,
         )
@@ -1753,8 +1753,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
         mask,
         dst_order,
         dst_row_ptr,
-        src_row_ptr,
         src_order,
+        src_row_ptr,
         n_node,
         total,
     ):
@@ -1774,8 +1774,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
         mask,
         dst_order,
         dst_row_ptr,
-        src_row_ptr,
         src_order,
+        src_row_ptr,
         n_node,
         total,
     ):
@@ -1790,8 +1790,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             mask,
             dst_order,
             dst_row_ptr,
-            src_row_ptr,
             src_order,
+            src_row_ptr,
             n_node,
             total,
             True,
@@ -1840,8 +1840,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
         ) = build_edge_csr(
             edge_index,
             torch.cat((g_e, edge_vec), dim=1),
@@ -1859,8 +1859,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             n_local=n_node,
             destination_order=destination_order,
             destination_row_ptr=destination_row_ptr,
-            source_row_ptr=source_row_ptr,
             source_order=source_order,
+            source_row_ptr=source_row_ptr,
             destination_sorted=True,
         )
         compact = canonical_graph_from_neighbor_graph(graph)
@@ -1872,8 +1872,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             n_node,
             total,
             True,
@@ -1923,8 +1923,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             edge_mask,
             order,
             row_ptr,
-            row_ptr,
             order,
+            row_ptr,
             n_node_per_frame,
             frame_count,
         )
@@ -1980,8 +1980,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             _topology_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
         ) = build_edge_csr(
             edge_index,
             torch.cat([edge_gradient, edge_vec], dim=1),
@@ -1996,8 +1996,8 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             edge_mask.cuda(),
             destination_order.cuda(),
             destination_row_ptr.cuda(),
-            source_row_ptr.cuda(),
             source_order.cuda(),
+            source_row_ptr.cuda(),
             n_node.cuda(),
             total,
         )

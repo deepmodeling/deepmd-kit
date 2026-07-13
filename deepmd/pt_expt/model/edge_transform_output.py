@@ -40,8 +40,8 @@ def edge_energy_deriv(
     n_node: torch.Tensor,
     destination_order: torch.Tensor | None = None,
     destination_row_ptr: torch.Tensor | None = None,
-    source_row_ptr: torch.Tensor | None = None,
     source_order: torch.Tensor | None = None,
+    source_row_ptr: torch.Tensor | None = None,
     node_capacity: int | None = None,
     *,
     do_atomic_virial: bool = False,
@@ -119,8 +119,8 @@ def edge_energy_deriv(
         and fused_scatter_available()
         and destination_order is not None
         and destination_row_ptr is not None
-        and source_row_ptr is not None
         and source_order is not None
+        and source_row_ptr is not None
     ):
         n_cap = node_capacity if node_capacity is not None else int(n_node.sum())
         force, atom_virial, virial = fused_edge_force_virial(
@@ -130,16 +130,16 @@ def edge_energy_deriv(
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             n_node,
             n_cap,
             do_atomic_virial,
         )
-        return force, (atom_virial if do_atomic_virial else None), virial
-    force, atom_virial, virial = edge_force_virial(
-        g_e, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
-    )
+    else:
+        force, atom_virial, virial = edge_force_virial(
+            g_e, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
+        )
     return force, (atom_virial if do_atomic_virial else None), virial
 
 
@@ -270,8 +270,8 @@ def fit_output_to_model_output_graph(
                 n_node,
                 graph.destination_order,
                 graph.destination_row_ptr,
-                graph.source_row_ptr,
                 graph.source_order,
+                graph.source_row_ptr,
                 node_capacity=N,
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,

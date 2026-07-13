@@ -57,8 +57,8 @@ __global__ void edge_force_virial_kernel(
     const bool* __restrict__ edge_mask,
     const index_t* __restrict__ destination_order,
     const long* __restrict__ destination_row_ptr,
-    const long* __restrict__ source_row_ptr,
     const index_t* __restrict__ source_order,
+    const long* __restrict__ source_row_ptr,
     scalar_t* __restrict__ force,
     scalar_t* __restrict__ node_virial) {
   constexpr unsigned kWarpMask = 0xffffffffu;
@@ -218,8 +218,8 @@ void launch_force_virial(long node_count,
                          const torch::Tensor& edge_mask,
                          const torch::Tensor& destination_order,
                          const torch::Tensor& destination_row_ptr,
-                         const torch::Tensor& source_row_ptr,
                          const torch::Tensor& source_order,
+                         const torch::Tensor& source_row_ptr,
                          const torch::Tensor& frame_row_ptr,
                          torch::Tensor& force,
                          torch::Tensor& node_virial,
@@ -235,9 +235,9 @@ void launch_force_virial(long node_count,
           edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
           destination_order.numel() ? destination_order.data_ptr<index_t>()
                                     : nullptr,
-          destination_row_ptr.data_ptr<long>(), source_row_ptr.data_ptr<long>(),
-          source_order.data_ptr<index_t>(), force.data_ptr<scalar_t>(),
-          node_virial.data_ptr<scalar_t>());
+          destination_row_ptr.data_ptr<long>(),
+          source_order.data_ptr<index_t>(), source_row_ptr.data_ptr<long>(),
+          force.data_ptr<scalar_t>(), node_virial.data_ptr<scalar_t>());
   FORCE_CHECK_LAUNCH("edge_force_virial node reduction");
 
   const long output_count = static_cast<long>(frame_count) * 9;
@@ -261,8 +261,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
     const torch::Tensor& edge_mask,
     const torch::Tensor& destination_order,
     const torch::Tensor& destination_row_ptr,
-    const torch::Tensor& source_row_ptr,
     const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
     const torch::Tensor& n_node_per_frame,
     bool want_atom_virial) {
   const long frame_count = n_node_per_frame.size(0);
@@ -296,14 +296,14 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
         if (source_order.scalar_type() == torch::kInt32) {
           launch_force_virial<scalar_t, int>(
               node_count, frame_count, partial_count, edge_gradient, edge_vec,
-              edge_mask, destination_order, destination_row_ptr, source_row_ptr,
-              source_order, frame_row_ptr, force, node_virial, virial_partial,
+              edge_mask, destination_order, destination_row_ptr, source_order,
+              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
               virial, stream);
         } else {
           launch_force_virial<scalar_t, long>(
               node_count, frame_count, partial_count, edge_gradient, edge_vec,
-              edge_mask, destination_order, destination_row_ptr, source_row_ptr,
-              source_order, frame_row_ptr, force, node_virial, virial_partial,
+              edge_mask, destination_order, destination_row_ptr, source_order,
+              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
               virial, stream);
         }
       });
@@ -355,7 +355,7 @@ build_graph_csr(torch::Tensor edge_index,
         cursor.data_ptr<long>(), source_order.data_ptr<long>());
     FORCE_CHECK_LAUNCH("build_graph_csr source order");
   }
-  return {destination_order, destination_row_ptr, source_row_ptr, source_order};
+  return {destination_order, destination_row_ptr, source_order, source_row_ptr};
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
@@ -365,16 +365,16 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
     torch::Tensor edge_mask,
     torch::Tensor destination_order,
     torch::Tensor destination_row_ptr,
-    torch::Tensor source_row_ptr,
     torch::Tensor source_order,
+    torch::Tensor source_row_ptr,
     torch::Tensor n_node_per_frame,
     c10::SymInt node_capacity,
     bool want_atom_virial) {
   const long node_count = node_capacity.expect_int();
   TORCH_CHECK(edge_gradient.is_cuda() && edge_vec.is_cuda() &&
                   edge_mask.is_cuda() && destination_order.is_cuda() &&
-                  destination_row_ptr.is_cuda() && source_row_ptr.is_cuda() &&
-                  source_order.is_cuda() && n_node_per_frame.is_cuda(),
+                  destination_row_ptr.is_cuda() && source_order.is_cuda() &&
+                  source_row_ptr.is_cuda() && n_node_per_frame.is_cuda(),
               "edge_force_virial: edge and CSR tensors must be CUDA tensors");
   TORCH_CHECK(edge_gradient.is_contiguous() && edge_vec.is_contiguous() &&
                   edge_mask.is_contiguous(),
@@ -388,8 +388,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
               "edge_force_virial: CSR row pointers must be int64");
   TORCH_CHECK(destination_order.is_contiguous() &&
                   destination_row_ptr.is_contiguous() &&
-                  source_row_ptr.is_contiguous() &&
-                  source_order.is_contiguous(),
+                  source_order.is_contiguous() &&
+                  source_row_ptr.is_contiguous(),
               "edge_force_virial: CSR tensors must be contiguous");
   TORCH_CHECK(
       (source_order.scalar_type() == torch::kInt32 ||
@@ -399,7 +399,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
       "same int32 or int64 dtype");
   return assemble_force_virial(node_count, edge_gradient, edge_vec, edge_mask,
                                destination_order, destination_row_ptr,
-                               source_row_ptr, source_order, n_node_per_frame,
+                               source_order, source_row_ptr, n_node_per_frame,
                                want_atom_virial);
 }
 
@@ -442,7 +442,7 @@ canonical_edge_force_virial(torch::Tensor edge_gradient,
   auto destination_order = torch::empty({0}, source_order.options());
   return assemble_force_virial(node_count, edge_gradient, edge_vec, edge_mask,
                                destination_order, destination_row_ptr,
-                               source_row_ptr, source_order, n_node_per_frame,
+                               source_order, source_row_ptr, n_node_per_frame,
                                want_atom_virial);
 }
 
@@ -451,12 +451,12 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "build_graph_csr(Tensor edge_index, SymInt node_count, "
       "SymInt valid_edge_count) -> "
       "(Tensor destination_order, Tensor destination_row_ptr, "
-      "Tensor source_row_ptr, Tensor source_order)");
+      "Tensor source_order, Tensor source_row_ptr)");
   library.impl("build_graph_csr", torch::kCUDA, &build_graph_csr);
   library.def(
       "edge_force_virial(Tensor edge_gradient, Tensor edge_vec, "
       "Tensor edge_index, Tensor edge_mask, Tensor destination_order, "
-      "Tensor destination_row_ptr, Tensor source_row_ptr, Tensor source_order, "
+      "Tensor destination_row_ptr, Tensor source_order, Tensor source_row_ptr, "
       "Tensor n_node_per_frame, SymInt node_capacity, "
       "bool want_atom_virial) -> "
       "(Tensor force, Tensor atom_virial, Tensor virial)");

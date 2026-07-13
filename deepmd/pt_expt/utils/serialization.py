@@ -392,7 +392,7 @@ def build_synthetic_graph_inputs(
     ``make_fx``. Inputs follow the positional order expected by
     ``forward_(common_)lower_graph``:
     ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
-    destination_row_ptr, source_row_ptr, source_order, fparam, aparam,
+    destination_row_ptr, source_order, source_row_ptr, fparam, aparam,
     charge_spin)``.
 
     The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
@@ -490,8 +490,8 @@ def build_synthetic_graph_inputs(
         graph.edge_mask,
         graph.destination_order,
         graph.destination_row_ptr,
-        graph.source_row_ptr,
         graph.source_order,
+        graph.source_row_ptr,
         fparam,
         aparam,
         charge_spin,
@@ -531,8 +531,8 @@ def build_synthetic_canonical_graph_inputs(
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
         _fparam,
         _aparam,
         _charge_spin,
@@ -545,8 +545,8 @@ def build_synthetic_canonical_graph_inputs(
         n_local=n_local,
         destination_order=destination_order,
         destination_row_ptr=destination_row_ptr,
-        source_row_ptr=source_row_ptr,
         source_order=source_order,
+        source_row_ptr=source_row_ptr,
         destination_sorted=True,
     )
     compact = canonical_graph_from_neighbor_graph(graph)
@@ -599,7 +599,7 @@ def _build_graph_dynamic_shapes(
     ----------
     *sample_inputs : torch.Tensor | None
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
-        destination_order, destination_row_ptr, source_row_ptr, source_order,
+        destination_order, destination_row_ptr, source_order, source_row_ptr,
         fparam, aparam, charge_spin)`` — 13 entries matching
         ``forward_lower_graph_exportable``.
     """
@@ -619,8 +619,8 @@ def _build_graph_dynamic_shapes(
         {0: nedge_dim},  # edge_mask: (E,) — E dynamic
         {0: nedge_dim},  # destination_order: (E,)
         {0: n_node_total_dim + 1},  # destination_row_ptr: (N + 1,)
-        {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
         {0: nedge_dim},  # source_order: (E,)
+        {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
         {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
         # aparam: (nf, nloc, nda) — both the frame AND atom axes are dynamic,
         # matching the dense ``_build_dynamic_shapes`` (otherwise a dim_aparam>0

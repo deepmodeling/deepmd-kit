@@ -422,16 +422,16 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
     const torch::Tensor& edge_mask,
     const torch::Tensor& destination_order,
     const torch::Tensor& destination_row_ptr,
-    const torch::Tensor& source_row_ptr,
     const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
     const torch::Tensor& fparam,
     const torch::Tensor& aparam,
     const torch::Tensor& charge_spin) {
   // Graph-input ABI: original edge payload plus destination/source CSR views.
   std::vector<torch::Tensor> inputs = {
-      atype,          n_node,      n_local,           edge_index,
-      edge_vec,       edge_mask,   destination_order, destination_row_ptr,
-      source_row_ptr, source_order};
+      atype,        n_node,        n_local,           edge_index,
+      edge_vec,     edge_mask,     destination_order, destination_row_ptr,
+      source_order, source_row_ptr};
   if (dfparam > 0) {
     inputs.push_back(fparam);
   }
@@ -1008,7 +1008,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
             graph_pack.edge_vec, graph_pack.edge_mask,
             graph_pack.destination_order, graph_pack.destination_row_ptr,
-            graph_pack.source_row_ptr, graph_pack.source_order, fparam_tensor,
+            graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
             graph_aparam, charge_spin_tensor);
       }
     } else {
@@ -1393,8 +1393,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.n_local,
           graph_tensors.edge_index, graph_tensors.edge_vec,
           graph_tensors.edge_mask, graph_tensors.destination_order,
-          graph_tensors.destination_row_ptr, graph_tensors.source_row_ptr,
-          graph_tensors.source_order, fparam_tensor, aparam_tensor,
+          graph_tensors.destination_row_ptr, graph_tensors.source_order,
+          graph_tensors.source_row_ptr, fparam_tensor, aparam_tensor,
           charge_spin_tensor);
     }
   } else {
@@ -2182,7 +2182,7 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
                 .findSchemaOrThrow("deepmd::build_graph_csr", "")
                 .typed<BuildGraphCSR>();
         std::tie(graph_pack.destination_order, graph_pack.destination_row_ptr,
-                 graph_pack.source_row_ptr, graph_pack.source_order) =
+                 graph_pack.source_order, graph_pack.source_row_ptr) =
             build_graph_csr.call(edge_index, c10::SymInt(nnode),
                                  c10::SymInt(nedge));
       }
@@ -2192,7 +2192,7 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
               graph_pack.atype, graph_pack.n_node, graph_pack.n_local,
               graph_pack.edge_index, graph_pack.edge_vec, graph_pack.edge_mask,
               graph_pack.destination_order, graph_pack.destination_row_ptr,
-              graph_pack.source_row_ptr, graph_pack.source_order, fparam_tensor,
+              graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
               graph_aparam, charge_spin_tensor));
       ae = out["atom_energy"].reshape({nnode}).slice(0, 0, nloc).contiguous();
       force_t = out["force"].reshape({nnode, 3}).contiguous();

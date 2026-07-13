@@ -79,8 +79,8 @@ def _graph_inputs(model):
         edge_mask,
         g.destination_order,
         g.destination_row_ptr,
-        g.source_row_ptr,
         g.source_order,
+        g.source_row_ptr,
     )
 
 

@@ -1767,7 +1767,7 @@ class DeepEval(DeepEvalBackend):
         from the eval system at its exact (tight) edge count and feeds the
         positional schema
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
-        destination_order, destination_row_ptr, source_row_ptr, source_order,
+        destination_order, destination_row_ptr, source_order, source_row_ptr,
         fparam, aparam, charge_spin)`` to the exported forward. The AOTI
         artifact's edge axis is dynamic, so no ``edge_capacity`` padding is needed. The
         ``graph_edge_dtype`` metadata selects float32 geometry for compressed
@@ -1821,13 +1821,13 @@ class DeepEval(DeepEvalBackend):
             dtype=torch.int64,
             device=DEVICE,
         )
+        source_order_t = torch.as_tensor(
+            graph.source_order,
+            device=DEVICE,
+        )
         source_row_ptr_t = torch.as_tensor(
             graph.source_row_ptr,
             dtype=torch.int64,
-            device=DEVICE,
-        )
-        source_order_t = torch.as_tensor(
-            graph.source_order,
             device=DEVICE,
         )
 
@@ -1847,8 +1847,8 @@ class DeepEval(DeepEvalBackend):
                 n_local=n_node_t,
                 destination_order=destination_order_t,
                 destination_row_ptr=destination_row_ptr_t,
-                source_row_ptr=source_row_ptr_t,
                 source_order=source_order_t,
+                source_row_ptr=source_row_ptr_t,
                 destination_sorted=bool(graph.destination_sorted),
             )
             compact = canonical_graph_from_neighbor_graph(generic_graph)
@@ -1876,8 +1876,8 @@ class DeepEval(DeepEvalBackend):
                 edge_mask_t,
                 destination_order_t,
                 destination_row_ptr_t,
-                source_row_ptr_t,
                 source_order_t,
+                source_row_ptr_t,
                 fparam_t,
                 aparam_t,
                 charge_spin_t,

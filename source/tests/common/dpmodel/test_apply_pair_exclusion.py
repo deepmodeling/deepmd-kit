@@ -55,8 +55,8 @@ def test_exclusion_invalidates_derived_csr_views() -> None:
 
     assert out.destination_order is None
     assert out.destination_row_ptr is None
-    assert out.source_row_ptr is None
     assert out.source_order is None
+    assert out.source_row_ptr is None
     assert out.destination_sorted is False
 
 

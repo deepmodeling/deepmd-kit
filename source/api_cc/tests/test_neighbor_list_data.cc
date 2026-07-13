@@ -150,8 +150,8 @@ TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   graph.edge_mask = torch::tensor({true, false, false}, torch::kBool);
   graph.destination_order = torch::tensor({0, 1, 2}, torch::kInt64);
   graph.destination_row_ptr = torch::tensor({0, 1}, torch::kInt64);
-  graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
   graph.source_order = torch::tensor({0, 1, 2}, torch::kInt64);
+  graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
 
   const auto compact = compactCanonicalGraph(graph);
   EXPECT_EQ(compact.source.scalar_type(), torch::kInt64);

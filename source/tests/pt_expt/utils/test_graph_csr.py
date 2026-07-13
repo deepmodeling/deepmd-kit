@@ -25,8 +25,8 @@ def _csr_inputs(canonicalize: bool) -> tuple[torch.Tensor, ...]:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     ) = build_edge_csr(
         edge_index,
         edge_vec,
@@ -39,8 +39,8 @@ def _csr_inputs(canonicalize: bool) -> tuple[torch.Tensor, ...]:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     )
 
 
@@ -70,8 +70,8 @@ def test_rejects_nonidentity_canonical_order() -> None:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     ) = _csr_inputs(canonicalize=True)
     destination_order = destination_order.clone()
     destination_order[:2] = torch.tensor([1, 0], dtype=torch.int64)
@@ -82,8 +82,8 @@ def test_rejects_nonidentity_canonical_order() -> None:
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             node_count=3,
             destination_sorted=True,
         )
@@ -95,8 +95,8 @@ def test_rejects_active_edge_outside_its_csr_row() -> None:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        source_row_ptr,
         source_order,
+        source_row_ptr,
     ) = _csr_inputs(canonicalize=True)
     destination_row_ptr = destination_row_ptr.clone()
     destination_row_ptr[1] = 1
@@ -107,8 +107,8 @@ def test_rejects_active_edge_outside_its_csr_row() -> None:
             edge_mask,
             destination_order,
             destination_row_ptr,
-            source_row_ptr,
             source_order,
+            source_row_ptr,
             node_count=3,
             destination_sorted=True,
         )

@@ -30,8 +30,8 @@ def _generic_graph(physical_edge_count: int) -> NeighborGraph:
         n_local=torch.tensor([1], dtype=torch.int64),
         destination_order=torch.arange(storage_count, dtype=torch.int64),
         destination_row_ptr=row_ptr,
-        source_row_ptr=row_ptr.clone(),
         source_order=torch.arange(storage_count, dtype=torch.int64),
+        source_row_ptr=row_ptr.clone(),
         destination_sorted=True,
     )
 
