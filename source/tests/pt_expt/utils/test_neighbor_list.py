@@ -555,9 +555,11 @@ def test_default_fallback(name: str) -> None:
     the value itself) by up to ~1.3e-5. ``dpa2``'s repformer smooth attention
     has the same sel-independence divergence, amplified through message passing
     (~1e-4 energy rel, ~5e-3 force abs, ~1.3e-2 virial abs at this fixture). We
-    assert BOUNDED closeness (atol=2e-2, rtol=1e-3 -- individual virial/force
-    components can be near-zero, so atol dominates) rather than bit-identity for
-    these, keeping the check meaningful rather than silently dropping coverage.
+    assert BOUNDED closeness with PER-MODEL bounds (individual virial/force
+    components can be near-zero, so atol dominates): the dpa1-family entries
+    keep their original tight ~3e-5 envelope, dpa2's message-passing
+    amplification gets 2e-2 -- rather than bit-identity, keeping the check
+    meaningful rather than silently dropping coverage.
     """
     coord_np, atype_np, box_np = _system()
     md = get_model(copy.deepcopy(ALL_MODELS[name])).to(env.DEVICE)
@@ -573,11 +575,17 @@ def test_default_fallback(name: str) -> None:
             coord_np, dtype=torch.float64, device=env.DEVICE
         ).requires_grad_(True)
         outs[tag] = md.forward(coord_t, atype_t, box=box_t, do_atomic_virial=True, **kw)
-    tol = (
-        {"rtol": 1e-3, "atol": 2e-2}
-        if name in KNOWN_GRAPH_DENSE_DIVERGENT
-        else {"rtol": 1e-10, "atol": 1e-12}
-    )
+    if name in KNOWN_GRAPH_DENSE_DIVERGENT:
+        # per-model divergence envelopes: loosening dpa1's bound to dpa2's
+        # message-passing-amplified scale would let a real dpa1 graph bug
+        # three orders of magnitude above its documented divergence pass.
+        tol = (
+            {"rtol": 1e-3, "atol": 2e-2}
+            if name == "dpa2"
+            else {"rtol": 1e-3, "atol": 3e-5}
+        )
+    else:
+        tol = {"rtol": 1e-10, "atol": 1e-12}
     for k in ("energy", "force", "virial"):
         np.testing.assert_allclose(
             outs["none"][k].detach().cpu().numpy(),
