@@ -415,9 +415,10 @@ class VariantDeepPotTest : public ::testing::TestWithParam<VariantDeepPotCase> {
     }
     if (!path_exists(param.model_path)) {
       if (param.skip_if_artifact_missing) {
-        GTEST_SKIP() << "Optional model artifact not generated (e.g. the "
-                        "AOTInductor graph .pt2 is skipped under LeakSanitizer): "
-                     << param.model_path;
+        GTEST_SKIP()
+            << "Optional model artifact not generated (e.g. the "
+               "AOTInductor graph .pt2 is skipped under LeakSanitizer): "
+            << param.model_path;
       }
       FAIL() << "Model artifact is not available: " << param.model_path;
     }
