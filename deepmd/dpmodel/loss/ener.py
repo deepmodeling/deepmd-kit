@@ -11,6 +11,10 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.loss.loss import (
     Loss,
 )
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    per_frame_component_mean,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -296,7 +300,7 @@ class EnergyLoss(Loss):
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization by real-atom count.
                     se = xp.square(energy - energy_hat)  # [nf, k]
-                    per_frame = xp.mean(xp.reshape(se, (_nf, -1)), axis=-1)  # [nf]
+                    per_frame = per_frame_component_mean(se, _nf)  # [nf]
                     if not self.use_huber:
                         loss += pref_e * xp.mean(per_frame * inv**norm_exp)
                     else:
@@ -327,9 +331,7 @@ class EnergyLoss(Loss):
                 l1_ener_loss = xp.mean(xp.abs(energy - energy_hat))
                 if maskf is not None:
                     abs_e = xp.abs(energy - energy_hat)  # [nf, k]
-                    per_frame_ae = xp.mean(
-                        xp.reshape(abs_e, (_nf, -1)), axis=-1
-                    )  # [nf]
+                    per_frame_ae = per_frame_component_mean(abs_e, _nf)  # [nf]
                     l1_ener_masked = xp.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
                     more_loss["mae_e"] = self.display_if_exist(
@@ -346,8 +348,9 @@ class EnergyLoss(Loss):
                 )
             if mae:
                 if maskf is not None:
-                    abs_e = xp.abs(energy - energy_hat)
-                    per_frame_ae = xp.mean(xp.reshape(abs_e, (_nf, -1)), axis=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        xp.abs(energy - energy_hat), _nf
+                    )
                     mae_e = xp.mean(per_frame_ae * inv)
                 else:
                     mae_e = xp.mean(xp.abs(energy - energy_hat)) * atom_norm_ener
@@ -362,10 +365,7 @@ class EnergyLoss(Loss):
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))  # [nf, nloc, 3]
                     maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
                     # Masked MSE computed for rmse_f display regardless of use_huber.
-                    sq_f = xp.square(diff_f_3d) * maskf_col  # [nf, nloc, 3]
-                    _pfs = xp.sum(xp.reshape(sq_f, (_nf, -1)), axis=-1)  # [nf]
-                    _pfd = xp.sum(maskf, axis=-1) * 3  # [nf]
-                    l2_force_masked = xp.mean(_pfs / _pfd)
+                    l2_force_masked = masked_atom_mean(xp.square(diff_f_3d), maskf, 3)
                     if not self.use_huber:
                         loss += pref_f * l2_force_masked
                     else:
@@ -435,12 +435,8 @@ class EnergyLoss(Loss):
             elif self.loss_func == "mae":
                 if maskf is not None:
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))
                     if not self.f_use_norm:
-                        abs_f = xp.abs(diff_f_3d) * maskf_col  # [nf, nloc, 3]
-                        per_frame_sum = xp.sum(xp.reshape(abs_f, (_nf, -1)), axis=-1)
-                        per_frame_dof = xp.sum(maskf, axis=-1) * 3
-                        l1_force_masked = xp.mean(per_frame_sum / per_frame_dof)
+                        l1_force_masked = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                     else:
                         diff_3 = xp.reshape(force_hat - force, (_nf, _nloc, 3))
                         norm_2d = xp.reshape(
@@ -474,11 +470,7 @@ class EnergyLoss(Loss):
             if mae:
                 if maskf is not None:
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))
-                    abs_f = xp.abs(diff_f_3d) * maskf_col
-                    per_frame_sum = xp.sum(xp.reshape(abs_f, (_nf, -1)), axis=-1)
-                    per_frame_dof = xp.sum(maskf, axis=-1) * 3
-                    mae_f = xp.mean(per_frame_sum / per_frame_dof)
+                    mae_f = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                 else:
                     mae_f = xp.mean(xp.abs(diff_f))
                 more_loss["mae_f"] = self.display_if_exist(mae_f, find_force)
@@ -565,10 +557,10 @@ class EnergyLoss(Loss):
                     # Idiom 1 (per-atom masked mean, ncomp=1).
                     ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
                     ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
-                    sq_ae = xp.square(ae_hat_2d - ae_2d) * maskf  # [nf, nloc]
-                    per_frame_sum = xp.sum(sq_ae, axis=-1)  # [nf]
                     per_frame_dof = xp.sum(maskf, axis=-1)  # [nf]
-                    l2_ae_masked = xp.mean(per_frame_sum / per_frame_dof)
+                    l2_ae_masked = masked_atom_mean(
+                        xp.square(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     if not self.use_huber:
                         loss += pref_ae * l2_ae_masked
                     else:
@@ -609,10 +601,9 @@ class EnergyLoss(Loss):
                 if maskf is not None:
                     ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
                     ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
-                    abs_ae = xp.abs(ae_hat_2d - ae_2d) * maskf  # [nf, nloc]
-                    per_frame_sum = xp.sum(abs_ae, axis=-1)  # [nf]
-                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf]
-                    l1_ae_masked = xp.mean(per_frame_sum / per_frame_dof)
+                    l1_ae_masked = masked_atom_mean(
+                        xp.abs(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     loss += pref_ae * l1_ae_masked
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_ae_masked, find_atom_ener
@@ -637,13 +628,9 @@ class EnergyLoss(Loss):
                     # Idiom 1 with pref weight (ncomp=3).
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
                     pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))
-                    sq_pf = xp.square(diff_f_3d) * pf_3d * maskf_col  # [nf, nloc, 3]
-                    per_frame_sum = xp.sum(
-                        xp.reshape(sq_pf, (_nf, -1)), axis=-1
-                    )  # [nf]
-                    per_frame_dof = xp.sum(maskf, axis=-1) * 3  # [nf]
-                    l2_pf_masked = xp.mean(per_frame_sum / per_frame_dof)
+                    l2_pf_masked = masked_atom_mean(
+                        xp.square(diff_f_3d) * pf_3d, maskf, 3
+                    )
                     loss += pref_pf * l2_pf_masked
                     more_loss["rmse_pf"] = self.display_if_exist(
                         xp.sqrt(l2_pf_masked), find_atom_pref
@@ -660,11 +647,7 @@ class EnergyLoss(Loss):
                 if maskf is not None:
                     diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
                     pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))
-                    abs_pf = xp.abs(diff_f_3d) * pf_3d * maskf_col  # [nf, nloc, 3]
-                    per_frame_sum = xp.sum(xp.reshape(abs_pf, (_nf, -1)), axis=-1)
-                    per_frame_dof = xp.sum(maskf, axis=-1) * 3
-                    l1_pf_masked = xp.mean(per_frame_sum / per_frame_dof)
+                    l1_pf_masked = masked_atom_mean(xp.abs(diff_f_3d) * pf_3d, maskf, 3)
                     loss += pref_pf * l1_pf_masked
                     more_loss["mae_pf"] = self.display_if_exist(
                         l1_pf_masked, find_atom_pref
