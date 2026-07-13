@@ -356,6 +356,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.tebd_compress = False
         self.geo_compress = False
         self.compress = False
+        # When set, force the legacy dense lower even if the config would
+        # otherwise be graph-lower eligible (see ``disable_graph_lower``).
+        self._graph_lower_disabled = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -432,9 +435,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         The graph-native lower (``call_graph``) covers the factorizable path
         AND transformer attention (``attn_layer >= 0``, NeighborGraph PR-D)
-        with concat OR strip type-embedding. Remaining ineligible configs
-        (``exclude_types``, and compressed descriptors) fall back to the legacy
-        dense path, so those models keep working unchanged.
+        with concat OR strip type-embedding.  ``exclude_types`` is fully
+        supported via
+        :func:`~deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
+        Compressed descriptors are the remaining ineligible config and fall
+        back to the legacy dense path, so those models keep working unchanged.
 
         Eligibility does NOT imply numerical interchangeability with the
         dense route for every config: with ``smooth_type_embedding=True``
@@ -442,16 +447,30 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         differs from the dense lower by up to ~1e-4 (see the Notes of
         :meth:`call_graph`).
         """
+        if self._graph_lower_disabled:
+            return False
         # compressed descriptors have no graph kernel (geo/tebd tabulation is
         # dense-only); keep them on the legacy dense path.
         if self.compress:
             return False
-        # exclude_types stays dense (graph exclusion is owned elsewhere); strip is
-        # now graph-eligible (per-edge factorized embedding, no neighbor coupling).
-        return (
-            self.se_atten.tebd_input_mode in ("concat", "strip")
-            and not self.se_atten.exclude_types
-        )
+        # strip is graph-eligible (per-edge factorized embedding, no neighbor
+        # coupling); exclude_types is graph-native via ``apply_pair_exclusion``
+        # (owned at this seam). Only compression / the disable flag force dense.
+        return self.se_atten.tebd_input_mode in ("concat", "strip")
+
+    def disable_graph_lower(self) -> None:
+        """Force the legacy dense lower for this descriptor.
+
+        This is an explicit opt-out knob used by contexts where the
+        graph-native lower is unsupported or undesirable (e.g. spin models,
+        whose carry-all routing diverges on sel-binding spin systems and
+        whose ``.pt2``/``.pte`` export trips a torch-inductor scatter/
+        atomic_add CPU codegen assertion).  After calling this,
+        :meth:`uses_graph_lower` returns ``False`` regardless of the
+        descriptor configuration.  The flag is not serialized; it is
+        re-derived structurally at spin-model construction/deserialization.
+        """
+        self._graph_lower_disabled = True
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
@@ -581,9 +600,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
         # graph-eligible configs route through the graph-native adapter (decision
         # #14: graph = single math source, dense call = thin adapter). Ineligible
-        # configs (exclude_types, compressed descriptors) and the ghost case with
-        # no mapping fall back to the legacy dense body. The graph needs `mapping`
-        # to fold ghosts to local owners; without it only nall == nloc is valid.
+        # configs (compressed descriptors) and the ghost case with no mapping
+        # fall back to the legacy dense body. The graph needs `mapping` to fold
+        # ghosts to local owners; without it only nall == nloc is valid.
         if self.uses_graph_lower() and (mapping is not None or nall == nloc):
             return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
         else:
@@ -632,26 +651,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei x 1
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
-            from_dense_quartet,
+            graph_from_dense_quartet,
         )
 
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        dev = array_api_compat.device(coord_ext)
         nf, nloc, nnei = nlist.shape
-        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
-        coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
-        if mapping is None:
-            # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
-            mapping_g = xp.broadcast_to(
-                xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
-            )
-        else:
-            mapping_g = xp.reshape(mapping, (nf, nall))
-        graph = from_dense_quartet(
-            coord_ext_3, nlist, mapping_g, layout=None, compact=False
+        # shape-static graph + flat local center types from the dense quartet
+        # (shared with the input-stat graph path, see graph_from_dense_quartet).
+        graph, atype_local = graph_from_dense_quartet(
+            coord_ext, atype_ext, nlist, mapping
         )
-        # local atom types, flat (nf * nloc,)
-        atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
         grrg_flat, rot_mat_flat = self.call_graph(
             graph,
             atype_local,
@@ -665,9 +674,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         grrg = xp.reshape(grrg_flat, (nf, nloc, *grrg_flat.shape[1:]))
         rot_mat = xp.reshape(rot_mat_flat, (nf, nloc, *rot_mat_flat.shape[1:]))
         # reconstruct the dense-shaped sw the dense way (env_mat switch masked
-        # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
-        # == nlist != -1, matching DescrptBlockSeAtten.call). A dense-layout
-        # artifact tied to neighbor slots, which the graph does not carry.
+        # where nlist == -1 OR the neighbor pair is type-excluded, matching
+        # DescrptBlockSeAtten.call which erases excluded nlist entries to -1
+        # before computing sw). A dense-layout artifact tied to neighbor slots,
+        # which the graph does not carry.
         _, _, sw = self.se_atten.env_mat.call(
             coord_ext,
             atype_ext,
@@ -677,6 +687,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         nlist_mask = (nlist != -1)[:, :, :, None]
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
+        if self.se_atten.exclude_types:
+            # additionally mask excluded type-pairs (mirrors the block's nlist
+            # erasure: excluded entries become -1 there, so sw is 0 for them).
+            exc_mask = self.se_atten.emask.build_type_exclude_mask(nlist, atype_ext)
+            exc_mask = xp.astype(exc_mask[:, :, :, None], sw.dtype)
+            sw = sw * exc_mask
         sw = xp.reshape(sw, (nf, nloc, nnei, 1))
         return grrg, rot_mat, None, None, sw
 
@@ -687,7 +703,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         nlist: Array,
     ) -> Array:
         """Legacy dense descriptor body (the ineligible ``call`` path:
-        compressed descriptors, exclude_types, or the no-mapping ghost case).
+        compressed descriptors or the no-mapping ghost case).
 
         Parameters
         ----------
@@ -1383,7 +1399,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             The path to the stat file.
 
         """
-        env_mat_stat = EnvMatStatSe(self)
+        # dpa1's forward computes its env matrix through the NeighborGraph
+        # (from_dense_quartet -> edge_env_mat); run the input stat through the
+        # SAME path so stat and forward share one env-matrix implementation.
+        # Bit-identical to the dense EnvMat (see test_env_mat_stat_graph.py).
+        env_mat_stat = EnvMatStatSe(self, use_graph=True)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         if path is None or not path.is_dir():
@@ -1756,9 +1776,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         -----
         Known limitations:
         - ``tebd_input_mode`` in {"concat", "strip"}; compressed descriptors stay dense;
-        - ``exclude_types`` is not yet supported and raises (lands in a later PR).
+        - ``exclude_types`` is applied graph-natively via ``apply_pair_exclusion``.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
+            apply_pair_exclusion,
             edge_env_mat,
             segment_sum,
         )
@@ -1767,11 +1788,6 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             raise NotImplementedError(
                 f"graph path does not support tebd_input_mode={self.tebd_input_mode!r}"
             )
-        if self.exclude_types:
-            raise NotImplementedError(
-                "graph path does not yet apply exclude_types (NeighborGraph PR-A); "
-                "type exclusion lands in a later PR"
-            )
         if type_embedding is None:
             raise ValueError("type_embedding is required for the graph path")
         xp = array_api_compat.array_namespace(graph.edge_vec)
@@ -1779,9 +1795,15 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # N == sum(graph.n_node) by contract (atype is (N,)); use the static shape
         # value so the kernel stays jit/export-traceable (no concretize of n_node).
         n_total = atype.shape[0]
+        atype = xp.asarray(atype, device=dev)
+        # descriptor-level pair exclusion: same canonical transform as the
+        # model-level ``pair_exclude_types`` (decision #18). Masked edges
+        # contribute zero to every segment_sum below; the dense path's
+        # nlist-erasure + env-mat zeroing is reproduced exactly.
+        # apply_pair_exclusion is a no-op when self.emask has no exclusions.
+        graph = apply_pair_exclusion(graph, atype, self.emask)
         src = graph.edge_index[0, :]
         dst = graph.edge_index[1, :]
-        atype = xp.asarray(atype, device=dev)
         center_type = xp.take(atype, dst, axis=0)  # (E,)
         nei_type = xp.take(atype, src, axis=0)  # (E,)
         # per-edge env-mat 4-vector, normalized by the center (dst) atom type.

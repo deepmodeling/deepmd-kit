@@ -499,8 +499,7 @@ def freeze(
         Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
         or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
         for graph-eligible models (``mixed_types`` and ``uses_graph_lower``:
-        dpa1/se_atten with concat type embedding and no ``exclude_types``,
-        attention layers included) and selects the C++ graph inference path;
+        dpa1/se_atten with concat type embedding) and selects the C++ graph inference path;
         the per-atom virial is enabled for it (near-free in the graph path:
         one extra scatter off the shared single backward). NOTE: for
         ``smooth_type_embedding=True`` the carry-all graph attention
@@ -570,7 +569,7 @@ def freeze(
     m.eval()
 
     # The graph lower is opt-in and only valid for graph-eligible models
-    # (dpa1 with concat tebd and no type exclusion; attention layers included
+    # (dpa1 with concat tebd, incl. attention layers and exclude_types
     # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
     # fast with a clear message rather than emitting a broken .pt2. Enable the
     # per-atom virial for the graph form -- it is near-free there (one extra
@@ -585,8 +584,7 @@ def freeze(
             raise ValueError(
                 "lower_kind='graph' requires a graph-eligible model "
                 "(mixed_types and a descriptor exposing uses_graph_lower()==True, "
-                "currently dpa1 with tebd_input_mode='concat' and no "
-                "exclude_types). Use lower_kind='nlist' for this model."
+                "currently dpa1 with tebd_input_mode='concat'). Use lower_kind='nlist' for this model."
             )
         do_atomic_virial = True
 

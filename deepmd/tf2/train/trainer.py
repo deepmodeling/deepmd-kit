@@ -61,7 +61,7 @@ from deepmd.tf2.common import (
 from deepmd.tf2.env import (
     tf,
 )
-from deepmd.tf2.make_model import (
+from deepmd.tf2.model.make_model import (
     prepare_lower_inputs,
 )
 from deepmd.tf2.model.model import (
@@ -888,6 +888,13 @@ class Trainer(AbstractTrainer):
                 fparam=fp,
                 aparam=ap,
                 charge_spin=cs,
+                # Model-level pair exclusion is a nlist-BUILD transform
+                # (decision #18/A4): the compiled lower consumes a pre-excluded
+                # nlist, so fold exclusion in here at the compiled-training
+                # prepare seam. Guard atomic_model for test doubles.
+                pair_excl=getattr(
+                    getattr(model, "atomic_model", None), "pair_excl", None
+                ),
             )
 
         return compiled_prepare_lower_batch

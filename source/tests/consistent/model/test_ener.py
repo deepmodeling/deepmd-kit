@@ -11,6 +11,9 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.model.ener_model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.model.model import get_model as get_model_dp
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -173,10 +176,11 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf2(self) -> bool:
-        return not INSTALLED_TF2 or (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        # tf2 folds model-level pair_exclude_types into the nlist at BUILD time
+        # (decision #18/A4): the eager upper path (dp_model.call_common) passes
+        # pair_excl through, so exclusion IS exercised here — do not skip it (it
+        # is the regression guard for that path).
+        return not INSTALLED_TF2
 
     @property
     def skip_jax(self) -> bool:
@@ -408,10 +412,9 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf2(self) -> bool:
-        return not INSTALLED_TF2 or (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        # See TestEner.skip_tf2: tf2 supports model-level pair_exclude_types via
+        # the build seam, so exclusion is exercised (regression guard).
+        return not INSTALLED_TF2
 
     @property
     def skip_jax(self) -> bool:
@@ -484,6 +487,14 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             6.0,
             [20, 20],
             distinguish_types=True,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4): the dpmodel-family lowers consume a pre-excluded nlist;
+            # legacy pt/pd re-apply internally, which is an idempotent no-op.
+            pair_excl=PairExcludeMask(
+                self.ntypes, [tuple(p) for p in self.data["pair_exclude_types"]]
+            )
+            if self.data["pair_exclude_types"]
+            else None,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
         self.nlist = nlist

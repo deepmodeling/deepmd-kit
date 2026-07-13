@@ -546,7 +546,7 @@ class ScalarRMSNorm(NativeOP):
         if x.ndim == 2:
             inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
             x = x * inv_rms
-            x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[0]
+            x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[0, :]
             return xp.astype(x, in_dtype)
 
         inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
