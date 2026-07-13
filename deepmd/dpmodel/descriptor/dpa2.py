@@ -914,24 +914,23 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
-        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        nframes, nloc, nnei = nlist.shape
-        nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
-        # graph-eligible configs route through the graph-native adapter
-        # (decision #14: graph = single math source, dense call = thin
-        # adapter). Ineligible configs (three-body repinit, compressed
-        # descriptors) and multi-rank/no-mapping-ghost cases fall back to the
-        # legacy dense body: the repformer block always has message passing
-        # across ranks (has_message_passing_across_ranks), so comm_dict !=
-        # None (multi-rank) is not yet supported on the graph route; the
-        # graph needs `mapping` to fold ghosts to local owners, so without it
-        # only nall == nloc is valid.
-        if (
-            self.uses_graph_lower()
-            and comm_dict is None
-            and (mapping is not None or nall == nloc)
-        ):
-            return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
+        # The dense ``call`` always runs the legacy dense body -- it is the
+        # cross-backend consistency reference and must match the tf/pt/pd/jax
+        # dense descriptors bit-for-bit. Unlike ``DescrptDPA1.call`` (whose
+        # graph adapter is bit-exact because its default repinit uses
+        # ``attn_layer > 0``, where the real attention masks padding), DPA2's
+        # repinit is hardwired to ``attn_layer == 0``. There the dense
+        # se_atten body leaks a phantom padding-neighbor ``-davg/dstd``
+        # residual that the graph path deliberately does NOT reproduce (see
+        # :meth:`call_graph`'s Notes; the graph output is the
+        # physically-correct one). That makes ``_call_graph_adapter`` diverge
+        # from ``_call_dense`` for any model with non-trivial statistics
+        # (nonzero ``davg`` or non-unit ``dstd``) -- an accepted graph/dense
+        # divergence (see ``KNOWN_GRAPH_DENSE_DIVERGENT``). The graph-native
+        # route is therefore reached exclusively through :meth:`call_graph`
+        # (pt_expt ``forward_atomic_graph`` and the C++ graph ``.pt2``), never
+        # through ``call``. ``_call_graph_adapter`` is retained as the
+        # bit-exact-regime reference exercised by ``TestDPA2AdapterBitExact``.
         return self._call_dense(
             coord_ext,
             atype_ext,
@@ -954,10 +953,20 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         Builds a NeighborGraph from the dense quartet with the SHAPE-STATIC
         converter (``compact=False``, jit/export-traceable -- no
         ``nonzero``), runs :meth:`call_graph`, and reconstructs the dense
-        5-tuple ABI. Bit-exact vs :meth:`_call_dense` for ANY sel: the
-        per-block edge masks in :meth:`call_graph` (dist filter + slot
-        filter against ``static_nnei``) replicate
+        5-tuple ABI. The per-block edge masks in :meth:`call_graph` (dist
+        filter + slot filter against ``static_nnei``) replicate
         ``build_multiple_neighbor_list``'s ``nlist[:, :, :ns]`` slicing.
+
+        Bit-exact vs :meth:`_call_dense` **only in the trivial-statistics
+        regime** (``davg == 0`` and ``dstd == 1``, i.e. ``set_davg_zero`` with
+        actually-zero stats). For any model with nonzero ``davg`` or non-unit
+        ``dstd`` this adapter DIFFERS from ``_call_dense``: DPA2's repinit is
+        always ``attn_layer == 0``, where the dense body leaks a phantom
+        padding-neighbor ``-davg/dstd`` residual that the graph path
+        deliberately omits (see :meth:`call_graph`'s Notes). This is why the
+        default dense :meth:`call` does NOT route here -- the graph-native
+        route lives in :meth:`call_graph`. This method is retained as the
+        bit-exact-regime reference exercised by ``TestDPA2AdapterBitExact``.
 
         Parameters
         ----------

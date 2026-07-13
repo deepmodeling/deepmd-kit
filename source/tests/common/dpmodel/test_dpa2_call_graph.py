@@ -640,18 +640,26 @@ class TestDPA2BlockMaskReplicatesMultipleNlist:
 
 class TestDPA2CallRouting:
     def test_call_routing_graph_eligible(self) -> None:
+        # Even for a graph-ELIGIBLE config, the dense ``call`` runs the dense
+        # body -- it is the cross-backend consistency reference and must match
+        # the tf/pt/pd/jax dense descriptors bit-for-bit. DPA2's repinit is
+        # always ``attn_layer == 0``, where ``_call_graph_adapter`` diverges
+        # from ``_call_dense`` for non-trivial statistics (the accepted
+        # padding-leak divergence, see DescrptDPA2.call / call_graph Notes).
+        # The graph-native route is reached through ``call_graph``, never
+        # ``call``.
         descr = _make_dpa2(repinit_nsel=200, repformer_nsel=150)
         assert descr.uses_graph_lower() is True
         coord, atype, box = _system(seed=41, nloc=8, box_size=6.0)
         ext_coord, ext_atype, mapping, nlist = _dense_quartet(descr, coord, atype, box)
 
         called = descr.call(ext_coord, ext_atype, nlist, mapping=mapping)
-        adapter = descr._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
-        for c, a in zip(called, adapter, strict=True):
-            if c is None or a is None:
-                assert c is None and a is None
+        dense = descr._call_dense(ext_coord, ext_atype, nlist, mapping=mapping)
+        for c, d in zip(called, dense, strict=True):
+            if c is None or d is None:
+                assert c is None and d is None
             else:
-                np.testing.assert_array_equal(c, a)
+                np.testing.assert_array_equal(c, d)
 
     def test_call_routing_three_body_dense(self) -> None:
         descr = _make_dpa2(repinit_nsel=200, repformer_nsel=150, use_three_body=True)
