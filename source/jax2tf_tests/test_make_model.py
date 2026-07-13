@@ -59,6 +59,53 @@ class TestMakeModel(tf.test.TestCase):
         )
         return ret["coord_x"]
 
+    @tf.function(
+        input_signature=[
+            tf.TensorSpec([None, None, 3], DTYPE),
+            tf.TensorSpec([None, None], tf.int32),
+            tf.TensorSpec([None, None, None], DTYPE),
+            tf.TensorSpec([None, 2], DTYPE),
+        ]
+    )
+    def call_model_with_charge_spin(
+        self,
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        box: tf.Tensor,
+        charge_spin: tf.Tensor,
+    ) -> tf.Tensor:
+        def call_lower(
+            extended_coord: tf.Tensor,
+            extended_atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+            charge_spin: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
+            del extended_atype, nlist, mapping, fparam, aparam
+            return {
+                "coord_x": extended_coord[..., :1]
+                + tf.reshape(charge_spin[:, :1], [-1, 1, 1])
+            }
+
+        nframes = tf.shape(coord)[0]
+        nloc = tf.shape(atype)[1]
+        ret = model_call_from_call_lower(
+            call_lower=call_lower,
+            rcut=0.4,
+            sel=[1],
+            mixed_types=True,
+            model_output_def=self.output_def,
+            coord=coord,
+            atype=atype,
+            box=box,
+            fparam=tf.zeros([nframes, 0], dtype=DTYPE),
+            aparam=tf.zeros([nframes, nloc, 0], dtype=DTYPE),
+            charge_spin=charge_spin,
+        )
+        return ret["coord_x"]
+
     def test_model_call_without_box(self) -> None:
         coord = tf.constant([[[0.2, 0.0, 0.0], [0.8, 0.0, 0.0]]], dtype=DTYPE)
         atype = tf.constant([[0, 1]], dtype=tf.int32)
@@ -76,3 +123,13 @@ class TestMakeModel(tf.test.TestCase):
         coord_x = self.call_model(coord, atype, box)
 
         self.assertAllClose(coord_x[:, :2], [[[0.2], [0.8]]])
+
+    def test_model_call_forwards_charge_spin(self) -> None:
+        coord = tf.constant([[[0.2, 0.0, 0.0], [0.8, 0.0, 0.0]]], dtype=DTYPE)
+        atype = tf.constant([[0, 1]], dtype=tf.int32)
+        box = tf.zeros([1, 0, 0], dtype=DTYPE)
+        charge_spin = tf.constant([[2.0, 1.0]], dtype=DTYPE)
+
+        coord_x = self.call_model_with_charge_spin(coord, atype, box, charge_spin)
+
+        self.assertAllClose(coord_x, coord[..., :1] + 2.0)
