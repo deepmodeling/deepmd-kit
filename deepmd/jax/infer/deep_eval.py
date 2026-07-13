@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -256,7 +257,11 @@ class DeepEval(DeepEvalBackend):
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
         **kwargs
-            Other parameters
+            Other parameters.
+            charge_spin : array-like, optional
+                The per-frame charge/spin conditioning input. The array can be
+                of size nframes x dim_chg_spin, or dim_chg_spin to reuse the
+                same value for all frames.
 
         Returns
         -------
@@ -265,6 +270,7 @@ class DeepEval(DeepEvalBackend):
             variables, and the values are the corresponding output arrays.
         """
         # convert all of the input to numpy array
+        charge_spin = kwargs.pop("charge_spin", None)
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
         if cells is not None:
@@ -274,7 +280,7 @@ class DeepEval(DeepEvalBackend):
         )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, request_defs
+            coords, cells, atom_types, fparam, aparam, charge_spin, request_defs
         )
         # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
         # its tuple, which would make ``zip`` iterate over the array's frame
@@ -373,6 +379,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ) -> tuple[np.ndarray, ...]:
         model = self.dp
@@ -406,17 +413,34 @@ class DeepEval(DeepEvalBackend):
             aparam_input = aparam.reshape(nframes, natoms, self.get_dim_aparam())
         else:
             aparam_input = None
+        if charge_spin is not None and not self.has_chg_spin_ebd():
+            warnings.warn(
+                "charge_spin was provided, but this model does not support "
+                "charge/spin conditioning. The provided charge_spin will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+        charge_spin_input = (
+            np.asarray(charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION)
+            if self.has_chg_spin_ebd() and charge_spin is not None
+            else None
+        )
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
         )
+        model_kwargs = {
+            "box": to_jax_array(box_input),
+            "fparam": to_jax_array(fparam_input),
+            "aparam": to_jax_array(aparam_input),
+            "do_atomic_virial": do_atomic_virial,
+        }
+        if self.has_chg_spin_ebd():
+            model_kwargs["charge_spin"] = to_jax_array(charge_spin_input)
         batch_output = model(
             to_jax_array(coord_input),
             to_jax_array(type_input),
-            box=to_jax_array(box_input),
-            fparam=to_jax_array(fparam_input),
-            aparam=to_jax_array(aparam_input),
-            do_atomic_virial=do_atomic_virial,
+            **model_kwargs,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -483,3 +507,21 @@ class DeepEval(DeepEvalBackend):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.dp.has_default_fparam()
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        if hasattr(self.dp, "has_chg_spin_ebd"):
+            return self.dp.has_chg_spin_ebd()
+        return False
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if hasattr(self.dp, "get_dim_chg_spin"):
+            return self.dp.get_dim_chg_spin()
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if hasattr(self.dp, "has_default_chg_spin"):
+            return self.dp.has_default_chg_spin()
+        return False

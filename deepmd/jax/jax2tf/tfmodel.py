@@ -78,6 +78,26 @@ class TFModelWrapper(tf.Module):
             self.default_fparam = self.model.get_default_fparam().numpy().tolist()
         else:
             self.default_fparam = None
+        self._has_chg_spin_ebd = (
+            self.model.has_chg_spin_ebd().numpy().item()
+            if hasattr(self.model, "has_chg_spin_ebd")
+            else False
+        )
+        self.dim_chg_spin = (
+            self.model.get_dim_chg_spin().numpy().item()
+            if hasattr(self.model, "get_dim_chg_spin")
+            else 0
+        )
+        self._has_default_chg_spin = (
+            self.model.has_default_chg_spin().numpy().item()
+            if hasattr(self.model, "has_default_chg_spin")
+            else False
+        )
+        self.default_chg_spin = (
+            self.model.get_default_chg_spin().numpy().tolist()
+            if hasattr(self.model, "get_default_chg_spin")
+            else None
+        )
         # property models only (absent for other model types).
         if hasattr(self.model, "get_var_name"):
             self._var_name = self.model.get_var_name().numpy().decode()
@@ -96,6 +116,7 @@ class TFModelWrapper(tf.Module):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: jnp.ndarray | None = None,
     ) -> Any:
         """Return model prediction.
 
@@ -114,6 +135,8 @@ class TFModelWrapper(tf.Module):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            The charge and spin conditioning input. shape: nf x dim_chg_spin
 
         Returns
         -------
@@ -122,7 +145,15 @@ class TFModelWrapper(tf.Module):
             The keys are defined by the `ModelOutputDef`.
 
         """
-        return self.call(coord, atype, box, fparam, aparam, do_atomic_virial)
+        return self.call(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+        )
 
     def call(
         self,
@@ -132,6 +163,7 @@ class TFModelWrapper(tf.Module):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
@@ -150,6 +182,8 @@ class TFModelWrapper(tf.Module):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            The charge and spin conditioning input. shape: nf x dim_chg_spin
 
         Returns
         -------
@@ -174,13 +208,11 @@ class TFModelWrapper(tf.Module):
                 (coord.shape[0], coord.shape[1], self.get_dim_aparam()),
                 dtype=jnp.float64,
             )
-        return call(
-            coord,
-            atype,
-            box,
-            fparam,
-            aparam,
-        )
+        args = (coord, atype, box, fparam, aparam)
+        if self.get_dim_chg_spin() > 0:
+            charge_spin = self._make_charge_spin_input(coord.shape[0], charge_spin)
+            args = (*args, charge_spin)
+        return call(*args)
 
     def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
@@ -230,14 +262,13 @@ class TFModelWrapper(tf.Module):
                 (extended_coord.shape[0], nlist.shape[1], self.get_dim_aparam()),
                 dtype=jnp.float64,
             )
-        return call_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
-        )
+        args = (extended_coord, extended_atype, nlist, mapping, fparam, aparam)
+        if self.get_dim_chg_spin() > 0:
+            charge_spin = self._make_charge_spin_input(
+                extended_coord.shape[0], charge_spin
+            )
+            args = (*args, charge_spin)
+        return call_lower(*args)
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -376,6 +407,53 @@ class TFModelWrapper(tf.Module):
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self._has_chg_spin_ebd
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return self.dim_chg_spin
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return self._has_default_chg_spin
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Get the default charge_spin values."""
+        return self.default_chg_spin
+
+    def _make_charge_spin_input(
+        self, nframes: int, charge_spin: jnp.ndarray | None
+    ) -> jnp.ndarray:
+        dim_chg_spin = self.get_dim_chg_spin()
+        if dim_chg_spin == 0:
+            return jnp.empty((nframes, 0), dtype=jnp.float64)
+        if charge_spin is None:
+            if self.has_default_chg_spin():
+                default_chg_spin = self.get_default_chg_spin()
+                assert default_chg_spin is not None
+                return jnp.tile(
+                    jnp.asarray(default_chg_spin, dtype=jnp.float64).reshape(1, -1),
+                    (nframes, 1),
+                )
+            raise ValueError(
+                "charge_spin is required for this model but was not provided, "
+                "and the model has no default_chg_spin."
+            )
+        charge_spin = jnp.asarray(charge_spin, dtype=jnp.float64)
+        if charge_spin.ndim == 1:
+            if charge_spin.size != dim_chg_spin:
+                raise ValueError("charge_spin must contain [charge, spin].")
+            charge_spin = charge_spin.reshape(1, dim_chg_spin)
+        elif charge_spin.ndim != 2 or charge_spin.shape[-1] != dim_chg_spin:
+            raise ValueError("charge_spin must have shape (nframes, 2).")
+        if charge_spin.shape[0] == 1 and nframes != 1:
+            return jnp.tile(charge_spin, (nframes, 1))
+        if charge_spin.shape[0] != nframes:
+            raise ValueError("charge_spin first dimension must match nframes.")
+        return charge_spin
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
