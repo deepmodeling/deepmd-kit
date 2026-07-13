@@ -617,6 +617,24 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
         return False
 
 
+def _model_trace_device(model: torch.nn.Module) -> torch.device:
+    """Device to build the synthetic trace inputs on for ``_trace_and_compile_graph``.
+
+    Must match the device the model's own parameters/buffers already live on
+    (the dpa1 CUDA lesson: traced inputs and params must share a device, or
+    FakeTensor device propagation raises for ``aten.index_select`` on the
+    type-embedding gather). The global :data:`DEVICE` is *not* a safe stand-in:
+    callers may legitimately hold the model on a different device (e.g. a test
+    pinning the model to CPU while running on a CUDA host). Falls back to
+    :data:`DEVICE` only if the model exposes no parameters or buffers.
+    """
+    for _t in model.parameters():
+        return _t.device
+    for _t in model.buffers():
+        return _t.device
+    return DEVICE
+
+
 def _trace_and_compile_graph(
     model: torch.nn.Module,
     fparam: torch.Tensor | None,
@@ -731,7 +749,7 @@ def _trace_and_compile_graph(
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_model_trace_device(model),
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
