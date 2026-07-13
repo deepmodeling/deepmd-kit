@@ -55,15 +55,13 @@ def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
     return xp.mean(per_frame_sum / per_frame_dof)
 
 
-def per_frame_component_mean(err: Array, nf: int) -> Array:
+def per_frame_component_mean(err: Array) -> Array:
     """Idiom 2 primitive: per-frame mean over the flattened component axis.
 
     Parameters
     ----------
     err : Array
         Per-frame error term of shape ``[nf, k]`` (already squared or abs'd).
-    nf : int
-        Number of frames.
 
     Returns
     -------
@@ -74,6 +72,7 @@ def per_frame_component_mean(err: Array, nf: int) -> Array:
         once here and reused.
     """
     xp = array_api_compat.array_namespace(err)
+    nf = err.shape[0]
     return xp.mean(xp.reshape(err, (nf, -1)), axis=-1)
 
 
@@ -96,8 +95,9 @@ def masked_atom_num(mask: Array | None, natoms: Any, dtype: Any) -> Any:
 
     Returns
     -------
-    ``mean_over_frames(astype(sum(mask, axis=-1), dtype))`` when ``mask`` is
-    given, else ``natoms``.
+    Array or int
+        ``mean_over_frames(astype(sum(mask, axis=-1), dtype))`` when ``mask``
+        is given, else ``natoms``.
     """
     if mask is None:
         return natoms

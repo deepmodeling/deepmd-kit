@@ -56,16 +56,23 @@ class TestPerFrameComponentMean:
     def test_numpy_matches_reference(self, k) -> None:
         rng = np.random.default_rng(2)
         err = rng.random((3, k))
-        got = per_frame_component_mean(err, 3)
+        got = per_frame_component_mean(err)
         np.testing.assert_allclose(
             got, err.reshape(3, -1).mean(axis=-1), rtol=0, atol=0
         )
 
     def test_torch_bit_identical(self) -> None:
         err_np = np.random.default_rng(3).random((3, 9))
-        got = per_frame_component_mean(torch.tensor(err_np), 3)
+        got = per_frame_component_mean(torch.tensor(err_np))
         ref = torch.mean(torch.tensor(err_np).reshape(3, -1), dim=-1)
         assert torch.equal(got, ref)
+
+    def test_torch_autograd(self) -> None:
+        err_np = np.random.default_rng(4).random((3, 9))
+        err = torch.tensor(err_np, requires_grad=True)
+        out = per_frame_component_mean(err)
+        out.sum().backward()
+        assert err.grad is not None
 
 
 class TestMaskedAtomNum:

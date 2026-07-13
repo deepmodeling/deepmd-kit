@@ -286,7 +286,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization.
                     se = torch.square(energy_pred - energy_label)  # [nf, k]
-                    per_frame = per_frame_component_mean(se, _nf)  # [nf]
+                    per_frame = per_frame_component_mean(se)  # [nf]
                     if not self.use_huber:
                         loss += pref_e * torch.mean(per_frame * inv**norm_exp)
                     else:
@@ -324,7 +324,7 @@ class EnergyStdLoss(TaskLoss):
                 )
                 if maskf is not None:
                     per_frame_ae = per_frame_component_mean(
-                        torch.abs(energy_pred - energy_label), _nf
+                        torch.abs(energy_pred - energy_label)
                     )
                     l1_ener_masked = torch.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
@@ -345,7 +345,7 @@ class EnergyStdLoss(TaskLoss):
             if mae:
                 if maskf is not None:
                     per_frame_ae = per_frame_component_mean(
-                        torch.abs(energy_pred - energy_label), _nf
+                        torch.abs(energy_pred - energy_label)
                     )
                     mae_e = torch.mean(per_frame_ae * inv)
                 else:
@@ -630,7 +630,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization.
                     se_v = torch.square(diff_v)  # [nf, 9]
-                    per_frame_v = per_frame_component_mean(se_v, _nf)  # [nf]
+                    per_frame_v = per_frame_component_mean(se_v)  # [nf]
                     if not self.use_huber:
                         loss += pref_v * torch.mean(per_frame_v * inv**norm_exp)
                     else:
@@ -666,9 +666,7 @@ class EnergyStdLoss(TaskLoss):
                     reduction="mean",
                 )
                 if maskf is not None:
-                    per_frame_v = per_frame_component_mean(
-                        torch.abs(diff_v), _nf
-                    )  # [nf]
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))  # [nf]
                     l1_v_masked = torch.mean(per_frame_v * inv)
                     loss += pref_v * l1_v_masked
                     more_loss["mae_v"] = self.display_if_exist(
@@ -686,7 +684,7 @@ class EnergyStdLoss(TaskLoss):
                 )
             if mae:
                 if maskf is not None:
-                    per_frame_v = per_frame_component_mean(torch.abs(diff_v), _nf)
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))
                     mae_v = torch.mean(per_frame_v * inv)
                 else:
                     mae_v = torch.mean(torch.abs(diff_v)) * atom_norm

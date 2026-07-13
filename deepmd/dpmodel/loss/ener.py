@@ -300,7 +300,7 @@ class EnergyLoss(Loss):
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization by real-atom count.
                     se = xp.square(energy - energy_hat)  # [nf, k]
-                    per_frame = per_frame_component_mean(se, _nf)  # [nf]
+                    per_frame = per_frame_component_mean(se)  # [nf]
                     if not self.use_huber:
                         loss += pref_e * xp.mean(per_frame * inv**norm_exp)
                     else:
@@ -331,7 +331,7 @@ class EnergyLoss(Loss):
                 l1_ener_loss = xp.mean(xp.abs(energy - energy_hat))
                 if maskf is not None:
                     abs_e = xp.abs(energy - energy_hat)  # [nf, k]
-                    per_frame_ae = per_frame_component_mean(abs_e, _nf)  # [nf]
+                    per_frame_ae = per_frame_component_mean(abs_e)  # [nf]
                     l1_ener_masked = xp.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
                     more_loss["mae_e"] = self.display_if_exist(
@@ -348,9 +348,7 @@ class EnergyLoss(Loss):
                 )
             if mae:
                 if maskf is not None:
-                    per_frame_ae = per_frame_component_mean(
-                        xp.abs(energy - energy_hat), _nf
-                    )
+                    per_frame_ae = per_frame_component_mean(xp.abs(energy - energy_hat))
                     mae_e = xp.mean(per_frame_ae * inv)
                 else:
                     mae_e = xp.mean(xp.abs(energy - energy_hat)) * atom_norm_ener
@@ -486,7 +484,7 @@ class EnergyLoss(Loss):
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
                     se_v = xp.square(v_hat_2d - v2d)  # [nf, 9]
-                    per_frame_v = per_frame_component_mean(se_v, _nf)  # [nf]
+                    per_frame_v = per_frame_component_mean(se_v)  # [nf]
                     if not self.use_huber:
                         loss += pref_v * xp.mean(per_frame_v * inv**norm_exp)
                     else:
@@ -519,7 +517,7 @@ class EnergyLoss(Loss):
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
                     per_frame_v = per_frame_component_mean(
-                        xp.abs(v_hat_2d - v2d), _nf
+                        xp.abs(v_hat_2d - v2d)
                     )  # [nf]
                     l1_virial_masked = xp.mean(per_frame_v * inv)
                     loss += pref_v * l1_virial_masked
@@ -539,7 +537,7 @@ class EnergyLoss(Loss):
                 if maskf is not None:
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
-                    per_frame_v = per_frame_component_mean(xp.abs(v_hat_2d - v2d), _nf)
+                    per_frame_v = per_frame_component_mean(xp.abs(v_hat_2d - v2d))
                     mae_v = xp.mean(per_frame_v * inv)
                 else:
                     mae_v = (

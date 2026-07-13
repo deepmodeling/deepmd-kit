@@ -163,7 +163,7 @@ class EnergySpinLoss(Loss):
                 se_e = xp.square(energy_pred - energy_label)  # [nf, k]
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization by real-atom count.
-                    per_frame_e = per_frame_component_mean(se_e, _nf)  # [nf]
+                    per_frame_e = per_frame_component_mean(se_e)  # [nf]
                     loss += pref_e * xp.mean(per_frame_e * inv**norm_exp)
                     more_loss["rmse_e"] = self.display_if_exist(
                         xp.sqrt(xp.mean(per_frame_e * inv**2)), find_energy
@@ -179,7 +179,7 @@ class EnergySpinLoss(Loss):
                 if maskf is not None:
                     # Idiom 2 (extensive) with abs: per-frame normalization by real-atom count.
                     per_frame_ae = per_frame_component_mean(
-                        xp.abs(energy_pred - energy_label), _nf
+                        xp.abs(energy_pred - energy_label)
                     )  # [nf]
                     l1_ener_masked = xp.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
@@ -194,7 +194,7 @@ class EnergySpinLoss(Loss):
             if mae:
                 if maskf is not None:
                     per_frame_ae = per_frame_component_mean(
-                        xp.abs(energy_pred - energy_label), _nf
+                        xp.abs(energy_pred - energy_label)
                     )
                     mae_e = xp.mean(per_frame_ae * inv)
                 else:
@@ -333,16 +333,14 @@ class EnergySpinLoss(Loss):
             if self.loss_func == "mse":
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization by real-atom count.
-                    per_frame_v = per_frame_component_mean(
-                        xp.square(diff_v), _nf
-                    )  # [nf]
+                    per_frame_v = per_frame_component_mean(xp.square(diff_v))  # [nf]
                     loss += pref_v * xp.mean(per_frame_v * inv**norm_exp)
                     more_loss["rmse_v"] = self.display_if_exist(
                         xp.sqrt(xp.mean(per_frame_v * inv**2)), find_virial
                     )
                     if mae:
                         per_frame_mae_v = per_frame_component_mean(
-                            xp.abs(diff_v), _nf
+                            xp.abs(diff_v)
                         )  # [nf]
                         mae_v = xp.mean(per_frame_mae_v * inv)
                         more_loss["mae_v"] = self.display_if_exist(mae_v, find_virial)
@@ -359,7 +357,7 @@ class EnergySpinLoss(Loss):
                 l1_virial_loss = xp.mean(xp.abs(diff_v))
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9) with abs: per-frame normalization by real-atom count.
-                    per_frame_v = per_frame_component_mean(xp.abs(diff_v), _nf)  # [nf]
+                    per_frame_v = per_frame_component_mean(xp.abs(diff_v))  # [nf]
                     l1_virial_masked = xp.mean(per_frame_v * inv)
                     loss += pref_v * l1_virial_masked
                     more_loss["mae_v"] = self.display_if_exist(
