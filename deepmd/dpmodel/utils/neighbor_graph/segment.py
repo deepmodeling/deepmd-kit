@@ -61,6 +61,8 @@ def segment_softmax(
     segment_ids: Array,
     num_segments: int,
     mask: Array | None = None,
+    phantom_count: Array | None = None,
+    phantom_logit: float = 0.0,
 ) -> Array:
     """Softmax over entries sharing a segment id, numerically stable.
 
@@ -68,6 +70,18 @@ def segment_softmax(
     max. ``mask`` (bool, per entry) removes masked entries from the softmax
     entirely (zero weight AND excluded from the denominator). Empty or
     fully-masked segments produce all-zero weights (no NaN).
+
+    ``phantom_count`` (per segment, shape ``(num_segments,)``) adds that many
+    virtual entries with raw logit ``phantom_logit`` to the segment's
+    DENOMINATOR only (they produce no output rows). This reproduces the dense
+    smooth-attention convention -- a fixed ``sel``-width softmax whose padding
+    slots each hold ``exp(-attnw_shift)`` -- on a ragged edge set whose entry
+    count varies with geometry: passing ``phantom_count = max(sel - n_real,
+    0)`` keeps the total denominator term count constant (``sel``), which
+    makes the attention weights exactly continuous when an entry enters or
+    leaves the segment at the cutoff (its boundary logit equals
+    ``phantom_logit`` by the smooth envelope, so the swap is value-preserving)
+    and term-for-term equal to the dense softmax at non-binding ``sel``.
     """
     xp = array_api_compat.array_namespace(data)
     if mask is not None:
@@ -79,6 +93,19 @@ def segment_softmax(
     else:
         data_for_max = data
     seg_max = segment_max(data_for_max, segment_ids, num_segments)
+    ph_b = None
+    if phantom_count is not None:
+        # phantom entries participate in the max exactly like dense's padding
+        # slots do in np_softmax's row max (dense: m = max(real, -shift));
+        # this also guards exp-overflow when every real logit < phantom_logit.
+        ph_b = xp.reshape(
+            phantom_count, phantom_count.shape + (1,) * (seg_max.ndim - 1)
+        )
+        seg_max = xp.where(
+            ph_b > 0,
+            xp.maximum(seg_max, xp.full_like(seg_max, phantom_logit)),
+            seg_max,
+        )
     # guard -inf (empty / fully-masked segments) so gather doesn't yield inf-inf
     seg_max = xp.where(xp.isinf(seg_max), xp.zeros_like(seg_max), seg_max)
     # shift data_for_max (masked entries already -inf), NOT the raw data:
@@ -93,6 +120,10 @@ def segment_softmax(
         # zero-weight guarantee never depends on the shift implementation
         ex = ex * xp.astype(mask_b, ex.dtype)
     denom = segment_sum(ex, segment_ids, num_segments)
+    if ph_b is not None:
+        denom = denom + xp.astype(ph_b, denom.dtype) * xp.exp(
+            xp.full_like(seg_max, phantom_logit) - seg_max
+        )
     denom_e = xp.take(denom, segment_ids, axis=0)
     safe = xp.where(denom_e > 0, denom_e, xp.ones_like(denom_e))
     return ex / safe

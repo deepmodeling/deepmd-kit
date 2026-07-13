@@ -1284,15 +1284,28 @@ class Atten2Map(NativeOP):
         k_e: Array,
         pair_mask: Array,
         e_tot: int,
+        sel: int,
     ) -> Array:
         """Graph twin of :meth:`call`: per-pair attention map over edges sharing
         a center. Dense (nnei, nnei) square -> ordered+self edge pairs; softmax
         over the key axis -> segment_softmax grouped by the query edge. The
         dense post-softmax query-row AND key-column zeroing both collapse to
         ``pair_mask`` (a pair is real iff BOTH edges are real).
+
+        The smooth branch reproduces dense's FIXED-WIDTH softmax denominator
+        exactly: dense keeps every one of its ``sel`` key slots in the
+        denominator, the non-real ones each at ``exp(-attnw_shift)``. Here the
+        masked pairs are excluded from the softmax and replaced by
+        ``max(sel - n_real, 0)`` phantom denominator terms per query edge, so
+        the phantom COUNT is geometry-independent. Without this, one phantom
+        per PRESENT pair would make the denominator term count change when an
+        edge enters/leaves the graph at the model cutoff -- an
+        ``O(exp(-attnw_shift))`` energy/force discontinuity -- and differ from
+        dense by ``O(sel * exp(-attnw_shift))``.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_softmax,
+            segment_sum,
         )
 
         xp = array_api_compat.array_namespace(g2, h2)
@@ -1315,11 +1328,23 @@ class Atten2Map(NativeOP):
         sw_q = xp.take(sw, q_e, axis=0)  # (P,)
         sw_k = xp.take(sw, k_e, axis=0)
         if self.smooth:
-            # padding pairs stay in the denominator at exp(-shift), like dense
             attnw = (attnw + self.attnw_shift) * sw_q[:, None] * sw_k[
                 :, None
             ] - self.attnw_shift
-            attnw = segment_softmax(attnw, q_e, e_tot)
+            # dense-width phantom compensation (see docstring): real pairs per
+            # query edge, then sel - n_real phantoms at exp(-shift)
+            pm = xp.astype(pair_mask, attnw.dtype)
+            n_real = segment_sum(pm, q_e, e_tot)  # (e_tot,)
+            phantom = sel - n_real
+            phantom = xp.where(phantom > 0, phantom, xp.zeros_like(phantom))
+            attnw = segment_softmax(
+                attnw,
+                q_e,
+                e_tot,
+                mask=pair_mask,
+                phantom_count=phantom,
+                phantom_logit=-self.attnw_shift,
+            )
         else:
             attnw = segment_softmax(attnw, q_e, e_tot, mask=pair_mask)
         attnw = attnw * xp.astype(pair_mask[:, None], attnw.dtype)
@@ -1674,9 +1699,17 @@ class LocalAtten(NativeOP):
         sw: Array,
         dst: Array,
         n_total: int,
+        sel: int,
     ) -> Array:
         """Graph twin of :meth:`call`: per-center attention over its edges
         (softmax over the neighbor axis -> segment_softmax over dst).
+
+        The smooth branch uses the dense-width phantom compensation (see
+        :meth:`Atten2Map.call_graph`): masked edges are excluded from the
+        softmax and ``max(sel - n_real, 0)`` phantom denominator terms at
+        ``exp(-attnw_shift)`` are added per center, keeping the denominator
+        term count geometry-independent (continuous at the cutoff, and equal
+        to the dense softmax at non-binding ``sel``).
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_softmax,
@@ -1692,7 +1725,18 @@ class LocalAtten(NativeOP):
         attnw = xp.sum(xp.take(g1q, dst, axis=0) * gg1k, axis=1) / nd**0.5  # (E, nh)
         if self.smooth:
             attnw = (attnw + self.attnw_shift) * sw[:, None] - self.attnw_shift
-            attnw = segment_softmax(attnw, dst, n_total)
+            em = xp.astype(edge_mask, attnw.dtype)
+            n_real = segment_sum(em, dst, n_total)  # (n_total,)
+            phantom = sel - n_real
+            phantom = xp.where(phantom > 0, phantom, xp.zeros_like(phantom))
+            attnw = segment_softmax(
+                attnw,
+                dst,
+                n_total,
+                mask=edge_mask,
+                phantom_count=phantom,
+                phantom_logit=-self.attnw_shift,
+            )
         else:
             attnw = segment_softmax(attnw, dst, n_total, mask=edge_mask)
         attnw = attnw * xp.astype(edge_mask[:, None], attnw.dtype)
@@ -2155,7 +2199,9 @@ class RepformerLayer(NativeOP):
         n_total
             Total number of nodes.
         nnei
-            The block sel (the smooth-branch normalization constant).
+            The block sel: the smooth-branch normalization constant AND the
+            fixed dense softmax width for the attention phantom-count
+            compensation (see :meth:`Atten2Map.call_graph`).
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_sum,
@@ -2426,7 +2472,9 @@ class RepformerLayer(NativeOP):
         n_total
             Total number of nodes.
         nnei
-            The block sel (the smooth-branch normalization constant).
+            The block sel: the smooth-branch normalization constant AND the
+            fixed dense softmax width for the attention phantom-count
+            compensation (see :meth:`Atten2Map.call_graph`).
         pairs
             ``(q_e, k_e, pair_mask)`` from
             :func:`~deepmd.dpmodel.utils.neighbor_graph.center_edge_pairs`.
@@ -2476,7 +2524,7 @@ class RepformerLayer(NativeOP):
                 )
                 q_e, k_e, pair_mask = pairs
                 AAg = self.attn2g_map.call_graph(
-                    g2, h2, sw, q_e, k_e, pair_mask, e_tot
+                    g2, h2, sw, q_e, k_e, pair_mask, e_tot, nnei
                 )  # (P, nh)
                 if self.update_g2_has_attn:
                     assert self.attn2_mh_apply is not None
@@ -2541,7 +2589,7 @@ class RepformerLayer(NativeOP):
             assert gg1 is not None
             assert self.loc_attn is not None
             g1_update.append(
-                self.loc_attn.call_graph(g1, gg1, edge_mask, sw, dst, n_total)
+                self.loc_attn.call_graph(g1, gg1, edge_mask, sw, dst, n_total, nnei)
             )
 
         if self.update_chnnl_2:

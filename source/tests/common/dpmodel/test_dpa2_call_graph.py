@@ -733,6 +733,81 @@ class TestDPA2ModelEnergyCarryAll:
         np.testing.assert_array_equal(graph["mask"], dense["mask"])
 
 
+def _make_attn_energy_model() -> EnergyModel:
+    """Attention-enabled twin of :func:`_make_energy_model` (both repformer
+    attention channels ON) for the phantom-count-compensated smooth-attention
+    tests below.
+    """
+    ds = _make_dpa2(repinit_nsel=200, repformer_nsel=150, repformer_attn=True)
+    ft = InvarFitting(
+        "energy",
+        ds.get_ntypes(),
+        ds.get_dim_out(),
+        1,
+        mixed_types=ds.mixed_types(),
+    )
+    return EnergyModel(ds, ft, type_map=["foo", "bar"])
+
+
+class TestDPA2AttentionCarryAllSmoothParity:
+    """Phantom-count-compensated smooth attention on the carry-all graph route.
+
+    The dense smooth-attention softmax keeps exactly ``sel - n_real`` phantom
+    terms (each ``exp(-attnw_shift)``) in every denominator -- a count that
+    never changes with geometry. The graph route instead used one phantom per
+    PRESENT edge (a geometry-dependent count): outputs differed from dense by
+    ``O(sel * exp(-attnw_shift)) ~ 1e-7`` even at non-binding sel, and the
+    energy jumped by ``O(exp(-attnw_shift))`` whenever an edge entered or left
+    the graph at the model cutoff. With the compensation (masked pairs
+    excluded from the softmax, ``max(sel - n_real, 0)`` phantoms added), the
+    denominator is term-for-term the dense one at non-binding sel: parity at
+    1e-12 AND exact continuity at the cutoff.
+    """
+
+    def test_attention_energy_parity_non_binding_sel(self) -> None:
+        rng = np.random.default_rng(53)
+        nloc = 8
+        coord = rng.normal(size=(1, nloc, 3)) * 1.5
+        atype = np.array([[0, 1, 0, 1, 0, 1, 0, 1]], dtype=np.int64)
+        model = _make_attn_energy_model()
+
+        dense = model.call_common(coord, atype, None, neighbor_graph_method="legacy")
+        graph = model.call_common(coord, atype, None, neighbor_graph_method="dense")
+
+        np.testing.assert_allclose(
+            graph["energy_redu"], dense["energy_redu"], rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12
+        )
+
+    def test_attention_energy_smooth_at_model_cutoff(self) -> None:
+        """Graph-route energy is continuous when an atom crosses the model
+        cutoff (repinit rcut=4.0). A second atom sits inside the repformer
+        cutoff so the attention softmaxes have >=2 members (the denominator-
+        jump scenario). Without the compensation the jump is
+        ``O(exp(-attnw_shift)) ~ 1e-10``; with it, only float-reassociation
+        noise remains.
+        """
+        model = _make_attn_energy_model()
+        atype = np.array([[0, 1, 1]], dtype=np.int64)
+        rcut = 4.0  # _make_dpa2 default repinit (model) rcut
+
+        def energy(r: float) -> float:
+            coord = np.array(
+                [[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, r, 0.0]]],
+                dtype=np.float64,
+            )
+            ret = model.call_common(
+                coord, atype, None, neighbor_graph_method="dense"
+            )
+            return float(np.sum(ret["energy_redu"]))
+
+        eps = 1e-8
+        jump = abs(energy(rcut + eps) - energy(rcut - eps))
+        assert jump < 1e-13, f"graph-route energy jump {jump:.3e} at rcut"
+
+
 class TestNodeOwnershipMask:
     """Direct unit tests of :func:`node_ownership_mask` -- the per-frame
     block arithmetic (``cumulative_sum``/``take``) is where bugs hide, so

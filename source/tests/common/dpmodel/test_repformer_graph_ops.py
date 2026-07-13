@@ -235,6 +235,7 @@ def test_atten2map_parity(has_gate, smooth):
         k_e,
         pm,
         NF * NLOC * NNEI,
+        NNEI,
     )  # (P, nh)
     slot = np.arange(NF * NLOC * NNEI) % NNEI
     ctr = dst[np.asarray(q_e)]
@@ -269,7 +270,7 @@ def test_atten2_mh_apply_parity(has_gate, smooth):
     ref = mha.call(ref_AA, g2)  # (nf, nloc, nnei, ng2)
     q_e, k_e, pm = _pairs(mask, dst, n_total)
     got_AA = a2m.call_graph(
-        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot, NNEI
     )
     got = mha.call_graph(got_AA, g2.reshape(-1, NG), q_e, k_e, e_tot)
     np.testing.assert_allclose(
@@ -298,7 +299,7 @@ def test_atten2_ev_apply_parity(has_gate, smooth):
     ref = ev.call(ref_AA, h2)  # (nf, nloc, nnei, 3)
     q_e, k_e, pm = _pairs(mask, dst, n_total)
     got_AA = a2m.call_graph(
-        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot, NNEI
     )
     got = ev.call_graph(got_AA, h2.reshape(-1, 3), q_e, k_e, e_tot)
     np.testing.assert_allclose(
@@ -320,6 +321,7 @@ def test_local_atten_parity(smooth):
         sw.reshape(-1),
         dst,
         n_total,
+        NNEI,
     )
     np.testing.assert_allclose(
         np.asarray(got), ref.reshape(n_total, 8), rtol=1e-12, atol=1e-12
@@ -340,7 +342,7 @@ def test_atten2map_graph_torch():
     q_e, k_e, pm = _pairs(mask, dst, n_total)
     e_tot = NF * NLOC * NNEI
     ref = a2m.call_graph(
-        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot
+        g2.reshape(-1, NG), h2.reshape(-1, 3), sw.reshape(-1), q_e, k_e, pm, e_tot, NNEI
     )
     got = a2m.call_graph(
         torch.from_numpy(g2.reshape(-1, NG)),
@@ -350,6 +352,7 @@ def test_atten2map_graph_torch():
         torch.from_numpy(k_e),
         torch.from_numpy(pm),
         e_tot,
+        NNEI,
     )
     np.testing.assert_allclose(got.numpy(), ref, rtol=1e-12, atol=1e-12)
 
