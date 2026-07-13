@@ -104,20 +104,20 @@ def test_cal_hg_graph_torch():
 
 
 def _mk_layer(g1_out_conv: bool, seed: int = 0, **kwargs) -> RepformerLayer:
-    cfg = dict(
-        rcut=4.0,
-        rcut_smth=0.5,
-        sel=NNEI,
-        ntypes=2,
-        g1_dim=8,
-        g2_dim=NG,
-        axis_neuron=2,
-        update_chnnl_2=True,
-        g1_out_conv=g1_out_conv,
-        g1_out_mlp=True,
-        precision="float64",
-        seed=seed,
-    )
+    cfg = {
+        "rcut": 4.0,
+        "rcut_smth": 0.5,
+        "sel": NNEI,
+        "ntypes": 2,
+        "g1_dim": 8,
+        "g2_dim": NG,
+        "axis_neuron": 2,
+        "update_chnnl_2": True,
+        "g1_out_conv": g1_out_conv,
+        "g1_out_mlp": True,
+        "precision": "float64",
+        "seed": seed,
+    }
     cfg.update(kwargs)
     return RepformerLayer(**cfg)
 
@@ -465,5 +465,5 @@ def test_repformer_layer_call_graph_torch():
         NNEI,
         t_pairs,
     )
-    for r, g in zip(ref, got):
+    for r, g in zip(ref, got, strict=True):
         np.testing.assert_allclose(g.numpy(), r, rtol=1e-12, atol=1e-12)
