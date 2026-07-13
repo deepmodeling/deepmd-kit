@@ -197,6 +197,8 @@ def _run_mpi_subprocess(
         extra_args=extra_args,
         runner_args=runner_args,
     )
+
+
 @pytest.mark.skipif(
     shutil.which("mpirun") is None, reason="MPI is not installed on this system"
 )
