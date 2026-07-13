@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "deepmd.hpp"
@@ -24,4 +25,15 @@ TEST(TestDeepmdException, deepmdexception) {
 TEST(TestDeepmdException, deepmdexception_nofile) {
   ASSERT_THROW(deepmd::hpp::DeepPot("_no_such_file.pb"),
                deepmd::hpp::deepmd_exception);
+}
+
+TEST(TestInputNlist, move_assignment_transfers_c_handle) {
+  deepmd::hpp::InputNlist source;
+  DP_Nlist* source_handle = source.nl;
+  deepmd::hpp::InputNlist target;
+
+  target = std::move(source);
+
+  EXPECT_EQ(target.nl, source_handle);
+  EXPECT_EQ(source.nl, nullptr);
 }

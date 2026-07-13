@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// The device pair style requires both LAMMPS Kokkos and the DeePMD C++ API.
-#if defined(LMP_KOKKOS) && defined(DP_USE_CXX_API)
+// The device pair style is available when the LAMMPS Kokkos package is enabled.
+#ifdef LMP_KOKKOS
 
 #ifndef LAMMPS_VERSION_NUMBER
 #error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
@@ -152,4 +152,4 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 #endif
 #endif
 
-#endif  // LMP_KOKKOS && DP_USE_CXX_API
+#endif  // LMP_KOKKOS

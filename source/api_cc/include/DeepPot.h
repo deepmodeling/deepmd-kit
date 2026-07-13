@@ -765,9 +765,10 @@ class DeepPot : public DeepBaseModel {
    * stored defaults. Empty vectors fall back to the stored default fparam and
    * to no aparam, so the two overloads coincide.
    *
-   * @param[in] fparam Runtime frame parameters, or empty for the model default.
-   * @param[in] aparam Runtime per-atom parameters (row-major [nloc, daparam]),
-   *   or empty for none.
+   * @param[in] fparam Host-resident runtime frame parameters, or empty for the
+   *   model default.
+   * @param[in] aparam Host-resident runtime per-atom parameters (row-major
+   *   [nloc, daparam]), or empty for none.
    * @param[in] nall_nodes Total graph node count; 0 (or nloc) folds ghosts onto
    *   local owners (single domain), while nall_nodes > nloc keeps the extended
    *   (local + ghost) node set for a domain-decomposed run.

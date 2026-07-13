@@ -58,7 +58,6 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/deepmd_version.h.in"
 file(GLOB DEEPMD_LMP_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp)
 
 find_package(DeePMD REQUIRED)
-option(DEEPMD_LAMMPS_KOKKOS "Build the DeePMD Kokkos pair style" OFF)
 target_sources(
   lammps
   PRIVATE ${DEEPMD_LMP_SRC}
@@ -69,29 +68,7 @@ target_sources(
           ${LAMMPS_SOURCE_DIR}/KSPACE/remap_wrap.cpp
           ${LAMMPS_SOURCE_DIR}/EXTRA-FIX/fix_ttm.cpp # for ttm
 )
-if(DEEPMD_LAMMPS_KOKKOS)
-  if(NOT PKG_KOKKOS)
-    message(FATAL_ERROR "DEEPMD_LAMMPS_KOKKOS requires PKG_KOKKOS")
-  endif()
-  if(NOT TARGET DeePMD::deepmd_cc)
-    message(
-      FATAL_ERROR
-        "DEEPMD_LAMMPS_KOKKOS requires the DeePMD C++ interface target")
-  endif()
-  target_link_libraries(lammps PUBLIC DeePMD::deepmd_cc)
-  target_compile_definitions(lammps PRIVATE DP_USE_CXX_API)
-  get_target_property(_deepmd_inc DeePMD::deepmd_cc
-                      INTERFACE_INCLUDE_DIRECTORIES)
-  if(_deepmd_inc AND NOT _deepmd_inc MATCHES "-NOTFOUND$")
-    foreach(_inc IN LISTS _deepmd_inc)
-      if(NOT _inc MATCHES "^\\$<")
-        target_include_directories(lammps PUBLIC "${_inc}/deepmd")
-      endif()
-    endforeach()
-  endif()
-else()
-  target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
-endif()
+target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
 target_include_directories(
   lammps PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_LIST_DIR}
                  ${LAMMPS_SOURCE_DIR}/KSPACE ${LAMMPS_SOURCE_DIR}/EXTRA-FIX)

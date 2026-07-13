@@ -322,8 +322,9 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
    * @param[in] nloc Number of local atoms.
    * @param[in] nedge Number of physical edges (dummy edges added internally).
-   * @param[in] fparam Frame parameters, or empty for the stored default.
-   * @param[in] aparam Per-atom parameters, or empty for none.
+   * @param[in] fparam Host-resident frame parameters, or empty for the stored
+   *   default.
+   * @param[in] aparam Host-resident per-atom parameters, or empty for none.
    * @param[in] nall_nodes Graph node count: 0 (or nloc) folds ghosts onto local
    *   owners; nall_nodes > nloc keeps the extended (local + ghost) node set.
    * @param[in] comm_nlist Communication neighbor list for the extended node

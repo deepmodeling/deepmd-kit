@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#if defined(LMP_KOKKOS) && defined(DP_USE_CXX_API)
+#ifdef LMP_KOKKOS
 #include "pair_deepmd_kokkos.h"
 
 #include <algorithm>
@@ -963,4 +963,4 @@ template class PairDeepMDKokkos<LMPHostType>;
 #endif
 }  // namespace LAMMPS_NS
 
-#endif  // LMP_KOKKOS && DP_USE_CXX_API
+#endif  // LMP_KOKKOS
