@@ -1,7 +1,8 @@
 name: Mirror to Gitee Repo
 
-# A ref deletion is also delivered as a push event.  Keeping one trigger avoids
-# launching duplicate mirrors for the same ref change.
+# Ref creation is also delivered as a push event, but deletion may only emit a
+# delete event. Keep both triggers so removed branches and tags are pruned from
+# the mirror without launching duplicate mirrors for ref creation.
 on:
   push:
     # Use positive patterns with exclusions so tag pushes can be listed below.
@@ -16,6 +17,7 @@ on:
       - "!pre-commit-ci-update-config"
     tags:
       - "**"
+  delete:
 
 # Ensures that only one mirror task will run at a time.
 concurrency:
@@ -23,7 +25,12 @@ concurrency:
 
 jobs:
   git-mirror:
-    if: github.repository_owner == 'deepmodeling'
+    # Delete events use the default branch as `github.ref`, so inspect the
+    # payload ref to suppress only ephemeral merge-queue branch deletions.
+    if: >-
+      github.repository_owner == 'deepmodeling' &&
+      (github.event_name != 'delete' ||
+       !startsWith(github.event.ref, 'gh-readonly-queue/'))
     # This is a Docker action; ubuntu-slim does not provide a Docker daemon.
     runs-on: ubuntu-latest
     steps:
