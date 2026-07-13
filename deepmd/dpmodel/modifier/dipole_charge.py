@@ -215,44 +215,6 @@ class DipoleChargeModifierBase:
         data.pop("type", None)
         return cls(**data)
 
-    @staticmethod
-    def get_real_atom_mask(atype: np.ndarray) -> np.ndarray:
-        """Return the mask of physical atoms accepted by the dipole model."""
-        return np.asarray(atype) >= 0
-
-    @staticmethod
-    def get_selected_wc_mask(atype: np.ndarray, sel_type: list[int]) -> np.ndarray:
-        """Return real atoms whose dipole output creates a virtual WC site."""
-        atype = np.asarray(atype)
-        return (atype >= 0) & np.isin(atype, np.asarray(sel_type, dtype=np.int64))
-
-    def make_charge_maps(
-        self, atype: np.ndarray, sel_type: list[int]
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Map real atom and selected WC types to their configured charges."""
-        atype = np.asarray(atype, dtype=np.int64)
-        real_mask = self.get_real_atom_mask(atype)
-        if np.any(atype[real_mask] >= len(self.sys_charge_map)):
-            raise ValueError("sys_charge_map does not cover all real atom types")
-        if len(sel_type) != len(self.model_charge_map):
-            raise ValueError(
-                "model_charge_map length must match the dipole model sel_type length"
-            )
-
-        real_charge = np.zeros_like(atype, dtype=np.float64)
-        real_charge[real_mask] = np.asarray(self.sys_charge_map)[atype[real_mask]]
-        selected_mask = self.get_selected_wc_mask(atype, sel_type)
-        selected_type = atype[selected_mask]
-        wc_charge_by_type = {
-            atom_type: self.model_charge_map[index]
-            for index, atom_type in enumerate(sel_type)
-        }
-        wc_charge = np.asarray(
-            [wc_charge_by_type[int(atom_type)] for atom_type in selected_type],
-            dtype=np.float64,
-        )
-        return real_charge, wc_charge
-
 
 @BaseModifier.register("dipole_charge")
 class DipoleChargeModifier(DipoleChargeModifierBase, BaseModifier):

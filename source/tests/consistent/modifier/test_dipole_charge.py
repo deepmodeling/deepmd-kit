@@ -7,6 +7,7 @@ import numpy as np
 
 from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.dpmodel.modifier.dipole_charge import (
+    compute_ewald_grids,
     ewald_reciprocal_energy,
     extend_dplr_system,
 )
@@ -72,12 +73,25 @@ class TestDipoleChargeModifierConsistency(unittest.TestCase):
                     [6.0, 6.0, 6.0],
                     [6.8, 6.0, 6.0],
                     [6.0, 6.8, 6.0],
-                ]
+                ],
+                [
+                    [1.2, 1.1, 1.0],
+                    [2.0, 1.1, 1.0],
+                    [1.2, 1.9, 1.0],
+                    [7.0, 7.0, 7.0],
+                    [7.8, 7.0, 7.0],
+                    [7.0, 7.8, 7.0],
+                ],
             ],
             dtype=np.float64,
         )
-        cls.atype = np.asarray([[0, 1, 1, 0, 1, 1]], dtype=np.int32)
-        cls.box = np.asarray([np.eye(3) * 10.0], dtype=np.float64)
+        cls.atype = np.asarray(
+            [[0, 1, 1, 0, 1, 1], [0, 1, 1, 0, 1, 1]],
+            dtype=np.int32,
+        )
+        cls.box = np.asarray(
+            [np.eye(3) * 10.0, np.diag([12.0, 14.0, 16.0])], dtype=np.float64
+        )
         cls.kwargs = {
             "model_name": "embedded.dp",
             "model_charge_map": [-8.0],
@@ -132,8 +146,14 @@ class TestDipoleChargeModifierConsistency(unittest.TestCase):
     def test_array_api_strict_core(self) -> None:
         """Ensure the shared numerical core uses only standard array operations."""
         xp = array_api_strict
-        coord = xp.asarray(self.coord, dtype=xp.float64)
-        atype = xp.asarray(self.atype, dtype=xp.int64)
+        padding_coord = np.zeros((self.coord.shape[0], 1, 3), dtype=np.float64)
+        coord = xp.asarray(
+            np.concatenate((self.coord, padding_coord), axis=1), dtype=xp.float64
+        )
+        padding_atype = -np.ones((self.atype.shape[0], 1), dtype=np.int32)
+        atype = xp.asarray(
+            np.concatenate((self.atype, padding_atype), axis=1), dtype=xp.int64
+        )
         box = xp.asarray(self.box, dtype=xp.float64)
         all_coord, all_charge = extend_dplr_system(
             coord,
@@ -143,6 +163,12 @@ class TestDipoleChargeModifierConsistency(unittest.TestCase):
             [-8.0],
             [6.0, 1.0],
         )
-        energy = ewald_reciprocal_energy(all_coord, all_charge, box, ((6, 6, 6),), 1.0)
-        self.assertEqual(energy.shape, (1, 1))
+        # Padding atoms and their paired WC slots must both remain uncharged.
+        charge_array = np.asarray(all_charge)
+        np.testing.assert_array_equal(charge_array[:, 6], 0.0)
+        np.testing.assert_array_equal(charge_array[:, 13], 0.0)
+        grids = compute_ewald_grids(box, self.kwargs["ewald_h"])
+        self.assertNotEqual(grids[0], grids[1])
+        energy = ewald_reciprocal_energy(all_coord, all_charge, box, grids, 1.0)
+        self.assertEqual(energy.shape, (2, 1))
         self.assertTrue(np.isfinite(np.asarray(energy)).all())
