@@ -1,8 +1,6 @@
 [build-system]
 requires = [
-    # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
-    # dynamic metadata API is still unstable
-    "scikit-build-core>=0.11,!=0.6.0,<0.13",
+    "scikit-build-core>=1",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
     "dependency_groups",
@@ -200,8 +198,7 @@ pin_jax_gpu = [
 [tool.setuptools_scm]
 
 [tool.scikit-build]
-experimental = true
-minimum-version = "0.5"
+minimum-version = "1.0"
 cmake.source-dir = "source"
 sdist.include = [
     "/deepmd/_version.py",
@@ -224,18 +221,18 @@ wheel.packages = [
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
 
-[tool.scikit-build.metadata.version]
+[[tool.dynamic-metadata]]
 provider = "scikit_build_core.metadata.setuptools_scm"
 
-[tool.scikit-build.metadata.optional-dependencies]
-provider = "backend.dynamic_metadata"
-provider-path = "backend"
+[[tool.dynamic-metadata]]
+provider = {path = ".", module = "backend.dynamic_metadata"}
+field = "optional-dependencies"
 
-[tool.scikit-build.metadata.scripts]
-provider = "backend.dynamic_metadata"
-provider-path = "backend"
+[[tool.dynamic-metadata]]
+provider = {path = ".", module = "backend.dynamic_metadata"}
+field = "scripts"
 
-[tool.scikit-build.metadata.readme]
+[[tool.dynamic-metadata]]
 provider = "scikit_build_core.metadata.fancy_pypi_readme"
 
 [[tool.scikit-build.generate]]
