@@ -926,8 +926,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         # None (multi-rank) is not yet supported on the graph route; the
         # graph needs `mapping` to fold ghosts to local owners, so without it
         # only nall == nloc is valid.
-        if self.uses_graph_lower() and comm_dict is None and (
-            mapping is not None or nall == nloc
+        if (
+            self.uses_graph_lower()
+            and comm_dict is None
+            and (mapping is not None or nall == nloc)
         ):
             return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
         return self._call_dense(
@@ -1147,7 +1149,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             dd = xp.reshape(dist, (n_center, static_nnei))[:, :ns]
             dd = xp.reshape(dd, (n_center * ns,))
             em = em & (dd <= rc)
-            sliced = dataclasses.replace(graph, edge_index=ei, edge_vec=ev, edge_mask=em)
+            sliced = dataclasses.replace(
+                graph, edge_index=ei, edge_vec=ev, edge_mask=em
+            )
             return sliced, ns
 
         tebd_table = (

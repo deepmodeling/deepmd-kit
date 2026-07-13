@@ -109,7 +109,9 @@ class TestPublicExports(unittest.TestCase):
 
 
 def test_segment_max_trailing_dims():
-    from deepmd.dpmodel.utils.neighbor_graph import segment_max
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_max,
+    )
 
     data = np.array([[1.0, 5.0], [3.0, 2.0], [2.0, 9.0]])
     ids = np.array([0, 0, 1], dtype=np.int64)
@@ -118,7 +120,9 @@ def test_segment_max_trailing_dims():
 
 
 def test_segment_softmax_trailing_dims_matches_columnwise():
-    from deepmd.dpmodel.utils.neighbor_graph import segment_softmax
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_softmax,
+    )
 
     rng = np.random.default_rng(0)
     data = rng.normal(size=(6, 3))
@@ -133,7 +137,9 @@ def test_segment_softmax_trailing_dims_matches_columnwise():
 def test_segment_softmax_trailing_dims_torch():
     import torch
 
-    from deepmd.dpmodel.utils.neighbor_graph import segment_softmax
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_softmax,
+    )
 
     rng = np.random.default_rng(1)
     data = rng.normal(size=(5, 2))

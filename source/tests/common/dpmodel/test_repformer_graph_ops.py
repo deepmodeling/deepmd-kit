@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Per-op parity: repformer graph twins vs the dense reference ops on the
 identical (shape-static, center-major) edge layout. Same math, fp64 =>
-rtol/atol 1e-12."""
+rtol/atol 1e-12.
+"""
 
 import itertools
 
@@ -15,12 +16,10 @@ from deepmd.dpmodel.descriptor.repformers import (
     LocalAtten,
     RepformerLayer,
     _cal_hg,
-    _cal_grrg,
-    _make_nei_g1,
-    _cal_grrg_graph,
     _cal_hg_graph,
-    symmetrization_op_graph,
+    _make_nei_g1,
     symmetrization_op,
+    symmetrization_op_graph,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     center_edge_pairs,
@@ -47,12 +46,17 @@ def test_cal_hg_graph_parity(smooth, use_sqrt_nnei):
     g, h, mask, sw, n_total, dst = _mk()
     ref = _cal_hg(g, h, mask, sw, smooth=smooth, use_sqrt_nnei=use_sqrt_nnei)
     got = _cal_hg_graph(
-        g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
-        dst, n_total, NNEI, smooth=smooth, use_sqrt_nnei=use_sqrt_nnei,
+        g.reshape(-1, NG),
+        h.reshape(-1, 3),
+        mask.reshape(-1),
+        sw.reshape(-1),
+        dst,
+        n_total,
+        NNEI,
+        smooth=smooth,
+        use_sqrt_nnei=use_sqrt_nnei,
     )
-    np.testing.assert_allclose(
-        got, ref.reshape(n_total, 3, NG), rtol=1e-12, atol=1e-12
-    )
+    np.testing.assert_allclose(got, ref.reshape(n_total, 3, NG), rtol=1e-12, atol=1e-12)
 
 
 @pytest.mark.parametrize("axis_neuron", [2, 4])
@@ -60,8 +64,14 @@ def test_symmetrization_op_graph_parity(axis_neuron):
     g, h, mask, sw, n_total, dst = _mk(1)
     ref = symmetrization_op(g, h, mask, sw, axis_neuron)
     got = symmetrization_op_graph(
-        g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
-        dst, n_total, NNEI, axis_neuron,
+        g.reshape(-1, NG),
+        h.reshape(-1, 3),
+        mask.reshape(-1),
+        sw.reshape(-1),
+        dst,
+        n_total,
+        NNEI,
+        axis_neuron,
     )
     np.testing.assert_allclose(
         got, ref.reshape(n_total, axis_neuron * NG), rtol=1e-12, atol=1e-12
@@ -73,13 +83,22 @@ def test_cal_hg_graph_torch():
 
     g, h, mask, sw, n_total, dst = _mk(2)
     ref = _cal_hg_graph(
-        g.reshape(-1, NG), h.reshape(-1, 3), mask.reshape(-1), sw.reshape(-1),
-        dst, n_total, NNEI,
+        g.reshape(-1, NG),
+        h.reshape(-1, 3),
+        mask.reshape(-1),
+        sw.reshape(-1),
+        dst,
+        n_total,
+        NNEI,
     )
     got = _cal_hg_graph(
-        torch.from_numpy(g.reshape(-1, NG)), torch.from_numpy(h.reshape(-1, 3)),
-        torch.from_numpy(mask.reshape(-1)), torch.from_numpy(sw.reshape(-1)),
-        torch.from_numpy(dst), n_total, NNEI,
+        torch.from_numpy(g.reshape(-1, NG)),
+        torch.from_numpy(h.reshape(-1, 3)),
+        torch.from_numpy(mask.reshape(-1)),
+        torch.from_numpy(sw.reshape(-1)),
+        torch.from_numpy(dst),
+        n_total,
+        NNEI,
     )
     np.testing.assert_allclose(got.numpy(), ref, rtol=1e-12)
 
@@ -137,9 +156,7 @@ def test_update_g1_conv_graph_parity(g1_out_conv):
         n_total,
         NNEI,
     )
-    np.testing.assert_allclose(
-        got, ref.reshape(n_total, -1), rtol=1e-12, atol=1e-12
-    )
+    np.testing.assert_allclose(got, ref.reshape(n_total, -1), rtol=1e-12, atol=1e-12)
 
 
 def test_update_g2_g1g1_graph_parity():
@@ -148,9 +165,7 @@ def test_update_g2_g1g1_graph_parity():
     g1_ext = g1.reshape(NF, NLOC, 8)
     gg1 = _make_nei_g1(g1_ext, np.where(mask, nlist, 0))
     ref = layer._update_g2_g1g1(g1_ext, gg1, mask, sw)
-    got = layer._update_g2_g1g1_graph(
-        g1, src, dst, mask.reshape(-1), sw.reshape(-1)
-    )
+    got = layer._update_g2_g1g1_graph(g1, src, dst, mask.reshape(-1), sw.reshape(-1))
     np.testing.assert_allclose(
         got, ref.reshape(n_total * NNEI, -1), rtol=1e-12, atol=1e-12
     )
@@ -196,10 +211,14 @@ def _pairs(mask, dst, n_total):
     return q_e, k_e, pm
 
 
-@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize(
+    "has_gate,smooth", [(True, True), (False, True), (True, False)]
+)
 def test_atten2map_parity(has_gate, smooth):
     rng = np.random.default_rng(6)
-    a2m = Atten2Map(NG, 4, 2, has_gate=has_gate, smooth=smooth, precision="float64", seed=7)
+    a2m = Atten2Map(
+        NG, 4, 2, has_gate=has_gate, smooth=smooth, precision="float64", seed=7
+    )
     g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
     h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
     mask = rng.random((NF, NLOC, NNEI)) > 0.3
@@ -229,11 +248,15 @@ def test_atten2map_parity(has_gate, smooth):
     np.testing.assert_allclose(np.asarray(got), ref_pairs, rtol=1e-12, atol=1e-12)
 
 
-@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize(
+    "has_gate,smooth", [(True, True), (False, True), (True, False)]
+)
 def test_atten2_mh_apply_parity(has_gate, smooth):
     rng = np.random.default_rng(9)
     nh = 3
-    a2m = Atten2Map(NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=10)
+    a2m = Atten2Map(
+        NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=10
+    )
     mha = Atten2MultiHeadApply(NG, nh, precision="float64", seed=11)
     g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
     h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
@@ -254,11 +277,15 @@ def test_atten2_mh_apply_parity(has_gate, smooth):
     )
 
 
-@pytest.mark.parametrize("has_gate,smooth", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize(
+    "has_gate,smooth", [(True, True), (False, True), (True, False)]
+)
 def test_atten2_ev_apply_parity(has_gate, smooth):
     rng = np.random.default_rng(12)
     nh = 3
-    a2m = Atten2Map(NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=13)
+    a2m = Atten2Map(
+        NG, 4, nh, has_gate=has_gate, smooth=smooth, precision="float64", seed=13
+    )
     ev = Atten2EquiVarApply(NG, nh, precision="float64", seed=14)
     g2 = rng.normal(size=(NF, NLOC, NNEI, NG))
     h2 = rng.normal(size=(NF, NLOC, NNEI, 3))
@@ -403,12 +430,8 @@ def test_repformer_layer_call_graph_parity(case_name):
     np.testing.assert_allclose(
         got_g1, ref_g1.reshape(n_total, -1), rtol=1e-12, atol=1e-12
     )
-    np.testing.assert_allclose(
-        got_g2, ref_g2.reshape(-1, NG), rtol=1e-12, atol=1e-12
-    )
-    np.testing.assert_allclose(
-        got_h2, ref_h2.reshape(-1, 3), rtol=1e-12, atol=1e-12
-    )
+    np.testing.assert_allclose(got_g2, ref_g2.reshape(-1, NG), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(got_h2, ref_h2.reshape(-1, 3), rtol=1e-12, atol=1e-12)
 
 
 def test_repformer_layer_call_graph_torch():
