@@ -229,9 +229,11 @@ class TestGraphEligibility:
         assert dd.uses_graph_lower() is True
 
     def test_se_atten_v2_graph_equals_dense(self) -> None:
-        """The graph-routed se_atten_v2 ``call`` is bit-exact with ``_call_dense``
+        """The se_atten_v2 graph adapter is bit-exact with ``_call_dense``
         (the ``static_nnei`` adapter reproduces the dense phantom terms despite
-        smooth=True) at a non-binding sel.
+        smooth=True) at a non-binding sel, for a fresh model (trivial
+        statistics -- the adapter's bit-exact regime; the public ``call``
+        itself is always dense).
         """
         from deepmd.dpmodel.descriptor.se_atten_v2 import (
             DescrptSeAttenV2,
@@ -246,10 +248,10 @@ class TestGraphEligibility:
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
             coord, atype, dd.get_rcut(), dd.get_sel(), mixed_types=True, box=None
         )
-        routed = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter = dd._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
         dense = dd._call_dense(ext_coord, ext_atype, nlist)
-        assert len(routed) == len(dense)
-        for r, d in zip(routed, dense, strict=True):
+        assert len(adapter) == len(dense)
+        for r, d in zip(adapter, dense, strict=True):
             if r is None:
                 assert d is None
                 continue
