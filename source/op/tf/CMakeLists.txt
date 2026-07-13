@@ -34,7 +34,6 @@ file(
   ewald_recp.cc
   gelu_multi_device.cc
   map_aparam.cc
-  neighbor_stat.cc
   unaggregated_grad.cc
   tabulate_multi_device.cc
   prod_env_mat_multi_device.cc
