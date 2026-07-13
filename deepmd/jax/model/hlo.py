@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from typing import (
     Any,
 )
@@ -29,6 +30,14 @@ OUTPUT_DEFS = {
         reducible=True,
         r_differentiable=True,
         c_differentiable=True,
+    ),
+    "energy_hessian": OutputVariableDef(
+        "energy",
+        shape=[1],
+        reducible=True,
+        r_differentiable=True,
+        c_differentiable=True,
+        r_hessian=True,
     ),
     "dos": OutputVariableDef(
         "dos",
@@ -215,6 +224,10 @@ class HLO(BaseModel):
         )
 
     def _output_var_def(self, name: str) -> OutputVariableDef:
+        if name == "energy" and json.loads(self.model_def_script).get(
+            "hessian_mode", False
+        ):
+            return OUTPUT_DEFS["energy_hessian"]
         if name in OUTPUT_DEFS:
             return OUTPUT_DEFS[name]
         # property models carry a user-defined output name (``var_name``) that
