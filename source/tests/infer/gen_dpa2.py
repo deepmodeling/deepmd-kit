@@ -214,6 +214,28 @@ def main():
     # Everything else stays at the section-A defaults (attn toggles ON in
     # repformer -- that's the point: repformer's own attention is graph-
     # native, unlike DPA1's se_atten which requires attn_layer=0).
+    #
+    # Skip the whole graph section under LeakSanitizer. The C++ memleak matrix
+    # runs these gen scripts with ``LD_PRELOAD=liblsan`` (the sanitizer-
+    # instrumented deepmd op .so requires the LSAN runtime; see
+    # source/install/test_cc_local.sh). Evaluating the AOTInductor-compiled
+    # graph .pt2's BACKWARD (forces) under that runtime segfaults inside the
+    # repformer's fused backward kernel -- an AOTI-compiled-code vs
+    # LeakSanitizer allocator incompatibility, NOT a graph-code bug: the same
+    # backward is bit-identical and finite in eager, in the non-memleak C++
+    # ctest, and in LAMMPS. dpa1's simpler graph .pt2 does not trip it. Leak-
+    # checking torch's own compiled kernels is meaningless anyway (the memleak
+    # build exists to leak-check deepmd's C++ ops). The dense DPA2 .pt2
+    # (section A) is unaffected and still generated. The C++ dpa2_graph_ptexpt
+    # row GTEST_SKIPs when this artifact is absent (skip_if_artifact_missing).
+    if "lsan" in os.environ.get("LD_PRELOAD", "").lower():
+        print(  # noqa: T201
+            "\n// Skipping DPA2 graph section under LeakSanitizer "
+            "(AOTInductor .pt2 backward is incompatible with the LSAN runtime; "
+            "covered by the non-memleak C++/LAMMPS matrix)."
+        )
+        return
+
     graph_config = copy.deepcopy(config)
     graph_config["descriptor"]["repinit"]["use_three_body"] = False
 

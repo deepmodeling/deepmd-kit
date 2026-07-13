@@ -42,6 +42,12 @@ struct VariantDeepPotCase {
   bool supports_no_pbc_atomic;
   bool supports_no_pbc_lmp_nlist;
   bool supports_no_pbc_lmp_nlist_atomic;
+  // When the model artifact is legitimately absent (e.g. gen_dpa2.py skips the
+  // AOTInductor graph .pt2 under LeakSanitizer, whose runtime is incompatible
+  // with the compiled backward kernel), GTEST_SKIP this case instead of
+  // failing on the missing file. Defaults false: a missing artifact is a hard
+  // error for every other case.
+  bool skip_if_artifact_missing = false;
 };
 
 struct DefaultFParamCase {
@@ -208,7 +214,8 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            /*supports_no_pbc_simple=*/true,
            /*supports_no_pbc_atomic=*/false,
            /*supports_no_pbc_lmp_nlist=*/true,
-           /*supports_no_pbc_lmp_nlist_atomic=*/false},
+           /*supports_no_pbc_lmp_nlist_atomic=*/false,
+           /*skip_if_artifact_missing=*/true},
           {"dpa2_pytorch_pth",
            Backend::PyTorch,
            "../../tests/infer/deeppot_dpa2.pth",
@@ -406,8 +413,14 @@ class VariantDeepPotTest : public ::testing::TestWithParam<VariantDeepPotCase> {
     if (!backend_enabled(param.backend)) {
       GTEST_SKIP() << backend_name(param.backend) << " support is not enabled.";
     }
-    ASSERT_TRUE(path_exists(param.model_path))
-        << "Model artifact is not available: " << param.model_path;
+    if (!path_exists(param.model_path)) {
+      if (param.skip_if_artifact_missing) {
+        GTEST_SKIP() << "Optional model artifact not generated (e.g. the "
+                        "AOTInductor graph .pt2 is skipped under LeakSanitizer): "
+                     << param.model_path;
+      }
+      FAIL() << "Model artifact is not available: " << param.model_path;
+    }
 
     if (param.builtin_ref != nullptr) {
       ref = param.builtin_ref;
