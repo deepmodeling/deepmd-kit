@@ -540,6 +540,27 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         pt_expt subclass overrides this to overwrite halo rows via
         ``deepmd_export::border_op`` when ``comm_dict`` is provided (C++
         multi-rank extended-region graphs).
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+        comm_dict
+            MPI communication metadata; must be ``None`` on this (dpmodel)
+            path.
+        n_total
+            Total number of nodes (unused here; the pt_expt override needs
+            it).
+
+        Returns
+        -------
+        g1 : Array
+            The (unchanged) node channel, with shape [n_total, ng1].
+
+        Raises
+        ------
+        NotImplementedError
+            If ``comm_dict`` is not ``None``.
         """
         del n_total
         if comm_dict is not None:
@@ -1124,8 +1145,34 @@ def _cal_hg_graph(
 ) -> Array:
     """Graph twin of :func:`_cal_hg`: hg[n, a, b] = sum_{e: dst(e)=n} h_e[a] g_e[b].
 
-    ``nnei`` is the block sel (the smooth-branch normalization constant, spec
-    decision #9: sel = normalization only).
+    Parameters
+    ----------
+    g
+        Flat edge-wise invariant rep, with shape [n_edge, ng].
+    h
+        Flat edge-wise equivariant rep, with shape [n_edge, 3].
+    edge_mask
+        Edge mask, where zero means no edge, with shape [n_edge].
+    sw
+        The switch function per edge, with shape [n_edge].
+    dst
+        Destination (center) node index of each edge, with shape [n_edge].
+    n_total
+        Total number of nodes.
+    nnei
+        The block sel (the smooth-branch normalization constant, spec
+        decision #9: sel = normalization only).
+    smooth
+        Whether to use the smooth (sw-weighted, sel-normalized) branch.
+    epsilon
+        Degree-normalization protection for the non-smooth branch.
+    use_sqrt_nnei
+        Whether to normalize by sqrt(nnei) instead of nnei.
+
+    Returns
+    -------
+    hg : Array
+        Transposed rotation matrix per node, with shape [n_total, 3, ng].
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         segment_sum,
@@ -1148,7 +1195,20 @@ def _cal_hg_graph(
 
 
 def _cal_grrg_graph(hg: Array, axis_neuron: int) -> Array:
-    """Graph twin of :func:`_cal_grrg` (node-local, no neighbor axis)."""
+    """Graph twin of :func:`_cal_grrg` (node-local, no neighbor axis).
+
+    Parameters
+    ----------
+    hg
+        Transposed rotation matrix per node, with shape [n_total, 3, ng].
+    axis_neuron
+        Size of the submatrix of hg (embedding matrix).
+
+    Returns
+    -------
+    grrg : Array
+        Atomic invariant rep, with shape [n_total, axis_neuron * ng].
+    """
     xp = array_api_compat.array_namespace(hg)
     n, _, ng = hg.shape
     hgm = hg[..., :axis_neuron]  # (N, 3, axis)
@@ -1169,7 +1229,38 @@ def symmetrization_op_graph(
     epsilon: float = 1e-4,
     use_sqrt_nnei: bool = True,
 ) -> Array:
-    """Graph twin of :func:`symmetrization_op`."""
+    """Graph twin of :func:`symmetrization_op`.
+
+    Parameters
+    ----------
+    g
+        Flat edge-wise invariant rep, with shape [n_edge, ng].
+    h
+        Flat edge-wise equivariant rep, with shape [n_edge, 3].
+    edge_mask
+        Edge mask, where zero means no edge, with shape [n_edge].
+    sw
+        The switch function per edge, with shape [n_edge].
+    dst
+        Destination (center) node index of each edge, with shape [n_edge].
+    n_total
+        Total number of nodes.
+    nnei
+        The block sel (the smooth-branch normalization constant).
+    axis_neuron
+        Size of the submatrix of hg (embedding matrix).
+    smooth
+        Whether to use the smooth (sw-weighted, sel-normalized) branch.
+    epsilon
+        Degree-normalization protection for the non-smooth branch.
+    use_sqrt_nnei
+        Whether to normalize by sqrt(nnei) instead of nnei.
+
+    Returns
+    -------
+    grrg : Array
+        Atomic invariant rep, with shape [n_total, axis_neuron * ng].
+    """
     hg = _cal_hg_graph(
         g,
         h,
@@ -1480,7 +1571,26 @@ class Atten2MultiHeadApply(NativeOP):
     def call_graph(
         self, AA: Array, g2: Array, q_e: Array, k_e: Array, e_tot: int
     ) -> Array:
-        """Graph twin of :meth:`call`: out[q] = sum_k AA[q,k] g2v[k] per head."""
+        """Graph twin of :meth:`call`: out[q] = sum_k AA[q,k] g2v[k] per head.
+
+        Parameters
+        ----------
+        AA
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        e_tot
+            Total number of edges.
+
+        Returns
+        -------
+        g2_new : Array
+            Attention-updated edge channel, with shape [n_edge, ng2].
+        """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_sum,
         )
@@ -1578,7 +1688,27 @@ class Atten2EquiVarApply(NativeOP):
     def call_graph(
         self, AA: Array, h2: Array, q_e: Array, k_e: Array, e_tot: int
     ) -> Array:
-        """Graph twin of :meth:`call` (heads applied to the equivariant channel)."""
+        """Graph twin of :meth:`call` (heads applied to the equivariant channel).
+
+        Parameters
+        ----------
+        AA
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        e_tot
+            Total number of edges.
+
+        Returns
+        -------
+        h2_new : Array
+            Attention-updated equivariant edge channel, with shape
+            [n_edge, 3].
+        """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_sum,
         )
@@ -2260,6 +2390,11 @@ class RepformerLayer(NativeOP):
             The block sel: the smooth-branch normalization constant AND the
             fixed dense softmax width for the attention phantom-count
             compensation (see :meth:`Atten2Map.call_graph`).
+
+        Returns
+        -------
+        g1_conv : Array
+            Convolution-updated node channel, with shape [n_total, ng1].
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             segment_sum,
@@ -2339,6 +2474,11 @@ class RepformerLayer(NativeOP):
             Edge mask, where zero means no edge, with shape [n_edge].
         sw
             The switch function, with shape [n_edge].
+
+        Returns
+        -------
+        g1g1 : Array
+            Per-edge center-neighbor g1 product, with shape [n_edge, ng1].
         """
         xp = array_api_compat.array_namespace(g1, edge_mask, sw)
         # (n_edge, ng1)

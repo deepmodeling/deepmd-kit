@@ -108,6 +108,28 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
         (ghost-free Python graphs / extended single-process graphs).  Spin
         models never route the graph lower (``disable_graph_lower``), so a
         ``has_spin`` comm_dict reaching here is a programming error.
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+        comm_dict
+            MPI communication metadata (``send_list``, ``send_proc``,
+            ``recv_proc``, ``send_num``, ``recv_num``, ``communicator``,
+            ``nlocal``, ``nghost``); ``None`` for single-process graphs.
+        n_total
+            Total number of nodes (``nlocal + nghost``).
+
+        Returns
+        -------
+        g1 : torch.Tensor
+            The node channel with halo rows refreshed, with shape
+            [n_total, ng1].
+
+        Raises
+        ------
+        NotImplementedError
+            If ``comm_dict`` carries ``has_spin``.
         """
         if comm_dict is None:
             return super()._exchange_ghosts_graph(g1, comm_dict, n_total)

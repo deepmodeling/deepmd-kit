@@ -627,6 +627,17 @@ def _model_trace_device(model: torch.nn.Module) -> torch.device:
     callers may legitimately hold the model on a different device (e.g. a test
     pinning the model to CPU while running on a CUDA host). Falls back to
     :data:`DEVICE` only if the model exposes no parameters or buffers.
+
+    Parameters
+    ----------
+    model
+        The model whose parameter/buffer device determines the trace device.
+
+    Returns
+    -------
+    device : torch.device
+        The device of the model's first parameter (or buffer), falling back
+        to the global :data:`DEVICE`.
     """
     for _t in model.parameters():
         return _t.device

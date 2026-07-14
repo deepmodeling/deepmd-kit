@@ -538,6 +538,13 @@ def _build_graph_dynamic_shapes_with_comm(
         charge_spin, send_list, send_proc, recv_proc, send_num, recv_num,
         communicator, nlocal, nghost)`` — 16 entries matching
         ``forward_lower_graph_exportable_with_comm``.
+
+    Returns
+    -------
+    dynamic_shapes : tuple
+        Per-input dynamic-shape specs (dicts of ``torch.export.Dim`` or
+        ``None``) in the same order as ``sample_inputs``, for
+        ``torch.export.export(..., dynamic_shapes=...)``.
     """
     fparam = sample_inputs[5]
     aparam = sample_inputs[6]

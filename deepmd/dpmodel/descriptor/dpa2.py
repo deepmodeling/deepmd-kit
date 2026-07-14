@@ -719,6 +719,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         (needs the angle machinery -- PR-G-dpa3), compressed descriptors
         (geo/tebd tabulation is dense-only), and the explicit disable flag
         (used by e.g. the spin model wrapper).
+
+        Returns
+        -------
+        uses_graph_lower : bool
+            Whether the graph-native lower (:meth:`call_graph`) is supported
+            for the current descriptor configuration.
         """
         if self._graph_lower_disabled:
             return False
@@ -1124,27 +1130,45 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         e_ax = graph.edge_mask.shape[0]
 
         def _block_graph(rc: float, ns: int) -> tuple[Any, int | None]:
-            # graph analogue of build_multiple_neighbor_list (nlist.py:408):
-            # dist mask always; slot TRUNCATION ONLY in the shape-static
-            # dense-adapter layout, replicating the dense
-            # `nlist[:, :, :ns]` slicing.
-            #
-            # This must be a genuine array-width SLICE, not just an
-            # edge_mask AND: the segment_sum-based channels only see zero
-            # contributions from masked-out padding regardless of the
-            # array's width, but the smooth-attention softmax
-            # (RepformerLayer.call_graph) keeps every padding PAIR in the
-            # denominator at exp(-attnw_shift) (dpa1 precedent) -- so the
-            # padding-pair COUNT, governed by the static width handed to
-            # `center_edge_pairs`/`static_nnei` and not merely by the mask
-            # contents, must match the dense sub-nlist width `ns` bit-for-
-            # bit, or the attention normalization silently drifts by
-            # O(1e-4) (extra always-masked pairs still contribute
-            # exp(-shift) to the denominator). Carry-all graphs
-            # (static_nnei is None) have no static width at all: sel is
-            # normalization-only there (spec decision #9), and the compact
-            # attention pairing groups per-center dynamically, so no
-            # truncation is needed or possible.
+            """Per-block view of the model graph (local closure).
+
+            Graph analogue of ``build_multiple_neighbor_list``
+            (nlist.py:408): dist mask always; slot TRUNCATION only in the
+            shape-static dense-adapter layout, replicating the dense
+            ``nlist[:, :, :ns]`` slicing.
+
+            Parameters
+            ----------
+            rc
+                The block cutoff radius.
+            ns
+                The block sel (dense sub-nlist width).
+
+            Returns
+            -------
+            block_graph : NeighborGraph
+                The block-restricted graph view.
+            block_static_nnei : int | None
+                The block's static width (``ns``) in the shape-static
+                layout, ``None`` for carry-all graphs.
+
+            Notes
+            -----
+            The genuine array-width SLICE (rather than an edge_mask AND)
+            keeps the shape-static pair enumeration
+            (``center_edge_pairs``/``static_nnei``) at exactly the dense
+            sub-nlist width ``ns``: the pair count stays minimal, and the
+            attention softmax sees the same present-slot layout as the
+            dense body. (Before the fixed-phantom-count compensation in
+            ``segment_softmax`` this width-match was also required for
+            numeric parity -- extra always-masked pairs each contributed
+            ``exp(-attnw_shift)`` to the denominator; the compensation has
+            since made the denominator width-independent.) Carry-all graphs
+            (``static_nnei is None``) have no static width at all: sel is
+            normalization-only there (spec decision #9), and the compact
+            attention pairing groups per-center dynamically, so no
+            truncation is needed or possible.
+            """
             if static_nnei is None or ns >= static_nnei:
                 m = graph.edge_mask & (dist <= rc)
                 return dataclasses.replace(graph, edge_mask=m), static_nnei
