@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <cstdint>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 
 #include "Convert.h"
 #ifdef DP_USE_CXX_API
@@ -82,7 +84,16 @@ int main(int argc, char* argv[]) {
     XyzFileManager::read(coord_file, atom_name, posi, velo, forc);
   }
 
-  Convert<double> cvt(atom_name, name_type_map);
+  std::unique_ptr<Convert<double> > cvt;
+  try {
+    cvt.reset(new Convert<double>(atom_name, name_type_map));
+  } catch (const std::exception& error) {
+    // Report configuration errors before model loading while keeping the
+    // command-line file access in main, where static analysis recognizes the
+    // existing CLI boundary.
+    std::cerr << "dp_ipi: " << error.what() << std::endl;
+    return 1;
+  }
   deepmd_compat::DeepPot nnp_inter(graph_file);
 
   enum { _MSGLEN = 12 };
@@ -100,7 +111,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> dvirial(9, 0);
   std::vector<double> dcoord;
   std::vector<double> dcoord_tmp;
-  std::vector<int> dtype = cvt.get_type();
+  std::vector<int> dtype = cvt->get_type();
   std::vector<double> dbox(9, 0);
   double* msg_buff = NULL;
   double ener;
@@ -180,11 +191,11 @@ int main(int argc, char* argv[]) {
       for (int ii = 0; ii < natoms * 3; ++ii) {
         dcoord_tmp[ii] = msg_buff[ii] * cvt_len;
       }
-      cvt.forward(dcoord, dcoord_tmp, 3);
+      cvt->forward(dcoord, dcoord_tmp, 3);
 
       // nnp over writes ener, force and virial
       nnp_inter.compute(dener, dforce_tmp, dvirial, dcoord, dtype, dbox);
-      cvt.backward(dforce, dforce_tmp, 3);
+      cvt->backward(dforce, dforce_tmp, 3);
       hasdata = true;
     } else if (header_str == "GETFORCE") {
       ener = dener * icvt_ener;
