@@ -1557,6 +1557,51 @@ const char* string_to_char_exact(const std::string& str) {
   return buffer;
 }
 
+static std::vector<double> copy_optional_host_values(const double* values,
+                                                     const int64_t size,
+                                                     const char* name) {
+  if (size < 0 || (size > 0 && values == nullptr)) {
+    throw deepmd::deepmd_exception(
+        std::string(name) +
+        " requires a non-null pointer and non-negative size");
+  }
+  return size > 0 ? std::vector<double>(values, values + size)
+                  : std::vector<double>();
+}
+
+template <typename EDGE_TYPE>
+static void DP_DeepPotComputeEdgesGPU_variant(DP_DeepPot* dp,
+                                              double* d_atom_energy,
+                                              double* d_force,
+                                              double* d_atom_virial,
+                                              const double* d_coord,
+                                              const int* d_atype,
+                                              const int* d_edge_index,
+                                              const EDGE_TYPE* d_edge_vec,
+                                              const int nloc,
+                                              const int nedge,
+                                              const double* fparam,
+                                              const int64_t fparam_size,
+                                              const double* aparam,
+                                              const int64_t aparam_size,
+                                              const int nall_nodes,
+                                              const DP_Nlist* comm_nlist) {
+  try {
+    const auto fparam_values =
+        copy_optional_host_values(fparam, fparam_size, "fparam");
+    const auto aparam_values =
+        copy_optional_host_values(aparam, aparam_size, "aparam");
+    const deepmd::InputNlist* communication =
+        comm_nlist != nullptr ? &comm_nlist->nl : nullptr;
+    dp->dp.compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord,
+                             d_atype, d_edge_index, d_edge_vec, nloc, nedge,
+                             fparam_values, aparam_values, nall_nodes,
+                             communication);
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+  }
+}
+
 extern "C" {
 
 const char* DP_NlistCheckOK(DP_Nlist* nlist) {
@@ -1627,6 +1672,97 @@ void DP_DeepPotComputeNListf(DP_DeepPot* dp,
   DP_DeepPotComputeNList_variant<float>(
       dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
       force, virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotComputeEdgesGPU(DP_DeepPot* dp,
+                               double* d_atom_energy,
+                               double* d_force,
+                               double* d_atom_virial,
+                               const double* d_coord,
+                               const int* d_atype,
+                               const int* d_edge_index,
+                               const double* d_edge_vec,
+                               const int nloc,
+                               const int nedge,
+                               const double* fparam,
+                               const int64_t fparam_size,
+                               const double* aparam,
+                               const int64_t aparam_size,
+                               const int nall_nodes,
+                               const DP_Nlist* comm_nlist) {
+  DP_DeepPotComputeEdgesGPU_variant(dp, d_atom_energy, d_force, d_atom_virial,
+                                    d_coord, d_atype, d_edge_index, d_edge_vec,
+                                    nloc, nedge, fparam, fparam_size, aparam,
+                                    aparam_size, nall_nodes, comm_nlist);
+}
+
+void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
+                                      double* d_atom_energy,
+                                      double* d_force,
+                                      double* d_atom_virial,
+                                      const double* d_coord,
+                                      const int* d_atype,
+                                      const int* d_edge_index,
+                                      const float* d_edge_vec,
+                                      const int nloc,
+                                      const int nedge,
+                                      const double* fparam,
+                                      const int64_t fparam_size,
+                                      const double* aparam,
+                                      const int64_t aparam_size,
+                                      const int nall_nodes,
+                                      const DP_Nlist* comm_nlist) {
+  DP_DeepPotComputeEdgesGPU_variant(dp, d_atom_energy, d_force, d_atom_virial,
+                                    d_coord, d_atype, d_edge_index, d_edge_vec,
+                                    nloc, nedge, fparam, fparam_size, aparam,
+                                    aparam_size, nall_nodes, comm_nlist);
+}
+
+void DP_DeepPotComputeCanonicalGraphGPU(DP_DeepPot* dp,
+                                        double* d_atom_energy,
+                                        double* d_force,
+                                        double* d_atom_virial,
+                                        const int64_t* d_atype,
+                                        const int64_t* d_source,
+                                        const float* d_edge_vec,
+                                        const int64_t* d_destination_row_ptr,
+                                        const int64_t* d_source_row_ptr,
+                                        const int64_t* d_source_order,
+                                        const int nloc,
+                                        const int nall_nodes,
+                                        const int64_t edge_storage) {
+  DP_REQUIRES_OK(dp,
+                 dp->dp.compute_canonical_graph_gpu(
+                     d_atom_energy, d_force, d_atom_virial, d_atype, d_source,
+                     d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+                     d_source_order, nloc, nall_nodes, edge_storage));
+}
+
+bool DP_DeepPotSupportsDeviceEdgeInference(DP_DeepPot* dp) {
+  try {
+    return dp->dp.supports_device_edge_inference();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
+bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp) {
+  try {
+    return dp->dp.uses_fp32_edge_vectors();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
+bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp) {
+  try {
+    return dp->dp.uses_canonical_graph_inference();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
 }
 
 // multiple frames

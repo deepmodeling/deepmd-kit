@@ -170,3 +170,48 @@ TYPED_TEST(TestInferDeepPotAFparamAparamNFramesPtExpt, cpu_build_nlist_atomic) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
   }
 }
+
+TYPED_TEST(TestInferDeepPotAFparamAparamNFramesPtExpt,
+           rejects_trailing_aparam_value) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE> invalid_aparam = this->aparam;
+  invalid_aparam.push_back(static_cast<VALUETYPE>(0));
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force;
+  std::vector<VALUETYPE> virial;
+
+  EXPECT_THROW(this->dp.compute(ener, force, virial, this->coord, this->atype,
+                                this->box, this->fparam, invalid_aparam),
+               deepmd::deepmd_exception);
+}
+
+TYPED_TEST(TestInferDeepPotAFparamAparamNFramesPtExpt,
+           broadcasts_single_frame_aparam) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE> broadcast_aparam(this->aparam.begin(),
+                                          this->aparam.begin() + this->natoms);
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force;
+  std::vector<VALUETYPE> virial;
+
+  this->dp.compute(ener, force, virial, this->coord, this->atype, this->box,
+                   this->fparam, broadcast_aparam);
+
+  ASSERT_EQ(ener.size(), static_cast<std::size_t>(this->nframes));
+  EXPECT_NEAR(ener[0], ener[1], EPSILON);
+}
+
+TYPED_TEST(TestInferDeepPotAFparamAparamNFramesPtExpt,
+           broadcasts_single_frame_fparam) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE> broadcast_fparam = {this->fparam.front()};
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force;
+  std::vector<VALUETYPE> virial;
+
+  this->dp.compute(ener, force, virial, this->coord, this->atype, this->box,
+                   broadcast_fparam, this->aparam);
+
+  ASSERT_EQ(ener.size(), static_cast<std::size_t>(this->nframes));
+  EXPECT_NEAR(ener[0], ener[1], EPSILON);
+}

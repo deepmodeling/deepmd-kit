@@ -958,7 +958,33 @@ struct InputNlist {
                             recvproc,
                             world,
                             nprocs)) {};
-  ~InputNlist() { DP_DeleteNlist(nl); };
+  InputNlist(const InputNlist&) = delete;
+  InputNlist& operator=(const InputNlist&) = delete;
+  InputNlist(InputNlist&& other) noexcept
+      : nl(other.nl),
+        inum(other.inum),
+        ilist(other.ilist),
+        numneigh(other.numneigh),
+        firstneigh(other.firstneigh) {
+    other.nl = nullptr;
+  }
+  InputNlist& operator=(InputNlist&& other) noexcept {
+    if (this != &other) {
+      DP_DeleteNlist(nl);
+      nl = other.nl;
+      inum = other.inum;
+      ilist = other.ilist;
+      numneigh = other.numneigh;
+      firstneigh = other.firstneigh;
+      other.nl = nullptr;
+    }
+    return *this;
+  }
+  ~InputNlist() {
+    if (nl != nullptr) {
+      DP_DeleteNlist(nl);
+    }
+  };
   /// @brief C API neighbor list.
   DP_Nlist* nl;
   /// @brief Number of core region atoms
@@ -1191,6 +1217,112 @@ class DeepPot : public DeepBaseModel {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Evaluate a device-resident edge graph with FP64 edge vectors.
+   *
+   * Edge, coordinate, type, and output pointers reside on the model device.
+   * Frame and atomic parameters remain host-resident because LAMMPS assembles
+   * them from computes, fixes, and pair-style settings.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr) {
+    DP_DeepPotComputeEdgesGPU(dp, d_atom_energy, d_force, d_atom_virial,
+                              d_coord, d_atype, d_edge_index, d_edge_vec, nloc,
+                              nedge, fparam.empty() ? nullptr : fparam.data(),
+                              static_cast<int64_t>(fparam.size()),
+                              aparam.empty() ? nullptr : aparam.data(),
+                              static_cast<int64_t>(aparam.size()), nall_nodes,
+                              comm_nlist != nullptr ? comm_nlist->nl : nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Evaluate a device-resident edge graph with FP32 edge vectors.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const float* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr) {
+    DP_DeepPotComputeEdgesGPUFloat32(
+        dp, d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+        d_edge_index, d_edge_vec, nloc, nedge,
+        fparam.empty() ? nullptr : fparam.data(),
+        static_cast<int64_t>(fparam.size()),
+        aparam.empty() ? nullptr : aparam.data(),
+        static_cast<int64_t>(aparam.size()), nall_nodes,
+        comm_nlist != nullptr ? comm_nlist->nl : nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Evaluate a compact canonical graph on the model device.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const int64_t* d_atype,
+                                   const int64_t* d_source,
+                                   const float* d_edge_vec,
+                                   const int64_t* d_destination_row_ptr,
+                                   const int64_t* d_source_row_ptr,
+                                   const int64_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const int64_t edge_storage) {
+    DP_DeepPotComputeCanonicalGraphGPU(
+        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_source,
+        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+        nloc, nall_nodes, edge_storage);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Query whether the loaded artifact supports device-edge inference.
+   */
+  bool supports_device_edge_inference() const {
+    const bool result = DP_DeepPotSupportsDeviceEdgeInference(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the loaded artifact expects FP32 edge vectors.
+   */
+  bool uses_fp32_edge_vectors() const {
+    const bool result = DP_DeepPotUsesFP32EdgeVectors(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the compact canonical graph ABI is active.
+   */
+  bool uses_canonical_graph_inference() const {
+    const bool result = DP_DeepPotUsesCanonicalGraphInference(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
   }
 
   /**
