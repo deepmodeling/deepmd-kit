@@ -552,6 +552,38 @@ class TestDpa2GraphLower:
             **tol,
         )
 
+    def test_graph_lower_hatch_state_dict_roundtrip_and_backcompat(self) -> None:
+        """``disable_graph_lower()`` is persisted state: it round-trips a
+        ``state_dict`` save/load (the ``graph_lower_disabled`` buffer), and a
+        PRE-knob checkpoint (no buffer key) still strict-loads, defaulting to
+        the graph route.
+        """
+        model = self._make_model()
+        model.atomic_model.descriptor.disable_graph_lower()
+        sd = model.state_dict()
+        assert any("graph_lower_disabled" in k for k in sd), (
+            "the hatch must ride the state_dict"
+        )
+
+        fresh = self._make_model()
+        assert fresh.atomic_model.descriptor.uses_graph_lower() is True
+        fresh.load_state_dict(sd)
+        assert fresh.atomic_model.descriptor.uses_graph_lower() is False, (
+            "restored buffer must re-disable the graph route"
+        )
+
+        # back-compat: a checkpoint written before the knob was persisted
+        # lacks the buffer key -- the strict load must still succeed and
+        # keep the default (graph) route.
+        old_sd = {
+            k: v
+            for k, v in self._make_model().state_dict().items()
+            if "graph_lower_disabled" not in k
+        }
+        fresh2 = self._make_model()
+        fresh2.load_state_dict(old_sd)
+        assert fresh2.atomic_model.descriptor.uses_graph_lower() is True
+
     def test_non_energy_model_stays_off_graph_compiled_path(self) -> None:
         """A graph-eligible DPA2 descriptor paired with a NON-energy fitting
         (property) must stay OFF the graph compiled-training path AND off
