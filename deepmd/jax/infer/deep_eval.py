@@ -314,9 +314,9 @@ class DeepEval(DeepEvalBackend):
             The requested output definitions.
         """
         if atomic:
-            return list(self.output_def.var_defs.values())
+            output_defs = list(self.output_def.var_defs.values())
         else:
-            return [
+            output_defs = [
                 x
                 for x in self.output_def.var_defs.values()
                 if x.category
@@ -324,8 +324,18 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
+        # Avoid allocating the quadratic Hessian placeholder when the frozen
+        # model does not provide that output.
+        if not self.get_has_hessian():
+            output_defs = [
+                x
+                for x in output_defs
+                if x.category != OutputVariableCategory.DERV_R_DERV_R
+            ]
+        return output_defs
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
@@ -493,6 +503,10 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def get_has_hessian(self) -> bool:
+        """Check if the model has Hessian output."""
+        return self.get_model_def_script().get("hessian_mode", False)
 
     def get_model(self) -> Any:
         """Get the JAX model as BaseModel.

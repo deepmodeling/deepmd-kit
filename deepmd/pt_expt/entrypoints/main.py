@@ -151,7 +151,7 @@ def _build_data_system(
         )
     systems = process_systems(
         systems_raw,
-        patterns=dataset_params.get("rglob_patterns", None),
+        patterns=dataset_params.get("rglob_patterns"),
     )
     return DeepmdDataSystem(
         systems=systems,
@@ -159,7 +159,7 @@ def _build_data_system(
         test_size=1,
         type_map=type_map,
         trn_all_set=True,
-        sys_probs=dataset_params.get("sys_probs", None),
+        sys_probs=dataset_params.get("sys_probs"),
         auto_prob_style=dataset_params.get("auto_prob", "prob_sys_size"),
     )
 

@@ -18,6 +18,7 @@ def freeze(
     *,
     checkpoint_folder: str,
     output: str,
+    hessian: bool = False,
     **kwargs: object,
 ) -> None:
     """Freeze a JAX checkpoint into a serialized model file.
@@ -30,6 +31,8 @@ def freeze(
     output : str
         Output model filename or prefix. The JAX model suffix is added when the
         filename has no supported backend suffix.
+    hessian : bool, default=False
+        Whether to include the Hessian in the frozen model outputs.
     **kwargs
         Other CLI arguments accepted for backend entry-point compatibility.
     """
@@ -46,4 +49,4 @@ def freeze(
         strict_prefer=True,
     )
     data = serialize_from_file(checkpoint_folder)
-    deserialize_to_file(output, data)
+    deserialize_to_file(output, data, hessian=hessian)

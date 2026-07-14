@@ -17,6 +17,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+)
 from write_lmp_data import (
     write_lmp_data,
 )
@@ -121,20 +124,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file_path=data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    lammps.neighbor("2.0 bin")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file_path.resolve())
-    lammps.mass("1 16")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file_path, units, masses=(16,))
 
 
 @pytest.fixture()

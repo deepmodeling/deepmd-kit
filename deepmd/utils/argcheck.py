@@ -416,6 +416,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_edge_norm = "Whether to apply standard channel RMSNorm on cutoff-vanishing feature branches. Setting to `false` removes RMSNorm from the radial network, environment-seed FiLM, and cross-focus competition, and uses unit-floor residual scaling for post-SO(2) messages. Setting to `false` is recommended."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
@@ -733,6 +734,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             optional=True,
             default=[0],
             doc=doc_radial_mlp,
+        ),
+        Argument(
+            "edge_norm",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_edge_norm,
         ),
         Argument(
             "use_env_seed",

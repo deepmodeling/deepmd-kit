@@ -55,7 +55,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         # mapt
         mapObj = MapTable(config_file, weight_file, map_file)
         mapt = mapObj.build_map()
-        #
         N = 32
         x = np.reshape(np.arange(N) / N * (8.0**2), [-1, 1])
         pred = mapObj.mapping2(x, {"s": mapt["s"]}, mapt["cfg_u2s"])
@@ -127,7 +126,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
             -0.37758207,
         ]
         np.testing.assert_almost_equal(pred, ref_dout, 8)
-        #
         N = 4
         x = np.reshape(np.arange(N) / N * 16, [-1, 1])
         pred = mapObj.mapping2(x, {"g": mapt["g"]}, mapt["cfg_s2g"])
@@ -455,7 +453,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
             dic_ph["natoms_vec"]: natoms_vec_dat,
             dic_ph["default_mesh"]: mesh_dat,
         }
-        #
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         # get tensordic
@@ -528,7 +525,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         mapObj = MapTable(config_file, weight_file, map_file)
         mapObj.Gs_Gt_mode = 0
         mapt = mapObj.build_map()
-        #
         N = 32
         x = np.reshape(np.arange(N) / N * (8.0**2), [-1, 1])
         pred = mapObj.mapping2(x, {"s": mapt["s"]}, mapt["cfg_u2s"])
@@ -568,7 +564,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             0.00000000e00,
         ]
         np.testing.assert_almost_equal(pred, ref_dout, 8)
-        #
         N = 4
         x = np.reshape(np.arange(N) / N * 16, [-1, 1])
         pred = mapObj.mapping2(x, {"g": mapt["g"]}, mapt["cfg_s2g"])
@@ -772,7 +767,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             dic_ph["natoms_vec"]: natoms_vec_dat,
             dic_ph["default_mesh"]: mesh_dat,
         }
-        #
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         # get tensordic
