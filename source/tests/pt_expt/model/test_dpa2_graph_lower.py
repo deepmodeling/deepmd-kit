@@ -265,7 +265,69 @@ class TestDpa2GraphLower:
             neighbor_graph_method="legacy",
         )
         e_diff = (graph["energy_redu"] - legacy["energy_redu"]).abs().max().item()
+        e_scale = legacy["energy_redu"].abs().max().item()
+        # non-zero (proves the default routed to the GRAPH, not a silent dense
+        # fallback -- a fallback would make this exactly 0) AND bounded (the
+        # divergence is the carry-all's extra in-cutoff neighbors, not a blow-up)
         assert e_diff > 1e-8, f"expected binding-sel divergence, got {e_diff:.3e}"
+        assert e_diff < e_scale, (
+            f"binding-sel divergence {e_diff:.3e} must stay below the energy "
+            f"scale {e_scale:.3e} (bounded, not a blow-up)"
+        )
+
+    def test_binding_sel_diverges_with_attention(self) -> None:
+        """Same binding-sel graph-vs-dense divergence as
+        :meth:`test_binding_sel_diverges`, but with BOTH repformer attention
+        channels ON -- the config iProzd's review asks for.
+
+        With attention enabled and the fixed-phantom-count compensation, the
+        two routes are bit-tight at NON-binding sel (see
+        ``test_neighbor_list.py::test_default_fallback[dpa2]``). At BINDING sel
+        they must still diverge, because the carry-all graph attends over
+        neighbors the dense body truncates -- a difference that is both
+        non-zero (the default IS the graph route) and bounded (below the energy
+        scale). If the default silently fell back to dense, the difference
+        would be exactly zero even with attention on.
+        """
+        generator = torch.Generator(device=self.device).manual_seed(GLOBAL_SEED)
+        nloc = 12
+        box_size = 3.0
+        coord = (
+            torch.rand(
+                [nloc, 3], dtype=torch.float64, device=self.device, generator=generator
+            )
+            * box_size
+        ).unsqueeze(0)
+        atype = torch.tensor(
+            [[ii % self.nt for ii in range(nloc)]],
+            dtype=torch.int64,
+            device=self.device,
+        )
+        box = (
+            torch.eye(3, dtype=torch.float64, device=self.device) * box_size
+        ).reshape(1, 9)
+
+        model = self._make_model(repformer_nsel=3, repformer_attn=True)
+        model.eval()
+
+        graph = model.forward_common(coord.clone().requires_grad_(True), atype, box)
+        legacy = model.forward_common(
+            coord.clone().requires_grad_(True),
+            atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        for key in ("energy_redu", "energy_derv_r"):
+            diff = (graph[key] - legacy[key]).abs().max().item()
+            scale = legacy[key].abs().max().item()
+            assert diff > 1e-8, (
+                f"expected binding-sel divergence in {key} with attention on, "
+                f"got {diff:.3e} (silent dense fallback?)"
+            )
+            assert diff < max(scale, 1.0), (
+                f"{key} binding-sel divergence {diff:.3e} must stay bounded "
+                f"below the scale {scale:.3e}"
+            )
 
     def test_graph_lower_symbolic_trace(self) -> None:
         """``make_fx`` symbolic trace of ``forward_common_lower_graph``

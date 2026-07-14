@@ -291,7 +291,7 @@ ALL_MODELS = {
 # tolerance covers both.
 # dpa2: repformer smooth attention (sel-independent on carry-all graph, with
 # sel-padding phantoms on dense) amplified through message passing.
-KNOWN_GRAPH_DENSE_DIVERGENT = {"dpa1_smooth", "se_atten_v2", "dpa2"}
+KNOWN_GRAPH_DENSE_DIVERGENT = {"dpa1_smooth", "se_atten_v2"}
 
 
 def _system(natoms: int = 6, box_len: float = 10.0, seed: int = GLOBAL_SEED):
@@ -534,7 +534,7 @@ def test_default_fallback(name: str) -> None:
     so the virial can differ by ~1 ULP between the passes (a real dispatch bug
     would differ by orders of magnitude more).
 
-    ``KNOWN_GRAPH_DENSE_DIVERGENT`` models (``dpa1_smooth``, ``se_atten_v2``, ``dpa2``)
+    ``KNOWN_GRAPH_DENSE_DIVERGENT`` models (``dpa1_smooth``, ``se_atten_v2``)
     are a special case: that "same builder" premise only holds for the
     DENSE-nlist route.  For a ``mixed_types`` descriptor with
     ``uses_graph_lower() == True``, passing an explicit ``neighbor_list`` forces
@@ -545,21 +545,30 @@ def test_default_fallback(name: str) -> None:
     ``smooth_type_embedding=True`` (unlike ``model_dpa1`` above, which pins it
     ``False`` for exactly this reason), so graph and dense intentionally diverge
     (NeighborGraph PR-D: dense keeps sel-padding phantom terms in the attention
-    softmax denominator, the graph route does not -- see
+    softmax denominator, the DPA1 graph route does not -- see
     ``test_block_compact_graph_smooth_clean_divergence`` in
     ``test_dpa1_graph_attention_parity.py`` for the same invariant at the block
     level). At this test's non-binding ``sel=40`` (vs. <=5 real neighbors), the
     gap is small but non-zero and deterministic (not CUDA ULP-style
     non-determinism): energy differs by ~1e-7, force by ~1e-6, virial (a
     derivative, so it amplifies the softmax-denominator perturbation more than
-    the value itself) by up to ~1.3e-5. ``dpa2``'s repformer smooth attention
-    has the same sel-independence divergence, amplified through message passing
-    (~1e-4 energy rel, ~5e-3 force abs, ~1.3e-2 virial abs at this fixture). We
-    assert BOUNDED closeness with PER-MODEL bounds (individual virial/force
-    components can be near-zero, so atol dominates): the dpa1-family entries
-    keep their original tight ~3e-5 envelope, dpa2's message-passing
-    amplification gets 2e-2 -- rather than bit-identity, keeping the check
-    meaningful rather than silently dropping coverage.
+    the value itself) by up to ~1.3e-5.
+
+    ``dpa2`` is NOT in that set: its repformer attention uses the
+    fixed-phantom-count compensation (``segment_softmax(phantom_count=...)``,
+    ``Atten2Map``/``LocalAtten.call_graph``), so at non-binding ``sel`` the
+    carry-all graph softmax denominator equals the dense one term-for-term and
+    the two routes agree to the fp64 noise floor (measured 0 / 7e-18 / 3e-17
+    on this fixture). It therefore takes the tight (``rtol=1e-10``) bound like
+    a non-divergent model. This test cannot by itself prove the graph route is
+    actually TAKEN for dpa2 (a silent dense fallback would also be bit-tight):
+    that positive check lives in
+    ``test_dpa2_graph_lower.py::TestDpa2GraphLower.test_binding_sel_diverges``
+    and ``test_binding_sel_diverges_with_attention``, where a BINDING sel makes
+    the carry-all graph attend over more neighbors than the sel-truncated dense
+    body, so ``None`` (graph) differs from ``"legacy"`` (dense) by a bounded
+    non-zero amount -- a difference that would collapse to zero if the default
+    silently fell back to dense.
     """
     coord_np, atype_np, box_np = _system()
     md = get_model(copy.deepcopy(ALL_MODELS[name])).to(env.DEVICE)
