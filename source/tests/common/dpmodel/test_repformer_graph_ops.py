@@ -397,7 +397,7 @@ _LAYER_CASES = {
 }
 # cases where pairs=None is exercised (neither update_g2_has_attn nor
 # update_h2 is set, so center_edge_pairs is not required)
-_PAIRS_NONE_CASES = {"conv_only"}
+_PAIRS_NONE_CASES = {"conv_only", "no_g2_attn"}
 
 
 @pytest.mark.parametrize("case_name", list(_LAYER_CASES))

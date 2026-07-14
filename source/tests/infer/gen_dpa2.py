@@ -305,15 +305,20 @@ def main():
     print(f"Nlist ref NoPBC max |force|: {max_ref_force_nopbc:.6e}")  # noqa: T201
     # ``not (x >= th)`` (rather than ``x < th``) so NaN forces -- e.g. from
     # an inductor SIMD miscompile of the AOTI artifact -- fail the check
-    # instead of slipping through.
-    if not (max_ref_force_pbc >= 1e-10) or not (
-        np.all(np.isfinite(f_r1)) and np.all(np.isfinite(f_rnp))
+    # instead of slipping through. Both the PBC and the NoPBC references are
+    # checked: each is baked into its own section of the .expected sidecar.
+    if (
+        not (max_ref_force_pbc >= 1e-10)
+        or not (max_ref_force_nopbc >= 1e-10)
+        or not (np.all(np.isfinite(f_r1)) and np.all(np.isfinite(f_rnp)))
     ):
         raise RuntimeError(
             f"Graph model nlist-ref forces are degenerate or non-finite "
-            f"(max={max_ref_force_pbc:.2e}); weights may need perturbation, "
-            f"or the AOTI compile is broken (known inductor CPU-SIMD bug; "
-            f"workaround: torch._inductor.config.cpp.simdlen = 1)."
+            f"(PBC max={max_ref_force_pbc:.2e}, "
+            f"NoPBC max={max_ref_force_nopbc:.2e}); weights may need "
+            f"perturbation, or the AOTI compile is broken (known inductor "
+            f"CPU-SIMD bug; workaround: torch._inductor.config.cpp.simdlen "
+            f"= 1)."
         )
 
     # ---- B.3  Export graph-form .pt2 ----

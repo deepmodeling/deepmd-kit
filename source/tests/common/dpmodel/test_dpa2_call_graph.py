@@ -65,7 +65,7 @@ def _make_block(**kwargs) -> DescrptBlockRepformers:
     return DescrptBlockRepformers(**cfg)
 
 
-def _system(seed: int = 0, nf: int = 1, nloc: int = 6, box_size: float = 8.0):
+def _block_system(seed: int = 0, nf: int = 1, nloc: int = 6, box_size: float = 8.0):
     """Small 2-type periodic system."""
     rng = np.random.default_rng(seed)
     coord = rng.random((nf, nloc, 3)) * box_size
@@ -95,7 +95,7 @@ def _dense_and_graph_call(block: DescrptBlockRepformers, seed: int = 7):
     conventions (dense fills padding slots with atom-0 geometry; the graph
     zero-fills), so g2/h2/sw parity is only asserted on real edges.
     """
-    coord, atype, box = _system(seed)
+    coord, atype, box = _block_system(seed)
     ext_coord, ext_atype, mapping, nlist = _build_nlist(block, coord, atype, box)
     nf, nloc = atype.shape
     nall = ext_atype.shape[1]
@@ -207,7 +207,7 @@ class TestRepformersBlockCallGraphTorch:
         import torch
 
         block = _make_block()
-        coord, atype, box = _system(11)
+        coord, atype, box = _block_system(11)
         ext_coord, ext_atype, mapping, nlist = _build_nlist(block, coord, atype, box)
         nf, nloc = atype.shape
         nnei = nlist.shape[-1]
@@ -247,7 +247,7 @@ class TestRepformersBlockSlotIndependence:
         (ntypes, nnei, 4) stat tensor, not just the default zeros/ones.
         """
         block = _make_block(set_davg_zero=False)
-        coord, atype, box = _system(3, nloc=8)
+        coord, atype, box = _block_system(3, nloc=8)
         sample = {"coord": coord, "atype": atype, "box": box}
         block.compute_input_stats([sample])
 
