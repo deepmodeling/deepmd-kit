@@ -224,9 +224,7 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     # Build a single-rank self-comm system: 5 owned + 2 ghost nodes.
     import ctypes
 
-    from deepmd.dpmodel.model.model import (
-        get_model as get_dp_model,
-    )
+    from deepmd.dpmodel.model.model import get_model as get_dp_model
     from deepmd.dpmodel.utils.neighbor_graph import (
         build_neighbor_graph,
     )
