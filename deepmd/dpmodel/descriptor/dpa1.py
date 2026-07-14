@@ -2425,11 +2425,18 @@ class GatedAttentionLayer(NativeOP):
 
     .. math::
         Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
-        A=\operatorname{softmax}_{j}(QK^T/\sqrt{d}),\qquad
-        O=\operatorname{reshape}(AV)W_{\mathrm{out}}.
+        L=\alpha\,\widetilde Q\widetilde K^T,\qquad
+        A=\operatorname{softmax}_{j}(\operatorname{MaskSmooth}(L)),
 
-    Neighbor masks, cutoff smoothing, and optional angular weights modify
-    :math:`A` before the softmax/output projection.
+        O=\operatorname{reshape}((A\odot R)V)W_{\mathrm{out}}.
+
+    Here the tildes denote optional per-vector normalization of :math:`Q`,
+    :math:`K`, and :math:`V`.  The implementation uses
+    :math:`\alpha=(d\,s)^{-1/2}` for ``scaling_factor`` :math:`s`, or the
+    configured ``temperature`` value when it is provided.  Neighbor masks and
+    cutoff smoothing modify the logits before softmax.  The optional angular
+    matrix :math:`R` is applied to the normalized attention weights after
+    softmax.
     """
 
     def __init__(
