@@ -413,8 +413,7 @@ def main():
     }
 
     print(  # noqa: T201
-        "\n---- Building graph-eligible DPA2 (use_three_body=False, "
-        "numb_aparam=1) ----"
+        "\n---- Building graph-eligible DPA2 (use_three_body=False, numb_aparam=1) ----"
     )
     model_a = get_model(copy.deepcopy(aparam_config))
     data_a = {

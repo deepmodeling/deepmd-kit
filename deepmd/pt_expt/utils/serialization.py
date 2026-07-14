@@ -1117,9 +1117,7 @@ def _trace_and_export(
         )
 
         _forbidden = forbidden_dims_from_model(model)
-        _dim_cs = (
-            model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
         if _dim_cs > 1:
             _forbidden.add(int(_dim_cs))
         if with_comm_dict:

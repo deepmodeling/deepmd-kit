@@ -428,9 +428,9 @@ def main():
         lower_kind="graph",
     )
     dp_ag = DeepPot(aparam_graph_pt2)
-    e_ag, f_ag, v_ag = dp_ag.eval(
-        coord, box, atype, atomic=False, aparam=aparam_vals
-    )[:3]
+    e_ag, f_ag, v_ag = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_vals)[
+        :3
+    ]
     aparam_force_diff = float(np.max(np.abs(f_ag[0] - f_a1[0])))
     print(  # noqa: T201
         f"Aparam graph .pt2 vs nlist ref PBC force max diff: {aparam_force_diff:.2e}"

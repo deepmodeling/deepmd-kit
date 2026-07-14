@@ -282,9 +282,7 @@ class _WrapperForwardEnergyGraph:
             # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
             # (N == nloc for the single-frame carry-all graph).
             aparam=(
-                self.aparam.reshape(self.nloc, -1)
-                if self.aparam is not None
-                else None
+                self.aparam.reshape(self.nloc, -1) if self.aparam is not None else None
             ),
         )
         # atomic_ret[kk]: flat (N, *def), N == nloc for a single-frame carry-all
