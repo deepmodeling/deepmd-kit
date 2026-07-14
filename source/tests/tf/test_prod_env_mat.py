@@ -1110,6 +1110,128 @@ class TestProdEnvMat(tf.test.TestCase):
         for ff in range(self.nframes):
             np.testing.assert_almost_equal(dem[ff], self.nopbc_expected_output, 5)
 
+    def test_nopbc_nvnmd_amix(self) -> None:
+        """Exercise NVNMD AMix without the PBC-only coordinate mapping."""
+        outputs = op_module.prod_env_mat_a_mix_nvnmd_quantize(
+            self.tcoord,
+            self.ttype,
+            self.tnatoms,
+            self.tbox,
+            tf.constant(np.zeros(0, dtype=np.int32)),
+            self.t_avg,
+            self.t_std,
+            rcut_a=-1,
+            rcut_r=self.rcut,
+            rcut_r_smth=self.rcut_smth,
+            sel_a=[self.nnei],
+            sel_r=[0],
+        )
+        self.sess.run(tf.global_variables_initializer())
+        result = self.sess.run(
+            outputs,
+            feed_dict={
+                self.tcoord: self.dcoord,
+                self.ttype: self.dtype,
+                self.tbox: self.dbox,
+                self.tnatoms: self.dnatoms,
+            },
+        )
+        expected_shapes = (
+            (self.nframes, self.nloc * self.ndescrpt),
+            (self.nframes, self.nloc * self.ndescrpt * 3),
+            (self.nframes, self.nloc * self.nnei * 3),
+            (self.nframes, self.nloc * self.nnei),
+            (self.nframes, self.nloc * self.nnei),
+            (self.nframes, self.nloc * self.nnei),
+        )
+        for value, expected_shape in zip(result, expected_shapes, strict=True):
+            self.assertEqual(value.shape, expected_shape)
+
+        nlist, neighbor_types, neighbor_mask = result[3:]
+        valid_neighbors = nlist >= 0
+        self.assertTrue(np.any(valid_neighbors))
+        self.assertTrue(np.any(~valid_neighbors))
+        source_types = np.take_along_axis(self.dtype, np.maximum(nlist, 0), axis=1)
+        expected_types = np.where(valid_neighbors, source_types, self.ntypes)
+        np.testing.assert_array_equal(neighbor_mask, valid_neighbors)
+        np.testing.assert_array_equal(neighbor_types, expected_types)
+
+    def test_external_nlist_amix(self) -> None:
+        """Exercise the AMix CPU fallback with a pointer-based neighbor list."""
+        ilist = np.arange(self.nloc, dtype=np.int32)
+        coordinates = self.dcoord[0].reshape(self.nall, 3)
+        neighbor_rows = [
+            np.array(
+                [
+                    jj
+                    for jj in range(self.nall)
+                    if jj != ii
+                    and np.linalg.norm(coordinates[ii] - coordinates[jj]) < self.rcut
+                ],
+                dtype=np.int32,
+            )
+            for ii in range(self.nloc)
+        ]
+        numneigh = np.array([row.size for row in neighbor_rows], dtype=np.int32)
+        firstneigh = np.array(
+            [row.ctypes.data for row in neighbor_rows], dtype=np.uintp
+        )
+
+        # The legacy external-list ABI stores native pointers at int offsets
+        # 4, 8, and 12. Keep every backing array alive through sess.run below.
+        mesh = np.zeros(16, dtype=np.int32)
+        mesh[1] = self.nloc
+        mesh_bytes = mesh.view(np.uint8)
+        for offset, address in (
+            (4, ilist.ctypes.data),
+            (8, numneigh.ctypes.data),
+            (12, firstneigh.ctypes.data),
+        ):
+            address_bytes = np.array([address], dtype=np.uintp).view(np.uint8)
+            byte_offset = offset * mesh.itemsize
+            mesh_bytes[byte_offset : byte_offset + address_bytes.size] = address_bytes
+
+        with tf.device("/CPU:0"):
+            outputs = op_module.prod_env_mat_a_mix(
+                self.tcoord,
+                self.ttype,
+                self.tnatoms,
+                self.tbox,
+                tf.constant(mesh),
+                self.t_avg,
+                self.t_std,
+                rcut_a=-1,
+                rcut_r=self.rcut,
+                rcut_r_smth=self.rcut_smth,
+                sel_a=[self.nnei],
+                sel_r=[0],
+            )
+        self.sess.run(tf.global_variables_initializer())
+        nlist, neighbor_types, neighbor_mask = self.sess.run(
+            outputs[3:],
+            feed_dict={
+                self.tcoord: self.dcoord[:1],
+                self.ttype: self.dtype[:1],
+                self.tbox: self.dbox[:1],
+                self.tnatoms: self.dnatoms,
+            },
+        )
+
+        nlist = nlist.reshape(self.nloc, self.nnei)
+        neighbor_types = neighbor_types.reshape(self.nloc, self.nnei)
+        neighbor_mask = neighbor_mask.reshape(self.nloc, self.nnei)
+        valid_neighbors = nlist >= 0
+        np.testing.assert_array_equal(valid_neighbors.sum(axis=1), numneigh)
+        for ii, row in enumerate(neighbor_rows):
+            np.testing.assert_array_equal(np.sort(nlist[ii][valid_neighbors[ii]]), row)
+        expected_types = np.where(
+            valid_neighbors,
+            self.dtype[0][np.maximum(nlist, 0)],
+            self.ntypes,
+        )
+        np.testing.assert_array_equal(neighbor_mask, valid_neighbors)
+        np.testing.assert_array_equal(neighbor_types, expected_types)
+
     def test_nopbc_self_built_nlist_deriv(self) -> None:
         hh = 1e-4
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
