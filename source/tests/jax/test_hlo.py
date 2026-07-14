@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Regression tests for metadata exposed by serialized JAX HLO models."""
 
-from deepmd.jax.model.hlo import HLO
+from deepmd.jax.model.hlo import (
+    HLO,
+)
 
 
 def test_hlo_get_nnei_uses_stored_selection() -> None:
