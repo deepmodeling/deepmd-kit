@@ -362,7 +362,7 @@ def _make_sample_inputs(
 
 def build_synthetic_graph_inputs(
     model: torch.nn.Module,
-    e_max: int,
+    e_max: int | None,
     nframes: int = 2,
     nloc: int = 7,
     *,
@@ -394,8 +394,13 @@ def build_synthetic_graph_inputs(
     ----------
     model : torch.nn.Module
         The pt_expt energy model (must expose ``get_rcut``/``get_type_map``/...).
-    e_max : int
-        Static edge capacity ``E`` to pad the (masked) edge axis to.
+    e_max : int or None
+        Static edge capacity ``E`` to pad the (masked) edge axis to.  Must be
+        at least the system's real edge count (the carry-all builder raises
+        ``edge overflow`` otherwise) — derive it from
+        :func:`count_synthetic_graph_edges`, never from ``sel`` (the builder
+        is sel-free).  ``None`` selects the dynamic layout (real edges plus
+        ``min_edges`` guard rows); used by the edge-count probe itself.
     nframes : int
         Number of frames in the sample system.
     nloc : int
@@ -469,6 +474,56 @@ def build_synthetic_graph_inputs(
         aparam,
         charge_spin,
     )
+
+
+def count_synthetic_graph_edges(
+    model: torch.nn.Module,
+    nframes: int,
+    nloc: int,
+    *,
+    dtype: torch.dtype,
+    device: torch.device | None = None,
+) -> int:
+    """Count the real (unpadded) edges of the synthetic trace system.
+
+    Probes :func:`build_synthetic_graph_inputs` with ``e_max=None`` (the
+    dynamic carry-all layout, whose edge axis is the real edge count plus
+    the ``min_edges`` guard rows) and counts the ``edge_mask`` real prefix.
+    The carry-all builder is sel-free — edges are cutoff-determined, ``sel``
+    is only a normalization constant — so the static trace ``edge_capacity``
+    must derive from this geometry-determined count; a sel-based estimate
+    overflows whenever the synthetic system's real degree exceeds ``sel``
+    (small-``sel`` models).
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The pt_expt energy model (must expose ``get_rcut``/``get_type_map``).
+    nframes : int
+        Number of frames of the synthetic system; must match the subsequent
+        :func:`build_synthetic_graph_inputs` call.
+    nloc : int
+        Local atoms per frame; must match the subsequent call.
+    dtype : torch.dtype
+        Float precision of the probe coordinates; must match the subsequent
+        call (the edge count is cutoff-thresholded).
+    device : torch.device, optional
+        Probe device; must match the subsequent call.
+
+    Returns
+    -------
+    int
+        Number of real edges of the synthetic system at the model cutoff.
+    """
+    edge_mask = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=nframes,
+        nloc=nloc,
+        dtype=dtype,
+        device=device,
+    )[4]
+    return int(edge_mask.sum())
 
 
 def _build_graph_dynamic_shapes(
@@ -1046,11 +1101,26 @@ def _trace_and_export(
         # The edge axis is DYNAMIC (B2.0): the AOTI artifact accepts any edge
         # count, so there is no capacity to bake. The trace sample is built at a
         # concrete, padded edge size only to keep the trace tensors distinct
-        # from the other dynamic dims (nframes=2, N=14) under torch.export's
-        # duck-sizing; the value itself does NOT constrain runtime.
+        # from the other dynamic dims (nframes, N) under torch.export's
+        # duck-sizing; the value itself does NOT constrain runtime.  The
+        # capacity derives from the ACTUAL edge count of the synthetic system
+        # (the carry-all builder is sel-free; a sel-derived estimate overflows
+        # for small-sel models): 25% headroom keeps the masked padded tail
+        # genuinely traced, the ``+ 2`` floor guarantees it even for tiny edge
+        # counts, and the final bump keeps the concrete edge length distinct
+        # from the other trace dims under duck-sizing.
         nloc_sample = 7
-        nnei = sum(model.get_sel())
-        e_sample = math.ceil(1.25 * nloc_sample * nnei)
+        nframes_sample = 1 if with_comm_dict else 2
+        e_real = count_synthetic_graph_edges(
+            model,
+            nframes=nframes_sample,
+            nloc=nloc_sample,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        e_sample = max(math.ceil(1.25 * e_real), e_real + 2)
+        while e_sample in (nframes_sample, nframes_sample * nloc_sample):
+            e_sample += 1
 
         if with_comm_dict:
             # Load libdeepmd_op_pt.so and register border_op fake/autograd

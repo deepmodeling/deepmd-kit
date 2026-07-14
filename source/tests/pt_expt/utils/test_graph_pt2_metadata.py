@@ -49,16 +49,24 @@ DPA1_CONFIG = {
 }
 
 
-def _build_dpa1_data() -> dict:
-    """Build a serialized dpmodel data dict for a dpa1(attn_layer=0) energy model."""
+def _build_dpa1_data(config: dict | None = None) -> dict:
+    """Build a serialized dpmodel data dict for a dpa1(attn_layer=0) energy model.
+
+    Parameters
+    ----------
+    config : dict, optional
+        Model config to build from.  Defaults to ``DPA1_CONFIG``.
+    """
     from deepmd.dpmodel.model.model import (
         get_model,
     )
 
-    model = get_model(copy.deepcopy(DPA1_CONFIG))
+    if config is None:
+        config = DPA1_CONFIG
+    model = get_model(copy.deepcopy(config))
     return {
         "model": model.serialize(),
-        "model_def_script": copy.deepcopy(DPA1_CONFIG),
+        "model_def_script": copy.deepcopy(config),
         "backend": "dpmodel",
         "software": "deepmd-kit",
         "version": "3.0.0",
@@ -92,6 +100,30 @@ def test_graph_pt2_has_lower_input_kind_graph(dpa1_dpmodel_data) -> None:
     # B2.0: the edge axis is DYNAMIC (Dim("nedge", min=2)); there is no static
     # capacity baked into the AOTI artifact, so no ``edge_capacity`` is persisted.
     assert "edge_capacity" not in meta
+
+
+def test_graph_pt2_small_sel_exports() -> None:
+    """Graph-form ``.pt2`` export succeeds for a small-``sel`` model.
+
+    The graph trace capacity derives from the synthetic trace system's
+    REAL edge count; the former sel-derived estimate
+    (``ceil(1.25 * nloc * sum(sel))``) overflowed the sel-free carry-all
+    builder whenever the actual degree exceeded ``sel`` (``edge overflow:
+    36 real edges > edge_capacity 18`` at ``sel=2``).
+    """
+    cfg = copy.deepcopy(DPA1_CONFIG)
+    cfg["descriptor"]["sel"] = 2
+    data = _build_dpa1_data(cfg)
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "m_graph_small_sel.pt2")
+        deserialize_to_file(
+            p,
+            data,
+            do_atomic_virial=True,
+            lower_kind="graph",
+        )
+        meta = _read_metadata(p)
+    assert meta["lower_input_kind"] == "graph"
 
 
 def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:

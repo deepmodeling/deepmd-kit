@@ -552,6 +552,64 @@ class TestDpa2GraphLower:
             **tol,
         )
 
+    def test_compiled_training_graph_small_sel(self) -> None:
+        """The compiled-training trace capacity derives from the synthetic
+        system's REAL edge count, not from ``sel``.
+
+        The carry-all graph builder is sel-free (sel = normalization
+        constant only), so a sel-derived static trace capacity
+        (``ceil(1.25 * nloc * sum(sel))``) overflows whenever the synthetic
+        trace system's actual degree exceeds ``sel``: with repinit/repformer
+        ``nsel=10/6`` the trace used to raise ``edge overflow: 106 real
+        edges > edge_capacity 89``.  The capacity is now probed from the
+        actual unpadded synthetic graph, so the trace must succeed and the
+        compiled lower must match the eager graph lower (compiled and eager
+        are the SAME route, so parity holds even at binding sel).
+        """
+        from deepmd.pt_expt.train.training import (
+            _trace_and_compile_graph,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = self._make_model(repinit_nsel=10, repformer_nsel=6).to("cpu")
+        model.eval()
+
+        compiled_lower, _ = _trace_and_compile_graph(model, None, None, None)
+
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=97,
+            nframes=3,
+            nloc=5,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+            want_fparam=False,
+            want_aparam=False,
+            want_charge_spin=False,
+        )
+        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
+        eager = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            ei,
+            ev,
+            em,
+            do_atomic_virial=False,
+            fparam=fp,
+            aparam=ap,
+            charge_spin=cs,
+        )
+        tol = {"rtol": 1e-10, "atol": 1e-10}
+        torch.testing.assert_close(compiled_out["energy"], eager["energy_redu"], **tol)
+        torch.testing.assert_close(
+            compiled_out["force"],
+            eager["energy_derv_r"].reshape(compiled_out["force"].shape),
+            **tol,
+        )
+
     def test_graph_lower_fparam_symbolic_trace_and_compile(self) -> None:
         """A graph-eligible DPA2 model with ``numb_fparam > 0`` must export
         (``make_fx`` symbolic) AND inductor-compile.
