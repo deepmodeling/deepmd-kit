@@ -75,10 +75,24 @@ ref_file = (
     / "infer"
     / "deeppot_dpa2_graph.expected"
 )
+# numb_aparam=1 sibling of the graph archive (gen_dpa2.py section C); the
+# uniform per-atom parameter is fed via the pair_style ``aparam`` argument.
+pb_aparam_file = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "deeppot_dpa2_graph_aparam.pt2"
+)
 # The MPI runner is backend-agnostic (DATAFILE PB_FILE OUTPUT + flags); reuse
 # the DPA3 driver verbatim rather than duplicate it (same pattern as
 # test_lammps_dpa1_graph_pt2.py).
 mpi_runner = Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"
+
+# Ceiling for EVERY mpirun invocation (parse mode included): a with-comm
+# desync hangs the collective forever, so an unbounded should-succeed
+# regression would hang the whole suite. Generous vs the observed ~30 s
+# healthy runtime of the heaviest case here.
+_MPI_DEFAULT_TIMEOUT = 600.0
 
 data_file = Path(__file__).parent / "data_dpa2_graph_pt2.lmp"
 # Wide-box, 3-way x-split variant for the genuinely-empty-rank MPI corner
@@ -307,17 +321,25 @@ def _run_mpi_subprocess(
     a same-archive reference for the multi-rank comparison.  ``pb``
     overrides the model archive (defaults to ``deeppot_dpa2_graph.pt2``).
 
-    With ``capture=True``, return raw subprocess info (``returncode``,
-    ``stdout``, ``stderr``, ``timed_out``) instead of parsed output -- used
-    by the empty-rank test.  ``timeout`` (seconds, capture mode only) bounds
-    the run: on expiry the WHOLE mpirun process group is SIGKILLed (a
-    deadlocked collective otherwise leaves orphaned ranks holding the GPU)
-    and ``timed_out=True`` is returned with ``returncode=None``.
+    EVERY run is bounded: ``timeout`` (seconds, default
+    ``_MPI_DEFAULT_TIMEOUT``) covers the parse path too, so a deadlocked
+    collective in a should-succeed regression cannot hang the suite -- on
+    expiry the WHOLE mpirun process group is SIGKILLed (killing only mpirun
+    can leave orphaned ranks blocking in the collective and holding the
+    GPU).  With ``capture=True``, return raw subprocess info
+    (``returncode``, ``stdout``, ``stderr``, ``timed_out``) instead of
+    parsed output -- used by the fail-fast tests; a timeout there returns
+    ``timed_out=True`` with ``returncode=None`` for the caller to assert
+    on.  In parse mode a timeout raises ``RuntimeError`` and a nonzero exit
+    raises ``subprocess.CalledProcessError`` (matching the old
+    ``check_call`` behavior).
     """
     if data_path is None:
         data_path = data_file
     if pb is None:
         pb = pb_file
+    if timeout is None:
+        timeout = _MPI_DEFAULT_TIMEOUT
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -339,35 +361,41 @@ def _run_mpi_subprocess(
             argv.extend(extra_args)
         if runner_args:
             argv.extend(runner_args)
-        if capture:
-            proc = sp.Popen(
-                argv,
-                stdout=sp.PIPE,
-                stderr=sp.PIPE,
-                text=True,
-                start_new_session=True,
-            )
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-            except sp.TimeoutExpired:
-                # Kill the whole process group: killing only mpirun can
-                # leave the deadlocked ranks orphaned (still blocking in
-                # the collective and holding the GPU).
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                stdout, stderr = proc.communicate()
+        proc = sp.Popen(
+            argv,
+            stdout=sp.PIPE if capture else None,
+            stderr=sp.PIPE if capture else None,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except sp.TimeoutExpired:
+            # Kill the whole process group: killing only mpirun can
+            # leave the deadlocked ranks orphaned (still blocking in
+            # the collective and holding the GPU).
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+            if capture:
                 return {
                     "returncode": None,
                     "stdout": stdout or "",
                     "stderr": stderr or "",
                     "timed_out": True,
                 }
+            raise RuntimeError(
+                f"mpirun timed out after {timeout}s (process group killed); "
+                "a should-succeed MPI regression is deadlocked."
+            ) from None
+        if capture:
             return {
                 "returncode": proc.returncode,
                 "stdout": stdout,
                 "stderr": stderr,
                 "timed_out": False,
             }
-        sp.check_call(argv)
+        if proc.returncode != 0:
+            raise sp.CalledProcessError(proc.returncode, argv)
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
         pe = float(lines[0])
@@ -458,6 +486,58 @@ def test_pair_deepmd_mpi_dpa2_graph_empty_subdomain_matches_single_rank() -> Non
         data_path=data_file_empty_subdomain,
         extra_args=["--nsteps", "5"],
         runner_args=runner_args,
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=1e-8
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.skipif(
+    not pb_aparam_file.exists(),
+    reason="deeppot_dpa2_graph_aparam.pt2 not generated (gen_dpa2.py section C)",
+)
+def test_pair_deepmd_mpi_dpa2_graph_empty_subdomain_aparam_matches_single_rank() -> (
+    None
+):
+    """Empty subdomain (nlocal == 0, nghost > 0) with ``numb_aparam > 0``:
+    MP must equal SP.
+
+    The ghost-only rank owns no atoms, so its runtime aparam is EMPTY while
+    the with-comm graph still carries ``N == nghost`` nodes; the C++
+    marshalling must SYNTHESIZE a zero ``(N, daparam)`` aparam for it
+    (``extend_graph_aparam``).  Feeding the empty tensor instead made the
+    artifact's aparam reshape fail rank-LOCALLY -- after the global
+    empty-rank preflight had already passed (``N > 0``) -- which
+    desynchronizes the subsequent per-layer ``border_op`` collective
+    sequence and leaves the peer rank hanging; every ``_run_mpi_subprocess``
+    call is therefore bounded by ``_MPI_DEFAULT_TIMEOUT`` so a regression
+    fails instead of hanging the suite.  The uniform ``aparam 0.25`` is
+    inert on the ghost-only rank (owned-node mask) but feeds every owned
+    atom on the other rank, so a wrong synthesis (or a dropped aparam)
+    breaks the MP == SP parity below.
+    """
+    runner_args = ["--neigh-every", "100", "--pair-extra", "aparam 0.25"]
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
+        pb=pb_aparam_file,
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
+        pb=pb_aparam_file,
     )
     assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
     np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)

@@ -28,30 +28,59 @@ using namespace deepmd;
 
 namespace {
 /**
- * @brief Extend a graph-route aparam tensor to the flat node axis.
+ * @brief Normalize a graph-route aparam tensor to the flat node axis.
  *
- * The NeighborGraph fitting consumes atomic parameters on the flat node
- * axis (N == n_node_count).  When the graph keeps the EXTENDED region
- * (N == nall_real: the multi-rank routes, both plain and with-comm), the
- * runtime aparam carries the owned (local) rows only; the halo rows are
- * zero-padded here.  Ghost fitting outputs are never retained -- the
- * with-comm artifact masks non-owned energies before reduction, and the
- * plain multi-rank remap sums energy over the owned prefix only -- so the
- * padded values are inert.  (``aparam_nall`` is structurally false for
- * pt_expt models, see ``init``, so the runtime aparam never carries
- * extended rows itself.)  Identity when aparam is absent or already covers
- * the node axis (single-rank folded graphs, N == nloc).
+ * The NeighborGraph ABI carries atomic parameters FLAT on the node axis --
+ * shape (N, daparam) with N == n_node_count, the same axis as ``atype``
+ * (mirrors ``build_synthetic_graph_inputs`` / ``_build_graph_dynamic_shapes``
+ * on the Python export side).  The runtime aparam carries the owned (local)
+ * rows only (``aparam_nall`` is structurally false for pt_expt models, see
+ * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
+ * the halo rows are zero-padded here.  Ghost fitting outputs are never
+ * retained -- the with-comm artifact masks non-owned energies before
+ * reduction, and the plain multi-rank remap sums energy over the owned
+ * prefix only -- so the padded values are inert.
+ *
+ * A ghost-only rank (``nlocal == 0``, ``N > 0``) synthesizes a full zero
+ * tensor: the graph still carries N nodes and the artifact requires the
+ * (N, daparam) input, while the owned-node mask keeps its contribution
+ * exactly zero.  A missing aparam on a rank that OWNS atoms, or a width
+ * mismatch, is an explicit error -- the former silently returned the empty
+ * tensor (artifact reshape failure mid-collective), and a width mismatch
+ * used to be absorbed by broadcasting ``copy_`` (silent result corruption
+ * for daparam > 1).
  */
 at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
                                std::int64_t n_node_count,
+                               std::int64_t nlocal,
                                std::int64_t daparam) {
-  if (daparam <= 0 || aparam_tensor.numel() == 0 || aparam_tensor.dim() < 2 ||
-      aparam_tensor.size(1) >= n_node_count) {
-    return aparam_tensor;
+  if (daparam <= 0) {
+    return aparam_tensor;  // model has no aparam input; passed through empty
+  }
+  if (aparam_tensor.numel() == 0) {
+    if (nlocal > 0) {
+      throw deepmd::deepmd_exception(
+          "aparam is required (dim_aparam=" + std::to_string(daparam) +
+          ") but no values were provided on a rank owning " +
+          std::to_string(nlocal) + " atoms.");
+    }
+    // ghost-only rank: there are no owned rows to supply; zeros are inert
+    // under the owned-node mask but the artifact needs the full node axis.
+    return torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  }
+  if (aparam_tensor.numel() != nlocal * daparam) {
+    throw deepmd::deepmd_exception(
+        "aparam holds " + std::to_string(aparam_tensor.numel()) +
+        " values but the graph route expects nlocal * dim_aparam = " +
+        std::to_string(nlocal) + " * " + std::to_string(daparam) + ".");
+  }
+  at::Tensor owned = aparam_tensor.reshape({nlocal, daparam});
+  if (nlocal == n_node_count) {
+    return owned;  // single-rank / folded graph: nothing to pad
   }
   at::Tensor padded =
-      torch::zeros({1, n_node_count, daparam}, aparam_tensor.options());
-  padded.slice(1, 0, aparam_tensor.size(1)).copy_(aparam_tensor);
+      torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  padded.slice(0, 0, nlocal).copy_(owned);
   return padded;
 }
 }  // namespace
@@ -1012,7 +1041,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       flat_outputs = run_model_graph_with_comm(
           node_atype, n_node_tensor, edge_tensors.edge_index,
           edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
-          extend_graph_aparam(aparam_tensor, n_node_count, daparam),
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam),
           charge_spin_tensor, comm_tensors);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
@@ -1091,7 +1120,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       flat_outputs = run_model_graph(
           node_atype, n_node_tensor, edge_tensors.edge_index,
           edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
-          extend_graph_aparam(aparam_tensor, n_node_count, daparam),
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam),
           charge_spin_tensor);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
@@ -1466,9 +1495,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
         graph_tensors.edge_index, graph_tensors.edge_mask, graph_tensors.atype,
         pair_exclude_table_, ntypes);
+    // standalone path is single-rank: every node is owned (nlocal == N), so
+    // this only normalizes the rectangular runtime aparam to the flat
+    // (N, daparam) node axis of the graph ABI.
     flat_outputs = run_model_graph(
         graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
-        graph_tensors.edge_vec, graph_edge_mask, fparam_tensor, aparam_tensor,
+        graph_tensors.edge_vec, graph_edge_mask, fparam_tensor,
+        extend_graph_aparam(aparam_tensor, natoms, natoms, daparam),
         charge_spin_tensor);
   } else {
     // Model-level pair exclusion is a BUILD-time transform (decision

@@ -395,6 +395,56 @@ def main():
     print(f"Wrote {graph_ref_path}")  # noqa: T201
 
     print("\nAll graph sanity checks passed.")  # noqa: T201
+
+    # ============================================================
+    # Section C: graph-eligible DPA2 with numb_aparam=1
+    # ============================================================
+    # Consumed by test_lammps_dpa2_graph_pt2.py's empty-subdomain aparam
+    # regression: a ghost-only rank (nlocal == 0, nghost > 0) must
+    # SYNTHESIZE a zero aparam covering the graph's halo nodes instead of
+    # feeding the empty owned tensor to the artifact -- the rank-local
+    # reshape failure would otherwise desynchronize the per-layer border_op
+    # collective sequence and hang the peers.  No .expected sidecar: the
+    # LAMMPS test is an MP == SP parity check on this same artifact.
+    aparam_config = copy.deepcopy(graph_config)
+    aparam_config["fitting_net"] = {
+        **config["fitting_net"],
+        "numb_aparam": 1,
+    }
+
+    print(  # noqa: T201
+        "\n---- Building graph-eligible DPA2 (use_three_body=False, "
+        "numb_aparam=1) ----"
+    )
+    model_a = get_model(copy.deepcopy(aparam_config))
+    data_a = {
+        "model": model_a.serialize(),
+        "model_def_script": aparam_config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    aparam_graph_pt2 = os.path.join(base_dir, "deeppot_dpa2_graph_aparam.pt2")
+    print(f"Exporting to {aparam_graph_pt2} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        aparam_graph_pt2,
+        copy.deepcopy(data_a),
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    # Sanity: single-rank eval with a uniform aparam must be finite, and the
+    # aparam must genuinely reach the fitting.
+    dp_ag = DeepPot(aparam_graph_pt2)
+    natoms_c = len(atype)
+    aparam_c = np.full((1, natoms_c, 1), 0.25, dtype=np.float64)
+    e_c, f_c, v_c = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_c)[:3]
+    e_c2 = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_c + 1.0)[0]
+    if not (np.all(np.isfinite(f_c)) and abs(e_c2[0, 0] - e_c[0, 0]) > 1e-12):
+        raise RuntimeError(
+            "BLOCKED: dpa2 graph aparam artifact is degenerate (non-finite "
+            "forces or aparam-insensitive energy)."
+        )
+
     print("\nDone!")  # noqa: T201
 
 
