@@ -2362,6 +2362,12 @@ class NeighborGatedAttentionLayer(NativeOP):
         input_r: Array | None = None,
         sw: Array | None = None,
     ) -> Array:
+        r"""Apply attention, its residual connection, and layer normalization.
+
+        .. math::
+            H_{\mathrm{out}}=\operatorname{LayerNorm}
+            \left(H+\operatorname{GatedAttention}(H,M,R,S)\right).
+        """
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -2411,7 +2417,20 @@ class NeighborGatedAttentionLayer(NativeOP):
 
 
 class GatedAttentionLayer(NativeOP):
-    r"""Gated self-attention update :math:`H'=H+\operatorname{Attn}(H)`."""
+    r"""Projected gated self-attention output.
+
+    With projected queries, keys, and values, the layer returns only the
+    attention output (the residual connection is applied by
+    :class:`NeighborGatedAttentionLayer`):
+
+    .. math::
+        Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
+        A=\operatorname{softmax}_{j}(QK^T/\sqrt{d}),\qquad
+        O=\operatorname{reshape}(AV)W_{\mathrm{out}}.
+
+    Neighbor masks, cutoff smoothing, and optional angular weights modify
+    :math:`A` before the softmax/output projection.
+    """
 
     def __init__(
         self,

@@ -965,7 +965,18 @@ def symmetrization_op(
 
 
 class Atten2Map(NativeOP):
-    r"""Attention-logit map :math:`A=QK^T/\sqrt d`."""
+    r"""Masked and smoothed angular attention map.
+
+    The raw logits are :math:`L_{ijk}^{(h)}=q_{ij}^{(h)}\cdot
+    k_{ik}^{(h)}/\sqrt d`.  If enabled, angular weighting multiplies these
+    logits by :math:`\hat h_{ij}\cdot\hat h_{ik}`.  Invalid neighbors are
+    masked, while the smooth path applies cutoff factors before and after the
+    softmax:
+
+    .. math::
+        A_{ijk}^{(h)}=s_{ij}s_{ik}\operatorname{softmax}_k\!\left(
+        (L_{ijk}^{(h)}+c)s_{ij}s_{ik}-c\right).
+    """
 
     def __init__(
         self,
@@ -1096,7 +1107,16 @@ class Atten2Map(NativeOP):
 
 
 class Atten2MultiHeadApply(NativeOP):
-    r"""Multi-head attention application :math:`\operatorname{softmax}(A)V`."""
+    r"""Multi-head attention application.
+
+    ``Atten2Map`` has already applied masking, smoothing, and softmax.  This
+    stage therefore computes the value aggregation and head projection only:
+
+    .. math::
+        O_{ij}^{(h)}=\sum_k A_{ijk}^{(h)}V_{ik}^{(h)},\qquad
+        O_{ij}=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        O_{ij}^{(h)}\right).
+    """
 
     def __init__(
         self,
@@ -1281,7 +1301,19 @@ class Atten2EquiVarApply(NativeOP):
 
 
 class LocalAtten(NativeOP):
-    r"""Local attention with :math:`a_{ij}=\operatorname{softmax}_j(q_i\cdot k_{ij})`."""
+    r"""Local attention with masked, smoothed softmax weights.
+
+    For each head, the query is formed from the destination feature and keys
+    and values from its neighbors.  The logits use the standard scaling and
+    the cutoff-smoothed softmax when enabled:
+
+    .. math::
+        L_{ij}^{(h)}=q_i^{(h)}\cdot k_{ij}^{(h)}/\sqrt{d},\qquad
+        A_{ij}^{(h)}=s_{ij}\operatorname{softmax}_j\!\left(
+        (L_{ij}^{(h)}+c)s_{ij}-c\right),\qquad
+        O_i=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        \sum_j A_{ij}^{(h)}v_{ij}^{(h)}\right).
+    """
 
     def __init__(
         self,

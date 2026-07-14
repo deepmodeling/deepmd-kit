@@ -169,11 +169,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         + \operatorname{FFN}_{\mathrm{eq}}\!\left(
         \sum_{j\in\mathcal N(i)} w_{ji}\mathbf m_{ji}^{(l)}\right).
 
-    The returned descriptor keeps only the invariant scalar coefficients after
-    the last interaction block:
+    The final read-out applies the configured scalar/equivariant read-out to
+    the last interaction state and then keeps its invariant scalar output:
 
     .. math::
-        \mathcal D_i = \mathbf h_i^{(L,0,0)}.
+        \mathcal D_i = \operatorname{ScalarReadout}_{\mathrm{mode}}
+        \left(\mathbf h_i^{(L)}\right).
+
+    In ``so3_readout="none"`` mode this is the identity read-out on the
+    :math:`(\ell,m)=(0,0)` coefficient.  In ``"glu"`` and ``"mlp"`` modes,
+    equivariant read-out blocks fold higher-degree coefficients into the
+    scalar channel before extraction.
 
     The weights :math:`w_{ji}` are either cutoff-envelope weights or normalized
     attention weights, depending on ``n_atten_head``.

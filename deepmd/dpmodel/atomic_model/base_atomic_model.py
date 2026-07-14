@@ -56,7 +56,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     r"""Base atomic model mapping local descriptors to per-atom outputs.
 
     For atom :math:`i`, the learned map is
-    :math:`y_i=F_\theta(\mathcal D_i,\mathcal N_i)`.
+    :math:`y_i=F_\theta(\mathcal D_i,\mathcal N_i)`, where
+    :math:`\mathcal N_i` denotes the complete local environment supplied to
+    the atomic model: the selected neighbor indices together with their
+    relative coordinates, types, and any associated descriptor-side features.
     """
 
     def __init__(
