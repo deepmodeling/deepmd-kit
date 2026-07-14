@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Backend-preservation tests for fitting-output reductions."""
 
+import pytest
+
 from deepmd.dpmodel.model.edge_transform_output import (
     fit_output_to_model_output_graph,
 )
@@ -14,6 +16,8 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
 )
+
+torch = pytest.importorskip("torch")
 
 
 def _output_def(*, intensive: bool) -> FittingOutputDef:
@@ -34,8 +38,6 @@ def _output_def(*, intensive: bool) -> FittingOutputDef:
 
 def test_dense_torch_extensive_reduction_stays_on_backend() -> None:
     """Dense reduction must not rely on NumPy-style ``Tensor.astype``."""
-    import torch
-
     atomic = torch.tensor([[[1.0], [2.0], [3.0]]], dtype=torch.float32)
     coord = torch.zeros((1, 3, 3), dtype=torch.float32)
 
@@ -50,8 +52,6 @@ def test_dense_torch_extensive_reduction_stays_on_backend() -> None:
 
 def test_dense_torch_mask_count_uses_energy_dtype() -> None:
     """The intensive divisor must be reduced by Torch in energy precision."""
-    import torch
-
     atomic = torch.tensor([[[1.0], [2.0], [3.0]]], dtype=torch.float32)
     coord = torch.zeros((1, 3, 3), dtype=torch.float32)
     mask = torch.tensor([[True, True, False]])
@@ -67,8 +67,6 @@ def test_dense_torch_mask_count_uses_energy_dtype() -> None:
 
 def test_graph_torch_mask_count_uses_backend_dtype() -> None:
     """Graph reductions must translate the NumPy precision to ``torch.dtype``."""
-    import torch
-
     graph = NeighborGraph(
         n_node=torch.tensor([2, 1], dtype=torch.int64),
         edge_index=torch.empty((2, 0), dtype=torch.int64),
