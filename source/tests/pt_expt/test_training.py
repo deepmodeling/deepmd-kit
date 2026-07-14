@@ -811,9 +811,7 @@ class TestRestart(unittest.TestCase):
             os.chdir(tmpdir)
             try:
                 config = _make_config(self.data_dir, numb_steps=1)
-                config["model"]["descriptor"] = copy.deepcopy(
-                    _DESCRIPTOR_DPA1_NO_ATTN
-                )
+                config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
                 config = update_deepmd_input(config, warning=False)
                 config = normalize(config)
                 trainer = get_trainer(config)
@@ -827,9 +825,7 @@ class TestRestart(unittest.TestCase):
                 self.assertTrue(os.path.exists(ckpt_path))
 
                 config2 = _make_config(self.data_dir, numb_steps=2)
-                config2["model"]["descriptor"] = copy.deepcopy(
-                    _DESCRIPTOR_DPA1_NO_ATTN
-                )
+                config2["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
                 config2 = update_deepmd_input(config2, warning=False)
                 config2 = normalize(config2)
                 trainer2 = get_trainer(config2, restart_model=ckpt_path)
