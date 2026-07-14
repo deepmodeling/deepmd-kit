@@ -45,8 +45,8 @@ namespace {
 at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
                                std::int64_t n_node_count,
                                std::int64_t daparam) {
-  if (daparam <= 0 || aparam_tensor.numel() == 0 ||
-      aparam_tensor.dim() < 2 || aparam_tensor.size(1) >= n_node_count) {
+  if (daparam <= 0 || aparam_tensor.numel() == 0 || aparam_tensor.dim() < 2 ||
+      aparam_tensor.size(1) >= n_node_count) {
     return aparam_tensor;
   }
   at::Tensor padded =
