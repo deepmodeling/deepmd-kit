@@ -191,6 +191,154 @@ class _WrapperForwardEnergy:
         return energy_redu
 
 
+def _build_graph_for_method(
+    method: str,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
+    box: torch.Tensor | None,
+    rcut: float,
+    pair_excl: Any,
+) -> Any:
+    """Build a carry-all ``NeighborGraph`` for the named pt_expt builder.
+
+    Single owning site for the graph-builder dispatch shared by
+    :meth:`_call_common_graph` and the graph Hessian wrapper
+    (:class:`_WrapperForwardEnergyGraph`), so both build the graph identically.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+        build_neighbor_graph_ase,
+    )
+
+    if method == "dense":
+        return build_neighbor_graph(coord, atype, box, rcut, pair_excl=pair_excl)
+    if method == "ase":
+        return build_neighbor_graph_ase(coord, atype, box, rcut, pair_excl=pair_excl)
+    if method == "vesin":
+        from deepmd.pt_expt.utils.vesin_graph_builder import (
+            build_neighbor_graph_vesin,
+        )
+
+        return build_neighbor_graph_vesin(coord, atype, box, rcut, pair_excl=pair_excl)
+    if method == "nv":
+        from deepmd.pt_expt.utils.nv_graph_builder import (
+            build_neighbor_graph_nv,
+        )
+
+        return build_neighbor_graph_nv(coord, atype, box, rcut, pair_excl=pair_excl)
+    raise ValueError(
+        f"unknown neighbor_graph_method {method!r}; use 'dense', 'ase', "
+        "'vesin', or 'nv'"
+    )
+
+
+class _WrapperForwardEnergyGraph:
+    """Graph twin of :class:`_WrapperForwardEnergy` for the Hessian.
+
+    Given flattened LOCAL coordinates for one frame, rebuilds the carry-all
+    ``NeighborGraph`` (so ``edge_vec`` tracks the coordinates through
+    ``autograd.functional.hessian``'s double-backward) and returns the scalar
+    reduced-output component. Unlike the dense wrapper this differentiates
+    w.r.t. the ``(nloc, 3)`` LOCAL coordinates directly -- the carry-all graph
+    has no ghost nodes (PBC images enter only as edges, rebuilt from the same
+    coords each call), so there is no extended-region ``nall -> nloc`` fold.
+    """
+
+    def __init__(
+        self,
+        model: Any,
+        kk: str,
+        ci: int,
+        nloc: int,
+        atype: torch.Tensor,  # (1, nloc)
+        box: torch.Tensor | None,  # (1, ...) or None
+        method: str,
+        pair_excl: Any,
+        rcut: float,
+        fparam: torch.Tensor | None,  # (1, ndf) or None
+        aparam: torch.Tensor | None,  # (1, nloc, nda) or None
+    ) -> None:
+        self.model = model
+        self.kk = kk
+        self.ci = ci
+        self.nloc = nloc
+        self.atype = atype
+        self.box = box
+        self.method = method
+        self.pair_excl = pair_excl
+        self.rcut = rcut
+        self.fparam = fparam
+        self.aparam = aparam
+
+    def __call__(self, coord_flat: torch.Tensor) -> torch.Tensor:
+        cc = coord_flat.reshape(1, self.nloc, 3)
+        ng = _build_graph_for_method(
+            self.method, cc, self.atype, self.box, self.rcut, self.pair_excl
+        )
+        atomic_ret = self.model.atomic_model.forward_common_atomic_graph(
+            ng,
+            self.atype.reshape(-1),
+            fparam=self.fparam,
+            aparam=self.aparam,
+        )
+        # atomic_ret[kk]: flat (N, *def), N == nloc for a single-frame carry-all
+        # graph (all nodes owned); reduced output = sum over the node axis.
+        atom_out = atomic_ret[self.kk]
+        return atom_out.sum(dim=0).reshape(-1)[self.ci]
+
+
+def _cal_hessian_ext_graph(
+    model: Any,
+    kk: str,
+    vdef: OutputVariableDef,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
+    box: torch.Tensor | None,
+    fparam: torch.Tensor | None,
+    aparam: torch.Tensor | None,
+    method: str,
+    pair_excl: Any,
+    rcut: float,
+    create_graph: bool = False,
+) -> torch.Tensor:
+    """Graph twin of :func:`_cal_hessian_ext`.
+
+    Computes the Hessian of the reduced output w.r.t. the LOCAL coordinates on
+    the carry-all graph route. Returns shape ``[nf, *vdef.shape, nloc*3,
+    nloc*3]`` -- the local-only counterpart of the dense extended Hessian,
+    already in the same final layout the dense route reaches after
+    ``communicate_extended_output`` folds ``nall -> nloc`` (the graph route
+    reduces over owned nodes, so no fold is needed). Node axis is
+    atom-major/xyz-minor, matching the dense final reshape.
+    """
+    nf, nloc, _ = coord.shape
+    vsize = math.prod(vdef.shape)
+    coord_flat = coord.reshape(nf, nloc * 3)
+    hessians = []
+    for ii in range(nf):
+        for ci in range(vsize):
+            wrapper = _WrapperForwardEnergyGraph(
+                model,
+                kk,
+                ci,
+                nloc,
+                atype[ii : ii + 1],
+                box[ii : ii + 1] if box is not None else None,
+                method,
+                pair_excl,
+                rcut,
+                fparam[ii : ii + 1] if fparam is not None else None,
+                aparam[ii : ii + 1] if aparam is not None else None,
+            )
+            hess = torch.autograd.functional.hessian(
+                wrapper,
+                coord_flat[ii],
+                create_graph=create_graph,
+            )  # (nloc*3, nloc*3)
+            hessians.append(hess)
+    return torch.stack(hessians).reshape(nf, *vdef.shape, nloc * 3, nloc * 3)
+
+
 def make_model(
     T_AtomicModel: type[BaseAtomicModel],
     T_Bases: tuple[type, ...] = (),
@@ -476,11 +624,6 @@ def make_model(
                 ``energy_redu``, ``energy_derv_r``, ``energy_derv_c_redu``, and
                 ``energy_derv_c`` when ``do_atomic_virial``).
             """
-            from deepmd.dpmodel.utils.neighbor_graph import (
-                build_neighbor_graph,
-                build_neighbor_graph_ase,
-            )
-
             # mirror the dpmodel guard: _resolve_graph_method's eligibility
             # check only protects the default (None) path; an EXPLICIT
             # neighbor_graph_method would otherwise reach the builders for
@@ -498,29 +641,7 @@ def make_model(
             # exported lower (forward_common_atomic_graph, which no longer
             # re-applies it) consumes a pre-excluded edge_mask.
             pair_excl = getattr(self.atomic_model, "pair_excl", None)
-            if method == "dense":
-                ng = build_neighbor_graph(cc, atype, bb, rcut, pair_excl=pair_excl)
-            elif method == "ase":
-                ng = build_neighbor_graph_ase(cc, atype, bb, rcut, pair_excl=pair_excl)
-            elif method == "vesin":
-                from deepmd.pt_expt.utils.vesin_graph_builder import (
-                    build_neighbor_graph_vesin,
-                )
-
-                ng = build_neighbor_graph_vesin(
-                    cc, atype, bb, rcut, pair_excl=pair_excl
-                )
-            elif method == "nv":
-                from deepmd.pt_expt.utils.nv_graph_builder import (
-                    build_neighbor_graph_nv,
-                )
-
-                ng = build_neighbor_graph_nv(cc, atype, bb, rcut, pair_excl=pair_excl)
-            else:
-                raise ValueError(
-                    f"unknown neighbor_graph_method {method!r}; "
-                    "use 'dense', 'ase', 'vesin', or 'nv'"
-                )
+            ng = _build_graph_for_method(method, cc, atype, bb, rcut, pair_excl)
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
             model_predict = self.forward_common_lower_graph(
@@ -548,6 +669,30 @@ def make_model(
                     and v.shape[:1] == torch.Size([N])
                 ):
                     model_predict[k] = v.reshape(nf, nloc, *v.shape[1:])
+            # Graph-native Hessian (parallel to the dense ``forward_common_atomic``
+            # loop): differentiate the reduced output w.r.t. the LOCAL coords by
+            # rebuilding the graph inside the wrapper. Added AFTER the unravel so
+            # its ``(nf, *def, nloc, 3, nloc, 3)`` shape is returned as-is.
+            # Eager-only, like the dense Hessian (autograd.functional.hessian
+            # does not export/compile).
+            aod = self.atomic_output_def()
+            for kk in aod.keys():
+                vdef = aod[kk]
+                if vdef.reducible and vdef.r_hessian:
+                    model_predict[get_hessian_name(kk)] = _cal_hessian_ext_graph(
+                        self,
+                        kk,
+                        vdef,
+                        cc,
+                        atype,
+                        bb,
+                        fp,
+                        ap,
+                        method,
+                        pair_excl,
+                        rcut,
+                        create_graph=self.training,
+                    )
             return model_predict
 
         def forward_common_atomic(

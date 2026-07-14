@@ -308,7 +308,12 @@ class DPAtomicModel(BaseAtomicModel):
         )
         fparam_node = None
         if fparam is not None:
-            frame_id = frame_id_from_n_node(graph.n_node)
+            # Pass the STATIC flat node count (``atype.shape[0] == N``) so the
+            # helper does not fall back to ``int(sum(n_node))``: that int() on a
+            # traced tensor breaks make_fx / torch.export
+            # (``GuardOnDataDependentSymNode``) for the graph .pt2 export and
+            # compiled-training paths when ``numb_fparam > 0``.
+            frame_id = frame_id_from_n_node(graph.n_node, n_total=atype.shape[0])
             fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
         return self.fitting_net.call_graph(
             gg, atype, gr=rot_mat, g2=None, h2=None, fparam=fparam_node, aparam=aparam

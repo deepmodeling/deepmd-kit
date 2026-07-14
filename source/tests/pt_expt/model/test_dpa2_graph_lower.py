@@ -176,6 +176,7 @@ class TestDpa2GraphLower:
         repformer_nsel: int = 150,
         repinit_nsel: int = 200,
         repformer_attn: bool = False,
+        numb_fparam: int = 0,
     ) -> EnergyModel:
         ds = _make_dpa2_descriptor(
             ntypes=self.nt,
@@ -189,6 +190,7 @@ class TestDpa2GraphLower:
             ds.get_dim_out(),
             1,
             mixed_types=ds.mixed_types(),
+            numb_fparam=numb_fparam,
             precision="float64",
             seed=GLOBAL_SEED,
         ).to(self.device)
@@ -223,6 +225,61 @@ class TestDpa2GraphLower:
         torch.testing.assert_close(
             graph["energy_derv_c_redu"], legacy["energy_derv_c_redu"], **tol
         )
+
+    def test_graph_native_hessian_matches_dense(self) -> None:
+        """The graph route computes the Hessian natively and it matches the
+        dense route bit-tight.
+
+        A Hessian-enabled graph-eligible DPA2 model default-flips to the graph
+        route; ``_call_common_graph`` now runs its own ``_cal_hessian_ext_graph``
+        loop (differentiating the reduced energy w.r.t. the LOCAL coords by
+        rebuilding the carry-all graph inside the autograd wrapper), so
+        ``energy_derv_r_derv_r`` is produced without falling back to dense.
+        The result must equal the dense route (forced via the
+        ``disable_graph_lower`` escape hatch on the same weights) at fp64
+        parity, in the same ``(nf, 1, nloc*3, nloc*3)`` layout.
+
+        A non-binding repformer sel is used so graph and dense agree on the
+        first derivatives too (attention off -- the fixture default); the
+        Hessian parity would otherwise inherit the binding-sel divergence.
+        """
+        from deepmd.pt_expt.train.training import (
+            _model_uses_graph_lower,
+        )
+
+        model = self._make_model()  # non-binding sel, attention off
+        model.eval()
+        assert model.atomic_model.descriptor.uses_graph_lower() is True
+        model.enable_hessian()
+        # a Hessian model stays graph-routed: the graph now produces the Hessian.
+        assert _model_uses_graph_lower(model) is True
+
+        box = self.cell.reshape(1, 9)
+        # ``EnergyModel.forward`` exposes the Hessian under the ``"hessian"``
+        # key (translated from ``energy_derv_r_derv_r``); it would KeyError if
+        # the graph route failed to produce it.
+        graph_out = model.forward(
+            self.coord.clone().requires_grad_(True), self.atype, box=box
+        )
+        assert "hessian" in graph_out
+        assert graph_out["hessian"].shape == (1, self.natoms * 3, self.natoms * 3)
+
+        # dense reference on the SAME weights via the escape hatch.
+        ref_model = self._make_model()
+        ref_model.eval()
+        ref_model.load_state_dict(model.state_dict(), strict=False)
+        ref_model.atomic_model.descriptor.disable_graph_lower()
+        ref_model.enable_hessian()
+        assert _model_uses_graph_lower(ref_model) is False
+        dense_out = ref_model.forward(
+            self.coord.clone().requires_grad_(True), self.atype, box=box
+        )
+        torch.testing.assert_close(
+            graph_out["hessian"], dense_out["hessian"], rtol=1e-9, atol=1e-9
+        )
+        # Hessian symmetry (a genuine second derivative, not a shape artifact).
+        h = graph_out["hessian"][0]
+        torch.testing.assert_close(h, h.transpose(-1, -2), rtol=1e-9, atol=1e-9)
 
     def test_disable_graph_lower_escape_hatch(self) -> None:
         """``descriptor.disable_graph_lower()`` is the documented legacy-dense
@@ -493,6 +550,63 @@ class TestDpa2GraphLower:
             compiled_out["virial"],
             eager["energy_derv_c_redu"].reshape(compiled_out["virial"].shape),
             **tol,
+        )
+
+    def test_graph_lower_fparam_symbolic_trace_and_compile(self) -> None:
+        """A graph-eligible DPA2 model with ``numb_fparam > 0`` must export
+        (``make_fx`` symbolic) AND inductor-compile.
+
+        Regression for the ``frame_id_from_n_node(graph.n_node)`` call in
+        ``dp_atomic_model.forward_atomic_graph``: without a STATIC ``n_total``
+        it fell back to ``int(sum(n_node))``, which make_fx / torch.export
+        cannot evaluate on a traced tensor (``GuardOnDataDependentSymNode``),
+        so both the graph ``.pt2`` export and compiled training failed for any
+        fparam model. Both must now trace/compile and match eager bit-tight.
+        """
+        from deepmd.pt_expt.train.training import (
+            _trace_and_compile_graph,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = self._make_model(numb_fparam=2).to("cpu")
+        model.eval()
+        assert model.atomic_model.descriptor.uses_graph_lower() is True
+
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        assert fp is not None and fp.shape[-1] == 2, "fparam must be present"
+
+        # (a) symbolic-trace export path
+        traced = model.forward_lower_graph_exportable(
+            atype, n_node, ei, ev, em,
+            fparam=fp, aparam=ap, do_atomic_virial=True,
+            charge_spin=cs, tracing_mode="symbolic", _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+        )
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+
+        # (b) compiled-training path (fparam threaded through the compile)
+        compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None)
+        compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
+        ctol = {"rtol": 1e-10, "atol": 1e-10}
+        torch.testing.assert_close(
+            compiled_out["energy"], ref["energy_redu"], **ctol
         )
 
     # ------------------------------------------------------------------
