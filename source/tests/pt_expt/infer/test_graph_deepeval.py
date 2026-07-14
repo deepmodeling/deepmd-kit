@@ -295,3 +295,66 @@ def test_graph_pt2_single_atom_no_edges(graph_pt2) -> None:
         e.reshape(-1), ref["energy"].reshape(-1), rtol=1e-10, atol=1e-10
     )
     np.testing.assert_allclose(f.reshape(-1), 0.0, atol=1e-12)
+
+
+def test_graph_pt2_deepeval_aparam(tmp_path) -> None:
+    """Graph ``.pt2`` DeepEval with ``numb_aparam > 0``.
+
+    DeepEval receives the user-facing rectangular ``(nf, natoms, nda)``
+    aparam and must flatten it to the graph ABI's flat ``(N, nda)`` node
+    axis before feeding the artifact (regression for the aparam
+    graph-freeze review round). Checks parity vs the eager dense reference
+    with the same aparam, and that aparam genuinely reaches the fitting.
+    """
+    from deepmd.pt_expt.model import (
+        get_model,
+    )
+
+    config = copy.deepcopy(DPA1_CONFIG)
+    config["descriptor"]["smooth_type_embedding"] = False
+    config["fitting_net"] = {**config["fitting_net"], "numb_aparam": 1}
+    model = get_model(config).to(torch.float64)
+    model.eval()
+    pt2_path = str(tmp_path / "deeppot_dpa1_graph_aparam.pt2")
+    deserialize_to_file(
+        pt2_path,
+        {"model": model.serialize()},
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+
+    coords, cells, atype = _build_system(**_SYSTEMS["small_8"])
+    natoms = atype.shape[0]
+    aparam = np.linspace(0.1, 0.9, natoms).reshape(1, natoms, 1)
+
+    dp = DeepPot(pt2_path)
+    assert dp.deep_eval.metadata["lower_input_kind"] == "graph"
+    e, f, v = dp.eval(coords, cells, atype, atomic=False, aparam=aparam)[:3]
+
+    # aparam must genuinely reach the fitting through the flat node axis
+    e_bump = dp.eval(coords, cells, atype, atomic=False, aparam=aparam + 1.0)[0]
+    assert not np.allclose(e_bump, e), "aparam bump must change the energy"
+
+    # parity vs the eager dense (sel-capped, non-binding) reference
+    coord_t = torch.tensor(
+        coords.reshape(1, natoms, 3), dtype=torch.float64, device=DEVICE
+    ).requires_grad_(True)
+    atype_t = torch.tensor(atype.reshape(1, natoms), dtype=torch.int64, device=DEVICE)
+    box_t = torch.tensor(cells.reshape(1, 9), dtype=torch.float64, device=DEVICE)
+    ap_t = torch.tensor(
+        aparam.reshape(1, natoms, 1), dtype=torch.float64, device=DEVICE
+    )
+    ret = model.call_common(
+        coord_t,
+        atype_t,
+        box_t,
+        aparam=ap_t,
+        neighbor_graph_method="legacy",
+    )
+    np.testing.assert_allclose(
+        e.reshape(-1),
+        ret["energy_redu"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="energy (graph .pt2 + aparam vs eager dense)",
+    )

@@ -516,7 +516,12 @@ def make_model(
                 edge_vec=ng.edge_vec,
                 edge_mask=ng.edge_mask,
                 fparam=fp,
-                aparam=ap,
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+                aparam=(
+                    xp.reshape(ap, (nf * nloc, ap.shape[-1]))
+                    if ap is not None
+                    else None
+                ),
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.

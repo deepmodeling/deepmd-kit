@@ -49,6 +49,9 @@ from deepmd.pt.train.validation import (
     FullValidator,
     resolve_full_validation_start_step,
 )
+from deepmd.pt.utils.compile_compat import (
+    forbidden_dims_from_model as _forbidden_dims_from_model,
+)
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
@@ -303,41 +306,6 @@ def _replace_latest_checkpoint_link(latest: Path, ckpt_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # torch.compile helpers
 # ---------------------------------------------------------------------------
-
-
-def _forbidden_dims_from_model(
-    model: torch.nn.Module,
-    task_buf_vals: tuple[torch.Tensor, ...],
-) -> set[int]:
-    """Prime-collision set for trace-dim selection.
-
-    Collects every ``> 1`` dim of the model's parameters/buffers (so
-    ``_next_safe_prime`` never aliases an internal dim like ``g2_dim`` /
-    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
-    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the dense
-    :func:`_trace_and_compile` and the graph :func:`_trace_and_compile_graph`;
-    each caller adds its path-specific dims (nall/nloc/nsel for dense,
-    charge_spin for both) on top of this base set.
-    """
-    forbidden: set[int] = {
-        int(_d)
-        for _src in (model.parameters(), model.buffers())
-        for _p in _src
-        for _d in _p.shape
-        if _d > 1
-    }
-    for _getter in (model.get_dim_fparam, model.get_dim_aparam):
-        try:
-            _dim = _getter()
-            if _dim > 1:
-                forbidden.add(int(_dim))
-        except Exception:
-            pass  # best-effort: dim unavailable -> nothing to forbid
-    for _tbv in task_buf_vals:
-        for _d in _tbv.shape:
-            if _d > 1:
-                forbidden.add(int(_d))
-    return forbidden
 
 
 def _trace_and_compile(
@@ -1160,6 +1128,12 @@ class _CompiledModel(torch.nn.Module):
 
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
+        # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
+        # every per-node tensor of the graph schema (the trace sample from
+        # build_synthetic_graph_inputs is flat too, so the compiled lower's
+        # input spec expects it).
+        if aparam is not None:
+            aparam = aparam.reshape(nframes * nloc, -1)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes

@@ -1805,6 +1805,11 @@ class DeepEval(DeepEvalBackend):
         fparam_t, aparam_t = self._prepare_optional_lower_inputs(
             fparam, aparam, nframes, natoms, DEVICE
         )
+        if aparam_t is not None:
+            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) --
+            # the same axis as ``atype`` (the shared helper above returns the
+            # dense rectangular (nf, natoms, nda) layout).
+            aparam_t = aparam_t.reshape(nframes * natoms, -1)
         charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
 
         model_inputs = (

@@ -883,15 +883,16 @@ class TestOwnedNodeMaskEnergyReduction:
 class TestGraphAparamExtendedAxis:
     """aparam contract on the (extended-region) graph route.
 
-    The graph fitting consumes atomic parameters on the FLAT node axis
-    (``N = sum(n_node)``). On extended-region graphs (the multi-rank C++
-    routes: ``N == nall_real``, owned prefix first, then halo) the caller
-    must therefore supply an extended-axis aparam with the halo rows padded
-    -- their fitting outputs are discarded by the owned-node mask, so the
-    padded values are inert. This pins the contract the C++ runtime's
-    ``extend_graph_aparam`` (DeepPotPTExpt.cc) implements: an owned-only
-    (nloc-axis) aparam must fail loudly rather than silently misalign
-    parameter rows with nodes.
+    The graph ABI carries atomic parameters FLAT on the node axis --
+    ``(N, nda)`` with ``N = sum(n_node)``, the same axis as ``atype``. On
+    extended-region graphs (the multi-rank C++ routes: ``N == nall_real``,
+    owned prefix first, then halo) the caller must therefore supply an
+    extended-axis aparam with the halo rows padded -- their fitting outputs
+    are discarded by the owned-node mask, so the padded values are inert.
+    This pins the contract the C++ runtime's ``extend_graph_aparam``
+    (DeepPotPTExpt.cc) implements: an owned-only (nloc-row) aparam and a
+    rectangular ``(nf, nloc, nda)`` aparam must both fail loudly rather
+    than silently misalign parameter rows with nodes.
     """
 
     def setup_method(self) -> None:
@@ -952,39 +953,54 @@ class TestGraphAparamExtendedAxis:
         )
 
     def test_extended_axis_accepted_halo_rows_inert(self) -> None:
-        """Extended-axis aparam (N rows) runs; halo-row values are inert for
-        the owned (masked) energy, owned-row values are not.
+        """Flat extended-axis aparam (``(N, nda)``) runs; halo-row values are
+        inert for the owned (masked) energy, owned-row values are not.
         """
         model = self._make_model()
         model.eval()
         base = torch.linspace(
             0.1, 0.6, self.natoms, dtype=torch.float64, device=self.device
-        ).reshape(1, self.natoms, 1)
+        ).reshape(self.natoms, 1)
         out = self._forward(model, base)
 
         # halo rows [n_local:) changed -> owned energy identical
         halo_bump = base.clone()
-        halo_bump[:, self.n_local_val :, :] += 7.5
+        halo_bump[self.n_local_val :, :] += 7.5
         out_halo = self._forward(model, halo_bump)
         torch.testing.assert_close(out_halo["energy_redu"], out["energy_redu"])
 
         # an OWNED row changed -> owned energy must change
         owned_bump = base.clone()
-        owned_bump[:, 0, :] += 7.5
+        owned_bump[0, :] += 7.5
         out_owned = self._forward(model, owned_bump)
         assert not torch.allclose(out_owned["energy_redu"], out["energy_redu"]), (
             "owned-row aparam change must reach the owned energy"
         )
 
     def test_owned_only_axis_fails_loudly(self) -> None:
-        """An nloc-axis aparam (owned rows only) must raise -- silently
-        misaligning parameter rows with the N-node axis is the bug the
-        extended-axis contract prevents.
+        """A flat aparam with only the OWNED rows (``(nloc, nda)`` instead of
+        ``(N, nda)``) must raise -- silently misaligning parameter rows with
+        the N-node axis is the bug the extended-axis contract prevents.
         """
         model = self._make_model()
         model.eval()
         owned_only = torch.linspace(
             0.1, 0.4, self.n_local_val, dtype=torch.float64, device=self.device
-        ).reshape(1, self.n_local_val, 1)
+        ).reshape(self.n_local_val, 1)
         with pytest.raises((RuntimeError, ValueError)):
             self._forward(model, owned_only)
+
+    def test_rectangular_aparam_fails_loudly(self) -> None:
+        """A rectangular ``(nf, nloc, nda)`` aparam handed to the graph lower
+        must raise -- with ``nf * nloc == N`` it would silently reshape into
+        the right element order in eager mode while handing ``torch.export``
+        an unprovable ``N == nf * nloc`` relation (the root cause of the
+        aparam graph-freeze failures).
+        """
+        model = self._make_model()
+        model.eval()
+        rectangular = torch.linspace(
+            0.1, 0.6, self.natoms, dtype=torch.float64, device=self.device
+        ).reshape(1, self.natoms, 1)
+        with pytest.raises(ValueError, match="flat"):
+            self._forward(model, rectangular)

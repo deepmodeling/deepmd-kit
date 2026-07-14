@@ -453,8 +453,12 @@ def build_synthetic_graph_inputs(
         if (want_fparam and dim_fparam > 0)
         else None
     )
+    # aparam is FLAT on the node axis -- (N, nda), the same axis as ``atype``
+    # -- like every per-node tensor of the graph ABI (a rectangular
+    # ``(nf, nloc, nda)`` sample would hand torch.export three independent
+    # symbols related by ``N == nf * nloc``, which it rejects).
     aparam = (
-        torch.zeros(nframes, nloc, dim_aparam, dtype=dtype, device=device)
+        torch.zeros(nframes * nloc, dim_aparam, dtype=dtype, device=device)
         if (want_aparam and dim_aparam > 0)
         else None
     )
@@ -551,7 +555,6 @@ def _build_graph_dynamic_shapes(
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
-    nloc_dim = torch.export.Dim("nloc", min=1)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
@@ -559,10 +562,10 @@ def _build_graph_dynamic_shapes(
         {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
         {0: nedge_dim},  # edge_mask: (E,) — E dynamic
         {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
-        # aparam: (nf, nloc, nda) — both the frame AND atom axes are dynamic,
-        # matching the dense ``_build_dynamic_shapes`` (otherwise a dim_aparam>0
-        # graph export specializes nloc to the sample size and breaks at runtime).
-        {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+        # aparam: (N, nda) — flat on the node axis, SHARING atype's ``N``
+        # symbol (the graph fitting consumes aparam per node; an independent
+        # dim would make torch.export prove/reject the equality).
+        {0: n_node_total_dim} if aparam is not None else None,  # aparam
         {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
     )
 
@@ -607,7 +610,6 @@ def _build_graph_dynamic_shapes_with_comm(
     nframes_val = 1
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
-    nloc_dim = torch.export.Dim("nloc", min=1)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_val},  # n_node: (nf,) — nf STATIC at 1
@@ -615,7 +617,10 @@ def _build_graph_dynamic_shapes_with_comm(
         {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
         {0: nedge_dim},  # edge_mask: (E,) — E dynamic
         {0: nframes_val} if fparam is not None else None,  # fparam: (nf, ndf)
-        {0: nframes_val, 1: nloc_dim} if aparam is not None else None,  # aparam
+        # aparam: (N, nda) — flat on the SAME extended node axis as atype
+        # (owned prefix + halo rows); an independent Dim here would make
+        # torch.export reject every numb_aparam > 0 with-comm freeze.
+        {0: n_node_total_dim} if aparam is not None else None,  # aparam
         {0: nframes_val} if charge_spin is not None else None,  # charge_spin
         # 8 comm tensors: send_list/send_proc/recv_proc/send_num/recv_num
         # (nswap,), communicator (1,), nlocal/nghost scalar — all static,
@@ -1098,19 +1103,49 @@ def _trace_and_export(
                 "with-comm .pt2 export requires an energy model"
             )
 
+        # Trace-time sizes must be pairwise-distinct AND avoid every static
+        # model dim (dim_fparam / dim_aparam / parameter dims): make_fx's
+        # duck-shaping merges same-valued dims into ONE symbol, so e.g.
+        # ``numb_aparam == 2`` traced at ``nframes == 2`` aliases ``nda``
+        # with ``nf`` and bakes outputs whose frame axis follows the STATIC
+        # aparam width -- silently wrong shapes at any other runtime nf.
+        # Mirrors the compiled-training trace
+        # (``training._trace_and_compile_graph``: forbidden set + primes).
+        from deepmd.pt.utils.compile_compat import (
+            forbidden_dims_from_model,
+            next_safe_prime,
+        )
+
+        _forbidden = forbidden_dims_from_model(model)
+        _dim_cs = (
+            model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+        )
+        if _dim_cs > 1:
+            _forbidden.add(int(_dim_cs))
+        if with_comm_dict:
+            # nf is STATIC 1 (size-1 dims specialize; no duck-merge risk);
+            # the flat node axis N == nloc_sample must stay collision-free.
+            nframes_sample = 1
+            nloc_sample = 7
+            while nloc_sample in _forbidden:
+                nloc_sample += 1
+        else:
+            nframes_sample = next_safe_prime(5, _forbidden)
+            nloc_sample = 7
+            while (nframes_sample * nloc_sample) in (_forbidden | {nframes_sample}):
+                nloc_sample += 1
+        n_sample = nframes_sample * nloc_sample
+
         # The edge axis is DYNAMIC (B2.0): the AOTI artifact accepts any edge
         # count, so there is no capacity to bake. The trace sample is built at a
         # concrete, padded edge size only to keep the trace tensors distinct
-        # from the other dynamic dims (nframes, N) under torch.export's
-        # duck-sizing; the value itself does NOT constrain runtime.  The
-        # capacity derives from the ACTUAL edge count of the synthetic system
-        # (the carry-all builder is sel-free; a sel-derived estimate overflows
-        # for small-sel models): 25% headroom keeps the masked padded tail
-        # genuinely traced, the ``+ 2`` floor guarantees it even for tiny edge
-        # counts, and the final bump keeps the concrete edge length distinct
-        # from the other trace dims under duck-sizing.
-        nloc_sample = 7
-        nframes_sample = 1 if with_comm_dict else 2
+        # from the other dims under duck-sizing; the value itself does NOT
+        # constrain runtime.  The capacity derives from the ACTUAL edge count
+        # of the synthetic system (the carry-all builder is sel-free; a
+        # sel-derived estimate overflows for small-sel models): 25% headroom
+        # keeps the masked padded tail genuinely traced, the ``+ 2`` floor
+        # guarantees it even for tiny edge counts, and the final bump keeps
+        # the concrete edge length collision-free.
         e_real = count_synthetic_graph_edges(
             model,
             nframes=nframes_sample,
@@ -1119,7 +1154,7 @@ def _trace_and_export(
             device=torch.device("cpu"),
         )
         e_sample = max(math.ceil(1.25 * e_real), e_real + 2)
-        while e_sample in (nframes_sample, nframes_sample * nloc_sample):
+        while e_sample in (_forbidden | {nframes_sample, n_sample}):
             e_sample += 1
 
         if with_comm_dict:
@@ -1152,7 +1187,7 @@ def _trace_and_export(
             sample_inputs = build_synthetic_graph_inputs(
                 model,
                 e_max=e_sample,
-                nframes=1,
+                nframes=nframes_sample,
                 nloc=nloc_sample,
                 dtype=torch.float64,
                 device=torch.device("cpu"),
@@ -1201,7 +1236,7 @@ def _trace_and_export(
             sample_inputs = build_synthetic_graph_inputs(
                 model,
                 e_max=e_sample,
-                nframes=2,
+                nframes=nframes_sample,
                 nloc=nloc_sample,
                 dtype=torch.float64,
                 device=torch.device("cpu"),

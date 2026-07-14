@@ -132,6 +132,40 @@ def test_dpa2_graph_pt2_embeds_with_comm_artifact(dpa2_dpmodel_data, tmp_path) -
     assert meta["has_message_passing"] is True
 
 
+def test_dpa2_graph_with_comm_aparam_freeze(tmp_path) -> None:
+    """A ``numb_aparam > 0`` message-passing model freezes to the graph
+    ``.pt2`` with the nested with-comm artifact.
+
+    Regression (OutisLi review): the with-comm dynamic-shape spec gave
+    ``aparam``'s node axis an independent ``nloc`` Dim while the graph ABI
+    carries ``aparam`` on the same flat node axis as ``atype``; the graph
+    fitting views ``aparam`` against the flat node count, so
+    ``torch.export`` proved the two axes equal and rejected every
+    ``numb_aparam > 0`` with-comm graph freeze with ``Constraints violated
+    (nloc): aparam.size(1) and atype.size(0) must always be equal``. The
+    aparam node axis now IS ``atype``'s ``n_node_total`` axis (flat
+    ``(N, nda)`` ABI), so both the regular and the with-comm graph traces
+    of this freeze must succeed.
+    """
+    cfg = copy.deepcopy(DPA2_CONFIG)
+    cfg["fitting_net"] = {**cfg["fitting_net"], "numb_aparam": 1}
+    data = _build_data(cfg)
+    p = str(tmp_path / "m_dpa2_graph_aparam.pt2")
+    deserialize_to_file(
+        p,
+        data,
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    with zipfile.ZipFile(p, "r") as zf:
+        names = zf.namelist()
+    assert "model/extra/forward_lower_with_comm.pt2" in names
+
+    meta = _read_metadata(p)
+    assert meta["lower_input_kind"] == "graph"
+    assert meta["has_comm_artifact"] is True
+
+
 def test_dpa1_graph_pt2_has_no_comm_artifact(dpa1_dpmodel_data, tmp_path) -> None:
     """dpa1 (non-message-passing) graph ``.pt2`` regression pin: no nested entry."""
     p = str(tmp_path / "m_dpa1_graph.pt2")

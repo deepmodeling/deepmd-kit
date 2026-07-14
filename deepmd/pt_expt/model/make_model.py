@@ -279,7 +279,13 @@ class _WrapperForwardEnergyGraph:
             ng,
             self.atype.reshape(-1),
             fparam=self.fparam,
-            aparam=self.aparam,
+            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
+            # (N == nloc for the single-frame carry-all graph).
+            aparam=(
+                self.aparam.reshape(self.nloc, -1)
+                if self.aparam is not None
+                else None
+            ),
         )
         # atomic_ret[kk]: flat (N, *def), N == nloc for a single-frame carry-all
         # graph (all nodes owned); reduced output = sum over the node axis.
@@ -478,7 +484,10 @@ def make_model(
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
-                Atomic parameter, ``(nf, nloc, nda)``.
+                Atomic parameter, ``(N, nda)`` -- FLAT on the node axis like
+                every per-node tensor of the graph ABI (on extended-region
+                multi-rank graphs the halo rows are included; their values
+                are inert under the owned-node mask).
             charge_spin
                 charge/spin conditioning. Ignored in PR-A; accepted for ABI
                 stability with charge/spin-conditioned descriptors.
@@ -644,6 +653,8 @@ def make_model(
             ng = _build_graph_for_method(method, cc, atype, bb, rcut, pair_excl)
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
+            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+            ap_flat = ap.reshape(nf * nloc, ap.shape[-1]) if ap is not None else None
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
@@ -652,7 +663,7 @@ def make_model(
                 ng.edge_mask,
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
-                aparam=ap,
+                aparam=ap_flat,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
             # outputs (N = nf * nloc for a carry-all rectangular graph).
