@@ -255,10 +255,13 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
         )
 
-        # set trainable
-        for param in self.parameters():
-            param.requires_grad = trainable
+        self._apply_trainable()
         self.compress = False
+
+    def _apply_trainable(self) -> None:
+        """Apply the descriptor-level trainable setting to every parameter."""
+        for param in self.parameters():
+            param.stop_gradient = not self.trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -557,6 +560,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         obj.repflows.layers = paddle.nn.LayerList(
             [RepFlowLayer.deserialize(layer) for layer in repflow_layers]
         )
+        # Deserialization replaces several sublayers after construction, so apply
+        # the descriptor-level setting again to their newly registered parameters.
+        obj._apply_trainable()
         return obj
 
     def forward(
