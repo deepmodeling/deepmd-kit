@@ -932,3 +932,92 @@ class TestOwnedNodeMaskEnergyReduction:
         np.testing.assert_array_equal(
             out_default["energy"], out_explicit_none["energy"]
         )
+
+
+class TestGraphAttentionCutoffContinuityBindingSel:
+    """Cutoff continuity when the carry-all degree EXCEEDS ``sel``.
+
+    OutisLi repro: repformer ``rcut=2, nsel=1``, one neighbor fixed at
+    ``r=1`` and a second crossing ``r=2`` -- just inside the cutoff every
+    center has 2 neighbors > sel=1, so the CLAMPED phantom count was zero
+    on both sides of the crossing and the departing pair/edge removed a
+    finite ``exp(-attnw_shift)`` softmax-denominator term: the full-model
+    energy stepped by ~-6.0e-10 (LocalAtten-only -3.6e-9, Atten2Map-only
+    +4.9e-9 -- independent defects at repformers.py's two ``call_graph``
+    sites).  The SIGNED count ``sel - n_real`` subtracts the excess beyond
+    sel, so the boundary increment vanishes for arbitrary degree.  g1
+    (LocalAtten) and g2 (Atten2Map) attention are exercised SEPARATELY.
+    """
+
+    def _descriptor_delta(self, *, g1_attn: bool, g2_attn: bool, eps: float):
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        repinit = RepinitArgs(
+            rcut=4.0,
+            rcut_smth=0.5,
+            nsel=20,
+            neuron=[6, 12],
+            axis_neuron=2,
+            tebd_dim=4,
+        )
+        repformer = RepformerArgs(
+            rcut=2.0,
+            rcut_smth=0.5,
+            nsel=1,  # BINDING: degree 2 > sel 1 just inside the cutoff
+            nlayers=2,
+            g1_dim=6,
+            g2_dim=4,
+            axis_neuron=2,
+            update_g1_has_attn=g1_attn,
+            update_g2_has_attn=g2_attn,
+            attn1_hidden=4,
+            attn1_nhead=2,
+            attn2_hidden=4,
+            attn2_nhead=2,
+        )
+        descr = DescrptDPA2(
+            ntypes=2,
+            repinit=repinit,
+            repformer=repformer,
+            precision="float64",
+            seed=42,
+        )
+        te = descr.type_embedding.call()
+        atype = np.array([[0, 1, 1]], dtype=np.int64)
+        outs = []
+        for d in (2.0 - eps, 2.0 + eps):
+            coord = np.zeros((1, 3, 3), dtype=np.float64)
+            coord[0, 1, 0] = 1.0  # fixed neighbor at r = 1
+            coord[0, 2, 0] = d  # crossing neighbor at r = 2 -+ eps
+            g = build_neighbor_graph(coord, atype, None, descr.get_rcut())
+            out, _ = descr.call_graph(g, atype.reshape(-1), type_embedding=te)
+            outs.append(np.asarray(out))
+        # anti-vacuity: just inside the cutoff, the center has 2 repformer
+        # neighbors (r=1 and r=2-eps) > nsel=1 -- the binding regime where
+        # the clamped scheme was discontinuous.
+        return float(np.max(np.abs(outs[0] - outs[1])))
+
+    @pytest.mark.parametrize(
+        ("g1_attn", "g2_attn"),
+        [(True, False), (False, True)],
+        ids=["g1_local_atten", "g2_atten2map"],
+    )
+    def test_descriptor_continuous_at_repformer_cutoff(self, g1_attn, g2_attn):
+        # The defect was a CONSTANT step (~5e-9) as eps -> 0; a smooth
+        # descriptor changes only proportionally to eps.  At eps = 1e-12
+        # anything above 1e-11 is a genuine discontinuity.
+        delta_tiny = self._descriptor_delta(g1_attn=g1_attn, g2_attn=g2_attn, eps=1e-12)
+        assert delta_tiny < 1e-11, (
+            f"descriptor step {delta_tiny:.3e} across the repformer cutoff "
+            "at binding sel (degree > sel): the attention softmax "
+            "denominator is not smooth"
+        )
+        # scaling check: shrinking eps by 1e4 must shrink the (smooth)
+        # difference, not plateau at a finite step.
+        delta_small = self._descriptor_delta(g1_attn=g1_attn, g2_attn=g2_attn, eps=1e-8)
+        assert delta_tiny < max(delta_small, 1e-13), (
+            f"difference plateaus ({delta_small:.3e} -> {delta_tiny:.3e}): "
+            "finite step at the cutoff"
+        )

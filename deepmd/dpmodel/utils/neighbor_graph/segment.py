@@ -82,9 +82,11 @@ def segment_softmax(
         removed from the softmax entirely (zero weight AND excluded from the
         denominator).
     phantom_count
-        Optional per-segment count of virtual entries, with shape
-        ``(num_segments,)``. Each adds one ``exp(phantom_logit)`` term to the
-        segment's DENOMINATOR only (no output rows are produced for them).
+        Optional per-segment SIGNED count of virtual entries, with shape
+        ``(num_segments,)``. Each unit adds (or, when negative, removes) one
+        ``exp(phantom_logit)`` term to the segment's DENOMINATOR only (no
+        output rows are produced for them). Negative counts express the
+        sel-free carry-all convention beyond ``sel`` -- see Notes.
     phantom_logit
         The raw logit of every phantom entry.
 
@@ -98,12 +100,21 @@ def segment_softmax(
     The phantom entries reproduce the dense smooth-attention convention -- a
     fixed ``sel``-width softmax whose padding slots each hold
     ``exp(-attnw_shift)`` -- on a ragged edge set whose entry count varies
-    with geometry: passing ``phantom_count = max(sel - n_real, 0)`` keeps the
-    total denominator term count constant (``sel``), which makes the
-    attention weights exactly continuous when an entry enters or leaves the
-    segment at the cutoff (its boundary logit equals ``phantom_logit`` by the
-    smooth envelope, so the swap is value-preserving) and term-for-term equal
-    to the dense softmax at non-binding ``sel``.
+    with geometry: passing the SIGNED ``phantom_count = sel - n_real`` makes
+    the denominator ``sum_j exp(l_j) + (sel - n_real) * exp(phantom_logit)``
+    == ``sum_j (exp(l_j) - exp(phantom_logit)) + sel * exp(phantom_logit)``:
+    every entry's net denominator contribution vanishes exactly at the
+    cutoff (its boundary logit equals ``phantom_logit`` by the smooth
+    envelope), so the attention weights are continuous when an entry enters
+    or leaves the segment for ARBITRARY degree -- including the sel-free
+    carry-all regime ``n_real > sel``, where a clamped (non-negative) count
+    would drop the compensation and leave a finite ``exp(-attnw_shift)``
+    denominator step at the crossing.  For ``n_real <= sel`` the scheme is
+    term-for-term equal to the dense softmax.  The denominator is positive
+    whenever every real logit is ``>= phantom_logit`` (guaranteed by the
+    smooth-envelope logit construction for sane pre-shift logits); the
+    existing non-positive-denominator guard below keeps the out-of-design
+    corner defined.
     """
     xp = array_api_compat.array_namespace(data)
     if mask is not None:

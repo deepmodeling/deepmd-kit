@@ -1416,7 +1416,7 @@ class Atten2Map(NativeOP):
         exactly: dense keeps every one of its ``sel`` key slots in the
         denominator, the non-real ones each at ``exp(-attnw_shift)``. Here the
         masked pairs are excluded from the softmax and replaced by
-        ``max(sel - n_real, 0)`` phantom denominator terms per query edge, so
+        ``sel - n_real`` SIGNED phantom denominator terms per query edge, so
         the phantom COUNT is geometry-independent. Without this, one phantom
         per PRESENT pair would make the denominator term count change when an
         edge enters/leaves the graph at the model cutoff -- an
@@ -1455,8 +1455,11 @@ class Atten2Map(NativeOP):
             # query edge, then sel - n_real phantoms at exp(-shift)
             pm = xp.astype(pair_mask, attnw.dtype)
             n_real = segment_sum(pm, q_e, e_tot)  # (e_tot,)
+            # SIGNED count: beyond sel it subtracts the excess phantom-level
+            # terms, so the boundary-pair denominator increment vanishes for
+            # ARBITRARY degree (a clamped count left a finite
+            # exp(-attnw_shift) step at the cutoff whenever n_real > sel).
             phantom = sel - n_real
-            phantom = xp.where(phantom > 0, phantom, xp.zeros_like(phantom))
             attnw = segment_softmax(
                 attnw,
                 q_e,
@@ -1894,7 +1897,7 @@ class LocalAtten(NativeOP):
         -----
         The smooth branch uses the dense-width phantom compensation (see
         :meth:`Atten2Map.call_graph`): masked edges are excluded from the
-        softmax and ``max(sel - n_real, 0)`` phantom denominator terms at
+        softmax and ``sel - n_real`` SIGNED phantom denominator terms at
         ``exp(-attnw_shift)`` are added per center, keeping the denominator
         term count geometry-independent (continuous at the cutoff, and equal
         to the dense softmax at non-binding ``sel``).
@@ -1915,8 +1918,10 @@ class LocalAtten(NativeOP):
             attnw = (attnw + self.attnw_shift) * sw[:, None] - self.attnw_shift
             em = xp.astype(edge_mask, attnw.dtype)
             n_real = segment_sum(em, dst, n_total)  # (n_total,)
+            # SIGNED count: see Atten2Map.call_graph -- beyond sel the excess
+            # is subtracted so the boundary-edge denominator increment
+            # vanishes for arbitrary degree.
             phantom = sel - n_real
-            phantom = xp.where(phantom > 0, phantom, xp.zeros_like(phantom))
             attnw = segment_softmax(
                 attnw,
                 dst,
