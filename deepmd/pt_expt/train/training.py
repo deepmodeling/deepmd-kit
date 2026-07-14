@@ -574,6 +574,16 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
             return False
     except (AttributeError, NotImplementedError):
         return False
+    # ENERGY-output models only, mirroring ``_resolve_graph_method``'s
+    # default-flip gate: ``_trace_and_compile_graph`` is energy-specific
+    # (``do_grad_r("energy")``, ``_translate_energy_keys``), so a non-energy
+    # model (property/dos/dipole/polar) on this path raises
+    # ``KeyError('energy')`` at its first compiled batch.
+    try:
+        if "energy" not in model.atomic_output_def().keys():
+            return False
+    except (AttributeError, NotImplementedError):
+        return False
     # Linear / ZBL atomic models have no single ``descriptor`` -> dense.
     descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
     uses_graph = getattr(descriptor, "uses_graph_lower", None)
@@ -1073,30 +1083,25 @@ class _CompiledModel(torch.nn.Module):
             *task_buf_vals,
         )
 
-        # Translate forward_lower keys -> forward keys.
-        # ``extended_force`` lives on all extended atoms (nf, nall, 3).
-        # Ghost-atom forces must be scatter-summed back to local atoms
-        # via ``mapping`` — the same operation ``communicate_extended_output``
-        # performs in the uncompiled path.
+        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
+        # every key passes through unchanged (energy models emit
+        # atom_energy/energy/virial/..., property/dos/... models their own
+        # keys -- the hardcoded energy-key copy here used to KeyError on any
+        # non-energy fitting), EXCEPT ``extended_force``, which lives on all
+        # extended atoms (nf, nall, 3): its ghost rows are scatter-summed
+        # back onto local owners via ``mapping`` -- the same fold
+        # ``communicate_extended_output`` performs in the uncompiled path.
         out: dict[str, torch.Tensor] = {}
-        out["atom_energy"] = result["atom_energy"]
-        out["energy"] = result["energy"]
-        if "extended_force" in result:
-            ext_force = result["extended_force"]  # (nf, nall, 3)
-            idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
-            force = torch.zeros(
-                nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
-            )
-            force.scatter_add_(1, idx, ext_force)
-            out["force"] = force
-        if "virial" in result:
-            out["virial"] = result["virial"]
-        if "extended_virial" in result:
-            out["extended_virial"] = result["extended_virial"]
-        if "atom_virial" in result:
-            out["atom_virial"] = result["atom_virial"]
-        if "mask" in result:
-            out["mask"] = result["mask"]
+        for key, val in result.items():
+            if key == "extended_force":
+                idx = mapping.unsqueeze(-1).expand_as(val)  # (nf, nall, 3)
+                force = torch.zeros(
+                    nframes, nloc, 3, dtype=val.dtype, device=val.device
+                )
+                force.scatter_add_(1, idx, val)
+                out["force"] = force
+            else:
+                out[key] = val
         return out
 
     def _forward_graph(

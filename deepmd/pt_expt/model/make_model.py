@@ -584,6 +584,18 @@ def make_model(
                 return None
             if neighbor_graph_method is not None:
                 return neighbor_graph_method
+            # The DEFAULT-flip is gated to ENERGY-output models: the graph
+            # lower itself is output-agnostic, but the compiled-training
+            # trace (``training._trace_and_compile_graph``) and the trainer's
+            # public-key translation are energy-specific, so a non-energy
+            # model (property/dos/dipole/polar) default-flipped here would
+            # route eager through the graph while its compiled twin raises
+            # ``KeyError('energy')`` -- and gating ONLY the compiled side
+            # would diverge eager (graph) from compiled (dense) instead.
+            # An EXPLICIT ``neighbor_graph_method=`` above stays available
+            # for non-energy models (eager-only, output-agnostic).
+            if "energy" not in self.atomic_output_def().keys():
+                return None
             # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)

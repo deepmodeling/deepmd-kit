@@ -552,6 +552,69 @@ class TestDpa2GraphLower:
             **tol,
         )
 
+    def test_non_energy_model_stays_off_graph_compiled_path(self) -> None:
+        """A graph-eligible DPA2 descriptor paired with a NON-energy fitting
+        (property) must stay OFF the graph compiled-training path AND off
+        the eager default-flip.
+
+        ``_trace_and_compile_graph`` and the trainer's public-key
+        translation are energy-specific (``do_grad_r('energy')``,
+        ``_translate_energy_keys``), so a property model routed onto the
+        graph compiled path raised ``KeyError('energy')`` at its first
+        batch while its eager forward (the output-agnostic graph lower)
+        succeeded -- an eager != compiled split.  The default-flip gate
+        keeps BOTH on dense for non-energy outputs: eager default must be
+        bit-identical to ``neighbor_graph_method="legacy"``, and the
+        compiled first batch must produce property outputs via the dense
+        compiler.
+        """
+        from deepmd.pt_expt.fitting import (
+            PropertyFittingNet,
+        )
+        from deepmd.pt_expt.model import (
+            PropertyModel,
+        )
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _model_uses_graph_lower,
+        )
+
+        ds = _make_dpa2_descriptor(ntypes=self.nt).to(self.device)
+        ft = PropertyFittingNet(
+            self.nt,
+            ds.get_dim_out(),
+            task_dim=2,
+            mixed_types=ds.mixed_types(),
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        model = PropertyModel(ds, ft, type_map=self.type_map).to(self.device)
+        model.eval()
+
+        # graph-eligible DESCRIPTOR, but non-energy MODEL -> gated off.
+        assert model.atomic_model.descriptor.uses_graph_lower() is True
+        assert _model_uses_graph_lower(model) is False
+
+        # eager default-flip mirrors the gate: default == legacy (dense).
+        box = self.cell.reshape(1, 9)
+        out_default = model.forward_common(self.coord, self.atype, box)
+        out_legacy = model.forward_common(
+            self.coord, self.atype, box, neighbor_graph_method="legacy"
+        )
+        torch.testing.assert_close(
+            out_default["property_redu"],
+            out_legacy["property_redu"],
+            rtol=0.0,
+            atol=0.0,
+        )
+
+        # compiled first batch: routed to the DENSE compiler; used to raise
+        # KeyError('energy') from the energy-specific graph trace.
+        cm = _CompiledModel(model, structure_key=("dpa2-property-regression",))
+        out_c = cm(self.coord, self.atype, box=box)
+        assert any("property" in k for k in out_c), (
+            f"compiled property forward must emit property keys; got {list(out_c)}"
+        )
+
     def test_compiled_training_graph_small_sel(self) -> None:
         """The compiled-training trace capacity derives from the synthetic
         system's REAL edge count, not from ``sel``.
