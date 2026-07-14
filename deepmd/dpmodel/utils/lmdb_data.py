@@ -1766,60 +1766,63 @@ def merge_lmdb(
 
     for src_path in src_paths:
         src_env = _open_lmdb(src_path)
-        with src_env.begin() as txn:
-            meta = _read_metadata(txn)
-        nframes, src_fmt, natoms_per_type = _parse_metadata(meta)
-        fallback_natoms = sum(natoms_per_type)
+        try:
+            with src_env.begin() as txn:
+                meta = _read_metadata(txn)
+            nframes, src_fmt, natoms_per_type = _parse_metadata(meta)
+            fallback_natoms = sum(natoms_per_type)
 
-        if first_system_info is None:
-            first_system_info = meta.get("system_info", {})
-        if first_type_map is None:
-            first_type_map = meta.get("type_map")
+            if first_system_info is None:
+                first_system_info = meta.get("system_info", {})
+            if first_type_map is None:
+                first_type_map = meta.get("type_map")
 
-        # Check for pre-computed frame_nlocs in source
-        src_nlocs = meta.get("frame_nlocs")
-        # Check for frame_system_ids in source
-        src_sys_ids = meta.get("frame_system_ids")
+            # Check for pre-computed frame_nlocs in source
+            src_nlocs = meta.get("frame_nlocs")
+            # Check for frame_system_ids in source
+            src_sys_ids = meta.get("frame_system_ids")
 
-        with src_env.begin() as src_txn, dst_env.begin(write=True) as dst_txn:
-            for i in range(nframes):
-                src_key = format(i, src_fmt).encode()
-                raw = src_txn.get(src_key)
-                if raw is None:
-                    continue
-                dst_key = format(frame_idx, fmt).encode()
-                dst_txn.put(dst_key, raw)
+            with src_env.begin() as src_txn, dst_env.begin(write=True) as dst_txn:
+                for i in range(nframes):
+                    src_key = format(i, src_fmt).encode()
+                    raw = src_txn.get(src_key)
+                    if raw is None:
+                        continue
+                    dst_key = format(frame_idx, fmt).encode()
+                    dst_txn.put(dst_key, raw)
 
-                # Get nloc for this frame
-                if src_nlocs is not None:
-                    frame_nlocs.append(int(src_nlocs[i]))
-                else:
-                    frame_raw = msgpack.unpackb(raw, raw=False)
-                    atype_raw = frame_raw.get("atom_types")
-                    if isinstance(atype_raw, dict):
-                        shape = atype_raw.get("shape") or atype_raw.get(b"shape")
-                        if shape:
-                            frame_nlocs.append(int(shape[0]))
+                    # Get nloc for this frame
+                    if src_nlocs is not None:
+                        frame_nlocs.append(int(src_nlocs[i]))
+                    else:
+                        frame_raw = msgpack.unpackb(raw, raw=False)
+                        atype_raw = frame_raw.get("atom_types")
+                        if isinstance(atype_raw, dict):
+                            shape = atype_raw.get("shape") or atype_raw.get(b"shape")
+                            if shape:
+                                frame_nlocs.append(int(shape[0]))
+                            else:
+                                frame_nlocs.append(fallback_natoms)
                         else:
                             frame_nlocs.append(fallback_natoms)
+
+                    # Propagate system IDs with offset
+                    if src_sys_ids is not None and i < len(src_sys_ids):
+                        frame_system_ids.append(int(src_sys_ids[i]) + sys_id_offset)
                     else:
-                        frame_nlocs.append(fallback_natoms)
+                        frame_system_ids.append(sys_id_offset)
 
-                # Propagate system IDs with offset
-                if src_sys_ids is not None and i < len(src_sys_ids):
-                    frame_system_ids.append(int(src_sys_ids[i]) + sys_id_offset)
-                else:
-                    frame_system_ids.append(sys_id_offset)
+                    frame_idx += 1
 
-                frame_idx += 1
-
-        # Update sys_id_offset for next source
-        if src_sys_ids is not None and len(src_sys_ids) > 0:
-            sys_id_offset += max(int(s) for s in src_sys_ids) + 1
-        else:
-            sys_id_offset += 1
-
-        src_env.close()
+            # Update sys_id_offset for next source
+            if src_sys_ids is not None and len(src_sys_ids) > 0:
+                sys_id_offset += max(int(s) for s in src_sys_ids) + 1
+            else:
+                sys_id_offset += 1
+        finally:
+            # Release only the reference acquired for this merge. Other readers
+            # may still share the cached environment and must remain usable.
+            _close_lmdb(src_path)
 
     # Write merged metadata with frame_nlocs for fast init
     merged_meta = {

@@ -6,6 +6,8 @@ remapping, auto_prob) live in source/tests/common/dpmodel/test_lmdb_data.py.
 Consistency tests (dpmodel vs pt) live in source/tests/consistent/test_lmdb_data.py.
 """
 
+import gc
+
 import lmdb
 import msgpack
 import numpy as np
@@ -750,6 +752,46 @@ class TestMergeLmdbSystemIds:
             meta = _read_metadata(txn)
         env.close()
         assert meta.get("type_map") == ["O", "H"]
+
+    def test_merge_keeps_cached_source_readers_open(self, tmp_path):
+        """A merge must release its cache reference without closing readers."""
+        src = str(tmp_path / "shared_src.lmdb")
+        dst = str(tmp_path / "shared_dst.lmdb")
+        _create_lmdb_with_system_ids(
+            src, system_frames=[3], natoms=6, type_map=["O", "H"]
+        )
+        cache_key = str(tmp_path.joinpath("shared_src.lmdb").resolve())
+        existing_reader = LmdbDataReader(src, ["O", "H"])
+        new_reader = None
+        expected_coord = existing_reader[0]["coord"].copy()
+        cached_env, refcount_before_merge = lmdb_data._ENV_CACHE[cache_key]
+
+        try:
+            merge_lmdb([src], dst)
+
+            # merge_lmdb shares the process-level environment cache with readers.
+            # Its temporary reference must be balanced without replacing or
+            # invalidating the environment retained by the existing reader.
+            env_after_merge, refcount_after_merge = lmdb_data._ENV_CACHE[cache_key]
+            assert env_after_merge is cached_env
+            assert refcount_after_merge == refcount_before_merge
+            np.testing.assert_array_equal(existing_reader[0]["coord"], expected_coord)
+
+            new_reader = LmdbDataReader(src, ["O", "H"])
+            env_after_new_reader, refcount_after_new_reader = lmdb_data._ENV_CACHE[
+                cache_key
+            ]
+            assert env_after_new_reader is cached_env
+            assert refcount_after_new_reader == refcount_before_merge + 1
+            np.testing.assert_array_equal(new_reader[0]["coord"], expected_coord)
+        finally:
+            existing_reader = None
+            new_reader = None
+            gc.collect()
+            # Keep a failing regression isolated from later LMDB tests. On the
+            # fixed path reader finalizers normally remove this entry already.
+            while cache_key in lmdb_data._ENV_CACHE:
+                lmdb_data._close_lmdb(src)
 
 
 # ============================================================
