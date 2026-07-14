@@ -587,9 +587,17 @@ class TestDpa2GraphLower:
 
         # (a) symbolic-trace export path
         traced = model.forward_lower_graph_exportable(
-            atype, n_node, ei, ev, em,
-            fparam=fp, aparam=ap, do_atomic_virial=True,
-            charge_spin=cs, tracing_mode="symbolic", _allow_non_fake_inputs=True,
+            atype,
+            n_node,
+            ei,
+            ev,
+            em,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
         )
         out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
         ref = model.forward_common_lower_graph(
@@ -605,9 +613,7 @@ class TestDpa2GraphLower:
         compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None)
         compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
         ctol = {"rtol": 1e-10, "atol": 1e-10}
-        torch.testing.assert_close(
-            compiled_out["energy"], ref["energy_redu"], **ctol
-        )
+        torch.testing.assert_close(compiled_out["energy"], ref["energy_redu"], **ctol)
 
     # ------------------------------------------------------------------
     # 2. the one piece of real code: the border_op graph exchange override.
