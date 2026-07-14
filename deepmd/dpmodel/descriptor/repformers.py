@@ -1189,7 +1189,19 @@ class Atten2MultiHeadApply(NativeOP):
 
 
 class Atten2EquiVarApply(NativeOP):
-    r"""Equivariant attention application preserving rotation laws."""
+    r"""Equivariant attention application preserving rotation laws.
+
+    For attention matrix :math:`A_{ijk}^{(h)}` and equivariant neighbor vectors
+    :math:`\mathbf h_{ik}`, each head produces
+
+    .. math::
+        \mathbf u_{ij}^{(h)} = \sum_k A_{ijk}^{(h)}\mathbf h_{ik},
+        \qquad
+        \mathbf u_{ij} = \sum_h w_h\mathbf u_{ij}^{(h)}.
+
+    The attention weights and head mixing coefficients are scalars, so the
+    output follows the same rotation law as :math:`\mathbf h`.
+    """
 
     def __init__(
         self,

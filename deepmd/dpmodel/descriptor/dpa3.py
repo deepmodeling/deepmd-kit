@@ -64,21 +64,33 @@ class RepFlowArgs:
     The DPA-3 descriptor uses a repflow architecture that maintains and updates three types
     of representations: node (:math:`\mathbf{n}`), edge (:math:`\mathbf{e}`), and angle (:math:`\mathbf{a}`).
 
-    The update equations for each layer are:
+    DPA3 applies message passing to the first two graphs of the line-graph
+    series.  Writing node, edge, and angle features as
+    :math:`\mathbf n_i^l`, :math:`\mathbf e_{ij}^l`, and
+    :math:`\mathbf a_{ij,ik}^l`, respectively, a layer has the residual form
 
     .. math::
-        \mathbf{n}^{l+1} = \text{UpdateNode}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+        \mathbf e_{ij}^{l+1} = \mathbf e_{ij}^l
+        + \operatorname{Update}_E^{(1)}
+        (\mathbf e_{ij}^l, \mathbf n_i^l, \mathbf n_j^l),
 
     .. math::
-        \mathbf{e}^{l+1} = \text{UpdateEdge}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+        \mathbf a_{ij,ik}^{l+1} = \mathbf a_{ij,ik}^l
+        + \operatorname{Update}_E^{(2)}
+        (\mathbf a_{ij,ik}^l, \mathbf e_{ij}^l, \mathbf e_{ik}^l),
 
     .. math::
-        \mathbf{a}^{l+1} = \text{UpdateAngle}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l).
+        \mathbf n_i^{l+1} = \mathbf n_i^l
+        + \operatorname{Update}_V^{(1)}
+        \left(\mathbf n_i^l,
+        \{\mathbf e_{ij}^l\}_{j\in\mathcal N(i)}\right).
 
-    The final descriptor is obtained by symmetrization:
+    Here the vertices of the second line graph are the edges of the first, so
+    :math:`\mathbf v_{ij}^{(2,l)} \equiv \mathbf e_{ij}^l`.  The invariant
+    atomic descriptor is the final first-graph node representation:
 
     .. math::
-        \mathcal{D}^i = \text{Symmetrize}(\mathbf{n}^L, \mathbf{e}^L),
+        \mathcal D^i = \mathbf n_i^L,
 
     where :math:`L` is the number of repflow layers.
 

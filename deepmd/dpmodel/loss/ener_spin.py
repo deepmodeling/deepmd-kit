@@ -22,6 +22,25 @@ from deepmd.utils.version import (
 class EnergySpinLoss(Loss):
     r"""Loss on energy, real force, magnetic force and virial for spin models.
 
+    For mean-squared error, the objective is a weighted sum
+
+    .. math::
+        L = p_E\frac{\langle(\Delta E)^2\rangle}{N^q}
+        +p_{F_r}\langle\lVert\Delta\mathbf F_r\rVert^2\rangle
+        +p_{F_m}\langle\lVert\Delta\mathbf F_m\rVert^2\rangle
+        +p_\Xi\frac{\langle\lVert\Delta\boldsymbol\Xi\rVert^2\rangle}{N^q}
+        +p_{E_i}\langle(\Delta E_i)^2\rangle,
+
+    where :math:`q=2` for intensive energy/virial normalization and :math:`q=1`
+    for the legacy normalization.  In MAE mode the squared differences are
+    replaced by absolute differences and extensive terms use :math:`1/N`.
+    Every prefactor is interpolated using the current learning rate,
+
+    .. math::
+        p_X(\eta)=p_X^{\mathrm{limit}}+
+        \left(p_X^{\mathrm{start}}-p_X^{\mathrm{limit}}\right)
+        \frac{\eta}{\eta_0}.
+
     Parameters
     ----------
     starter_learning_rate : float

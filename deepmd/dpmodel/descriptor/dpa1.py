@@ -2288,7 +2288,20 @@ class NeighborGatedAttention(NativeOP):
 
 
 class NeighborGatedAttentionLayer(NativeOP):
-    r"""Single gated neighbor-attention residual layer."""
+    r"""Single gated neighbor-attention residual layer.
+
+    For neighbor features :math:`\mathbf X`, the layer applies gated attention,
+    adds a residual connection, and normalizes the result:
+
+    .. math::
+        \mathbf X' = \operatorname{LayerNorm}\!\left(
+        \mathbf X + \operatorname{GatedAttention}
+        (\mathbf X, \mathbf M, \mathbf R, \mathbf S)\right),
+
+    where :math:`\mathbf M` is the neighbor mask and the optional
+    :math:`\mathbf R` and :math:`\mathbf S` supply directional and switching
+    information.
+    """
 
     def __init__(
         self,

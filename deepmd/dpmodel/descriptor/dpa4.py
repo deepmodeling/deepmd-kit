@@ -142,8 +142,41 @@ if TYPE_CHECKING:
 @BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")
 class DescrptDPA4(NativeOP, BaseDescriptor):
-    """
+    r"""
     SeZM descriptor.
+
+    DPA4 stores the state of atom :math:`i` at layer :math:`l` as SO(3)
+    coefficients :math:`\mathbf h_i^{(l,\ell,m)}`.  For an edge :math:`j\to i`,
+    the source state is rotated into an edge-aligned frame, processed by an
+    SO(2)-equivariant convolution, and rotated back:
+
+    .. math::
+        \mathbf q_{ji}^{(l)} =
+        \mathbf D(\hat{\mathbf r}_{ji})^{-1}\mathbf h_j^{(l)},
+        \qquad
+        \mathbf m_{ji}^{(l)} =
+        \mathbf D(\hat{\mathbf r}_{ji})
+        \operatorname{SO2Conv}\!\left(
+        \mathbf q_{ji}^{(l)},\boldsymbol\rho(r_{ji})\right),
+
+    where :math:`\mathbf D` contains Wigner-D rotation blocks and
+    :math:`\boldsymbol\rho` is the radial embedding multiplied by a smooth
+    cutoff envelope.  Messages are aggregated and passed through an
+    equivariant feed-forward update,
+
+    .. math::
+        \mathbf h_i^{(l+1)} = \mathbf h_i^{(l)}
+        + \operatorname{FFN}_{\mathrm{eq}}\!\left(
+        \sum_{j\in\mathcal N(i)} w_{ji}\mathbf m_{ji}^{(l)}\right).
+
+    The returned descriptor keeps only the invariant scalar coefficients after
+    the last interaction block:
+
+    .. math::
+        \mathcal D_i = \mathbf h_i^{(L,0,0)}.
+
+    The weights :math:`w_{ji}` are either cutoff-envelope weights or normalized
+    attention weights, depending on ``n_atten_head``.
 
     Execution outline
     -----------------
