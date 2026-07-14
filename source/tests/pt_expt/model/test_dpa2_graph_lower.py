@@ -15,13 +15,12 @@ override that performs the per-layer MPI halo refresh via
 """
 
 import ctypes
+import importlib
 
 import numpy as np
 import pytest
 import torch
 
-# Trigger registration of the deepmd_export::border_op opaque wrapper.
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
@@ -45,6 +44,10 @@ from deepmd.pt_expt.utils import (
 from ...seed import (
     GLOBAL_SEED,
 )
+
+# Trigger registration of the deepmd_export::border_op opaque wrapper
+# (importlib form: the module is imported purely for its side effect).
+importlib.import_module("deepmd.pt_expt.utils.comm")
 
 # ---------------------------------------------------------------------------
 # Self-comm-dict helper (mirrors
@@ -582,3 +585,113 @@ class TestOwnedNodeMaskEnergyReduction:
         torch.testing.assert_close(
             out_default["energy_derv_r"], out_explicit_none["energy_derv_r"]
         )
+
+
+class TestGraphAparamExtendedAxis:
+    """aparam contract on the (extended-region) graph route.
+
+    The graph fitting consumes atomic parameters on the FLAT node axis
+    (``N = sum(n_node)``). On extended-region graphs (the multi-rank C++
+    routes: ``N == nall_real``, owned prefix first, then halo) the caller
+    must therefore supply an extended-axis aparam with the halo rows padded
+    -- their fitting outputs are discarded by the owned-node mask, so the
+    padded values are inert. This pins the contract the C++ runtime's
+    ``extend_graph_aparam`` (DeepPotPTExpt.cc) implements: an owned-only
+    (nloc-axis) aparam must fail loudly rather than silently misalign
+    parameter rows with nodes.
+    """
+
+    def setup_method(self) -> None:
+        self.device = env.DEVICE
+        self.natoms = 6
+        self.n_local_val = 4
+        self.nt = 2
+        generator = torch.Generator(device=self.device).manual_seed(GLOBAL_SEED)
+        cell = torch.rand(
+            [3, 3], dtype=torch.float64, device=self.device, generator=generator
+        )
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=self.device)
+        self.cell = cell.unsqueeze(0)
+        coord = torch.rand(
+            [self.natoms, 3],
+            dtype=torch.float64,
+            device=self.device,
+            generator=generator,
+        )
+        self.coord = torch.matmul(coord, cell).unsqueeze(0).to(self.device)
+        self.atype = torch.tensor(
+            [[0, 0, 0, 1, 1, 1]], dtype=torch.int64, device=self.device
+        )
+
+    def _make_model(self) -> EnergyModel:
+        ds = _make_dpa2_descriptor(ntypes=self.nt).to(self.device)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+            numb_aparam=1,
+            precision="float64",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        return EnergyModel(ds, ft, type_map=["foo", "bar"]).to(self.device)
+
+    def _forward(self, model, aparam):
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        ng = build_neighbor_graph(
+            self.coord, self.atype, self.cell.reshape(1, 9), model.get_rcut()
+        )
+        n_local = torch.tensor(
+            [self.n_local_val], dtype=torch.int64, device=self.device
+        )
+        return model.forward_common_lower_graph(
+            self.atype.reshape(-1),
+            ng.n_node,
+            ng.edge_index,
+            ng.edge_vec,
+            ng.edge_mask,
+            aparam=aparam,
+            n_local=n_local,
+        )
+
+    def test_extended_axis_accepted_halo_rows_inert(self) -> None:
+        """Extended-axis aparam (N rows) runs; halo-row values are inert for
+        the owned (masked) energy, owned-row values are not.
+        """
+        model = self._make_model()
+        model.eval()
+        base = torch.linspace(
+            0.1, 0.6, self.natoms, dtype=torch.float64, device=self.device
+        ).reshape(1, self.natoms, 1)
+        out = self._forward(model, base)
+
+        # halo rows [n_local:) changed -> owned energy identical
+        halo_bump = base.clone()
+        halo_bump[:, self.n_local_val :, :] += 7.5
+        out_halo = self._forward(model, halo_bump)
+        torch.testing.assert_close(out_halo["energy_redu"], out["energy_redu"])
+
+        # an OWNED row changed -> owned energy must change
+        owned_bump = base.clone()
+        owned_bump[:, 0, :] += 7.5
+        out_owned = self._forward(model, owned_bump)
+        assert not torch.allclose(out_owned["energy_redu"], out["energy_redu"]), (
+            "owned-row aparam change must reach the owned energy"
+        )
+
+    def test_owned_only_axis_fails_loudly(self) -> None:
+        """An nloc-axis aparam (owned rows only) must raise -- silently
+        misaligning parameter rows with the N-node axis is the bug the
+        extended-axis contract prevents.
+        """
+        model = self._make_model()
+        model.eval()
+        owned_only = torch.linspace(
+            0.1, 0.4, self.n_local_val, dtype=torch.float64, device=self.device
+        ).reshape(1, self.n_local_val, 1)
+        with pytest.raises((RuntimeError, ValueError)):
+            self._forward(model, owned_only)

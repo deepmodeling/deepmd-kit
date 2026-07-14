@@ -26,6 +26,36 @@ using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
 
+namespace {
+/**
+ * @brief Extend a graph-route aparam tensor to the flat node axis.
+ *
+ * The NeighborGraph fitting consumes atomic parameters on the flat node
+ * axis (N == n_node_count).  When the graph keeps the EXTENDED region
+ * (N == nall_real: the multi-rank routes, both plain and with-comm), the
+ * runtime aparam carries the owned (local) rows only; the halo rows are
+ * zero-padded here.  Ghost fitting outputs are never retained -- the
+ * with-comm artifact masks non-owned energies before reduction, and the
+ * plain multi-rank remap sums energy over the owned prefix only -- so the
+ * padded values are inert.  (``aparam_nall`` is structurally false for
+ * pt_expt models, see ``init``, so the runtime aparam never carries
+ * extended rows itself.)  Identity when aparam is absent or already covers
+ * the node axis (single-rank folded graphs, N == nloc).
+ */
+at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
+                               std::int64_t n_node_count,
+                               std::int64_t daparam) {
+  if (daparam <= 0 || aparam_tensor.numel() == 0 ||
+      aparam_tensor.dim() < 2 || aparam_tensor.size(1) >= n_node_count) {
+    return aparam_tensor;
+  }
+  at::Tensor padded =
+      torch::zeros({1, n_node_count, daparam}, aparam_tensor.options());
+  padded.slice(1, 0, aparam_tensor.size(1)).copy_(aparam_tensor);
+  return padded;
+}
+}  // namespace
+
 void DeepPotPTExpt::translate_error(std::function<void()> f) {
   try {
     f();
@@ -938,13 +968,32 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // with-comm artifact instead of being read directly from local halo
       // types, so no geometry/mask changes are needed -- only the model
       // entry point (and the appended comm tensors) differ.
-      if (nall_real == 0) {
+      // Collective preflight: a rank with zero owned+ghost atoms cannot run
+      // the graph artifact, and a rank-LOCAL failure would leave the
+      // non-empty peers blocked forever in the per-layer border_op
+      // collectives.  All-reduce the minimum node count over the LAMMPS
+      // communicator (comm_tensors[5]) so EVERY rank agrees to run -- or
+      // every rank throws promptly with the same error.  The op is an
+      // identity when the communicator handle is null or MPI is not
+      // compiled in.
+      const auto allreduce_min =
+          c10::Dispatcher::singleton()
+              .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
+              .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
+      at::Tensor local_n_node =
+          torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
+      const std::int64_t global_min_n_node =
+          allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
+              .item<std::int64_t>();
+      if (global_min_n_node == 0) {
         throw deepmd::deepmd_exception(
             "Multi-rank message-passing graph inference does not yet support "
             "a rank with zero owned+ghost atoms (the exported graph artifact "
             "requires at least one node, and skipping the run would desync "
-            "the per-layer MPI halo exchange). Use a domain decomposition "
-            "that keeps every rank non-empty, or a dense .pt2.");
+            "the per-layer MPI halo exchange; this rank has " +
+            std::to_string(nall_real) +
+            " owned+ghost atoms). Use a domain decomposition that keeps "
+            "every rank non-empty, or a dense .pt2.");
       }
       const auto edge_tensors =
           compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
@@ -962,7 +1011,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           pair_exclude_table_, ntypes);
       flat_outputs = run_model_graph_with_comm(
           node_atype, n_node_tensor, edge_tensors.edge_index,
-          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor, aparam_tensor,
+          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
+          extend_graph_aparam(aparam_tensor, n_node_count, daparam),
           charge_spin_tensor, comm_tensors);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
@@ -1038,10 +1088,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
           edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
           pair_exclude_table_, ntypes);
-      flat_outputs =
-          run_model_graph(node_atype, n_node_tensor, edge_tensors.edge_index,
-                          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
-                          aparam_tensor, charge_spin_tensor);
+      flat_outputs = run_model_graph(
+          node_atype, n_node_tensor, edge_tensors.edge_index,
+          edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
+          extend_graph_aparam(aparam_tensor, n_node_count, daparam),
+          charge_spin_tensor);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and

@@ -423,16 +423,14 @@ def test_pair_deepmd_mpi_dpa2_graph_empty_rank_does_not_silently_succeed() -> No
     (``DeepPotPTExpt.cc``, guard added alongside the with-comm graph route)
     throws a clear, actionable error on the empty rank instead of running.
 
-    KNOWN CURRENT BEHAVIOR: the empty rank's throw does not propagate to
-    an MPI abort -- the peer ranks are already blocked inside the
-    per-layer ``border_op`` collectives waiting for the rank that threw,
-    so the job DEADLOCKS rather than exiting nonzero.  This test therefore
-    bounds the run with a hard timeout and accepts EITHER outcome as "does
-    not silently succeed": (a) nonzero exit carrying the documented
-    fail-loud message, or (b) timeout (the deadlock).  Turning the
-    deadlock into a clean collective abort -- or supporting empty ranks
-    via phantom nodes -- is follow-up work; the point pinned here is that
-    no exit-0 run with fabricated numbers can occur.
+    The failure is COLLECTIVE and PROMPT: before entering the per-layer
+    ``border_op`` collectives, every rank participates in a communicator-
+    wide min-reduction of its node count (``deepmd_export::
+    allreduce_min_int``), so the non-empty peers detect the empty rank and
+    throw the same error instead of blocking forever waiting for it.  A
+    timeout is therefore a FAILURE of this test (it would mean the
+    preflight regressed back into the historical deadlock), and the
+    documented error message must appear on a nonzero exit.
 
     ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
     verified (see the module-level comment above the fixture) to put the
@@ -447,10 +445,12 @@ def test_pair_deepmd_mpi_dpa2_graph_empty_rank_does_not_silently_succeed() -> No
         capture=True,
         timeout=120,
     )
-    if out["timed_out"]:
-        # Deadlock in the per-layer collectives after the empty rank threw:
-        # accepted as "did not silently succeed" (see docstring).
-        return
+    assert not out["timed_out"], (
+        "Multi-rank graph run with an empty rank timed out instead of "
+        "failing promptly: the collective empty-rank preflight "
+        "(allreduce_min_int) must make every rank throw BEFORE the "
+        "per-layer border_op collectives."
+    )
     assert out["returncode"] != 0, (
         "Expected the multi-rank message-passing graph run to fail loudly "
         "on a genuinely empty rank, but it exited 0.\n"

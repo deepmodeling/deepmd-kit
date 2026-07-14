@@ -574,6 +574,40 @@ DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_export(
                             communicator_tensor, nlocal_tensor, nghost_tensor)
       .clone();
 }
+
+/**
+ * @brief Communicator-wide int64 min-reduction (collective preflight).
+ *
+ * Used by the C++ inference runtime to agree ACROSS RANKS whether a
+ * multi-rank graph run may proceed (e.g. "does any rank have zero
+ * owned+ghost atoms?") BEFORE entering the per-layer ``border_op``
+ * collectives -- a rank-local failure there would leave the peers blocked
+ * forever. Identity when MPI is not compiled in or the communicator handle
+ * is null (single-process runs).
+ */
+DEEPMD_MAYBE_UNUSED torch::Tensor allreduce_min_int_export(
+    const torch::Tensor& value_tensor,
+    const torch::Tensor& communicator_tensor) {
+  torch::Tensor value_cpu = value_tensor.to(torch::kCPU).contiguous();
+#ifdef USE_MPI
+  torch::Tensor comm_cpu = communicator_tensor.to(torch::kCPU).contiguous();
+  if (*comm_cpu.data_ptr<std::int64_t>() != 0) {
+    MPI_Comm world;
+#ifdef OMPI_MPI_H
+    std::int64_t* communicator = comm_cpu.data_ptr<std::int64_t>();
+#else
+    std::int64_t* ptr = comm_cpu.data_ptr<std::int64_t>();
+    int* communicator = reinterpret_cast<int*>(ptr);
+#endif
+    world = reinterpret_cast<MPI_Comm>(*communicator);
+    std::int64_t local = *value_cpu.data_ptr<std::int64_t>();
+    std::int64_t global_min = local;
+    MPI_Allreduce(&local, &global_min, 1, MPI_INT64_T, MPI_MIN, world);
+    return torch::full_like(value_cpu, global_min);
+  }
+#endif
+  return value_cpu.clone();
+}
 }  // namespace
 #undef DEEPMD_MAYBE_UNUSED
 
@@ -586,6 +620,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
       "border_op_backward(Tensor sendlist, Tensor sendproc, Tensor recvproc, "
       "Tensor sendnum, Tensor recvnum, Tensor grad_g1, Tensor communicator, "
       "Tensor nlocal, Tensor nghost) -> Tensor");
+  m.def("allreduce_min_int(Tensor value, Tensor communicator) -> Tensor");
 }
 
 // Register CPU + CUDA implementations under explicit dispatch keys so
@@ -594,10 +629,12 @@ TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
 TORCH_LIBRARY_IMPL(deepmd_export, CPU, m) {
   m.impl("border_op", border_op_export);
   m.impl("border_op_backward", border_op_backward_export);
+  m.impl("allreduce_min_int", allreduce_min_int_export);
 }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 TORCH_LIBRARY_IMPL(deepmd_export, CUDA, m) {
   m.impl("border_op", border_op_export);
   m.impl("border_op_backward", border_op_backward_export);
+  m.impl("allreduce_min_int", allreduce_min_int_export);
 }
 #endif
