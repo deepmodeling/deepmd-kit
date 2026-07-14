@@ -76,6 +76,20 @@ class Identity(NativeOP):
 
 
 class NativeLayer(NativeOP):
+    r"""Affine neural-network layer with optional residual connection.
+
+    The activated branch is
+
+    .. math::
+
+       \mathbf z=\boldsymbol\phi(\mathbf x\mathbf W+\mathbf b),
+
+    optionally scaled elementwise by a trainable timestep :math:`\mathbf d`.
+    If ``resnet`` is enabled, the output is :math:`\mathbf z+\mathbf x` for
+    equal widths, or :math:`\mathbf z+[\mathbf x,\mathbf x]` when the output
+    width is twice the input width.
+    """
+
     """Native representation of a layer.
 
     Parameters
@@ -266,7 +280,13 @@ class NativeLayer(NativeOP):
         return self.w.shape[1]
 
     def call(self, x):  # noqa: ANN001, ANN201
-        """Forward pass.
+        r"""Evaluate the affine, activation, timestep, and residual operations.
+
+        In compact form, this returns
+        :math:`\mathbf y=\mathbf r(\mathbf x)+
+        \mathbf d\odot\boldsymbol\phi(\mathbf x\mathbf W+\mathbf b)`, where
+        :math:`\mathbf r` is the configured identity/duplicated residual and
+        :math:`\mathbf d=\mathbf 1` when no timestep is used.
 
         Parameters
         ----------
@@ -404,7 +424,17 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
 
 
 class LayerNorm(NativeLayer):
-    """Implementation of Layer Normalization layer.
+    r"""Implementation of layer normalization.
+
+    For features normalized over the final axes, this layer computes
+
+    .. math::
+
+       \mathbf y=\boldsymbol\gamma\odot
+       \frac{\mathbf x-\mu}{\sqrt{\sigma^2+\epsilon}}+\boldsymbol\beta,
+
+    where :math:`\mu` and :math:`\sigma^2` are the mean and variance over
+    those axes.
 
     Parameters
     ----------
@@ -540,7 +570,7 @@ class LayerNorm(NativeLayer):
         return self.w.shape[0]
 
     def call(self, x):  # noqa: ANN001, ANN201
-        """Forward pass.
+        r"""Normalize :math:`\mathbf x` and apply learned scale and shift.
 
         Parameters
         ----------

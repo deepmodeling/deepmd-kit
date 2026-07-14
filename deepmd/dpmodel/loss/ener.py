@@ -23,6 +23,17 @@ from deepmd.utils.version import (
 
 
 def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) -> Array:
+    r"""Return the mean Huber loss.
+
+    For residual :math:`e=y-\hat y`, the elementwise loss is
+
+    .. math::
+
+       H_\delta(e)=\begin{cases}
+       \tfrac12 e^2,& |e|\le\delta,\\
+       \delta(|e|-\tfrac12\delta),& |e|>\delta.
+       \end{cases}
+    """
     xp = array_api_compat.array_namespace(predictions, targets)
     error = targets - predictions
     abs_error = xp.abs(error)
@@ -34,6 +45,27 @@ def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) ->
 
 class EnergyLoss(Loss):
     r"""Construct a layer to compute loss on energy, force and virial.
+
+    The total objective is a weighted sum of the enabled error terms,
+
+    .. math::
+
+       L=p_E L_E+p_F L_F+p_\Xi L_\Xi+p_{E_i}L_{E_i}
+       +p_{PF}L_{PF}+p_{GF}L_{GF}.
+
+    Each prefactor is interpolated using the current learning rate
+    :math:`\eta` as
+
+    .. math::
+
+       p(\eta)=p_{\mathrm{limit}}+
+       (p_{\mathrm{start}}-p_{\mathrm{limit}})
+       \frac{\eta}{\eta_0}.
+
+    The individual terms are mean squared, mean absolute, or Huber errors as
+    configured.  In relative-force mode, each force residual is divided by
+    :math:`\lVert\hat{\mathbf F}_i\rVert+\nu`, where :math:`\nu` is
+    ``relative_f``.
 
     Parameters
     ----------
@@ -194,7 +226,12 @@ class EnergyLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Calculate the weighted energy-model objective.
+
+        This evaluates the objective and learning-rate-dependent prefactors
+        defined in :class:`EnergyLoss`; returned diagnostics are square roots
+        of the corresponding unweighted error terms.
+        """
         energy = model_dict["energy"]
         force = model_dict["force"]
         virial = model_dict["virial"]

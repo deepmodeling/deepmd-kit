@@ -22,6 +22,26 @@ from deepmd.utils.version import (
 class PropertyLoss(Loss):
     r"""Loss on property predictions.
 
+    Except for MAPE, the residual is evaluated in normalized property space,
+
+    .. math::
+
+       e_k=\frac{y_k-b_k}{s_k}-\frac{\hat y_k-b_k}{s_k}.
+
+    Extensive properties are first divided by the number of real atoms.
+    ``smooth_mae`` uses
+
+    .. math::
+
+       \ell_\beta(e)=\begin{cases}
+       e^2/(2\beta),&|e|<\beta,\\
+       |e|-\beta/2,&|e|\ge\beta.
+       \end{cases}
+
+    The other choices are the usual :math:`\sum|e|`, :math:`\sum e^2`,
+    :math:`\sqrt{\langle e^2\rangle}`, and
+    :math:`\langle |(y-\hat y)/(y+10^{-3})|\rangle`.
+
     Parameters
     ----------
     task_dim : int
@@ -75,7 +95,12 @@ class PropertyLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the configured normalized property error.
+
+        For extensive targets, both prediction and label are divided by the
+        real atom count before the equations in :class:`PropertyLoss` are
+        applied.
+        """
         del learning_rate, mae
         var_name = self.var_name
         pred = model_dict[var_name]

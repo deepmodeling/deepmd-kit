@@ -22,6 +22,25 @@ from deepmd.utils.version import (
 class DOSLoss(Loss):
     r"""Loss on DOS (density of states) for both local and global predictions.
 
+    For DOS bin :math:`k`, define its discrete cumulative distribution by
+
+    .. math::
+
+       C_k=\sum_{q=0}^{k}D_q.
+
+    The optimized objective combines global and atomic DOS and CDF errors,
+
+    .. math::
+
+       L=p_D\langle(D-\hat D)^2\rangle
+       +p_C\langle(C-\hat C)^2\rangle
+       +p_{D_i}\langle(D_i-\hat D_i)^2\rangle
+       +p_{C_i}\langle(C_i-\hat C_i)^2\rangle.
+
+    Padded atoms are excluded from the atomic averages.  Each prefactor uses
+    :math:`p=p_{\mathrm{limit}}+(p_{\mathrm{start}}-p_{\mathrm{limit}})
+    \eta/\eta_0`.
+
     Parameters
     ----------
     starter_learning_rate : float
@@ -101,7 +120,11 @@ class DOSLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the weighted DOS and cumulative-DOS objective.
+
+        The cumulative terms use :math:`C_k=\sum_{q\le k}D_q`; local terms
+        are averaged only over real atoms when a mask is present.
+        """
         # Get array namespace from any available tensor
         first_key = next(iter(model_dict))
         xp = array_api_compat.array_namespace(model_dict[first_key])
