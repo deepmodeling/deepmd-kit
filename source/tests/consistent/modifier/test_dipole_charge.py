@@ -25,6 +25,8 @@ if INSTALLED_ARRAY_API_STRICT:
 if INSTALLED_PT_EXPT:
     import torch
 
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+
 if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.model.model import BaseModel as PTExptBaseModel
     from deepmd.pt_expt.modifier.dipole_charge import (
@@ -106,9 +108,9 @@ class TestDipoleChargeModifierConsistency(unittest.TestCase):
             model = PTExptBaseModel.deserialize(self.serialized_model).double()
             modifier = PTExptModifier(**self.kwargs, dipole_model=model).double().eval()
             result = modifier(
-                torch.tensor(self.coord, dtype=torch.float64, device="cpu"),
-                torch.tensor(self.atype, dtype=torch.int64, device="cpu"),
-                torch.tensor(self.box, dtype=torch.float64, device="cpu"),
+                torch.tensor(self.coord, dtype=torch.float64, device=PT_EXPT_DEVICE),
+                torch.tensor(self.atype, dtype=torch.int64, device=PT_EXPT_DEVICE),
+                torch.tensor(self.box, dtype=torch.float64, device=PT_EXPT_DEVICE),
             )
             results["pt_expt"] = {
                 key: value.detach().cpu().numpy() for key, value in result.items()
