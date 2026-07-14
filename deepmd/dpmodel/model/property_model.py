@@ -31,6 +31,8 @@ DPPropertyModel_ = make_model(DPPropertyAtomicModel, T_Bases=(NativeOP, BaseMode
 
 @BaseModel.register("property")
 class PropertyModel(DPModelCommon, DPPropertyModel_):
+    r"""Property model with extensive reduction :math:`p=\sum_i p_i`."""
+
     def __init__(
         self,
         *args: Any,

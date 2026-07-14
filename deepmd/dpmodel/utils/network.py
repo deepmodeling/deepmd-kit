@@ -57,6 +57,8 @@ def softplus_t(x):  # noqa: ANN001, ANN201
 
 
 class Identity(NativeOP):
+    r"""Identity map :math:`y=x`."""
+
     def __init__(self) -> None:
         super().__init__()
 

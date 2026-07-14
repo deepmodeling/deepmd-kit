@@ -31,6 +31,10 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel, T_Bases=(NativeOP, BaseMo
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
+    r"""Combined energy :math:`E=E_{DP}+E_{ZBL}` with
+    forces :math:`\mathbf F_i=-\nabla_{\mathbf r_i}E`.
+    """
+
     def __init__(
         self,
         *args: Any,

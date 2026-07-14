@@ -53,6 +53,12 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
+    r"""Base atomic model mapping local descriptors to per-atom outputs.
+
+    For atom :math:`i`, the learned map is
+    :math:`y_i=F_\theta(\mathcal D_i,\mathcal N_i)`.
+    """
+
     def __init__(
         self,
         type_map: list[str],

@@ -2153,6 +2153,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
 
 class NeighborGatedAttention(NativeOP):
+    r"""Gated neighbor aggregation :math:`h_i'=h_i+\sum_j a_{ij}v_{ij}`."""
+
     def __init__(
         self,
         layer_num: int,
@@ -2286,6 +2288,8 @@ class NeighborGatedAttention(NativeOP):
 
 
 class NeighborGatedAttentionLayer(NativeOP):
+    r"""Single gated neighbor-attention residual layer."""
+
     def __init__(
         self,
         nnei: int,
@@ -2394,6 +2398,8 @@ class NeighborGatedAttentionLayer(NativeOP):
 
 
 class GatedAttentionLayer(NativeOP):
+    r"""Gated self-attention update :math:`H'=H+\operatorname{Attn}(H)`."""
+
     def __init__(
         self,
         nnei: int,

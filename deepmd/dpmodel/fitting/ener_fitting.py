@@ -22,6 +22,8 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("ener")
 class EnergyFittingNet(InvarFitting):
+    r"""Fit scalar atomic energies :math:`E_i=F_\theta(\mathcal D_i)`."""
+
     def __init__(
         self,
         ntypes: int,

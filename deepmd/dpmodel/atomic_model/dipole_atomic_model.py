@@ -22,6 +22,11 @@ from .dp_atomic_model import (
 
 
 class DPDipoleAtomicModel(DPAtomicModel):
+    r"""Atomic dipole model with :math:`\boldsymbol\mu_i=F_\theta(\mathcal D_i)`.
+
+    Frame dipoles are additive: :math:`\boldsymbol\mu=\sum_i\boldsymbol\mu_i`.
+    """
+
     def __init__(
         self,
         descriptor: BaseDescriptor,

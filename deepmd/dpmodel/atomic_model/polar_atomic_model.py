@@ -18,6 +18,11 @@ from .dp_atomic_model import (
 
 
 class DPPolarAtomicModel(DPAtomicModel):
+    r"""Atomic polarizability model with
+    :math:`\boldsymbol\alpha_i=F_\theta(\mathcal D_i)` and
+    :math:`\boldsymbol\alpha=\sum_i\boldsymbol\alpha_i`.
+    """
+
     def __init__(
         self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
     ) -> None:

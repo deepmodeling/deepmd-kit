@@ -32,6 +32,8 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("dos")
 class DOSFittingNet(InvarFitting):
+    r"""Fit DOS vectors :math:`\mathbf D_i=F_\theta(\mathcal D_i)`."""
+
     def __init__(
         self,
         ntypes: int,

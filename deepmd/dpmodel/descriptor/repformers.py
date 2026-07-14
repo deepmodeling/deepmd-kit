@@ -965,6 +965,8 @@ def symmetrization_op(
 
 
 class Atten2Map(NativeOP):
+    r"""Attention-logit map :math:`A=QK^T/\sqrt d`."""
+
     def __init__(
         self,
         input_dim: int,
@@ -1094,6 +1096,8 @@ class Atten2Map(NativeOP):
 
 
 class Atten2MultiHeadApply(NativeOP):
+    r"""Multi-head attention application :math:`\operatorname{softmax}(A)V`."""
+
     def __init__(
         self,
         input_dim: int,
@@ -1185,6 +1189,8 @@ class Atten2MultiHeadApply(NativeOP):
 
 
 class Atten2EquiVarApply(NativeOP):
+    r"""Equivariant attention application preserving rotation laws."""
+
     def __init__(
         self,
         input_dim: int,
@@ -1263,6 +1269,8 @@ class Atten2EquiVarApply(NativeOP):
 
 
 class LocalAtten(NativeOP):
+    r"""Local attention with :math:`a_{ij}=\operatorname{softmax}_j(q_i\cdot k_{ij})`."""
+
     def __init__(
         self,
         input_dim: int,
@@ -1404,6 +1412,8 @@ class LocalAtten(NativeOP):
 
 
 class RepformerLayer(NativeOP):
+    r"""Residual representation update :math:`(G_1,G_2,H_2)^{l+1}=\Phi_l(...)`."""
+
     def __init__(
         self,
         rcut: float,
