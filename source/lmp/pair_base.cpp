@@ -139,25 +139,48 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
   assert(do_compute_fparam);
 
   int icompute = modify->find_compute(compute_fparam_id);
-  Compute* compute = modify->compute[icompute];
+  if (icompute < 0) {
+    error->all(FLERR,
+               "compute " + compute_fparam_id + " for fparam is not found");
+  }
 
+  Compute* compute = modify->compute[icompute];
   if (!compute) {
-    error->all(FLERR, "compute id is not found: " + compute_fparam_id);
+    error->all(FLERR,
+               "compute " + compute_fparam_id + " for fparam is not found");
   }
   fparam.resize(dim_fparam);
 
   if (dim_fparam == 1) {
+    if (!compute->scalar_flag) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " does not provide a scalar for fparam");
+    }
     if (!(compute->invoked_flag & Compute::INVOKED_SCALAR)) {
       compute->compute_scalar();
       compute->invoked_flag |= Compute::INVOKED_SCALAR;
     }
     fparam[0] = compute->scalar;
   } else if (dim_fparam > 1) {
+    if (!compute->vector_flag) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " does not provide a vector for fparam");
+    }
     if (!(compute->invoked_flag & Compute::INVOKED_VECTOR)) {
       compute->compute_vector();
       compute->invoked_flag |= Compute::INVOKED_VECTOR;
     }
+    // Variable-length computes update size_vector when they are invoked, so
+    // validate the realized length rather than their initial zero capacity.
+    if (compute->size_vector < dim_fparam) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " vector is shorter than fparam dimension");
+    }
     double* cvector = compute->vector;
+    if (!cvector) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " returned a null vector for fparam");
+    }
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
     }
@@ -214,10 +237,30 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   assert(do_compute_aparam);
 
   int icompute = modify->find_compute(compute_aparam_id);
-  Compute* compute = modify->compute[icompute];
+  if (icompute < 0) {
+    error->all(FLERR,
+               "compute " + compute_aparam_id + " for aparam is not found");
+  }
 
+  Compute* compute = modify->compute[icompute];
   if (!compute) {
-    error->all(FLERR, "compute id is not found: " + compute_aparam_id);
+    error->all(FLERR,
+               "compute " + compute_aparam_id + " for aparam is not found");
+  }
+  if (!compute->peratom_flag) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " does not provide per-atom data for aparam");
+  }
+  // LAMMPS represents per-atom vectors with zero columns and per-atom
+  // arrays with a positive column count. Validate that layout before
+  // invoking the compute so the corresponding result pointer is safe to use.
+  if (dim_aparam == 1 && compute->size_peratom_cols != 0) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " does not provide a per-atom vector for aparam");
+  }
+  if (dim_aparam > 1 && compute->size_peratom_cols < dim_aparam) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " array has fewer columns than aparam dimension");
   }
   int nlocal = atom->nlocal;
   aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
@@ -226,12 +269,29 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
     compute->compute_peratom();
     compute->invoked_flag |= Compute::INVOKED_PERATOM;
   }
+  // Empty MPI subdomains legitimately have no per-atom storage. The result is
+  // already an empty vector, so do not require output pointers in that case.
+  if (nlocal == 0) {
+    return;
+  }
   if (dim_aparam == 1) {
     double* cvector = compute->vector_atom;
+    if (!cvector) {
+      error->all(FLERR, "compute " + compute_aparam_id +
+                            " returned a null per-atom vector for aparam");
+    }
     aparam.assign(cvector, cvector + nlocal);
   } else if (dim_aparam > 1) {
     double** carray = compute->array_atom;
+    if (!carray) {
+      error->all(FLERR, "compute " + compute_aparam_id +
+                            " returned a null per-atom array for aparam");
+    }
     for (int ii = 0; ii < nlocal; ++ii) {
+      if (!carray[ii]) {
+        error->all(FLERR, "compute " + compute_aparam_id +
+                              " returned a null per-atom array row for aparam");
+      }
       for (int jj = 0; jj < dim_aparam; ++jj) {
         aparam[ii * dim_aparam + jj] = carray[ii][jj];
       }
