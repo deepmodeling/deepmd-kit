@@ -99,6 +99,21 @@ data_file = Path(__file__).parent / "data_dpa2_graph_pt2.lmp"
 # both sides.
 data_file_empty_rank = Path(__file__).parent / "data_dpa2_graph_pt2_empty_rank.lmp"
 
+# Empty-SUBDOMAIN fixture (distinct from the empty-RANK fixture above): a rank
+# that owns ZERO local atoms but DOES hold ghost atoms (nlocal == 0,
+# nghost > 0). This is the SUPPORTED case -- it bypasses the C++
+# ``nall_real == 0`` guard and enters ``run_model_graph_with_comm`` with a
+# real (ghost-only) extended region, exercising the owned-node energy mask
+# (n_local == 0) and the per-layer border_op ghost exchange together. A
+# 30 x 13 x 13 box with all six atoms clustered in x in [0.25, 12.83] under
+# ``processors 2 1 1`` splits at x = 15: rank 1 owns [15, 30) (no atoms) but
+# the near-edge atom at x = 12.83 is within rcut+skin (6.0 + 2.0 = 8.0) of the
+# split, so rank 1 holds it as a ghost. Mirrors the dense DPA3 empty-subdomain
+# fixture (``test_lammps_dpa3_pt2.py``).
+data_file_empty_subdomain = (
+    Path(__file__).parent / "data_dpa2_graph_pt2_empty_subdomain.lmp"
+)
+
 # Reference values written by source/tests/infer/gen_dpa2.py (PBC case).
 # Guarded with try/except because gen_dpa2.py only runs when PyTorch is built.
 try:
@@ -140,10 +155,12 @@ def setup_module() -> None:
     write_lmp_data(box, coord, type_OH, data_file)
     box_empty_rank = np.array([0, 90, 0, 13, 0, 13, 0, 0, 0])
     write_lmp_data(box_empty_rank, coord, type_OH, data_file_empty_rank)
+    box_empty_subdomain = np.array([0, 30, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data(box_empty_subdomain, coord, type_OH, data_file_empty_subdomain)
 
 
 def teardown_module() -> None:
-    for f in [data_file, data_file_empty_rank]:
+    for f in [data_file, data_file_empty_rank, data_file_empty_subdomain]:
         if f.exists():
             os.remove(f)
 
@@ -395,6 +412,55 @@ def test_pair_deepmd_mpi_dpa2_graph_matches_single_rank() -> None:
     # and energy match, and the energy check above already uses rel=1e-8).
     # An absolute-only tolerance cannot absorb that at these magnitudes, so
     # allow the same 1e-8 relative slack as the energy check.
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=1e-8
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa2_graph_empty_subdomain_matches_single_rank() -> None:
+    """Multi-rank with-comm graph route with one rank owning ZERO local
+    atoms but holding ghosts (nlocal == 0, nghost > 0) must equal the
+    single-rank reference.
+
+    Distinct from the empty-RANK test below: this is the SUPPORTED
+    empty-subdomain case that passes the C++ ``nall_real == 0`` guard
+    (nall_real > 0 because ghosts exist) and enters
+    ``run_model_graph_with_comm``. It is the DPA2-graph analogue of
+    ``test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_empty_subdomain``
+    and exercises the two pieces of the with-comm route that only fire when
+    a rank's owned count is zero: the ``n_local == 0`` owned-node energy
+    mask (the rank must contribute no reduced energy while its ghost nodes
+    still feed neighbors' features) and the per-layer ``border_op`` ghost
+    exchange on a ghost-only extended region. Wrong handling would either
+    desync the collective exchange or leak the empty rank's (masked)
+    energy, both of which break MP == SP here.
+
+    30 x 13 x 13 box under ``processors 2 1 1`` -> split at x = 15, rank 1
+    owns [15, 30) (empty) but ghosts the near-edge atom at x = 12.83
+    (within rcut + skin = 8.0). ``neigh_modify every 100`` also exercises
+    the cached (ago > 0) dispatch path on the empty-subdomain rank.
+    """
+    runner_args = ["--neigh-every", "100"]
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
     np.testing.assert_allclose(
         out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=1e-8
     )
