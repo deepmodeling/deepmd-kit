@@ -2950,9 +2950,9 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       for (int j = 0; j < natoms; j++) {
         atom_energy[i][j] = atom_energy_flat[i * natoms + j];
       }
-      // for (int j = 0; j < natoms * 9; j++) {
-      //   atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
-      // }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
     }
   };
 
