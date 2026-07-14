@@ -395,6 +395,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         communicator: torch.Tensor,
         nlocal: torch.Tensor,
         nghost: torch.Tensor,
+        n_local: torch.Tensor,
         do_atomic_virial: bool = False,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
@@ -431,17 +432,26 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             ``serialization.py``), packed into ``comm_dict`` inside the
             traced function.
 
-            Runtime device contract (asymmetric, unlike the dense with-comm
-            artifact where all 8 stay on CPU): ``nlocal`` and ``nghost``
-            must live ON THE MODEL DEVICE, because ``nlocal`` is consumed
-            IN-GRAPH here (the ``n_local`` derivation below becomes a
-            device kernel after ``move_to_device_pass``; a CPU tensor
-            fed to it is read as a device pointer -- CUDA illegal memory
-            access).  The other six are consumed only by the opaque
-            ``border_op`` whose host code dereferences their ``data_ptr``
-            (``send_list`` carries raw host pointers), so they must stay
-            on CPU.  The C++ ``run_model_graph_with_comm`` implements
-            this placement.
+            Runtime device contract: ALL 8 stay on CPU, symmetric with
+            the dense with-comm artifact -- they are consumed only by the
+            opaque ``border_op`` whose HOST code dereferences their
+            ``data_ptr`` (``send_list`` carries raw host pointers) and
+            reads ``nlocal``/``nghost`` via cheap host ``.item()`` calls.
+            Deriving the in-graph owned count from a device-placed
+            ``nlocal`` instead (the previous design) made every per-layer
+            ``border_op`` forward AND custom backward pull the scalars
+            back with synchronizing D2H reads (``4 * nlayers`` per MD
+            step).  The C++ ``run_model_graph_with_comm`` implements this
+            placement.
+        n_local
+            (1,) int64 ON THE MODEL DEVICE: the per-frame OWNED node
+            count consumed IN-GRAPH by the owned-node energy mask (it
+            becomes a device kernel operand after
+            ``move_to_device_pass``, like ``n_node``; a CPU tensor fed
+            there is read as a device pointer -- CUDA illegal memory
+            access).  Carries the same value as the ``nlocal`` comm
+            tensor; the two inputs exist precisely to separate the
+            device-compute role from the host-MPI-control role.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).
@@ -452,7 +462,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             A traced module whose ``forward`` accepts ``(atype, n_node,
             edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin,
             send_list, send_proc, recv_proc, send_num, recv_num,
-            communicator, nlocal, nghost)`` and returns a dict with the
+            communicator, nlocal, nghost, n_local)`` and returns a dict with the
             SAME public keys as :meth:`forward_lower_graph_exportable`
             (``atom_energy``, ``energy``, ``force``, ``virial``,
             ``atom_virial`` when ``do_atomic_virial``).
@@ -478,6 +488,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             communicator: torch.Tensor,
             nlocal: torch.Tensor,
             nghost: torch.Tensor,
+            n_local: torch.Tensor,
         ) -> dict[str, torch.Tensor]:
             comm_dict = {
                 "send_list": send_list,
@@ -489,11 +500,12 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 "nlocal": nlocal,
                 "nghost": nghost,
             }
-            # nlocal is a scalar int32 tensor; reshape to the (nf,) == (1,)
-            # shape forward_common_lower_graph's n_local expects, cast to
-            # n_node's dtype (node_ownership_mask compares directly against
-            # n_node-derived indices).
-            n_local = nlocal.reshape(1).to(n_node.dtype)
+            # n_local is the DEVICE owned-count input; reshape to the
+            # (nf,) == (1,) shape forward_common_lower_graph expects, cast
+            # to n_node's dtype (node_ownership_mask compares directly
+            # against n_node-derived indices).  The CPU ``nlocal`` comm
+            # tensor above is host control metadata for border_op only.
+            n_local = n_local.reshape(1).to(n_node.dtype)
             model_ret = model.forward_common_lower_graph(
                 atype,
                 n_node,
@@ -532,4 +544,5 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             communicator,
             nlocal,
             nghost,
+            n_local,
         )

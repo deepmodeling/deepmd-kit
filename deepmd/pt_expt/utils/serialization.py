@@ -594,8 +594,9 @@ def _build_graph_dynamic_shapes_with_comm(
     *sample_inputs : torch.Tensor | None
         ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
         charge_spin, send_list, send_proc, recv_proc, send_num, recv_num,
-        communicator, nlocal, nghost)`` — 16 entries matching
-        ``forward_lower_graph_exportable_with_comm``.
+        communicator, nlocal, nghost, n_local)`` — 17 entries matching
+        ``forward_lower_graph_exportable_with_comm`` (``n_local`` is the
+        device owned-count input, static ``(1,)``).
 
     Returns
     -------
@@ -632,6 +633,8 @@ def _build_graph_dynamic_shapes_with_comm(
         None,
         None,
         None,
+        None,
+        # n_local: (1,) device owned-count — static.
         None,
     )
 
@@ -1195,7 +1198,17 @@ def _trace_and_export(
                 nghost=nghost_sample,
                 device=torch.device("cpu"),
             )
-            sample_inputs = sample_inputs + comm_inputs
+            # 17th input of the GRAPH with-comm ABI: the DEVICE owned-count
+            # consumed IN-GRAPH by the owned-node mask.  The CPU ``nlocal``
+            # comm tensor (comm_inputs[6]) is host control metadata for
+            # border_op only -- splitting the two roles keeps all 8 comm
+            # tensors on CPU (symmetric with the dense with-comm artifact)
+            # and removes the per-layer synchronizing D2H scalar reads a
+            # device-placed nlocal forced inside border_op.
+            n_local_sample = torch.tensor(
+                [nlocal_sample], dtype=torch.int64, device=torch.device("cpu")
+            )
+            sample_inputs = sample_inputs + comm_inputs + (n_local_sample,)
 
             (
                 atype_g,
@@ -1219,6 +1232,7 @@ def _trace_and_export(
                 aparam_g,
                 charge_spin_g,
                 *comm_inputs,
+                n_local_sample,
                 do_atomic_virial=do_atomic_virial,
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,

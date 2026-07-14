@@ -182,3 +182,96 @@ def test_dpa1_graph_pt2_has_no_comm_artifact(dpa1_dpmodel_data, tmp_path) -> Non
     meta = _read_metadata(p)
     assert meta["lower_input_kind"] == "graph"
     assert meta["has_comm_artifact"] is False
+
+
+def test_graph_with_comm_n_local_is_separate_device_input(
+    dpa2_dpmodel_data, tmp_path
+) -> None:
+    """The graph with-comm ABI splits the owned-count roles: the CPU
+    ``nlocal`` comm tensor is host control metadata for ``border_op``, and
+    a SEPARATE 17th ``n_local`` input feeds the in-graph owned-node mask.
+
+    Regression for the device-scalar review finding: deriving the owned
+    mask from a device-placed ``nlocal`` comm tensor made every per-layer
+    ``border_op`` forward AND custom backward pull the scalar back with a
+    synchronizing D2H read (``4 * nlayers`` per MD step).  With the split,
+    all 8 comm tensors stay on CPU (symmetric with the dense with-comm
+    artifact).  This pins the ABI: the traced program exposes the extra
+    input (17 placeholders: 8 graph-base incl. the None-valued
+    fparam/aparam/charge_spin slots + 8 comm + n_local), and the
+    owned-energy reduction follows ``n_local``, not the comm ``nlocal``.
+    """
+    import numpy as np
+    import torch
+
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export,
+    )
+
+    exported, _meta, _dj, _keys = _trace_and_export(
+        copy.deepcopy(dpa2_dpmodel_data),
+        model_json_override=None,
+        with_comm_dict=True,
+        lower_kind="graph",
+    )
+    loaded = exported.module()
+    placeholders = loaded.graph.find_nodes(op="placeholder")
+    assert len(placeholders) == 17, (
+        f"graph with-comm program must accept 17 positional inputs "
+        f"(8 graph-base + 8 comm + n_local); got {len(placeholders)}"
+    )
+
+    # Build a single-rank self-comm system: 5 owned + 2 ghost nodes.
+    import ctypes
+
+    from deepmd.dpmodel.model.model import (
+        get_model as get_dp_model,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    model = get_dp_model(copy.deepcopy(DPA2_CONFIG))
+    rcut = model.get_rcut()
+    rng = np.random.default_rng(7)
+    n_total, nghost = 7, 2
+    nlocal = n_total - nghost
+    coord = rng.random((1, n_total, 3)) * rcut * 0.6
+    atype = np.array([[i % 2 for i in range(n_total)]])
+    graph = build_neighbor_graph(coord, atype, None, rcut)
+
+    atype_t = torch.tensor(atype.reshape(-1), dtype=torch.int64)
+    n_node_t = torch.as_tensor(np.asarray(graph.n_node), dtype=torch.int64)
+    ei = torch.as_tensor(np.asarray(graph.edge_index), dtype=torch.int64)
+    ev = torch.as_tensor(np.asarray(graph.edge_vec), dtype=torch.float64)
+    em = torch.as_tensor(np.asarray(graph.edge_mask), dtype=torch.bool)
+
+    sendlist_indices = np.ascontiguousarray(
+        np.arange(nghost, dtype=np.int32)
+    )  # keepalive below
+    addr = sendlist_indices.ctypes.data_as(ctypes.c_void_p).value
+    comm = (
+        torch.tensor([addr], dtype=torch.int64),  # send_list
+        torch.zeros(1, dtype=torch.int32),  # send_proc
+        torch.zeros(1, dtype=torch.int32),  # recv_proc
+        torch.tensor([nghost], dtype=torch.int32),  # send_num
+        torch.tensor([nghost], dtype=torch.int32),  # recv_num
+        torch.zeros(1, dtype=torch.int64),  # communicator (null: self)
+        torch.tensor(nlocal, dtype=torch.int32),  # nlocal (CPU, host role)
+        torch.tensor(nghost, dtype=torch.int32),  # nghost (CPU, host role)
+    )
+
+    def run(n_local_val: int) -> torch.Tensor:
+        n_local_t = torch.tensor([n_local_val], dtype=torch.int64)
+        out = loaded(atype_t, n_node_t, ei, ev, em, None, None, None, *comm, n_local_t)
+        return out["energy"]
+
+    # Same comm nlocal, different n_local: the owned-energy reduction must
+    # follow the 17th input (fewer owned nodes -> different energy).
+    e_full = run(nlocal)
+    e_fewer = run(nlocal - 1)
+    assert torch.isfinite(e_full).all() and torch.isfinite(e_fewer).all()
+    assert not torch.allclose(e_full, e_fewer), (
+        "owned-energy reduction must consume the dedicated n_local input"
+    )
+    del sendlist_indices  # keepalive until here

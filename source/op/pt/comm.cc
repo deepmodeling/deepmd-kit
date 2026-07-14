@@ -105,6 +105,13 @@ class Border : public torch::autograd::Function<Border> {
       if (cuda_aware == 0) {
         recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
         recv_g1_tensor.copy_(g1);
+      } else if (g1.device().is_cuda()) {
+        // nlocal/nghost are HOST tensors (their .item() reads above no
+        // longer synchronize the device): explicitly order the prior CUDA
+        // work that produced g1 before MPI reads the device buffers on the
+        // CUDA-aware path.  The non-CUDA-aware path is ordered by the
+        // synchronizing copy_ to CPU above.
+        DPErrcheck(gpuDeviceSynchronize());
       }
     }
 #endif
@@ -263,6 +270,11 @@ class Border : public torch::autograd::Function<Border> {
       if (cuda_aware == 0) {
         d_local_g1_tensor = torch::empty_like(grad_g1).to(torch::kCPU);
         d_local_g1_tensor.copy_(grad_g1);
+      } else if (grad_g1.device().is_cuda()) {
+        // Same explicit CUDA-stream-to-MPI ordering as the forward: the
+        // host-side nlocal/nghost reads no longer act as an accidental
+        // barrier before MPI touches the device gradient buffers.
+        DPErrcheck(gpuDeviceSynchronize());
       }
     }
 #endif

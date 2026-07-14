@@ -505,7 +505,8 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
     const torch::Tensor& fparam,
     const torch::Tensor& aparam,
     const torch::Tensor& charge_spin,
-    const std::vector<at::Tensor>& comm_tensors) {
+    const std::vector<at::Tensor>& comm_tensors,
+    const torch::Tensor& n_local) {
   if (!with_comm_loader) {
     throw deepmd::deepmd_exception(
         "run_model_graph_with_comm called but the with-comm artifact is not "
@@ -537,28 +538,24 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
-  // Device placement of the 8 comm tensors is asymmetric on the GRAPH
-  // route.  The exported with-comm graph derives ``n_local`` from the
-  // ``nlocal`` comm tensor IN-GRAPH (``nlocal.reshape(1).to(...)`` feeding
-  // the owned-node energy mask, see
-  // ``forward_lower_graph_exportable_with_comm``), and after
-  // ``move_to_device_pass`` those are device kernels -- feeding a CPU
-  // tensor there makes the kernel read a host pointer as device memory
-  // (CUDA illegal memory access; first observed live in the dpa2 graph
-  // LAMMPS MP test).  So ``nlocal`` / ``nghost`` (indices 6, 7) must be ON
-  // the model device.  The other six comm tensors are consumed ONLY by the
-  // opaque ``deepmd_export::border_op`` whose host code dereferences their
-  // ``data_ptr`` directly (``send_list`` even carries raw host pointers),
-  // so they must STAY on CPU -- same placement the dense with-comm route
-  // uses for all eight.
+  // All 8 comm tensors stay ON CPU, symmetric with the dense with-comm
+  // route: they are consumed only by the opaque ``deepmd_export::border_op``
+  // whose HOST code dereferences their ``data_ptr`` directly (``send_list``
+  // even carries raw host pointers) and reads ``nlocal``/``nghost`` via
+  // cheap host ``.item()`` calls.  The in-graph owned-node mask consumes
+  // the SEPARATE 17th input ``n_local`` instead, which must be on the
+  // model device (its consumer is a device kernel after
+  // ``move_to_device_pass``; a CPU tensor fed there is read as a device
+  // pointer -- CUDA illegal memory access, first observed live in the dpa2
+  // graph LAMMPS MP test when the roles were still merged).  Splitting the
+  // roles removes the per-layer synchronizing D2H scalar reads a
+  // device-placed nlocal forced inside border_op (2 per layer forward + 2
+  // per layer backward).
   const auto model_device = atype.device();
-  for (size_t i = 0; i < comm_tensors.size(); ++i) {
-    if (i == 6 || i == 7) {
-      inputs.push_back(comm_tensors[i].to(model_device));
-    } else {
-      inputs.push_back(comm_tensors[i]);
-    }
+  for (const auto& ct : comm_tensors) {
+    inputs.push_back(ct);
   }
+  inputs.push_back(n_local.to(model_device));
   return with_comm_loader->run(inputs);
 }
 
@@ -1005,24 +1002,36 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // every rank throws promptly with the same error.  The op is an
       // identity when the communicator handle is null or MPI is not
       // compiled in.
-      const auto allreduce_min =
-          c10::Dispatcher::singleton()
-              .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
-              .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
-      at::Tensor local_n_node =
-          torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
-      const std::int64_t global_min_n_node =
-          allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
-              .item<std::int64_t>();
-      if (global_min_n_node == 0) {
-        throw deepmd::deepmd_exception(
-            "Multi-rank message-passing graph inference does not yet support "
-            "a rank with zero owned+ghost atoms (the exported graph artifact "
-            "requires at least one node, and skipping the run would desync "
-            "the per-layer MPI halo exchange; this rank has " +
-            std::to_string(nall_real) +
-            " owned+ghost atoms). Use a domain decomposition that keeps "
-            "every rank non-empty, or a dense .pt2.");
+      //
+      // Cached across ``ago > 0`` force calls: the owned+ghost node count
+      // shares the lifetime of the cached nlist/mapping/edge topology
+      // (both only change on an ``ago == 0`` rebuild, which is globally
+      // synchronized by LAMMPS), so re-running the collective on every
+      // cache-hit MD step added a global synchronization to the hot path
+      // with no added protection.
+      if (ago == 0 || !graph_comm_preflight_done_) {
+        graph_comm_preflight_done_ = false;
+        const auto allreduce_min =
+            c10::Dispatcher::singleton()
+                .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
+                .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
+        at::Tensor local_n_node =
+            torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
+        const std::int64_t global_min_n_node =
+            allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
+                .item<std::int64_t>();
+        if (global_min_n_node == 0) {
+          throw deepmd::deepmd_exception(
+              "Multi-rank message-passing graph inference does not yet "
+              "support a rank with zero owned+ghost atoms (the exported "
+              "graph artifact requires at least one node, and skipping the "
+              "run would desync the per-layer MPI halo exchange; this rank "
+              "has " +
+              std::to_string(nall_real) +
+              " owned+ghost atoms). Use a domain decomposition that keeps "
+              "every rank non-empty, or a dense .pt2.");
+        }
+        graph_comm_preflight_done_ = true;
       }
       const auto edge_tensors =
           compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
@@ -1038,11 +1047,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const at::Tensor graph_edge_mask = deepmd::applyPairExclusion(
           edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
           pair_exclude_table_, ntypes);
+      // Device owned-count input for the in-graph owned-node mask (17th
+      // artifact input); the CPU nlocal comm tensor stays host-side for
+      // border_op.
+      at::Tensor n_local_tensor =
+          torch::full({1}, static_cast<std::int64_t>(nloc), int_option);
       flat_outputs = run_model_graph_with_comm(
           node_atype, n_node_tensor, edge_tensors.edge_index,
           edge_tensors.edge_vec, graph_edge_mask, fparam_tensor,
           extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam),
-          charge_spin_tensor, comm_tensors);
+          charge_spin_tensor, comm_tensors, n_local_tensor);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and

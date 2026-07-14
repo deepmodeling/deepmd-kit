@@ -361,6 +361,14 @@ class DeepPotPTExpt : public DeepPotBackend {
   // continue to work; GNN archives must be regenerated to opt into
   // the fail-fast guard against the silent-corruption bug.
   bool has_message_passing_ = false;
+  // Whether the collective empty-rank preflight (allreduce of the minimum
+  // owned+ghost node count over the LAMMPS communicator, graph with-comm
+  // route) has PASSED for the current neighbor topology.  Reset on every
+  // ``ago == 0`` rebuild: the node count shares the lifetime of the cached
+  // nlist/mapping/edge topology, so re-running the collective on cache-hit
+  // (``ago > 0``) force calls added a global synchronization per MD step
+  // without any added protection.
+  bool graph_comm_preflight_done_ = false;
   // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
   // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
   // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
@@ -528,12 +536,20 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
    * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
    * @param[in] aparam Atomic parameters on the flat EXTENDED node axis,
-   *            shape ``(1, N, dim_aparam)`` (owned prefix filled, halo rows
+   *            shape ``(N, dim_aparam)`` (owned prefix filled, halo rows
    *            zero-padded -- ghost fitting outputs are masked inside the
    *            artifact), or an empty tensor when ``dim_aparam == 0``.
    * @param[in] comm_tensors 8 comm tensors in canonical positional order:
    *            send_list, send_proc, recv_proc, send_num, recv_num,
-   *            communicator, nlocal, nghost.
+   *            communicator, nlocal, nghost.  All 8 stay on CPU (host
+   *            control metadata for the opaque ``border_op``, symmetric
+   *            with the dense with-comm artifact).
+   * @param[in] n_local (1,) int64 owned-node count consumed IN-GRAPH by the
+   *            owned-node energy mask; moved to the model device here (its
+   *            consumer is a device kernel after ``move_to_device_pass``).
+   *            Same value as the ``nlocal`` comm tensor -- the two inputs
+   *            separate the device-compute role from the host-MPI-control
+   *            role, so ``border_op`` never pulls device scalars.
    */
   std::vector<torch::Tensor> run_model_graph_with_comm(
       const torch::Tensor& atype,
@@ -544,7 +560,8 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin,
-      const std::vector<at::Tensor>& comm_tensors);
+      const std::vector<at::Tensor>& comm_tensors,
+      const torch::Tensor& n_local);
 
   /**
    * @brief Extract outputs from flat tensor list using output_keys.
