@@ -22,7 +22,18 @@ from .dp_atomic_model import (
 
 
 class DPDipoleAtomicModel(DPAtomicModel):
-    r"""Atomic dipole model with :math:`\boldsymbol\mu_i=F_\theta(\mathcal D_i)`.
+    r"""Atomic dipole model reconstructed from descriptor rotation matrices.
+
+    The fitting network predicts local coefficients and contracts them with
+    the equivariant descriptor output:
+
+    .. math::
+
+       \mathbf M_i=F_\theta(\mathcal D_i),\qquad
+       \boldsymbol\mu_i=\mathbf M_i\mathbf R_i,
+
+    where :math:`\mathbf R_i\in\mathbb R^{m_1\times3}` is the descriptor
+    rotation matrix.  This contraction produces the lab-frame vector.
 
     Frame dipoles are additive: :math:`\boldsymbol\mu=\sum_i\boldsymbol\mu_i`.
     """

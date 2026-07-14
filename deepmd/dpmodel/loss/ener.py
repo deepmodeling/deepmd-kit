@@ -229,8 +229,12 @@ class EnergyLoss(Loss):
         r"""Calculate the weighted energy-model objective.
 
         This evaluates the objective and learning-rate-dependent prefactors
-        defined in :class:`EnergyLoss`; returned diagnostics are square roots
-        of the corresponding unweighted error terms.
+        defined in :class:`EnergyLoss`.  The diagnostics contain per-term RMSE
+        values in MSE/Huber mode and per-term MAE values when ``loss_func`` is
+        ``"mae"`` or ``mae=True``.  RMSE diagnostics remain ordinary residual
+        RMSEs when the optimized objective uses Huber loss.  The aggregate
+        ``rmse`` entry is :math:`\sqrt{L}` for the fully weighted objective,
+        including all enabled prefactors and any configured Huber terms.
         """
         energy = model_dict["energy"]
         force = model_dict["force"]

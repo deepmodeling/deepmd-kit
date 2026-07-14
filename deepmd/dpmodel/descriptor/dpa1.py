@@ -2426,7 +2426,13 @@ class GatedAttentionLayer(NativeOP):
     .. math::
         Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
         L=\alpha\,\widetilde Q\widetilde K^T,\qquad
-        A=\operatorname{softmax}_{j}(\operatorname{MaskSmooth}(L)),
+        S_{ij}=s_i s_j,
+
+    .. math::
+
+        \overline L_{ij}=(L_{ij}+c)S_{ij}-c,\qquad
+        \overline A_{ij}=\operatorname{softmax}_{j}(\overline L_{ij}),
+        \qquad A_{ij}=S_{ij}\overline A_{ij},
 
         O=\operatorname{reshape}((A\odot R)V)W_{\mathrm{out}}.
 
@@ -2434,9 +2440,10 @@ class GatedAttentionLayer(NativeOP):
     :math:`K`, and :math:`V`.  The implementation uses
     :math:`\alpha=(d\,s)^{-1/2}` for ``scaling_factor`` :math:`s`, or the
     configured ``temperature`` value when it is provided.  Neighbor masks and
-    cutoff smoothing modify the logits before softmax.  The optional angular
-    matrix :math:`R` is applied to the normalized attention weights after
-    softmax.
+    cutoff smoothing modifies both the logits before softmax and, through
+    :math:`S`, the attention amplitude afterward.  Without smoothing, invalid
+    keys are masked before softmax and invalid query rows are zeroed.  The
+    optional angular matrix :math:`R` is applied after these operations.
     """
 
     def __init__(

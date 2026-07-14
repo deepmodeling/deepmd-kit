@@ -67,23 +67,44 @@ class RepFlowArgs:
     DPA3 applies message passing to the first two graphs of the line-graph
     series.  Writing node, edge, and angle features as
     :math:`\mathbf n_i^l`, :math:`\mathbf e_{ij}^l`, and
-    :math:`\mathbf a_{ij,ik}^l`, respectively, a layer has the residual form
+    :math:`\mathbf a_{ij,ik}^l`, respectively, the default parallel layer with
+    angle updates forms
 
     .. math::
-        \mathbf e_{ij}^{l+1} = \mathbf e_{ij}^l
-        + \operatorname{Update}_E^{(1)}
-        (\mathbf e_{ij}^l, \mathbf n_i^l, \mathbf n_j^l),
+
+        \mathbf m_{ij}^{E,\mathrm{self}}=
+        U_E(\mathbf e_{ij}^l,\mathbf n_i^l,\mathbf n_j^l),
+        \qquad
+        \mathbf m_{ij}^{A\to E}=\operatorname{Reduce}_k
+        U_{A\to E}(\mathbf a_{ij,ik}^l,\mathbf n_i^l,
+        \mathbf e_{ij}^l,\mathbf e_{ik}^l),
 
     .. math::
-        \mathbf a_{ij,ik}^{l+1} = \mathbf a_{ij,ik}^l
-        + \operatorname{Update}_E^{(2)}
-        (\mathbf a_{ij,ik}^l, \mathbf e_{ij}^l, \mathbf e_{ik}^l),
+
+        \mathbf e_{ij}^{l+1}=\operatorname{Combine}_E
+        (\mathbf e_{ij}^l,\mathbf m_{ij}^{E,\mathrm{self}},
+        \mathbf m_{ij}^{A\to E}),
 
     .. math::
-        \mathbf n_i^{l+1} = \mathbf n_i^l
-        + \operatorname{Update}_V^{(1)}
-        \left(\mathbf n_i^l,
-        \{\mathbf e_{ij}^l\}_{j\in\mathcal N(i)}\right).
+
+        \mathbf a_{ij,ik}^{l+1}=\operatorname{Combine}_A\!\left(
+        \mathbf a_{ij,ik}^l,
+        U_A(\mathbf a_{ij,ik}^l,\mathbf n_i^l,
+        \mathbf e_{ij}^l,\mathbf e_{ik}^l)\right),
+
+    .. math::
+
+        \mathbf n_i^{l+1}=\operatorname{Combine}_N\!\left(
+        \mathbf n_i^l,U_N^{\mathrm{self}}(\mathbf n_i^l),
+        U_N^{\mathrm{sym}}(\{\mathbf e_{ij}^l,\mathbf n_j^l\}_j),
+        \operatorname{Reduce}_j U_{E\to N}
+        (\mathbf n_i^l,\mathbf n_j^l,\mathbf e_{ij}^l)\right).
+
+    The ``Combine`` operation is selected by ``update_style``; its default
+    ``res_residual`` form adds each message with a learned residual weight.
+    The angle-to-edge reduction is switch-weighted over :math:`k`.  In
+    sequential mode the same dependencies are evaluated with the most recently
+    updated edge and angle features.
 
     Here the vertices of the second line graph are the edges of the first, so
     :math:`\mathbf v_{ij}^{(2,l)} \equiv \mathbf e_{ij}^l`.  The invariant

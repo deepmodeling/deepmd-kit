@@ -967,15 +967,30 @@ def symmetrization_op(
 class Atten2Map(NativeOP):
     r"""Masked and smoothed angular attention map.
 
-    The raw logits are :math:`L_{ijk}^{(h)}=q_{ij}^{(h)}\cdot
-    k_{ik}^{(h)}/\sqrt d`.  If enabled, angular weighting multiplies these
-    logits by :math:`\hat h_{ij}\cdot\hat h_{ik}`.  Invalid neighbors are
-    masked, while the smooth path applies cutoff factors before and after the
-    softmax:
+    Define the raw logits and the (not necessarily unit-vector) angular factor
+    by
 
     .. math::
-        A_{ijk}^{(h)}=s_{ij}s_{ik}\operatorname{softmax}_k\!\left(
-        (L_{ijk}^{(h)}+c)s_{ij}s_{ik}-c\right).
+
+        L_{ijk}^{(h)}=\frac{q_{ij}^{(h)}\cdot k_{ik}^{(h)}}{\sqrt d},
+        \qquad
+        G_{ijk}=\mathbf h_{ij}\cdot\mathbf h_{ik}.
+
+    When ``has_gate=True``, :math:`G_{ijk}` also gates the logits, so let
+    :math:`\widetilde L=L G`; otherwise let :math:`\widetilde L=L`.  In the
+    smooth path the normalized attention and returned map are
+
+    .. math::
+
+        \overline A_{ijk}^{(h)}=\operatorname{softmax}_k\!\left(
+        (\widetilde L_{ijk}^{(h)}+c)s_{ij}s_{ik}-c\right),\qquad
+        M_{ijk}^{(h)}=s_{ij}s_{ik}\overline A_{ijk}^{(h)}
+        \frac{G_{ijk}}{\sqrt 3}.
+
+    Without smoothing, masked softmax replaces the first expression and the
+    cutoff factors are omitted.  Invalid query and key entries are zeroed.  The
+    factor :math:`G_{ijk}/\sqrt 3` multiplies the returned map unconditionally,
+    including when ``has_gate=False``.
     """
 
     def __init__(

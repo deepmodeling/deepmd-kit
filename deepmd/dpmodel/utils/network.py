@@ -78,7 +78,7 @@ class Identity(NativeOP):
 
 
 class NativeLayer(NativeOP):
-    r"""Affine neural-network layer with optional residual connection.
+    r"""Native affine neural-network layer with optional residual connection.
 
     The activated branch is
 
@@ -90,9 +90,6 @@ class NativeLayer(NativeOP):
     If ``resnet`` is enabled, the output is :math:`\mathbf z+\mathbf x` for
     equal widths, or :math:`\mathbf z+[\mathbf x,\mathbf x]` when the output
     width is twice the input width.
-    """
-
-    """Native representation of a layer.
 
     Parameters
     ----------

@@ -25,16 +25,23 @@ class EnergySpinLoss(Loss):
     For mean-squared error, the objective is a weighted sum
 
     .. math::
-        L = p_E\frac{\langle(\Delta E)^2\rangle}{N^q}
-        +p_{F_r}\langle\lVert\Delta\mathbf F_r\rVert^2\rangle
-        +p_{F_m}\langle\lVert\Delta\mathbf F_m\rVert^2\rangle
-        +p_\Xi\frac{\langle\lVert\Delta\boldsymbol\Xi\rVert^2\rangle}{N^q}
+
+        L = p_E\left\langle\frac{(\Delta E)^2}{N^q}\right\rangle
+        +p_{F_r}\left\langle(\Delta F^r_{i\alpha})^2
+        \right\rangle_{i,\alpha}
+        +p_{F_m}\left\langle(\Delta F^m_{i\alpha})^2
+        \right\rangle_{i\in\mathcal M,\alpha}
+        +p_\Xi\left\langle\frac{(\Delta\Xi_{\alpha\beta})^2}{N^q}
+        \right\rangle_{\alpha,\beta}
         +p_{E_i}\langle(\Delta E_i)^2\rangle,
 
     where :math:`q=2` for intensive energy/virial normalization and :math:`q=1`
-    for the legacy normalization.  In MAE mode the squared differences are
-    replaced by absolute differences and extensive terms use :math:`1/N`.
-    Every prefactor is interpolated using the current learning rate,
+    for the legacy normalization, and :math:`\mathcal M` is the set selected by
+    ``mask_mag``.  Thus force and virial errors are componentwise means rather
+    than means of squared vector or tensor norms.  In MAE mode the squared
+    component differences are replaced by absolute differences and extensive
+    terms use :math:`1/N`.  Every prefactor is interpolated using the current
+    learning rate,
 
     .. math::
         p_X(\eta)=p_X^{\mathrm{limit}}+

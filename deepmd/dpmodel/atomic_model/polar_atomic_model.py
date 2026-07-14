@@ -18,8 +18,28 @@ from .dp_atomic_model import (
 
 
 class DPPolarAtomicModel(DPAtomicModel):
-    r"""Atomic polarizability model with
-    :math:`\boldsymbol\alpha_i=F_\theta(\mathcal D_i)` and
+    r"""Atomic polarizability model reconstructed in the laboratory frame.
+
+    Let :math:`\mathbf R_i\in\mathbb R^{m_1\times3}` be the descriptor
+    rotation matrix.  In diagonal fitting mode the network predicts
+    :math:`\mathbf p_i=F_\theta(\mathcal D_i)` and reconstructs
+
+    .. math::
+
+       \boldsymbol\alpha_i=\mathbf R_i^T
+       \operatorname{diag}(\mathbf p_i)\mathbf R_i.
+
+    In full-matrix mode it predicts :math:`\widehat{\mathbf P}_i`, symmetrizes
+    :math:`\mathbf P_i=(\widehat{\mathbf P}_i+
+    \widehat{\mathbf P}_i^T)/2`, and reconstructs
+
+    .. math::
+
+       \boldsymbol\alpha_i=\mathbf R_i^T\mathbf P_i\mathbf R_i.
+
+    Type-dependent scaling is applied to the predicted local coefficients, and
+    an optional isotropic shift :math:`c_{t_i}\mathbf I` is added after the
+    reconstruction.  The frame tensor is additive:
     :math:`\boldsymbol\alpha=\sum_i\boldsymbol\alpha_i`.
     """
 

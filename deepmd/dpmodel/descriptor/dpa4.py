@@ -161,13 +161,28 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
     where :math:`\mathbf D` contains Wigner-D rotation blocks and
     :math:`\boldsymbol\rho` is the radial embedding multiplied by a smooth
-    cutoff envelope.  Messages are aggregated and passed through an
-    equivariant feed-forward update,
+    cutoff envelope.  In the baseline residual path, the aggregated message is
+    first added directly to the node state, after which every equivariant FFN
+    subblock applies its own residual update:
 
     .. math::
-        \mathbf h_i^{(l+1)} = \mathbf h_i^{(l)}
-        + \operatorname{FFN}_{\mathrm{eq}}\!\left(
-        \sum_{j\in\mathcal N(i)} w_{ji}\mathbf m_{ji}^{(l)}\right).
+
+        \mathbf M_i^{(l)}=\sum_{j\in\mathcal N(i)}
+        w_{ji}\mathbf m_{ji}^{(l)},\qquad
+        \mathbf u_i^{(l,0)}=\mathbf h_i^{(l)}+\mathbf M_i^{(l)},
+
+    .. math::
+
+        \mathbf u_i^{(l,r)}=\mathbf u_i^{(l,r-1)}+
+        \operatorname{FFN}_{\mathrm{eq},r}
+        \!\left(\mathbf u_i^{(l,r-1)}\right),\qquad
+        \mathbf h_i^{(l+1)}=\mathbf u_i^{(l,B)}.
+
+    Consequently, one FFN subblock gives
+    :math:`\mathbf h_i^{(l+1)}=\mathbf h_i^{(l)}+\mathbf M_i^{(l)}+
+    \operatorname{FFN}_{\mathrm{eq}}(\mathbf h_i^{(l)}+\mathbf M_i^{(l)})`.
+    The AttnRes modes replace these baseline shortcuts with selective
+    depth-wise aggregation before the SO(2) and/or FFN units.
 
     The final read-out applies the configured scalar/equivariant read-out to
     the last interaction state and then keeps its invariant scalar output:
@@ -176,10 +191,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         \mathcal D_i = \operatorname{ScalarReadout}_{\mathrm{mode}}
         \left(\mathbf h_i^{(L)}\right).
 
-    In ``so3_readout="none"`` mode this is the identity read-out on the
-    :math:`(\ell,m)=(0,0)` coefficient.  In ``"glu"`` and ``"mlp"`` modes,
-    equivariant read-out blocks fold higher-degree coefficients into the
-    scalar channel before extraction.
+    In ``so3_readout="none"`` mode, coefficients with :math:`\ell>0` are
+    discarded and the :math:`\ell=0` slice is processed by the configured
+    learned scalar residual FFN stack.  In ``"glu"`` and ``"mlp"`` modes,
+    equivariant residual read-out blocks first fold higher-degree coefficients
+    into the scalar channel before extraction.
 
     The weights :math:`w_{ji}` are either cutoff-envelope weights or normalized
     attention weights, depending on ``n_atten_head``.

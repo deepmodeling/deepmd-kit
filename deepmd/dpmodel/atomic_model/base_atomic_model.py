@@ -53,13 +53,13 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
-    r"""Base atomic model mapping local descriptors to per-atom outputs.
+    """Base interface mapping local atomic environments to per-atom outputs.
 
-    For atom :math:`i`, the learned map is
-    :math:`y_i=F_\theta(\mathcal D_i,\mathcal N_i)`, where
-    :math:`\mathcal N_i` denotes the complete local environment supplied to
-    the atomic model: the selected neighbor indices together with their
-    relative coordinates, types, and any associated descriptor-side features.
+    The local environment includes the selected neighbor indices and the
+    corresponding coordinates and atom types, together with optional frame,
+    atomic, or descriptor-specific conditioning inputs.  Concrete subclasses
+    may learn a descriptor-plus-fitting map, interpolate a fixed pair table, or
+    combine outputs from existing atomic models.
     """
 
     def __init__(
