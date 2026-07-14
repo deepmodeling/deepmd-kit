@@ -1286,12 +1286,41 @@ class Atten2Map(NativeOP):
         e_tot: int,
         sel: int,
     ) -> Array:
-        """Graph twin of :meth:`call`: per-pair attention map over edges sharing
-        a center. Dense (nnei, nnei) square -> ordered+self edge pairs; softmax
-        over the key axis -> segment_softmax grouped by the query edge. The
-        dense post-softmax query-row AND key-column zeroing both collapse to
-        ``pair_mask`` (a pair is real iff BOTH edges are real).
+        """Graph twin of :meth:`call`: per-pair attention map over edges sharing a center.
 
+        The dense (nnei, nnei) square becomes ordered+self edge pairs; the
+        softmax over the key axis becomes a segment_softmax grouped by the
+        query edge. The dense post-softmax query-row AND key-column zeroing
+        both collapse to ``pair_mask`` (a pair is real iff BOTH edges are
+        real).
+
+        Parameters
+        ----------
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        sw
+            The switch function per edge, with shape [n_edge].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        pair_mask
+            Pair validity (both edges real), with shape [n_pair].
+        e_tot
+            Total number of edges (the number of softmax segments).
+        sel
+            The block sel: the fixed dense softmax width used for the
+            phantom-count compensation of the smooth branch.
+
+        Returns
+        -------
+        attn : Array
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+
+        Notes
+        -----
         The smooth branch reproduces dense's FIXED-WIDTH softmax denominator
         exactly: dense keeps every one of its ``sel`` key slots in the
         denominator, the non-real ones each at ``exp(-attnw_shift)``. Here the
@@ -1701,9 +1730,38 @@ class LocalAtten(NativeOP):
         n_total: int,
         sel: int,
     ) -> Array:
-        """Graph twin of :meth:`call`: per-center attention over its edges
-        (softmax over the neighbor axis -> segment_softmax over dst).
+        """Graph twin of :meth:`call`: per-center attention over its edges.
 
+        The dense softmax over the neighbor axis becomes a segment_softmax
+        over ``dst``.
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+        gg1
+            Neighbor (source-node) g1 gathered per edge, with shape
+            [n_edge, ng1].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function per edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape
+            [n_edge].
+        n_total
+            Total number of nodes (the number of softmax segments).
+        sel
+            The block sel: the fixed dense softmax width used for the
+            phantom-count compensation of the smooth branch.
+
+        Returns
+        -------
+        g1_attn : Array
+            Attention-updated node channel, with shape [n_total, ng1].
+
+        Notes
+        -----
         The smooth branch uses the dense-width phantom compensation (see
         :meth:`Atten2Map.call_graph`): masked edges are excluded from the
         softmax and ``max(sel - n_real, 0)`` phantom denominator terms at

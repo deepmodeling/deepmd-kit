@@ -67,21 +67,43 @@ def segment_softmax(
     """Softmax over entries sharing a segment id, numerically stable.
 
     Mirrors the dense ``np_softmax`` max-subtraction trick with a PER-SEGMENT
-    max. ``mask`` (bool, per entry) removes masked entries from the softmax
-    entirely (zero weight AND excluded from the denominator). Empty or
-    fully-masked segments produce all-zero weights (no NaN).
+    max. Empty or fully-masked segments produce all-zero weights (no NaN).
 
-    ``phantom_count`` (per segment, shape ``(num_segments,)``) adds that many
-    virtual entries with raw logit ``phantom_logit`` to the segment's
-    DENOMINATOR only (they produce no output rows). This reproduces the dense
-    smooth-attention convention -- a fixed ``sel``-width softmax whose padding
-    slots each hold ``exp(-attnw_shift)`` -- on a ragged edge set whose entry
-    count varies with geometry: passing ``phantom_count = max(sel - n_real,
-    0)`` keeps the total denominator term count constant (``sel``), which
-    makes the attention weights exactly continuous when an entry enters or
-    leaves the segment at the cutoff (its boundary logit equals
-    ``phantom_logit`` by the smooth envelope, so the swap is value-preserving)
-    and term-for-term equal to the dense softmax at non-binding ``sel``.
+    Parameters
+    ----------
+    data
+        Per-entry logits, with shape ``(n, *f)``.
+    segment_ids
+        Segment id of each entry (int64), with shape ``(n,)``.
+    num_segments
+        Number of segments.
+    mask
+        Optional per-entry bool mask, with shape ``(n,)``. Masked entries are
+        removed from the softmax entirely (zero weight AND excluded from the
+        denominator).
+    phantom_count
+        Optional per-segment count of virtual entries, with shape
+        ``(num_segments,)``. Each adds one ``exp(phantom_logit)`` term to the
+        segment's DENOMINATOR only (no output rows are produced for them).
+    phantom_logit
+        The raw logit of every phantom entry.
+
+    Returns
+    -------
+    weights : Array
+        Per-entry softmax weights, with shape ``(n, *f)``.
+
+    Notes
+    -----
+    The phantom entries reproduce the dense smooth-attention convention -- a
+    fixed ``sel``-width softmax whose padding slots each hold
+    ``exp(-attnw_shift)`` -- on a ragged edge set whose entry count varies
+    with geometry: passing ``phantom_count = max(sel - n_real, 0)`` keeps the
+    total denominator term count constant (``sel``), which makes the
+    attention weights exactly continuous when an entry enters or leaves the
+    segment at the cutoff (its boundary logit equals ``phantom_logit`` by the
+    smooth envelope, so the swap is value-preserving) and term-for-term equal
+    to the dense softmax at non-binding ``sel``.
     """
     xp = array_api_compat.array_namespace(data)
     if mask is not None:
