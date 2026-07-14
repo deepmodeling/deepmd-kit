@@ -224,6 +224,59 @@ class TestDpa2GraphLower:
             graph["energy_derv_c_redu"], legacy["energy_derv_c_redu"], **tol
         )
 
+    def test_disable_graph_lower_escape_hatch(self) -> None:
+        """``descriptor.disable_graph_lower()`` is the documented legacy-dense
+        escape hatch: it flips ``uses_graph_lower()`` to ``False`` so the
+        default (``neighbor_graph_method=None``) eager forward takes the DENSE
+        route -- bit-identical to explicitly requesting ``"legacy"``.
+
+        Uses a BINDING repformer sel so graph and dense genuinely differ: with
+        the hatch engaged, the default must match dense (not graph), which a
+        binding sel makes an unambiguous (non-bit-tight) distinction.
+        """
+        generator = torch.Generator(device=self.device).manual_seed(GLOBAL_SEED)
+        nloc = 12
+        box_size = 3.0
+        coord = (
+            torch.rand(
+                [nloc, 3], dtype=torch.float64, device=self.device, generator=generator
+            )
+            * box_size
+        ).unsqueeze(0)
+        atype = torch.tensor(
+            [[ii % self.nt for ii in range(nloc)]],
+            dtype=torch.int64,
+            device=self.device,
+        )
+        box = (
+            torch.eye(3, dtype=torch.float64, device=self.device) * box_size
+        ).reshape(1, 9)
+
+        model = self._make_model(repformer_nsel=3, repformer_attn=True)
+        model.eval()
+        assert model.atomic_model.descriptor.uses_graph_lower() is True
+
+        # engage the escape hatch
+        model.atomic_model.descriptor.disable_graph_lower()
+        assert model.atomic_model.descriptor.uses_graph_lower() is False
+
+        default_after = model.forward_common(
+            coord.clone().requires_grad_(True), atype, box
+        )
+        legacy = model.forward_common(
+            coord.clone().requires_grad_(True),
+            atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        # with the hatch on, default (None) == legacy (dense), bit-identical
+        torch.testing.assert_close(
+            default_after["energy_redu"], legacy["energy_redu"], rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            default_after["energy_derv_r"], legacy["energy_derv_r"], rtol=0, atol=0
+        )
+
     def test_binding_sel_diverges(self) -> None:
         """At binding repformer sel, the carry-all graph (sel-independent)
         keeps neighbors the dense body truncates, so the two routes diverge.
