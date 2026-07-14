@@ -379,6 +379,12 @@ PairDeepBaseModel::PairDeepBaseModel(
   out_rel = 0;
   out_rel_v = 0;
   stdf_comm_buff_size = 0;
+  counts = nullptr;
+  displacements = nullptr;
+  tagsend = nullptr;
+  tagrecv = nullptr;
+  stdfsend = nullptr;
+  stdfrecv = nullptr;
   eps = 0.;
   eps_v = 0.;
   scale = NULL;
@@ -426,11 +432,38 @@ void PairDeepBaseModel::print_summary(const string pre) const {
 }
 
 PairDeepBaseModel::~PairDeepBaseModel() {
+  destroy_model_deviation_buffers();
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
     memory->destroy(scale);
   }
+}
+
+void PairDeepBaseModel::ensure_model_deviation_buffers() {
+  if (counts == nullptr) {
+    memory->create(counts, comm->nprocs, "deepmd:counts");
+    memory->create(displacements, comm->nprocs, "deepmd:displacements");
+  }
+
+  const int ntotal = atom->natoms;
+  if (ntotal > stdf_comm_buff_size) {
+    memory->grow(stdfsend, ntotal, "deepmd:stdfsendall");
+    memory->grow(stdfrecv, ntotal, "deepmd:stdfrecvall");
+    memory->grow(tagsend, ntotal, "deepmd:tagsendall");
+    memory->grow(tagrecv, ntotal, "deepmd:tagrecvall");
+    stdf_comm_buff_size = ntotal;
+  }
+}
+
+void PairDeepBaseModel::destroy_model_deviation_buffers() {
+  memory->destroy(counts);
+  memory->destroy(displacements);
+  memory->destroy(stdfsend);
+  memory->destroy(stdfrecv);
+  memory->destroy(tagsend);
+  memory->destroy(tagrecv);
+  stdf_comm_buff_size = 0;
 }
 
 void PairDeepBaseModel::allocate() {
@@ -477,17 +510,7 @@ void PairDeepBaseModel::init_style() {
   // neighbor->requests[irequest]->newton = 2;
 #endif
   if (out_each == 1) {
-    int ntotal = atom->natoms;
-    int nprocs = comm->nprocs;
-    if (ntotal > stdf_comm_buff_size) {
-      stdf_comm_buff_size = ntotal;
-    }
-    memory->create(counts, nprocs, "deepmd:counts");
-    memory->create(displacements, nprocs, "deepmd:displacements");
-    memory->create(stdfsend, ntotal, "deepmd:stdfsendall");
-    memory->create(stdfrecv, ntotal, "deepmd:stdfrecvall");
-    memory->create(tagsend, ntotal, "deepmd:tagsendall");
-    memory->create(tagrecv, ntotal, "deepmd:tagrecvall");
+    ensure_model_deviation_buffers();
   }
 }
 

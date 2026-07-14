@@ -55,6 +55,11 @@ class PairDeepBaseModel : public Pair {
   deepmd_compat::DeepBaseModel deep_base;
   deepmd_compat::DeepBaseModelDevi deep_base_model_devi;
   virtual void allocate();
+  // The model-deviation gather arrays are owned by this pair style.  Keep
+  // their allocation in one place so repeated LAMMPS initialization cannot
+  // overwrite a live pointer and leak the previous allocation.
+  void ensure_model_deviation_buffers();
+  void destroy_model_deviation_buffers();
   double** scale;
   unsigned numb_models;
   double cutoff;
