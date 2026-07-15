@@ -2274,6 +2274,64 @@ class TestSO2Parity:
         assert alpha.shape == (7, 1, 1)
         assert np.all(np.isfinite(alpha))
 
+    def test_segment_softmax_high_logit_edge_vanishes_continuously(self) -> None:
+        """A zero-weight high-logit edge must leave the segment continuously."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = np.array([[[0.0]], [[20.0]]], dtype=np.float64)
+        dst = np.zeros(2, dtype=np.int64)
+        z_bias_raw = np.array([[np.log(np.expm1(1.0))]], dtype=np.float64)
+        eps = 1.0e-7
+
+        def evaluate(crossing_envelope: float) -> np.ndarray:
+            edge_env = np.array([[1.0], [crossing_envelope]], dtype=np.float64)
+            alpha_dp = np.asarray(
+                dp_softmax(
+                    logits=logits,
+                    edge_env=edge_env,
+                    dst=dst,
+                    n_nodes=1,
+                    z_bias_raw=z_bias_raw,
+                    eps=eps,
+                )
+            )
+            alpha_pt = pt_softmax(
+                logits=to_pt(logits),
+                edge_env=to_pt(edge_env),
+                dst=to_pt(dst),
+                n_nodes=1,
+                z_bias_raw=to_pt(z_bias_raw),
+                eps=eps,
+            )
+            assert_parity(alpha_dp, alpha_pt)
+            return alpha_dp
+
+        near = evaluate(1.0e-12)
+        zero = evaluate(0.0)
+        expected_stable = 1.0 / (2.0 + eps)
+        np.testing.assert_allclose(near[0, 0, 0], expected_stable, rtol=0.0, atol=1e-14)
+        np.testing.assert_allclose(zero[0, 0, 0], expected_stable, rtol=0.0, atol=1e-14)
+        np.testing.assert_array_equal(zero[1], 0.0)
+
+        edge_env = torch.tensor(
+            [[1.0], [0.0]], dtype=torch.float64, device=PT_DEVICE, requires_grad=True
+        )
+        alpha = pt_softmax(
+            logits=to_pt(logits),
+            edge_env=edge_env,
+            dst=to_pt(dst),
+            n_nodes=1,
+            z_bias_raw=to_pt(z_bias_raw),
+            eps=eps,
+        )
+        alpha.sum().backward()
+        assert torch.isfinite(edge_env.grad).all()
+
     # ---------- SO2Convolution ----------
     def _conv_kwargs(self, **overrides):
         kwargs = {
