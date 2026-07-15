@@ -19,6 +19,7 @@ from deepmd.pt.model.descriptor.sezm import (
     DescrptSeZM,
 )
 from deepmd.pt.model.descriptor.sezm_nn import (
+    C3CutoffEnvelope,
     DynamicRadialDegreeMixer,
     EdgeCartesianTensorProduct,
     ForceEmbedding,
@@ -38,6 +39,7 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     quaternion_multiply,
     quaternion_to_rotation_matrix,
     safe_norm,
+    segment_envelope_gated_softmax,
 )
 from deepmd.pt.model.model import (
     get_sezm_model,
@@ -1826,6 +1828,119 @@ class TestInnerClamp(_SeZMTestCase):
             InnerClamp(-1.0, 1.0)
         with self.assertRaises(ValueError):
             InnerClamp(1.0, 1.0)
+
+
+class TestCutoffNumerics(_SeZMTestCase):
+    """Numerical stability at cutoff-vanishing attention boundaries."""
+
+    def test_high_logit_edge_vanishes_continuously(self) -> None:
+        """A zero-weight high-logit edge must leave the segment continuously."""
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float64, device=self.device
+        )
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float64, device=self.device
+        )
+        eps = 1.0e-7
+
+        def evaluate(crossing_envelope: float) -> torch.Tensor:
+            edge_env = torch.tensor(
+                [[1.0], [crossing_envelope]],
+                dtype=torch.float64,
+                device=self.device,
+            )
+            return segment_envelope_gated_softmax(
+                logits, edge_env, dst, 1, z_bias_raw, eps
+            )
+
+        near = evaluate(1.0e-12)
+        zero = evaluate(0.0)
+        expected_stable = 1.0 / (2.0 + eps)
+        torch.testing.assert_close(
+            near[0, 0, 0],
+            torch.tensor(expected_stable, dtype=torch.float64, device=self.device),
+        )
+        torch.testing.assert_close(
+            zero[0, 0, 0],
+            torch.tensor(expected_stable, dtype=torch.float64, device=self.device),
+        )
+        self.assertEqual(float(zero[1, 0, 0]), 0.0)
+
+    def test_envelope_nextafter_cutoff_attention(self) -> None:
+        """Adjacent float32 distances must not create a spurious attention edge."""
+        envelope_fn = C3CutoffEnvelope(6.0, exponent=5, dtype=torch.float32)
+        rcut = torch.tensor(6.0, dtype=torch.float32, device=self.device)
+        zero = torch.tensor(0.0, dtype=torch.float32, device=self.device)
+        r_near = torch.nextafter(rcut, zero)
+        r_inner = torch.nextafter(r_near, zero)
+        distances = torch.stack([r_near, r_inner])[:, None]
+        envelope = envelope_fn(distances)
+
+        distance64 = distances[:, 0].to(torch.float64)
+        u = (6.0 - distance64) / 6.0
+        x = 1.0 - u
+        reference = u**4 * (1.0 + x * (4.0 + x * (10.0 + x * (20.0 + 35.0 * x))))
+        torch.testing.assert_close(
+            envelope[:, 0].to(torch.float64),
+            reference,
+            rtol=1.0e-6,
+            atol=0.0,
+        )
+        self.assertTrue(bool((envelope >= 0.0).all()))
+
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=self.device
+        )
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=self.device
+        )
+        for edge_envelope in envelope[:, 0]:
+            edge_env = torch.stack([torch.ones_like(edge_envelope), edge_envelope])[
+                :, None
+            ]
+            alpha = segment_envelope_gated_softmax(
+                logits, edge_env, dst, 1, z_bias_raw, 1.0e-7
+            )
+            self.assertLess(float(alpha[1, 0, 0]), 1.0e-30)
+
+    def test_tiny_source_weight_hessian(self) -> None:
+        """Log-domain source scaling must preserve the physical Hessian."""
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=self.device
+        )
+        edge_env = torch.ones((2, 1), dtype=torch.float32, device=self.device)
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=self.device
+        )
+        eps = 1.0e-7
+
+        def attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return segment_envelope_gated_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
+
+        def physical_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            edge_mass = source_weight * torch.exp(logits[:, 0, 0])
+            return (edge_mass / (null_mass + edge_mass.sum())).sum()
+
+        source_weight = torch.tensor(
+            [1.0, 1.0e-30], dtype=torch.float32, device=self.device
+        )
+        actual = torch.autograd.functional.hessian(attention_sum, source_weight)
+        reference = torch.autograd.functional.hessian(physical_sum, source_weight)
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(actual, reference, rtol=1.0e-5, atol=32.0)
 
 
 class TestEdgeNorm(_SeZMTestCase):

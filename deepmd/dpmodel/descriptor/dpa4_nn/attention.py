@@ -28,6 +28,17 @@ from deepmd.dpmodel.utils.network import (
 )
 
 
+def _stop_gradient(value: Any) -> Any:
+    """Return ``value`` with backend gradient tracking disabled."""
+    if array_api_compat.is_torch_array(value):
+        return value.detach()
+    if array_api_compat.is_jax_array(value):
+        import jax
+
+        return jax.lax.stop_gradient(value)
+    return value
+
+
 def segment_envelope_gated_softmax(
     logits: Any,
     edge_env: Any,
@@ -100,10 +111,18 @@ def segment_envelope_gated_softmax(
     ones = xp.ones((n_edge,), dtype=compute_dtype, device=device)
     log_weight = 2.0 * xp.log(xp.where(edge_positive, edge_env_1d, ones))
     active = edge_positive
+    source_ratio = None
     if src_weight is not None:
         source_weight = xp.astype(xp.reshape(src_weight, (n_edge,)), compute_dtype)
         source_positive = source_weight > 0.0
-        log_weight = log_weight + xp.log(xp.where(source_positive, source_weight, ones))
+        safe_source = xp.where(source_positive, source_weight, ones)
+        source_scale = _stop_gradient(safe_source)
+        log_weight = log_weight + xp.log(source_scale)
+        source_ratio = xp.where(
+            source_positive,
+            source_weight / source_scale,
+            xp.zeros((n_edge,), dtype=compute_dtype, device=device),
+        )
         active = active & source_positive
     if edge_mask is not None:
         mask = xp.astype(xp.reshape(edge_mask, (n_edge,)), compute_dtype)
@@ -141,6 +160,11 @@ def segment_envelope_gated_softmax(
 
     # === Step 3. Normalize edge and null masses in the shared shifted frame ===
     edge_exp = xp.exp(effective_logits - edge_max)
+    if source_ratio is not None:
+        # ``source_scale`` carries the forward magnitude in log space, while
+        # this linear ratio carries derivatives without differentiating
+        # ``log(src_weight)`` at extremely small positive gates.
+        edge_exp = edge_exp * source_ratio[:, None]
     denom_sum = xp_add_at(
         xp.zeros((n_nodes, n_channel), dtype=compute_dtype, device=device),
         dst,

@@ -74,11 +74,17 @@ def segment_envelope_gated_softmax(
     ones = torch.ones_like(edge_env_1d)
     log_weight = 2.0 * torch.log(torch.where(edge_positive, edge_env_1d, ones))
     active = edge_positive
+    source_ratio: torch.Tensor | None = None
     if src_weight is not None:
         source_weight = src_weight.reshape(n_edge).to(dtype=compute_dtype)
         source_positive = source_weight > 0.0
-        log_weight = log_weight + torch.log(
-            torch.where(source_positive, source_weight, ones)
+        safe_source = torch.where(source_positive, source_weight, ones)
+        source_scale = safe_source.detach()
+        log_weight = log_weight + torch.log(source_scale)
+        source_ratio = torch.where(
+            source_positive,
+            source_weight / source_scale,
+            torch.zeros_like(source_weight),
         )
         active = active & source_positive
     effective_logits = torch.where(
@@ -109,6 +115,11 @@ def segment_envelope_gated_softmax(
 
     # === Step 3. Normalize edge and null masses in the shared shifted frame ===
     edge_exp = torch.exp(effective_logits - edge_max)
+    if source_ratio is not None:
+        # ``source_scale`` carries the forward magnitude in log space, while
+        # this linear ratio carries derivatives without differentiating
+        # ``log(src_weight)`` at extremely small positive gates.
+        edge_exp = edge_exp * source_ratio.reshape(n_edge, 1)
     denom_sum = torch.zeros(
         n_nodes,
         n_channel,
