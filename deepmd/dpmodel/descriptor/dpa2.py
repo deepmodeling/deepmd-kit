@@ -732,7 +732,39 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             return False
         if self.use_three_body:
             return False
+        # Nonzero-mean checkpoints stay on the legacy route: the dense
+        # repinit accumulates the (sel - n_real) padding slots' -davg/dstd
+        # environment rows, which the sel-free carry-all lower has no
+        # phantom-row counterpart for -- a checkpoint trained against the
+        # dense expression (set_davg_zero=False + compute_input_stats) would
+        # otherwise be silently evaluated with a different function
+        # (observed ~4e-2 energy shift at NON-binding sel, attention off).
+        # Reproducing the dense padding term on the graph route is a
+        # versioned training/migration change, not a default flip.
+        if not self.repinit_args.set_davg_zero:
+            return False
+        if not self.repformer_args.set_davg_zero:
+            return False
         return self.repinit.tebd_input_mode in ("concat", "strip")
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The compact ``center_edge_pairs`` realization (unbacked-SymInt
+        ``nonzero``/``repeat`` sizes, ``pairs.py``) backs the repformer's
+        nnei-x-nnei attention (``update_g2_has_attn``: Atten2Map /
+        MultiHeadApply) and the equivariant pair update (``update_h2``:
+        EquiVarApply).  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return bool(
+            self.repformer_args.update_g2_has_attn or self.repformer_args.update_h2
+        )
 
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.

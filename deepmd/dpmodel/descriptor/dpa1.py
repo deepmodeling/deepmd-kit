@@ -459,6 +459,23 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
 
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The transformer attention lower (``attn_layer > 0``) enumerates
+        neighbor pairs via the compact ``center_edge_pairs`` realization
+        (unbacked-SymInt ``nonzero``/``repeat`` sizes, ``pairs.py``);
+        the factorizable lower (``attn_layer == 0``) traces with backed
+        symbols only.  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return self.se_atten.attn_layer > 0
+
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.
 

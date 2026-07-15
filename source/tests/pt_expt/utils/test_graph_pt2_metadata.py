@@ -204,8 +204,9 @@ class _FakeDesc:
     def __init__(self, n_attn: int) -> None:
         self._n = n_attn
 
-    def get_numb_attn_layer(self) -> int:
-        return self._n
+    def uses_compact_edge_pairs(self) -> bool:
+        # mirrors dpa1's capability: attention rides center_edge_pairs
+        return self._n > 0
 
 
 class _FakeAtomicModel:
@@ -269,3 +270,73 @@ def test_graph_trace_version_guard_tolerates_no_descriptor(monkeypatch) -> None:
 
     monkeypatch.setattr(torch, "__version__", "2.5.1")
     check_graph_trace_torch_version(_NoDesc())
+
+
+@pytest.mark.parametrize(
+    ("repformer_overrides", "should_raise"),
+    [
+        ({}, True),  # default dpa2: update_g2_has_attn=True -> compact pairs
+        ({"update_g2_has_attn": False, "update_h2": True}, True),  # h2 consumer
+        ({"update_g2_has_attn": False, "update_h2": False}, False),  # no pairs
+    ],
+    ids=["default_g2_attn", "update_h2", "no_pair_consumers"],
+)
+def test_graph_trace_version_guard_dpa2_compact_pairs(
+    monkeypatch, repformer_overrides, should_raise
+) -> None:
+    """A default graph-eligible DPA2 must trip the torch < 2.6 guard.
+
+    Regression (OutisLi review): the guard keyed on dpa1's
+    ``get_numb_attn_layer``, which DPA2 does not implement, so every DPA2
+    passed and compiled training / graph freeze failed deep inside
+    ``make_fx`` instead of the fast version error.  The guard now keys on
+    the descriptor capability ``uses_compact_edge_pairs()``: DPA2's
+    ``update_g2_has_attn`` (default True) and ``update_h2`` both run the
+    compact ``center_edge_pairs`` realization; with both off the lower
+    traces backed symbols only and old torch stays usable.
+    """
+    import torch
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        check_graph_trace_torch_version,
+    )
+
+    cfg = copy.deepcopy(DPA2_GUARD_CONFIG)
+    cfg["descriptor"]["repformer"].update(repformer_overrides)
+    model = get_model(cfg)
+    assert model.atomic_model.descriptor.uses_graph_lower() is True
+
+    monkeypatch.setattr(torch, "__version__", "2.5.1")
+    if should_raise:
+        with pytest.raises(RuntimeError, match=r"torch >= 2\.6"):
+            check_graph_trace_torch_version(model)
+    else:
+        check_graph_trace_torch_version(model)
+
+
+# Small graph-eligible dpa2 for the version-guard regression above.
+DPA2_GUARD_CONFIG = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "dpa2",
+        "repinit": {
+            "rcut": 4.0,
+            "rcut_smth": 0.5,
+            "nsel": 10,
+            "neuron": [4, 8],
+            "axis_neuron": 2,
+        },
+        "repformer": {
+            "rcut": 3.0,
+            "rcut_smth": 0.5,
+            "nsel": 6,
+            "nlayers": 1,
+            "g1_dim": 8,
+            "g2_dim": 4,
+        },
+    },
+    "fitting_net": {"neuron": [8, 8], "seed": 1},
+}

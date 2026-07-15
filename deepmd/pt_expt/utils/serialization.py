@@ -164,30 +164,36 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
     Parameters
     ----------
     model
-        The graph-eligible model about to be traced. The attention depth is
-        read from ``model.atomic_model.descriptor.get_numb_attn_layer()``;
-        models without a single descriptor (linear/zbl/frozen) pass the
-        check (they take the dense route anyway).
+        The graph-eligible model about to be traced. The compact-pair usage
+        is read from the descriptor capability
+        ``uses_compact_edge_pairs()`` -- ``True`` for dpa1 with
+        ``attn_layer > 0`` and for dpa2 with ``update_g2_has_attn`` or
+        ``update_h2`` (keying on ``get_numb_attn_layer()`` alone missed
+        dpa2, whose repformer attention rides ``center_edge_pairs`` without
+        implementing that dpa1 accessor).  Models without a single
+        descriptor (linear/zbl/frozen) pass the check (they take the dense
+        route anyway), as do descriptors without the capability method.
 
     Raises
     ------
     RuntimeError
-        If the descriptor has ``attn_layer > 0`` and the running torch is
-        older than 2.6.
+        If the descriptor's graph lower traces compact edge pairs and the
+        running torch is older than 2.6.
     """
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    get_n_attn = getattr(desc, "get_numb_attn_layer", None)
-    n_attn = get_n_attn() if get_n_attn is not None else 0
-    if n_attn <= 0:
+    uses_pairs = getattr(desc, "uses_compact_edge_pairs", None)
+    if uses_pairs is None or not uses_pairs():
         return
     version = torch.__version__.split("+")[0]
     major_minor = tuple(int(p) for p in version.split(".")[:2] if p.isdigit())
     if len(major_minor) == 2 and major_minor < (2, 6):
         raise RuntimeError(
-            f"graph-form tracing of attention layers (attn_layer={n_attn}) "
-            f"requires torch >= 2.6 (unbacked-SymInt support for the compact "
+            "graph-form tracing of this descriptor's attention/pair updates "
+            "requires torch >= 2.6 (unbacked-SymInt support for the compact "
             f"center_edge_pairs realization); found torch {torch.__version__}. "
-            "Upgrade torch, set 'attn_layer: 0', or use the dense (nlist) path."
+            "Upgrade torch; or disable the compact-pair consumers "
+            "(dpa1: set 'attn_layer: 0'; dpa2: set 'update_g2_has_attn: "
+            "false' and 'update_h2: false'); or use the dense (nlist) path."
         )
 
 

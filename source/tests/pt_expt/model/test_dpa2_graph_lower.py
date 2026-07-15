@@ -611,6 +611,126 @@ class TestDpa2GraphLower:
         fresh2.load_state_dict(old_sd)
         assert fresh2.atomic_model.descriptor.uses_graph_lower() is True
 
+    def test_nonzero_mean_stays_on_legacy_route(self) -> None:
+        """A ``set_davg_zero=False`` DPA2 with COMPUTED nonzero statistics is
+        gated off the default graph route.
+
+        Regression (OutisLi review): the dense repinit accumulates the
+        ``(sel - n_real)`` padding slots' ``-davg/dstd`` environment rows,
+        which the sel-free carry-all lower has no phantom-row counterpart
+        for -- with normal ``compute_input_stats`` (nonzero davg), the graph
+        route differed from ``legacy`` by ~4e-2 in energy at NON-binding sel
+        with attention off, silently reinterpreting checkpoints trained
+        against the dense expression.  ``uses_graph_lower()`` therefore
+        returns False for ``set_davg_zero=False``; the default forward is
+        bit-identical to ``legacy``.  The anti-vacuity part transplants the
+        computed statistics into a ``set_davg_zero=True`` (graph-eligible)
+        twin and shows the graph-vs-dense divergence is real -- so this
+        gate cannot be removed without reproducing the dense padding math.
+        """
+        from deepmd.dpmodel.descriptor.dpa2 import (
+            RepformerArgs,
+            RepinitArgs,
+        )
+
+        def _build(set_davg_zero: bool) -> EnergyModel:
+            repinit = RepinitArgs(
+                rcut=4.0,
+                rcut_smth=0.5,
+                nsel=12,  # NON-binding for the 6-atom fixture
+                neuron=[3, 6],
+                axis_neuron=2,
+                tebd_dim=4,
+                set_davg_zero=set_davg_zero,
+            )
+            repformer = RepformerArgs(
+                rcut=2.0,
+                rcut_smth=0.5,
+                nsel=8,  # NON-binding
+                nlayers=2,
+                g1_dim=8,
+                g2_dim=4,
+                axis_neuron=2,
+                update_g1_has_attn=False,
+                update_g2_has_attn=False,
+            )
+            ds = DescrptDPA2(
+                ntypes=self.nt,
+                repinit=repinit,
+                repformer=repformer,
+                precision="float64",
+                seed=GLOBAL_SEED,
+            ).to(self.device)
+            ft = InvarFitting(
+                "energy",
+                self.nt,
+                ds.get_dim_out(),
+                1,
+                mixed_types=ds.mixed_types(),
+                precision="float64",
+                seed=GLOBAL_SEED,
+            ).to(self.device)
+            return EnergyModel(ds, ft, type_map=self.type_map).to(self.device)
+
+        model = _build(set_davg_zero=False)
+        # NORMAL computed statistics (not a hand-written mean).
+        sample = {
+            "coord": self.coord.clone(),
+            "atype": self.atype.clone(),
+            "box": self.cell.clone(),
+        }
+        model.atomic_model.descriptor.compute_input_stats([sample])
+        davg = np.asarray(model.atomic_model.descriptor.repinit.mean)
+        assert np.abs(davg).max() > 0, "computed statistics must be nonzero"
+
+        # 1. the gate: nonzero-mean configs stay on the legacy route.
+        assert model.atomic_model.descriptor.uses_graph_lower() is False
+        model.eval()
+        box = self.cell.reshape(1, 9)
+        out_default = model.forward_common(
+            self.coord.clone().requires_grad_(True), self.atype, box
+        )
+        out_legacy = model.forward_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        torch.testing.assert_close(
+            out_default["energy_redu"], out_legacy["energy_redu"], rtol=0.0, atol=0.0
+        )
+
+        # 2. anti-vacuity: transplant the computed stats into a graph-eligible
+        # twin -- the graph route genuinely diverges from dense at NON-binding
+        # sel once davg != 0, which is what the gate protects against.
+        twin = _build(set_davg_zero=True)
+        twin.load_state_dict(model.state_dict(), strict=False)
+        twin.atomic_model.descriptor.repinit.mean = (
+            model.atomic_model.descriptor.repinit.mean
+        )
+        twin.atomic_model.descriptor.repinit.stddev = (
+            model.atomic_model.descriptor.repinit.stddev
+        )
+        assert twin.atomic_model.descriptor.uses_graph_lower() is True
+        twin.eval()
+        out_graph = twin.forward_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="dense",
+        )
+        out_dense = twin.forward_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            box,
+            neighbor_graph_method="legacy",
+        )
+        diff = float((out_graph["energy_redu"] - out_dense["energy_redu"]).abs().max())
+        assert diff > 1e-8, (
+            f"expected a genuine graph-vs-dense divergence for nonzero davg "
+            f"(the reason for the gate); got {diff:.3e}"
+        )
+
     def test_non_energy_model_stays_off_graph_compiled_path(self) -> None:
         """A graph-eligible DPA2 descriptor paired with a NON-energy fitting
         (property) must stay OFF the graph compiled-training path AND off
