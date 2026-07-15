@@ -1066,10 +1066,15 @@ class _CompiledModel(torch.nn.Module):
         # every key passes through unchanged (energy models emit
         # atom_energy/energy/virial/..., property/dos/... models their own
         # keys -- the hardcoded energy-key copy here used to KeyError on any
-        # non-energy fitting), EXCEPT ``extended_force``, which lives on all
-        # extended atoms (nf, nall, 3): its ghost rows are scatter-summed
-        # back onto local owners via ``mapping`` -- the same fold
-        # ``communicate_extended_output`` performs in the uncompiled path.
+        # non-energy fitting), EXCEPT the extended-region keys
+        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
+        # (nf, nall, 9): their ghost rows are scatter-summed back onto
+        # local owners via ``mapping`` -- the same fold
+        # ``communicate_extended_output`` performs in the uncompiled path
+        # (which exposes them as ``force`` / ``atom_virial``).  Folding
+        # both keeps the compiled and uncompiled outputs key-for-key
+        # consistent, including for a future atom-virial training
+        # objective.
         out: dict[str, torch.Tensor] = {}
         if "extended_force" in result:
             ext_force = result["extended_force"]  # (nf, nall, 3)
@@ -1079,8 +1084,20 @@ class _CompiledModel(torch.nn.Module):
             )
             force.scatter_add_(1, idx, ext_force)
             out["force"] = force
+        if "extended_virial" in result:
+            ext_virial = result["extended_virial"]  # (nf, nall, 9)
+            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
+            atom_virial = torch.zeros(
+                nframes,
+                nloc,
+                ext_virial.shape[-1],
+                dtype=ext_virial.dtype,
+                device=ext_virial.device,
+            )
+            atom_virial.scatter_add_(1, idx, ext_virial)
+            out["atom_virial"] = atom_virial
         for key, val in result.items():
-            if key not in ("extended_force",):
+            if key not in ("extended_force", "extended_virial"):
                 out[key] = val
         return out
 

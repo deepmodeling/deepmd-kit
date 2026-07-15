@@ -50,7 +50,14 @@ class DescrptDPA2(DescrptDPA2DP):
         )
 
     def disable_graph_lower(self) -> None:
-        """Persisted variant of the dpmodel escape hatch (see base class)."""
+        """Persisted variant of the dpmodel escape hatch (see base class).
+
+        The buffer (and the routing bool) are PER-TASK state: multi-task
+        ``share_params`` shares network submodules, not this buffer, so
+        disabling the graph lower on one task branch does not propagate to
+        branches sharing the same descriptor weights -- each branch owns
+        its routing decision.
+        """
         super().disable_graph_lower()
         self.graph_lower_disabled.fill_(True)
 
