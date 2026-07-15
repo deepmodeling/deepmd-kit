@@ -52,7 +52,7 @@ from .utils import (
 
 class RadialMLP(nn.Module):
     """
-    Radial MLP with channel RMSNorm and configurable activation.
+    Radial MLP with optional channel RMSNorm and configurable activation.
 
     Parameters
     ----------
@@ -65,11 +65,14 @@ class RadialMLP(nn.Module):
         Floating point dtype for the linear layers.
     trainable : bool
         Whether the parameters are trainable.
+    radial_norm : bool
+        Whether to insert a channel RMSNorm in each hidden layer.
 
     Architecture
     ------------
-    Linear → RMSNorm → Activation for all hidden layers,
-    with the final layer being a plain Linear (no norm, no activation).
+    ``radial_norm=True``  : Linear → RMSNorm → Activation for each hidden layer.
+    ``radial_norm=False`` : Linear → Activation for each hidden layer.
+    The final layer is always a plain Linear (no norm, no activation).
 
     Notes
     -----
@@ -78,6 +81,15 @@ class RadialMLP(nn.Module):
     pads masked edges with zero ``edge_rbf``; any non-zero bias would leak
     spurious features into GIE scatter, causing energy divergence between
     compile and non-compile paths.
+
+    The hidden RMSNorm normalizes each edge's radial features by their own RMS.
+    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
+    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
+    (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
+    energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
+    the RMSNorm so the radial features vanish smoothly with the envelope, which
+    restores C^3 smoothness at the cutoff.
     """
 
     def __init__(
@@ -87,6 +99,7 @@ class RadialMLP(nn.Module):
         activation_function: str = "silu",
         dtype: torch.dtype = torch.float32,
         trainable: bool = True,
+        radial_norm: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
         super().__init__()
@@ -98,6 +111,7 @@ class RadialMLP(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[self.dtype]
         self.trainable = bool(trainable)
+        self.radial_norm = bool(radial_norm)
 
         modules: list[nn.Module] = []
         n_layers = len(mlp_layers)
@@ -114,13 +128,14 @@ class RadialMLP(nn.Module):
             modules.append(linear)
             # Last layer: no RMSNorm/activation
             if i < n_layers - 2:
-                modules.append(
-                    RMSNorm(
-                        channels=mlp_layers[i + 1],
-                        dtype=self.dtype,
-                        trainable=trainable,
+                if self.radial_norm:
+                    modules.append(
+                        RMSNorm(
+                            channels=mlp_layers[i + 1],
+                            dtype=self.dtype,
+                            trainable=trainable,
+                        )
                     )
-                )
                 modules.append(ActivationFn(self.activation_function))
 
         self.net = nn.Sequential(*modules)
@@ -151,6 +166,7 @@ class RadialMLP(nn.Module):
             "activation_function": self.activation_function,
             "dtype": RESERVED_PRECISION_DICT[self.dtype],
             "trainable": self.trainable,
+            "radial_norm": self.radial_norm,
             "@variables": {k: np_safe(v) for k, v in state.items()},
         }
 

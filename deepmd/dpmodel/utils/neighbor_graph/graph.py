@@ -14,6 +14,7 @@ from __future__ import (
 
 from dataclasses import (
     dataclass,
+    field,
 )
 from typing import (
     TYPE_CHECKING,
@@ -36,7 +37,10 @@ class NeighborGraph:
 
     Geometry enters the model ONLY through ``edge_vec`` (the single autograd
     leaf). ``edge_index``/``angle_index`` use the SoA ``(2, .)`` layout so the
-    src/dst index vectors are contiguous.
+    src/dst index vectors are contiguous. Destination/source CSR views address
+    the current payload through permutations. Builders may preserve incoming
+    order or apply a stable destination-major canonicalization. Consumers must
+    apply ``edge_mask`` even inside a CSR row.
     """
 
     n_node: Array
@@ -53,6 +57,16 @@ class NeighborGraph:
     """(2, A) int  [edge_a, edge_b] sharing a center; into [0, E). None if no angles."""
     angle_mask: Array | None = None
     """(A,) bool  real vs padding on the angle axis. None if no angles."""
+    destination_order: Array | None = field(default=None, kw_only=True)
+    """(E,) edge permutation grouped by destination; same dtype as edge_index."""
+    destination_row_ptr: Array | None = field(default=None, kw_only=True)
+    """(N + 1,) int64 offsets into ``destination_order``."""
+    source_order: Array | None = field(default=None, kw_only=True)
+    """(E,) source-grouped edge permutation; same dtype as edge_index."""
+    source_row_ptr: Array | None = field(default=None, kw_only=True)
+    """(N + 1,) int64 CSR offsets into ``source_order``."""
+    destination_sorted: bool = field(default=False, kw_only=True)
+    """Whether the payload is destination-major and destination_order is identity."""
 
 
 @dataclass
@@ -221,6 +235,37 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     return xp.minimum(frame_id, xp.astype(last_frame, xp.int64))
 
 
+def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:
+    """Return the owned-node mask for a local-plus-halo graph.
+
+    Each frame occupies one contiguous block of ``n_node[f]`` nodes, with its
+    ``n_local[f]`` owned nodes first and halo nodes after them.
+
+    Parameters
+    ----------
+    n_node
+        Total node counts per frame with shape ``(nf,)``.
+    n_local
+        Owned node counts per frame with shape ``(nf,)``.
+    n_total
+        Size of the flat node axis.
+
+    Returns
+    -------
+    Array
+        Boolean ownership mask with shape ``(n_total,)``.
+    """
+    xp = array_api_compat.array_namespace(n_node, n_local)
+    device = array_api_compat.device(n_node)
+    node_index = xp.arange(n_total, dtype=n_node.dtype, device=device)
+    frame_id = frame_id_from_n_node(n_node, n_total=n_total)
+    frame_end = xp.cumulative_sum(n_node)
+    frame_start = frame_end - n_node
+    index_in_frame = node_index - xp.take(frame_start, frame_id, axis=0)
+    local_count = xp.take(n_local, frame_id, axis=0)
+    return index_in_frame < local_count
+
+
 def apply_pair_exclusion(
     graph: NeighborGraph,
     atype: Array,
@@ -264,7 +309,8 @@ def apply_pair_exclusion(
     -------
     NeighborGraph
         A ``dataclasses.replace`` copy (or the original ``graph`` on early
-        exit) with the exclusion applied.
+        exit) with the exclusion applied. Existing CSR views are cleared
+        because their row pointers depend on the valid-edge mask.
 
     Notes
     -----
@@ -285,6 +331,11 @@ def apply_pair_exclusion(
     out = dataclasses.replace(
         graph,
         edge_mask=xp.logical_and(graph.edge_mask, xp.astype(keep, xp.bool)),
+        destination_order=None,
+        destination_row_ptr=None,
+        source_order=None,
+        source_row_ptr=None,
+        destination_sorted=False,
     )
     if compact:
         # Angle fields are a coupled pair (produced together by the angle

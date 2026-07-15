@@ -207,7 +207,6 @@ class ModelWrapper(paddle.nn.Layer):
     def set_extra_state(self, extra_state: dict[str, Any]) -> None:
         self.model_params = extra_state["model_params"]
         self.train_infos = extra_state["train_infos"]
-        return None
 
     def get_extra_state(self) -> dict:
         extra_state = {

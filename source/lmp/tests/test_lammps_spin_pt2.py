@@ -10,6 +10,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_spin_lammps,
+)
 from write_lmp_data import (
     write_lmp_data_spin,
 )
@@ -145,27 +148,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("spin")
-    if units == "metal":
-        lammps.neighbor("2.0 bin")
-    else:
-        raise ValueError("units for spin should be metal")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal":
-        lammps.mass("1 58")
-        lammps.mass("2 16")
-    else:
-        raise ValueError("units for spin should be metal")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    else:
-        raise ValueError("units for spin should be metal")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_spin_lammps(data_file, units)
 
 
 @pytest.fixture

@@ -213,7 +213,6 @@ def one_layer(
                 uniform_seed,
                 name,
             )
-            #
             NTAVC = nvnmd_cfg.fitn["NTAVC"]
             nd = inputs.get_shape().as_list()[1] - NTAVC
             inputs2 = tf.slice(inputs, [0, nd], [-1, NTAVC])

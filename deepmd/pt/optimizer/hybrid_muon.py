@@ -281,7 +281,7 @@ if TRITON_AVAILABLE:
         b_ptrs = x + (offs_xn[:, None] * stride_xm + offs_k[None, :] * stride_xk)
 
         accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_M), dtype=tl.float32)
-        for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        for k in range(tl.cdiv(K, BLOCK_SIZE_K)):
             a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
             b = tl.load(b_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
             accumulator = tl.dot(a, tl.permute(b, (1, 0)), accumulator)

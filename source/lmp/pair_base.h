@@ -52,8 +52,14 @@ class PairDeepBaseModel : public Pair {
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  protected:
-  deepmd_compat::DeepBaseModel deep_base;
-  deepmd_compat::DeepBaseModelDevi deep_base_model_devi;
+  // Bound (not copied) to the derived class's own model members. The derived
+  // members are still under construction when this base constructor runs, so
+  // copying them would read uninitialized state; a reference only records the
+  // address and resolves to the fully constructed model by first use. Used for
+  // the model summary and, in the C++ API build, the fully device-resident
+  // inference entry (see pair_deepmd_kokkos).
+  deepmd_compat::DeepBaseModel& deep_base;
+  deepmd_compat::DeepBaseModelDevi& deep_base_model_devi;
   virtual void allocate();
   double** scale;
   unsigned numb_models;
