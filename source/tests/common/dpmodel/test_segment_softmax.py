@@ -2,6 +2,7 @@
 """segment_max / segment_softmax (NeighborGraph PR-D segment toolkit)."""
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     segment_max,
@@ -122,9 +123,14 @@ class TestSignedPhantomStrictPositivity:
     raw signed denominator ``sum exp(l) + (sel - n) exp(ph)`` then crosses
     zero (e.g. ``sel=1``, logits ``[-21, -21]``, ``ph=-20``), which used to
     hit the ``denom > 0`` where-guard and return weights ``[1, 1]`` (sum 2)
-    on one side and a pole on the other.  The smooth floor
-    ``(D + sqrt(D^2 + delta^2)) / 2`` keeps the normalization finite,
-    positive and smooth for any finite logits.
+    on one side and a pole on the other.  The exponential-tail floor
+    ``D + delta * exp(-D / delta)`` keeps the normalization finite,
+    positive and smooth there; it is GATED to the negative-count,
+    small-denominator regime so that ``phantom_count >= 0`` (no pole
+    possible) and every in-design negative-count segment stay BIT-exact
+    with the floor-free dense formula, and its inactive branch is
+    constructed without the ``-D / delta`` division so float32 autodiff
+    stays NaN-free.
     """
 
     def test_reviewer_repro_finite_positive(self) -> None:
@@ -199,10 +205,121 @@ class TestSignedPhantomStrictPositivity:
             f"-> fine {step_fine:.4f}): discontinuity or pole at the crossing"
         )
 
+    def test_zero_phantom_count_below_phantom_exact_dense(self) -> None:
+        """OutisLi review: ``phantom_count == 0`` means ``n_real == sel`` --
+        no phantom term exists and the denominator is a plain positive
+        softmax sum, so the output must be the EXACT dense softmax even
+        when every logit sits far below ``phantom_logit`` (the always-on
+        floor used to return ~0.0009 instead of 0.5 here).
+        """
+        data = np.array([-30.0, -30.0])
+        seg = np.array([0, 0], dtype=np.int64)
+        w = segment_softmax(
+            data, seg, 1, phantom_count=np.array([0.0]), phantom_logit=-20.0
+        )
+        np.testing.assert_array_equal(w, [0.5, 0.5])
+        # and BIT-equal to the phantom-free primitive on generic data
+        rng = np.random.default_rng(11)
+        data = rng.normal(size=9) * 30.0  # spans far below AND above -20
+        seg = np.array([0, 0, 0, 1, 1, 1, 1, 2, 2], dtype=np.int64)
+        w_zero = segment_softmax(
+            data, seg, 3, phantom_count=np.zeros(3), phantom_logit=-20.0
+        )
+        w_none = segment_softmax(data, seg, 3)
+        np.testing.assert_array_equal(w_zero, w_none)
+
+    def test_positive_count_below_phantom_exact_dense(self) -> None:
+        """count > 0 with all real logits below ``phantom_logit``: the
+        denominator is positive (phantom terms only ADD), so the fixed-width
+        dense softmax must be reproduced exactly -- the floor must not fire.
+        """
+        data = np.array([-30.0, -30.0])
+        seg = np.array([0, 0], dtype=np.int64)
+        w = segment_softmax(
+            data, seg, 1, phantom_count=np.array([1.0]), phantom_logit=-20.0
+        )
+        full = np.array([-30.0, -30.0, -20.0])
+        ref = np.exp(full - full.max())
+        ref = ref / ref.sum()
+        np.testing.assert_allclose(w, ref[:2], rtol=1e-15, atol=0.0)
+
+    def test_float32_torch_backward_finite(self) -> None:
+        """OutisLi review: with a tiny ``delta`` the floor's backward forms
+        ``D / delta**2`` -> inf, and ``0 * inf = NaN`` poisons the gradients
+        in float32 even though the forward is exact.  The gated safe-where
+        construction must keep float32 autodiff finite and correct, in both
+        the inactive (reviewer repro) and active (deep-deficit) regimes.
+        """
+        import torch
+
+        # inactive-floor regime: logits far above phantom_logit
+        data = torch.tensor([20.0, 21.0], dtype=torch.float32, requires_grad=True)
+        ids = torch.tensor([0, 0], dtype=torch.int64)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+        )
+        v = torch.tensor([1.0, 2.0])
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+        # analytic softmax-jacobian reference: g_i = w_i * (v_i - sum_j w_j v_j)
+        # (the phantom term exp(-41) is negligible at float32 resolution)
+        w64 = np.exp([20.0, 21.0] - np.float64(21.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(data.grad.numpy(), ref, rtol=1e-4)
+        assert np.abs(ref).max() > 0.1  # nontrivial gradient, not all-zero
+
+        # active-floor regime: signed denominator below the floor threshold
+        data = torch.tensor([-21.0, -21.0], dtype=torch.float32, requires_grad=True)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+        )
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+
+    def test_float32_jax_backward_finite(self) -> None:
+        """Same float32 autodiff guarantee through JAX (the reviewer
+        reproduced the NaN gradient there as well).
+        """
+        jax = pytest.importorskip("jax")
+        jnp = jax.numpy
+
+        ids = np.array([0, 0], dtype=np.int64)
+        v = np.array([1.0, 2.0], dtype=np.float32)
+
+        def loss(x):  # noqa: ANN001, ANN202
+            w = segment_softmax(
+                x,
+                jnp.asarray(ids),
+                1,
+                phantom_count=jnp.asarray([-1.0], dtype=jnp.float32),
+                phantom_logit=-20.0,
+            )
+            return (w * jnp.asarray(v)).sum()
+
+        # inactive-floor regime (reviewer repro)
+        g = jax.grad(loss)(jnp.asarray([20.0, 21.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+        w64 = np.exp([20.0, 21.0] - np.float64(21.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(np.asarray(g), ref, rtol=1e-4)
+        # active-floor regime
+        g = jax.grad(loss)(jnp.asarray([-21.0, -21.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+
     def test_floor_does_not_disturb_dense_parity_regime(self) -> None:
         """In the in-design regime (all logits >= phantom_logit, count >= 0)
-        the floor's correction is ~exp(-2*shift) relative -- invisible at
-        the 1e-12 level used by the dense-parity suites.
+        the floor never fires (its gate excludes non-negative counts), so
+        the fixed-width dense softmax is reproduced exactly.
         """
         rng = np.random.default_rng(3)
         data = rng.normal(size=7)  # normal-scale logits, shift 20 below

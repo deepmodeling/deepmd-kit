@@ -113,11 +113,14 @@ def segment_softmax(
     term-for-term equal to the dense softmax.  Real logits are NOT bounded
     below by ``phantom_logit`` (the smooth envelope maps pre-shift logits
     ``raw < -attnw_shift`` to ``l < phantom_logit`` at ``sw > 0``), so for
-    negative counts the raw signed denominator can cross zero; a smooth
+    NEGATIVE counts the raw signed denominator can cross zero; a smooth
     strictly-positive floor (see the inline comment at the denominator)
-    keeps the normalization finite, positive and C-infinity for arbitrary
-    finite logits while perturbing the in-design regime by only
-    ~``exp(-2 * attnw_shift)`` relative.
+    keeps the normalization finite and positive there.  The floor is gated
+    to the negative-count, small-denominator regime, so for
+    ``phantom_count >= 0`` (a plain positive softmax sum -- no pole exists)
+    and for every in-design negative-count segment the output is
+    BIT-IDENTICAL to the floor-free formula: the dense term-for-term parity
+    is exact, not merely approximate.
     """
     xp = array_api_compat.array_namespace(data)
     dev = array_api_compat.device(data)
@@ -158,9 +161,18 @@ def segment_softmax(
         ex = ex * xp.astype(mask_b, ex.dtype)
     denom = segment_sum(ex, segment_ids, num_segments)
     if ph_b is not None:
-        ph_term = xp.exp(xp.full_like(seg_max, phantom_logit) - seg_max)
-        denom = denom + xp.astype(ph_b, denom.dtype) * ph_term
-        # Smooth strictly-positive floor for the SIGNED compensation: real
+        # exponent clamped at 80 (exp(80) ~ 5.5e34 is finite in BOTH float32
+        # and float64): pl - seg_max > 80 means every real logit sits > 80
+        # below the phantom logit; an unclamped exp would overflow (inf in
+        # float32 already at ~88) and poison the signed sum with inf - inf.
+        ph_arg = xp.minimum(
+            xp.full_like(seg_max, phantom_logit) - seg_max,
+            xp.full_like(seg_max, 80.0),
+        )
+        ph_term = xp.exp(ph_arg)
+        ph_f = xp.astype(ph_b, denom.dtype)
+        denom = denom + ph_f * ph_term
+        # Smooth strictly-positive floor for NEGATIVE counts only: real
         # logits are not bounded below by ``phantom_logit`` (the smooth
         # envelope maps ``raw < -shift`` to ``l < -shift`` at ``sw > 0``),
         # so with a negative count the signed denominator D can cross zero
@@ -169,19 +181,25 @@ def segment_softmax(
         #
         #     D~ = D + delta * exp(-D / delta),   delta = sel*ph_term / 40
         #
-        # Properties: (i) C-infinity in the logits and monotone-decreasing
-        # towards larger deficits; (ii) D~ >= delta > 0 for ANY finite
-        # logits (minimum at D == 0), so the weights stay finite and are
-        # bounded by ``40 * n_real / sel``; (iii) in the in-design regime
-        # every real logit is >= phantom_logit, hence D >= sel * ph_term
-        # == 40 * delta and the correction is <= exp(-40) * delta -- more
-        # than 1e-17 RELATIVE below D, i.e. it underflows to EXACT identity
-        # in float64 and the dense term-for-term parity is bit-preserved;
-        # (iv) the boundary-edge cancellation survives (a smooth function
-        # of the already-continuous D).  The exponent is clamped at 700 to
-        # avoid inf*0 pathologies for astronomically negative D (there the
-        # floor is astronomically large and the weights are ~0, as a
-        # maximal phantom deficit should give).
+        # applied ONLY where (a) the count is negative (for count >= 0 the
+        # denominator is a plain positive softmax sum -- no pole -- and the
+        # dense term-for-term parity must stay BIT-exact) and (b)
+        # D < 40 * delta (beyond that the correction is <= exp(-40) * delta
+        # < 1e-19 RELATIVE to D -- sub-ulp in float32 AND float64, so the
+        # gate boundary is bit-invisible; in-design every real logit is
+        # >= phantom_logit, hence D >= sel * ph_term == 40 * delta and the
+        # floor never fires).  Properties inside the active region: C-inf
+        # in the logits, D~ >= delta > 0 for any finite logits, weights
+        # bounded by ~40 * n_real / sel, and the boundary-edge cancellation
+        # survives (a smooth function of the already-continuous D).
+        #
+        # The inactive branch substitutes (0, 1) for (D, delta) BEFORE the
+        # division: even a zero cotangent cannot rescue exp(-D/delta) under
+        # autodiff when delta underflows (backward forms D/delta**2 -> inf,
+        # and 0 * inf = NaN in torch/jax float32), so the pathological
+        # division must never be constructed.  The exponent cap 80 bounds
+        # the active branch's exp for float32 while keeping D~ positive for
+        # any physical edge count (needs n_real/sel < exp(80)/40 ~ 1e33).
         if mask is not None:
             n_real_seg = segment_sum(
                 xp.astype(mask, denom.dtype), segment_ids, num_segments
@@ -192,12 +210,15 @@ def segment_softmax(
                 segment_ids,
                 num_segments,
             )
-        sel_b = xp.reshape(
-            n_real_seg, n_real_seg.shape + (1,) * (denom.ndim - 1)
-        ) + xp.astype(ph_b, denom.dtype)
+        sel_b = (
+            xp.reshape(n_real_seg, n_real_seg.shape + (1,) * (denom.ndim - 1)) + ph_f
+        )
         delta = xp.maximum(sel_b, xp.ones_like(sel_b)) * ph_term / 40.0
-        e_arg = xp.minimum(-denom / delta, xp.full_like(denom, 700.0))
-        denom = denom + delta * xp.exp(e_arg)
+        active = xp.logical_and(ph_f < 0.0, denom < 40.0 * delta)
+        denom_a = xp.where(active, denom, xp.zeros_like(denom))
+        delta_a = xp.where(active, delta, xp.ones_like(delta))
+        e_arg = xp.minimum(-denom_a / delta_a, xp.full_like(denom, 80.0))
+        denom = xp.where(active, denom + delta_a * xp.exp(e_arg), denom)
     denom_e = xp.take(denom, segment_ids, axis=0)
     safe = xp.where(denom_e > 0, denom_e, xp.ones_like(denom_e))
     return ex / safe

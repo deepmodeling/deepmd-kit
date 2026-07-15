@@ -328,6 +328,79 @@ def test_local_atten_parity(smooth):
     )
 
 
+def test_local_atten_below_phantom_dense_parity():
+    """OutisLi review: finite valid projection weights can push every smooth
+    logit below ``-attnw_shift``.  With ``n_real == sel`` the signed phantom
+    count is 0 -- the denominator is a plain positive softmax sum -- and the
+    graph route must match dense EXACTLY (the always-on floor used to return
+    ~0.0018 where dense gives 1.0)."""
+    la = LocalAtten(1, 1, 1, smooth=True, precision="float64", seed=1)
+    la.mapq.w = np.array([[1.0]])
+    la.mapkv.w = np.array([[-30.0, 1.0]])  # key -30, value 1
+    la.head_map.w = np.array([[1.0]])  # identity head
+    la.head_map.b = np.array([0.0])
+    nf, nloc, nnei = 1, 1, 2
+    g1 = np.ones((nf * nloc, 1))
+    gg1 = np.ones((nf, nloc, nnei, 1))
+    mask = np.ones((nf, nloc, nnei), dtype=bool)
+    sw = np.ones((nf, nloc, nnei))
+    ref = la.call(g1.reshape(nf, nloc, 1), gg1, mask, sw)  # == [[[1.0]]]
+    dst = np.zeros(nnei, dtype=np.int64)
+    got = la.call_graph(
+        g1,
+        gg1.reshape(-1, 1),
+        mask.reshape(-1),
+        sw.reshape(-1),
+        dst,
+        nf * nloc,
+        nnei,  # sel == n_real: phantom count 0
+    )
+    np.testing.assert_allclose(
+        np.asarray(got), ref.reshape(1, 1), rtol=1e-12, atol=0.0
+    )
+    # anti-vacuity: the logits really are below -attnw_shift and the dense
+    # result is the nontrivial value from the review
+    np.testing.assert_allclose(np.asarray(got), [[1.0]], rtol=1e-12)
+
+
+def test_atten2map_below_phantom_dense_parity():
+    """Same below-``-attnw_shift`` regime for the pair attention map: with
+    all key slots real (phantom count 0) graph must equal dense exactly."""
+    a2m = Atten2Map(1, 1, 1, has_gate=False, smooth=True, precision="float64", seed=2)
+    a2m.mapqk.w = np.array([[1.0, -30.0]])  # query 1, key -30 -> logits -30
+    nf, nloc, nnei = 1, 1, 2
+    g2 = np.ones((nf, nloc, nnei, 1))
+    h2 = np.zeros((nf, nloc, nnei, 3))
+    h2[..., 0] = 1.0
+    mask = np.ones((nf, nloc, nnei), dtype=bool)
+    sw = np.ones((nf, nloc, nnei))
+    ref = a2m.call(g2, h2, mask, sw)  # (nf, nloc, nnei, nnei, nh)
+    n_total = nf * nloc
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), nnei)
+    q_e, k_e, pm = center_edge_pairs(
+        dst,
+        mask.reshape(-1),
+        n_total,
+        include_self=True,
+        ordered=True,
+        static_nnei=nnei,
+    )
+    got = a2m.call_graph(
+        g2.reshape(-1, 1),
+        h2.reshape(-1, 3),
+        sw.reshape(-1),
+        q_e,
+        k_e,
+        pm,
+        nf * nloc * nnei,
+        nnei,
+    )
+    ref_pairs = ref[0, 0, np.asarray(q_e) % nnei, np.asarray(k_e) % nnei, :]
+    np.testing.assert_allclose(np.asarray(got), ref_pairs, rtol=1e-12, atol=0.0)
+    # anti-vacuity: weight 0.5 per key slot times h2h2t = 1/sqrt(3)
+    np.testing.assert_allclose(np.asarray(got), 0.5 / np.sqrt(3.0), rtol=1e-12)
+
+
 def test_atten2map_graph_torch():
     import torch
 
