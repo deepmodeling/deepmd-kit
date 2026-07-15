@@ -785,8 +785,9 @@ class TestMergeLmdbSystemIds:
             assert refcount_after_new_reader == refcount_before_merge + 1
             np.testing.assert_array_equal(new_reader[0]["coord"], expected_coord)
         finally:
-            existing_reader = None
-            new_reader = None
+            # Drop both strong references so their finalizers release the
+            # cache entries before the cleanup assertion below.
+            del existing_reader, new_reader
             gc.collect()
             # Keep a failing regression isolated from later LMDB tests. On the
             # fixed path reader finalizers normally remove this entry already.
