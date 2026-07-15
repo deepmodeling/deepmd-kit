@@ -284,7 +284,9 @@ class DescrptDPA1(DescrptDPA1DP):
         # equation and gradients without warning.  A persistent buffer rides
         # every pt_expt state_dict, so save/restart round-trips it.
         torch.nn.Module.register_buffer(
-            self, "graph_lower_disabled", torch.zeros((), dtype=torch.bool)
+            self,
+            "graph_lower_disabled",
+            torch.zeros((), dtype=torch.bool, device="cpu"),
         )
 
     def disable_graph_lower(self) -> None:
