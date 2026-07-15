@@ -572,17 +572,17 @@ def make_model(
             aparam
                 Atomic parameter, ``(N, nda)`` -- FLAT on the node axis like
                 every per-node tensor of the graph ABI (on extended-region
-                multi-rank graphs the halo rows are included; their values
+                multi-rank graphs the ghost rows are included; their values
                 are inert under the owned-node mask).
             charge_spin
                 charge/spin conditioning. Ignored in PR-A; accepted for ABI
                 stability with charge/spin-conditioned descriptors.
             n_local
                 Per-rank local (owned) atom counts for multi-rank inference,
-                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
                 are excluded from the DIFFERENTIATED ``<var>_redu`` (and thus
                 from force/virial/atom-virial, which are ``grad`` of that
-                reduction) -- each halo atom is owned, and counted, on
+                reduction) -- each ghost atom is owned, and counted, on
                 another rank. The per-node output (``<var>``) itself stays
                 FULL/unmasked. ``None`` (default) is the single-rank/
                 all-owned behavior. See

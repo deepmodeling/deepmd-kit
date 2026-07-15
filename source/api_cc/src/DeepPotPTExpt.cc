@@ -38,7 +38,7 @@ namespace {
  * on the Python export side).  The runtime aparam carries the owned (local)
  * rows only (``aparam_nall`` is structurally false for pt_expt models, see
  * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
- * the halo rows are zero-padded here.  Ghost fitting outputs are never
+ * the ghost rows are zero-padded here.  Ghost fitting outputs are never
  * retained -- the with-comm artifact masks non-owned energies before
  * reduction, and the plain multi-rank remap sums energy over the owned
  * prefix only -- so the padded values are inert.
@@ -764,7 +764,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // NeighborGraph multi-rank dispatch:
   //   - NON-message-passing (dpa1, se_e2_a, ...): the SAME single-rank graph
   //     .pt2 runs on the EXTENDED region (fold_to_local=false; ghosts are
-  //     distinct nodes whose features come from their real halo types).  No
+  //     distinct nodes whose features come from their real ghost types).  No
   //     with-comm artifact / no border_op is needed; ghost reaction forces are
   //     folded to their owners by LAMMPS reverse-comm.  Handled below.
   //   - message-passing graph (DPA2/DPA3): multi-rank requires a with-comm
@@ -1070,7 +1070,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // below exactly (extended region, N == nall_real, node types from the
       // on-device extended ``atype_Tensor`` slice): ghost nodes are distinct
       // and their embeddings are filled in-place by ``border_op`` inside the
-      // with-comm artifact instead of being read directly from local halo
+      // with-comm artifact instead of being read directly from local ghost
       // types, so no geometry/mask changes are needed -- only the model
       // entry point (and the appended comm tensors) differ.
       // Collective preflight: a rank with zero owned+ghost atoms cannot run
@@ -1104,7 +1104,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               "Multi-rank message-passing graph inference does not yet "
               "support a rank with zero owned+ghost atoms (the exported "
               "graph artifact requires at least one node, and skipping the "
-              "run would desync the per-layer MPI halo exchange; this rank "
+              "run would desync the per-layer MPI ghost exchange; this rank "
               "has " +
               std::to_string(nall_real) +
               " owned+ghost atoms). Use a domain decomposition that keeps "
@@ -1207,7 +1207,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       at::Tensor n_local_tensor = torch::full({1}, nloc, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      // Flat (N, daparam) graph ABI: validate the width, zero-pad halo
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
       // rows, and synthesize a zero tensor on a ghost-only rank (see
       // extend_graph_aparam).
       at::Tensor graph_aparam =

@@ -9,7 +9,7 @@ virial via ``forward_common_lower_graph``, compiled training
 inherits it with ZERO new plumbing code -- these tests PROVE that
 inheritance (routing/parity), plus cover the one piece of real code this
 task adds: ``DescrptBlockRepformers._exchange_ghosts_graph``, the pt_expt
-override that performs the per-layer MPI halo refresh via
+override that performs the per-layer MPI ghost refresh via
 ``deepmd_export::border_op`` on the graph path (see
 ``deepmd/pt_expt/descriptor/repformers.py``).
 """
@@ -965,7 +965,7 @@ class TestDpa2GraphLower:
 
     def test_graph_exchange_border_op_self_communication(self) -> None:
         """A real (non-spin) ``comm_dict`` routes through ``border_op``:
-        local rows [0, nlocal) are untouched and halo rows [nlocal, N)
+        local rows [0, nlocal) are untouched and ghost rows [nlocal, N)
         are overwritten with the owner rows named by the sendlist -- the
         actual new-code path this task adds (the identity/spin-reject
         tests above already hold on the dpmodel base and do not exercise
@@ -1021,8 +1021,8 @@ class TestDpa2GraphLower:
 
 
 class TestOwnedNodeMaskEnergyReduction:
-    """``n_local`` (owned-node mask) must exclude halo rows from the
-    DIFFERENTIATED per-frame energy (each halo atom is owned -- and counted
+    """``n_local`` (owned-node mask) must exclude ghost rows from the
+    DIFFERENTIATED per-frame energy (each ghost atom is owned -- and counted
     -- on another rank), while ``atom_energy`` itself stays FULL and the
     mask is applied BEFORE ``edge_energy_deriv`` differentiates the summed
     energy (so ``grad(energy, edge_vec)`` only carries owned-energy terms).
@@ -1075,9 +1075,9 @@ class TestOwnedNodeMaskEnergyReduction:
 
     def test_owned_mask_energy_reduction(self) -> None:
         """``energy_redu`` with ``n_local`` == sum(atom_energy[:n_local]);
-        halo rows of the per-node output are masked to zero (#5758
-        convention -- each halo atom's fitting output is owned by another
-        rank); halo rows [n_local:) of the assembled force are NOT all zero
+        ghost rows of the per-node output are masked to zero (#5758
+        convention -- each ghost atom's fitting output is owned by another
+        rank); ghost rows [n_local:) of the assembled force are NOT all zero
         (they still receive src-scatter contributions from OWNED centers'
         edges).
         """
@@ -1105,7 +1105,7 @@ class TestOwnedNodeMaskEnergyReduction:
             ng.edge_mask,
         )
 
-        # per-node output: owned rows unchanged, halo rows masked to zero.
+        # per-node output: owned rows unchanged, ghost rows masked to zero.
         torch.testing.assert_close(
             out_masked["energy"].reshape(-1)[:n_local_val],
             out_full["energy"].reshape(-1)[:n_local_val],
@@ -1119,11 +1119,11 @@ class TestOwnedNodeMaskEnergyReduction:
             out_masked["energy_redu"].reshape(-1), owned_sum.reshape(1)
         )
 
-        # halo-row partial forces survive (src-side scatter from owned edges).
+        # ghost-row partial forces survive (src-side scatter from owned edges).
         force = out_masked["energy_derv_r"].reshape(self.natoms, 3)
         halo_force = force[n_local_val:]
         assert not torch.allclose(halo_force, torch.zeros_like(halo_force)), (
-            "expected nonzero halo-row partial force from owned-center edges"
+            "expected nonzero ghost-row partial force from owned-center edges"
         )
 
         # ordering check: the masked force must differ from the unmasked
@@ -1166,8 +1166,8 @@ class TestGraphAparamExtendedAxis:
     The graph ABI carries atomic parameters FLAT on the node axis --
     ``(N, nda)`` with ``N = sum(n_node)``, the same axis as ``atype``. On
     extended-region graphs (the multi-rank C++ routes: ``N == nall_real``,
-    owned prefix first, then halo) the caller must therefore supply an
-    extended-axis aparam with the halo rows padded -- their fitting outputs
+    owned prefix first, then ghost) the caller must therefore supply an
+    extended-axis aparam with the ghost rows padded -- their fitting outputs
     are discarded by the owned-node mask, so the padded values are inert.
     This pins the contract the C++ runtime's ``extend_graph_aparam``
     (DeepPotPTExpt.cc) implements: an owned-only (nloc-row) aparam and a
@@ -1233,7 +1233,7 @@ class TestGraphAparamExtendedAxis:
         )
 
     def test_extended_axis_accepted_halo_rows_inert(self) -> None:
-        """Flat extended-axis aparam (``(N, nda)``) runs; halo-row values are
+        """Flat extended-axis aparam (``(N, nda)``) runs; ghost-row values are
         inert for the owned (masked) energy, owned-row values are not.
         """
         model = self._make_model()
@@ -1243,11 +1243,11 @@ class TestGraphAparamExtendedAxis:
         ).reshape(self.natoms, 1)
         out = self._forward(model, base)
 
-        # halo rows [n_local:) changed -> owned energy identical
+        # ghost rows [n_local:) changed -> owned energy identical
         halo_bump = base.clone()
         halo_bump[self.n_local_val :, :] += 7.5
-        out_halo = self._forward(model, halo_bump)
-        torch.testing.assert_close(out_halo["energy_redu"], out["energy_redu"])
+        out_ghost = self._forward(model, halo_bump)
+        torch.testing.assert_close(out_ghost["energy_redu"], out["energy_redu"])
 
         # an OWNED row changed -> owned energy must change
         owned_bump = base.clone()

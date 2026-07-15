@@ -638,7 +638,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    * exported artifact, exactly as the with-comm dense/edge artifacts do.
    *
    * @param[in] atype Per-node extended-region types, shape ``(N,)`` int64,
-   *            N == nall_real (owned prefix first, then halo).
+   *            N == nall_real (owned prefix first, then ghost).
    * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
    * @param[in] edge_index Extended-region edge graph ``(2, E)`` int64
    *            [src, dst]; ghost-node indices retained (NOT folded to
@@ -646,7 +646,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
    * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
    * @param[in] aparam Atomic parameters on the flat EXTENDED node axis,
-   *            shape ``(N, dim_aparam)`` (owned prefix filled, halo rows
+   *            shape ``(N, dim_aparam)`` (owned prefix filled, ghost rows
    *            zero-padded -- ghost fitting outputs are masked inside the
    *            artifact), or an empty tensor when ``dim_aparam == 0``.
    * @param[in] comm_tensors 8 comm tensors in canonical positional order:

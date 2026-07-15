@@ -401,7 +401,7 @@ def main():
     # ============================================================
     # Consumed by test_lammps_dpa2_graph_pt2.py's empty-subdomain aparam
     # regression: a ghost-only rank (nlocal == 0, nghost > 0) must
-    # SYNTHESIZE a zero aparam covering the graph's halo nodes instead of
+    # SYNTHESIZE a zero aparam covering the graph's ghost nodes instead of
     # feeding the empty owned tensor to the artifact -- the rank-local
     # reshape failure would otherwise desynchronize the per-layer border_op
     # collective sequence and hang the peers.  No .expected sidecar: the

@@ -537,7 +537,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
         Ghost-free graphs (Python single-rank; src IS the local owner) and
         extended single-process graphs need NO exchange -- identity. The
-        pt_expt subclass overrides this to overwrite halo rows via
+        pt_expt subclass overrides this to overwrite ghost rows via
         ``deepmd_export::border_op`` when ``comm_dict`` is provided (C++
         multi-rank extended-region graphs).
 
@@ -2658,7 +2658,7 @@ class RepformerLayer(NativeOP):
             Flat node-wise atomic invariant rep, with shape [n_total, ng1].
             Unlike :meth:`call`, this is the FULL node channel with no
             local/ghost slice: ghost-free graphs have no ghosts, and extended
-            (multi-rank) graphs deliberately compute halo rows here and let
+            (multi-rank) graphs deliberately compute ghost rows here and let
             the later communication step overwrite them.
         g2
             Flat edge-wise pair invariant rep, with shape [n_edge, ng2].

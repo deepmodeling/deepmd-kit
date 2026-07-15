@@ -199,17 +199,17 @@ def fit_output_to_model_output_graph(
         CUDA out-of-bounds device-assert is prevented by the index clamp in
         :func:`~deepmd.dpmodel.utils.neighbor_graph.derivatives.edge_force_virial`.
     n_local
-        ``(nf,)`` per-frame OWNED node counts for multi-rank halo exclusion
+        ``(nf,)`` per-frame OWNED node counts for multi-rank ghost exclusion
         (owned-prefix layout, :func:`~deepmd.dpmodel.model.edge_transform_output.node_ownership_mask`).
-        When given, every reducible per-node value is masked to zero on halo
+        When given, every reducible per-node value is masked to zero on ghost
         rows (index ``>= n_local[frame]``) BEFORE the per-frame
-        ``segment_sum`` -- each halo atom is owned (and counted) on another
+        ``segment_sum`` -- each ghost atom is owned (and counted) on another
         rank, so it must not double-count into THIS rank's differentiated
         energy. Critically, the mask is applied BEFORE ``edge_energy_deriv``
         differentiates the reduced value, so ``grad(energy, edge_vec)`` (and
         therefore force/virial/atom-virial) only carries owned-energy terms.
         The per-node output (``<var>``) itself stays FULL/unmasked (the C++
-        caller slices owned rows itself; halo partial forces are
+        caller slices owned rows itself; ghost partial forces are
         reverse-commed by LAMMPS -- dpa1-MP precedent). ``None`` (default):
         unchanged single-rank behavior.
     force_precision
@@ -248,7 +248,7 @@ def fit_output_to_model_output_graph(
     frame_id = frame_id_from_n_node(
         n_node, n_total=N
     )  # (N,) int64 frame index per atom
-    # owned-node (multi-rank halo) mask: (N,) bool, True for owned rows.
+    # owned-node (multi-rank ghost) mask: (N,) bool, True for owned rows.
     # Computed once (array-API pure, works directly on torch tensors) and
     # applied to every reducible per-node value BEFORE its segment_sum, so
     # the downstream force/virial autograd (which differentiates the

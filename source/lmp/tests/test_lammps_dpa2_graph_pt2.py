@@ -562,10 +562,10 @@ def test_pair_deepmd_mpi_dpa2_graph_empty_rank_does_not_silently_succeed() -> No
     the single-rank reference): dpa1 is non-message-passing, so its
     "empty" rank still runs the plain graph artifact over its (non-empty)
     ghost region.  dpa2's with-comm route instead needs every rank to
-    participate in the per-layer MPI halo exchange (``border_op``); a rank
+    participate in the per-layer MPI ghost exchange (``border_op``); a rank
     with zero nodes has nothing to export in the traced graph (violates
     the exported ``Dim("n_node_total", min=1)`` and would desync the
-    collective halo exchange across ranks). The C++ side
+    collective ghost exchange across ranks). The C++ side
     (``DeepPotPTExpt.cc``, guard added alongside the with-comm graph route)
     throws a clear, actionable error on the empty rank instead of running.
 

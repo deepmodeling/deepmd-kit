@@ -43,14 +43,14 @@ def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:
     """Derive the ``(n_total,)`` owned-node mask from per-frame local counts.
 
     Owned-prefix layout: frame ``f`` owns the first ``n_local[f]`` of its
-    contiguous ``n_node[f]``-node block (the remainder, if any, are halo/
+    contiguous ``n_node[f]``-node block (the remainder, if any, are ghost/
     ghost nodes owned by another rank). Local helper matching the (not yet
     merged) ``#5758`` name/semantics so a later rebase converges.
 
     Parameters
     ----------
     n_node
-        (nf,) per-frame REAL (local + halo) node counts.
+        (nf,) per-frame REAL (local + ghost) node counts.
     n_local
         (nf,) per-frame OWNED node counts, ``n_local[f] <= n_node[f]``.
     n_total
@@ -97,13 +97,13 @@ def fit_output_to_model_output_graph(
     mask
         the ``(N,)`` real-node mask for the intensive-output denominator.
     n_local
-        ``(nf,)`` per-frame OWNED node counts for multi-rank halo exclusion
+        ``(nf,)`` per-frame OWNED node counts for multi-rank ghost exclusion
         (owned-prefix layout, :func:`node_ownership_mask`). When given, every
-        reducible per-node value is masked to zero on halo rows (index
+        reducible per-node value is masked to zero on ghost rows (index
         ``>= n_local[frame]``) BEFORE the per-frame ``segment_sum`` -- each
-        halo atom is owned (and counted) on another rank, so its contribution
+        ghost atom is owned (and counted) on another rank, so its contribution
         must not double-count here. The per-node output (``<var>``) itself is
-        left FULL/unmasked (the C++ caller slices owned rows itself; halo
+        left FULL/unmasked (the C++ caller slices owned rows itself; ghost
         partial forces are reverse-commed by LAMMPS). ``None`` (default):
         unchanged single-rank behavior.
 

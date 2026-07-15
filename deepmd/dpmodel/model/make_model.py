@@ -682,7 +682,7 @@ def make_model(
                 (E,) boolean/0-1 valid-edge mask.
             n_local
                 Per-rank local (owned) atom counts for multi-rank inference,
-                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
                 are excluded from ``<var>_redu`` (see
                 :func:`fit_output_to_model_output_graph`); ``None`` (default)
                 is the single-rank/all-owned behavior.
@@ -758,7 +758,7 @@ def make_model(
                 (E,) boolean/0-1 valid-edge mask.
             n_local
                 Per-rank local (owned) atom counts for multi-rank inference,
-                ``(nf,)``. When given, halo rows (index ``>= n_local[frame]``)
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
                 are excluded from ``<var>_redu``; ``None`` (default) is the
                 single-rank/all-owned behavior.
             fparam

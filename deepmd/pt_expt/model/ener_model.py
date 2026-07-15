@@ -613,7 +613,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         """Trace ``forward_common_lower_graph`` with comm_dict tensors as
         additional positional inputs -- the with-comm counterpart of
         :meth:`forward_lower_graph_exportable` for message-passing graph
-        descriptors (dpa2's repformer block drives cross-rank halo refresh
+        descriptors (dpa2's repformer block drives cross-rank ghost refresh
         via ``deepmd_export::border_op``, see
         :meth:`~deepmd.pt_expt.descriptor.repformers.
         DescrptBlockRepformers._exchange_ghosts_graph`).
@@ -624,7 +624,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         derives ``n_local`` (the per-frame OWNED node count, reshaped to
         ``(1,)``; single-frame -- LAMMPS always drives inference with
         ``nf=1``) from the scalar ``nlocal`` tensor, so the differentiated
-        reduction excludes halo (not-owned) nodes (see
+        reduction excludes ghost (not-owned) nodes (see
         :meth:`forward_common_lower_graph`'s ``n_local`` parameter). Unlike
         the plain-graph export path (which traces
         ``forward_common_lower_graph_exportable`` and then wraps a SECOND

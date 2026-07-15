@@ -701,7 +701,7 @@ def _build_graph_dynamic_shapes_with_comm(
 
     Same as :func:`_build_graph_dynamic_shapes` (the flat node axis ``N``
     and the edge axis ``E`` stay dynamic -- a with-comm graph carries owned
-    PLUS halo nodes in the "owned-prefix" layout) EXCEPT ``nframes`` is
+    PLUS ghost nodes in the "owned-prefix" layout) EXCEPT ``nframes`` is
     STATIC at ``1``: the pt_expt Repformer with-comm override only supports
     ``nf=1`` (LAMMPS always drives multi-rank inference with one frame).
     The 8 trailing comm tensors are all STATIC (``None``): ``nswap`` is
@@ -742,7 +742,7 @@ def _build_graph_dynamic_shapes_with_comm(
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
         {0: nframes_val} if fparam is not None else None,  # fparam
         # aparam: (N, nda) — flat on the SAME extended node axis as atype
-        # (owned prefix + halo rows).
+        # (owned prefix + ghost rows).
         {0: n_node_total_dim} if aparam is not None else None,  # aparam
         {0: nframes_val} if charge_spin is not None else None,  # charge_spin
         # 8 comm tensors: static, nswap baked in at the trace value.
@@ -1440,8 +1440,8 @@ def _trace_and_export(
             # The pt_expt Repformer with-comm override only supports nf=1
             # (LAMMPS always drives multi-rank inference with one frame).
             # ``nloc_sample`` is the TOTAL flat node count carried by the
-            # graph (owned + halo, "owned-prefix" layout); the comm sample
-            # splits it into an owned prefix and a halo suffix so the
+            # graph (owned + ghost, "owned-prefix" layout); the comm sample
+            # splits it into an owned prefix and a ghost suffix so the
             # border_op self-send is genuinely exercised at trace time.
             # The builder's slot-2 ``n_local`` (clamp(n_node - 1, min=1))
             # already keeps owned != total for the in-graph mask symbols.

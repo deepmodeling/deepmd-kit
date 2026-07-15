@@ -833,7 +833,7 @@ class TestNodeOwnershipMask:
         np.testing.assert_array_equal(mask, np.ones(7, dtype=bool))
 
     def test_zero_owned_frame(self) -> None:
-        # a frame that owns nothing (all halo) -- degenerate but must not crash.
+        # a frame that owns nothing (all ghost) -- degenerate but must not crash.
         n_node = np.array([2, 3], dtype=np.int64)
         n_local = np.array([0, 2], dtype=np.int64)
         mask = node_ownership_mask(n_node, n_local, n_total=5)
@@ -842,7 +842,7 @@ class TestNodeOwnershipMask:
 
 class TestOwnedNodeMaskEnergyReduction:
     """``n_local`` (owned-node mask) in the graph output reduction (Task 9):
-    halo rows (index >= n_local[frame]) must be excluded from the
+    ghost rows (index >= n_local[frame]) must be excluded from the
     DIFFERENTIATED per-frame energy, while ``atom_energy`` itself stays FULL.
     """
 
@@ -866,9 +866,9 @@ class TestOwnedNodeMaskEnergyReduction:
     def test_owned_mask_energy_reduction(self) -> None:
         """1 frame, 5 nodes, n_local=3: energy_redu == sum(atom_energy[:3]),
         and the difference from the unmasked (``n_local=None``) energy_redu
-        equals sum(atom_energy[3:5]).  Under the #5758 convention the halo
+        equals sum(atom_energy[3:5]).  Under the #5758 convention the ghost region
         rows of the per-node output are ALSO masked to zero (owned rows
-        unchanged) -- each halo atom's fitting output is owned, and
+        unchanged) -- each ghost atom's fitting output is owned, and
         reported, by another rank.
         """
         model, ng, atype_local = self._make_graph_and_model(nloc=5)
@@ -890,7 +890,7 @@ class TestOwnedNodeMaskEnergyReduction:
             n_local=n_local,
         )
 
-        # per-node output: owned rows unchanged, halo rows masked to zero.
+        # per-node output: owned rows unchanged, ghost rows masked to zero.
         np.testing.assert_allclose(
             out_masked["energy"].reshape(-1)[:3],
             out_full["energy"].reshape(-1)[:3],

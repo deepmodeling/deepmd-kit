@@ -1242,7 +1242,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # dense does the mapping gather to g1_ext here; the graph has ONE
-        # flat node space -- nothing to do (extended multi-rank halo refresh
+        # flat node space -- nothing to do (extended multi-rank ghost refresh
         # happens inside the repformer layer loop via
         # `_exchange_ghosts_graph`).
         repformer_graph, repformer_static_nnei = _block_graph(

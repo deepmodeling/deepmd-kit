@@ -98,12 +98,12 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
         comm_dict: dict | None,
         n_total: int,
     ) -> torch.Tensor:
-        """Graph-path per-layer halo refresh via ``border_op``.
+        """Graph-path per-layer ghost refresh via ``border_op``.
 
         Flat single-frame counterpart of :meth:`_exchange_ghosts`: ``g1`` is
         already ``(N, ng1)`` with ``N == nlocal + nghost`` (owned prefix
         first), so no squeeze/pad/unsqueeze dance is needed -- ``border_op``
-        overwrites the halo rows ``[nlocal, N)`` in place with the owner
+        overwrites the ghost rows ``[nlocal, N)`` in place with the owner
         rows and returns the same tensor.  Identity without ``comm_dict``
         (ghost-free Python graphs / extended single-process graphs).  Spin
         models never route the graph lower (``disable_graph_lower``), so a
@@ -123,7 +123,7 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
         Returns
         -------
         g1 : torch.Tensor
-            The node channel with halo rows refreshed, with shape
+            The node channel with ghost rows refreshed, with shape
             [n_total, ng1].
 
         Raises
