@@ -453,11 +453,13 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool has_message_passing_ = false;
   // Whether the collective empty-rank preflight (allreduce of the minimum
   // owned+ghost node count over the LAMMPS communicator, graph with-comm
-  // route) has PASSED for the current neighbor topology.  Reset on every
-  // ``ago == 0`` rebuild: the node count shares the lifetime of the cached
-  // nlist/mapping/edge topology, so re-running the collective on cache-hit
-  // (``ago > 0``) force calls added a global synchronization per MD step
-  // without any added protection.
+  // route) has PASSED for the current neighbor topology.  The preflight
+  // re-runs whenever the with-comm graph branch is entered with
+  // ``ago == 0`` (every topology rebuild) or before its first success:
+  // the node count shares the lifetime of the cached nlist/mapping/edge
+  // topology, so re-running the collective on cache-hit (``ago > 0``)
+  // force calls added a global synchronization per MD step without any
+  // added protection.
   bool graph_comm_preflight_done_ = false;
   // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
   // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see

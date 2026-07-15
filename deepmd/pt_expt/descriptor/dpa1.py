@@ -640,6 +640,13 @@ class DescrptDPA1(DescrptDPA1DP):
         return (
             TRITON_AVAILABLE
             and se.tebd_input_mode in ("strip", "concat")
+            # Mirror the CUDA gate: the triton kernel does not re-apply the
+            # descriptor emask, so it relies on the graph having been built
+            # with pair exclusion.  get_model enforces descriptor
+            # exclude_types == model pair_exclude_types, making that hold
+            # today -- gate it anyway so the invariant is asserted at the
+            # dispatch site rather than assumed.
+            and not se.exclude_types
             and str(layers[-1].activation_function).lower() in ACT_CODES
         )
 
