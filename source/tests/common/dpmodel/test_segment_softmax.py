@@ -229,7 +229,7 @@ class TestSignedPhantomStrictPositivity:
         np.testing.assert_array_equal(w_zero, w_none)
 
     def test_positive_count_below_phantom_exact_dense(self) -> None:
-        """count > 0 with all real logits below ``phantom_logit``: the
+        """Count > 0 with all real logits below ``phantom_logit``: the
         denominator is positive (phantom terms only ADD), so the fixed-width
         dense softmax must be reproduced exactly -- the floor must not fire.
         """
@@ -295,7 +295,7 @@ class TestSignedPhantomStrictPositivity:
         ids = np.array([0, 0], dtype=np.int64)
         v = np.array([1.0, 2.0], dtype=np.float32)
 
-        def loss(x):  # noqa: ANN001, ANN202
+        def loss(x):
             w = segment_softmax(
                 x,
                 jnp.asarray(ids),

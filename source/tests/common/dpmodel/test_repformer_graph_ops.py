@@ -333,7 +333,8 @@ def test_local_atten_below_phantom_dense_parity():
     logit below ``-attnw_shift``.  With ``n_real == sel`` the signed phantom
     count is 0 -- the denominator is a plain positive softmax sum -- and the
     graph route must match dense EXACTLY (the always-on floor used to return
-    ~0.0018 where dense gives 1.0)."""
+    ~0.0018 where dense gives 1.0).
+    """
     la = LocalAtten(1, 1, 1, smooth=True, precision="float64", seed=1)
     la.mapq.w = np.array([[1.0]])
     la.mapkv.w = np.array([[-30.0, 1.0]])  # key -30, value 1
@@ -355,9 +356,7 @@ def test_local_atten_below_phantom_dense_parity():
         nf * nloc,
         nnei,  # sel == n_real: phantom count 0
     )
-    np.testing.assert_allclose(
-        np.asarray(got), ref.reshape(1, 1), rtol=1e-12, atol=0.0
-    )
+    np.testing.assert_allclose(np.asarray(got), ref.reshape(1, 1), rtol=1e-12, atol=0.0)
     # anti-vacuity: the logits really are below -attnw_shift and the dense
     # result is the nontrivial value from the review
     np.testing.assert_allclose(np.asarray(got), [[1.0]], rtol=1e-12)
@@ -365,7 +364,8 @@ def test_local_atten_below_phantom_dense_parity():
 
 def test_atten2map_below_phantom_dense_parity():
     """Same below-``-attnw_shift`` regime for the pair attention map: with
-    all key slots real (phantom count 0) graph must equal dense exactly."""
+    all key slots real (phantom count 0) graph must equal dense exactly.
+    """
     a2m = Atten2Map(1, 1, 1, has_gate=False, smooth=True, precision="float64", seed=2)
     a2m.mapqk.w = np.array([[1.0, -30.0]])  # query 1, key -30 -> logits -30
     nf, nloc, nnei = 1, 1, 2
