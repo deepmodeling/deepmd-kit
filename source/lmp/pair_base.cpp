@@ -147,7 +147,7 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
   Compute* compute = modify->compute[icompute];
   if (!compute) {
     error->all(FLERR,
-               "compute " + compute_fparam_id + " for fparam is not found");
+               "compute " + compute_fparam_id + " for fparam is invalid");
   }
   fparam.resize(dim_fparam);
 
@@ -245,7 +245,7 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   Compute* compute = modify->compute[icompute];
   if (!compute) {
     error->all(FLERR,
-               "compute " + compute_aparam_id + " for aparam is not found");
+               "compute " + compute_aparam_id + " for aparam is invalid");
   }
   if (!compute->peratom_flag) {
     error->all(FLERR, "compute " + compute_aparam_id +
@@ -277,19 +277,19 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   if (dim_aparam == 1) {
     double* cvector = compute->vector_atom;
     if (!cvector) {
-      error->all(FLERR, "compute " + compute_aparam_id +
+      error->one(FLERR, "compute " + compute_aparam_id +
                             " returned a null per-atom vector for aparam");
     }
     aparam.assign(cvector, cvector + nlocal);
   } else if (dim_aparam > 1) {
     double** carray = compute->array_atom;
     if (!carray) {
-      error->all(FLERR, "compute " + compute_aparam_id +
+      error->one(FLERR, "compute " + compute_aparam_id +
                             " returned a null per-atom array for aparam");
     }
     for (int ii = 0; ii < nlocal; ++ii) {
       if (!carray[ii]) {
-        error->all(FLERR, "compute " + compute_aparam_id +
+        error->one(FLERR, "compute " + compute_aparam_id +
                               " returned a null per-atom array row for aparam");
       }
       for (int jj = 0; jj < dim_aparam; ++jj) {
