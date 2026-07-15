@@ -48,29 +48,28 @@ class DescrptDPA1(DescrptDPA1DP):
         super().disable_graph_lower()
         self.graph_lower_disabled.fill_(True)
 
-    def uses_graph_lower(self) -> bool:
-        """Graph-lower eligibility; the persisted buffer is the source of truth.
-
-        ``load_state_dict`` (Trainer restart) only restores tensor values, so
-        the dpmodel-side bool is re-synced from the buffer here before
-        delegating to the base-class eligibility logic.
-
-        Returns
-        -------
-        bool
-            Whether the descriptor routes through the carry-all graph lower.
-        """
-        if bool(self.graph_lower_disabled):
-            self._graph_lower_disabled = True
-        return super().uses_graph_lower()
-
-    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         # Back-compat: checkpoints written before the knob was persisted lack
         # the buffer; default to the fresh module's value (graph enabled)
         # instead of failing the strict load.
         key = prefix + "graph_lower_disabled"
         if key not in state_dict:
             state_dict[key] = self.graph_lower_disabled.detach().clone()
+        else:
+            # Re-sync the dpmodel-side routing bool from the RESTORED value
+            # here, at load time, where the incoming tensor is real.  The
+            # routing predicate itself must stay a plain python bool:
+            # ``uses_graph_lower()`` runs inside traced forwards (the dense
+            # adapter gate), and reading the buffer there would emit a
+            # data-dependent ``bool(FakeTensor)`` guard that breaks
+            # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
+            self._graph_lower_disabled = bool(state_dict[key])
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def share_params(
