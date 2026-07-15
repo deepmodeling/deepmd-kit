@@ -110,3 +110,108 @@ def test_masked_entry_larger_than_unmasked_max_no_nan() -> None:
     ref = np.exp([1.0, 2.0]) / np.exp([1.0, 2.0]).sum()
     np.testing.assert_allclose(out[:2], ref, rtol=1e-12)
     assert out[2] == 0.0
+
+
+class TestSignedPhantomStrictPositivity:
+    """The SIGNED phantom denominator must stay strictly positive for
+    arbitrary finite logits (OutisLi / njzjz-bot review).
+
+    Real logits are not bounded below by ``phantom_logit``: the smooth
+    envelope maps pre-shift logits ``raw < -attnw_shift`` to
+    ``l < phantom_logit`` whenever ``sw > 0``.  With a negative count the
+    raw signed denominator ``sum exp(l) + (sel - n) exp(ph)`` then crosses
+    zero (e.g. ``sel=1``, logits ``[-21, -21]``, ``ph=-20``), which used to
+    hit the ``denom > 0`` where-guard and return weights ``[1, 1]`` (sum 2)
+    on one side and a pole on the other.  The smooth floor
+    ``(D + sqrt(D^2 + delta^2)) / 2`` keeps the normalization finite,
+    positive and smooth for any finite logits.
+    """
+
+    def test_reviewer_repro_finite_positive(self) -> None:
+        # sel=1, two real entries below the phantom logit -> raw D < 0.
+        data = np.array([-21.0, -21.0])
+        seg = np.array([0, 0])
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([-1.0]),  # sel - n_real = 1 - 2
+            phantom_logit=-20.0,
+        )
+        assert np.all(np.isfinite(w))
+        assert np.all(w >= 0.0)
+        # a positive normalization cannot return the where-guard's [1, 1]
+        assert w.sum() < 2.0
+
+    def test_njzjz_repro_three_entries(self) -> None:
+        data = np.array([-100.0, -100.0, -100.0])
+        seg = np.array([0, 0, 0])
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([-2.0]),  # sel=1, n_real=3
+            phantom_logit=-20.0,
+        )
+        assert np.all(np.isfinite(w))
+        assert np.all(w >= 0.0)
+        # deep-suppressed entries with a huge phantom deficit -> near-zero
+        # weights, NOT the where-guard's [1, 1, 1].
+        assert w.sum() < 1.0
+
+    def test_smooth_across_former_zero_crossing(self) -> None:
+        """Sweep a logit through the raw denominator's zero crossing: the
+        weights must stay finite and BOUNDED (<= 40 * n_real / sel from the
+        floor scale), and their increments must SCALE with the sweep
+        resolution -- the smoothness signature a pole cannot fake (at a
+        pole, refining the grid does not shrink the largest step).
+        """
+
+        def _sweep(lo: float, hi: float, num: int) -> np.ndarray:
+            outs = []
+            for l2 in np.linspace(lo, hi, num):
+                w = segment_softmax(
+                    np.array([-21.0, float(l2)]),
+                    np.array([0, 0]),
+                    1,
+                    phantom_count=np.array([-1.0]),
+                    phantom_logit=-20.0,
+                )
+                assert np.all(np.isfinite(w))
+                assert np.all(w >= 0.0)
+                # floor-scale bound: 40 * n_real / sel = 80 here
+                assert np.all(w <= 80.0)
+                outs.append(w)
+            return np.stack(outs)
+
+        # D_raw(l) = exp(-21) + exp(l) - exp(-20) crosses zero at l = ln(
+        # exp(-20) - exp(-21)) ~= -20.4587 (the LocalAtten sw-sweep pole
+        # from the review, expressed directly in logit space).
+        crossing = np.log(np.exp(-20.0) - np.exp(-21.0))
+        coarse = _sweep(crossing - 0.5, crossing + 0.5, 201)
+        step_coarse = np.abs(np.diff(coarse, axis=0)).max()
+        # refine 10x: a smooth function's largest step shrinks ~10x; a pole
+        # (or the old where-guard plateau jump) would keep an O(1) step.
+        fine = _sweep(crossing - 0.5, crossing + 0.5, 2001)
+        step_fine = np.abs(np.diff(fine, axis=0)).max()
+        assert step_fine < 0.2 * step_coarse, (
+            f"steps do not shrink under refinement (coarse {step_coarse:.4f} "
+            f"-> fine {step_fine:.4f}): discontinuity or pole at the crossing"
+        )
+
+    def test_floor_does_not_disturb_dense_parity_regime(self) -> None:
+        """In the in-design regime (all logits >= phantom_logit, count >= 0)
+        the floor's correction is ~exp(-2*shift) relative -- invisible at
+        the 1e-12 level used by the dense-parity suites.
+        """
+        rng = np.random.default_rng(3)
+        data = rng.normal(size=7)  # normal-scale logits, shift 20 below
+        seg = np.zeros(7, dtype=np.int64)
+        w_floor = segment_softmax(
+            data, seg, 1, phantom_count=np.array([3.0]), phantom_logit=-20.0
+        )
+        # reference: the exact fixed-width softmax with 3 phantom slots
+        full = np.concatenate([data, np.full(3, -20.0)])
+        ref = np.exp(full - full.max())
+        ref = ref / ref.sum()
+        np.testing.assert_allclose(w_floor, ref[:7], rtol=1e-12, atol=1e-15)

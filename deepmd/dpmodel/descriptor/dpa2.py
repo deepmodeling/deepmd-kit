@@ -757,13 +757,22 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         EquiVarApply).  ``check_graph_trace_torch_version`` keys its
         torch >= 2.6 requirement on this capability.
 
+        Derived from the EFFECTIVE per-layer flags, not the configured
+        arguments: the LAST repformer layer is built with
+        ``update_chnnl_2=False``, which forces its ``update_g2_has_attn``
+        and ``update_h2`` off -- so e.g. ``nlayers=1`` never runs
+        ``center_edge_pairs`` even when the arguments enable it, and old
+        torch stays usable.  This mirrors the gate
+        ``DescrptBlockRepformers.call_graph`` itself uses to decide whether
+        to build the pairs.
+
         Returns
         -------
         bool
             Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
         """
-        return bool(
-            self.repformer_args.update_g2_has_attn or self.repformer_args.update_h2
+        return any(
+            ll.update_g2_has_attn or ll.update_h2 for ll in self.repformers.layers
         )
 
     def disable_graph_lower(self) -> None:

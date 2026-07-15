@@ -275,11 +275,20 @@ def test_graph_trace_version_guard_tolerates_no_descriptor(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("repformer_overrides", "should_raise"),
     [
-        ({}, True),  # default dpa2: update_g2_has_attn=True -> compact pairs
-        ({"update_g2_has_attn": False, "update_h2": True}, True),  # h2 consumer
-        ({"update_g2_has_attn": False, "update_h2": False}, False),  # no pairs
+        # nlayers >= 2 so a non-last layer actually consumes compact pairs
+        # (the LAST layer is built with update_chnnl_2=False, which forces
+        # its g2/h2 updates off).
+        ({"nlayers": 2}, True),  # default update_g2_has_attn=True
+        ({"nlayers": 2, "update_g2_has_attn": False, "update_h2": True}, True),
+        (
+            {"nlayers": 2, "update_g2_has_attn": False, "update_h2": False},
+            False,
+        ),  # no pair consumers on any layer
+        # nlayers=1: the only layer is the last -> NO effective compact-pair
+        # consumer even with the arguments enabled; torch 2.5 stays usable.
+        ({"nlayers": 1}, False),
     ],
-    ids=["default_g2_attn", "update_h2", "no_pair_consumers"],
+    ids=["g2_attn_2layers", "update_h2_2layers", "no_pair_consumers", "single_layer"],
 )
 def test_graph_trace_version_guard_dpa2_compact_pairs(
     monkeypatch, repformer_overrides, should_raise
@@ -293,7 +302,10 @@ def test_graph_trace_version_guard_dpa2_compact_pairs(
     the descriptor capability ``uses_compact_edge_pairs()``: DPA2's
     ``update_g2_has_attn`` (default True) and ``update_h2`` both run the
     compact ``center_edge_pairs`` realization; with both off the lower
-    traces backed symbols only and old torch stays usable.
+    traces backed symbols only and old torch stays usable.  The capability
+    reads the EFFECTIVE per-layer flags: the last layer's g2/h2 updates
+    are structurally off (``update_chnnl_2=False``), so a single-layer
+    repformer never builds compact pairs and must NOT be rejected.
     """
     import torch
 

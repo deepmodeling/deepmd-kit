@@ -2386,12 +2386,14 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
           torch::full({1}, static_cast<std::int64_t>(nnode), opt_i64);
       const at::Tensor n_local =
           torch::full({1}, static_cast<std::int64_t>(nloc), opt_i64);
-      at::Tensor graph_aparam = aparam_tensor;
-      if (daparam > 0 && nnode > nloc) {
-        graph_aparam = torch::cat(
-            {aparam_tensor, torch::zeros({1, nnode - nloc, daparam}, opt_f64)},
-            1);
-      }
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
+      // rows, and synthesize a zero tensor on a ghost-only subdomain --
+      // the rank-3 (1, nnode, daparam) pad this branch used before is
+      // rejected by the artifact (GeneralFitting.call_graph requires
+      // rank-2 aparam), so device-edge graph inference with
+      // numb_aparam > 0 failed at the artifact boundary.
+      at::Tensor graph_aparam =
+          extend_graph_aparam(aparam_tensor, nnode, nloc, daparam);
       GraphTensorPack graph_pack;
       graph_pack.atype = atype_t.reshape({nnode});
       graph_pack.n_node = n_node;

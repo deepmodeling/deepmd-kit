@@ -110,13 +110,17 @@ def segment_softmax(
     carry-all regime ``n_real > sel``, where a clamped (non-negative) count
     would drop the compensation and leave a finite ``exp(-attnw_shift)``
     denominator step at the crossing.  For ``n_real <= sel`` the scheme is
-    term-for-term equal to the dense softmax.  The denominator is positive
-    whenever every real logit is ``>= phantom_logit`` (guaranteed by the
-    smooth-envelope logit construction for sane pre-shift logits); the
-    existing non-positive-denominator guard below keeps the out-of-design
-    corner defined.
+    term-for-term equal to the dense softmax.  Real logits are NOT bounded
+    below by ``phantom_logit`` (the smooth envelope maps pre-shift logits
+    ``raw < -attnw_shift`` to ``l < phantom_logit`` at ``sw > 0``), so for
+    negative counts the raw signed denominator can cross zero; a smooth
+    strictly-positive floor (see the inline comment at the denominator)
+    keeps the normalization finite, positive and C-infinity for arbitrary
+    finite logits while perturbing the in-design regime by only
+    ~``exp(-2 * attnw_shift)`` relative.
     """
     xp = array_api_compat.array_namespace(data)
+    dev = array_api_compat.device(data)
     if mask is not None:
         # broadcast mask (n,) over any trailing feature dims of data (n, *f)
         mask_b = xp.reshape(mask, mask.shape + (1,) * (data.ndim - 1))
@@ -154,9 +158,46 @@ def segment_softmax(
         ex = ex * xp.astype(mask_b, ex.dtype)
     denom = segment_sum(ex, segment_ids, num_segments)
     if ph_b is not None:
-        denom = denom + xp.astype(ph_b, denom.dtype) * xp.exp(
-            xp.full_like(seg_max, phantom_logit) - seg_max
-        )
+        ph_term = xp.exp(xp.full_like(seg_max, phantom_logit) - seg_max)
+        denom = denom + xp.astype(ph_b, denom.dtype) * ph_term
+        # Smooth strictly-positive floor for the SIGNED compensation: real
+        # logits are not bounded below by ``phantom_logit`` (the smooth
+        # envelope maps ``raw < -shift`` to ``l < -shift`` at ``sw > 0``),
+        # so with a negative count the signed denominator D can cross zero
+        # -- a pole in the attention weights reachable with finite, valid
+        # model parameters.  Exponential-tail floor:
+        #
+        #     D~ = D + delta * exp(-D / delta),   delta = sel*ph_term / 40
+        #
+        # Properties: (i) C-infinity in the logits and monotone-decreasing
+        # towards larger deficits; (ii) D~ >= delta > 0 for ANY finite
+        # logits (minimum at D == 0), so the weights stay finite and are
+        # bounded by ``40 * n_real / sel``; (iii) in the in-design regime
+        # every real logit is >= phantom_logit, hence D >= sel * ph_term
+        # == 40 * delta and the correction is <= exp(-40) * delta -- more
+        # than 1e-17 RELATIVE below D, i.e. it underflows to EXACT identity
+        # in float64 and the dense term-for-term parity is bit-preserved;
+        # (iv) the boundary-edge cancellation survives (a smooth function
+        # of the already-continuous D).  The exponent is clamped at 700 to
+        # avoid inf*0 pathologies for astronomically negative D (there the
+        # floor is astronomically large and the weights are ~0, as a
+        # maximal phantom deficit should give).
+        if mask is not None:
+            n_real_seg = segment_sum(
+                xp.astype(mask, denom.dtype), segment_ids, num_segments
+            )
+        else:
+            n_real_seg = segment_sum(
+                xp.ones(data.shape[:1], dtype=denom.dtype, device=dev),
+                segment_ids,
+                num_segments,
+            )
+        sel_b = xp.reshape(
+            n_real_seg, n_real_seg.shape + (1,) * (denom.ndim - 1)
+        ) + xp.astype(ph_b, denom.dtype)
+        delta = xp.maximum(sel_b, xp.ones_like(sel_b)) * ph_term / 40.0
+        e_arg = xp.minimum(-denom / delta, xp.full_like(denom, 700.0))
+        denom = denom + delta * xp.exp(e_arg)
     denom_e = xp.take(denom, segment_ids, axis=0)
     safe = xp.where(denom_e > 0, denom_e, xp.ones_like(denom_e))
     return ex / safe
