@@ -144,8 +144,7 @@ def test_dpmodel_backend_rejects_vesin():
 def test_explicit_method_fails_fast_for_ineligible_descriptor():
     """An EXPLICIT neighbor_graph_method must fail fast when the descriptor
     has no graph lower (mirrors the dpmodel guard; the default-path check in
-    _resolve_graph_method does not protect explicit methods). Regression for
-    OutisLi review on #5714.
+    _resolve_graph_method does not protect explicit methods).
     """
     from deepmd.pt_expt.descriptor.se_e2_a import (
         DescrptSeA,

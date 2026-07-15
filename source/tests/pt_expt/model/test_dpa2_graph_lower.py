@@ -243,8 +243,8 @@ class TestDpa2GraphLower:
         first derivatives too (attention off -- the fixture default); the
         Hessian parity would otherwise inherit the binding-sel divergence.
         """
-        from deepmd.pt_expt.train.training import (
-            _model_uses_graph_lower,
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower as _model_uses_graph_lower,
         )
 
         model = self._make_model()  # non-binding sel, attention off
@@ -459,23 +459,42 @@ class TestDpa2GraphLower:
             dtype=torch.float64,
             device=torch.device("cpu"),
         )
-        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
         traced = model.forward_lower_graph_exportable(
             atype,
             n_node,
+            nl,
             ei,
             ev,
             em,
+            do,
+            drp,
+            so,
+            srp,
             fparam=fp,
             aparam=ap,
             do_atomic_virial=True,
             charge_spin=cs,
+            destination_sorted=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
-        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        out = traced(atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs)
         ref = model.forward_common_lower_graph(
-            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
         )
         tol = {"rtol": 1e-12, "atol": 1e-12}
         torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
@@ -525,15 +544,23 @@ class TestDpa2GraphLower:
             want_aparam=False,
             want_charge_spin=False,
         )
-        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
 
-        compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
+        compiled_out = compiled_lower(
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
         eager = model.forward_common_lower_graph(
             atype,
             n_node,
+            nl,
             ei,
             ev,
             em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
             do_atomic_virial=False,
             fparam=fp,
             aparam=ap,
@@ -606,9 +633,11 @@ class TestDpa2GraphLower:
         from deepmd.pt_expt.model import (
             PropertyModel,
         )
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower as _model_uses_graph_lower,
+        )
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
-            _model_uses_graph_lower,
         )
 
         ds = _make_dpa2_descriptor(ntypes=self.nt).to(self.device)
@@ -684,14 +713,22 @@ class TestDpa2GraphLower:
             want_aparam=False,
             want_charge_spin=False,
         )
-        atype, n_node, ei, ev, em, fp, ap, cs = sample
-        compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
+        atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        compiled_out = compiled_lower(
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
         eager = model.forward_common_lower_graph(
             atype,
             n_node,
+            nl,
             ei,
             ev,
             em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
             do_atomic_virial=False,
             fparam=fp,
             aparam=ap,
@@ -735,26 +772,45 @@ class TestDpa2GraphLower:
             dtype=torch.float64,
             device=torch.device("cpu"),
         )
-        atype, n_node, ei, ev, em, fp, ap, cs = sample
+        atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
         assert fp is not None and fp.shape[-1] == 2, "fparam must be present"
 
         # (a) symbolic-trace export path
         traced = model.forward_lower_graph_exportable(
             atype,
             n_node,
+            nl,
             ei,
             ev,
             em,
+            do,
+            drp,
+            so,
+            srp,
             fparam=fp,
             aparam=ap,
             do_atomic_virial=True,
             charge_spin=cs,
+            destination_sorted=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
-        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        out = traced(atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs)
         ref = model.forward_common_lower_graph(
-            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
         )
         tol = {"rtol": 1e-12, "atol": 1e-12}
         torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
@@ -764,7 +820,9 @@ class TestDpa2GraphLower:
 
         # (b) compiled-training path (fparam threaded through the compile)
         compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None)
-        compiled_out = compiled_lower(atype, n_node, ei, ev, em, fp, ap, cs)
+        compiled_out = compiled_lower(
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
         ctol = {"rtol": 1e-10, "atol": 1e-10}
         torch.testing.assert_close(compiled_out["energy"], ref["energy_redu"], **ctol)
 
@@ -897,9 +955,11 @@ class TestOwnedNodeMaskEnergyReduction:
 
     def test_owned_mask_energy_reduction(self) -> None:
         """``energy_redu`` with ``n_local`` == sum(atom_energy[:n_local]);
-        ``atom_energy`` itself stays FULL/unmasked; halo rows [n_local:) of
-        the assembled force are NOT all zero (they still receive src-scatter
-        contributions from OWNED centers' edges).
+        halo rows of the per-node output are masked to zero (#5758
+        convention -- each halo atom's fitting output is owned by another
+        rank); halo rows [n_local:) of the assembled force are NOT all zero
+        (they still receive src-scatter contributions from OWNED centers'
+        edges).
         """
         model = self._make_model()
         model.eval()
@@ -908,20 +968,30 @@ class TestOwnedNodeMaskEnergyReduction:
         n_local_val = 4
 
         out_full = model.forward_common_lower_graph(
-            atype_flat, ng.n_node, ng.edge_index, ng.edge_vec, ng.edge_mask
+            atype_flat,
+            ng.n_node,
+            ng.n_node.clone(),
+            ng.edge_index,
+            ng.edge_vec,
+            ng.edge_mask,
         )
         n_local = torch.tensor([n_local_val], dtype=torch.int64, device=self.device)
         out_masked = model.forward_common_lower_graph(
             atype_flat,
             ng.n_node,
+            n_local,
             ng.edge_index,
             ng.edge_vec,
             ng.edge_mask,
-            n_local=n_local,
         )
 
-        # atom_energy (per-node) is FULL and byte-identical regardless of n_local.
-        torch.testing.assert_close(out_masked["energy"], out_full["energy"])
+        # per-node output: owned rows unchanged, halo rows masked to zero.
+        torch.testing.assert_close(
+            out_masked["energy"].reshape(-1)[:n_local_val],
+            out_full["energy"].reshape(-1)[:n_local_val],
+        )
+        halo_energy = out_masked["energy"].reshape(-1)[n_local_val:]
+        torch.testing.assert_close(halo_energy, torch.zeros_like(halo_energy))
 
         atom_energy = out_full["energy"].reshape(-1)
         owned_sum = atom_energy[:n_local_val].sum()
@@ -946,32 +1016,27 @@ class TestOwnedNodeMaskEnergyReduction:
             "owned-node mask must be applied BEFORE edge_energy_deriv"
         )
 
-    def test_n_local_none_is_byte_identical(self) -> None:
-        """Regression: omitting ``n_local`` (default ``None``) reproduces the
-        pre-Task-9 unmasked reduction exactly.
+    def test_n_local_full_ownership_is_unmasked(self) -> None:
+        """``n_local == n_node`` (every node owned, the single-rank case)
+        reproduces the unmasked reduction exactly: ``energy_redu`` equals the
+        sum of the (unmasked) per-node energies.
         """
         model = self._make_model()
         model.eval()
         ng = self._build_graph(model)
         atype_flat = self.atype.reshape(-1)
 
-        out_default = model.forward_common_lower_graph(
-            atype_flat, ng.n_node, ng.edge_index, ng.edge_vec, ng.edge_mask
-        )
-        out_explicit_none = model.forward_common_lower_graph(
+        out = model.forward_common_lower_graph(
             atype_flat,
             ng.n_node,
+            ng.n_node.clone(),
             ng.edge_index,
             ng.edge_vec,
             ng.edge_mask,
-            n_local=None,
         )
         torch.testing.assert_close(
-            out_default["energy_redu"], out_explicit_none["energy_redu"]
-        )
-        torch.testing.assert_close(out_default["energy"], out_explicit_none["energy"])
-        torch.testing.assert_close(
-            out_default["energy_derv_r"], out_explicit_none["energy_derv_r"]
+            out["energy_redu"].reshape(-1),
+            out["energy"].reshape(-1).sum().reshape(1),
         )
 
 
@@ -1040,11 +1105,11 @@ class TestGraphAparamExtendedAxis:
         return model.forward_common_lower_graph(
             self.atype.reshape(-1),
             ng.n_node,
+            n_local,
             ng.edge_index,
             ng.edge_vec,
             ng.edge_mask,
             aparam=aparam,
-            n_local=n_local,
         )
 
     def test_extended_axis_accepted_halo_rows_inert(self) -> None:
@@ -1085,17 +1150,21 @@ class TestGraphAparamExtendedAxis:
         with pytest.raises((RuntimeError, ValueError)):
             self._forward(model, owned_only)
 
-    def test_rectangular_aparam_fails_loudly(self) -> None:
-        """A rectangular ``(nf, nloc, nda)`` aparam handed to the graph lower
-        must raise -- with ``nf * nloc == N`` it would silently reshape into
-        the right element order in eager mode while handing ``torch.export``
-        an unprovable ``N == nf * nloc`` relation (the root cause of the
-        aparam graph-freeze failures).
+    def test_rectangular_aparam_extends_consistently(self) -> None:
+        """A rectangular ``(nf, nloc, nda)`` aparam on the EXTENDED-region
+        route (``n_local`` present) is expanded by the ragged
+        ``_extend_graph_aparam`` gather (#5758) and must give the same owned
+        energy as the equivalent flat ``(N, nda)`` input; the flat layout
+        stays the canonical trace/export ABI (a rectangular sample would
+        hand ``torch.export`` an unprovable ``N == nf * nloc`` relation --
+        the root cause of the aparam graph-freeze failures).
         """
         model = self._make_model()
         model.eval()
-        rectangular = torch.linspace(
+        flat = torch.linspace(
             0.1, 0.6, self.natoms, dtype=torch.float64, device=self.device
-        ).reshape(1, self.natoms, 1)
-        with pytest.raises(ValueError, match="flat"):
-            self._forward(model, rectangular)
+        ).reshape(self.natoms, 1)
+        rectangular = flat.reshape(1, self.natoms, 1)
+        out_rect = self._forward(model, rectangular)
+        out_flat = self._forward(model, flat)
+        torch.testing.assert_close(out_rect["energy_redu"], out_flat["energy_redu"])

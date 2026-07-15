@@ -434,12 +434,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns whether this descriptor supports the graph-native lower.
 
         The graph-native lower (``call_graph``) covers the factorizable path
-        AND transformer attention (``attn_layer >= 0``, NeighborGraph PR-D)
-        with concat OR strip type-embedding.  ``exclude_types`` is fully
-        supported via
+        and transformer attention (``attn_layer >= 0``) with concat or strip
+        type embedding. ``exclude_types`` is applied through
         :func:`~deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
-        Compressed descriptors are the remaining ineligible config and fall
-        back to the legacy dense path, so those models keep working unchanged.
+        Geo-compressed strip models
+        (``geo_compress=True``, ``attn_layer == 0``) are also graph-eligible;
+        tebd-only compression and compressed descriptors with descriptor-level
+        exclusions stay on the legacy dense path.
 
         Eligibility does NOT imply numerical interchangeability with the
         dense route for every config: with ``smooth_type_embedding=True``
@@ -449,13 +450,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         if self._graph_lower_disabled:
             return False
-        # compressed descriptors have no graph kernel (geo/tebd tabulation is
-        # dense-only); keep them on the legacy dense path.
         if self.compress:
-            return False
-        # strip is graph-eligible (per-edge factorized embedding, no neighbor
-        # coupling); exclude_types is graph-native via ``apply_pair_exclusion``
-        # (owned at this seam). Only compression / the disable flag force dense.
+            return (
+                self.geo_compress
+                and self.se_atten.tebd_input_mode == "strip"
+                and self.se_atten.attn_layer == 0
+                and not self.se_atten.exclude_types
+            )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
 
     def disable_graph_lower(self) -> None:
@@ -1782,7 +1783,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         Notes
         -----
         Known limitations:
-        - ``tebd_input_mode`` in {"concat", "strip"}; compressed descriptors stay dense;
+        - ``tebd_input_mode`` in {"concat", "strip"};
         - ``exclude_types`` is applied graph-natively via ``apply_pair_exclusion``.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (

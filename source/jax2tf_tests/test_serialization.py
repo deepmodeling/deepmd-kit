@@ -3,7 +3,9 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import pytest
+import tensorflow as tf
 from tensorflow.core.protobuf import (
     saved_model_pb2,
 )
@@ -38,6 +40,8 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
     )
 
     class DummyModel:
+        dim_chg_spin = 0
+
         def call_common_lower(
             self,
             coord,
@@ -46,12 +50,19 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
             mapping,
             fparam,
             aparam,
+            charge_spin=None,
             do_atomic_virial: bool = False,
         ):
             del nlist, mapping, fparam, aparam, do_atomic_virial
+            charge_spin_offset = (
+                0.0
+                if charge_spin is None
+                else jnp.asarray(charge_spin[:, None, :1], dtype=coord.dtype)
+            )
             return {
                 "coord_x": coord[..., :1]
                 + jnp.asarray(atype[..., None], dtype=coord.dtype) * 0.0
+                + charge_spin_offset
             }
 
         def get_nnei(self) -> int:
@@ -99,6 +110,21 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
         def get_default_fparam(self) -> None:
             return None
 
+        def has_chg_spin_ebd(self) -> bool:
+            return self.dim_chg_spin > 0
+
+        def get_dim_chg_spin(self) -> int:
+            return self.dim_chg_spin
+
+        def has_default_chg_spin(self) -> bool:
+            return False
+
+        def get_default_chg_spin(self) -> None:
+            return None
+
+    class DummyChargeSpinModel(DummyModel):
+        dim_chg_spin = 2
+
     monkeypatch.setattr(
         serialization.BaseModel,
         "deserialize",
@@ -112,3 +138,33 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
     )
 
     assert "XlaCallModule" in _saved_model_ops(model_dir)
+
+    monkeypatch.setattr(
+        serialization.BaseModel,
+        "deserialize",
+        staticmethod(lambda data: DummyChargeSpinModel()),
+    )
+
+    charge_spin_model_dir = tmp_path / "dummy_chg_spin.savedmodel"
+    serialization.deserialize_to_file(
+        str(charge_spin_model_dir),
+        {"model": {"type": "dummy"}, "model_def_script": {"type": "dummy"}},
+    )
+
+    assert "XlaCallModule" in _saved_model_ops(charge_spin_model_dir)
+
+    loaded_model = tf.saved_model.load(str(charge_spin_model_dir))
+    coord = tf.constant([[[0.2, 0.0, 0.0], [0.8, 0.0, 0.0]]], dtype=tf.float64)
+    atype = tf.constant([[0, 0]], dtype=tf.int32)
+    result = loaded_model.call(
+        coord,
+        atype,
+        tf.zeros([1, 0, 0], dtype=tf.float64),
+        tf.zeros([1, 0], dtype=tf.float64),
+        tf.zeros([1, 2, 0], dtype=tf.float64),
+        tf.constant([[2.0, 1.0]], dtype=tf.float64),
+    )
+    np.testing.assert_allclose(
+        result["coord_x"].numpy(),
+        np.array([[[2.2], [2.8]]]),
+    )

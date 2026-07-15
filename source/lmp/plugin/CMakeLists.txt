@@ -116,6 +116,15 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   add_library(${libname} MODULE ${LMP_SRC})
 
+  option(DEEPMD_LAMMPS_KOKKOS
+         "Build the Kokkos device pair style in the LAMMPS plugin" OFF)
+  if(DEEPMD_LAMMPS_KOKKOS)
+    find_package(Kokkos CONFIG REQUIRED)
+    target_compile_definitions(${libname} PRIVATE LMP_KOKKOS)
+    target_include_directories(${libname} PRIVATE ${LAMMPS_HEADER_DIR}/KOKKOS)
+    target_link_libraries(${libname} PUBLIC Kokkos::kokkos)
+  endif()
+
   # link: libdeepmd
   if(DP_USING_C_API)
     target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD_C})

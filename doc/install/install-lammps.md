@@ -80,6 +80,16 @@ make -j4
 make install
 ```
 
+To build the GPU-resident `pair_style deepmd/kk`, enable the LAMMPS Kokkos
+package. The pair style uses the DeePMD C API:
+
+```bash
+cmake -D PKG_KOKKOS=ON \
+    -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes \
+    -D CMAKE_INSTALL_PREFIX=${deepmd_root} \
+    -D CMAKE_PREFIX_PATH=${deepmd_root} ../cmake
+```
+
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
 ```bash
@@ -112,6 +122,12 @@ cmake -D PKG_PLUGIN=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CM
 make -j4
 make install
 ```
+
+Configure LAMMPS with `PKG_KOKKOS=ON`, then configure the DeePMD plugin with
+`DEEPMD_LAMMPS_KOKKOS=ON` and `Kokkos_DIR` pointing to the Kokkos package
+exported by the LAMMPS build. This registers the GPU-resident
+`pair_style deepmd/kk`; the plugin and built-in integrations use the same C API
+device-graph interface.
 
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 

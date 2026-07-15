@@ -75,8 +75,8 @@ def _build_system(
 
     The blob keeps every atom within ``rcut`` of at most ``natoms - 1`` others
     (<< ``sel``), so the carry-all graph neighbor set equals the sel-capped
-    dense one.  Varying ``natoms`` yields a different edge count, exercising the
-    DYNAMIC edge axis of the exported ``.pt2`` (B2.0).
+    dense one. Varying ``natoms`` yields a different edge count and exercises
+    the dynamic edge axis of the exported ``.pt2``.
     """
     rng = np.random.default_rng(seed)
     box_size = 18.0
@@ -88,10 +88,7 @@ def _build_system(
     return coords, cells, atype
 
 
-# Two DIFFERENT-size systems evaluated through the SAME exported ``.pt2``.
-# Both are sparse, non-binding clusters but with different edge counts, so the
-# second size FAILS against a static-``E`` artifact (B1) and PASSES only once
-# the edge axis is dynamic (B2.0).
+# Two system sizes with different edge counts use the same exported artifact.
 _SYSTEMS = {
     "small_8": {"natoms": 8, "seed": 20240626},
     "large_20": {"natoms": 20, "seed": 20240701},
@@ -162,7 +159,7 @@ def graph_pt2(request):
     enumeration exports via unbacked SymInts (``xp_hint_dynamic_size``).
     ``smooth_type_embedding`` stays False: the smooth dense reference keeps
     sel-padding in its softmax denominator, so dense==carry-all parity holds
-    only for the non-smooth branch (PR-D divergence decision).
+    only for the non-smooth branch.
 
     The AOTI compile is slow (~90 s), so it is done once per param.  The eager
     pt_expt model is returned alongside the archive path to serve as the dense
@@ -197,9 +194,8 @@ def graph_pt2(request):
 def test_graph_pt2_deepeval_parity(graph_pt2, pbc, system) -> None:
     """Graph ``.pt2`` DeepEval == eager dense dpa1 (energy/force/virial), 1e-10.
 
-    Both ``_SYSTEMS`` are fed through the SAME module-scoped ``.pt2``; the
-    differing edge counts prove the exported artifact's edge axis is dynamic
-    (a static-``E`` B1 artifact would reject / mis-shape the larger system).
+    Both systems use the same module-scoped artifact; their different edge
+    counts exercise its dynamic edge axis.
     """
     pt2_path, model = graph_pt2
     coords, cells, atype = _build_system(**_SYSTEMS[system])

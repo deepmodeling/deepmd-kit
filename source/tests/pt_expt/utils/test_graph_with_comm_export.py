@@ -189,7 +189,8 @@ def test_graph_with_comm_n_local_is_separate_device_input(
 ) -> None:
     """The graph with-comm ABI splits the owned-count roles: the CPU
     ``nlocal`` comm tensor is host control metadata for ``border_op``, and
-    a SEPARATE 17th ``n_local`` input feeds the in-graph owned-node mask.
+    the SEPARATE device ``n_local`` input (slot 2 of the graph base, #5758
+    convention) feeds the in-graph owned-node mask.
 
     Regression for the device-scalar review finding: deriving the owned
     mask from a device-placed ``nlocal`` comm tensor made every per-layer
@@ -197,8 +198,8 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     synchronizing D2H read (``4 * nlayers`` per MD step).  With the split,
     all 8 comm tensors stay on CPU (symmetric with the dense with-comm
     artifact).  This pins the ABI: the traced program exposes the extra
-    input (17 placeholders: 8 graph-base incl. the None-valued
-    fparam/aparam/charge_spin slots + 8 comm + n_local), and the
+    input (21 placeholders: 13 graph-base incl. slot-2 ``n_local`` and the
+    None-valued fparam/aparam/charge_spin slots + 8 comm), and the
     owned-energy reduction follows ``n_local``, not the comm ``nlocal``.
     """
     import numpy as np
@@ -216,9 +217,9 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     )
     loaded = exported.module()
     placeholders = loaded.graph.find_nodes(op="placeholder")
-    assert len(placeholders) == 17, (
-        f"graph with-comm program must accept 17 positional inputs "
-        f"(8 graph-base + 8 comm + n_local); got {len(placeholders)}"
+    assert len(placeholders) == 21, (
+        f"graph with-comm program must accept 21 positional inputs "
+        f"(13 graph-base incl. n_local + 8 comm); got {len(placeholders)}"
     )
 
     # Build a single-rank self-comm system: 5 owned + 2 ghost nodes.
@@ -236,13 +237,17 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     nlocal = n_total - nghost
     coord = rng.random((1, n_total, 3)) * rcut * 0.6
     atype = np.array([[i % 2 for i in range(n_total)]])
-    graph = build_neighbor_graph(coord, atype, None, rcut)
+    graph = build_neighbor_graph(coord, atype, None, rcut, canonicalize=True)
 
     atype_t = torch.tensor(atype.reshape(-1), dtype=torch.int64)
     n_node_t = torch.as_tensor(np.asarray(graph.n_node), dtype=torch.int64)
     ei = torch.as_tensor(np.asarray(graph.edge_index), dtype=torch.int64)
     ev = torch.as_tensor(np.asarray(graph.edge_vec), dtype=torch.float64)
     em = torch.as_tensor(np.asarray(graph.edge_mask), dtype=torch.bool)
+    do_t = torch.as_tensor(np.asarray(graph.destination_order), dtype=torch.int64)
+    drp_t = torch.as_tensor(np.asarray(graph.destination_row_ptr), dtype=torch.int64)
+    so_t = torch.as_tensor(np.asarray(graph.source_order), dtype=torch.int64)
+    srp_t = torch.as_tensor(np.asarray(graph.source_row_ptr), dtype=torch.int64)
 
     sendlist_indices = np.ascontiguousarray(
         np.arange(nghost, dtype=np.int32)
@@ -261,7 +266,22 @@ def test_graph_with_comm_n_local_is_separate_device_input(
 
     def run(n_local_val: int) -> torch.Tensor:
         n_local_t = torch.tensor([n_local_val], dtype=torch.int64)
-        out = loaded(atype_t, n_node_t, ei, ev, em, None, None, None, *comm, n_local_t)
+        out = loaded(
+            atype_t,
+            n_node_t,
+            n_local_t,
+            ei,
+            ev,
+            em,
+            do_t,
+            drp_t,
+            so_t,
+            srp_t,
+            None,
+            None,
+            None,
+            *comm,
+        )
         return out["energy"]
 
     # Same comm nlocal, different n_local: the owned-energy reduction must

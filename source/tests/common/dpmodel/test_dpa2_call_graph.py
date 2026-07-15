@@ -866,7 +866,10 @@ class TestOwnedNodeMaskEnergyReduction:
     def test_owned_mask_energy_reduction(self) -> None:
         """1 frame, 5 nodes, n_local=3: energy_redu == sum(atom_energy[:3]),
         and the difference from the unmasked (``n_local=None``) energy_redu
-        equals sum(atom_energy[3:5]); ``atom_energy`` itself is unchanged.
+        equals sum(atom_energy[3:5]).  Under the #5758 convention the halo
+        rows of the per-node output are ALSO masked to zero (owned rows
+        unchanged) -- each halo atom's fitting output is owned, and
+        reported, by another rank.
         """
         model, ng, atype_local = self._make_graph_and_model(nloc=5)
 
@@ -887,9 +890,15 @@ class TestOwnedNodeMaskEnergyReduction:
             n_local=n_local,
         )
 
-        # atom_energy (per-node) is FULL and byte-identical regardless of n_local.
+        # per-node output: owned rows unchanged, halo rows masked to zero.
         np.testing.assert_allclose(
-            out_masked["energy"], out_full["energy"], rtol=1e-12, atol=1e-12
+            out_masked["energy"].reshape(-1)[:3],
+            out_full["energy"].reshape(-1)[:3],
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            out_masked["energy"].reshape(-1)[3:], 0.0, rtol=0, atol=1e-12
         )
 
         atom_energy = out_full["energy"].reshape(-1)

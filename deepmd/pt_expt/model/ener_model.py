@@ -90,6 +90,168 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
+    def forward_lower_canonical_graph(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        source: torch.Tensor,
+        edge_vec: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        *,
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate an eligible compressed DPA1 deployment graph.
+
+        Parameters
+        ----------
+        atype
+            Flat local-plus-halo atom types with shape ``(N,)``, int64.
+        n_node
+            Per-frame total node counts with shape ``(nf,)``, int64.
+        n_local
+            Per-frame owned node counts with shape ``(nf,)``, int64.
+        source
+            Source-node indices with shape ``(S,)``, int32 or int64.
+        edge_vec
+            Destination-major edge vectors with shape ``(S, 3)``, float32.
+        destination_row_ptr
+            Destination CSR offsets with shape ``(N + 1,)``, int64.
+        source_row_ptr
+            Source CSR offsets with shape ``(N + 1,)``, int64.
+        source_order
+            Source-grouped edge positions with shape ``(S,)`` and the same
+            dtype as ``source``.
+        do_atomic_virial
+            Whether to return the per-node virial.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public energy-model outputs on the flat node axis.
+        """
+        from deepmd.kernels.cuda.dpa1.canonical import (
+            canonical_model_eligible,
+            dpa1_canonical_compress_energy_force,
+        )
+        from deepmd.pt_expt.utils.canonical_graph import (
+            DPA1CanonicalGraph,
+            validate_canonical_graph_shapes,
+        )
+
+        if not canonical_model_eligible(self):
+            raise ValueError("model is not eligible for compact canonical deployment")
+        graph = DPA1CanonicalGraph(
+            n_node=n_node,
+            n_local=n_local,
+            source=source,
+            edge_vec=edge_vec,
+            destination_row_ptr=destination_row_ptr,
+            source_row_ptr=source_row_ptr,
+            source_order=source_order,
+        )
+        validate_canonical_graph_shapes(graph, atype.shape[0])
+        atype, output_mask = self.atomic_model._prepare_graph_nodes(
+            n_node,
+            n_local,
+            atype,
+            edge_vec,
+        )
+        descriptor = self.atomic_model.descriptor
+        fitting = self.atomic_model.fitting_net
+        atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
+        energy, atom_energy, force, virial, atom_virial = (
+            dpa1_canonical_compress_energy_force(
+                descriptor,
+                fitting,
+                graph,
+                atype,
+                descriptor.type_embedding.call(),
+                output_mask,
+                atom_bias,
+                do_atomic_virial,
+            )
+        )
+        result = {
+            "atom_energy": atom_energy,
+            "energy": energy,
+            "force": force,
+            "virial": virial,
+            "mask": output_mask.to(torch.int32),
+        }
+        if do_atomic_virial:
+            result["atom_virial"] = atom_virial
+        return result
+
+    def forward_lower_canonical_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        source: torch.Tensor,
+        edge_vec: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        *,
+        do_atomic_virial: bool,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace the compact canonical deployment forward with ``make_fx``.
+
+        Parameters
+        ----------
+        atype, n_node, n_local, source, edge_vec
+            Compact graph node and edge tensors.
+        destination_row_ptr, source_row_ptr, source_order
+            Compact dual-CSR topology.
+        do_atomic_virial
+            Whether the traced output includes per-node virial.
+        **make_fx_kwargs
+            Additional arguments passed to :func:`make_fx`.
+
+        Returns
+        -------
+        torch.nn.Module
+            Traced eight-input compact deployment module.
+        """
+        model = self
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            source: torch.Tensor,
+            edge_vec: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            return model.forward_lower_canonical_graph(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            source,
+            edge_vec,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+        )
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -280,13 +442,19 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         atype: torch.Tensor,
         n_node: torch.Tensor,
+        n_local: torch.Tensor,
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        destination_sorted: bool = False,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower_graph`` into an exportable module with
@@ -298,15 +466,26 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         Parameters
         ----------
         atype
-            (N,) flat local atom types, ``N == sum(n_node)``.
+            (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
         n_node
-            (nf,) per-frame local atom counts.
+            (nf,) per-frame total node counts.
+        n_local
+            (nf,) per-frame owned node counts.
         edge_index
             (2, E) ``[src, dst]`` edge endpoints (flat local indices).
         edge_vec
             (E, 3) neighbor-minus-center edge vectors (sample for tracing).
         edge_mask
             (E,) valid-edge mask (sample for tracing).
+        destination_order
+            (E,) destination-grouped edge permutation.
+        source_order
+            (E,) source-grouped edge permutation.
+        destination_row_ptr, source_row_ptr
+            (N + 1,) destination/source CSR offsets.
+        destination_sorted
+            Static export-time assertion that the payload is destination-major
+            and ``destination_order`` is identity.
         fparam, aparam, do_atomic_virial, charge_spin
             As in ``forward_lower``.
         **make_fx_kwargs
@@ -317,26 +496,32 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         -------
         torch.nn.Module
             A traced module whose ``forward`` accepts
-            ``(atype, n_node, edge_index, edge_vec, edge_mask,
-            fparam, aparam, charge_spin)`` and returns a dict with the
-            public keys: ``atom_energy``, ``energy``, ``force``,
+            ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+            destination_order, destination_row_ptr, source_order,
+            source_row_ptr, fparam, aparam, charge_spin)`` and returns a dict
+            with the public keys: ``atom_energy``, ``energy``, ``force``,
             ``virial``, ``atom_virial`` (the last only when
-            ``do_atomic_virial``).  Unlike the dense
+            ``do_atomic_virial``). Unlike the dense
             :meth:`forward_lower_exportable` (which emits ``extended_force`` /
-            ``extended_virial`` over the ghost-padded extended region), the
-            graph path is LOCAL-only (``N == sum(n_node)`` nodes, no ghosts),
-            so it emits ``force`` / ``atom_virial`` directly.
+            ``extended_virial``), the graph path emits ``force`` and
+            ``atom_virial`` directly on the local-plus-halo node axis.
         """
         traced = self.forward_common_lower_graph_exportable(
             atype,
             n_node,
+            n_local,
             edge_index,
             edge_vec,
             edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
+            destination_sorted=destination_sorted,
             **make_fx_kwargs,
         )
 
@@ -348,9 +533,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         def fn(
             atype: torch.Tensor,
             n_node: torch.Tensor,
+            n_local: torch.Tensor,
             edge_index: torch.Tensor,
             edge_vec: torch.Tensor,
             edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
             charge_spin: torch.Tensor | None,
@@ -358,9 +548,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_ret = traced(
                 atype,
                 n_node,
+                n_local,
                 edge_index,
                 edge_vec,
                 edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
                 fparam,
                 aparam,
                 charge_spin,
@@ -374,16 +569,33 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             )
 
         return make_fx(fn, **make_fx_kwargs)(
-            atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin
+            atype,
+            n_node,
+            n_local,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fparam,
+            aparam,
+            charge_spin,
         )
 
     def forward_lower_graph_exportable_with_comm(
         self,
         atype: torch.Tensor,
         n_node: torch.Tensor,
+        n_local: torch.Tensor,
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
@@ -395,7 +607,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         communicator: torch.Tensor,
         nlocal: torch.Tensor,
         nghost: torch.Tensor,
-        n_local: torch.Tensor,
         do_atomic_virial: bool = False,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
@@ -474,9 +685,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         def fn(
             atype: torch.Tensor,
             n_node: torch.Tensor,
+            n_local: torch.Tensor,
             edge_index: torch.Tensor,
             edge_vec: torch.Tensor,
             edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
             charge_spin: torch.Tensor | None,
@@ -488,7 +704,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             communicator: torch.Tensor,
             nlocal: torch.Tensor,
             nghost: torch.Tensor,
-            n_local: torch.Tensor,
         ) -> dict[str, torch.Tensor]:
             comm_dict = {
                 "send_list": send_list,
@@ -500,23 +715,25 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 "nlocal": nlocal,
                 "nghost": nghost,
             }
-            # n_local is the DEVICE owned-count input; reshape to the
-            # (nf,) == (1,) shape forward_common_lower_graph expects, cast
-            # to n_node's dtype (node_ownership_mask compares directly
-            # against n_node-derived indices).  The CPU ``nlocal`` comm
-            # tensor above is host control metadata for border_op only.
-            n_local = n_local.reshape(1).to(n_node.dtype)
+            # ``n_local`` (slot 2, DEVICE) is the owned-count input consumed
+            # by the in-graph owned-node mask; the CPU ``nlocal`` comm
+            # tensor is host control metadata for border_op only.
             model_ret = model.forward_common_lower_graph(
                 atype,
                 n_node,
+                n_local,
                 edge_index,
                 edge_vec,
                 edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
+                destination_sorted=True,
                 do_atomic_virial=do_atomic_virial,
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
-                n_local=n_local,
                 comm_dict=comm_dict,
             )
             return _translate_energy_keys(
@@ -530,9 +747,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         return make_fx(fn, **make_fx_kwargs)(
             atype,
             n_node,
+            n_local,
             edge_index,
             edge_vec,
             edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
             fparam,
             aparam,
             charge_spin,
@@ -544,5 +766,4 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             communicator,
             nlocal,
             nghost,
-            n_local,
         )

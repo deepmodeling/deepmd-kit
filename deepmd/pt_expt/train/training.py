@@ -49,9 +49,6 @@ from deepmd.pt.train.validation import (
     FullValidator,
     resolve_full_validation_start_step,
 )
-from deepmd.pt.utils.compile_compat import (
-    forbidden_dims_from_model as _forbidden_dims_from_model,
-)
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
@@ -67,6 +64,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.model import (
     get_model,
+)
+from deepmd.pt_expt.model.graph_lower import (
+    model_uses_graph_lower,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
@@ -308,6 +308,41 @@ def _replace_latest_checkpoint_link(latest: Path, ckpt_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _forbidden_dims_from_model(
+    model: torch.nn.Module,
+    task_buf_vals: tuple[torch.Tensor, ...],
+) -> set[int]:
+    """Prime-collision set for trace-dim selection.
+
+    Collects every ``> 1`` dim of the model's parameters/buffers (so
+    ``_next_safe_prime`` never aliases an internal dim like ``g2_dim`` /
+    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
+    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the dense
+    :func:`_trace_and_compile` and the graph :func:`_trace_and_compile_graph`;
+    each caller adds its path-specific dims (nall/nloc/nsel for dense,
+    charge_spin for both) on top of this base set.
+    """
+    forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    for _getter in (model.get_dim_fparam, model.get_dim_aparam):
+        try:
+            _dim = _getter()
+            if _dim > 1:
+                forbidden.add(int(_dim))
+        except Exception:
+            pass  # best-effort: dim unavailable -> nothing to forbid
+    for _tbv in task_buf_vals:
+        for _d in _tbv.shape:
+            if _d > 1:
+                forbidden.add(int(_d))
+    return forbidden
+
+
 def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
@@ -547,83 +582,6 @@ def _finalize_compiled_lower(
     )
 
 
-def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
-    """Whether ``model``'s eager default-flip routes through the GRAPH lower.
-
-    Mirrors the predicate in
-    :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
-    for ``neighbor_graph_method is None`` (the training default): a model is
-    graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (dpa1/se_atten with concat type embedding;
-    attention layers included).
-
-    When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
-    so the compiled path matches eager training (which already default-flips to
-    the carry-all graph forward); when False the dense ``forward_lower`` is
-    compiled (se_e2_a / dpa2 / dpa3 / linear / zbl).
-
-    ASSUMPTION: training uses the default ``neighbor_graph_method`` (None). If a
-    user-facing ``"legacy"`` opt-out is ever plumbed into the trainer, this gate
-    must also honor it (else eager would run dense while the compiled path runs
-    the graph lower, re-introducing the eager!=compiled divergence this fixes).
-    """
-    if not hasattr(model, "mixed_types"):
-        return False
-    try:
-        if not model.mixed_types():
-            return False
-    except (AttributeError, NotImplementedError):
-        return False
-    # ENERGY-output models only, mirroring ``_resolve_graph_method``'s
-    # default-flip gate: ``_trace_and_compile_graph`` is energy-specific
-    # (``do_grad_r("energy")``, ``_translate_energy_keys``), so a non-energy
-    # model (property/dos/dipole/polar) on this path raises
-    # ``KeyError('energy')`` at its first compiled batch.
-    try:
-        if "energy" not in model.atomic_output_def().keys():
-            return False
-    except (AttributeError, NotImplementedError):
-        return False
-    # Linear / ZBL atomic models have no single ``descriptor`` -> dense.
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph is None:
-        return False
-    try:
-        return bool(uses_graph())
-    except (AttributeError, NotImplementedError):
-        return False
-
-
-def _model_trace_device(model: torch.nn.Module) -> torch.device:
-    """Device to build the synthetic trace inputs on for ``_trace_and_compile_graph``.
-
-    Must match the device the model's own parameters/buffers already live on
-    (the dpa1 CUDA lesson: traced inputs and params must share a device, or
-    FakeTensor device propagation raises for ``aten.index_select`` on the
-    type-embedding gather). The global :data:`DEVICE` is *not* a safe stand-in:
-    callers may legitimately hold the model on a different device (e.g. a test
-    pinning the model to CPU while running on a CUDA host). Falls back to
-    :data:`DEVICE` only if the model exposes no parameters or buffers.
-
-    Parameters
-    ----------
-    model
-        The model whose parameter/buffer device determines the trace device.
-
-    Returns
-    -------
-    device : torch.device
-        The device of the model's first parameter (or buffer), falling back
-        to the global :data:`DEVICE`.
-    """
-    for _t in model.parameters():
-        return _t.device
-    for _t in model.buffers():
-        return _t.device
-    return DEVICE
-
-
 def _trace_and_compile_graph(
     model: torch.nn.Module,
     fparam: torch.Tensor | None,
@@ -716,6 +674,7 @@ def _trace_and_compile_graph(
     while (trace_nf * nloc_trace) in (_forbidden | {trace_nf}):
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
+
     # Shared with the .pt2 export trace (serialization.py) so the two graph
     # traces can never desync on the input schema.  Training uses the run-time
     # float precision and device; optional tensors match the actual call.
@@ -737,7 +696,7 @@ def _trace_and_compile_graph(
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=_model_trace_device(model),
+        device=DEVICE,
     )
     e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
@@ -746,7 +705,7 @@ def _trace_and_compile_graph(
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=_model_trace_device(model),
+        device=DEVICE,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -754,9 +713,14 @@ def _trace_and_compile_graph(
     (
         s_atype,
         s_n_node,
+        s_n_local,
         s_edge_index,
         s_edge_vec,
         s_edge_mask,
+        s_destination_order,
+        s_destination_row_ptr,
+        s_source_order,
+        s_source_row_ptr,
         s_fparam,
         s_aparam,
         s_charge_spin,
@@ -765,9 +729,14 @@ def _trace_and_compile_graph(
     def fn(
         atype: torch.Tensor,
         n_node: torch.Tensor,
+        n_local: torch.Tensor,
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
@@ -793,9 +762,14 @@ def _trace_and_compile_graph(
             model_ret = model.forward_common_lower_graph(
                 atype,
                 n_node,
+                n_local,
                 edge_index,
                 edge_vec,
                 edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
                 do_atomic_virial=False,
                 fparam=fparam,
                 aparam=aparam,
@@ -828,9 +802,14 @@ def _trace_and_compile_graph(
     )(
         s_atype,
         s_n_node,
+        s_n_local,
         s_edge_index,
         s_edge_vec,
         s_edge_mask,
+        s_destination_order,
+        s_destination_row_ptr,
+        s_source_order,
+        s_source_row_ptr,
         s_fparam,
         s_aparam,
         s_charge_spin,
@@ -928,7 +907,7 @@ class _CompiledModel(torch.nn.Module):
         # lower too, otherwise the eager (graph) and compiled (dense) backward
         # gradients diverge at fp64 accumulation and the optimizer amplifies it.
         if self._graph_eligible is None:
-            self._graph_eligible = _model_uses_graph_lower(self.original_model)
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
         if self._graph_eligible:
             return self._forward_graph(
                 coord, atype, box, fparam, aparam, charge_spin, nframes, nloc, rcut
@@ -1092,15 +1071,16 @@ class _CompiledModel(torch.nn.Module):
         # back onto local owners via ``mapping`` -- the same fold
         # ``communicate_extended_output`` performs in the uncompiled path.
         out: dict[str, torch.Tensor] = {}
+        if "extended_force" in result:
+            ext_force = result["extended_force"]  # (nf, nall, 3)
+            idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
+            force = torch.zeros(
+                nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
+            )
+            force.scatter_add_(1, idx, ext_force)
+            out["force"] = force
         for key, val in result.items():
-            if key == "extended_force":
-                idx = mapping.unsqueeze(-1).expand_as(val)  # (nf, nall, 3)
-                force = torch.zeros(
-                    nframes, nloc, 3, dtype=val.dtype, device=val.device
-                )
-                force.scatter_add_(1, idx, val)
-                out["force"] = force
-            else:
+            if key not in ("extended_force",):
                 out[key] = val
         return out
 
@@ -1238,9 +1218,14 @@ class _CompiledModel(torch.nn.Module):
         result = self.compiled_forward_lower(
             atype_flat,
             ng.n_node,
+            ng.n_node,
             ng.edge_index,
             edge_vec,
             ng.edge_mask,
+            ng.destination_order,
+            ng.destination_row_ptr,
+            ng.source_order,
+            ng.source_row_ptr,
             fparam,
             aparam,
             charge_spin,

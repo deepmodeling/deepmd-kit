@@ -136,6 +136,8 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist) {
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepPot& dp = this->dp;
+  EXPECT_FALSE(dp.supports_device_edge_inference());
+  EXPECT_FALSE(dp.uses_canonical_graph_inference());
   double ener;
   std::vector<VALUETYPE> force, virial;
   dp.compute(ener, force, virial, coord, atype, box);
@@ -644,7 +646,6 @@ TYPED_TEST(TestInferDeepPotAPtExpt, print_summary) {
   dp.print_summary("");
 }
 
-// Regression test for the fail-fast guard hoisted in commit c80db58d.
 // `deeppot_sea_no_atomic_virial.pt2` is a copy of deeppot_sea.pt2 with
 // the do_atomic_virial=false flag patched into its metadata.json.
 // Calling compute() with atomic=true on this model must throw before
