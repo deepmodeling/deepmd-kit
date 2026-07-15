@@ -86,6 +86,34 @@ at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
   return padded;
 }
 
+/**
+ * @brief Assert the flat graph-route aparam contract at the C++ boundary.
+ *
+ * The graph artifacts consume aparam FLAT on the node axis, shape
+ * (N, daparam) -- the layout ``extend_graph_aparam`` produces.  A caller
+ * hand-rolling a rectangular (1, N, daparam) tensor (the pre-flat
+ * convention) would otherwise fail DEEP inside the artifact -- or, on a
+ * GPU-only route, only at deployment where no CPU test can catch it (the
+ * device-edge branch shipped exactly that bug).  Failing loudly here turns
+ * any future such site into an immediate, self-explanatory error.
+ */
+void check_graph_aparam_flat(const at::Tensor& aparam,
+                             std::int64_t daparam,
+                             const char* where) {
+  if (daparam <= 0) {
+    return;
+  }
+  if (aparam.dim() != 2 || aparam.size(1) != daparam) {
+    std::ostringstream oss;
+    oss << where
+        << ": graph-route aparam must be flat (N, daparam) on the node axis "
+           "(produce it with extend_graph_aparam); got a rank-"
+        << aparam.dim() << " tensor of shape " << aparam.sizes()
+        << " for daparam = " << daparam << ".";
+    throw deepmd::deepmd_exception(oss.str());
+  }
+}
+
 void synchronize_current_accelerator_stream() {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   DPErrcheck(gpuDeviceSynchronize());
@@ -484,6 +512,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
     const torch::Tensor& aparam,
     const torch::Tensor& charge_spin) {
   // Graph-input ABI: original edge payload plus destination/source CSR views.
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph");
   std::vector<torch::Tensor> inputs = {
       atype,        n_node,        n_local,           edge_index,
       edge_vec,     edge_mask,     destination_order, destination_row_ptr,
@@ -625,6 +654,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
         "communicator, nlocal, nghost). Got " +
         std::to_string(comm_tensors.size()) + ".");
   }
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph_with_comm");
   // NeighborGraph ABI: the 13-input base of run_model_graph (atype, n_node,
   // n_local, edge_index, edge_vec, edge_mask, destination_order,
   // destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
