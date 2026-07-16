@@ -48,6 +48,32 @@ class TestMaskedAtomMean:
         ref = torch.mean(pfs / pfd)
         assert out.item() == ref.item()
 
+    def test_all_padding_frame_is_not_nan(self) -> None:
+        # a frame with zero real atoms has per_frame_dof == 0; the ratio must
+        # not become 0/0 = NaN (an independent finiteness invariant -- the
+        # reference formula shares the bug, so equality checks cannot catch it)
+        elem = np.random.default_rng(3).random((2, 4, 3))
+        maskf = np.array([[1.0, 1.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
+        got = masked_atom_mean(elem, maskf, 3)
+        assert np.isfinite(got)
+        # the all-padding frame contributes a neutral 0, so the result is the
+        # first frame's masked mean divided by the number of frames
+        pfs0 = (elem[0] * maskf[0][:, None]).reshape(-1).sum()
+        expected = (pfs0 / (maskf[0].sum() * 3)) / 2
+        np.testing.assert_allclose(got, expected, rtol=0, atol=0)
+
+    def test_all_padding_frame_torch_grad_is_not_nan(self) -> None:
+        # the guard must keep both the value and the autograd gradient finite
+        elem_np = np.random.default_rng(4).random((2, 4, 3))
+        maskf_np = np.array([[1.0, 1.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
+        elem = torch.tensor(elem_np, requires_grad=True)
+        maskf = torch.tensor(maskf_np)
+        out = masked_atom_mean(elem, maskf, 3)
+        out.backward()
+        assert torch.isfinite(out).item()
+        assert elem.grad is not None
+        assert torch.isfinite(elem.grad).all().item()
+
 
 class TestPerFrameComponentMean:
     """Idiom 2 primitive: per-frame mean over the flattened component axis."""
