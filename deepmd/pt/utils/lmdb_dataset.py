@@ -171,24 +171,41 @@ class LmdbDataset(Dataset):
                 collate_fn=_collate_lmdb_batch,
             )
 
-        # Per-nloc-group dataloaders for make_stat_input.
-        # Each group gets its own DataLoader so torch.cat in stat collection
-        # only concatenates same-shape tensors.
-        self._nloc_dataloaders: list[DataLoader] = []
+        # Per-nloc and label-availability dataloaders for make_stat_input.
+        # These are rebuilt after requirements are registered so statistics
+        # never collate real labels with default-filled placeholders.
+        self._nloc_dataloaders: list[DataLoader] | None = None
+
+    def _rebuild_nloc_dataloaders(self) -> None:
+        """Build homogeneous loaders used by model-stat collection."""
+        dataloaders: list[DataLoader] = []
         for nloc in sorted(self._reader.nloc_groups.keys()):
-            indices = self._reader.nloc_groups[nloc]
-            subset = torch.utils.data.Subset(self, indices)
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            with torch.device("cpu"):
-                dl = DataLoader(
-                    subset,
-                    batch_size=bs,
-                    shuffle=False,
-                    num_workers=0,
-                    drop_last=False,
-                    collate_fn=_collate_lmdb_batch,
-                )
-            self._nloc_dataloaders.append(dl)
+            signature_groups = self._reader.group_indices_by_find_signature(
+                self._reader.nloc_groups[nloc]
+            )
+            for signature in sorted(signature_groups):
+                subset = torch.utils.data.Subset(self, signature_groups[signature])
+                bs = self._reader.get_batch_size_for_nloc(nloc)
+                with torch.device("cpu"):
+                    dl = DataLoader(
+                        subset,
+                        batch_size=bs,
+                        shuffle=False,
+                        num_workers=0,
+                        drop_last=False,
+                        collate_fn=_collate_lmdb_batch,
+                    )
+                dataloaders.append(dl)
+        self._nloc_dataloaders = dataloaders
+
+    def _get_nloc_dataloaders(self) -> list[DataLoader]:
+        """Materialize statistics loaders lazily when none are registered."""
+        if self._nloc_dataloaders is None:
+            self._rebuild_nloc_dataloaders()
+        dataloaders = self._nloc_dataloaders
+        if dataloaders is None:
+            raise RuntimeError("Failed to initialize LMDB statistics dataloaders")
+        return dataloaders
 
     def __len__(self) -> int:
         return len(self._reader)
@@ -229,6 +246,7 @@ class LmdbDataset(Dataset):
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
+        self._rebuild_nloc_dataloaders()
 
     def preload_and_modify_all_data_torch(self) -> None:
         """No-op: LMDB reads on demand."""
@@ -328,17 +346,17 @@ class LmdbDataset(Dataset):
 
     @property
     def systems(self) -> list:
-        """One 'system' per nloc group for stat collection compatibility."""
-        return [self] * len(self._nloc_dataloaders)
+        """One logical system per stack-compatible statistics group."""
+        return [self] * len(self._get_nloc_dataloaders())
 
     @property
     def dataloaders(self) -> list:
-        """Per-nloc-group dataloaders for make_stat_input.
+        """Homogeneous dataloaders for make_stat_input.
 
-        Each dataloader yields batches with uniform nloc, so torch.cat
-        in stat collection only concatenates same-shape tensors.
+        Each loader has one nloc and one availability signature, so stat
+        collection sees consistent shapes and scalar ``find_*`` flags.
         """
-        return self._nloc_dataloaders
+        return self._get_nloc_dataloaders()
 
     @property
     def sampler_list(self) -> list:

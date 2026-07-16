@@ -284,10 +284,10 @@ class FullValidator:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
-        # Lazily-populated full test snapshot for LMDB validation. Mixed-nloc
-        # LMDB datasets cannot be stacked as a single (nframes, natoms*3)
-        # tensor, so we materialize frames grouped by nloc the first time
-        # full validation runs and reuse the snapshot on subsequent calls.
+        # Lazily-populated full test snapshot for LMDB validation. Frames are
+        # evaluated in atom-count and label-availability groups so each stack
+        # has consistent shapes and scalar find_* flags. Reuse the decoded
+        # snapshot on subsequent validation calls.
         self._lmdb_test_data: LmdbTestData | None = None
 
     def should_run(self, display_step: int) -> bool:
@@ -430,20 +430,25 @@ class FullValidator:
           and we forward its underlying ``DeepmdData`` instance.
         - For ``LmdbDataset`` validation data, we lazily materialize a
           :class:`LmdbTestData` snapshot (cached across calls) and yield one
-          :class:`LmdbTestDataNlocView` per ``nloc`` group, so mixed-nloc
-          frames can be stacked and evaluated group by group.
+          :class:`LmdbTestDataNlocView` per atom-count and label-availability
+          group. This keeps scalar ``find_*`` flags valid while excluding
+          default-filled labels from metrics.
         """
         validation_data = self.validation_data
         if isinstance(validation_data, LmdbDataset):
             lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for nloc in sorted(lmdb_test_data.nloc_groups.keys()):
-                yield LmdbTestDataNlocView(lmdb_test_data, nloc)
+            for (nloc, _signature), indices in sorted(
+                lmdb_test_data.find_signature_groups.items()
+            ):
+                yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
             return
 
         if hasattr(validation_data, "_reader"):
             lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for nloc in sorted(lmdb_test_data.nloc_groups.keys()):
-                yield LmdbTestDataNlocView(lmdb_test_data, nloc)
+            for (nloc, _signature), indices in sorted(
+                lmdb_test_data.find_signature_groups.items()
+            ):
+                yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
             return
 
         if hasattr(validation_data, "data_systems"):

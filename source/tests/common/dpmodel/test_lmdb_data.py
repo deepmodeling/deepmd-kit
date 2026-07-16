@@ -724,6 +724,38 @@ class TestAutoProb(unittest.TestCase):
         self.assertGreater(len(all_indices), 600)
         self.assertEqual(len(set(all_indices)), 600)
 
+    def test_sampler_allocates_block_target_across_find_signatures(self):
+        """Independent signature groups must not each round the block target."""
+
+        class TwoSignatureReader:
+            """Minimal reader exposing two one-frame availability groups."""
+
+            def __init__(self):
+                self.nloc_groups = {6: [0, 1]}
+                self.frame_system_ids = [0, 0]
+
+            @staticmethod
+            def group_indices_by_find_signature(indices):
+                self.assertEqual(indices, [0, 1])
+                return {(0.0,): [0], (1.0,): [1]}
+
+            @staticmethod
+            def get_batch_size_for_nloc(nloc):
+                self.assertEqual(nloc, 6)
+                return 1
+
+        sampler = SameNlocBatchSampler(
+            TwoSignatureReader(),
+            shuffle=False,
+            block_targets=[([0], 3)],
+        )
+        batches = list(sampler)
+        counts = [sum(index in batch for batch in batches) for index in (0, 1)]
+
+        self.assertEqual(len(sampler), len(batches))
+        self.assertEqual(sum(map(len, batches)), 3)
+        self.assertEqual(sorted(counts), [1, 2])
+
     def test_sampler_without_block_targets(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
         sampler = SameNlocBatchSampler(reader, shuffle=False)
