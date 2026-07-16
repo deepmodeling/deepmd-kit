@@ -17,6 +17,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestDataNlocView,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
+    _remap_atom_types,
     compute_block_targets,
     is_lmdb,
     make_neighbor_stat_data,
@@ -161,6 +162,44 @@ def _create_lmdb_with_type_map(
             key = format(i, "012d").encode()
             frame = _make_frame(natoms=natoms, seed=i)
             txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+    return path
+
+
+def _create_lmdb_with_virtual_type(path: str) -> str:
+    """Create one LMDB frame containing a negative virtual atom type."""
+    atype = np.array([0, -1, 1], dtype=np.int64)
+    frame = _make_frame(natoms=len(atype))
+    frame["atom_types"] = {
+        "type": "<i8",
+        "shape": atype.shape,
+        "data": atype.tobytes(),
+    }
+    frame["atom_numbs"] = [
+        {
+            "type": "<i8",
+            "shape": (1,),
+            "data": np.array([1], dtype=np.int64).tobytes(),
+        },
+        {
+            "type": "<i8",
+            "shape": (1,),
+            "data": np.array([1], dtype=np.int64).tobytes(),
+        },
+    ]
+
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": 1,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            # Virtual atoms occupy coordinate slots but are not real species.
+            "system_info": {"natoms": [1, 1]},
+            "frame_nlocs": [len(atype)],
+        }
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        txn.put(b"000000000000", msgpack.packb(frame, use_bin_type=True))
     env.close()
     return path
 
@@ -570,6 +609,23 @@ class TestTypeMapRemapping(unittest.TestCase):
         td = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
         self.assertIsNone(td._type_remap)
         tmpdir.cleanup()
+
+    def test_virtual_type_preserved_during_remap(self):
+        """Both LMDB consumers must retain virtual sentinels when remapping."""
+        path = _create_lmdb_with_virtual_type(f"{self._tmpdir.name}/virtual_type.lmdb")
+
+        reader = LmdbDataReader(path, ["H", "O"])
+        frame = reader[0]
+        np.testing.assert_array_equal(frame["atype"], [1, -1, 0])
+        np.testing.assert_array_equal(frame["natoms"], [3, 3, 1, 1])
+
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        np.testing.assert_array_equal(test_data.get_test()["type"], [[1, -1, 0]])
+
+    def test_positive_out_of_range_type_still_raises(self):
+        """A malformed real type must not be mistaken for a virtual sentinel."""
+        with self.assertRaises(IndexError):
+            _remap_atom_types(np.array([0, 2]), np.array([1, 0]))
 
 
 # ============================================================

@@ -149,6 +149,18 @@ def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _remap_atom_types(atype: np.ndarray, type_remap: np.ndarray) -> np.ndarray:
+    """Remap real atom types while preserving negative virtual sentinels.
+
+    Positive indices retain NumPy's normal bounds checking, so malformed LMDB
+    data cannot be silently reinterpreted as a different species.
+    """
+    remapped_atype = atype.astype(np.int64, copy=True)
+    real_atom_mask = remapped_atype >= 0
+    remapped_atype[real_atom_mask] = type_remap[remapped_atype[real_atom_mask]]
+    return remapped_atype
+
+
 def is_lmdb(systems: str) -> bool:
     """Check if systems points to an LMDB dataset."""
     return systems.endswith(".lmdb") or Path(systems, "data.mdb").is_file()
@@ -466,10 +478,15 @@ class LmdbDataReader:
     def _compute_natoms_vec(self, atype: np.ndarray) -> np.ndarray:
         """Compute natoms_vec from a frame's atype array.
 
+        Negative virtual types and positive indices outside the configured type
+        map are excluded from the per-type counts. The leading nloc entries
+        still include every atom slot, matching mixed-type NPY data handling.
+
         Returns [nloc, nloc, count_type0, count_type1, ...] with length ntypes+2.
         """
         nloc = len(atype)
-        counts = np.bincount(atype, minlength=self._ntypes)[: self._ntypes]
+        real_atype = atype[(atype >= 0) & (atype < self._ntypes)]
+        counts = np.bincount(real_atype, minlength=self._ntypes)
         vec = np.empty(self._ntypes + 2, dtype=np.int64)
         vec[0] = nloc
         vec[1] = nloc
@@ -579,7 +596,7 @@ class LmdbDataReader:
             frame["atype"] = frame["atype"].reshape(-1).astype(np.int64)
             # Remap atom types from LMDB's type_map to model's type_map
             if self._type_remap is not None:
-                frame["atype"] = self._type_remap[frame["atype"]].astype(np.int64)
+                frame["atype"] = _remap_atom_types(frame["atype"], self._type_remap)
         if "virial" in frame and isinstance(frame["virial"], np.ndarray):
             frame["virial"] = (
                 frame["virial"].reshape(9).astype(self._resolve_dtype("virial"))
@@ -1459,9 +1476,9 @@ class LmdbTestData:
                         and "atype" in frame
                         and isinstance(frame["atype"], np.ndarray)
                     ):
-                        frame["atype"] = self._type_remap[
-                            frame["atype"].reshape(-1)
-                        ].astype(np.int64)
+                        frame["atype"] = _remap_atom_types(
+                            frame["atype"].reshape(-1), self._type_remap
+                        )
                     self._frames.append(frame)
 
         # Shuffle if requested
