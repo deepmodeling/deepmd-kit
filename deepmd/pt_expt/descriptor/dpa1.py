@@ -552,10 +552,15 @@ class DescrptDPA1(DescrptDPA1DP):
             graph = dataclasses.replace(graph, edge_vec=graph.edge_vec.to(prec))
         # Triton edge convolution: serves the uncompressed concat / strip lower;
         # a tabulated (geo_compress) descriptor stays on the table path below.
+        # Descriptor-level exclusions stay on the reference path: the fused
+        # edge kernel bypasses the reference ``apply_pair_exclusion(graph,
+        # atype, emask)`` (descriptor exclude_types is independent of the
+        # model-level pair_exclude_types already applied at graph build).
         if (
             fused
             and triton_infer_level() >= 1
             and not self.geo_compress
+            and not self.se_atten.exclude_types
             and self._fused_eligible("triton")
         ):
             return self._call_graph_triton(graph, atype, type_embedding)
@@ -647,13 +652,12 @@ class DescrptDPA1(DescrptDPA1DP):
         return (
             TRITON_AVAILABLE
             and se.tebd_input_mode in ("strip", "concat")
-            # Mirror the CUDA gate: the triton kernel does not re-apply the
-            # descriptor emask, so it relies on the graph having been built
-            # with pair exclusion.  get_model enforces descriptor
-            # exclude_types == model pair_exclude_types, making that hold
-            # today -- gate it anyway so the invariant is asserted at the
-            # dispatch site rather than assumed.
-            and not se.exclude_types
+            # No exclude_types condition here: exclusion handling differs per
+            # dispatch site.  The dense ``_call_triton`` applies the descriptor
+            # emask itself (``_env_mat`` masks nlist / sw / rr), so it serves
+            # excluded models; the graph ``_call_graph_triton`` bypasses the
+            # reference ``apply_pair_exclusion`` and is gated at its dispatch
+            # site in :meth:`call_graph` instead.
             and str(layers[-1].activation_function).lower() in ACT_CODES
         )
 

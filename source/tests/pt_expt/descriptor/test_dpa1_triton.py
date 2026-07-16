@@ -53,6 +53,7 @@ def _build_dpa1_expt(
     precision="float64",
     tebd_input_mode="concat",
     smooth=True,
+    exclude_types=(),
 ):
     from deepmd.pt_expt.descriptor.dpa1 import (
         DescrptDPA1,
@@ -72,6 +73,7 @@ def _build_dpa1_expt(
         activation_function=act,
         precision=precision,
         smooth_type_embedding=smooth,
+        exclude_types=list(exclude_types),
         seed=1,
     ).to(device)
     des.eval()
@@ -346,6 +348,21 @@ class TestDpa1DenseRouting(unittest.TestCase):
     def test_parity_concat_nonpow2(self) -> None:
         self._assert_parity(_build_dpa1_expt(self.device, [12, 25, 50]))
 
+    def test_parity_concat_exclude_types(self) -> None:
+        # descriptor-level exclude_types is served by the dense fused path
+        # (the emask masks nlist / sw / rr in ``_env_mat``); the eligibility
+        # predicate must not force it back to the reference.
+        des_ex = _build_dpa1_expt(self.device, [8, 16, 32], exclude_types=[(0, 1)])
+        self._assert_parity(des_ex)
+        # anti-vacuity: the exclusion visibly changes the descriptor (same
+        # seed as the unexcluded twin), so the parity above compared two
+        # implementations that BOTH applied it.
+        des_no = _build_dpa1_expt(self.device, [8, 16, 32])
+        ec, ea, nl = self._dense_inputs(des_ex)
+        self.assertFalse(
+            torch.allclose(des_ex.call(ec, ea, nl)[0], des_no.call(ec, ea, nl)[0])
+        )
+
     def test_make_fx_bakes_env_mat(self) -> None:
         des = _build_dpa1_expt(self.device, [8, 16, 32])
         ec, ea, nl = self._dense_inputs(des)
@@ -364,6 +381,123 @@ class TestDpa1DenseRouting(unittest.TestCase):
                 os.environ["DP_TRITON_INFER"] = saved
         targets = [str(n.target) for n in traced.graph.nodes]
         self.assertGreaterEqual(sum("env_mat.default" in t for t in targets), 1)
+
+
+class TestDpa1TritonExcludeTypesRouting(unittest.TestCase):
+    """Descriptor-level ``exclude_types`` routing is per dispatch site.
+
+    The eligibility predicate no longer carries an ``exclude_types`` veto:
+    the dense ``_call_triton`` applies the descriptor emask itself (in
+    ``_env_mat``) and stays fused, while the graph ``call_graph`` gates the
+    fused edge kernel out (``_call_graph_triton`` bypasses the reference
+    ``apply_pair_exclusion``) and serves exclusions from the dpmodel
+    reference. Routing is device-free, so this runs on CPU with
+    ``TRITON_AVAILABLE`` patched; kernel-level parity is covered by the
+    CUDA classes above.
+    """
+
+    def setUp(self) -> None:
+        import deepmd.pt_expt.descriptor.dpa1 as dpa1_mod
+
+        self._dpa1_mod = dpa1_mod
+        self._saved_avail = dpa1_mod.TRITON_AVAILABLE
+        self._saved_level = os.environ.get("DP_TRITON_INFER")
+        dpa1_mod.TRITON_AVAILABLE = True
+        os.environ["DP_TRITON_INFER"] = "1"
+        self.device = torch.device("cpu")
+        gen = torch.Generator(device=self.device).manual_seed(3)
+        n = 24
+        self.coord = (torch.rand(1, n, 3, generator=gen, device=self.device) * 8.0).to(
+            torch.float64
+        )
+        self.atype = torch.randint(0, 2, (1, n), generator=gen, device=self.device)
+        self.box = (
+            (torch.eye(3, device=self.device) * 8.0).reshape(1, 9).to(torch.float64)
+        )
+
+    def tearDown(self) -> None:
+        self._dpa1_mod.TRITON_AVAILABLE = self._saved_avail
+        if self._saved_level is None:
+            os.environ.pop("DP_TRITON_INFER", None)
+        else:
+            os.environ["DP_TRITON_INFER"] = self._saved_level
+
+    def _quartet(self, des):
+        return extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            des.get_rcut(),
+            des.get_sel(),
+            mixed_types=des.mixed_types(),
+            box=self.box,
+        )
+
+    def _graph(self, des):
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
+        )
+
+        ec, ea, mp, nl = self._quartet(des)
+        return from_dense_quartet(ec, nl, mp, compact=True), self.atype.reshape(-1)
+
+    def test_predicate_admits_exclude_types(self) -> None:
+        des = _build_dpa1_expt(self.device, [8, 16, 32], exclude_types=[(0, 1)])
+        self.assertTrue(des._fused_eligible("triton"))
+
+    def test_dense_dispatch_serves_exclude_types(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        des = _build_dpa1_expt(self.device, [8, 16, 32], exclude_types=[(0, 1)])
+        calls = []
+
+        def recording_triton(coord_ext, atype_ext, nlist):
+            calls.append(1)
+            # delegate to the reference body (no Triton on this box); the
+            # dispatch decision is what is under test
+            return DescrptDPA1DP.call.__wrapped__(des, coord_ext, atype_ext, nlist)
+
+        des._call_triton = recording_triton
+        ec, ea, _mp, nl = self._quartet(des)
+        des.call(ec, ea, nl)
+        self.assertEqual(len(calls), 1)
+
+    def test_graph_dispatch_exclude_types_stays_reference(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        des = _build_dpa1_expt(self.device, [8, 16, 32], exclude_types=[(0, 1)])
+
+        def forbidden_triton(graph, atype, type_embedding):
+            raise AssertionError(
+                "graph triton kernel must not serve descriptor exclude_types"
+            )
+
+        des._call_graph_triton = forbidden_triton
+        tebd = des.type_embedding.call()
+        graph, atype_local = self._graph(des)
+        grrg, _rot = des.call_graph(graph, atype_local, type_embedding=tebd)
+        # the reference path applied apply_pair_exclusion
+        ref, _rot_ref = DescrptDPA1DP.call_graph(
+            des, graph, atype_local, type_embedding=tebd
+        )
+        torch.testing.assert_close(grrg, ref, atol=0.0, rtol=0.0)
+
+    def test_graph_dispatch_no_exclusions_takes_triton(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        des = _build_dpa1_expt(self.device, [8, 16, 32])
+        calls = []
+
+        def recording_triton(graph, atype, type_embedding):
+            calls.append(1)
+            return DescrptDPA1DP.call_graph(
+                des, graph, atype, type_embedding=type_embedding
+            )
+
+        des._call_graph_triton = recording_triton
+        tebd = des.type_embedding.call()
+        graph, atype_local = self._graph(des)
+        des.call_graph(graph, atype_local, type_embedding=tebd)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
