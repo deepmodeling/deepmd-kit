@@ -1856,6 +1856,18 @@ class TestCutoffNumerics(_SeZMTestCase):
 
         near = evaluate(1.0e-12)
         zero = evaluate(0.0)
+        near_mass = math.exp(20.0) * 1.0e-24
+        near_denominator = 2.0 + eps + near_mass
+        torch.testing.assert_close(
+            near[1, 0, 0],
+            torch.tensor(
+                near_mass / near_denominator,
+                dtype=torch.float64,
+                device=self.device,
+            ),
+            rtol=1.0e-12,
+            atol=0.0,
+        )
         expected_stable = 1.0 / (2.0 + eps)
         torch.testing.assert_close(
             near[0, 0, 0],
@@ -1940,6 +1952,12 @@ class TestCutoffNumerics(_SeZMTestCase):
         actual = torch.autograd.functional.hessian(attention_sum, source_weight)
         reference = torch.autograd.functional.hessian(physical_sum, source_weight)
         self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(
+            actual[0, 0],
+            reference[0, 0],
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
         torch.testing.assert_close(actual, reference, rtol=1.0e-5, atol=32.0)
 
 
