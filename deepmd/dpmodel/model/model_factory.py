@@ -97,7 +97,6 @@ def get_zbl_model(
     backend_name: str,
 ) -> Any:
     """Construct a ZBL model from backend-native atomic model classes."""
-    data = copy.deepcopy(data)
     descriptor, fitting, fitting_type = get_model_components(
         data,
         descriptor_base=descriptor_base,

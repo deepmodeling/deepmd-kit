@@ -6,6 +6,7 @@ import unittest
 from deepmd.dpmodel.model.model_factory import (
     get_model,
     get_standard_model,
+    get_zbl_model,
 )
 
 
@@ -39,6 +40,12 @@ class _Descriptor:
     def get_dim_out(self) -> int:
         return 11
 
+    def get_rcut(self) -> float:
+        return 5.0
+
+    def get_sel(self) -> list[int]:
+        return [4, 8]
+
 
 class _DescriptorBase:
     @classmethod
@@ -56,7 +63,7 @@ class _Fitting:
 class _FittingBase:
     @classmethod
     def get_class_by_type(cls, fitting_type: str) -> type[_Fitting]:
-        if fitting_type != "dipole":
+        if fitting_type not in {"dipole", "ener"}:
             raise KeyError(fitting_type)
         return _Fitting
 
@@ -72,6 +79,30 @@ class _StandardModelBase:
         if model_type != "dipole":
             raise KeyError(model_type)
         return _StandardModel
+
+
+class _AtomicModel:
+    def __init__(self, descriptor, fitting, **kwargs) -> None:
+        self.descriptor = descriptor
+        self.fitting = fitting
+        self.kwargs = kwargs
+
+
+class _PairTabModel:
+    def __init__(self, table, rcut, sel, **kwargs) -> None:
+        self.table = table
+        self.rcut = rcut
+        self.sel = sel
+        self.kwargs = kwargs
+
+
+class _ZBLModel:
+    def __init__(self, dp_model, pairtab, sw_rmin, sw_rmax, **kwargs) -> None:
+        self.dp_model = dp_model
+        self.pairtab = pairtab
+        self.sw_rmin = sw_rmin
+        self.sw_rmax = sw_rmax
+        self.kwargs = kwargs
 
 
 def _factory(name: str):
@@ -191,6 +222,66 @@ class TestModelFactory(unittest.TestCase):
         self.assertEqual(model.kwargs["fitting"].kwargs["embedding_width"], 7)
         self.assertEqual(model.kwargs["atom_exclude_types"], [1])
         self.assertEqual(model.kwargs["pair_exclude_types"], [[0, 1]])
+
+    def test_model_level_type_embedding_is_rejected(self) -> None:
+        """Cover the shared validation used by every dpmodel-driven backend."""
+        with self.assertRaisesRegex(ValueError, "type_embedding is not at the model"):
+            get_standard_model(
+                {
+                    "type_map": ["O", "H"],
+                    "type_embedding": {},
+                    "descriptor": {"type": "descriptor"},
+                    "fitting_net": {"type": "dipole"},
+                },
+                descriptor_base=_DescriptorBase,
+                fitting_base=_FittingBase,
+                model_base=_StandardModelBase,
+                backend_name="test",
+            )
+
+    def test_zbl_rejects_non_energy_fitting(self) -> None:
+        """ZBL construction accepts only an energy fitting network."""
+        with self.assertRaisesRegex(ValueError, "Unknown fitting type dipole"):
+            get_zbl_model(
+                {
+                    "type_map": ["O", "H"],
+                    "descriptor": {"type": "descriptor"},
+                    "fitting_net": {"type": "dipole"},
+                    "use_srtab": "table",
+                    "sw_rmin": 0.2,
+                    "sw_rmax": 4.0,
+                },
+                descriptor_base=_DescriptorBase,
+                fitting_base=_FittingBase,
+                atomic_model=_AtomicModel,
+                pairtab_model=_PairTabModel,
+                zbl_model=_ZBLModel,
+                backend_name="test",
+            )
+
+    def test_zbl_forwards_nondefault_softmin_and_descriptor_cutoff(self) -> None:
+        """Preserve configured softmin values and normalized descriptor geometry."""
+        model = get_zbl_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {"type": "descriptor"},
+                "fitting_net": {"type": "ener"},
+                "use_srtab": "table",
+                "sw_rmin": 0.2,
+                "sw_rmax": 4.0,
+                "smin_alpha": 0.37,
+            },
+            descriptor_base=_DescriptorBase,
+            fitting_base=_FittingBase,
+            atomic_model=_AtomicModel,
+            pairtab_model=_PairTabModel,
+            zbl_model=_ZBLModel,
+            backend_name="test",
+        )
+
+        self.assertEqual(model.kwargs["smin_alpha"], 0.37)
+        self.assertEqual(model.pairtab.rcut, 5.0)
+        self.assertEqual(model.pairtab.sel, [4, 8])
 
 
 if __name__ == "__main__":
