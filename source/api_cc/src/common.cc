@@ -189,11 +189,9 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
-    // per-atom width is daparam: select_map below writes
-    // nframes * n_selected * daparam elements (stride = daparam), so the
-    // buffer must carry the daparam factor -- sizing it without one
-    // heap-overflowed for daparam > 1 and left the vector's logical size at
-    // one column per atom.
+    // Atomic parameters store ``daparam`` consecutive components per atom.
+    // Keep the allocation consistent with the stride passed to ``select_map``
+    // below so every remapped component has a valid destination element.
     aparam.resize(static_cast<size_t>(nframes) *
                   (aparam_nall ? nall_real : nloc_real) * daparam);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
