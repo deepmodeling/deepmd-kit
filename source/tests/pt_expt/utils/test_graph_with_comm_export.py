@@ -292,4 +292,6 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     assert not torch.allclose(e_full, e_fewer), (
         "owned-energy reduction must consume the dedicated n_local input"
     )
-    del sendlist_indices  # keepalive until here
+    # keepalive: the raw pointer in ``comm`` must reference a live buffer
+    # through both ``run`` calls above (a real use, not a bare ``del``)
+    assert sendlist_indices.ctypes.data_as(ctypes.c_void_p).value == addr

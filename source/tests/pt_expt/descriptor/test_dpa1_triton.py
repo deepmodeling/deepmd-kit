@@ -397,7 +397,8 @@ class TestDpa1TritonExcludeTypesRouting(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        import deepmd.pt_expt.descriptor.dpa1 as dpa1_mod
+        # single import style for the module (CodeQL py/import-and-import-from)
+        from deepmd.pt_expt.descriptor import dpa1 as dpa1_mod
 
         self._dpa1_mod = dpa1_mod
         self._saved_avail = dpa1_mod.TRITON_AVAILABLE
