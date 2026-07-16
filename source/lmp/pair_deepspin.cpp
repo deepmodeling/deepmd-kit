@@ -23,6 +23,7 @@
 #include "neighbor.h"
 #include "output.h"
 #include "update.h"
+#include "utils.h"
 #if LAMMPS_VERSION_NUMBER >= 20210831
 // in lammps #2902, fix_ttm members turns from private to protected
 #define USE_TTM 1
@@ -719,23 +720,45 @@ void PairDeepSpin::settings(int narg, char** arg) {
       out_each = 1;
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative, not provided");
+      }
       out_rel = 1;
-      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+            ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative_v, not provided");
+      }
       out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps_v = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+              ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
       virtual_len.resize(numb_types_spin);
       for (int ii = 0; ii < numb_types_spin; ++ii) {
-        virtual_len[ii] = atof(arg[iarg + ii + 1]);
+        if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
+          char tmp[1024];
+          sprintf(tmp, "Illegal virtual_len, the dimension should be %d",
+                  numb_types_spin);
+          error->all(FLERR, tmp);
+        }
+        virtual_len[ii] =
+            utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
       }
       iarg += numb_types_spin + 1;
     } else if (string(arg[iarg]) == string("spin_norm")) {
       spin_norm.resize(numb_types_spin);
       for (int ii = 0; ii < numb_types_spin; ++ii) {
-        spin_norm[ii] = atof(arg[iarg + ii + 1]);
+        if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
+          char tmp[1024];
+          sprintf(tmp, "Illegal spin_norm, the dimension should be %d",
+                  numb_types_spin);
+          error->all(FLERR, tmp);
+        }
+        spin_norm[ii] =
+            utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
       }
       iarg += numb_types_spin + 1;
     }
