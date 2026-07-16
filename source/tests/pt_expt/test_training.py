@@ -18,6 +18,7 @@ from unittest.mock import (
     patch,
 )
 
+import pytest
 import torch
 
 from deepmd.loggers.training import (
@@ -311,6 +312,7 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    @pytest.mark.timeout(60)
     def test_zero_start_warmup_schedulers_construct(self) -> None:
         """Cosine and WSD warmup must initialize LambdaLR without division by zero."""
         for schedule_type in ("cosine", "wsd"):
