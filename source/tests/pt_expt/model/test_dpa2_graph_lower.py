@@ -505,6 +505,71 @@ class TestDpa2GraphLower:
             out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
         )
 
+    def test_graph_lower_symbolic_trace_with_attention(self) -> None:
+        """Same symbolic trace with the repformer attention ON (the CI
+        gen_dpa2 export config).  The attention path runs the slot-occupancy
+        ``segment_softmax`` whose entry count is a DATA-DEPENDENT (unbacked)
+        symbol under export; a Python ``if n == 0`` early-out in
+        ``_slot_occupancy`` raised ``GuardOnDataDependentSymNode: Eq(u1, 0)``
+        here while the attention-off trace above stayed green.
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = self._make_model(repformer_attn=True).to("cpu")
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+        )
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+
     def test_compiled_training_graph_smoke(self) -> None:
         """``_trace_and_compile_graph`` inductor-compiles the graph lower;
         one synthetic batch matches the eager graph lower at fp64 1e-10.

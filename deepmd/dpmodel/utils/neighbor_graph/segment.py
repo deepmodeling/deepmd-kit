@@ -93,8 +93,9 @@ def _slot_occupancy(
     xp = array_api_compat.array_namespace(slot_weight)
     dev = array_api_compat.device(slot_weight)
     n = slot_weight.shape[0]
-    if n == 0:
-        return slot_weight
+    # NOTE: no ``n == 0`` early-out -- the entry count is a data-dependent
+    # (unbacked) symbol under torch.export and a Python branch on it raises
+    # GuardOnDataDependentSymNode; every op below is empty-safe as-is.
     # sort by (segment asc, weight desc): stable argsort twice
     order_w = xp.argsort(slot_weight, descending=True, stable=True)
     order = xp.take(
@@ -111,8 +112,12 @@ def _slot_occupancy(
     offsets = xp.cumulative_sum(counts) - counts  # exclusive prefix
     iota = xp.cumulative_sum(ones) - 1.0  # arange(n) as float
     rank = iota - xp.take(offsets, seg_s, axis=0) + 1.0  # (n,) 1-based
-    # suffix weight below rank k: T_k = total - (top-k prefix)
-    prefix = xp.cumulative_sum(sw_s)
+    # suffix weight below rank k: T_k = total - (top-k prefix).  The entry
+    # axis is a data-dependent (unbacked) size under torch.export and this
+    # cumsum carries gradients, whose backward guards ``numel <= 1``; two
+    # zero pads make that guard statically false for any entry count.
+    pad2 = xp.zeros((2,), dtype=slot_weight.dtype, device=dev)
+    prefix = xp.cumulative_sum(xp.concat([pad2, sw_s]))[2:]
     seg_prefix_off = xp.take(xp.cumulative_sum(total) - total, seg_s, axis=0)
     t_k = xp.take(total, seg_s, axis=0) - (prefix - seg_prefix_off)  # (n,)
     cap_e = xp.take(capacity, seg_s, axis=0)  # (n,)
