@@ -16,7 +16,6 @@ from deepmd.infer import (
     DeepEval,
 )
 
-
 MODEL_CONFIG = {
     "type_map": ["O", "H"],
     "descriptor": {
