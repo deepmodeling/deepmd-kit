@@ -52,9 +52,9 @@ TEST(TestPairwiseMap, single_fragment_with_placeholders) {
   std::vector<int> forward_qm_map, backward_qm_map, forward_qmmm_map,
       backward_qmmm_map;
   int nloc_qm, nloc_qmmm, nall_qm, nall_qmmm;
-  deepmd::dprc_pairwise_map_cpu(
-      forward_qm_map, backward_qm_map, forward_qmmm_map, backward_qmmm_map,
-      nloc_qm, nloc_qmmm, nall_qm, nall_qmmm, fragments, 4, 6);
+  deepmd::dprc_pairwise_map_cpu(forward_qm_map, backward_qm_map,
+                                forward_qmmm_map, backward_qmmm_map, nloc_qm,
+                                nloc_qmmm, nall_qm, nall_qmmm, fragments, 4, 6);
 
   ASSERT_THAT(forward_qm_map, testing::ElementsAre(0, 2, 4, 5));
   ASSERT_THAT(backward_qm_map, testing::ElementsAre(0, -1, 1, -1, 2, 3));
