@@ -13,6 +13,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import lmdb
 import msgpack
@@ -23,6 +26,8 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    _build_data_system,
+    _get_neighbor_stat_data,
     get_trainer,
 )
 from deepmd.pt_expt.utils.lmdb_dataset import (
@@ -44,6 +49,29 @@ def _encode_array(arr: np.ndarray) -> dict:
         "shape": list(arr.shape),
         "data": arr.tobytes(),
     }
+
+
+class TestConvertedLmdbValidation(unittest.TestCase):
+    """Reject format conversion that resolves to multiple LMDB databases."""
+
+    def test_neighbor_stat_and_training_data_reject_multiple_lmdb(self) -> None:
+        params = {
+            "systems": "input.extxyz",
+            "format": "extxyz",
+            "batch_size": 1,
+        }
+        converted = ["first.lmdb", "second.lmdb"]
+        with (
+            patch(
+                "deepmd.pt_expt.entrypoints.main.process_systems",
+                return_value=converted,
+            ),
+            patch("deepmd.utils.data_system.is_lmdb", return_value=True),
+        ):
+            with self.assertRaisesRegex(ValueError, "exactly one path"):
+                _get_neighbor_stat_data(params, ["O", "H"])
+            with self.assertRaisesRegex(ValueError, "exactly one path"):
+                _build_data_system(params, ["O", "H"])
 
 
 def _make_frame(natoms: int, seed: int) -> dict:

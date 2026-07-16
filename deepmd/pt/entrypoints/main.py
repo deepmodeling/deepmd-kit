@@ -91,6 +91,7 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
     process_systems,
+    validate_lmdb_systems,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -194,9 +195,10 @@ def get_trainer(
                     "out_format", dataset_params.get("output_format", None)
                 ),
             )
-            if len(systems) == 1 and is_lmdb(systems[0]):
+            lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
+            if lmdb_path is not None:
                 return LmdbDataset(
-                    systems[0],
+                    lmdb_path,
                     model_params_single["type_map"],
                     dataset_params["batch_size"],
                     auto_prob_style=dataset_params.get("auto_prob", None),
@@ -437,12 +439,13 @@ def train(
                         "out_format", dataset_params.get("output_format", None)
                     ),
                 )
-            if len(systems) == 1 and is_lmdb(systems[0]):
+            lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
+            if lmdb_path is not None:
                 from deepmd.dpmodel.utils.lmdb_data import (
                     make_neighbor_stat_data,
                 )
 
-                return make_neighbor_stat_data(systems[0], type_map)
+                return make_neighbor_stat_data(lmdb_path, type_map)
             return get_data(dataset_params, 0, type_map, None)
 
         if not multi_task:

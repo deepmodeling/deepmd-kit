@@ -23,9 +23,6 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
-from deepmd.dpmodel.utils.lmdb_data import (
-    is_lmdb,
-)
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
@@ -72,6 +69,7 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
     process_systems,
+    validate_lmdb_systems,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -120,12 +118,7 @@ def get_trainer(
                 "out_format", training_dataset_params.get("output_format", None)
             ),
         )
-        if len(training_systems) == 1 and is_lmdb(training_systems[0]):
-            raise NotImplementedError(
-                "Paddle backend does not support LMDB training data yet. "
-                "Set training_data.out_format to 'deepmd/hdf5' when using "
-                "training_data.format for automatic conversion."
-            )
+        validate_lmdb_systems(training_systems, backend_name="Paddle", supported=False)
         if validation_systems is not None:
             val_patterns = validation_dataset_params.get("rglob_patterns", None)
             validation_systems = process_systems(
@@ -136,12 +129,9 @@ def get_trainer(
                     "out_format", validation_dataset_params.get("output_format", None)
                 ),
             )
-            if len(validation_systems) == 1 and is_lmdb(validation_systems[0]):
-                raise NotImplementedError(
-                    "Paddle backend does not support LMDB validation data yet. "
-                    "Set validation_data.out_format to 'deepmd/hdf5' when using "
-                    "validation_data.format for automatic conversion."
-                )
+            validate_lmdb_systems(
+                validation_systems, backend_name="Paddle", supported=False
+            )
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)

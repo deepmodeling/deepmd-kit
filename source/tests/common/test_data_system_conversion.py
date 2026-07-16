@@ -29,6 +29,7 @@ from deepmd.utils.data_system import (
     LmdbDataSystem,
     get_data,
     process_systems,
+    validate_lmdb_systems,
 )
 
 
@@ -199,6 +200,40 @@ class TestDpdataFormatConversion(unittest.TestCase):
         stat_set = data._load_set(data.dirs[0])
         self.assertEqual(stat_set["coord"].shape, (1, 3))
         self.assertEqual(stat_set["type"].shape, (1, 1))
+
+    def test_multiple_lmdb_paths_are_rejected(self) -> None:
+        lmdb_a = self.root / "a.lmdb"
+        lmdb_b = self.root / "b.lmdb"
+        _write_minimal_lmdb(str(lmdb_a))
+        _write_minimal_lmdb(str(lmdb_b))
+
+        with self.assertRaisesRegex(ValueError, "exactly one path"):
+            get_data(
+                {
+                    "systems": [str(lmdb_a), str(lmdb_b)],
+                    "batch_size": 1,
+                },
+                0.0,
+                ["H"],
+                None,
+            )
+
+    def test_backend_without_lmdb_support_rejects_any_resolved_path(self) -> None:
+        lmdb_path = self.root / "unsupported.lmdb"
+        _write_minimal_lmdb(str(lmdb_path))
+
+        with self.assertRaisesRegex(NotImplementedError, "Paddle backend"):
+            validate_lmdb_systems(
+                [str(lmdb_path)], backend_name="Paddle", supported=False
+            )
+
+    def test_lmdb_stack_frames_rejects_empty_batch(self) -> None:
+        lmdb_path = self.root / "empty-batch.lmdb"
+        _write_minimal_lmdb(str(lmdb_path))
+        data = LmdbDataSystem(str(lmdb_path), ["H"], batch_size=1)
+
+        with self.assertRaisesRegex(ValueError, "empty LMDB frame batch"):
+            data._stack_frames([])
 
 
 if __name__ == "__main__":

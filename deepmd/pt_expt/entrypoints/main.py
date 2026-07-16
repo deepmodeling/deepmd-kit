@@ -33,6 +33,7 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
     get_data,
     process_systems,
+    validate_lmdb_systems,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -123,12 +124,15 @@ def _get_neighbor_stat_data(
             "out_format", dataset_params.get("output_format", None)
         ),
     )
-    if len(systems) == 1 and is_lmdb(systems[0]):
+    converted_lmdb_path = validate_lmdb_systems(
+        systems, backend_name="PyTorch exportable"
+    )
+    if converted_lmdb_path is not None:
         from deepmd.dpmodel.utils.lmdb_data import (
             make_neighbor_stat_data,
         )
 
-        return make_neighbor_stat_data(systems[0], type_map)
+        return make_neighbor_stat_data(converted_lmdb_path, type_map)
     return get_data(dataset_params, 0, type_map, None)
 
 
@@ -165,9 +169,12 @@ def _build_data_system(
             "out_format", dataset_params.get("output_format", None)
         ),
     )
-    if len(systems) == 1 and is_lmdb(systems[0]):
+    converted_lmdb_path = validate_lmdb_systems(
+        systems, backend_name="PyTorch exportable"
+    )
+    if converted_lmdb_path is not None:
         return LmdbDataSystem(
-            lmdb_path=systems[0],
+            lmdb_path=converted_lmdb_path,
             type_map=type_map,
             batch_size=dataset_params["batch_size"],
             auto_prob_style=dataset_params.get("auto_prob"),

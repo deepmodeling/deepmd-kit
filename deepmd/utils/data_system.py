@@ -24,6 +24,12 @@ from deepmd.common import (
     make_default_mesh,
     rglob_sys_str,
 )
+from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbDataReader,
+    SameNlocBatchSampler,
+    compute_block_targets,
+    is_lmdb,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -40,6 +46,33 @@ log = logging.getLogger(__name__)
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
 _DPDATA_DEFAULT_OUT_FORMAT = "lmdb"
 _DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str], list[str]] = {}
+
+
+def validate_lmdb_systems(
+    systems: list[str],
+    *,
+    backend_name: str,
+    supported: bool = True,
+) -> str | None:
+    """Validate expanded systems and return the sole resolved LMDB path.
+
+    LMDB stores multiple logical systems inside one database, so mixing an
+    LMDB path with other expanded paths is ambiguous and unsupported.
+    """
+    lmdb_paths = [path for path in systems if is_lmdb(path)]
+    if not lmdb_paths:
+        return None
+    if not supported:
+        raise NotImplementedError(
+            f"{backend_name} backend does not support LMDB data yet. "
+            "Choose out_format='deepmd/hdf5' for automatic conversion."
+        )
+    if len(systems) != 1:
+        raise ValueError(
+            f"{backend_name} backend requires an LMDB dataset to resolve to "
+            "exactly one path; LMDB paths cannot be mixed with other systems."
+        )
+    return lmdb_paths[0]
 
 
 class DeepmdDataSystem:
@@ -707,12 +740,6 @@ class LmdbDataSystem:
                 "must map them to element names."
             )
 
-        from deepmd.dpmodel.utils.lmdb_data import (
-            LmdbDataReader,
-            SameNlocBatchSampler,
-            compute_block_targets,
-        )
-
         self.lmdb_path = lmdb_path
         self._reader = LmdbDataReader(
             lmdb_path, type_map, batch_size, mixed_batch=False
@@ -859,6 +886,8 @@ class LmdbDataSystem:
             return next(self._iter)
 
     def _stack_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        if not frames:
+            raise ValueError("Cannot stack an empty LMDB frame batch.")
         out: dict[str, Any] = {}
         structural_keys = {"coord", "box"}
         for key in frames[0]:
@@ -1263,6 +1292,8 @@ def _convert_system_by_dpdata(
                     try:
                         lock_path.unlink()
                     except FileNotFoundError:
+                        # Concurrent conversion cleanup is idempotent; another
+                        # process may already have removed the shared lock.
                         pass
                 break
 
@@ -1324,10 +1355,6 @@ def process_systems(
         if _is_deepmd_data_format(fmt):
             fmt = None
 
-    from deepmd.dpmodel.utils.lmdb_data import (
-        is_lmdb,
-    )
-
     # Iterate over the search_paths list and apply expansion logic to each path
     result_systems = []
     for path in search_paths:
@@ -1388,11 +1415,8 @@ def get_data(
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode
 
-    from deepmd.dpmodel.utils.lmdb_data import (
-        is_lmdb,
-    )
-
-    if len(systems) == 1 and is_lmdb(systems[0]):
+    lmdb_path = validate_lmdb_systems(systems, backend_name="legacy data loader")
+    if lmdb_path is not None:
         if type_map is None:
             raise ValueError(
                 "LMDB training data requires model/type_map to be set. "
@@ -1400,7 +1424,7 @@ def get_data(
                 "'deepmd/hdf5' for automatic conversion."
             )
         return LmdbDataSystem(
-            lmdb_path=systems[0],
+            lmdb_path=lmdb_path,
             type_map=type_map,
             batch_size=batch_size,
             auto_prob_style=auto_prob,
