@@ -14,6 +14,9 @@ from unittest.mock import (
     patch,
 )
 
+from deepmd.jax.model.base_model import (
+    BaseModel,
+)
 from deepmd.jax.model.ener_model import (
     EnergyModel,
 )
@@ -51,7 +54,11 @@ def _base_sezm_config() -> dict:
     return {
         "type": "dpa4",
         "type_map": ["O", "H"],
-        "descriptor": {"type": "dpa4"},
+        "descriptor": {
+            "type": "dpa4",
+            "random_gamma": False,
+            "use_amp": False,
+        },
         "fitting_net": {"type": "dpa4_ener"},
     }
 
@@ -110,6 +117,13 @@ class TestJAXSeZMModelFactory(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             get_model(data)
 
+        for key in ("random_gamma", "use_amp"):
+            with self.subTest(descriptor_option=key):
+                data = _base_sezm_config()
+                data["descriptor"][key] = True
+                with self.assertRaisesRegex(NotImplementedError, key):
+                    get_model(data)
+
     def test_rejects_incompatible_descriptor_and_fitting_types(self) -> None:
         data = _base_sezm_config()
         data["descriptor"]["type"] = "se_e2_a"
@@ -128,6 +142,27 @@ class TestJAXSeZMModelFactory(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             get_model(data)
+
+    @patch(
+        "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel",
+        return_value=({"type": "dpa4", "sel": 16}, 0.75),
+    )
+    def test_model_aliases_route_through_update_sel(self, update_sel) -> None:
+        """Neighbor-stat preprocessing recognizes every public DPA4 alias."""
+        for model_type in ("dpa4", "DPA4", "sezm", "SeZM"):
+            with self.subTest(model_type=model_type):
+                local_jdata = {
+                    "type": model_type,
+                    "descriptor": {"type": "dpa4", "sel": "auto"},
+                }
+
+                updated, min_nbor_dist = BaseModel.update_sel(
+                    object(), ["O", "H"], local_jdata
+                )
+
+                self.assertEqual(updated["descriptor"]["sel"], 16)
+                self.assertEqual(min_nbor_dist, 0.75)
+        self.assertEqual(update_sel.call_count, 4)
 
     @patch("deepmd.jax.model.model.get_standard_model", side_effect=lambda data: data)
     def test_descriptor_exclude_types_feed_standard_model(

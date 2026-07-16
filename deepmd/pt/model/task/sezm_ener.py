@@ -310,6 +310,21 @@ class GLUFittingNet(torch.nn.Module):
             trainable=self.trainable[-1],
         )
 
+        # The layer constructors retain ``trainable`` as serialization
+        # metadata but do not consistently apply it to newly created
+        # ``Parameter`` objects. Reapply the policy at this owning module so a
+        # deserialize round trip cannot make frozen layers optimizer-visible.
+        for layer, layer_trainable in zip(
+            self.hidden_layers, self.trainable[:-1], strict=True
+        ):
+            for param in layer.parameters():
+                param.requires_grad = layer_trainable
+        if self.case_film is not None:
+            for param in self.case_film.parameters():
+                param.requires_grad = all(self.trainable)
+        for param in self.output_layer.parameters():
+            param.requires_grad = self.trainable[-1]
+
     def _apply_input_film(
         self,
         xx: torch.Tensor,

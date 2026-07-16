@@ -47,6 +47,9 @@ from deepmd.pt.model.model.sezm_native_spin_model import (
 from deepmd.pt.model.model.sezm_property_model import (
     SeZMPropertyModel,
 )
+from deepmd.pt.model.task.sezm_ener import (
+    SeZMEnergyFittingNet,
+)
 from deepmd.pt.train.training import (
     prepare_model_for_loss,
 )
@@ -85,6 +88,29 @@ _SKIP_OFF_COMPILE_TORCH_REASON = (
     "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x; "
     f"current torch is {torch.__version__}."
 )
+
+
+class TestSeZMEnergyFittingTrainability(unittest.TestCase):
+    """Ensure frozen PT DPA4 fitting parameters survive serialization."""
+
+    def test_frozen_parameters_survive_round_trip(self) -> None:
+        fitting = SeZMEnergyFittingNet(
+            ntypes=2,
+            dim_descrpt=8,
+            neuron=[8],
+            mixed_types=True,
+            trainable=False,
+            dim_case_embd=2,
+            case_film_embd=True,
+            precision="float64",
+            seed=20260716,
+        )
+
+        restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
+
+        self.assertTrue(list(fitting.parameters()))
+        self.assertTrue(list(restored.parameters()))
+        self.assertTrue(all(not param.requires_grad for param in restored.parameters()))
 
 
 def _assert_close_with_strict_warning(

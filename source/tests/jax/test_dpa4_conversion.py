@@ -5,7 +5,9 @@ from copy import (
     deepcopy,
 )
 
-import torch
+import pytest
+
+torch = pytest.importorskip("torch")
 
 from deepmd.jax.utils.serialization import (
     deserialize_to_file as deserialize_to_jax_file,
@@ -39,6 +41,7 @@ def _small_dpa4_config() -> dict:
                 "mmax": 1,
                 "n_blocks": 1,
                 "random_gamma": False,
+                "use_amp": False,
                 "precision": "float64",
                 "seed": 1,
             },

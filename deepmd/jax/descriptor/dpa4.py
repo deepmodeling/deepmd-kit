@@ -287,6 +287,19 @@ register_dpmodel_mapping(
 @flax_module
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # The dpmodel implementation currently fixes gamma and performs no
+        # automatic mixed-precision policy under JAX. Reject explicit requests
+        # instead of silently accepting training options that have no effect.
+        if kwargs.get("random_gamma") is True:
+            raise NotImplementedError(
+                "DPA4 random_gamma=True is not supported in the JAX backend."
+            )
+        if kwargs.get("use_amp") is True:
+            raise NotImplementedError(
+                "DPA4 use_amp=True is not supported in the JAX backend."
+            )
+        kwargs.setdefault("random_gamma", False)
+        kwargs.setdefault("use_amp", False)
         super().__init__(*args, **kwargs)
         _promote_trainable_tree(self)
 

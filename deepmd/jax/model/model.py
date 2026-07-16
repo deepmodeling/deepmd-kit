@@ -128,6 +128,16 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["fitting_net"] = data.get("fitting_net") or {}
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
+    if data["descriptor"].get("random_gamma") is True:
+        raise NotImplementedError(
+            "DPA4 random_gamma=True is not supported in the JAX backend."
+        )
+    if data["descriptor"].get("use_amp") is True:
+        raise NotImplementedError(
+            "DPA4 use_amp=True is not supported in the JAX backend."
+        )
+    data["descriptor"].setdefault("random_gamma", False)
+    data["descriptor"].setdefault("use_amp", False)
     if data["descriptor"].get("add_chg_spin_ebd"):
         raise NotImplementedError(
             "DPA4/SeZM charge/spin conditioning is not supported in JAX."
