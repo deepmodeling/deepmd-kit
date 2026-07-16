@@ -16,11 +16,35 @@ from deepmd.dpmodel.utils.batch import (
 log = logging.getLogger(__name__)
 
 
+def _get_stat_nsystems(data: Any) -> int:
+    """Return the number of shape-compatible systems used for statistics."""
+    get_stat_nsystems = getattr(data, "get_stat_nsystems", None)
+    if get_stat_nsystems is not None:
+        return int(get_stat_nsystems())
+    return int(data.get_nsystems())
+
+
+def _get_stat_numb_batches(data: Any, sys_idx: int, nbatches: int) -> int:
+    """Limit sampling to the available batches of one statistical system."""
+    get_stat_numb_batches = getattr(data, "get_stat_numb_batches", None)
+    if get_stat_numb_batches is None:
+        return nbatches
+    return min(nbatches, int(get_stat_numb_batches(sys_idx)))
+
+
+def _get_stat_batch(data: Any, sys_idx: int) -> dict[str, Any]:
+    """Return one batch from a shape-compatible statistical system."""
+    get_stat_batch = getattr(data, "get_stat_batch", None)
+    if get_stat_batch is not None:
+        return get_stat_batch(sys_idx)
+    return data.get_batch(sys_idx=sys_idx)
+
+
 def _make_all_stat_ref(data: Any, nbatches: int) -> dict[str, list[Any]]:
     all_stat = defaultdict(list)
-    for ii in range(data.get_nsystems()):
-        for jj in range(nbatches):
-            stat_data = data.get_batch(sys_idx=ii)
+    for ii in range(_get_stat_nsystems(data)):
+        for jj in range(_get_stat_numb_batches(data, ii, nbatches)):
+            stat_data = _get_stat_batch(data, ii)
             for dd in stat_data:
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32)
@@ -55,10 +79,10 @@ def collect_batches(
             all_stat[key][batch_idx][frame_idx]
     """
     all_stat = defaultdict(list)
-    for ii in range(data.get_nsystems()):
+    for ii in range(_get_stat_nsystems(data)):
         sys_stat = defaultdict(list)
-        for jj in range(nbatches):
-            stat_data = data.get_batch(sys_idx=ii)
+        for jj in range(_get_stat_numb_batches(data, ii, nbatches)):
+            stat_data = _get_stat_batch(data, ii)
             for dd in stat_data:
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32)
@@ -78,8 +102,10 @@ def make_stat_input(
 ) -> list[dict[str, np.ndarray]]:
     """Pack data for statistics using DeepmdDataSystem.
 
-    Collects *nbatches* batches from each system and concatenates them
-    into a single dict per system.  The returned format
+    Collects up to *nbatches* batches from each shape-compatible statistical
+    system and concatenates them into one dictionary per system. Data sources
+    with variable atom counts may expose dedicated statistical-system methods
+    so incompatible ``nloc`` groups remain separate. The returned format
     (``list[dict[str, np.ndarray]]``) is backend-agnostic and can be
     consumed by ``compute_or_load_stat`` in dpmodel, pt_expt, and jax.
 
@@ -98,7 +124,7 @@ def make_stat_input(
     """
     all_stat = collect_batches(data, nbatches, merge_sys=False)
 
-    nsystems = data.get_nsystems()
+    nsystems = _get_stat_nsystems(data)
     log.info(f"Packing data for statistics from {nsystems} systems")
 
     keys = list(all_stat.keys())
