@@ -56,7 +56,7 @@ jobs:
           # the key must never match, even when restarting workflows, as that
           # will cause durations to get out of sync between groups, the
           # combined durations will be loaded if available
-          key: test3-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
+          key: test3-durations-split-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.python }}-${{ matrix.group }}
           restore-keys: |
             test3-durations-combined-${{ matrix.python }}-${{ github.sha }}
             test3-durations-combined-${{ matrix.python }}
