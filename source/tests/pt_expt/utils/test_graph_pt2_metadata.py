@@ -15,8 +15,11 @@ import tempfile
 import zipfile
 
 import pytest
+import torch
 
 from deepmd.pt_expt.utils.serialization import (
+    _graph_edge_dtype,
+    _supports_graph_export,
     deserialize_to_file,
 )
 
@@ -89,9 +92,40 @@ def test_graph_pt2_has_lower_input_kind_graph(dpa1_dpmodel_data) -> None:
         )
         meta = _read_metadata(p)
     assert meta["lower_input_kind"] == "graph"
-    # B2.0: the edge axis is DYNAMIC (Dim("nedge", min=2)); there is no static
-    # capacity baked into the AOTI artifact, so no ``edge_capacity`` is persisted.
+    assert meta["graph_edge_dtype"] == "float64"
+    # A dynamic edge axis has no persisted static capacity.
     assert "edge_capacity" not in meta
+
+
+@pytest.mark.parametrize(
+    ("statistics_dtype", "expected"),
+    [(torch.float32, "float32"), (torch.float64, "float64")],
+)
+def test_compressed_graph_uses_compute_precision_edge_geometry(
+    statistics_dtype: torch.dtype, expected: str
+) -> None:
+    """Compressed DPA1 graph geometry follows descriptor compute precision."""
+
+    class _Descriptor:
+        geo_compress = True
+
+        class _Block:
+            mean = torch.empty(0, dtype=statistics_dtype)
+
+        se_atten = _Block()
+
+        def _fused_eligible(self, backend: str) -> bool:
+            return backend == "cuda" and self.se_atten.mean.dtype == torch.float32
+
+    class _AtomicModel:
+        descriptor = _Descriptor()
+
+    class _Model:
+        atomic_model = _AtomicModel()
+
+    assert _graph_edge_dtype(_Model(), "graph") == expected
+    assert _graph_edge_dtype(_Model(), "nlist") == "float64"
+    assert _supports_graph_export(_Model()) is (statistics_dtype == torch.float32)
 
 
 def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:
@@ -105,6 +139,7 @@ def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:
         )
         meta = _read_metadata(p)
     assert meta["lower_input_kind"] == "nlist"
+    assert meta["graph_edge_dtype"] == "float64"
     # edge_capacity is a graph-only artifact constant; the dense path omits it.
     assert "edge_capacity" not in meta
 
@@ -114,8 +149,7 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
 
     The knob is consumed only by graph-form ``.pt2`` eval; silently ignoring
     it on nlist-form artifacts misled users into thinking they selected an
-    O(N) builder (OutisLi review, #5714). The nlist-path knob is
-    ``nlist_backend``.
+    O(N) builder. The nlist-path knob is ``nlist_backend``.
     """
     from deepmd.infer import (
         DeepPot,
@@ -130,7 +164,7 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
         )
         with pytest.raises(ValueError, match="graph-form"):
             DeepPot(p, neighbor_graph_method="vesin")
-        # the default stays accepted (no behavior change)
+        # The default remains valid for nlist-form artifacts.
         DeepPot(p)
 
 

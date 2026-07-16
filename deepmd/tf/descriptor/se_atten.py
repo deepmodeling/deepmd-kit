@@ -732,10 +732,9 @@ class DescrptSeAtten(DescrptSeA):
         trainable: bool = True,
     ) -> tuple[tf.Tensor, None]:
         assert (
-            input_dict is not None
-            and input_dict.get("type_embedding", None) is not None
+            input_dict is not None and input_dict.get("type_embedding") is not None
         ), "se_atten descriptor must use type_embedding"
-        type_embedding = input_dict.get("type_embedding", None)
+        type_embedding = input_dict.get("type_embedding")
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
@@ -1961,7 +1960,7 @@ class DescrptSeAtten(DescrptSeA):
             raise RuntimeError(
                 "The implementation for smooth_type_embedding is inconsistent with other backends"
             )
-        # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
+        # TODO support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
             raise NotImplementedError(
                 "serialization is unsupported when tebd_input_mode=='strip' and type_one_side is True"

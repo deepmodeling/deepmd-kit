@@ -21,9 +21,6 @@ path implemented in B3.1.
 import importlib.util
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -36,6 +33,10 @@ from expected_ref import (
 )
 from lammps import (
     PyLammps,
+)
+from lammps_test_utils import (
+    make_atomic_lammps,
+    run_mpi_pair_runner,
 )
 from write_lmp_data import (
     write_lmp_data,
@@ -127,20 +128,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    if atom_map != "no":
-        lammps.atom_modify(f"map {atom_map}")
-    lammps.neighbor("2.0 bin")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    lammps.mass("1 16")
-    lammps.mass("2 2")
-    lammps.timestep(0.0005)
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, atom_map=atom_map)
 
 
 @pytest.fixture
@@ -210,54 +198,22 @@ def _run_mpi_subprocess(
     runner_args: list[str] | None = None,
     pb: Path | None = None,
 ) -> dict:
-    """Invoke the (backend-agnostic) DPA3 MPI runner under
-    ``mpirun -n <nprocs>`` against the dpa1 graph .pt2 and return
-    ``{"pe": float, "forces": (n, 3), "virials": (n, 9)}``.
+    """Invoke the shared DPA MPI runner against the DPA1 graph model.
 
     ``nprocs == 1`` forces ``--processors 1 1 1`` so the C++ side sees
     ``nprocs == 1`` and routes to the single-rank graph path — a
     same-archive reference for the multi-rank comparison.  ``pb`` overrides
     the model archive (defaults to the no-exclusion ``deeppot_dpa1_graph.pt2``).
     """
-    if data_path is None:
-        data_path = data_file
-    if pb is None:
-        pb = pb_file
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        argv = [
-            "mpirun",
-            "-n",
-            str(nprocs),
-            sys.executable,
-            str(mpi_runner),
-            str(data_path.resolve()),
-            str(pb.resolve()),
-            out_path,
-        ]
-        if processors is not None:
-            argv.extend(["--processors", processors])
-        elif nprocs == 1:
-            argv.extend(["--processors", "1 1 1"])
-        if extra_args:
-            argv.extend(extra_args)
-        if runner_args:
-            argv.extend(runner_args)
-        sp.check_call(argv)
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe = float(lines[0])
-        rows = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        forces = rows[:, :3]
-        virials = rows[:, 3:]
-        return {"pe": pe, "forces": forces, "virials": virials}
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
+    return run_mpi_pair_runner(
+        mpi_runner,
+        data_path or data_file,
+        pb or pb_file,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=extra_args,
+        runner_args=runner_args,
+    )
 
 
 @pytest.mark.skipif(

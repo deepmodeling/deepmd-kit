@@ -24,6 +24,8 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     ForceEmbedding,
     InnerClamp,
     NodeCartesianTensorProduct,
+    RadialBasis,
+    RadialMLP,
     SeZMDirectForceHead,
     SO2Linear,
     SpinEmbedding,
@@ -1824,6 +1826,131 @@ class TestInnerClamp(_SeZMTestCase):
             InnerClamp(-1.0, 1.0)
         with self.assertRaises(ValueError):
             InnerClamp(1.0, 1.0)
+
+
+class TestEdgeNorm(_SeZMTestCase):
+    """The ``edge_norm`` switch and its effect on cutoff smoothness.
+
+    The descriptor exposes a single ``edge_norm`` flag; internally it drives the
+    ``RadialMLP.radial_norm`` hidden RMSNorm, the FiLM scale/shift norms, and the
+    cross-focus competition norm, and selects the post-SO(2) residual scaling
+    floor. The RadialMLP-level tests exercise the radial mechanism directly; the
+    descriptor test checks the umbrella propagation.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.dtype = torch.float64
+        self.rcut = 6.0
+
+    def _radial_feature_curve(self, *, radial_norm: bool, seed: int) -> torch.Tensor:
+        """Radial features over a near-cutoff distance sweep.
+
+        ``RadialBasis`` bakes in the C^3 envelope, so ``edge_rbf`` vanishes at
+        ``rcut``. With ``radial_norm=True`` the hidden RMSNorm divides that
+        envelope out and its ``eps`` floor is crossed near ``rcut``, injecting a
+        localized curvature spike; ``radial_norm=False`` drops the RMSNorm so the
+        feature stays smooth. Both variants share the same linear weights (same
+        ``seed``), isolating the effect of the norm.
+
+        Parameters
+        ----------
+        radial_norm : bool
+            Whether the RadialMLP keeps its hidden RMSNorm.
+        seed : int
+            Seed shared by both variants so the linear weights match.
+
+        Returns
+        -------
+        torch.Tensor
+            Radial features with shape (N, out_dim) over the distance sweep.
+        """
+        basis = RadialBasis(rcut=self.rcut, n_radial=8, exponent=7, dtype=self.dtype)
+        mlp = RadialMLP(
+            [8, 12, 8], radial_norm=radial_norm, dtype=self.dtype, seed=seed
+        )
+        r = torch.linspace(
+            0.5 * self.rcut,
+            0.9995 * self.rcut,
+            4000,
+            dtype=self.dtype,
+            device=self.device,
+        ).view(-1, 1)
+        with torch.no_grad():
+            return mlp(basis(r))
+
+    @staticmethod
+    def _peak_curvature(feat: torch.Tensor) -> float:
+        """Peak absolute second finite difference of the feature L2 norm."""
+        y = feat.norm(dim=1)
+        return float((y[2:] - 2.0 * y[1:-1] + y[:-2]).abs().max())
+
+    def test_radial_norm_false_removes_cutoff_curvature_spike(self) -> None:
+        """``radial_norm=False`` suppresses the eps-crossing kink near ``rcut``."""
+        feat_norm = self._radial_feature_curve(radial_norm=True, seed=3)
+        feat_smooth = self._radial_feature_curve(radial_norm=False, seed=3)
+        # Both vanish at rcut: edge_rbf -> 0 and RadialMLP(0) = 0 (bias=False).
+        self.assertLess(feat_smooth[-1].abs().max().item(), 1.0e-8)
+        # The normalized variant floor-crosses just inside rcut; dropping the
+        # RMSNorm removes that localized curvature spike by a wide margin.
+        self.assertLess(
+            self._peak_curvature(feat_smooth) * 5.0,
+            self._peak_curvature(feat_norm),
+        )
+
+    def test_radial_norm_structure_and_serialization(self) -> None:
+        """The flag toggles the hidden RMSNorm and round-trips through serialize."""
+        for radial_norm in (True, False):
+            with self.subTest(radial_norm=radial_norm):
+                mlp = RadialMLP(
+                    [8, 12, 8], radial_norm=radial_norm, dtype=self.dtype, seed=5
+                )
+                has_norm = any(type(m).__name__ == "RMSNorm" for m in mlp.net)
+                self.assertEqual(has_norm, radial_norm)
+
+                restored = RadialMLP.deserialize(mlp.serialize())
+                self.assertEqual(restored.radial_norm, radial_norm)
+                x = torch.rand(16, 8, dtype=self.dtype, device=self.device)
+                with torch.no_grad():
+                    torch.testing.assert_close(mlp(x), restored(x))
+
+    def test_edge_norm_gates_all_cutoff_vanishing_norms(self) -> None:
+        """``edge_norm`` controls every cutoff-vanishing normalization path."""
+        for edge_norm in (True, False):
+            with self.subTest(edge_norm=edge_norm):
+                desc = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        edge_norm=edge_norm,
+                        use_env_seed=True,
+                        n_focus=2,
+                        sandwich_norm=[True, True, True, True],
+                        precision="float64",
+                    )
+                )
+                # radial MLP hidden RMSNorm
+                radial_has_norm = any(
+                    type(m).__name__ == "RMSNorm" for m in desc.radial_embedding.net
+                )
+                self.assertEqual(radial_has_norm, edge_norm)
+                # env-seed FiLM scale/shift norms
+                self.assertEqual(
+                    type(desc.film_scale_norm).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                self.assertEqual(
+                    type(desc.film_shift_norm).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                # cross-focus competition norm (n_focus>1 -> competition active)
+                focus_norm_mod = desc.blocks[0].so2_conv.focus_compete_norm
+                self.assertEqual(
+                    type(focus_norm_mod).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                # Only the post-SO(2) residual branch uses unit-floor scaling.
+                expected_eps = 1.0e-5 if edge_norm else 1.0
+                self.assertEqual(desc.blocks[0].post_so2_norm.eps, expected_eps)
+                self.assertEqual(desc.blocks[0].pre_so2_norm.eps, 1.0e-5)
+                self.assertEqual(desc.blocks[0].pre_ffn_norms[0].eps, 1.0e-5)
+                self.assertEqual(desc.blocks[0].post_ffn_norms[0].eps, 1.0e-5)
+                self.assertEqual(desc.serialize()["config"]["edge_norm"], edge_norm)
 
 
 class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):

@@ -123,7 +123,7 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
     : PairDeepBaseModel(
           lmp, cite_user_deepmd_package, deep_pot, deep_pot_model_devi),
       commdata_(nullptr) {
-  // Constructor body can be empty
+  print_summary("  ");
 }
 
 PairDeepMD::~PairDeepMD() {
@@ -186,8 +186,8 @@ double PairDeepMD::eval_energy_with_fparam(
     }
   }
 
-  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
-  // the LAMMPS atom-map; harmless for other models).
+  // Owner mapping for message-passing .pt2 models that gather ghost features
+  // through the LAMMPS atom map; unused by other models.
   std::vector<int> mapping_vec(nall, -1);
   if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     for (size_t ii = 0; ii < nall; ++ii) {
@@ -236,6 +236,14 @@ double PairDeepMD::eval_energy_with_fparam(
   return scale[1][1] * dener * ener_unit_cvt_factor;
 }
 
+deepmd_compat::InputNlist PairDeepMD::make_comm_nlist() {
+  commdata_ = (CommBrickDeepMD*)comm;
+  return deepmd_compat::InputNlist(
+      0, nullptr, nullptr, nullptr, commdata_->nswap, commdata_->sendnum,
+      commdata_->recvnum, commdata_->firstrecv, commdata_->sendlist,
+      commdata_->sendproc, commdata_->recvproc, &world, comm->nprocs);
+}
+
 void PairDeepMD::compute(int eflag, int vflag) {
   if (numb_models == 0) {
     return;
@@ -249,7 +257,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                "centroid/stress/atom command for 9-element atomic virial.");
   }
   bool do_ghost = true;
-  //  dpa2 communication
+  // Ghost communicator used to assemble the send/recv swap metadata.
   commdata_ = (CommBrickDeepMD*)comm;
   double** x = atom->x;
   double** f = atom->f;
@@ -297,8 +305,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   }
 
-  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
-  // the LAMMPS atom-map; harmless for other models).
+  // Owner mapping for message-passing .pt2 models that gather ghost features
+  // through the LAMMPS atom map; unused by other models.
   std::vector<int> mapping_vec(nall, -1);
   if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     for (size_t ii = 0; ii < nall; ++ii) {
@@ -327,7 +335,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     make_fparam_from_fix(fparam);
   }
 
-  // int ago = numb_models > 1 ? 0 : neighbor->ago;
   int ago = neighbor->ago;
   if (numb_models > 1) {
     if (multi_models_no_mod_devi &&
@@ -381,17 +388,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
             eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
           }
         }
-        // Added by Davide Tisi 2020
-        // interface the atomic virial computed by DeepMD
-        // with the one used in centroid atoms
+        // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
+        // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
         if (cvflag_atom) {
           for (int ii = 0; ii < nall; ++ii) {
-            // vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-            // vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-            // vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-            // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-            // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-            // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
             cvatom[ii][0] +=
                 scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
             cvatom[ii][1] +=
@@ -452,18 +452,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
           eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
         }
       }
-      // Added by Davide Tisi 2020
-      // interface the atomic virial computed by DeepMD
-      // with the one used in centroid atoms
+      // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
+      // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
       if (cvflag_atom) {
         dvatom = all_atom_virial[0];
         for (int ii = 0; ii < nall; ++ii) {
-          // vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-          // vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-          // vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-          // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-          // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-          // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
           cvatom[ii][0] +=
               scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
           cvatom[ii][1] +=
@@ -899,7 +892,7 @@ void PairDeepMD::settings(int narg, char** arg) {
            << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
            << setw(18 + 1) << "avg_devi_f";
         if (out_each) {
-          // at this time, we don't know how many atoms
+          // The atom count is not known when the header is written.
           fp << setw(18 + 1) << "atm_devi_f(N)";
         }
         fp << endl;

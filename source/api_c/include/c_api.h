@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #else
@@ -12,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 27
+#define DP_C_API_VERSION 28
 
 /**
  * @brief Neighbor list.
@@ -357,6 +358,124 @@ extern void DP_DeepPotComputeNListf(DP_DeepPot* dp,
                                     float* virial,
                                     float* atomic_energy,
                                     float* atomic_virial);
+
+/**
+ * @brief Evaluate a device-resident edge graph with FP64 edge vectors.
+ *
+ * All ``d_*`` pointers reference accelerator memory on the model device.
+ * Frame and atomic parameters are host-resident arrays; pass NULL with size 0
+ * to use the model defaults.
+ *
+ * @param[in] dp The DP to use.
+ * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
+ * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[in] d_coord Per-node coordinates, shape ``(nall_nodes, 3)``.
+ * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
+ * @param[in] d_edge_index Destination-major ``[source, destination]`` edges,
+ * shape ``(2, nedge)``.
+ * @param[in] d_edge_vec Edge vectors, shape ``(nedge, 3)``.
+ * @param[in] nloc Number of owned local nodes.
+ * @param[in] nedge Number of physical edges.
+ * @param[in] fparam Host frame parameters.
+ * @param[in] fparam_size Number of values in ``fparam``.
+ * @param[in] aparam Host per-atom parameters.
+ * @param[in] aparam_size Number of values in ``aparam``.
+ * @param[in] nall_nodes Total local-plus-halo node count.
+ * @param[in] comm_nlist Communication metadata, or NULL.
+ * @since API version 28
+ */
+extern void DP_DeepPotComputeEdgesGPU(DP_DeepPot* dp,
+                                      double* d_atom_energy,
+                                      double* d_force,
+                                      double* d_atom_virial,
+                                      const double* d_coord,
+                                      const int* d_atype,
+                                      const int* d_edge_index,
+                                      const double* d_edge_vec,
+                                      int nloc,
+                                      int nedge,
+                                      const double* fparam,
+                                      int64_t fparam_size,
+                                      const double* aparam,
+                                      int64_t aparam_size,
+                                      int nall_nodes,
+                                      const DP_Nlist* comm_nlist);
+
+/**
+ * @brief Evaluate a device-resident edge graph with FP32 edge vectors.
+ *
+ * The pointer and shape contract matches DP_DeepPotComputeEdgesGPU.
+ *
+ * @since API version 28
+ */
+extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
+                                             double* d_atom_energy,
+                                             double* d_force,
+                                             double* d_atom_virial,
+                                             const double* d_coord,
+                                             const int* d_atype,
+                                             const int* d_edge_index,
+                                             const float* d_edge_vec,
+                                             int nloc,
+                                             int nedge,
+                                             const double* fparam,
+                                             int64_t fparam_size,
+                                             const double* aparam,
+                                             int64_t aparam_size,
+                                             int nall_nodes,
+                                             const DP_Nlist* comm_nlist);
+
+/**
+ * @brief Evaluate a compact canonical graph on the model device.
+ *
+ * @param[in] dp The DP to use.
+ * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
+ * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
+ * @param[in] d_source Source node per edge storage slot.
+ * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
+ * @param[in] d_destination_row_ptr Destination CSR offsets.
+ * @param[in] d_source_row_ptr Source CSR offsets.
+ * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] nloc Number of owned local nodes.
+ * @param[in] nall_nodes Total local-plus-halo node count.
+ * @param[in] edge_storage Number of edge storage slots.
+ * @since API version 28
+ */
+extern void DP_DeepPotComputeCanonicalGraphGPU(
+    DP_DeepPot* dp,
+    double* d_atom_energy,
+    double* d_force,
+    double* d_atom_virial,
+    const int64_t* d_atype,
+    const int64_t* d_source,
+    const float* d_edge_vec,
+    const int64_t* d_destination_row_ptr,
+    const int64_t* d_source_row_ptr,
+    const int64_t* d_source_order,
+    int nloc,
+    int nall_nodes,
+    int64_t edge_storage);
+
+/**
+ * @brief Query whether the loaded artifact supports device-edge inference.
+ * @since API version 28
+ */
+extern bool DP_DeepPotSupportsDeviceEdgeInference(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether device edge vectors use FP32.
+ * @since API version 28
+ */
+extern bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether the compact canonical graph ABI is active.
+ * @since API version 28
+ */
+extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)

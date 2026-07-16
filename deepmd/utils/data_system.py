@@ -897,11 +897,11 @@ def get_data(
         The data system
     """
     systems = jdata["systems"]
-    rglob_patterns = jdata.get("rglob_patterns", None)
+    rglob_patterns = jdata.get("rglob_patterns")
     systems = process_systems(systems, patterns=rglob_patterns)
 
     batch_size = jdata["batch_size"]
-    sys_probs = jdata.get("sys_probs", None)
+    sys_probs = jdata.get("sys_probs")
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode
 

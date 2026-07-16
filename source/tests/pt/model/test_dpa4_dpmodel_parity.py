@@ -806,7 +806,8 @@ class TestNormParity:
 
     @pytest.mark.parametrize("lmax", [0, 2, 3])  # 0 covers the scalar-only branch
     @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
-    def test_equivariant_rmsnorm(self, lmax, n_focus) -> None:
+    @pytest.mark.parametrize("eps", [1.0e-5, 1.0])
+    def test_equivariant_rmsnorm(self, lmax, n_focus, eps) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
             EquivariantRMSNorm as DPEquivariantRMSNorm,
         )
@@ -815,10 +816,16 @@ class TestNormParity:
         )
 
         pt_mod = PTEquivariantRMSNorm(
-            lmax, self.channels, n_focus, dtype=torch.float64, trainable=True
+            lmax,
+            self.channels,
+            n_focus,
+            eps=eps,
+            dtype=torch.float64,
+            trainable=True,
         )
         self._perturb(pt_mod, 2040)
         serialized = pt_mod.serialize()
+        assert serialized["config"]["eps"] == eps
         # pt state_dict key contract: 2 parameters + 2 persistent buffers
         assert set(serialized["@variables"]) == {
             "adam_scale",
@@ -831,6 +838,40 @@ class TestNormParity:
         x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.channels))
         x[0] = 0.0  # all-zeros row exercises the eps path
         assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
+
+    def test_equivariant_rmsnorm_eps_one_reparameterization(self) -> None:
+        """An epsilon of one preserves the legacy branch function class."""
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            EquivariantRMSNorm as PTEquivariantRMSNorm,
+        )
+
+        legacy = PTEquivariantRMSNorm(
+            2,
+            self.channels,
+            1,
+            eps=1.0e-5,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        unit_scale = PTEquivariantRMSNorm(
+            2,
+            self.channels,
+            1,
+            eps=1.0,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        self._perturb(legacy, 2042)
+        unit_scale.load_state_dict(legacy.state_dict())
+
+        rng = np.random.default_rng(2043)
+        x = to_pt(rng.normal(size=(17, 9, 1, self.channels)))
+        torch.testing.assert_close(
+            legacy(x),
+            unit_scale(x / np.sqrt(legacy.eps)),
+            rtol=PT_RTOL,
+            atol=PT_ATOL,
+        )
 
     def test_equivariant_rmsnorm_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -3293,6 +3334,17 @@ class TestBlockParity:
         )
         self._assert_block_parity(pt_mod, dp_mod, kwargs)
 
+    def test_block_post_so2_eps_one(self) -> None:
+        pt_mod, dp_mod, kwargs = self._build_block_pair(
+            so2_post_norm=True,
+            so2_post_norm_eps=1.0,
+        )
+        assert pt_mod.post_so2_norm.eps == 1.0
+        assert dp_mod.post_so2_norm.eps == 1.0
+        assert pt_mod.pre_ffn_norms[0].eps == 1.0e-5
+        assert dp_mod.pre_ffn_norms[0].eps == 1.0e-5
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
     def test_block_ffn_blocks(self) -> None:
         # multiple FFN subblocks exercise the per-subblock loop and seeds
         pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_blocks=2)
@@ -3519,6 +3571,22 @@ class TestDescriptorParity:
         pt_mod, dp_mod, _ = self._build_descr_pair(
             use_env_seed=use_env_seed, n_blocks=n_blocks
         )
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
+        "edge_norm", [False, True]
+    )  # cutoff-vanishing normalization modes
+    def test_descriptor_edge_norm(self, edge_norm) -> None:
+        # edge_norm=False drops the radial MLP RMSNorm, turns the FiLM scale/shift
+        # norms into identity pass-throughs, drops the focus-compete norm, and
+        # selects unit-floor post-SO(2) residual scaling in both backends.
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            edge_norm=edge_norm, use_env_seed=True, n_focus=2
+        )
+        assert dp_mod.edge_norm == edge_norm
+        expected_eps = 1.0e-5 if edge_norm else 1.0
+        assert pt_mod.blocks[0].post_so2_norm.eps == expected_eps
+        assert dp_mod.blocks[0].post_so2_norm.eps == expected_eps
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(

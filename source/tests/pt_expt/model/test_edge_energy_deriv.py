@@ -70,6 +70,49 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         torch.testing.assert_close(force, f2, rtol=1e-12, atol=1e-12)
         torch.testing.assert_close(gv, gv2, rtol=1e-12, atol=1e-12)
 
+    def test_force_precision_downcasts_inference_only(self) -> None:
+        """``force_precision`` assembles force / virial in that dtype for
+        inference, matching the fp64 assembly in content (the gradient carries
+        only the model precision); it is ignored when a graph is retained, so
+        training / double-backward keeps the fp64 leaf dtype.
+        """
+        torch.manual_seed(2)
+        N = 6
+        n_node = torch.tensor([N], dtype=torch.int64, device=env.DEVICE)
+        coord = torch.randn(N, 3, dtype=torch.float64, device=env.DEVICE)
+        src = torch.tensor([0, 1, 2, 3, 4, 5], device=env.DEVICE)
+        dst = torch.tensor([1, 0, 3, 2, 5, 4], device=env.DEVICE)
+        edge_index = torch.stack([src, dst], 0)
+        edge_mask = torch.ones(src.shape[0], dtype=torch.bool, device=env.DEVICE)
+
+        def deriv(force_precision, create_graph):
+            ev = (coord[src] - coord[dst]).detach().requires_grad_(True)
+            energy = (torch.sin(ev).sum(-1) ** 2).sum()
+            return edge_energy_deriv(
+                energy,
+                ev,
+                edge_index,
+                edge_mask,
+                n_node,
+                do_atomic_virial=True,
+                create_graph=create_graph,
+                force_precision=force_precision,
+            )
+
+        f64, av64, gv64 = deriv(None, False)
+        f32, av32, gv32 = deriv(torch.float32, False)
+        # inference: force / virial are emitted in the requested precision ...
+        self.assertEqual(f32.dtype, torch.float32)
+        self.assertEqual(gv32.dtype, torch.float32)
+        self.assertEqual(av32.dtype, torch.float32)
+        # ... and match the fp64 assembly to the fp32 floor.
+        torch.testing.assert_close(f32.double(), f64, rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(gv32.double(), gv64, rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(av32.double(), av64, rtol=1e-5, atol=1e-5)
+        # a retained graph keeps the fp64 leaf dtype (downcast suppressed).
+        f_train, _, _ = deriv(torch.float32, True)
+        self.assertEqual(f_train.dtype, torch.float64)
+
     def test_atom_virial_optional(self) -> None:
         """do_atomic_virial=False returns None for atom_virial; force+virial still computed."""
         N = 3

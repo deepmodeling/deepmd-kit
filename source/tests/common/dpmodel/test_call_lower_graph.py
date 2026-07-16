@@ -3,9 +3,7 @@
 (``CM.call_lower_graph``) and the dense ``EnergyModel.call_lower`` on the SAME
 neighbor list (regime-1: ``from_dense_quartet`` reproduces the nlist neighbors).
 
-PR-A is dpa1(attn_layer=0) energy-only; force/virial come from pt_expt autograd
-in a later task, so this only checks ``energy`` (reduced per-frame) and
-``atom_energy`` (per-atom).
+This suite checks ``energy`` (reduced per-frame) and ``atom_energy`` (per-atom).
 """
 
 import unittest

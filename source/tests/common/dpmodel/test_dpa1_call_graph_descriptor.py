@@ -159,6 +159,28 @@ class TestDpa1DescriptorCallGraph:
             assert not np.any(np.isnan(grrg_g))
             assert not np.any(np.isinf(grrg_g))
 
+    def test_eligible_no_mapping_with_ghosts_falls_back(self) -> None:
+        """An eligible (concat) attn_layer=0 descriptor called with mapping=None
+        on a PERIODIC system (nall > nloc ghosts) must run the dense body and
+        match it (the public ``call`` is unconditionally dense; under the old
+        routing gate this pinned the mapping-less fallback, since the graph
+        path requires an explicit ghost mapping).
+        """
+        dd = self._make([30])
+        box = np.eye(3, dtype=np.float64)[None] * 6.0
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=box,
+        )
+        assert ext_atype.shape[1] > self.nloc  # ghosts present
+        ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=None)  # must not IndexError
+        np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
+
     def test_call_is_mapping_insensitive_with_nontrivial_stats(self) -> None:
         """``call(..., mapping)`` == ``call(..., None)`` == ``_call_dense`` with
         NONZERO ``davg`` and ghosts present.
