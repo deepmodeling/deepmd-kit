@@ -46,13 +46,25 @@ def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
     -------
     Array
         ``mean_over_frames( sum(elem * mask) / (real_natoms * ncomp) )``.
+        An all-padding frame (zero real atoms) contributes a neutral ``0``
+        instead of ``0/0 = NaN``.
     """
     xp = array_api_compat.array_namespace(elem, maskf)
     nf = elem.shape[0]
     masked = elem * maskf[:, :, None]
     per_frame_sum = xp.sum(xp.reshape(masked, (nf, -1)), axis=-1)
     per_frame_dof = xp.sum(maskf, axis=-1) * ncomp
-    return xp.mean(per_frame_sum / per_frame_dof)
+    # An all-padding frame has zero real atoms, so ``per_frame_dof`` is 0 and
+    # the ratio would be 0/0 = NaN -- poisoning the frame mean and, under
+    # autograd, its gradient. Divide by a safe denominator and map those frames
+    # to a neutral per-frame value of 0. Frames with real atoms are untouched,
+    # preserving the bit-identical guarantee.
+    has_dof = per_frame_dof > 0
+    safe_dof = xp.where(has_dof, per_frame_dof, xp.ones_like(per_frame_dof))
+    per_frame = xp.where(
+        has_dof, per_frame_sum / safe_dof, xp.zeros_like(per_frame_sum)
+    )
+    return xp.mean(per_frame)
 
 
 def per_frame_component_mean(err: Array) -> Array:
