@@ -751,6 +751,50 @@ class TestMergeLmdbSystemIds:
         env.close()
         assert meta.get("type_map") == ["O", "H"]
 
+        reader = LmdbDataReader(dst, ["O", "H"])
+        expected_atype = np.array([0, 0, 0, 1, 1, 1])
+        np.testing.assert_array_equal(reader[0]["atype"], expected_atype)
+        np.testing.assert_array_equal(reader[5]["atype"], expected_atype)
+
+    def test_merge_rejects_incompatible_type_maps_before_creating_output(
+        self, tmp_path
+    ):
+        """Raw frames cannot be shared under two different type index maps."""
+        src1, src2 = str(tmp_path / "tm1.lmdb"), str(tmp_path / "tm2.lmdb")
+        _create_lmdb_with_system_ids(
+            src1, system_frames=[1], natoms=6, type_map=["O", "H"]
+        )
+        _create_lmdb_with_system_ids(
+            src2, system_frames=[1], natoms=6, type_map=["H", "O"]
+        )
+        dst = tmp_path / "incompatible.lmdb"
+        dst.mkdir()
+        marker = dst / "existing-data"
+        marker.write_text("preserve me")
+
+        with pytest.raises(ValueError, match="incompatible type_map values") as exc:
+            merge_lmdb([src1, src2], str(dst))
+
+        assert src1 in str(exc.value)
+        assert src2 in str(exc.value)
+        assert marker.read_text() == "preserve me"
+
+    def test_merge_rejects_mixed_explicit_and_missing_type_maps(self, tmp_path):
+        """A legacy source without a map cannot be proven index-compatible."""
+        src_without_map = str(tmp_path / "legacy.lmdb")
+        src_with_map = str(tmp_path / "typed.lmdb")
+        _create_test_lmdb(src_without_map, nframes=1, natoms=6)
+        _create_lmdb_with_system_ids(
+            src_with_map, system_frames=[1], natoms=6, type_map=["O", "H"]
+        )
+        dst = tmp_path / "mixed_metadata.lmdb"
+
+        with pytest.raises(ValueError, match="mixed type_map metadata") as exc:
+            merge_lmdb([src_without_map, src_with_map], str(dst))
+
+        assert "missing" in str(exc.value)
+        assert not dst.exists()
+
 
 # ============================================================
 # Multitask LMDB training
