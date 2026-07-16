@@ -23,6 +23,9 @@ if(ENABLE_PYTORCH)
 endif()
 if(ENABLE_JAX)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_JAX)
+  # DeepPotJAX lifecycle tests instantiate the backend directly to exercise
+  # cleanup without relying on the dlopen plugin facade.
+  target_link_libraries(runUnitTests_cc deepmd_backend_jax)
 endif()
 if(ENABLE_PADDLE)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_PADDLE)
