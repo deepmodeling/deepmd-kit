@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
@@ -10,12 +13,19 @@ from typing import (
 import h5py
 import numpy as np
 import pytest
+import torch
 from dargs.dargs import (
     ArgumentValueError,
 )
 
 from deepmd.pt.entrypoints.main import (
     _prepare_stat_file_path,
+)
+from deepmd.pt.model.model import (
+    get_model,
+)
+from deepmd.pt.utils.env import (
+    DEVICE,
 )
 from deepmd.pt.utils.stat import (
     compute_output_stats,
@@ -136,6 +146,78 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
         reader_two.root.close()
         DPH5Path._load_h5py.cache_clear()
         DPH5Path._file_keys.cache_clear()
+
+
+def test_energy_model_reloads_update_cache_in_read_mode(tmp_path: Path) -> None:
+    model_params = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "se_e2_a",
+            "sel": [4, 4],
+            "rcut": 3.0,
+            "rcut_smth": 2.5,
+            "neuron": [4, 8],
+            "axis_neuron": 4,
+            "precision": "float64",
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [8],
+            "precision": "float64",
+        },
+    }
+    sampled = [
+        {
+            "coord": torch.tensor(
+                [
+                    [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                    [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
+                ],
+                dtype=torch.float64,
+                device=DEVICE,
+            ),
+            "atype": torch.tensor(
+                [[0, 0], [1, 1]],
+                dtype=torch.int64,
+                device=DEVICE,
+            ),
+            "box": None,
+            "natoms": torch.tensor(
+                [[2, 2, 2, 0], [2, 2, 0, 2]],
+                dtype=torch.int64,
+                device=DEVICE,
+            ),
+            "energy": torch.tensor(
+                [[2.0], [4.0]],
+                dtype=torch.float64,
+                device=DEVICE,
+            ),
+            "find_energy": np.float32(1.0),
+        }
+    ]
+    stat_file = tmp_path / "stat.hdf5"
+
+    update_path = _prepare_stat_file_path(str(stat_file), "update")
+    assert isinstance(update_path, DPH5Path)
+    try:
+        update_model = get_model(deepcopy(model_params)).to(DEVICE)
+        update_model.compute_or_load_stat(lambda: sampled, update_path)
+        stat_root = update_path / "O H"
+        assert (stat_root / "bias_atom_energy").is_file()
+        assert not (stat_root / "bias_atom_mask").is_file()
+    finally:
+        _close_stat_path(update_path)
+
+    read_path = _prepare_stat_file_path(str(stat_file), "read")
+    assert isinstance(read_path, DPH5Path)
+    try:
+        read_model = get_model(deepcopy(model_params)).to(DEVICE)
+        read_model.compute_or_load_stat(
+            lambda: pytest.fail("complete read-only cache must not sample data"),
+            read_path,
+        )
+    finally:
+        _close_stat_path(read_path)
 
 
 def test_stat_file_mode_configuration_validation() -> None:
