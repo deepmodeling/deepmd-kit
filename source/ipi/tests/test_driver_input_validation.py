@@ -55,3 +55,39 @@ class TestDPIPIInputValidation(unittest.TestCase):
             "dp_ipi: Unknown atom name 'Xx' in coordinate file: "
             "no matching entry in atom_type.\n",
         )
+
+    def test_missing_atom_type_is_rejected_before_model_loading(self) -> None:
+        """Report a missing atom-type map instead of leaking a JSON exception."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            coord_file = tmp_path / "coord.xyz"
+            config_file = tmp_path / "config.json"
+            missing_model = tmp_path / "model-that-must-not-be-loaded.pb"
+
+            coord_file.write_text(
+                "1\nmissing atom map\nO 0.0 0.0 0.0\n", encoding="utf-8"
+            )
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "verbose": False,
+                        "use_unix": True,
+                        "port": 31415,
+                        "host": "unused",
+                        "graph_file": str(missing_model),
+                        "coord_file": str(coord_file),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                ["dp_ipi", str(config_file)],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=10,
+            )
+
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
+        self.assertIn("dp_ipi: invalid atom_type configuration:", result.stderr)

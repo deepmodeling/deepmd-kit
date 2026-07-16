@@ -73,18 +73,25 @@ int main(int argc, char* argv[]) {
   const char* host = host_str.c_str();
   std::string graph_file = jdata["graph_file"];
   std::string coord_file = jdata["coord_file"];
-  std::map<std::string, int> name_type_map = jdata["atom_type"];
+  std::map<std::string, int> name_type_map;
+  try {
+    name_type_map = jdata.at("atom_type").get<std::map<std::string, int>>();
+  } catch (const std::exception& error) {
+    std::cerr << "dp_ipi: invalid atom_type configuration: " << error.what()
+              << std::endl;
+    return 1;
+  }
   bool b_verb = jdata["verbose"];
 
   std::vector<std::string> atom_name;
   {
-    std::vector<std::vector<double> > posi;
-    std::vector<std::vector<double> > velo;
-    std::vector<std::vector<double> > forc;
+    std::vector<std::vector<double>> posi;
+    std::vector<std::vector<double>> velo;
+    std::vector<std::vector<double>> forc;
     XyzFileManager::read(coord_file, atom_name, posi, velo, forc);
   }
 
-  std::unique_ptr<Convert<double> > cvt;
+  std::unique_ptr<Convert<double>> cvt;
   try {
     cvt.reset(new Convert<double>(atom_name, name_type_map));
   } catch (const std::exception& error) {
@@ -227,4 +234,5 @@ int main(int argc, char* argv[]) {
   if (msg_buff != NULL) {
     delete[] msg_buff;
   }
+  return 0;
 }
