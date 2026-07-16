@@ -277,6 +277,17 @@ void deepmd::remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
   }
 }
 
+std::vector<std::intptr_t> deepmd::pack_comm_sendlist_pointers(
+    int* const* sendlist, int nswap) {
+  std::vector<std::intptr_t> pointer_addresses;
+  pointer_addresses.reserve(nswap);
+  for (int iswap = 0; iswap < nswap; ++iswap) {
+    pointer_addresses.push_back(
+        reinterpret_cast<std::intptr_t>(sendlist[iswap]));
+  }
+  return pointer_addresses;
+}
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
                                                const int natoms) {
   int inum = natoms >= 0 ? natoms : inlist.inum;
