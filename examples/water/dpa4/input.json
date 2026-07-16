@@ -1,7 +1,7 @@
 {
-  "_comment": "Baseline DPA4/SeZM energy-training example for the water dataset.",
+  "_comment": "DPA4-Mini energy-training example for the water dataset.",
   "model": {
-    "type": "DPA4",
+    "type": "dpa4",
     "type_map": [
       "O",
       "H"
@@ -12,38 +12,26 @@
       "n_radial": 16,
       "edge_norm": false,
       "use_env_seed": true,
-      "edge_cartesian": false,
-      "node_cartesian": "none",
-      "lmax": 3,
+      "lmax": 2,
       "mmax": 1,
       "n_blocks": 2,
       "mixing_layers": 3,
       "radial_so2_mode": "degree_channel",
       "radial_so2_rank": 1,
-      "n_focus": 2,
+      "n_focus": 1,
       "focus_dim": 0,
       "n_atten_head": 1,
+      "message_node_so3": true,
       "ffn_neurons": 0,
       "ffn_so3_grid": true,
-      "so3_readout": "mlp",
-      "grid_mlp": [
-        false,
-        false,
-        false
-      ],
+      "grid_mlp": false,
       "grid_branch": [
-        1,
-        1,
+        0,
+        0,
         1
       ],
-      "ffn_blocks": 2,
-      "sandwich_norm": [
-        false,
-        true,
-        true,
-        false
-      ],
-      "message_node_so3": true,
+      "ffn_blocks": 1,
+      "so3_readout": "mlp",
       "use_amp": true,
       "precision": "float32",
       "seed": 42
@@ -62,7 +50,7 @@
     "type": "wsd",
     "start_lr": 4.5e-4,
     "stop_lr": 1e-6,
-    "warmup_steps": 5000,
+    "warmup_ratio": 0.003,
     "warmup_start_factor": 0.2,
     "decay_phase_ratio": 0.65,
     "decay_type": "cosine"
