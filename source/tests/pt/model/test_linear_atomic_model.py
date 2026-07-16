@@ -13,6 +13,7 @@ from deepmd.dpmodel.atomic_model import (
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
     DPZBLLinearEnergyAtomicModel,
+    LinearEnergyAtomicModel,
     PairTabAtomicModel,
 )
 from deepmd.pt.model.descriptor import (
@@ -40,6 +41,54 @@ from .test_env_mat import (
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
+
+
+class _RecordingAtomicModel(torch.nn.Module):
+    """Minimal torch submodel that records remapped runtime atom types."""
+
+    def __init__(self, type_map: list[str]) -> None:
+        super().__init__()
+        self.type_map = type_map
+        self.received_atype: list[torch.Tensor] = []
+
+    def mixed_types(self) -> bool:
+        return True
+
+    def get_type_map(self) -> list[str]:
+        return self.type_map
+
+    def change_type_map(
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: object | None = None,
+    ) -> None:
+        self.type_map = type_map
+
+    def get_rcut(self) -> float:
+        return 2.0
+
+    def get_nsel(self) -> int:
+        return 1
+
+    def get_sel(self) -> list[int]:
+        return [1]
+
+    def forward_common_atomic(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        *args: object,
+        **kwargs: object,
+    ) -> dict[str, torch.Tensor]:
+        self.received_atype.append(extended_atype.detach().clone())
+        return {
+            "energy": torch.zeros(
+                (*nlist.shape[:2], 1),
+                dtype=extended_coord.dtype,
+                device=extended_coord.device,
+            )
+        }
 
 
 class TestWeightCalculation(unittest.TestCase):
@@ -252,6 +301,39 @@ class TestRemmapMethod(unittest.TestCase):
             return res
 
         assert trans(atype, commonl) == trans(new_atype, originl)
+
+    def test_change_type_map_rebuilds_mapping(self) -> None:
+        submodels = [
+            _RecordingAtomicModel(["bar", "foo"]),
+            _RecordingAtomicModel(["bar", "foo"]),
+        ]
+        model = LinearEnergyAtomicModel(
+            models=submodels,
+            type_map=["foo", "bar"],
+            weights="sum",
+        ).to(env.DEVICE)
+
+        new_type_map = ["bar", "foo", "baz"]
+        model.change_type_map(new_type_map)
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]],
+            dtype=dtype,
+            device=env.DEVICE,
+        )
+        atype = torch.tensor([[0, 1, 2]], dtype=torch.int64, device=env.DEVICE)
+        nlist = torch.tensor([[[1], [0], [1]]], dtype=torch.int64, device=env.DEVICE)
+
+        model.forward_atomic(coord, atype, nlist)
+
+        for mapping, submodel in zip(model.mapping_list, submodels, strict=True):
+            torch.testing.assert_close(
+                mapping,
+                torch.tensor([0, 1, 2], dtype=mapping.dtype, device=env.DEVICE),
+            )
+            torch.testing.assert_close(
+                submodel.received_atype[-1],
+                atype.to(dtype=submodel.received_atype[-1].dtype),
+            )
 
 
 if __name__ == "__main__":

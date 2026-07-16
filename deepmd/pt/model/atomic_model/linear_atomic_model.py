@@ -74,18 +74,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
 
         self.models = torch.nn.ModuleList(models)
-        sub_model_type_maps = [md.get_type_map() for md in models]
-        err_msg = []
-        self.mapping_list = []
-        common_type_map = set(type_map)
         self.type_map = type_map
-        for tpmp in sub_model_type_maps:
-            if not common_type_map.issubset(set(tpmp)):
-                err_msg.append(
-                    f"type_map {tpmp} is not a subset of type_map {type_map}"
-                )
-            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
-        assert len(err_msg) == 0, "\n".join(err_msg)
+        self.mapping_list = self._build_mapping_list()
 
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         self.rcuts = torch.tensor(
@@ -104,6 +94,21 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
             )
         self.weights = weights
+
+    def _build_mapping_list(self) -> list[torch.Tensor]:
+        """Map common type IDs to the current type IDs of every submodel."""
+        common_type_map = set(self.type_map)
+        mapping_list = []
+        err_msg = []
+        for model in self.models:
+            submodel_type_map = model.get_type_map()
+            if not common_type_map.issubset(set(submodel_type_map)):
+                err_msg.append(
+                    f"type_map {submodel_type_map} is not a subset of type_map {self.type_map}"
+                )
+            mapping_list.append(self.remap_atype(submodel_type_map, self.type_map))
+        assert len(err_msg) == 0, "\n".join(err_msg)
+        return mapping_list
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -151,6 +156,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 if model_with_new_type_stat is not None
                 else None,
             )
+        # Recreate the tensors after the submodels update their type ordering;
+        # otherwise forward paths keep indexing through the stale constructor map.
+        self.mapping_list = self._build_mapping_list()
 
     def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
