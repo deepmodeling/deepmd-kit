@@ -271,7 +271,14 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
             trainer.run()
 
         with open("lcurve.out") as f:
-            data_lines = [line.split() for line in f if not line.startswith("#")]
+            lines = f.readlines()
+        header_lines = [line.split() for line in lines if line.startswith("#")]
+        data_lines = [line.split() for line in lines if not line.startswith("#")]
+        self.assertTrue(header_lines)
+        header_columns = header_lines[0][1:]
+        self.assertTrue(any("_val_" in column for column in header_columns))
+        for columns in data_lines:
+            self.assertEqual(len(columns), len(header_columns))
         displayed_steps = [int(columns[0]) for columns in data_lines]
         self.assertEqual(displayed_steps, [1, 2])
         self.assertIn("nan", data_lines[1])

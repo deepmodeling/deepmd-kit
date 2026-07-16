@@ -1703,7 +1703,31 @@ class Trainer:
                     valid_results = {_key: {} for _key in self.model_keys}
                     if self.disp_avg:
                         # For multi-task, use accumulated average loss for all tasks
+                        def initialize_task_loss_accumulator(
+                            _task_key: str,
+                        ) -> None:
+                            if self.train_loss_accu[_task_key]:
+                                return
+                            self.optimizer.zero_grad(set_to_none=True)
+                            task_input, task_label, _ = self.get_data(
+                                is_train=True, task_key=_task_key
+                            )
+                            if not task_input:
+                                return
+                            _, _, task_more_loss = self.wrapper(
+                                **task_input,
+                                cur_lr=pref_lr,
+                                label=task_label,
+                                task_key=_task_key,
+                            )
+                            self.train_loss_accu[_task_key] = {
+                                item: 0.0
+                                for item in task_more_loss
+                                if "l2_" not in item
+                            }
+
                         for _key in self.model_keys:
+                            initialize_task_loss_accumulator(_key)
                             train_results[_key] = log_loss_train(
                                 loss, more_loss, _task_key=_key
                             )
@@ -1726,25 +1750,30 @@ class Trainer:
                                 train_results[_key] = log_loss_train(
                                     loss, more_loss, _task_key=_key
                                 )
-                            valid_results[_key] = log_loss_valid(_task_key=_key)
-                            if self.rank == 0:
+                    for _key in self.model_keys:
+                        valid_results[_key] = log_loss_valid(_task_key=_key)
+                        if self.rank == 0:
+                            log.info(
+                                format_training_message_per_task(
+                                    batch=display_step_id,
+                                    task_name=_key + "_trn",
+                                    rmse=train_results[_key],
+                                    learning_rate=cur_lr,
+                                    check_total_rmse_nan=not (
+                                        self.disp_avg
+                                        and self.step_count_per_task.get(_key, 0) == 0
+                                    ),
+                                )
+                            )
+                            if valid_results[_key]:
                                 log.info(
                                     format_training_message_per_task(
                                         batch=display_step_id,
-                                        task_name=_key + "_trn",
-                                        rmse=train_results[_key],
-                                        learning_rate=cur_lr,
+                                        task_name=_key + "_val",
+                                        rmse=valid_results[_key],
+                                        learning_rate=None,
                                     )
                                 )
-                                if valid_results[_key]:
-                                    log.info(
-                                        format_training_message_per_task(
-                                            batch=display_step_id,
-                                            task_name=_key + "_val",
-                                            rmse=valid_results[_key],
-                                            learning_rate=None,
-                                        )
-                                    )
                 self.wrapper.train()
 
                 if self.disp_avg:
