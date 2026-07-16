@@ -1467,6 +1467,10 @@ class Atten2Map(NativeOP):
                 mask=pair_mask,
                 phantom_count=phantom,
                 phantom_logit=-self.attnw_shift,
+                # per-pair slot weight: the KEY edge's envelope (the pair's
+                # logit reaches -attnw_shift when the key edge exits; sw_q
+                # is constant within the segment and applied post-softmax)
+                slot_weight=sw_k,
             )
         else:
             attnw = segment_softmax(attnw, q_e, e_tot, mask=pair_mask)
@@ -1929,6 +1933,7 @@ class LocalAtten(NativeOP):
                 mask=edge_mask,
                 phantom_count=phantom,
                 phantom_logit=-self.attnw_shift,
+                slot_weight=sw,
             )
         else:
             attnw = segment_softmax(attnw, dst, n_total, mask=edge_mask)

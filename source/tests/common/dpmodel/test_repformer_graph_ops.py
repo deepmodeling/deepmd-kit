@@ -333,7 +333,8 @@ def test_local_atten_below_phantom_dense_parity():
     logit below ``-attnw_shift``.  With ``n_real == sel`` the signed phantom
     count is 0 -- the denominator is a plain positive softmax sum -- and the
     graph route must match dense EXACTLY (the always-on floor used to return
-    ~0.0018 where dense gives 1.0)."""
+    ~0.0018 where dense gives 1.0).
+    """
     la = LocalAtten(1, 1, 1, smooth=True, precision="float64", seed=1)
     la.mapq.w = np.array([[1.0]])
     la.mapkv.w = np.array([[-30.0, 1.0]])  # key -30, value 1
@@ -355,17 +356,58 @@ def test_local_atten_below_phantom_dense_parity():
         nf * nloc,
         nnei,  # sel == n_real: phantom count 0
     )
-    np.testing.assert_allclose(
-        np.asarray(got), ref.reshape(1, 1), rtol=1e-12, atol=0.0
-    )
+    np.testing.assert_allclose(np.asarray(got), ref.reshape(1, 1), rtol=1e-12, atol=0.0)
     # anti-vacuity: the logits really are below -attnw_shift and the dense
     # result is the nontrivial value from the review
     np.testing.assert_allclose(np.asarray(got), [[1.0]], rtol=1e-12)
 
 
+def test_local_atten_cutoff_crossing_below_phantom_continuous():
+    """OutisLi round 5: an edge crossing the cutoff must not JUMP the output
+    when the surviving logits sit below ``-attnw_shift``.
+
+    Same LocalAtten as :func:`test_local_atten_below_phantom_dense_parity`
+    (every smooth logit ~= -30 < -attnw_shift) but with ``sel = 1``: outside
+    the cutoff (one edge, phantom count 0) the output is exactly 1.0; a
+    second edge entering with ``sw = s -> 0+`` flips the count to -1.  The
+    count-gated denominator floor produced 0.00181599 just inside (limiting
+    jump -0.998); the slot-occupancy denominator must converge back to the
+    outside value.
+    """
+    la = LocalAtten(1, 1, 1, smooth=True, precision="float64", seed=1)
+    la.mapq.w = np.array([[1.0]])
+    la.mapkv.w = np.array([[-30.0, 1.0]])
+    la.head_map.w = np.array([[1.0]])
+    la.head_map.b = np.array([0.0])
+    sel = 1
+    n_total = 1
+
+    def run(sw_edges: np.ndarray) -> float:
+        nnei = sw_edges.shape[0]
+        g1 = np.ones((n_total, 1))
+        gg1 = np.ones((nnei, 1))
+        mask = np.ones(nnei, dtype=bool)
+        dst = np.zeros(nnei, dtype=np.int64)
+        out = la.call_graph(g1, gg1, mask, sw_edges, dst, n_total, sel)
+        return float(np.asarray(out)[0, 0])
+
+    outside = run(np.array([1.0]))
+    np.testing.assert_allclose(outside, 1.0, rtol=1e-12)
+    prev_gap = None
+    for s in [1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12]:
+        inside = run(np.array([1.0, s]))
+        assert np.isfinite(inside)
+        gap = abs(inside - outside)
+        if prev_gap is not None:
+            assert gap < prev_gap  # converging, not plateauing at a jump
+        prev_gap = gap
+    assert prev_gap < 1e-7
+
+
 def test_atten2map_below_phantom_dense_parity():
     """Same below-``-attnw_shift`` regime for the pair attention map: with
-    all key slots real (phantom count 0) graph must equal dense exactly."""
+    all key slots real (phantom count 0) graph must equal dense exactly.
+    """
     a2m = Atten2Map(1, 1, 1, has_gate=False, smooth=True, precision="float64", seed=2)
     a2m.mapqk.w = np.array([[1.0, -30.0]])  # query 1, key -30 -> logits -30
     nf, nloc, nnei = 1, 1, 2
