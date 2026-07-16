@@ -6,12 +6,14 @@ Verifies the full pipeline:
 """
 
 import importlib
+import json
 import os
 import tempfile
 import unittest
 import zipfile
 
 import numpy as np
+import pytest
 import torch
 
 from deepmd.infer import (
@@ -53,6 +55,46 @@ def _assert_repeatable(a, b) -> None:
         np.testing.assert_array_equal(a, b)
     else:
         np.testing.assert_allclose(a, b, rtol=1e-10, atol=1e-10)
+
+
+def _deserialize_pt2_with_default_device_cleared(
+    path: str,
+    data: dict,
+    *,
+    do_atomic_virial: bool = False,
+) -> None:
+    """Compile a PT2 archive without inheriting a leaked default device."""
+    previous_default_device = torch.get_default_device()
+    torch.set_default_device(None)
+    try:
+        deserialize_to_file(path, data, do_atomic_virial=do_atomic_virial)
+    finally:
+        torch.set_default_device(previous_default_device)
+
+
+def _copy_pt2_with_extra_json(
+    source: str,
+    destination: str,
+    *,
+    remove: set[str] | None = None,
+    replace: dict[str, object] | None = None,
+) -> None:
+    """Copy a compiled PT2 archive while editing only its extra JSON files.
+
+    The compiled AOTInductor artifact is byte-for-byte reused. This lets
+    metadata, ZIP-layout, and accessor tests exercise alternate metadata
+    without paying for another code-generation pass.
+    """
+    remove = remove or set()
+    replace = replace or {}
+    edited_names = remove | set(replace)
+    with zipfile.ZipFile(source, "r") as zin, zipfile.ZipFile(destination, "w") as zout:
+        for info in zin.infolist():
+            if info.filename in edited_names:
+                continue
+            zout.writestr(info, zin.read(info.filename))
+        for name, value in replace.items():
+            zout.writestr(name, json.dumps(value))
 
 
 class TestDeepEvalEner(unittest.TestCase):
@@ -657,71 +699,86 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
 
-class TestDeepEvalEnerPt2(unittest.TestCase):
-    """Test pt_expt inference for energy models via .pt2 (AOTInductor)."""
+@pytest.fixture(scope="module")
+def deep_eval_ener_pt2_artifacts(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, object]:
+    """Build one base PT2 artifact and derive all metadata variants from it."""
+    root = tmp_path_factory.mktemp("deep_eval_ener_pt2")
+    rcut = 4.0
+    rcut_smth = 0.5
+    sel = [8, 6]
+    nt = 2
+    type_map = ["foo", "bar"]
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.rcut = 4.0
-        cls.rcut_smth = 0.5
-        cls.sel = [8, 6]
-        cls.nt = 2
-        cls.type_map = ["foo", "bar"]
+    ds = DescrptSeA(rcut, rcut_smth, sel)
+    ft = EnergyFittingNet(
+        nt,
+        ds.get_dim_out(),
+        mixed_types=ds.mixed_types(),
+        seed=GLOBAL_SEED,
+    )
+    model = EnergyModel(ds, ft, type_map=type_map).to(torch.float64).eval()
+    model_data = {"model": model.serialize()}
 
-        # Build pt_expt model
-        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
-        ft = EnergyFittingNet(
-            cls.nt,
-            ds.get_dim_out(),
-            mixed_types=ds.mixed_types(),
-            seed=GLOBAL_SEED,
-        )
-        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
-        cls.model = cls.model.to(torch.float64)
-        cls.model.eval()
+    pt2_path = str(root / "model.pt2")
+    _deserialize_pt2_with_default_device_cleared(
+        pt2_path,
+        model_data,
+        do_atomic_virial=True,
+    )
 
-        # Serialize and save to .pt2
-        cls.model_data = {"model": cls.model.serialize()}
-        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
-        cls.tmpfile.close()
-        # Temporarily clear default device to avoid poisoning AOTInductor
-        # compilation (tests/pt/__init__.py sets it to "cuda:9999999").
-        torch.set_default_device(None)
-        try:
-            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
-        finally:
-            torch.set_default_device("cuda:9999999")
+    metadata_only_pt2_path = str(root / "metadata_only.pt2")
+    _copy_pt2_with_extra_json(
+        pt2_path,
+        metadata_only_pt2_path,
+        remove={"model/extra/model.json"},
+    )
 
-        cls.meta_tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
-        cls.meta_tmpfile.close()
-        with (
-            zipfile.ZipFile(cls.tmpfile.name, "r") as zin,
-            zipfile.ZipFile(cls.meta_tmpfile.name, "w") as zout,
-        ):
-            for info in zin.infolist():
-                if info.filename == "model/extra/model.json":
-                    continue
-                zout.writestr(info, zin.read(info.filename))
+    training_config = {"type_map": type_map, "descriptor": {"type": "se_e2_a"}}
+    configured_pt2_path = str(root / "configured.pt2")
+    _copy_pt2_with_extra_json(
+        pt2_path,
+        configured_pt2_path,
+        replace={"model/extra/model_def_script.json": training_config},
+    )
 
-        # Also save to .pte for cross-format comparison
-        cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
-        cls.pte_tmpfile.close()
-        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data, do_atomic_virial=True)
+    pte_path = str(root / "model.pte")
+    deserialize_to_file(pte_path, model_data, do_atomic_virial=True)
 
-        # Create DeepPot for .pt2
-        cls.dp = DeepPot(cls.tmpfile.name)
-        # Create DeepPot for metadata-only .pt2
-        cls.dp_meta = DeepPot(cls.meta_tmpfile.name)
-        # Create DeepPot for .pte reference
-        cls.dp_pte = DeepPot(cls.pte_tmpfile.name)
+    return {
+        "rcut": rcut,
+        "rcut_smth": rcut_smth,
+        "sel": sel,
+        "nt": nt,
+        "type_map": type_map,
+        "model": model,
+        "model_data": model_data,
+        "pt2_path": pt2_path,
+        "metadata_only_pt2_path": metadata_only_pt2_path,
+        "pte_path": pte_path,
+        "dp": DeepPot(pt2_path),
+        "dp_meta": DeepPot(metadata_only_pt2_path),
+        "dp_pte": DeepPot(pte_path),
+        "dp_with_config": DeepPot(configured_pt2_path),
+        "training_config": training_config,
+    }
 
-    @classmethod
-    def tearDownClass(cls) -> None:
-        import os
 
-        os.unlink(cls.tmpfile.name)
-        os.unlink(cls.meta_tmpfile.name)
-        os.unlink(cls.pte_tmpfile.name)
+@pytest.fixture(scope="class")
+def _bind_deep_eval_ener_pt2_artifacts(
+    request: pytest.FixtureRequest,
+    deep_eval_ener_pt2_artifacts: dict[str, object],
+) -> None:
+    """Expose the shared module fixture through the legacy unittest class."""
+    assert request.cls is not None
+    for name, value in deep_eval_ener_pt2_artifacts.items():
+        setattr(request.cls, name, value)
+
+
+@pytest.mark.usefixtures("_bind_deep_eval_ener_pt2_artifacts")
+class TestDeepEvalEnerPt2Metadata(unittest.TestCase):
+    """Test PT2 metadata, ZIP layout, and metadata-only inference."""
 
     def test_get_rcut(self) -> None:
         self.assertAlmostEqual(self.dp.deep_eval.get_rcut(), self.rcut)
@@ -756,27 +813,9 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertEqual(mds, {})
 
     def test_get_model_def_script_with_params(self) -> None:
-        """Export with model_params → get_model_def_script returns them."""
-        training_config = {"type_map": self.type_map, "descriptor": {"type": "se_e2_a"}}
-        with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
-            tmpfile2 = f.name
-        try:
-            torch.set_default_device(None)
-            try:
-                data_with_config = {
-                    **self.model_data,
-                    "model_def_script": training_config,
-                }
-                deserialize_to_file(tmpfile2, data_with_config)
-            finally:
-                torch.set_default_device("cuda:9999999")
-            dp2 = DeepPot(tmpfile2)
-            mds = dp2.deep_eval.get_model_def_script()
-            self.assertEqual(mds, training_config)
-        finally:
-            import os
-
-            os.unlink(tmpfile2)
+        """A metadata-edited variant exposes its replaced model definition."""
+        mds = self.dp_with_config.deep_eval.get_model_def_script()
+        self.assertEqual(mds, self.training_config)
 
     def test_model_api_delegation(self) -> None:
         """Verify that model API calls are delegated to the deserialized dpmodel."""
@@ -790,11 +829,11 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
     def test_pt2_file_is_zip(self) -> None:
         """The .pt2 file should be a valid ZIP archive."""
-        self.assertTrue(zipfile.is_zipfile(self.tmpfile.name))
+        self.assertTrue(zipfile.is_zipfile(self.pt2_path))
 
     def test_pt2_has_metadata(self) -> None:
         """The .pt2 ZIP should contain metadata entries under ``model/extra/``."""
-        with zipfile.ZipFile(self.tmpfile.name, "r") as zf:
+        with zipfile.ZipFile(self.pt2_path, "r") as zf:
             names = zf.namelist()
             self.assertIn("model/extra/metadata.json", names)
             self.assertIn("model/extra/model_def_script.json", names)
@@ -804,7 +843,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
     def test_metadata_only_pt2_has_no_model_json(self) -> None:
         """The metadata-only .pt2 keeps metadata but drops model.json."""
-        with zipfile.ZipFile(self.meta_tmpfile.name, "r") as zf:
+        with zipfile.ZipFile(self.metadata_only_pt2_path, "r") as zf:
             names = zf.namelist()
             self.assertIn("model/extra/metadata.json", names)
             self.assertNotIn("model/extra/model.json", names)
@@ -839,6 +878,11 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertEqual(len(full_out), len(meta_out))
         for ref, test in zip(full_out, meta_out, strict=True):
             np.testing.assert_array_equal(test, ref)
+
+
+@pytest.mark.usefixtures("_bind_deep_eval_ener_pt2_artifacts")
+class TestDeepEvalEnerPt2(unittest.TestCase):
+    """Test numerical inference through the shared PT2 AOTInductor artifact."""
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
@@ -979,7 +1023,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
            implementation that truncates without sorting) gives a different
            energy.  This proves the distance sort is necessary.
         """
-        exported = torch.export.load(self.pte_tmpfile.name)
+        exported = torch.export.load(self.pte_path)
         exported_mod = exported.module()
 
         nnei = sum(self.sel)  # model's expected neighbor count
@@ -1064,7 +1108,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
     def test_serialize_round_trip(self) -> None:
         """Test .pt2 → serialize_from_file → deserialize → model gives same outputs."""
-        loaded_data = serialize_from_file(self.tmpfile.name)
+        loaded_data = serialize_from_file(self.pt2_path)
 
         model2 = EnergyModel.deserialize(loaded_data["model"])
         model2 = model2.to(torch.float64)
