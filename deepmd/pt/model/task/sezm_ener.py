@@ -310,6 +310,15 @@ class GLUFittingNet(torch.nn.Module):
             trainable=self.trainable[-1],
         )
 
+        # MLPLayer stores trainability as serialization metadata but its
+        # Parameters default to requires_grad=True. Apply the per-layer policy
+        # to the actual tensors so construction and deserialization agree.
+        for layer_idx, layer in enumerate(self.hidden_layers):
+            for parameter in layer.parameters():
+                parameter.requires_grad = self.trainable[layer_idx]
+        for parameter in self.output_layer.parameters():
+            parameter.requires_grad = self.trainable[-1]
+
     def _apply_input_film(
         self,
         xx: torch.Tensor,

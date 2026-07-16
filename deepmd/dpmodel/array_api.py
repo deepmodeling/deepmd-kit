@@ -293,6 +293,26 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
             indices_tensor,
             tf.shape(x_tensor, out_type=tf.int64)[0],
         )
+        if values_tensor.dtype.is_floating:
+            # TensorFlow uses the lowest finite value as the identity of
+            # unsorted_segment_max. Restore the true maximum-at identity when
+            # every update for a touched segment element is negative infinity.
+            all_negative_infinity = (
+                tf.math.unsorted_segment_min(
+                    tf.cast(
+                        tf.math.is_inf(values_tensor) & (values_tensor < 0),
+                        tf.int32,
+                    ),
+                    indices_tensor,
+                    tf.shape(x_tensor, out_type=tf.int64)[0],
+                )
+                > 0
+            )
+            reduced = tf.where(
+                all_negative_infinity,
+                tf.cast(float("-inf"), values_tensor.dtype),
+                reduced,
+            )
         segment_counts = tf.math.unsorted_segment_sum(
             tf.ones_like(indices_tensor, dtype=tf.int32),
             indices_tensor,
