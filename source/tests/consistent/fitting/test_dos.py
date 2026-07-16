@@ -20,8 +20,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -43,6 +44,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.dos import DOSFitting as DOSFittingTF
 else:
     DOSFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import DOSFittingNet as DOSFittingTF2
+else:
+    DOSFittingTF2 = object
 from deepmd.utils.argcheck import (
     fitting_dos,
 )
@@ -62,14 +70,50 @@ else:
     DOSFittingStrict = object
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
-    (True, False),  # mixed_types
-    (0, 1),  # numb_fparam
-    (0, 1),  # numb_aparam
-    (10, 20),  # numb_dos
+DOS_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
+    "numb_fparam",
+    "numb_aparam",
+    "numb_dos",
 )
+
+DOS_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+    "numb_fparam": 0,
+    "numb_aparam": 0,
+    "numb_dos": 10,
+}
+
+
+def dos_fitting_case(**overrides: Any) -> tuple:
+    case = DOS_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in DOS_FITTING_CASE_FIELDS)
+
+
+DOS_FITTING_CURATED_CASES = (
+    dos_fitting_case(),
+    dos_fitting_case(resnet_dt=False),
+    dos_fitting_case(precision="float32"),
+    dos_fitting_case(mixed_types=False),
+    dos_fitting_case(numb_fparam=1),
+    dos_fitting_case(numb_aparam=1),
+    dos_fitting_case(numb_dos=20),
+    dos_fitting_case(
+        resnet_dt=False,
+        precision="float32",
+        mixed_types=False,
+        numb_fparam=1,
+        numb_aparam=1,
+        numb_dos=20,
+    ),
+)
+
+
+@parameterized_cases(*DOS_FITTING_CURATED_CASES)
 class TestDOS(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -116,7 +160,10 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
     def skip_pt_expt(self) -> bool:
         return CommonTest.skip_pt_expt
 
+    skip_tf2 = not INSTALLED_TF2
+
     tf_class = DOSFittingTF
+    tf2_class = DOSFittingTF2
     dp_class = DOSFittingDP
     pt_class = DOSFittingPT
     pt_expt_class = DOSFittingPTExpt
@@ -238,6 +285,24 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
         )["dos"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam) if numb_fparam else None,
+                aparam=to_tensorflow_array(self.aparam) if numb_aparam else None,
+            )["dos"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (

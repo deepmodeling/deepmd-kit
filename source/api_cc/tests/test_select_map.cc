@@ -94,3 +94,85 @@ TYPED_TEST(TestSelectMap, selectmap_type1) {
     EXPECT_EQ(this->expected_atype_out_1[ii], this->atype_out_1[ii]);
   }
 }
+
+TYPED_TEST(TestSelectMap, select_real_atoms_coord_aparam_local) {
+  constexpr int nframes = 2;
+  constexpr int daparam = 2;
+  constexpr int nall = 5;
+  constexpr int nghost = 2;
+  constexpr int ntypes = 2;
+
+  // Type 2 represents a virtual atom.  The input contains virtual atoms in
+  // both the local [0, 3) and ghost [3, 5) portions of the neighbor list.
+  const std::vector<int> atype = {0, 2, 1, 0, 2};
+  std::vector<TypeParam> coord(nframes * nall * 3);
+  const std::vector<TypeParam> aparam_in = {
+      10, 11, 20, 21, 30, 31,  // frame 0: three local atoms
+      40, 41, 50, 51, 60, 61,  // frame 1: three local atoms
+  };
+  const std::vector<TypeParam> expected_aparam = {
+      10, 11, 30, 31,  // frame 0: local virtual atom removed
+      40, 41, 60, 61,  // frame 1: local virtual atom removed
+  };
+
+  std::vector<TypeParam> coord_out;
+  std::vector<int> atype_out;
+  // Seed the output with the expected logical size.  The helper must preserve
+  // this size contract while remapping every daparam component below.
+  std::vector<TypeParam> aparam_out(expected_aparam.size());
+  int nghost_real = 0;
+  std::vector<int> fwd_map;
+  std::vector<int> bkw_map;
+  int nall_real = 0;
+  int nloc_real = 0;
+
+  deepmd::select_real_atoms_coord(coord_out, atype_out, aparam_out, nghost_real,
+                                  fwd_map, bkw_map, nall_real, nloc_real, coord,
+                                  atype, aparam_in, nghost, ntypes, nframes,
+                                  daparam, nall, false);
+
+  ASSERT_EQ(aparam_out.size(), expected_aparam.size());
+  EXPECT_EQ(aparam_out, expected_aparam);
+  EXPECT_EQ(nloc_real, 2);
+  EXPECT_EQ(nghost_real, 1);
+}
+
+TYPED_TEST(TestSelectMap, select_real_atoms_coord_aparam_all) {
+  constexpr int nframes = 2;
+  constexpr int daparam = 2;
+  constexpr int nall = 5;
+  constexpr int nghost = 2;
+  constexpr int ntypes = 2;
+
+  const std::vector<int> atype = {0, 2, 1, 0, 2};
+  std::vector<TypeParam> coord(nframes * nall * 3);
+  const std::vector<TypeParam> aparam_in = {
+      10, 11, 20, 21, 30, 31, 40, 41, 50,  51,   // frame 0: all atoms
+      60, 61, 70, 71, 80, 81, 90, 91, 100, 101,  // frame 1: all atoms
+  };
+  const std::vector<TypeParam> expected_aparam = {
+      10, 11, 30, 31, 40, 41,  // frame 0: both virtual atoms removed
+      60, 61, 80, 81, 90, 91,  // frame 1: both virtual atoms removed
+  };
+
+  std::vector<TypeParam> coord_out;
+  std::vector<int> atype_out;
+  // As above, assert the full scalar-count contract rather than only checking
+  // the remapped prefix of the output buffer.
+  std::vector<TypeParam> aparam_out(expected_aparam.size());
+  int nghost_real = 0;
+  std::vector<int> fwd_map;
+  std::vector<int> bkw_map;
+  int nall_real = 0;
+  int nloc_real = 0;
+
+  deepmd::select_real_atoms_coord(coord_out, atype_out, aparam_out, nghost_real,
+                                  fwd_map, bkw_map, nall_real, nloc_real, coord,
+                                  atype, aparam_in, nghost, ntypes, nframes,
+                                  daparam, nall, true);
+
+  ASSERT_EQ(aparam_out.size(), expected_aparam.size());
+  EXPECT_EQ(aparam_out, expected_aparam);
+  EXPECT_EQ(nloc_real, 2);
+  EXPECT_EQ(nghost_real, 1);
+}

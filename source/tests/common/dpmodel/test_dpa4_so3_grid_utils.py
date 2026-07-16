@@ -1,27 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Parity tests for the DPA4 SO(3) grid utility functions.
+"""Parity tests for the DPA4 SO(3) grid resolver.
 
-Compares the dpmodel ports of ``resolve_so3_grid`` and ``_build_so3_frame_set``
-against the reference pt implementations.
+Checks that the dpmodel port of ``resolve_so3_grid`` matches the reference pt
+implementation and honors its documented quadrature-resolution contract.
 """
 
 import pytest
 
 from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
-    _build_so3_frame_set,
     resolve_so3_grid,
 )
-
-
-@pytest.mark.parametrize("kmax", [0, 1, 2, 3])  # frame-index half-width
-def test_build_so3_frame_set(kmax) -> None:
-    from deepmd.pt.model.descriptor.sezm_nn.projection import (
-        _build_so3_frame_set as pt_build_so3_frame_set,
-    )
-
-    assert _build_so3_frame_set(kmax) == pt_build_so3_frame_set(kmax)
-    if kmax == 2:
-        assert _build_so3_frame_set(kmax) == [0, -1, 1, -2, 2]
 
 
 @pytest.mark.parametrize(
@@ -74,8 +62,6 @@ def test_resolve_so3_grid_unpackaged_precision_raises() -> None:
 
 @pytest.mark.parametrize("kmax", [-1, -2])  # negative half-width is invalid
 def test_negative_kmax_raises(kmax) -> None:
-    """Both utilities reject negative kmax."""
-    with pytest.raises(ValueError, match="non-negative"):
-        _build_so3_frame_set(kmax)
+    """The resolver rejects negative kmax."""
     with pytest.raises(ValueError, match="non-negative"):
         resolve_so3_grid(2, kmax=kmax)

@@ -90,6 +90,9 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+from .stat import (
+    load_or_compute_se_input_stats,
+)
 
 log = logging.getLogger(__name__)
 
@@ -373,7 +376,8 @@ class DescrptSeAtten(DescrptSeA):
         **kwargs
             Additional keyword arguments.
         """
-        if True:
+
+        def compute_stats() -> dict[str, Any]:
             sumr = []
             suma = []
             sumn = []
@@ -418,7 +422,16 @@ class DescrptSeAtten(DescrptSeA):
                 "sumr2": sumr2,
                 "suma2": suma2,
             }
-            self.merge_input_stats(stat_dict)
+            return stat_dict
+
+        stat_dict = load_or_compute_se_input_stats(
+            self,
+            kwargs.get("stat_file_path"),
+            last_dim=4,
+            compute=compute_stats,
+            mixed_types=True,
+        )
+        self.merge_input_stats(stat_dict)
 
     def enable_compression(
         self,
@@ -719,10 +732,9 @@ class DescrptSeAtten(DescrptSeA):
         trainable: bool = True,
     ) -> tuple[tf.Tensor, None]:
         assert (
-            input_dict is not None
-            and input_dict.get("type_embedding", None) is not None
+            input_dict is not None and input_dict.get("type_embedding") is not None
         ), "se_atten descriptor must use type_embedding"
-        type_embedding = input_dict.get("type_embedding", None)
+        type_embedding = input_dict.get("type_embedding")
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
         output_qmat = []
@@ -1948,7 +1960,7 @@ class DescrptSeAtten(DescrptSeA):
             raise RuntimeError(
                 "The implementation for smooth_type_embedding is inconsistent with other backends"
             )
-        # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
+        # TODO support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
             raise NotImplementedError(
                 "serialization is unsupported when tebd_input_mode=='strip' and type_one_side is True"

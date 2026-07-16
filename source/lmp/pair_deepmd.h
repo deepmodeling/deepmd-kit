@@ -54,6 +54,10 @@ class PairDeepMD : public PairDeepBaseModel {
  protected:
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
+  // Assemble the send/recv swap metadata (a comm-only neighbor list; its
+  // geometry fields are unused) for the device-resident message-passing path,
+  // where ghost features are exchanged across ranks inside the forward pass.
+  deepmd_compat::InputNlist make_comm_nlist();
 
  private:
   CommBrickDeepMD* commdata_;

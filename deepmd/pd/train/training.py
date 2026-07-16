@@ -81,6 +81,9 @@ from deepmd.pd.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
+)
 from deepmd.utils.path import (
     DPH5Path,
 )
@@ -520,9 +523,8 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model = get_model_for_wrapper(
-                        state_dict["_extra_state"]["model_params"]
-                    )
+                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
                     pretrained_model_wrapper = ModelWrapper(pretrained_model)
                     pretrained_model_wrapper.set_state_dict(state_dict)
                     # update type related params
@@ -557,6 +559,25 @@ class Trainer:
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
+                        _input_model_params = (
+                            model_params["model_dict"][_model_key]
+                            if self.multi_task
+                            else model_params
+                        )
+                        _pretrained_model_params = (
+                            pretrained_model_params["model_dict"][_model_key_from]
+                            if "model_dict" in pretrained_model_params
+                            else pretrained_model_params
+                        )
+                        if (
+                            "descriptor" in _input_model_params
+                            and "descriptor" in _pretrained_model_params
+                        ):
+                            warn_configuration_mismatch_during_finetune(
+                                _input_model_params["descriptor"],
+                                _pretrained_model_params["descriptor"],
+                                _model_key_from,
+                            )
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -1038,7 +1059,11 @@ class Trainer:
             if JIT:
                 break
 
-        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+        if (
+            self.change_bias_after_training
+            and self.num_steps > self.start_step
+            and (self.rank == 0 or dist.get_rank() == 0)
+        ):
             if not self.multi_task:
                 self.model = model_change_out_bias(
                     self.model,
@@ -1195,11 +1220,19 @@ class Trainer:
             "box",
             "fparam",
             "aparam",
+            "charge_spin",
         ]
         input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
+                if item_key == "fparam" and batch_data.get("find_fparam", 1.0) == 0.0:
+                    continue
+                if (
+                    item_key == "charge_spin"
+                    and batch_data.get("find_charge_spin", 1.0) == 0.0
+                ):
+                    continue
                 input_dict[item_key] = batch_data[item_key]
             else:
                 if item_key not in ["sid", "fid"]:
@@ -1305,6 +1338,20 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]
         additional_data_requirement += spin_requirement_items
+    if _model.has_chg_spin_ebd():
+        has_default_cs = _model.has_default_chg_spin()
+        cs_default = (
+            _model.get_default_chg_spin().cpu().numpy() if has_default_cs else 0.0
+        )
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "charge_spin",
+                ndof=2,
+                atomic=False,
+                must=not has_default_cs,
+                default=cs_default,
+            )
+        )
     return additional_data_requirement
 
 

@@ -43,6 +43,9 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .model import (
     Model,
@@ -202,7 +205,9 @@ class FrozenModel(Model):
     def get_ntypes(self) -> int:
         return self.model.get_ntypes()
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         pass
 
     def init_variables(

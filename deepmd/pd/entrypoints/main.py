@@ -104,7 +104,7 @@ def get_trainer(
         seed: int | None = None,
     ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
         training_dataset_params = data_dict_single["training_data"]
-        validation_dataset_params = data_dict_single.get("validation_data", None)
+        validation_dataset_params = data_dict_single.get("validation_data")
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
@@ -134,7 +134,7 @@ def get_trainer(
             )
 
         # stat files
-        stat_file_path_single = data_dict_single.get("stat_file", None)
+        stat_file_path_single = data_dict_single.get("stat_file")
         if rank != 0:
             stat_file_path_single = None
         elif stat_file_path_single is not None:

@@ -70,7 +70,7 @@ def make_inputs(seed=5, nf=2, nloc=6, rcut=6.0, nnei=20, ntypes=2):
 def example_descriptor_kwargs(**overrides) -> dict:
     """Small example-config-like (examples/water/dpa4/input.json) descriptor block.
 
-    Sizes are shrunk (channels=8, sel=20, so2_layers=2) for fast fp64 parity,
+    Sizes are shrunk (channels=8, sel=20, mixing_layers=2) for fast fp64 parity,
     but the grid-relevant structure (lmax=3, mmax=1, n_focus=2, n_blocks=2,
     grid_branch=[1,1,1], ffn_so3_grid + message_node_so3) mirrors the flagship
     config.
@@ -84,7 +84,7 @@ def example_descriptor_kwargs(**overrides) -> dict:
         "lmax": 3,
         "mmax": 1,
         "n_blocks": 2,
-        "so2_layers": 2,
+        "mixing_layers": 2,
         "n_focus": 2,
         "focus_dim": 0,
         "ffn_so3_grid": True,
@@ -181,6 +181,7 @@ def test_masked_edge_noop() -> None:
     nf, nloc = atype.shape
     coord_ext = coord.reshape(nf, -1)
     out = np.asarray(dd.call(coord_ext, atype, nlist)[0])
+    assert np.abs(out).max() > 1e-6
 
     pad = -np.ones((nf, nloc, 1), dtype=nlist.dtype)
     nlist2 = np.concatenate([nlist, pad], axis=-1)

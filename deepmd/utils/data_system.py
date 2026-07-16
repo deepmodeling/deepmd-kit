@@ -1403,15 +1403,15 @@ def get_data(
         The data system
     """
     systems = jdata["systems"]
-    rglob_patterns = jdata.get("rglob_patterns", None)
-    data_format = jdata.get("format", None)
-    out_format = jdata.get("out_format", jdata.get("output_format", None))
+    rglob_patterns = jdata.get("rglob_patterns")
+    data_format = jdata.get("format")
+    out_format = jdata.get("out_format", jdata.get("output_format"))
     systems = process_systems(
         systems, patterns=rglob_patterns, fmt=data_format, out_fmt=out_format
     )
 
     batch_size = jdata["batch_size"]
-    sys_probs = jdata.get("sys_probs", None)
+    sys_probs = jdata.get("sys_probs")
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode
 

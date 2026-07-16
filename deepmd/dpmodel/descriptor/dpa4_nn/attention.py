@@ -2,19 +2,11 @@
 """
 Attention utilities for DPA4/SeZM message passing.
 
-This module is the dpmodel port of
-``deepmd.pt.model.descriptor.sezm_nn.attention``. It implements the
-destination-wise envelope-gated softmax used by the SO(2) attention path.
+This module implements the destination-wise envelope-gated softmax used by the
+SO(2) attention path in the SeZM descriptor.
 
-Padded-edge adaptation
-----------------------
-The pt version consumes a sparse edge list and reduces per destination node
-with ``scatter_reduce(amax)`` / ``scatter_add`` keyed by ``dst``. In the
-dpmodel padded layout (see ``edge_cache.EdgeCache``) the edge axis is
-``E = n_nodes * nnei`` with slot ``(i, j)`` belonging to node ``i``, so every
-destination-wise reduction becomes a plain reduction over the ``nnei`` axis
-after a ``(n_nodes, nnei, ...)`` reshape, and invalid (padded) slots are
-removed by folding ``edge_mask`` into the non-negative per-edge weight.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.attention``.
 """
 
 from __future__ import (
@@ -27,6 +19,10 @@ from typing import (
 
 import array_api_compat
 
+from deepmd.dpmodel.array_api import (
+    xp_add_at,
+    xp_maximum_at,
+)
 from deepmd.dpmodel.utils.network import (
     softplus_t,
 )
@@ -35,6 +31,7 @@ from deepmd.dpmodel.utils.network import (
 def segment_envelope_gated_softmax(
     logits: Any,
     edge_env: Any,
+    dst: Any,
     n_nodes: int,
     z_bias_raw: Any,
     eps: float,
@@ -44,19 +41,21 @@ def segment_envelope_gated_softmax(
     """
     Compute destination-wise envelope-gated softmax attention.
 
-    All array arguments must live in the same array namespace.
-
     Parameters
     ----------
     logits
-        Attention logits with shape (E, F, H), padded-edge layout with
-        ``E = n_nodes * nnei``.
+        Attention logits with shape (E, F, H).
     edge_env
         Cutoff envelope weights with shape (E, 1) or (E,).
+    dst
+        Destination node indices with shape (E,). The group max and the
+        denominator sum are scattered over these indices, which makes the
+        normalization layout-agnostic: it is correct both for the padded
+        ``call`` (where ``dst == repeat(arange(n_nodes), nnei)``) and for the
+        sparse ``call_with_edges`` (arbitrary ``dst`` order and per-node
+        degree).
     n_nodes
-        Number of nodes. The pt ``dst`` argument is dropped: in the padded
-        layout the destination of edge slot ``(i, j)`` is implicitly node
-        ``i``.
+        Number of nodes.
     z_bias_raw
         Unconstrained denominator bias with shape (F, H).
         Softplus is applied to keep the bias strictly positive.
@@ -75,9 +74,8 @@ def segment_envelope_gated_softmax(
     edge_mask
         Optional padded-edge validity mask with shape (E,) or (E, 1);
         zero marks invalid slots. Folded into the non-negative per-edge
-        weight, so invalid slots drop out of the group max, the numerator,
-        and the denominator exactly like absent edges in the pt sparse
-        layout.
+        weight so invalid slots drop out of the group max, the numerator,
+        and the denominator.
 
     Returns
     -------
@@ -88,18 +86,8 @@ def segment_envelope_gated_softmax(
     n_edge, n_focus, n_head = logits.shape
     n_channel = n_focus * n_head
     eps_f = float(eps)
-    # Keep ``n_nodes`` symbolic (no ``int()``): it is the product ``nf*nloc``,
-    # and casting to a Python int specializes it to the trace-time sample
-    # shape, which breaks torch.export with a dynamic ``nloc`` dim. The
-    # ``Mod`` check below stays statically known (``E == n_nodes*nnei``) and
-    # the ``(n_nodes, nnei, ...)`` reshapes recover the layout symbolically.
-    if n_nodes <= 0 or n_edge % n_nodes != 0:
-        raise ValueError(
-            "padded-edge layout requires E to be a multiple of n_nodes; "
-            f"got E={n_edge}, n_nodes={n_nodes}"
-        )
-    nnei = n_edge // n_nodes
     device = array_api_compat.device(logits)
+    dst = xp.astype(dst, xp.int64)
 
     # === Step 1. Flatten (F, H) and build the effective per-edge weight ===
     logits_2d = xp.reshape(logits, (n_edge, n_channel))
@@ -134,14 +122,16 @@ def segment_envelope_gated_softmax(
     )
 
     # === Step 2. Destination-wise max for stable exponentials ===
-    # pt: scatter_reduce(amax) over dst — padded-edge max over the nnei axis.
-    group_max = xp.max(
-        xp.reshape(logits_for_max, (n_nodes, nnei, n_channel)), axis=1
+    # Destination segment max over ``dst`` (pt ``scatter_reduce`` amax). The
+    # scatter is layout-agnostic and the maximum is order-independent, so the
+    # padded ``call`` stays bit-exact while the sparse ``call_with_edges`` is
+    # handled by the same code path.
+    group_max = xp_maximum_at(
+        xp.full((n_nodes, n_channel), float("-inf"), dtype=logits.dtype, device=device),
+        dst,
+        logits_for_max,
     )  # (N, n_channel)
-    edge_max = xp.reshape(
-        xp.broadcast_to(group_max[:, None, :], (n_nodes, nnei, n_channel)),
-        (n_edge, n_channel),
-    )
+    edge_max = xp.take(group_max, dst, axis=0)
     zeros_en = xp.zeros((n_edge, n_channel), dtype=logits.dtype, device=device)
     zeros_nn = xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device)
     edge_max = xp.where(xp.isfinite(edge_max), edge_max, zeros_en)
@@ -152,16 +142,15 @@ def segment_envelope_gated_softmax(
     edge_weighted_exp = edge_weight_sq[:, None] * exp_shifted
 
     # === Step 4. Destination-wise normalization with positive denominator bias ===
-    # pt: scatter_add over dst — padded-edge masked sum over the nnei axis
-    # (invalid slots already carry zero weight).
-    denom_sum = xp.sum(
-        xp.reshape(edge_weighted_exp, (n_nodes, nnei, n_channel)), axis=1
+    # Destination segment sum over ``dst`` (pt ``scatter_add``); invalid slots
+    # already carry zero weight. Layout-agnostic like the group max above.
+    denom_sum = xp_add_at(
+        xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device),
+        dst,
+        edge_weighted_exp,
     )  # (N, n_channel)
     denom = denom_sum + zeta * xp.exp(-group_max_safe)
 
-    denom_edge = xp.reshape(
-        xp.broadcast_to(denom[:, None, :], (n_nodes, nnei, n_channel)),
-        (n_edge, n_channel),
-    )
+    denom_edge = xp.take(denom, dst, axis=0)
     alpha = edge_weighted_exp / (denom_edge + eps_f)
     return xp.reshape(alpha, (n_edge, n_focus, n_head))

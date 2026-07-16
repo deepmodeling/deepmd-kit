@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""JAX/jax2tf SavedModel export.
+
+The ``.savedmodel`` suffix is the JAX SavedModel artifact used by the JAX C++
+inference path. It is intentionally different from the TF2 eager
+``.savedmodeltf`` artifact: the model body below must pass through
+``jax2tf.convert`` so TensorFlow stores XlaCallModule nodes. Do not replace this
+module with the TF2 SavedModel exporter unless the file suffix and C++ loader
+contract are changed together.
+"""
+
 import json
 from collections.abc import (
     Callable,
 )
 
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 from jax.experimental import (
     jax2tf,
 )
@@ -19,129 +28,225 @@ from deepmd.jax.jax2tf.make_model import (
 from deepmd.jax.model.base_model import (
     BaseModel,
 )
+from deepmd.jax.utils.serialization import (
+    _prepare_hessian_model_def_script,
+    _set_model_min_nbor_dist_from_data,
+)
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
-    """Deserialize the dictionary to a model file.
-
-    Parameters
-    ----------
-    model_file : str
-        The model file to be saved.
-    data : dict
-        The dictionary to be deserialized.
-    """
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
+    """Deserialize the dictionary to a JAX/jax2tf SavedModel."""
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
-        model_def_script = data["model_def_script"]
+        _set_model_min_nbor_dist_from_data(model, data)
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
+        if hessian:
+            model.enable_hessian()
         call_lower = model.call_common_lower
+        dim_chg_spin = model.get_dim_chg_spin()
+        has_chg_spin = dim_chg_spin > 0
 
         tf_model = tf.Module()
+
+        def lower_input_signature() -> list[tf.TensorSpec]:
+            signature = [
+                tf.TensorSpec([None, None, 3], tf.float64),
+                tf.TensorSpec([None, None], tf.int32),
+                tf.TensorSpec([None, None, None], tf.int64),
+                tf.TensorSpec([None, None], tf.int64),
+                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+            ]
+            if has_chg_spin:
+                signature.append(tf.TensorSpec([None, dim_chg_spin], tf.float64))
+            return signature
+
+        def call_input_signature() -> list[tf.TensorSpec]:
+            signature = [
+                tf.TensorSpec([None, None, 3], tf.float64),
+                tf.TensorSpec([None, None], tf.int32),
+                tf.TensorSpec([None, None, None], tf.float64),
+                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+            ]
+            if has_chg_spin:
+                signature.append(tf.TensorSpec([None, dim_chg_spin], tf.float64))
+            return signature
+
+        def lower_args(
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+            charge_spin: tf.Tensor | None,
+        ) -> tuple[tf.Tensor, ...]:
+            args = (coord, atype, nlist, mapping, fparam, aparam)
+            if has_chg_spin:
+                assert charge_spin is not None
+                args = (*args, charge_spin)
+            return args
 
         def exported_whether_do_atomic_virial(
             do_atomic_virial: bool, has_ghost_atoms: bool
         ) -> Callable:
-            def call_lower_with_fixed_do_atomic_virial(
-                coord: tnp.ndarray,
-                atype: tnp.ndarray,
-                nlist: tnp.ndarray,
-                mapping: tnp.ndarray,
-                fparam: tnp.ndarray,
-                aparam: tnp.ndarray,
-            ) -> dict[str, tnp.ndarray]:
-                return call_lower(
-                    coord,
-                    atype,
-                    nlist,
-                    mapping,
-                    fparam,
-                    aparam,
-                    do_atomic_virial=do_atomic_virial,
-                )
+            if has_chg_spin:
 
-            # nghost >= 1 is assumed if there is
-            # other workaround does not work, such as
-            # nall; nloc + nghost - 1
+                def call_lower_with_fixed_do_atomic_virial(
+                    coord: tf.Tensor,
+                    atype: tf.Tensor,
+                    nlist: tf.Tensor,
+                    mapping: tf.Tensor,
+                    fparam: tf.Tensor,
+                    aparam: tf.Tensor,
+                    charge_spin: tf.Tensor,
+                ) -> dict[str, tf.Tensor]:
+                    return call_lower(
+                        coord,
+                        atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                        do_atomic_virial=do_atomic_virial,
+                        charge_spin=charge_spin,
+                    )
+
+            else:
+
+                def call_lower_with_fixed_do_atomic_virial(
+                    coord: tf.Tensor,
+                    atype: tf.Tensor,
+                    nlist: tf.Tensor,
+                    mapping: tf.Tensor,
+                    fparam: tf.Tensor,
+                    aparam: tf.Tensor,
+                ) -> dict[str, tf.Tensor]:
+                    return call_lower(
+                        coord,
+                        atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                        do_atomic_virial=do_atomic_virial,
+                    )
+
+            # nghost >= 1 is assumed if there is ghost atoms. Other workarounds
+            # do not work, such as nall; nloc + nghost - 1.
             if has_ghost_atoms:
                 nghost = "nghost"
             else:
                 nghost = "0"
+            # The converted function is the part that carries the JAX model
+            # semantics into TensorFlow. Its SavedModel graph is expected to
+            # contain XlaCallModule ops; a graph made only of ordinary TF ops
+            # means this path has accidentally fallen back to the TF2 exporter.
+            polymorphic_shapes = [
+                f"(nf, nloc + {nghost}, 3)",
+                f"(nf, nloc + {nghost})",
+                f"(nf, nloc, {model.get_nnei()})",
+                f"(nf, nloc + {nghost})",
+                f"(nf, {model.get_dim_fparam()})",
+                f"(nf, nloc, {model.get_dim_aparam()})",
+            ]
+            if has_chg_spin:
+                polymorphic_shapes.append(f"(nf, {dim_chg_spin})")
             return jax2tf.convert(
                 call_lower_with_fixed_do_atomic_virial,
-                polymorphic_shapes=[
-                    f"(nf, nloc + {nghost}, 3)",
-                    f"(nf, nloc + {nghost})",
-                    f"(nf, nloc, {model.get_nnei()})",
-                    f"(nf, nloc + {nghost})",
-                    f"(nf, {model.get_dim_fparam()})",
-                    f"(nf, nloc, {model.get_dim_aparam()})",
-                ],
+                polymorphic_shapes=polymorphic_shapes,
                 with_gradient=True,
             )
 
-        # Save a function that can take scalar inputs.
-        # We need to explicit set the function name, so C++ can find it.
-        @tf.function(
-            autograph=False,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, None], tf.int64),
-                tf.TensorSpec([None, None], tf.int64),
-                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
-                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
-            ],
-        )
-        def call_lower_without_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+        def dispatch_call_lower(
+            do_atomic_virial: bool,
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+            charge_spin: tf.Tensor | None = None,
+        ) -> dict[str, tf.Tensor]:
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
+            args = lower_args(coord, atype, nlist, mapping, fparam, aparam, charge_spin)
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
                 lambda: exported_whether_do_atomic_virial(
-                    do_atomic_virial=False, has_ghost_atoms=False
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                    do_atomic_virial=do_atomic_virial, has_ghost_atoms=False
+                )(*args),
                 lambda: exported_whether_do_atomic_virial(
-                    do_atomic_virial=False, has_ghost_atoms=True
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                    do_atomic_virial=do_atomic_virial, has_ghost_atoms=True
+                )(*args),
             )
+
+        if has_chg_spin:
+
+            @tf.function(autograph=False, input_signature=lower_input_signature())
+            def call_lower_without_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                nlist: tf.Tensor,
+                mapping: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+                charge_spin: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return dispatch_call_lower(
+                    False, coord, atype, nlist, mapping, fparam, aparam, charge_spin
+                )
+
+        else:
+
+            @tf.function(autograph=False, input_signature=lower_input_signature())
+            def call_lower_without_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                nlist: tf.Tensor,
+                mapping: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return dispatch_call_lower(
+                    False, coord, atype, nlist, mapping, fparam, aparam
+                )
 
         tf_model.call_lower = call_lower_without_atomic_virial
 
-        @tf.function(
-            autograph=False,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, None], tf.int64),
-                tf.TensorSpec([None, None], tf.int64),
-                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
-                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
-            ],
-        )
-        def call_lower_with_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
-            nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
-            return tf.cond(
-                tf.shape(coord)[1] == tf.shape(nlist)[1],
-                lambda: exported_whether_do_atomic_virial(
-                    do_atomic_virial=True, has_ghost_atoms=False
-                )(coord, atype, nlist, mapping, fparam, aparam),
-                lambda: exported_whether_do_atomic_virial(
-                    do_atomic_virial=True, has_ghost_atoms=True
-                )(coord, atype, nlist, mapping, fparam, aparam),
-            )
+        if has_chg_spin:
+
+            @tf.function(autograph=False, input_signature=lower_input_signature())
+            def call_lower_with_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                nlist: tf.Tensor,
+                mapping: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+                charge_spin: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return dispatch_call_lower(
+                    True, coord, atype, nlist, mapping, fparam, aparam, charge_spin
+                )
+
+        else:
+
+            @tf.function(autograph=False, input_signature=lower_input_signature())
+            def call_lower_with_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                nlist: tf.Tensor,
+                mapping: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return dispatch_call_lower(
+                    True, coord, atype, nlist, mapping, fparam, aparam
+                )
 
         tf_model.call_lower_atomic_virial = call_lower_with_atomic_virial
 
@@ -152,35 +257,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 call_lower = call_lower_without_atomic_virial
 
             def call(
-                coord: tnp.ndarray,
-                atype: tnp.ndarray,
-                box: tnp.ndarray | None = None,
-                fparam: tnp.ndarray | None = None,
-                aparam: tnp.ndarray | None = None,
-            ) -> dict[str, tnp.ndarray]:
-                """Return model prediction.
-
-                Parameters
-                ----------
-                coord
-                    The coordinates of the atoms.
-                    shape: nf x (nloc x 3)
-                atype
-                    The type of atoms. shape: nf x nloc
-                box
-                    The simulation box. shape: nf x 9
-                fparam
-                    frame parameter. nf x ndf
-                aparam
-                    atomic parameter. nf x nloc x nda
-
-                Returns
-                -------
-                ret_dict
-                    The result dict of type dict[str,jnp.ndarray].
-                    The keys are defined by the `ModelOutputDef`.
-
-                """
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor | None = None,
+                fparam: tf.Tensor | None = None,
+                aparam: tf.Tensor | None = None,
+                charge_spin: tf.Tensor | None = None,
+            ) -> dict[str, tf.Tensor]:
                 return model_call_from_call_lower(
                     call_lower=call_lower,
                     rcut=model.get_rcut(),
@@ -192,58 +275,80 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     box=box,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=do_atomic_virial,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # the traced lower consumes a pre-excluded nlist. Guard
+                    # atomic_model too: test doubles (DummyModel) lack it.
+                    pair_excl=getattr(
+                        getattr(model, "atomic_model", None), "pair_excl", None
+                    ),
                 )
 
             return call
 
-        @tf.function(
-            autograph=True,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, None], tf.float64),
-                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
-                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
-            ],
-        )
-        def call_with_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            box: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
-            return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
-                coord, atype, box, fparam, aparam
-            )
+        if has_chg_spin:
+
+            @tf.function(autograph=True, input_signature=call_input_signature())
+            def call_with_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+                charge_spin: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
+                    coord, atype, box, fparam, aparam, charge_spin
+                )
+
+        else:
+
+            @tf.function(autograph=True, input_signature=call_input_signature())
+            def call_with_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
+                    coord, atype, box, fparam, aparam
+                )
 
         tf_model.call_atomic_virial = call_with_atomic_virial
 
-        @tf.function(
-            autograph=True,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, None], tf.float64),
-                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
-                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
-            ],
-        )
-        def call_without_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            box: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
-            return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
-                coord, atype, box, fparam, aparam
-            )
+        if has_chg_spin:
+
+            @tf.function(autograph=True, input_signature=call_input_signature())
+            def call_without_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+                charge_spin: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
+                    coord, atype, box, fparam, aparam, charge_spin
+                )
+
+        else:
+
+            @tf.function(autograph=True, input_signature=call_input_signature())
+            def call_without_atomic_virial(
+                coord: tf.Tensor,
+                atype: tf.Tensor,
+                box: tf.Tensor,
+                fparam: tf.Tensor,
+                aparam: tf.Tensor,
+            ) -> dict[str, tf.Tensor]:
+                return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
+                    coord, atype, box, fparam, aparam
+                )
 
         tf_model.call = call_without_atomic_virial
 
-        # set functions to export other attributes
         @tf.function
         def get_type_map() -> tf.Tensor:
             return tf.constant(model.get_type_map(), dtype=tf.string)
@@ -307,6 +412,21 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         tf_model.get_sel = get_sel
 
         @tf.function
+        def get_pair_exclude_types() -> tf.Tensor:
+            # Model-level pair_exclude_types, exported FLAT [ti0, tj0, ti1, tj1,
+            # ...] so the C++ ingestion seam (DeepPotJAX) can fold exclusion into
+            # the LAMMPS nlist before the traced call_lower_* consumes it
+            # (decision #18/A4). The upper ``call`` already pre-excludes its
+            # freshly built nlist. Guard atomic_model: test doubles may lack it.
+            pet = getattr(
+                getattr(model, "atomic_model", None), "pair_exclude_types", []
+            )
+            flat = [int(t) for pair in (pet or []) for t in pair]
+            return tf.constant(flat, dtype=tf.int64)
+
+        tf_model.get_pair_exclude_types = get_pair_exclude_types
+
+        @tf.function
         def get_model_def_script() -> tf.Tensor:
             return tf.constant(
                 json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
@@ -319,6 +439,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             return tf.constant(model.has_message_passing(), dtype=tf.bool)
 
         tf_model.has_message_passing = has_message_passing
+        tf_model.do_message_passing = has_message_passing
 
         @tf.function
         def has_default_fparam() -> tf.Tensor:
@@ -331,10 +452,58 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             default_fparam = model.get_default_fparam()
             if default_fparam is None:
                 return tf.constant([], dtype=tf.double)
-            else:
-                return tf.constant(default_fparam, dtype=tf.double)
+            return tf.constant(default_fparam, dtype=tf.double)
 
         tf_model.get_default_fparam = get_default_fparam
+
+        @tf.function
+        def has_chg_spin_ebd() -> tf.Tensor:
+            return tf.constant(model.has_chg_spin_ebd(), dtype=tf.bool)
+
+        tf_model.has_chg_spin_ebd = has_chg_spin_ebd
+
+        @tf.function
+        def get_dim_chg_spin() -> tf.Tensor:
+            return tf.constant(dim_chg_spin, dtype=tf.int64)
+
+        tf_model.get_dim_chg_spin = get_dim_chg_spin
+
+        @tf.function
+        def has_default_chg_spin() -> tf.Tensor:
+            return tf.constant(model.has_default_chg_spin(), dtype=tf.bool)
+
+        tf_model.has_default_chg_spin = has_default_chg_spin
+
+        @tf.function
+        def get_default_chg_spin() -> tf.Tensor:
+            default_chg_spin = model.get_default_chg_spin()
+            if default_chg_spin is None:
+                return tf.constant([], dtype=tf.double)
+            return tf.constant(default_chg_spin, dtype=tf.double)
+
+        tf_model.get_default_chg_spin = get_default_chg_spin
+
+        # property models: persist the output name/dimension/intensiveness so
+        # the evaluator can dispatch to DeepProperty and reshape the output.
+        if hasattr(model, "get_var_name"):
+
+            @tf.function
+            def get_var_name() -> tf.Tensor:
+                return tf.constant(model.get_var_name(), dtype=tf.string)
+
+            tf_model.get_var_name = get_var_name
+
+            @tf.function
+            def get_task_dim() -> tf.Tensor:
+                return tf.constant(model.get_task_dim(), dtype=tf.int64)
+
+            tf_model.get_task_dim = get_task_dim
+
+            @tf.function
+            def get_intensive() -> tf.Tensor:
+                return tf.constant(model.get_intensive(), dtype=tf.bool)
+
+            tf_model.get_intensive = get_intensive
 
         tf.saved_model.save(
             tf_model,

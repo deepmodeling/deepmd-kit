@@ -4,6 +4,11 @@ project(infer_water)
 # find DeePMD-kit
 find_package(DeePMD REQUIRED)
 
+# helper that generates graph.pb from the bundled test model
+add_executable(convert_model convert_model.c)
+# link DeePMD-kit C API
+target_link_libraries(convert_model PRIVATE DeePMD::deepmd_c)
+
 # C++ example
 add_executable(infer_water_cc infer_water.cpp)
 # link DeePMD-kit C++ API

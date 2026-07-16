@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -29,6 +35,46 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+
+def _extend_graph_aparam(
+    aparam: Array,
+    n_node: Array,
+    n_local: Array,
+    n_total: int,
+) -> Array:
+    """Expand frame-local atomic parameters onto a local-plus-halo node axis."""
+    import array_api_compat
+
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        frame_id_from_n_node,
+        node_ownership_mask,
+    )
+
+    xp = array_api_compat.array_namespace(aparam, n_node, n_local)
+    frame_id = frame_id_from_n_node(n_node, n_total=n_total)
+    frame_end = xp.cumulative_sum(n_node)
+    frame_start = frame_end - n_node
+    node_index = xp.arange(
+        n_total,
+        dtype=n_node.dtype,
+        device=array_api_compat.device(n_node),
+    )
+    index_in_frame = node_index - xp.take(frame_start, frame_id, axis=0)
+    local_capacity = aparam.shape[1]
+    sentinel = xp.zeros(
+        (aparam.shape[0], 1, aparam.shape[2]),
+        dtype=aparam.dtype,
+        device=array_api_compat.device(aparam),
+    )
+    padded_aparam = xp.concat([aparam, sentinel], axis=1)
+    padded_capacity = local_capacity + 1
+    local_index = index_in_frame % padded_capacity
+    flat_index = frame_id * padded_capacity + local_index
+    flat_aparam = xp.reshape(padded_aparam, (-1, aparam.shape[-1]))
+    gathered = xp.take(flat_aparam, flat_index, axis=0)
+    ownership = node_ownership_mask(n_node, n_local, n_total)
+    return xp.where(ownership[:, None], gathered, xp.zeros_like(gathered))
 
 
 @BaseAtomicModel.register("standard")
@@ -247,6 +293,77 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam,
         )
         return ret
+
+    def forward_atomic_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Graph analogue of :meth:`forward_atomic` on the flat node axis.
+
+        Runs the descriptor ``call_graph`` then the fitting ``call_graph`` PER NODE
+        and returns the raw fitting dict on the flat ``(N, *)`` axis (no reduction
+        or masking; the wrapper handles those). ``fparam`` is gathered to nodes by
+        ``frame_id`` so each node sees its frame's parameter.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
+            the interface stays stable for charge/spin-conditioned descriptors.
+
+        Returns
+        -------
+        result_dict
+            the result dict on the flat node axis, defined by the `FittingOutputDef`.
+
+        """
+        import array_api_compat
+
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        type_embedding = self.descriptor.type_embedding.call()
+        gg, rot_mat = self.descriptor.call_graph(
+            graph, atype, type_embedding=type_embedding
+        )
+        fparam_node = None
+        if fparam is not None:
+            frame_id = frame_id_from_n_node(
+                graph.n_node,
+                n_total=atype.shape[0],
+            )
+            fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
+        aparam_node = aparam
+        if aparam is not None and graph.n_local is not None and aparam.ndim == 3:
+            aparam_node = _extend_graph_aparam(
+                aparam,
+                graph.n_node,
+                graph.n_local,
+                atype.shape[0],
+            )
+        return self.fitting_net.call_graph(
+            gg,
+            atype,
+            gr=rot_mat,
+            g2=None,
+            h2=None,
+            fparam=fparam_node,
+            aparam=aparam_node,
+        )
 
     def compute_or_load_stat(
         self,

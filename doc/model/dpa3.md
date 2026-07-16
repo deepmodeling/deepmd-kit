@@ -130,7 +130,7 @@ To run the DPA3 model on LAMMPS via source code installation
 the custom OP library for Python interface integration must be compiled and linked
 during the [model freezing process](../freeze/freeze.md).
 
-The customized OP library for the Python interface can be installed by setting environment variable {envvar}`DP_ENABLE_PYTORCH` to `1` during installation.
+The customized OP library for the Python interface is installed by default when building DeePMD-kit from source.
 
 If one runs LAMMPS with MPI, the customized OP library for the C++ interface should be compiled against the same MPI library as the runtime MPI.
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,

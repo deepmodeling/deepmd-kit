@@ -256,7 +256,6 @@ class ModelWrapper(torch.nn.Module):
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state["model_params"]
         self.train_infos = state["train_infos"]
-        return None
 
     def get_extra_state(self) -> dict:
         state = {

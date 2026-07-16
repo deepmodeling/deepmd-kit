@@ -57,6 +57,65 @@ class DescrptSeAttenV2(DescrptSeAttenV2DP):
 
         return DescrptDPA1.call(self, *args, **kwargs)
 
+    def _fused_eligible(self, *args: Any, **kwargs: Any) -> bool:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._fused_eligible(self, *args, **kwargs)
+
+    def fused_energy_force_graph(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1.fused_energy_force_graph(self, *args, **kwargs)
+
+    # Graph-lower routing and the fused-kernel helpers it dispatches to,
+    # forwarded to DescrptDPA1 so the accelerated CUDA / Triton / tabulated
+    # graph paths serve se_atten_v2 rather than only the dpmodel reference.
+    def call_graph(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1.call_graph(self, *args, **kwargs)
+
+    def _call_graph_cuda(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._call_graph_cuda(self, *args, **kwargs)
+
+    def _call_graph_cuda_compress(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._call_graph_cuda_compress(self, *args, **kwargs)
+
+    def _call_graph_triton(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._call_graph_triton(self, *args, **kwargs)
+
+    def _call_graph_compress_reference(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._call_graph_compress_reference(self, *args, **kwargs)
+
+    def _call_triton(self, *args: Any, **kwargs: Any) -> Any:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1._call_triton(self, *args, **kwargs)
+
     def _call_compressed(self, *args: Any, **kwargs: Any) -> Any:
         from deepmd.pt_expt.descriptor.dpa1 import (
             DescrptDPA1,

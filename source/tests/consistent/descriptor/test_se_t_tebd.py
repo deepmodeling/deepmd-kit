@@ -20,8 +20,9 @@ from ..common import (
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -39,6 +40,10 @@ if INSTALLED_PT_EXPT:
 else:
     DescrptSeTTebdPTExpt = None
 DescrptSeTTebdTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdTF2
+else:
+    DescrptSeTTebdTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
 else:
@@ -57,20 +62,60 @@ from deepmd.utils.argcheck import (
     descrpt_se_e3_tebd_args,
 )
 
-
-@parameterized(
-    (4,),  # tebd_dim
-    ("strip",),  # tebd_input_mode
-    (True,),  # resnet_dt
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (True, False),  # smooth
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False, True),  # use_tebd_bias
+SE_T_TEBD_CASE_FIELDS = (
+    "tebd_dim",
+    "tebd_input_mode",
+    "resnet_dt",
+    "excluded_types",
+    "env_protection",
+    "set_davg_zero",
+    "smooth",
+    "concat_output_tebd",
+    "precision",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+SE_T_TEBD_BASELINE_CASE = {
+    "tebd_dim": 4,
+    "tebd_input_mode": "strip",
+    "resnet_dt": True,
+    "excluded_types": [],
+    "env_protection": 0.0,
+    "set_davg_zero": True,
+    "smooth": True,
+    "concat_output_tebd": True,
+    "precision": "float64",
+    "use_econf_tebd": True,
+    "use_tebd_bias": False,
+}
+
+
+def se_t_tebd_case(**overrides: Any) -> tuple:
+    case = SE_T_TEBD_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_T_TEBD_CASE_FIELDS)
+
+
+SE_T_TEBD_CURATED_CASES = (
+    se_t_tebd_case(),
+    se_t_tebd_case(excluded_types=[[0, 1]]),
+    se_t_tebd_case(set_davg_zero=False),
+    se_t_tebd_case(smooth=False),
+    se_t_tebd_case(use_econf_tebd=False),
+    se_t_tebd_case(use_tebd_bias=True),
+    se_t_tebd_case(
+        excluded_types=[[0, 1]],
+        set_davg_zero=False,
+        smooth=False,
+        use_econf_tebd=False,
+        use_tebd_bias=True,
+    ),
+)
+
+SE_T_TEBD_DESCRIPTOR_API_CURATED_CASES = SE_T_TEBD_CURATED_CASES
+
+
+@parameterized_cases(*SE_T_TEBD_CURATED_CASES)
 class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -180,8 +225,10 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     skip_pd = not INSTALLED_PD
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = DescrptSeTTebdTF
+    tf2_class = DescrptSeTTebdTF2
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
     pt_expt_class = DescrptSeTTebdPTExpt
@@ -277,6 +324,16 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
@@ -357,19 +414,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (4,),  # tebd_dim
-    ("strip",),  # tebd_input_mode
-    (True,),  # resnet_dt
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (True, False),  # smooth
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False, True),  # use_tebd_bias
-)
+@parameterized_cases(*SE_T_TEBD_DESCRIPTOR_API_CURATED_CASES)
 class TestSeTTebdDescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

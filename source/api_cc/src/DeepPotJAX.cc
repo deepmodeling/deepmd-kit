@@ -6,13 +6,17 @@
 #include <tensorflow/c/c_api.h>
 #include <tensorflow/c/eager/c_api.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <numeric>
 #include <ostream>
 #include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -46,6 +50,265 @@ inline void find_function(TF_Function*& found_func,
     }
   }
   found_func = NULL;
+}
+
+inline bool operation_attr_bool_true(TF_Operation* oper,
+                                     const char* attr_name) {
+  TF_Status* attr_status = TF_NewStatus();
+  unsigned char value = 0;
+  TF_OperationGetAttrBool(oper, attr_name, &value, attr_status);
+  const bool result = TF_GetCode(attr_status) == TF_OK && value != 0;
+  TF_DeleteStatus(attr_status);
+  return result;
+}
+
+inline bool read_proto_varint(const char*& ptr,
+                              const char* end,
+                              uint64_t& value) {
+  value = 0;
+  int shift = 0;
+  while (ptr < end && shift <= 63) {
+    const uint64_t byte = static_cast<unsigned char>(*ptr++);
+    value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) == 0) {
+      return true;
+    }
+    shift += 7;
+  }
+  return false;
+}
+
+inline bool read_proto_bytes(const char*& ptr,
+                             const char* end,
+                             const char*& payload,
+                             size_t& payload_size) {
+  uint64_t size = 0;
+  if (!read_proto_varint(ptr, end, size) ||
+      size > static_cast<uint64_t>(end - ptr)) {
+    return false;
+  }
+  payload = ptr;
+  payload_size = static_cast<size_t>(size);
+  ptr += payload_size;
+  return true;
+}
+
+inline bool skip_proto_field(const int wire_type,
+                             const char*& ptr,
+                             const char* end) {
+  uint64_t ignored = 0;
+  const char* payload = NULL;
+  size_t payload_size = 0;
+  switch (wire_type) {
+    case 0:
+      return read_proto_varint(ptr, end, ignored);
+    case 1:
+      if (end - ptr < 8) {
+        return false;
+      }
+      ptr += 8;
+      return true;
+    case 2:
+      return read_proto_bytes(ptr, end, payload, payload_size);
+    case 5:
+      if (end - ptr < 4) {
+        return false;
+      }
+      ptr += 4;
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool proto_bytes_equal(const char* payload,
+                              const size_t payload_size,
+                              const std::string& expected) {
+  return payload_size == expected.size() &&
+         std::memcmp(payload, expected.data(), payload_size) == 0;
+}
+
+inline bool attr_value_bool_true(const char* data, const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    // AttrValue.b = 5, encoded as a varint bool.
+    if (field_number == 5 && wire_type == 0) {
+      uint64_t value = 0;
+      return read_proto_varint(ptr, end, value) && value != 0;
+    }
+    if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_attr_bool_true(TF_Function* func, const char* attr_name) {
+  TF_Status* attr_status = TF_NewStatus();
+  TF_Buffer* attr_value = TF_NewBuffer();
+  TF_FunctionGetAttrValueProto(func, attr_name, attr_value, attr_status);
+  const bool result =
+      TF_GetCode(attr_status) == TF_OK && attr_value->data != NULL &&
+      attr_value_bool_true(static_cast<const char*>(attr_value->data),
+                           attr_value->length);
+  TF_DeleteBuffer(attr_value);
+  TF_DeleteStatus(attr_status);
+  return result;
+}
+
+inline bool attr_entry_is_xla_must_compile_true(const char* data,
+                                                const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  bool key_matches = false;
+  bool value_is_true = false;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 1 || field_number == 2)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      if (field_number == 1) {
+        key_matches =
+            proto_bytes_equal(payload, payload_size, "_XlaMustCompile");
+      } else if (field_number == 2) {
+        value_is_true = attr_value_bool_true(payload, payload_size);
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return key_matches && value_is_true;
+}
+
+inline bool node_def_uses_xla(const char* data, const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 2 || field_number == 5)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      // NodeDef.op = 2. This identifies jax2tf native serialization.
+      if (field_number == 2 &&
+          proto_bytes_equal(payload, payload_size, "XlaCallModule")) {
+        return true;
+      }
+      // NodeDef.attr = 5. This catches PartitionedCall nodes marked by
+      // tf.function(jit_compile=True).
+      if (field_number == 5 &&
+          attr_entry_is_xla_must_compile_true(payload, payload_size)) {
+        return true;
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_def_uses_xla(const char* data, const size_t size) {
+  // TensorFlow's C API exposes TF_Function bodies only as serialized
+  // FunctionDef protos. Use a minimal wire-format reader over the stable
+  // FunctionDef/NodeDef/AttrValue field numbers instead of a raw byte
+  // substring, and avoid depending on TensorFlow C++ protobuf headers.
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 3 || field_number == 5)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      // FunctionDef.node_def = 3.
+      if (field_number == 3 && node_def_uses_xla(payload, payload_size)) {
+        return true;
+      }
+      // FunctionDef.attr = 5. This catches concrete functions marked by
+      // tf.function(jit_compile=True).
+      if (field_number == 5 &&
+          attr_entry_is_xla_must_compile_true(payload, payload_size)) {
+        return true;
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_uses_xla(TF_Function* func, TF_Status* status) {
+  if (function_attr_bool_true(func, "_XlaMustCompile")) {
+    return true;
+  }
+  TF_Buffer* func_def = TF_NewBuffer();
+  TF_FunctionToFunctionDef(func, func_def, status);
+  if (TF_GetCode(status) != TF_OK) {
+    std::string msg = TF_Message(status);
+    TF_DeleteBuffer(func_def);
+    throw deepmd::deepmd_exception("TensorFlow C API Error: " + msg);
+  }
+  const bool uses_xla =
+      func_def->data != NULL &&
+      function_def_uses_xla(static_cast<const char*>(func_def->data),
+                            func_def->length);
+  TF_DeleteBuffer(func_def);
+  return uses_xla;
+}
+
+inline bool graph_uses_xla_compilation(TF_Graph* graph) {
+  size_t pos = 0;
+  while (TF_Operation* oper = TF_GraphNextOperation(graph, &pos)) {
+    const char* op_type = TF_OperationOpType(oper);
+    if ((op_type != NULL && std::strcmp(op_type, "XlaCallModule") == 0) ||
+        operation_attr_bool_true(oper, "_XlaMustCompile")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool uses_xla_compilation(TF_Graph* graph,
+                                 const std::vector<TF_Function*>& funcs,
+                                 TF_Status* status) {
+  if (graph_uses_xla_compilation(graph)) {
+    return true;
+  }
+  for (TF_Function* func : funcs) {
+    if (function_uses_xla(func, status)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline TF_DataType get_data_tensor_type(const std::vector<double>& data) {
@@ -198,6 +461,54 @@ inline TFE_TensorHandle* add_input(TFE_Op* op,
   return handle;
 }
 
+inline std::vector<double> make_charge_spin_input(
+    const std::vector<double>& charge_spin,
+    const int dchgspin,
+    const int nframes,
+    const std::vector<double>& default_chg_spin) {
+  if (dchgspin == 0) {
+    if (!charge_spin.empty()) {
+      std::cerr << "WARNING: charge_spin was provided, but this model does "
+                   "not support charge/spin conditioning. The provided "
+                   "charge_spin will be ignored."
+                << std::endl;
+    }
+    if (!default_chg_spin.empty()) {
+      throw deepmd::deepmd_exception(
+          "default_chg_spin is stored, but this model does not support "
+          "charge/spin conditioning");
+    }
+    return {};
+  }
+  std::vector<double> source;
+  if (!charge_spin.empty()) {
+    source = charge_spin;
+  } else if (!default_chg_spin.empty()) {
+    source = default_chg_spin;
+  } else {
+    throw deepmd::deepmd_exception(
+        "charge_spin is required for this model but was not provided, "
+        "and no default_chg_spin is stored in the model.");
+  }
+  const size_t dim = static_cast<size_t>(dchgspin);
+  const size_t expected = static_cast<size_t>(nframes) * dim;
+  if (source.size() == expected) {
+    return source;
+  }
+  if (source.size() == dim) {
+    std::vector<double> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(source.begin(), source.end(), result.begin() + ff * dim);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "charge_spin has " + std::to_string(source.size()) +
+      " values but the model expects dim_chg_spin=" + std::to_string(dchgspin) +
+      " (per frame) or " + std::to_string(expected) + " (for " +
+      std::to_string(nframes) + " frames).");
+}
+
 template <typename T>
 inline void tensor_to_vector(std::vector<T>& result,
                              TFE_TensorHandle* retval,
@@ -278,6 +589,7 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   TF_Function** funcs = func_vector.data();
   TF_GraphGetFunctions(graph, funcs, nfuncs, status);
   check_status(status);
+  uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
 
   ctx_opts = TFE_NewContextOptions();
   TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
@@ -310,6 +622,28 @@ void deepmd::DeepPotJAX::init(const std::string& model,
       get_scalar<int64_t>(ctx, "get_dim_fparam", func_vector, device, status);
   daparam =
       get_scalar<int64_t>(ctx, "get_dim_aparam", func_vector, device, status);
+  try {
+    dchgspin = get_scalar<int64_t>(ctx, "get_dim_chg_spin", func_vector, device,
+                                   status);
+  } catch (tf_function_not_found& e) {
+    dchgspin = 0;
+  }
+  try {
+    has_default_chg_spin_ = get_scalar<bool>(ctx, "has_default_chg_spin",
+                                             func_vector, device, status);
+  } catch (tf_function_not_found& e) {
+    has_default_chg_spin_ = false;
+  }
+  if (dchgspin > 0 && has_default_chg_spin_) {
+    try {
+      default_chg_spin_ = get_vector<double>(ctx, "get_default_chg_spin",
+                                             func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      default_chg_spin_.clear();
+    }
+  } else {
+    default_chg_spin_.clear();
+  }
   std::vector<std::string> type_map_ =
       get_vector_string(ctx, "get_type_map", func_vector, device, status);
   // deepmd-kit stores type_map as a concatenated string, split by ' '
@@ -321,17 +655,39 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   sel = get_vector<int64_t>(ctx, "get_sel", func_vector, device, status);
   nnei = std::accumulate(sel.begin(), sel.end(), decltype(sel)::value_type(0));
   try {
-    do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+    do_message_passing = get_scalar<bool>(ctx, "has_message_passing",
                                           func_vector, device, status);
   } catch (tf_function_not_found& e) {
-    // compatibile with models generated by v3.0.0rc0
-    do_message_passing = false;
+    try {
+      do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+                                            func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      // compatible with models generated by v3.0.0rc0
+      do_message_passing = false;
+    }
   }
   try {
     has_default_fparam_ = get_scalar<bool>(ctx, "has_default_fparam",
                                            func_vector, device, status);
   } catch (tf_function_not_found& e) {
     has_default_fparam_ = false;
+  }
+  try {
+    // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1, ...].
+    // Fold exclusion into the LAMMPS nlist at ingestion (decision #18/A4); the
+    // exported call_lower_* consumes a pre-excluded nlist. Models exported
+    // before this getter existed baked exclusion into the graph, so a missing
+    // getter (=> empty table => identity here) is correct for them.
+    std::vector<int64_t> pet_flat = get_vector<int64_t>(
+        ctx, "get_pair_exclude_types", func_vector, device, status);
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
+      pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
+                                      static_cast<int>(pet_flat[ii + 1]));
+    }
+    pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
+  } catch (tf_function_not_found& e) {
+    pair_exclude_table_.clear();
   }
   inited = true;
 }
@@ -361,6 +717,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                                  const std::vector<VALUETYPE>& box,
                                  const std::vector<VALUETYPE>& fparam,
                                  const std::vector<VALUETYPE>& aparam_,
+                                 const std::vector<double>& charge_spin,
                                  const bool atomic) {
   std::vector<VALUETYPE> coord, force, aparam, atom_energy, atom_virial;
   std::vector<double> ener_double, force_double, virial_double,
@@ -393,6 +750,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> box_double(box.begin(), box.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
+  std::vector<double> charge_spin_double =
+      make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
 
   TFE_Op* op;
   if (atomic) {
@@ -402,15 +761,22 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     op = get_func_op(ctx, "call_without_atomic_virial", func_vector, device,
                      status);
   }
-  std::vector<TFE_TensorHandle*> input_list(5);
-  std::vector<TF_Tensor*> data_tensor(5);
+  const size_t num_inputs = 5 + (dchgspin > 0 ? 1 : 0);
+  std::vector<TFE_TensorHandle*> input_list(num_inputs);
+  std::vector<TF_Tensor*> data_tensor(num_inputs);
   // coord
   std::vector<int64_t> coord_shape = {nframes, nloc_real, 3};
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
+  std::vector<int> atype_input(static_cast<size_t>(nframes) * nloc_real);
+  for (int ff = 0; ff < nframes; ++ff) {
+    std::copy(atype.begin(), atype.end(),
+              atype_input.begin() + static_cast<size_t>(ff) * nloc_real);
+  }
   std::vector<int64_t> atype_shape = {nframes, nloc_real};
-  input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
+  input_list[1] =
+      add_input(op, atype_input, atype_shape, data_tensor[1], status);
   // box
   int box_size = box_double.size() > 0 ? 3 : 0;
   std::vector<int64_t> box_shape = {nframes, box_size, box_size};
@@ -423,6 +789,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
   input_list[4] =
       add_input(op, aparam_double, aparam_shape, data_tensor[4], status);
+  if (dchgspin > 0) {
+    std::vector<int64_t> charge_spin_shape = {nframes, dchgspin};
+    input_list[5] = add_input(op, charge_spin_double, charge_spin_shape,
+                              data_tensor[5], status);
+  }
   // execute the function
   int nretvals = 6;
   TFE_TensorHandle* retvals[nretvals];
@@ -487,7 +858,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (size_t i = 0; i < 5; i++) {
+  for (size_t i = 0; i < input_list.size(); i++) {
     TFE_DeleteTensorHandle(input_list[i]);
     TF_DeleteTensor(data_tensor[i]);
   }
@@ -511,6 +882,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                                  const int& ago,
                                  const std::vector<VALUETYPE>& fparam,
                                  const std::vector<VALUETYPE>& aparam_,
+                                 const std::vector<double>& charge_spin,
                                  const bool atomic) {
   std::vector<VALUETYPE> coord, force, aparam, atom_energy, atom_virial;
   std::vector<double> ener_double, force_double, virial_double,
@@ -541,17 +913,24 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
+  std::vector<double> charge_spin_double =
+      make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
 
-  if (padding_for_nloc != nloc_real) {
-    padding_to_nall = nall_real * PADDING_FACTOR;
-    padding_for_nloc = nloc_real;
+  int nall_model = nall_real;
+  if (uses_xla_compilation_) {
+    if (padding_for_nloc != nloc_real) {
+      padding_to_nall = nall_real * PADDING_FACTOR;
+      padding_for_nloc = nloc_real;
+    }
+    while (padding_to_nall < nall_real) {
+      padding_to_nall *= PADDING_FACTOR;
+    }
+    nall_model = padding_to_nall;
   }
-  while (padding_to_nall < nall_real) {
-    padding_to_nall *= PADDING_FACTOR;
-  }
-  // do padding
-  coord_double.resize(nframes * padding_to_nall * 3, 0.0);
-  atype.resize(nframes * padding_to_nall, -1);
+  // Padding is only useful for XLA-compiled functions; eager TF graphs can use
+  // the exact atom count without shape recompilation churn.
+  coord_double.resize(static_cast<size_t>(nframes) * nall_model * 3, 0.0);
+  atype.resize(static_cast<size_t>(nframes) * nall_model, -1);
 
   TFE_Op* op;
   if (atomic) {
@@ -561,14 +940,15 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     op = get_func_op(ctx, "call_lower_without_atomic_virial", func_vector,
                      device, status);
   }
-  std::vector<TFE_TensorHandle*> input_list(6);
-  std::vector<TF_Tensor*> data_tensor(6);
+  const size_t num_inputs = 6 + (dchgspin > 0 ? 1 : 0);
+  std::vector<TFE_TensorHandle*> input_list(num_inputs);
+  std::vector<TF_Tensor*> data_tensor(num_inputs);
   // coord
-  std::vector<int64_t> coord_shape = {nframes, padding_to_nall, 3};
+  std::vector<int64_t> coord_shape = {nframes, nall_model, 3};
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
-  std::vector<int64_t> atype_shape = {nframes, padding_to_nall};
+  std::vector<int64_t> atype_shape = {nframes, nall_model};
   input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
   // nlist
   if (ago == 0) {
@@ -593,10 +973,16 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
       }
     }
   }
+  // Model-level pair exclusion (decision #18/A4): erase excluded-type
+  // neighbours to -1 before the exported call_lower_* consumes the nlist.
+  // applyPairExcludeNlistVec (common.h) is the torch-free twin of
+  // applyPairExclusionNlist (commonPT.h); empty table => identity.
+  applyPairExcludeNlistVec(nlist, atype, pair_exclude_table_, ntypes, nloc_real,
+                           static_cast<int>(max_size));
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
-  std::vector<int64_t> mapping_shape = {nframes, padding_to_nall};
-  std::vector<int64_t> mapping(nframes * padding_to_nall, -1);
+  std::vector<int64_t> mapping_shape = {nframes, nall_model};
+  std::vector<int64_t> mapping(static_cast<size_t>(nframes) * nall_model, -1);
   // pass mapping if it is given in the neighbor list
   if (lmp_list.mapping) {
     // assume nframes is 1
@@ -622,6 +1008,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
   input_list[5] =
       add_input(op, aparam_double, aparam_shape, data_tensor[5], status);
+  if (dchgspin > 0) {
+    std::vector<int64_t> charge_spin_shape = {nframes, dchgspin};
+    input_list[6] = add_input(op, charge_spin_double, charge_spin_shape,
+                              data_tensor[6], status);
+  }
   // execute the function
   int nretvals = 6;
   TFE_TensorHandle* retvals[nretvals];
@@ -671,7 +1062,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (size_t i = 0; i < 6; i++) {
+  for (size_t i = 0; i < input_list.size(); i++) {
     TFE_DeleteTensorHandle(input_list[i]);
     TF_DeleteTensor(data_tensor[i]);
   }
@@ -695,6 +1086,7 @@ template void deepmd::DeepPotJAX::compute<double>(
     const int& ago,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam_,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 template void deepmd::DeepPotJAX::compute<float>(
@@ -711,6 +1103,7 @@ template void deepmd::DeepPotJAX::compute<float>(
     const int& ago,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam_,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 void deepmd::DeepPotJAX::get_type_map(std::string& type_map_) {
@@ -730,7 +1123,22 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<double>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam, atomic);
+          fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<double>& force,
+                                  std::vector<double>& virial,
+                                  std::vector<double>& atom_energy,
+                                  std::vector<double>& atom_virial,
+                                  const std::vector<double>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<double>& box,
+                                  const std::vector<double>& fparam,
+                                  const std::vector<double>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<float>& force,
@@ -744,7 +1152,22 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<float>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam, atomic);
+          fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<float>& force,
+                                  std::vector<float>& virial,
+                                  std::vector<float>& atom_energy,
+                                  std::vector<float>& atom_virial,
+                                  const std::vector<float>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<float>& box,
+                                  const std::vector<float>& fparam,
+                                  const std::vector<float>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<double>& force,
@@ -761,7 +1184,25 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<double>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam, atomic);
+          nghost, inlist, ago, fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<double>& force,
+                                  std::vector<double>& virial,
+                                  std::vector<double>& atom_energy,
+                                  std::vector<double>& atom_virial,
+                                  const std::vector<double>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<double>& box,
+                                  const int nghost,
+                                  const InputNlist& inlist,
+                                  const int& ago,
+                                  const std::vector<double>& fparam,
+                                  const std::vector<double>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<float>& force,
@@ -778,7 +1219,25 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<float>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam, atomic);
+          nghost, inlist, ago, fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<float>& force,
+                                  std::vector<float>& virial,
+                                  std::vector<float>& atom_energy,
+                                  std::vector<float>& atom_virial,
+                                  const std::vector<float>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<float>& box,
+                                  const int nghost,
+                                  const InputNlist& inlist,
+                                  const int& ago,
+                                  const std::vector<float>& fparam,
+                                  const std::vector<float>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew_mixed_type(std::vector<double>& ener,
                                              std::vector<double>& force,

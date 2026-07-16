@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import json
 import os
 import shutil
@@ -7,10 +8,18 @@ import unittest
 from pathlib import (
     Path,
 )
+from unittest import (
+    mock,
+)
 
 from deepmd.tf.entrypoints.change_bias import (
     change_bias,
 )
+
+# the ``entrypoints`` package re-exports the ``change_bias`` function, which
+# shadows the submodule under attribute access; fetch the real module so its
+# private helpers can be patched.
+change_bias_module = importlib.import_module("deepmd.tf.entrypoints.change_bias")
 from deepmd.tf.train.run_options import (
     RunOptions,
 )
@@ -111,6 +120,38 @@ class TestChangeBias(unittest.TestCase):
             )
 
         self.assertIn("No valid checkpoint found", str(cm.exception))
+
+    def test_change_bias_accepts_checkpoint_prefix_with_step(self):
+        """A checkpoint prefix such as ``model.ckpt-1000`` carries no recognized
+        suffix, but must be routed to the checkpoint handler when a TensorFlow
+        ``checkpoint`` state file sits beside it.
+        """
+        ckpt_dir = self.temp_path / "ckpt_prefix"
+        ckpt_dir.mkdir()
+        (ckpt_dir / "checkpoint").write_text('model_checkpoint_path: "model.ckpt-1000"')
+        prefix = ckpt_dir / "model.ckpt-1000"
+
+        with mock.patch.object(
+            change_bias_module, "_change_bias_checkpoint_file"
+        ) as mocked:
+            change_bias(INPUT=str(prefix), mode="change", system=".")
+        mocked.assert_called_once()
+        self.assertEqual(mocked.call_args.args[0], str(prefix))
+
+    def test_change_bias_accepts_checkpoint_directory(self):
+        """A checkpoint directory (no suffix) containing a ``checkpoint`` state
+        file must be routed to the checkpoint handler, not rejected.
+        """
+        ckpt_dir = self.temp_path / "ckpt_dir"
+        ckpt_dir.mkdir()
+        (ckpt_dir / "checkpoint").write_text('model_checkpoint_path: "model.ckpt-1000"')
+
+        with mock.patch.object(
+            change_bias_module, "_change_bias_checkpoint_file"
+        ) as mocked:
+            change_bias(INPUT=str(ckpt_dir), mode="change", system=".")
+        mocked.assert_called_once()
+        self.assertEqual(mocked.call_args.args[0], str(ckpt_dir))
 
     def test_change_bias_user_defined_requires_real_model(self):
         """Test that user-defined bias requires a real model with proper structure."""

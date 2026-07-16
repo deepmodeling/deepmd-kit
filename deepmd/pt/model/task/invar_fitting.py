@@ -174,27 +174,33 @@ class InvarFitting(GeneralFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
 
         Args:
         - inputs: Embedding matrix. Its shape is [nframes, natoms[0], self.dim_descrpt].
         - natoms: Tell atom count and element count. Its shape is [2+self.ntypes].
+        - return_atomic_feature: also return the last hidden activation under the
+          ``atomic_feature`` key.
 
         Returns
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = self._forward_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            return_atomic_feature=return_atomic_feature,
+        )
         result = {self.var_name: out[self.var_name].to(env.GLOBAL_PT_FLOAT_PRECISION)}
-        if "middle_output" in out:
-            result.update(
-                {
-                    "middle_output": out["middle_output"].to(
-                        env.GLOBAL_PT_FLOAT_PRECISION
-                    )
-                }
-            )
+        if return_atomic_feature:
+            result["atomic_feature"] = out["atomic_feature"]
         return result
 
     # make jit happy with torch 2.0.0

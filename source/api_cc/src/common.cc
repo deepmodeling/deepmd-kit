@@ -9,6 +9,9 @@
 #include <string>
 
 #include "AtomMap.h"
+#ifndef BUILD_TENSORFLOW
+#include "BackendPlugin.h"
+#endif
 #include "device.h"
 #if defined(_WIN32)
 #if defined(_WIN32_WINNT)
@@ -186,8 +189,11 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
+    // Atomic parameters store ``daparam`` consecutive components per atom.
+    // Keep the allocation consistent with the stride passed to ``select_map``
+    // below so every remapped component has a valid destination element.
     aparam.resize(static_cast<size_t>(nframes) *
-                  (aparam_nall ? nall_real : nloc_real));
+                  (aparam_nall ? nall_real : nloc_real) * daparam);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
                           (aparam_nall ? nall_real : nloc_real),
                           (aparam_nall ? nall : (nall - nghost)));
@@ -460,16 +466,7 @@ static inline void _load_single_op_library(std::string library_name) {
   _load_library_path(dso_path);
 }
 
-void deepmd::load_op_library() {
-#ifdef BUILD_TENSORFLOW
-  _load_single_op_library("deepmd_op");
-#endif
-#ifdef BUILD_PYTORCH
-  _load_single_op_library("deepmd_op_pt");
-#endif
-#ifdef BUILD_PADDLE
-  _load_single_op_library("deepmd_op_pd");
-#endif
+static inline void _load_customized_plugins() {
   // load customized plugins
   const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
   if (env_customized_plugins) {
@@ -487,6 +484,31 @@ void deepmd::load_op_library() {
       _load_library_path(plugin);
     }
   }
+}
+
+void deepmd::load_op_library() {
+#ifdef BUILD_TENSORFLOW
+  _load_single_op_library("deepmd_op");
+#endif
+#ifdef BUILD_PYTORCH
+  _load_single_op_library("deepmd_op_pt");
+#endif
+#ifdef BUILD_PADDLE
+  _load_single_op_library("deepmd_op_pd");
+#endif
+  _load_customized_plugins();
+}
+
+void deepmd::load_op_library(DPBackend backend) {
+  if (deepmd::DPBackend::TensorFlow == backend) {
+    _load_single_op_library("deepmd_op");
+  } else if (deepmd::DPBackend::PyTorch == backend ||
+             deepmd::DPBackend::PyTorchExportable == backend) {
+    _load_single_op_library("deepmd_op_pt");
+  } else if (deepmd::DPBackend::Paddle == backend) {
+    _load_single_op_library("deepmd_op_pd");
+  }
+  _load_customized_plugins();
 }
 
 std::string deepmd::name_prefix(const std::string& scope) {
@@ -1258,8 +1280,7 @@ void deepmd::convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb) {
                       std::ios::out | std::ios::trunc | std::ios::binary);
   graph_def.SerializeToOstream(&output);
 #else
-  throw deepmd::deepmd_exception(
-      "convert_pbtxt_to_pb: TensorFlow backend is not enabled.");
+  convert_pbtxt_to_pb_from_plugin(fn_pb_txt, fn_pb);
 #endif
 }
 
@@ -1465,6 +1486,10 @@ void deepmd::print_summary(const std::string& pre) {
 }
 
 deepmd::DPBackend deepmd::get_backend(const std::string& model) {
+  auto has_suffix = [](const std::string& value, const std::string& suffix) {
+    return value.length() >= suffix.length() &&
+           value.substr(value.length() - suffix.length()) == suffix;
+  };
   if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
     return deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 4 &&
@@ -1472,8 +1497,8 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
     return deepmd::DPBackend::PyTorchExportable;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     return deepmd::DPBackend::TensorFlow;
-  } else if (model.length() >= 11 &&
-             model.substr(model.length() - 11) == ".savedmodel") {
+  } else if (has_suffix(model, ".savedmodel") ||
+             has_suffix(model, ".savedmodeltf")) {
     return deepmd::DPBackend::JAX;
   } else if ((model.length() >= 5 &&
               model.substr(model.length() - 5) == ".json") ||

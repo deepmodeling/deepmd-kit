@@ -42,8 +42,10 @@ __all__ = [
     "get_task_buffer_values",
     "is_prime",
     "next_safe_prime",
+    "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
+    "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
 ]
@@ -83,11 +85,45 @@ def apply_global_compile_patches() -> None:
 
     dynamo_config.optimize_ddp = False
 
+    # Force int64 tensor indexing in every compiled kernel.  Applies on all
+    # supported PyTorch versions and is independent of runtime shapes.
+    patch_inductor_force_int64_indexing()
+
     # The symbolic-divisibility regression exists only on PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
     # patched.
     if Version(torch.__version__).release[:2] == (2, 12):
         patch_inductor_symbolic_divisibility()
+
+
+def patch_inductor_force_int64_indexing() -> None:
+    """Force Inductor to emit int64 tensor indexing in every compiled kernel.
+
+    Inductor selects the index dtype from static size hints. The compiled
+    ``core_compute`` graph is traced with the small placeholder shapes returned
+    by :func:`next_safe_prime`, from which Inductor infers that the
+    data-dependent edge and node axes fit in int32. At runtime those axes grow
+    large enough that the flattened index of a tensor such as ``(E, D, D, C)``
+    exceeds ``2**31`` and wraps to an out-of-range address, which surfaces
+    asynchronously as a CUDA illegal memory access. Forcing int64 indexing
+    removes this dependence on the trace-time size hints at the cost of a small
+    amount of additional address arithmetic. The patch is idempotent and
+    complements ``triton.max_tiles=1`` in :func:`build_inductor_compile_options`.
+    """
+    try:
+        from torch._inductor.codegen.simd import (
+            SIMDScheduling,
+        )
+    except Exception:
+        return
+
+    if getattr(SIMDScheduling, "_dp_force_int64_patched", False):
+        return
+
+    # ``can_use_32bit_indexing`` gates int32 selection; returning ``False``
+    # forces int64 indexing in every generated kernel.
+    SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
+    SIMDScheduling._dp_force_int64_patched = True
 
 
 def check_compile_torch_version() -> None:
@@ -144,8 +180,19 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     index-bearing tensors (``nlist`` neighbor indices, ``mapping``
     extended-to-local indices) because the duplicated row reuses the
     previously-valid row's values.  Trimming likewise never invalidates
-    indices.  Only shapes flow downstream during ``make_fx`` tracing,
-    so the exact replicated/trimmed values do not affect the FX graph.
+    indices.
+
+    The result is always contiguous, which matters as much as its shape.
+    Trimming a non-leading dimension by slicing returns a view whose stride
+    still encodes the *pre-trim* length; ``make_fx`` symbolic tracing records
+    that stale stride as a free symbol, and duck-shaping then unifies it with
+    any size symbol that happens to share the same trace-time value -- e.g. the
+    trimmed ``atype`` stride (= the frame's ``nloc``) colliding with the edge
+    count when both equal a ``next_safe_prime`` value. The compiled graph would
+    then guard unrelated axes against one another and fail ``assert_size_stride``
+    at runtime. Materializing a contiguous copy keeps the trace inputs' memory
+    layout identical to the contiguous runtime inputs, so strides never carry a
+    stale length into the symbol pool.
     """
     cur = int(t.shape[dim])
     if cur == target:
@@ -153,7 +200,7 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     if cur > target:
         sl: list[slice] = [slice(None)] * t.ndim
         sl[dim] = slice(None, target)
-        return t[tuple(sl)]
+        return t[tuple(sl)].contiguous()
     sl = [slice(None)] * t.ndim
     sl[dim] = slice(-1, None)
     last = t[tuple(sl)]
@@ -254,7 +301,37 @@ def rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
     return new_gm
 
 
-def build_inductor_compile_options() -> dict[str, Any]:
+def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.view`` in a ``make_fx`` graph to ``aten.reshape``.
+
+    ``make_fx`` lowers ``Tensor.reshape`` to ``aten.view`` whenever the traced
+    ``FakeTensor`` is view-compatible. The lowering is unsound when the fake
+    stride differs from the eager stride -- a permuted tensor that ``FakeTensor``
+    keeps strided while eager materializes contiguous -- since the baked
+    ``aten.view`` is accepted during tracing yet rejected at runtime for
+    incompatible size and stride. ``aten.reshape`` coincides with ``aten.view``
+    on view-compatible strides (and is elided by Inductor in that case) and
+    copies only when a view is impossible; the rewrite is therefore
+    semantics-preserving and free on the fast path.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    view = torch.ops.aten.view.default
+    reshape = torch.ops.aten.reshape.default
+    relaxed = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is view:
+            node.target = reshape
+            relaxed = True
+    if relaxed:
+        gm.graph.lint()
+        gm.recompile()
+
+
+def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:
     """Return the conservative Inductor options used to lower the dynamic graph.
 
     The option set disables every Inductor and Triton feature that has
@@ -264,6 +341,22 @@ def build_inductor_compile_options() -> dict[str, Any]:
     some GPU/Triton combinations. Options absent from the running PyTorch's
     configuration registry are dropped so the returned dictionary stays valid
     across releases.
+
+    Parameters
+    ----------
+    inference : bool
+        Whether the options lower an inference graph (the ``make_fx`` +
+        ``aot_module_simplified`` path and the AOTInductor freeze) rather
+        than the ``torch.compile`` training graph.  Inference graphs enter
+        Inductor with hint-less data-dependent symbols, which breaks the
+        peak-memory reordering pass (see below); training graphs carry real
+        size hints from the first traced call and benefit from the pass.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keyword options accepted by ``torch.compile(options=...)`` and by
+        ``torch._inductor.config.patch``.
     """
     compile_options: dict[str, Any] = {
         "max_autotune": False,
@@ -276,7 +369,27 @@ def build_inductor_compile_options() -> dict[str, Any]:
         # shapes on PyTorch 2.11 and earlier (pytorch/pytorch#174379, #178080,
         # #179494); the edge count is exactly that kind of shape.
         "triton.mix_order_reduction": False,
+        # Constrain every generated kernel to a 1D launch grid. The default
+        # 2D/3D tiling can place the data-dependent edge or node axis on the y
+        # or z launch dimension, whose limit is 65535; a larger axis then
+        # launches an out-of-range grid that surfaces as a CUDA illegal memory
+        # access. A 1D grid keeps that axis on the x dimension (limit 2**31-1).
+        # The option is shared by the training and evaluation graphs.
+        "triton.max_tiles": 1,
     }
+    if inference:
+        # The peak-memory reordering pass sizes buffers through
+        # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
+        # lowered from ``make_fx`` fake placeholders whose edge-count symbols
+        # carry no hint, so every dynamically shaped buffer is costed as zero
+        # bytes, the candidate orders become indistinguishable to the cost
+        # model, and the pass rewrites the schedule into an order that hoists
+        # the dynamic allocations to the head of the generated ``call()`` --
+        # all forward/backward intermediates then coexist, more than doubling
+        # peak memory on the SeZM inference graph.  Training compiles through
+        # Dynamo with real hints from the first call and measurably benefits
+        # from the pass, so it keeps the upstream default.
+        compile_options["reorder_for_peak_memory"] = False
     try:
         from torch._inductor import config as inductor_config
 

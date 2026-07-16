@@ -155,19 +155,19 @@ def get_trainer(
     ]:
         # get data modifier
         modifier = None
-        modifier_params = model_params_single.get("modifier", None)
+        modifier_params = model_params_single.get("modifier")
         if modifier_params is not None:
             modifier = get_data_modifier(modifier_params).to(DEVICE)
 
         training_dataset_params = data_dict_single["training_data"]
-        validation_dataset_params = data_dict_single.get("validation_data", None)
+        validation_dataset_params = data_dict_single.get("validation_data")
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
 
         # stat files
-        stat_file_path_single = data_dict_single.get("stat_file", None)
+        stat_file_path_single = data_dict_single.get("stat_file")
         if rank != 0:
             stat_file_path_single = None
         elif stat_file_path_single is not None:
@@ -186,13 +186,13 @@ def get_trainer(
             dataset_params: dict[str, Any],
         ) -> DpLoaderSet | LmdbDataset:
             """Create a dataset from systems with pattern expansion/conversion."""
-            patterns = dataset_params.get("rglob_patterns", None)
+            patterns = dataset_params.get("rglob_patterns")
             systems = process_systems(
                 systems,
                 patterns=patterns,
-                fmt=dataset_params.get("format", None),
+                fmt=dataset_params.get("format"),
                 out_fmt=dataset_params.get(
-                    "out_format", dataset_params.get("output_format", None)
+                    "out_format", dataset_params.get("output_format")
                 ),
             )
             lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
@@ -201,7 +201,7 @@ def get_trainer(
                     lmdb_path,
                     model_params_single["type_map"],
                     dataset_params["batch_size"],
-                    auto_prob_style=dataset_params.get("auto_prob", None),
+                    auto_prob_style=dataset_params.get("auto_prob"),
                 )
             return DpLoaderSet(
                 systems,
@@ -424,7 +424,7 @@ def train(
         ) -> Any:
             training_systems = dataset_params.get("systems")
             if (
-                dataset_params.get("format", None) is None
+                dataset_params.get("format") is None
                 and training_systems is not None
                 and isinstance(training_systems, str)
                 and is_lmdb(training_systems)
@@ -433,10 +433,10 @@ def train(
             else:
                 systems = process_systems(
                     training_systems,
-                    patterns=dataset_params.get("rglob_patterns", None),
-                    fmt=dataset_params.get("format", None),
+                    patterns=dataset_params.get("rglob_patterns"),
+                    fmt=dataset_params.get("format"),
                     out_fmt=dataset_params.get(
-                        "out_format", dataset_params.get("output_format", None)
+                        "out_format", dataset_params.get("output_format")
                     ),
                 )
             lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Shared utilities for pt_expt (.pt2 / AOTInductor) backend classes.
 // Provides: JSON parser, ZIP archive reader, type-sorted nlist builder,
-// and helpers for the with-comm dual-artifact layout (Phase 4 of the
-// GNN MPI plumbing).
+// and helpers for the with-comm dual-artifact layout.
 #pragma once
 
 #include <torch/torch.h>
@@ -470,7 +469,7 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// With-comm artifact extraction (Phase 4)
+// With-comm artifact extraction
 //
 // GNN .pt2 archives carry a nested ``extra/forward_lower_with_comm.pt2``
 // alongside the regular forward_lower artifact.  AOTInductor's
@@ -559,7 +558,7 @@ class TempFile {
 };
 
 // ============================================================================
-// comm_dict tensor packing for the with-comm artifact (Phase 4)
+// Communication tensor packing for the with-comm artifact
 //
 // The with-comm AOTInductor artifact accepts comm tensors as 8 additional
 // positional inputs (after the regular 4-6 inputs) in this canonical order:
@@ -576,9 +575,7 @@ class TempFile {
 // ============================================================================
 
 /**
- * @brief Build the 8 comm-tensor positional inputs from LAMMPS data
- * (Phase 5 working signature, restored after the consolidation
- * attempt regressed).
+ * @brief Build the 8 comm-tensor positional inputs from LAMMPS data.
  */
 inline std::vector<at::Tensor> build_comm_tensors_positional(
     const InputNlist& lmp_list,
@@ -593,23 +590,36 @@ inline std::vector<at::Tensor> build_comm_tensors_positional(
   auto int64_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
 
+  // The with-comm AOTInductor artifact is compiled assuming 16-byte-aligned
+  // inputs (the freeze-time sample comm tensors are torch-allocated). LAMMPS'
+  // raw send/recv arrays and the MPI handle carry only their natural element
+  // alignment, so wrapping them with ``from_blob`` would force AOTInductor to
+  // copy each input to an aligned buffer on every step (a per-step warning and
+  // copy). ``clone`` materialises them in torch-allocated aligned storage; the
+  // pointer values inside ``sendlist`` are copied verbatim and still address
+  // the live LAMMPS swap buffers. The clones are tiny (``nswap`` elements), so
+  // the one-time copy is negligible.
   at::Tensor sendlist_tensor =
-      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
+      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option)
+          .clone();
   at::Tensor sendproc_tensor =
-      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
+      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option).clone();
   at::Tensor recvproc_tensor =
-      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-  at::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
-  at::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
+      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option).clone();
+  at::Tensor sendnum_tensor =
+      torch::from_blob(sendnum, {nswap}, int32_option).clone();
+  at::Tensor recvnum_tensor =
+      torch::from_blob(recvnum, {nswap}, int32_option).clone();
 
-  static std::int64_t null_communicator = 0;
+  std::int64_t null_communicator = 0;
   at::Tensor communicator_tensor;
   if (lmp_list.world == nullptr) {
     communicator_tensor =
-        torch::from_blob(&null_communicator, {1}, int64_option);
+        torch::from_blob(&null_communicator, {1}, int64_option).clone();
   } else {
     communicator_tensor =
-        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option);
+        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option)
+            .clone();
   }
 
   at::Tensor nlocal_tensor = torch::tensor(nlocal, int32_option);

@@ -34,6 +34,7 @@ def eval_desc(
     datafile: str,
     output: str = "desc",
     head: str | None = None,
+    dtype: str = "native",
     **kwargs: Any,
 ) -> None:
     """Evaluate descriptors for given systems.
@@ -50,6 +51,9 @@ def eval_desc(
         output directory for descriptor files
     head : Optional[str], optional
         (Supported backend: PyTorch) Task head if in multi-task mode.
+    dtype : str
+        Output dtype for descriptor arrays: ``"fp32"``, ``"fp64"``, or
+        ``"native"``.
     **kwargs
         additional arguments
 
@@ -65,7 +69,7 @@ def eval_desc(
     """
     if datafile is not None:
         with open(datafile) as datalist:
-            all_sys = datalist.read().splitlines()
+            all_sys = [line.strip() for line in datalist if line.strip()]
     else:
         all_sys = expand_sys_str(system)
 
@@ -129,6 +133,7 @@ def eval_desc(
             fparam=fparam,
             aparam=aparam,
             mixed_type=mixed_type,
+            dtype=dtype,
         )
 
         # descriptors are kept in 3D format (nframes, natoms, ndesc)

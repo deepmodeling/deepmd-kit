@@ -12,6 +12,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+)
 from model_convert import (
     ensure_converted_pb,
 )
@@ -27,7 +30,7 @@ system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
 md_file = Path(__file__).parent / "md.out"
 
-# from api_cc/tests/test_deeppot_a_fparam_aparam.cc
+# Same reference values as source/tests/infer/deeppot_universal_data.h.
 expected_ae = np.array(
     [
         -1.038271183039953804e-01,
@@ -150,34 +153,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    if units == "metal" or units == "real":
-        lammps.neighbor("2.0 bin")
-    elif units == "si":
-        lammps.neighbor("2.0e-10 bin")
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal" or units == "real":
-        lammps.mass("1 16")
-    elif units == "si":
-        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
-    else:
-        raise ValueError("units should be metal, real, or si")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    elif units == "si":
-        lammps.timestep(5e-16)
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, masses=(16,))
 
 
 @pytest.fixture

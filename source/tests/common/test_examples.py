@@ -49,6 +49,8 @@ input_files = (
     p_examples / "dos" / "train" / "input_torch.json",
     p_examples / "spin" / "se_e2_a" / "input_tf.json",
     p_examples / "spin" / "se_e2_a" / "input_torch.json",
+    p_examples / "spin" / "dpa4" / "input.json",
+    p_examples / "spin" / "dpa4" / "input-deepspin.json",
     p_examples / "dprc" / "normal" / "input.json",
     p_examples / "dprc" / "pairwise" / "input.json",
     p_examples / "dprc" / "generalized_force" / "input.json",
@@ -62,7 +64,6 @@ input_files = (
     p_examples / "water" / "dpa3" / "input_torch_dynamic.json",
     p_examples / "water" / "dpa4" / "input.json",
     p_examples / "water" / "dpa4" / "input-zbl.json",
-    p_examples / "water" / "dpa4" / "input-spin.json",
     p_examples / "water" / "dpa4" / "lmp" / "input.json",
     p_examples / "property" / "train" / "input_torch.json",
     p_examples / "water" / "se_e3_tebd" / "input_torch.json",
@@ -94,3 +95,26 @@ class TestExamples(unittest.TestCase):
                 if multi_task:
                     jdata["model"], _ = preprocess_shared_params(jdata["model"])
                 normalize(jdata, multi_task=multi_task)
+
+    def test_data_paths_exist(self) -> None:
+        """Each example's data ``systems`` must resolve relative to the example's
+        own directory, so the example is runnable from that directory.
+        """
+        for fn in input_files:
+            training = j_loader(str(fn)).get("training", {})
+            for key in ("training_data", "validation_data"):
+                data = training.get(key)
+                if not isinstance(data, dict):
+                    continue
+                systems = data.get("systems")
+                if systems is None:
+                    continue
+                if isinstance(systems, str):
+                    systems = [systems]
+                for system in systems:
+                    with self.subTest(fn=str(fn), key=key, system=system):
+                        self.assertTrue(
+                            (fn.parent / system).exists(),
+                            f"{system!r} in {fn} does not resolve relative to "
+                            f"the example directory {fn.parent}",
+                        )

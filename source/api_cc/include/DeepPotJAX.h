@@ -102,6 +102,14 @@ class DeepPotJAX : public DeepPotBackend {
     assert(inited);
     return has_default_fparam_;
   };
+  /**
+   * @brief Get dimension of charge/spin condition inputs.
+   * @return The dimension of charge/spin condition inputs.
+   **/
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
 
   // forward to template class
   void computew(std::vector<double>& ener,
@@ -116,6 +124,18 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<double>& aparam,
                 const bool atomic);
   void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
                 std::vector<float>& atom_energy,
@@ -126,6 +146,18 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -141,6 +173,21 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<double>& aparam,
                 const bool atomic);
   void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
                 std::vector<float>& atom_energy,
@@ -154,6 +201,21 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
   void computew_mixed_type(std::vector<double>& ener,
                            std::vector<double>& force,
                            std::vector<double>& virial,
@@ -191,6 +253,12 @@ class DeepPotJAX : public DeepPotBackend {
   int dfparam;
   // the dimension of the atomic parameter
   int daparam;
+  // the dimension of charge/spin condition inputs
+  int dchgspin;
+  // has default charge/spin values
+  bool has_default_chg_spin_;
+  // default charge/spin values
+  std::vector<double> default_chg_spin_;
   // type map
   std::string type_map;
   // sel
@@ -201,6 +269,14 @@ class DeepPotJAX : public DeepPotBackend {
   bool do_message_passing;
   // has default fparam
   bool has_default_fparam_;
+  // Model-level pair-exclusion keep table (flat (ntypes+1)^2), built once in
+  // init from the exported ``get_pair_exclude_types``. Empty => no exclusion.
+  // The exported ``call_lower_*`` consumes a pre-excluded nlist (decision
+  // #18/A4), so this ingestion seam folds exclusion into the LAMMPS nlist.
+  std::vector<int> pair_exclude_table_;
+  // whether SavedModel execution goes through XLA and benefits from shape
+  // padding; true for JAX/jax2tf XlaCallModule and TF2 jit_compile exports
+  bool uses_xla_compilation_ = false;
   // padding to nall
   int padding_to_nall = 0;
   // padding for nloc
@@ -254,6 +330,7 @@ class DeepPotJAX : public DeepPotBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 
   /**
@@ -296,6 +373,7 @@ class DeepPotJAX : public DeepPotBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 };
 }  // namespace deepmd

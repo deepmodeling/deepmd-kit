@@ -26,6 +26,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
 )
 
 if INSTALLED_PT or INSTALLED_PT_EXPT:
@@ -40,6 +41,10 @@ if INSTALLED_TF:
     from deepmd.tf.env import (
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
+    )
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
     )
 if INSTALLED_JAX:
     from deepmd.jax.env import (
@@ -209,6 +214,47 @@ class DescriptorTest:
             for x in pt_expt_obj(ext_coords, ext_atype, **kwargs)
         ]
 
+    def eval_tf2_descriptor(
+        self,
+        tf2_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
+    ) -> Any:
+        ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
+            coords.reshape(1, -1, 3),
+            atype.reshape(1, -1),
+            box.reshape(1, 3, 3),
+            tf2_obj.get_rcut(),
+        )
+        nlist = build_neighbor_list(
+            ext_coords,
+            ext_atype,
+            natoms[0],
+            tf2_obj.get_rcut(),
+            tf2_obj.get_sel(),
+            distinguish_types=(not mixed_types),
+        )
+        kwargs = {
+            "nlist": to_tensorflow_array(nlist),
+            "mapping": to_tensorflow_array(mapping),
+            "fparam": to_tensorflow_array(fparam),
+        }
+        if hasattr(tf2_obj, "get_dim_chg_spin") and tf2_obj.get_dim_chg_spin() > 0:
+            kwargs["charge_spin"] = to_tensorflow_array(charge_spin)
+        return [
+            to_numpy_array(x)
+            for x in tf2_obj(
+                to_tensorflow_array(ext_coords),
+                to_tensorflow_array(ext_atype),
+                **kwargs,
+            )
+        ]
+
     def eval_jax_descriptor(
         self,
         jax_obj: Any,
@@ -269,13 +315,20 @@ class DescriptorTest:
             pd_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        charge_spin_pd = (
+            paddle.to_tensor(charge_spin).to(PD_DEVICE)
+            if charge_spin is not None
+            else None
+        )
+        kwargs = {"nlist": nlist, "mapping": mapping}
+        if charge_spin_pd is not None:
+            kwargs["charge_spin"] = charge_spin_pd
         return [
             x.detach().cpu().numpy() if paddle.is_tensor(x) else x
             for x in pd_obj(
                 ext_coords,
                 ext_atype,
-                nlist=nlist,
-                mapping=mapping,
+                **kwargs,
             )
         ]
 

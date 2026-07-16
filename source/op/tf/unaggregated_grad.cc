@@ -314,11 +314,11 @@ class UnaggregatedDyDxSOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (y.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (w.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (xbar.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     // check functype
 
     int context_output_index = 0;
@@ -360,13 +360,13 @@ class UnaggregatedDy2DxSOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (y.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dy.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (w.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (xbar.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
 
     int context_output_index = 0;
     Tensor* dy2_dx = NULL;
@@ -407,13 +407,13 @@ class UnaggregatedDyDxOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (z.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (w.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dy_dx.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (ybar.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
 
     int context_output_index = 0;
     Tensor* dz_dx = NULL;
@@ -457,15 +457,15 @@ class UnaggregatedDy2DxOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (z.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (w.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dy_dx.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (dy2_dx.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
     OP_REQUIRES(context, (ybar.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
 
     int context_output_index = 0;
     Tensor* dz2_dx = NULL;

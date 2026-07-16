@@ -104,7 +104,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         cmake_args.append("-DENABLE_TENSORFLOW=OFF")
         tf_version = None
 
-    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
+    if os.environ.get("DP_ENABLE_PYTORCH", "1") == "1":
         pt_install_dir, _ = find_pytorch()
         pt_version = get_pt_version(pt_install_dir)
         cmake_args.extend(
@@ -135,5 +135,6 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
 def set_scikit_build_env() -> None:
     """Set scikit-build environment variables before executing scikit-build."""
     cmake_minimum_required_version, cmake_args, _, _, _, _ = get_argument_from_env()
-    os.environ["SKBUILD_CMAKE_MINIMUM_VERSION"] = cmake_minimum_required_version
+    # scikit-build-core v1 expects cmake.version to be a version specifier.
+    os.environ["SKBUILD_CMAKE_VERSION"] = f">={cmake_minimum_required_version}"
     os.environ["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)

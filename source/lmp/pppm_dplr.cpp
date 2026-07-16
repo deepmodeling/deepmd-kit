@@ -48,6 +48,14 @@ PPPMDPLR::PPPMDPLR(LAMMPS* lmp)
 
 /* ---------------------------------------------------------------------- */
 
+void PPPMDPLR::clear_fele() {
+  int nlocal = atom->nlocal;
+  fele.resize(static_cast<size_t>(nlocal) * 3);
+  fill(fele.begin(), fele.end(), 0.0);
+}
+
+/* ---------------------------------------------------------------------- */
+
 void PPPMDPLR::init() {
   // DPLR PPPM requires newton on, b/c it computes forces on ghost atoms
 
@@ -57,10 +65,8 @@ void PPPMDPLR::init() {
 
   PPPM::init();
 
-  int nlocal = atom->nlocal;
   // cout << " ninit pppm/dplr ---------------------- " << nlocal << endl;
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 }
 
 /* ----------------------------------------------------------------------
@@ -89,6 +95,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   // return if there are no charges
 
   if (qsqsum == 0.0) {
+    clear_fele();
     return;
   }
 
@@ -143,7 +150,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
 
   if (differentiation_flag == 1)
 #if LAMMPS_VERSION_NUMBER >= 20221222
-    gc->reverse_comm(Grid3d::KSPACE, this, REVERSE_RHO, 1, sizeof(FFT_SCALAR),
+    gc->forward_comm(Grid3d::KSPACE, this, FORWARD_AD, 1, sizeof(FFT_SCALAR),
                      gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
     gc->forward_comm(GridComm::KSPACE, this, 1, sizeof(FFT_SCALAR), FORWARD_AD,
@@ -296,8 +303,7 @@ void PPPMDPLR::fieldforce_ik() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];
@@ -372,8 +378,7 @@ void PPPMDPLR::fieldforce_ad() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];

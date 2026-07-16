@@ -4,7 +4,13 @@
 #ifdef BUILD_PYTORCH
 #include <torch/torch.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
+#include <set>
+#include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -138,6 +144,669 @@ inline torch::Tensor createNlistTensor(
   }
   torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
   return flat_tensor.view({1, nloc, nnei});
+}
+
+struct EdgeTensorPack {
+  torch::Tensor edge_index;
+  torch::Tensor edge_vec;
+  torch::Tensor edge_index_ext;
+  torch::Tensor edge_mask;
+};
+
+/**
+ * @brief Build compact edge tensors from a neighbor list.
+ *
+ * The returned tensors are aligned by edge:
+ * - edge_index uses flattened local-atom indices and drives descriptor message
+ *   passing.
+ * - edge_index_ext uses flattened extended-atom indices and drives force and
+ *   virial scatter.
+ * - edge_mask marks physical edges. When geometry is requested, two masked
+ *   dummy edges are appended so the exported graph never observes a singular
+ *   edge dimension.
+ *
+ * @param nlist Neighbor-list rows.  By default row i is center atom i; callers
+ *   that compact LAMMPS rows must pass row_centers.
+ * @param coord Extended coordinates shaped as nall x 3.
+ * @param mapping Extended-to-local atom map with length nall.
+ * @param nloc Number of local atoms.
+ * @param nall Number of extended atoms.
+ * @param device Target device for the returned tensors.
+ * @param with_geometry Whether to also materialize edge_vec, edge_mask and
+ *   model-input dummy edges. The cached LAMMPS path keeps only the real skin
+ *   topology and compacts it on-device every step, so it passes ``false``.
+ *   The returned edge_vec and edge_mask are left undefined in that case.
+ * @param row_centers Optional center atom index for each neighbor-list row.
+ * @param fold_to_local Whether edge_index folds ghost neighbours onto their
+ *   local owners via ``mapping`` (single-domain message passing). When false,
+ *   edge_index indexes the extended atoms directly and coincides with
+ *   edge_index_ext; this is the multi-rank with-comm convention where ghost
+ *   node features are exchanged across ranks rather than gathered locally.
+ */
+template <typename VALUETYPE>
+inline EdgeTensorPack createEdgeTensors(
+    const std::vector<std::vector<int>>& nlist,
+    const std::vector<VALUETYPE>& coord,
+    const std::vector<std::int64_t>& mapping,
+    const int nloc,
+    const int nall,
+    const torch::Device& device,
+    const bool with_geometry = true,
+    const std::vector<int>* row_centers = nullptr,
+    const bool fold_to_local = true) {
+  std::vector<std::int64_t> src;
+  std::vector<std::int64_t> dst;
+  std::vector<std::int64_t> src_ext;
+  std::vector<std::int64_t> dst_ext;
+  std::vector<VALUETYPE> edge_vec;
+  size_t reserve_size = with_geometry ? 2 : 0;
+  for (const auto& row : nlist) {
+    reserve_size += row.size();
+  }
+  src.reserve(reserve_size);
+  dst.reserve(reserve_size);
+  src_ext.reserve(reserve_size);
+  dst_ext.reserve(reserve_size);
+  if (with_geometry) {
+    edge_vec.reserve(reserve_size * 3);
+  }
+
+  // Real edges: use row_centers when LAMMPS has compacted away empty rows.
+  for (int ii = 0; ii < static_cast<int>(nlist.size()); ++ii) {
+    if (row_centers != nullptr &&
+        static_cast<size_t>(ii) >= row_centers->size()) {
+      continue;
+    }
+    const int center =
+        row_centers == nullptr ? ii : (*row_centers)[static_cast<size_t>(ii)];
+    if (center < 0 || center >= nloc || center >= nall) {
+      continue;
+    }
+    const size_t center_offset = static_cast<size_t>(center) * 3;
+    for (const int jj : nlist[ii]) {
+      if (jj < 0 || jj >= nall) {
+        continue;
+      }
+      // edge_index source: the local owner (folded) for single-domain message
+      // passing, or the extended atom itself for the multi-rank with-comm
+      // convention where ghost features are exchanged across ranks.
+      std::int64_t src_node;
+      if (fold_to_local) {
+        const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        if (src_local < 0 || src_local >= nloc) {
+          continue;
+        }
+        src_node = src_local;
+      } else {
+        src_node = jj;
+      }
+      const size_t neighbor_offset = static_cast<size_t>(jj) * 3;
+      const VALUETYPE dx = coord[neighbor_offset] - coord[center_offset];
+      const VALUETYPE dy =
+          coord[neighbor_offset + 1] - coord[center_offset + 1];
+      const VALUETYPE dz =
+          coord[neighbor_offset + 2] - coord[center_offset + 2];
+      const VALUETYPE rr = dx * dx + dy * dy + dz * dz;
+      if (rr <= static_cast<VALUETYPE>(1e-10)) {
+        continue;
+      }
+      src.push_back(src_node);
+      dst.push_back(center);
+      src_ext.push_back(jj);
+      dst_ext.push_back(center);
+      if (with_geometry) {
+        edge_vec.push_back(dx);
+        edge_vec.push_back(dy);
+        edge_vec.push_back(dz);
+      }
+    }
+  }
+
+  const size_t real_edges = src.size();
+  if (with_geometry) {
+    // Dummy edges keep exported edge tensors non-empty without affecting
+    // output.
+    for (int ii = 0; ii < 2; ++ii) {
+      src.push_back(0);
+      dst.push_back(0);
+      src_ext.push_back(0);
+      dst_ext.push_back(0);
+      edge_vec.push_back(0);
+      edge_vec.push_back(0);
+      edge_vec.push_back(0);
+    }
+  }
+  const size_t nedge = src.size();
+  std::vector<std::int64_t> edge_index(2 * nedge);
+  std::vector<std::int64_t> edge_index_ext(2 * nedge);
+  // Materialize local-owner and extended scatter index spaces side by side.
+  for (size_t ii = 0; ii < nedge; ++ii) {
+    edge_index[ii] = src[ii];
+    edge_index[nedge + ii] = dst[ii];
+    edge_index_ext[ii] = src_ext[ii];
+    edge_index_ext[nedge + ii] = dst_ext[ii];
+  }
+
+  auto int_options = torch::TensorOptions().dtype(torch::kInt64);
+  EdgeTensorPack pack;
+  if (nedge == 0) {
+    pack.edge_index = torch::empty({2, 0}, int_options).to(device);
+    pack.edge_index_ext = torch::empty({2, 0}, int_options).to(device);
+  } else {
+    pack.edge_index =
+        torch::from_blob(edge_index.data(),
+                         {2, static_cast<std::int64_t>(nedge)}, int_options)
+            .clone()
+            .to(device);
+    pack.edge_index_ext =
+        torch::from_blob(edge_index_ext.data(),
+                         {2, static_cast<std::int64_t>(nedge)}, int_options)
+            .clone()
+            .to(device);
+  }
+  if (with_geometry) {
+    pack.edge_vec =
+        torch::from_blob(
+            edge_vec.data(), {static_cast<std::int64_t>(nedge), 3},
+            torch::TensorOptions().dtype(std::is_same<VALUETYPE, float>::value
+                                             ? torch::kFloat32
+                                             : torch::kFloat64))
+            .clone()
+            .to(device);
+    std::vector<std::uint8_t> edge_mask(nedge, 0);
+    std::fill(edge_mask.begin(), edge_mask.begin() + real_edges,
+              static_cast<std::uint8_t>(1));
+    pack.edge_mask =
+        torch::from_blob(edge_mask.data(), {static_cast<std::int64_t>(nedge)},
+                         torch::TensorOptions().dtype(torch::kUInt8))
+            .clone()
+            .to(torch::kBool)
+            .to(device);
+  }
+  return pack;
+}
+
+/**
+ * @brief Compact a cached LAMMPS skin topology to the current cutoff edge set.
+ *
+ * LAMMPS rebuilds neighbor topology only when its skin list is refreshed.  The
+ * SeZM lower graph, however, should see only the current model-cutoff edges.
+ * This helper keeps the cached skin topology immutable, recomputes edge
+ * vectors from the current coordinates on the target device, filters by
+ * ``rr <= rcut**2``, then appends the two masked dummy edges required by the
+ * exported graph contract.
+ */
+inline EdgeTensorPack compactEdgeTensors(const torch::Tensor& edge_index,
+                                         const torch::Tensor& edge_index_ext,
+                                         const torch::Tensor& coord,
+                                         const double rcut) {
+  const auto coord_flat = coord.reshape({-1, 3});
+  const auto src_ext = edge_index_ext.select(0, 0);
+  const auto dst_ext = edge_index_ext.select(0, 1);
+  const auto edge_vec_all =
+      coord_flat.index_select(0, src_ext) - coord_flat.index_select(0, dst_ext);
+  const auto rr = (edge_vec_all * edge_vec_all).sum(1);
+  const auto keep = (rr > 1e-10) & (rr <= rcut * rcut);
+  const auto real_idx = torch::nonzero(keep).reshape({-1});
+
+  EdgeTensorPack pack;
+  const auto real_edge_index = edge_index.index_select(1, real_idx);
+  const auto real_edge_index_ext = edge_index_ext.index_select(1, real_idx);
+  const auto real_edge_vec = edge_vec_all.index_select(0, real_idx);
+
+  const auto dummy_index = torch::zeros({2, 2}, edge_index.options());
+  const auto dummy_vec = torch::zeros({2, 3}, edge_vec_all.options());
+  pack.edge_index = torch::cat({real_edge_index, dummy_index}, 1);
+  pack.edge_index_ext = torch::cat({real_edge_index_ext, dummy_index}, 1);
+  pack.edge_vec = torch::cat({real_edge_vec, dummy_vec}, 0);
+
+  const auto real_mask = torch::ones(
+      {real_idx.size(0)},
+      torch::TensorOptions().dtype(torch::kBool).device(coord.device()));
+  const auto dummy_mask = torch::zeros({2}, real_mask.options());
+  pack.edge_mask = torch::cat({real_mask, dummy_mask}, 0);
+  return pack;
+}
+
+struct GraphTensorPack {
+  torch::Tensor atype;
+  torch::Tensor n_node;
+  torch::Tensor n_local;
+  torch::Tensor edge_index;
+  torch::Tensor edge_vec;
+  torch::Tensor edge_mask;
+  torch::Tensor destination_order;
+  torch::Tensor destination_row_ptr;
+  torch::Tensor source_order;
+  torch::Tensor source_row_ptr;
+};
+
+struct CanonicalGraphTensorPack {
+  torch::Tensor atype;
+  torch::Tensor n_node;
+  torch::Tensor n_local;
+  torch::Tensor source;
+  torch::Tensor edge_vec;
+  torch::Tensor destination_row_ptr;
+  torch::Tensor source_row_ptr;
+  torch::Tensor source_order;
+};
+
+inline CanonicalGraphTensorPack compactCanonicalGraph(
+    const GraphTensorPack& graph) {
+  const std::int64_t edge_count =
+      graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
+          .item<std::int64_t>();
+  const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  auto source = torch::zeros({storage_count},
+                             graph.edge_index.options().dtype(torch::kInt64));
+  auto edge_vec = torch::zeros({storage_count, 3},
+                               graph.edge_vec.options().dtype(torch::kFloat32));
+  auto source_order = torch::arange(
+      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  if (edge_count > 0) {
+    source.slice(0, 0, edge_count)
+        .copy_(graph.edge_index.select(0, 0)
+                   .slice(0, 0, edge_count)
+                   .to(torch::kInt64));
+    edge_vec.slice(0, 0, edge_count)
+        .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
+    source_order.slice(0, 0, edge_count)
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+  }
+  return {graph.atype,
+          graph.n_node,
+          graph.n_local,
+          source,
+          edge_vec,
+          graph.destination_row_ptr,
+          graph.source_row_ptr,
+          source_order};
+}
+
+/**
+ * @brief Build destination/source CSR views of an edge pack.
+ *
+ * Both views store permutations into the original edge payload. Masked
+ * padding entries form the suffix of each permutation.
+ *
+ * ``destination_sorted`` requires a destination-grouped real-edge prefix and
+ * a masked suffix. The destination permutation is the identity in this layout.
+ */
+inline void buildGraphCSR(GraphTensorPack& pack,
+                          const std::int64_t node_count,
+                          const bool destination_sorted = false) {
+  const auto real_index = torch::nonzero(pack.edge_mask).reshape({-1});
+  const auto padding_index =
+      torch::nonzero(torch::logical_not(pack.edge_mask)).reshape({-1});
+  const auto real_destination =
+      pack.edge_index.select(0, 1).index_select(0, real_index);
+  const auto real_source =
+      pack.edge_index.select(0, 0).index_select(0, real_index);
+  const auto destination_counts =
+      torch::bincount(real_destination, {}, node_count);
+  const auto source_counts = torch::bincount(real_source, {}, node_count);
+  const auto zero = torch::zeros({1}, destination_counts.options());
+  pack.destination_row_ptr =
+      torch::cat({zero, torch::cumsum(destination_counts, 0)})
+          .to(torch::kInt64)
+          .contiguous();
+  pack.source_row_ptr = torch::cat({zero, torch::cumsum(source_counts, 0)})
+                            .to(torch::kInt64)
+                            .contiguous();
+  const auto real_source_order = torch::argsort(real_source, 0, false);
+  if (destination_sorted) {
+    pack.destination_order =
+        torch::arange(pack.edge_index.size(1), real_index.options());
+  } else {
+    const auto real_destination_order =
+        torch::argsort(real_destination, 0, false);
+    pack.destination_order =
+        torch::cat(
+            {real_index.index_select(0, real_destination_order), padding_index})
+            .contiguous();
+  }
+  pack.source_order =
+      torch::cat({real_index.index_select(0, real_source_order), padding_index})
+          .contiguous();
+}
+
+inline void buildGraphCSR(GraphTensorPack& pack) {
+  buildGraphCSR(pack, pack.atype.size(0));
+}
+
+/**
+ * @brief Reorder an edge payload into destination-major form and build CSR.
+ *
+ * The same permutation is applied to every edge field. Masked entries move to
+ * the suffix, and the resulting destination permutation is the identity.
+ */
+inline void canonicalizeGraphPayload(GraphTensorPack& pack,
+                                     const std::int64_t node_count) {
+  const auto destination = pack.edge_index.select(0, 1);
+  const auto padding_node = torch::full_like(destination, node_count);
+  const auto destination_key =
+      torch::where(pack.edge_mask, destination, padding_node);
+  const auto order = torch::argsort(destination_key, /*stable=*/true, 0, false);
+  pack.edge_index = pack.edge_index.index_select(1, order).contiguous();
+  pack.edge_vec = pack.edge_vec.index_select(0, order).contiguous();
+  pack.edge_mask = pack.edge_mask.index_select(0, order).contiguous();
+  buildGraphCSR(pack, node_count, /*destination_sorted=*/true);
+}
+
+/**
+ * @brief Build NeighborGraph input tensors from a host neighbor list
+ *        (single-rank, dynamic edge axis).
+ *
+ * Mirrors the edge schema but drops ``coord``/``edge_scatter_index`` and adds
+ * ``n_node``. Edge construction is delegated to
+ * ``createEdgeTensors``/``compactEdgeTensors``; the wrapper emits
+ * ``n_node = [nloc]`` for the single frame and sets node types from the local
+ * slice of ``atype_ext``.
+ *
+ * @param nlist Neighbor-list rows (local idx into the extended set).
+ * @param coord Extended coordinates shaped as nall x 3.
+ * @param atype_ext Extended atom types, length nall.  Node types are taken from
+ *   the extended types (NOT ``atype[mapping]``); for single-rank ghost-free
+ *   this is just ``atype_ext[0:nloc]``; an extended graph also carries the halo
+ *   types directly.
+ * @param mapping Extended-to-local atom map, length nall.
+ * @param nloc Number of local atoms.
+ * @param nall Number of extended atoms.
+ * @param rcut Model cutoff (edges with ``rr > rcut**2`` are dropped).
+ * @param device Target device for the returned tensors.
+ * @param row_centers Optional center atom index for each neighbor-list row
+ *   (LAMMPS compacts away empty rows); ``nullptr`` means row i is center i.
+ * @param fold_to_local Whether ghost neighbours are folded onto their local
+ *   owners (single-rank, ``N == nloc``, ``n_node = [nloc]``, node types from
+ *   ``atype_ext[0:nloc]``) or kept as distinct extended nodes (multi-rank,
+ *   ``N == nall``, ``n_node = [nall]``, node types from the full ``atype_ext``
+ *   including the real halo types). In the multi-rank
+ *   case ``edge_index`` indexes the extended atoms directly, so ghost reaction
+ *   forces land on the ghost rows and are folded to their owners by LAMMPS
+ *   reverse-comm (no with-comm artifact / no border_op — dpa1 is non-MP).
+ */
+template <typename VALUETYPE>
+inline GraphTensorPack buildGraphTensors(
+    const std::vector<std::vector<int>>& nlist,
+    const std::vector<VALUETYPE>& coord,
+    const std::vector<int>& atype_ext,
+    const std::vector<std::int64_t>& mapping,
+    const int nloc,
+    const int nall,
+    const double rcut,
+    const torch::Device& device,
+    const std::vector<int>* row_centers = nullptr,
+    const bool fold_to_local = true) {
+  auto int_options = torch::TensorOptions().dtype(torch::kInt64);
+
+  // 1. Cached-style topology only (no geometry): when fold_to_local=true,
+  //    edge_index folds ghost neighbours onto their local owners (single-rank);
+  //    when false, edge_index indexes the extended atoms directly (multi-rank).
+  //    edge_index_ext always keeps extended indices for the on-device geometry
+  //    recompute.
+  const EdgeTensorPack topology =
+      createEdgeTensors(nlist, coord, mapping, nloc, nall, device,
+                        /*with_geometry=*/false, row_centers, fold_to_local);
+
+  // 2. Recompute geometry from the current coords on-device, filter by rcut and
+  //    append the two masked dummy edges.  The model is compiled for float64
+  //    inputs, so build the coord tensor as float64 to match the edge path.
+  std::vector<double> coord_d(coord.begin(), coord.end());
+  at::Tensor coord_tensor =
+      torch::from_blob(coord_d.data(), {static_cast<std::int64_t>(nall), 3},
+                       torch::TensorOptions().dtype(torch::kFloat64))
+          .clone()
+          .to(device);
+  const EdgeTensorPack edges = compactEdgeTensors(
+      topology.edge_index, topology.edge_index_ext, coord_tensor, rcut);
+
+  GraphTensorPack pack;
+  pack.edge_index = edges.edge_index;  // (2, E): local-folded or extended
+  pack.edge_vec = edges.edge_vec;      // (E, 3) neighbour - center
+  pack.edge_mask = edges.edge_mask;    // (E,) bool
+  // Single-rank: N == nloc (ghosts folded onto owners).  Multi-rank: N == nall
+  // (ghosts are distinct nodes whose features come from their real halo types).
+  const std::int64_t n_node_count = fold_to_local ? nloc : nall;
+  pack.n_node = torch::full({1}, n_node_count, int_options).to(device);
+  pack.n_local = torch::full({1}, nloc, int_options).to(device);
+  // Node types from the extended types (NOT atype[mapping]): the local slice
+  // for single-rank, the full extended set (incl. real halo types) for
+  // multi-rank.
+  std::vector<std::int64_t> atype_nodes(atype_ext.begin(),
+                                        atype_ext.begin() + n_node_count);
+  pack.atype = torch::from_blob(atype_nodes.data(), {n_node_count}, int_options)
+                   .clone()
+                   .to(device);
+  return pack;
+}
+
+/**
+ * @brief Graph pair-type exclusion: AND the per-edge keep-mask into
+ *        ``edge_mask``.
+ *
+ * Inference-path twin of Python ``apply_pair_exclusion`` (mask-only mode) in
+ * ``deepmd/dpmodel/utils/neighbor_graph/graph.py`` +
+ * ``PairExcludeMask.build_edge_exclude_mask``.  Kept side-by-side reviewable:
+ * same argument order (edge_index, edge_mask, atype, ...) and same variable
+ * names (``type_ij``, ``keep``).
+ *
+ * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
+ * exported ``.pt2`` graph lower consumes a pre-excluded ``edge_mask`` and
+ * never re-applies it, so the C++ ingestion seam is the sole owner: this helper
+ * is called once on each dispatched graph run path (single-rank and the
+ * non-message-passing multi-rank extended-region path), never twice on the same
+ * tensors.
+ *
+ * @param edge_index (2, E) int64 ``[src, dst]``; src = neighbor, dst = center.
+ * @param edge_mask (E,) bool real-vs-padding mask to be ANDed in place.
+ * @param atype (N,) int64 flat node types (clamped >= 0).
+ * @param type_mask_table Device-resident flat ``(ntypes+1)^2`` int32 keep table
+ *   uploaded once in ``init`` (``buildPairExcludeTable`` + one H2D copy).  An
+ *   UNDEFINED tensor => identity (returns ``edge_mask``), mirroring the old
+ *   empty-vector early-exit.  Already on the model device (== ``edge_mask``
+ *   device), so ``index_select`` needs no per-call transfer.
+ * @param ntypes Number of real atom types.
+ * @return New ``edge_mask`` with excluded edges cleared.
+ */
+inline torch::Tensor applyPairExclusion(const torch::Tensor& edge_index,
+                                        const torch::Tensor& edge_mask,
+                                        const torch::Tensor& atype,
+                                        const torch::Tensor& type_mask_table,
+                                        const int ntypes) {
+  if (!type_mask_table.defined()) {
+    return edge_mask;
+  }
+  const auto src = edge_index.index({0});  // (E,) neighbour
+  const auto dst = edge_index.index({1});  // (E,) center
+  const auto src_t = atype.index_select(0, src);
+  const auto dst_t = atype.index_select(0, dst);
+  // type_ij = atype[dst] * (ntypes + 1) + atype[src]  (matches Python)
+  const auto type_ij = dst_t * (ntypes + 1) + src_t;
+  const auto keep = type_mask_table.index_select(0, type_ij).to(torch::kBool);
+  return torch::logical_and(edge_mask, keep);
+}
+
+/**
+ * @brief Dense-nlist pair-type exclusion: erase excluded neighbours to ``-1``.
+ *
+ * Inference-path twin of Python ``apply_pair_exclusion_nlist`` in
+ * ``deepmd/dpmodel/utils/nlist.py`` +
+ * ``PairExcludeMask.build_type_exclude_mask``. Same argument order (nlist,
+ * atype_ext, ...) and same variable names (``type_ij``, ``keep``).
+ *
+ * OWNERSHIP: exclusion is a BUILD-time transform (decision #18/A4).  The
+ * exported ``.pt2`` dense lower consumes a pre-excluded nlist and never
+ * re-applies it, so the C++ ingestion seam is the sole owner: this helper is
+ * called once on each dispatched dense run path (single-rank ``run_model`` and
+ * multi-rank ``run_model_with_comm``), never twice on the same tensors.
+ *
+ * @param nlist (nf, nloc, nnei) int64 neighbour list; ``-1`` == empty slot.
+ * @param atype_ext (nf, nall) int64 extended atom types.
+ * @param type_mask_table Device-resident flat ``(ntypes+1)^2`` int32 keep table
+ *   uploaded once in ``init``.  An UNDEFINED tensor => identity (returns
+ *   ``nlist``).  Already on the model device (== ``nlist`` device), so
+ *   ``index_select`` needs no per-call transfer.
+ * @param ntypes Number of real atom types.
+ * @return New neighbour list with excluded entries set to ``-1``.
+ */
+inline torch::Tensor applyPairExclusionNlist(
+    const torch::Tensor& nlist,
+    const torch::Tensor& atype_ext,
+    const torch::Tensor& type_mask_table,
+    const int ntypes) {
+  if (!type_mask_table.defined()) {
+    return nlist;
+  }
+  const std::int64_t nf = nlist.size(0);
+  const std::int64_t nloc = nlist.size(1);
+  const std::int64_t nnei = nlist.size(2);
+  const std::int64_t nall = atype_ext.size(1);
+  // center types: first nloc extended atoms.  type_i = atype * (ntypes + 1).
+  const auto type_i = atype_ext.slice(1, 0, nloc) * (ntypes + 1);  // (nf, nloc)
+  // append virtual atom of type ntypes; map -1 neighbours to it.
+  const auto ae = torch::cat(
+      {atype_ext, torch::full({nf, 1}, ntypes, atype_ext.options())}, 1);
+  const auto nlist_for_type =
+      torch::where(nlist == -1, torch::full_like(nlist, nall), nlist);
+  const auto type_j = torch::gather(
+      ae.unsqueeze(1).expand({nf, nloc, nall + 1}), 2, nlist_for_type);
+  // type_ij = type_i * (ntypes + 1) + type_j  (matches Python: type_i already
+  // scaled above; here just add the neighbour type).
+  const auto type_ij = type_i.unsqueeze(2) + type_j;  // (nf, nloc, nnei)
+  const auto keep = type_mask_table.index_select(0, type_ij.reshape({-1}))
+                        .reshape({nf, nloc, nnei});
+  return torch::where(keep == 1, nlist, torch::full_like(nlist, -1));
+}
+
+/**
+ * @brief Remap NeighborGraph (graph-schema) public outputs onto the dense
+ *        internal-key layout the rest of ``compute`` consumes.
+ *
+ * The graph forward (``forward_lower_graph_exportable``) is LOCAL-only and
+ * emits flat-N PUBLIC keys:
+ *   - ``atom_energy`` (N, 1)      per-atom energy        (N == nloc)
+ *   - ``energy``      (nf, 1)     reduced total energy
+ *   - ``force``       (N, 3)      per-atom force (ghosts already folded onto
+ *                                 their local owners via ``edge_index``)
+ *   - ``virial``      (nf, 9)     reduced total virial
+ *   - ``atom_virial`` (N, 9)      per-atom (full-to-src) virial
+ *
+ * The downstream extraction in ``DeepPotPTExpt::compute`` was written for the
+ * dense forward's internal keys with their extra dims:
+ *   ``energy_redu`` (nf,1), ``energy_derv_c_redu`` (nf,1,9),
+ *   ``energy_derv_r`` (nf,nall,1,3), ``energy`` (nf,nloc,1),
+ *   ``energy_derv_c`` (nf,nall,1,9).
+ *
+ * This helper rewrites the public keys into those internal keys (single frame,
+ * nf == 1).  The per-atom force / atom-virial are LOCAL (nloc rows); they are
+ * zero-padded up to the extended length ``nall`` so the existing fold-back
+ * (``fold_back`` / ``select_map``) is a no-op on the ghost rows — the local
+ * rows already carry the folded ghost contributions, so zero ghosts avoid
+ * double counting (and keep LAMMPS reverse-comm correct).
+ *
+ * **Single-rank only.** Multi-rank inference must not call this
+ * function: ghost/halo forces are real cross-rank contributions that must be
+ * returned as-is and folded back via reverse-comm rather than being zeroed.
+ * Calling this function on a multi-rank result would silently zero those forces
+ * and produce wrong energetics. Pass ``single_rank = false`` to get an
+ * explicit exception instead of silent corruption.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (== N, the graph node count).
+ * @param[in] nall Extended atom count to pad the per-atom outputs up to.
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ * @param[in] single_rank Must be true; throws deepmd_exception if false.
+ */
+inline void remap_graph_outputs_to_dense_keys(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic,
+    const bool single_rank = true) {
+  if (!single_rank) {
+    throw deepmd::deepmd_exception(
+        "remap_graph_outputs_to_dense_keys requires single-rank graph input");
+  }
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  const auto& energy_pub = output_map.at("energy");  // (nf, 1)
+  const auto& force_pub = output_map.at("force");    // (N, 3), N == nloc
+  const auto& virial_pub = output_map.at("virial");  // (nf, 9)
+
+  output_map["energy_redu"] = energy_pub.reshape({nf, 1});
+  output_map["energy_derv_c_redu"] = virial_pub.reshape({nf, 1, 9});
+
+  // Local force -> (nf, nall, 1, 3) with zero ghost rows.
+  auto force_full = torch::zeros({nf, nall, 1, 3}, force_pub.options());
+  force_full.index_put_({0, Slice(0, nloc), 0}, force_pub);
+  output_map["energy_derv_r"] = force_full;
+
+  if (atomic) {
+    const auto& atom_energy_pub = output_map.at("atom_energy");  // (N, 1)
+    const auto& atom_virial_pub = output_map.at("atom_virial");  // (N, 9)
+    output_map["energy"] = atom_energy_pub.reshape({nf, nloc, 1});
+    auto atom_virial_full =
+        torch::zeros({nf, nall, 1, 9}, atom_virial_pub.options());
+    atom_virial_full.index_put_({0, Slice(0, nloc), 0}, atom_virial_pub);
+    output_map["energy_derv_c"] = atom_virial_full;
+  }
+}
+
+/**
+ * @brief Remap NeighborGraph public outputs onto the dense internal-key layout
+ *        for the MULTI-RANK (extended-region) non-message-passing path.
+ *
+ * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes: ghost
+ * (halo) atoms are distinct nodes, so the per-node ``force`` is already the
+ * EXTENDED force (one row per extended atom).  Ghost reaction forces stay on
+ * their ghost rows and are folded back to their owning rank by LAMMPS
+ * reverse-comm — exactly as the dense path returns its extended force.  No
+ * zero-padding (unlike the single-rank helper) and no with-comm artifact (dpa1
+ * is non-MP).
+ *
+ * Key differences from the single-rank helper:
+ *   - ``energy_redu`` = sum of the LOCAL atom energies
+ * (``atom_energy[0:nloc]``) ONLY.  The public ``energy`` key reduces over all
+ * ``N == nall`` nodes, which would double-count the bias energy of ghost nodes
+ * that belong to other ranks (ghost nodes have no center edges, so they carry a
+ * bias-only energy and zero force/virial gradient — harmless for force/virial
+ * but wrong for the owned energy).
+ *   - ``energy_derv_r`` / ``energy_derv_c`` keep all ``nall`` rows (no
+ * padding).
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (owned by this rank).
+ * @param[in] nall Extended atom count (== N, the graph node count).
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_outputs_to_dense_keys_extended(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  const auto& atom_energy_pub = output_map.at("atom_energy");  // (N==nall, 1)
+  const auto& force_pub = output_map.at("force");    // (N==nall, 3) extended
+  const auto& virial_pub = output_map.at("virial");  // (nf, 9)
+
+  // Owned energy = sum over LOCAL atoms only; ghost nodes carry bias-only
+  // energy belonging to other ranks.
+  output_map["energy_redu"] =
+      atom_energy_pub.index({Slice(0, nloc)}).sum().reshape({nf, 1});
+  output_map["energy_derv_c_redu"] = virial_pub.reshape({nf, 1, 9});
+  // Extended force: ghost rows stay distinct for LAMMPS reverse-comm fold-back.
+  output_map["energy_derv_r"] = force_pub.reshape({nf, nall, 1, 3});
+
+  if (atomic) {
+    const auto& atom_virial_pub = output_map.at("atom_virial");  // (N==nall, 9)
+    output_map["energy"] =
+        atom_energy_pub.index({Slice(0, nloc)}).reshape({nf, nloc, 1});
+    output_map["energy_derv_c"] = atom_virial_pub.reshape({nf, nall, 1, 9});
+  }
 }
 
 }  // namespace deepmd

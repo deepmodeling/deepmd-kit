@@ -475,7 +475,6 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         self.trainable = copy.deepcopy(trainable)
         self.atom_ener = atom_ener
         self.use_aparam_as_mask = bool(use_aparam_as_mask)
-        self._return_middle_output = False
         self.has_force_embedding_latent = self.condition_lmax >= 1
         self.has_vector_latent = self.latent_lmax >= 1
         trainable_flag = (
@@ -583,11 +582,6 @@ class SeZMDeNSFittingNet(torch.nn.Module):
     def get_sel_type(self) -> list[int]:
         """Return selected atom types of the energy branch."""
         return self.energy_head.get_sel_type()
-
-    def set_return_middle_output(self, enable: bool) -> None:
-        """Enable or disable forwarding of the scalar energy hidden activations."""
-        self._return_middle_output = bool(enable)
-        self.energy_head.set_return_middle_output(enable)
 
     def build_force_embedding(
         self,
@@ -703,8 +697,6 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             "energy": energy_ret["energy"],
             "dforce": mixed_force.to(dtype=descriptor.dtype),
         }
-        if "middle_output" in energy_ret:
-            result["middle_output"] = energy_ret["middle_output"]
         if return_components:
             result["clean_dforce"] = clean_force
             result["denoising_dforce"] = denoising_force

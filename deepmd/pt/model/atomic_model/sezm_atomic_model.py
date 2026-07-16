@@ -149,6 +149,22 @@ class SeZMAtomicModel(DPAtomicModel):
         """Return the current SeZM execution mode."""
         return str(getattr(self, "_active_mode", "ener"))
 
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Return whether output statistics are type-resolved."""
+        active_fitting = self.get_active_fitting_net()
+        if active_fitting is not None and hasattr(
+            active_fitting, "get_distinguish_types"
+        ):
+            return bool(active_fitting.get_distinguish_types())
+        return super().get_compute_stats_distinguish_types()
+
+    def get_intensive(self) -> bool:
+        """Return whether the active reducible output is intensive."""
+        active_fitting = self.get_active_fitting_net()
+        if active_fitting is not None and hasattr(active_fitting, "get_intensive"):
+            return bool(active_fitting.get_intensive())
+        return super().get_intensive()
+
     def _compute_or_load_dens_force_stat(
         self,
         sampled_func: Any,
@@ -498,23 +514,6 @@ class SeZMAtomicModel(DPAtomicModel):
             return super().fitting_output_def()
         return active_fitting.output_def()
 
-    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
-        """
-        Set the fitting-last-layer evaluation hook for the active fitting path.
-
-        Parameters
-        ----------
-        enable
-            Whether to enable the hook.
-        """
-        self.enable_eval_fitting_last_layer_hook = enable
-        active_fitting = self.get_active_fitting_net()
-        if active_fitting is not None and hasattr(
-            active_fitting, "set_return_middle_output"
-        ):
-            active_fitting.set_return_middle_output(enable)
-        self.eval_fitting_last_layer_list.clear()
-
     def change_type_map(
         self,
         type_map: list[str],
@@ -612,9 +611,16 @@ class SeZMAtomicModel(DPAtomicModel):
         dict[str, torch.Tensor]
             Outputs after SeZM output-stat post-processing.
         """
-        if "energy" in ret:
-            out_bias, _ = self._fetch_out_stat(["energy"])
-            ret["energy"] = ret["energy"] + out_bias["energy"][atype]
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for key in self.bias_keys:
+            if key not in ret:
+                continue
+            if key == "energy":
+                ret[key] = ret[key] + out_bias[key][atype]
+            elif self.get_compute_stats_distinguish_types():
+                ret[key] = ret[key] * out_std[key][atype] + out_bias[key][atype]
+            else:
+                ret[key] = ret[key] * out_std[key][0] + out_bias[key][0]
         return ret
 
     def get_dim_fparam(self) -> int:
@@ -727,9 +733,8 @@ class SeZMAtomicModel(DPAtomicModel):
         """Reconstruct SeZM `dens`-head kwargs from energy head and descriptor."""
         descriptor = self.descriptor
         kwargs = self._build_ener_fitting_kwargs()
-        node_l_schedule = getattr(descriptor, "node_l_schedule", descriptor.l_schedule)
-        kwargs["condition_lmax"] = int(node_l_schedule[0])
-        kwargs["latent_lmax"] = int(node_l_schedule[-1])
+        kwargs["condition_lmax"] = int(descriptor.node_init_lmax)
+        kwargs["latent_lmax"] = int(descriptor.node_readout_lmax)
         kwargs["channels"] = int(descriptor.channels)
         return kwargs
 
