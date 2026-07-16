@@ -68,6 +68,7 @@ class ProdForceGradOp : public OpKernel {
 
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int nloc = natoms(0);
+    int nall = natoms(1);
     int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
@@ -85,9 +86,14 @@ class ProdForceGradOp : public OpKernel {
         context, (nframes == axis_shape.dim_size(0)),
         deepmd::tf_compat::InvalidArgument("number of frames should match"));
 
-    OP_REQUIRES(context, (nloc * 3 == grad_shape.dim_size(1)),
+    OP_REQUIRES(
+        context, (nall >= nloc),
+        deepmd::tf_compat::InvalidArgument(
+            "number of all atoms should not be smaller than local atoms"));
+    OP_REQUIRES(context,
+                (static_cast<int64_t>(nall) * 3 == grad_shape.dim_size(1)),
                 deepmd::tf_compat::InvalidArgument(
-                    "input grad shape should be 3 x natoms"));
+                    "input grad shape should be 3 x all atoms"));
     OP_REQUIRES(context,
                 (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
                  in_deriv_shape.dim_size(1)),
@@ -118,10 +124,20 @@ class ProdForceGradOp : public OpKernel {
     auto axis = axis_tensor.flat<int>();
     auto grad_net = grad_net_tensor->flat<FPTYPE>();
 
+    // ProdForce returns one force vector for every local and ghost atom. Keep
+    // those upstream gradients distinct: folding ghost indices modulo nloc
+    // would differentiate a different output than the forward op produced.
+    const int64_t nlist_size = static_cast<int64_t>(nframes) * nloc * nnei;
+    for (int64_t ii = 0; ii < nlist_size; ++ii) {
+      OP_REQUIRES(context, nlist(ii) < nall,
+                  deepmd::tf_compat::InvalidArgument(
+                      "neighbor index should be smaller than all atoms"));
+    }
+
     // loop over frames
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk) {
-      int grad_iter = kk * nloc * 3;
+      int grad_iter = kk * nall * 3;
       int net_iter = kk * nloc * ndescrpt;
       int in_iter = kk * nloc * ndescrpt * 12;
       int nlist_iter = kk * nloc * nnei;
@@ -163,9 +179,6 @@ class ProdForceGradOp : public OpKernel {
         // loop over neighbors
         for (int jj = 0; jj < nnei; ++jj) {
           int j_idx = nlist(nlist_iter + i_idx * nnei + jj);
-          if (j_idx > nloc) {
-            j_idx = j_idx % nloc;
-          }
           if (j_idx < 0) {
             continue;
           }
