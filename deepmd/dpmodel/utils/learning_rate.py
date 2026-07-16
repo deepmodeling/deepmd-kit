@@ -717,5 +717,8 @@ def make_learning_rate_schedule(
         The schedule selected by ``lr_params["type"]`` (``exp`` by default).
     """
     params = dict(lr_params)
+    # ``type`` is optional in the public schema.  Supply the documented
+    # exponential default before dispatching through the strict registry.
+    params.setdefault("type", "exp")
     params["num_steps"] = num_steps
     return BaseLR(**params)

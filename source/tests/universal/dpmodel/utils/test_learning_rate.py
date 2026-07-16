@@ -393,6 +393,16 @@ class TestMakeLearningRateSchedule(unittest.TestCase):
                 self.assertIsInstance(schedule, expected_class)
                 self.assertNotIn("num_steps", params)
 
+    def test_omitted_type_uses_exponential_default(self) -> None:
+        """Honor the public schema default without mutating the input."""
+        params = {"start_lr": 1e-3, "stop_lr": 1e-5}
+
+        schedule = make_learning_rate_schedule(params, num_steps=100)
+
+        self.assertIsInstance(schedule, LearningRateExp)
+        self.assertNotIn("type", params)
+        self.assertNotIn("num_steps", params)
+
 
 class TestLearningRateBeyondStopSteps(unittest.TestCase):
     """Test learning rate behavior beyond num_steps."""

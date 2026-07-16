@@ -1535,7 +1535,11 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = training_params.get("opt_type", "Adam")
-        initial_lr = float(self.lr_schedule.value(self.start_step))
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
 
         if opt_type == "Adam":
             self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
@@ -1548,6 +1552,9 @@ class Trainer(AbstractTrainer):
             )
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
@@ -1733,6 +1740,8 @@ class Trainer(AbstractTrainer):
 
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
+                for param_group in self.optimizer.param_groups:
+                    param_group["initial_lr"] = initial_lr
                 # rebuild scheduler from the resumed step.
                 # last_epoch handles the step offset; the lambda must NOT
                 # add self.start_step again (that would double-count).
