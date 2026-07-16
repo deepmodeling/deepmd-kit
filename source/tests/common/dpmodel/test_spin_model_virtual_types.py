@@ -11,7 +11,6 @@ from deepmd.dpmodel.model.model import (
     get_model,
 )
 
-
 MODEL_CONFIG = {
     "type_map": ["A", "B", "C"],
     "descriptor": {
