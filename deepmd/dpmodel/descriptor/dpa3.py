@@ -28,6 +28,7 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -707,16 +708,15 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(
+                take_type_embedding(
                     type_embedding,
                     xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (-1,)),
-                    axis=0,
                 ),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+                take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
                 (nframes, nall, self.tebd_dim),
             )
 

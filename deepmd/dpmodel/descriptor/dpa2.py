@@ -38,6 +38,7 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -893,7 +894,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # repinit
         g1_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nframes, nall, self.tebd_dim),
         )
         g1_inp = xp_take_first_n(g1_ext, 1, nloc)
