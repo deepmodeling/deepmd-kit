@@ -103,11 +103,21 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         for model in self.models:
             submodel_type_map = model.get_type_map()
             if not common_type_map.issubset(set(submodel_type_map)):
+                missing_types = [
+                    atom_type
+                    for atom_type in self.type_map
+                    if atom_type not in submodel_type_map
+                ]
                 err_msg.append(
-                    f"type_map {submodel_type_map} is not a subset of type_map {self.type_map}"
+                    f"type_map {self.type_map} contains types {missing_types} "
+                    f"not supported by submodel type_map {submodel_type_map}"
                 )
+                # remap_atype assumes every common type exists in the submodel.
+                # Defer the combined validation error instead of leaking KeyError.
+                continue
             mapping_list.append(self.remap_atype(submodel_type_map, self.type_map))
-        assert len(err_msg) == 0, "\n".join(err_msg)
+        if err_msg:
+            raise ValueError("\n".join(err_msg))
         return mapping_list
 
     def mixed_types(self) -> bool:

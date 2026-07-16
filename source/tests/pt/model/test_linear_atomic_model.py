@@ -302,6 +302,18 @@ class TestRemmapMethod(unittest.TestCase):
 
         assert trans(atype, commonl) == trans(new_atype, originl)
 
+    def test_missing_submodel_type_raises_validation_error(self) -> None:
+        """Unsupported common types should produce an actionable ValueError."""
+        with self.assertRaisesRegex(
+            ValueError,
+            r"contains types \['bar'\].*not supported by submodel type_map \['foo'\]",
+        ):
+            LinearEnergyAtomicModel(
+                models=[_RecordingAtomicModel(["foo"])],
+                type_map=["foo", "bar"],
+                weights="sum",
+            )
+
     def test_change_type_map_rebuilds_mapping(self) -> None:
         submodels = [
             _RecordingAtomicModel(["bar", "foo"]),

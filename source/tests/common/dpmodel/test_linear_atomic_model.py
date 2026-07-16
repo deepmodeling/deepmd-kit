@@ -292,6 +292,18 @@ class TestLinearWeights(unittest.TestCase):
 
 
 class TestChangeTypeMap(unittest.TestCase):
+    def test_missing_submodel_type_raises_validation_error(self) -> None:
+        """Unsupported common types should produce an actionable ValueError."""
+        with self.assertRaisesRegex(
+            ValueError,
+            r"contains types \['bar'\].*not supported by submodel type_map \['foo'\]",
+        ):
+            LinearEnergyAtomicModel(
+                models=[_RecordingAtomicModel(["foo"])],
+                type_map=["foo", "bar"],
+                weights="sum",
+            )
+
     def test_rebuilds_submodel_type_mappings(self) -> None:
         """Runtime type IDs must follow the submodels after a map change."""
         submodels = [
