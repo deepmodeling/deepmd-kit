@@ -722,3 +722,35 @@ def test_local_atten_float32_high_logit_backward_finite():
     np.testing.assert_allclose(
         gg1_t.grad.numpy().reshape(-1), gg1_d.grad.numpy().reshape(-1), rtol=1e-4
     )
+
+
+def test_local_atten_float32_log_spaced_sw_matches_float64():
+    """OutisLi round 8 forward repro: float32 LocalAtten.call_graph with
+    smooth cutoff weights spanning decades (sw = [1, 0.1, 0.01, 5e-7]) and
+    raw logits -30.  The float32 active-set selection used to pick the wrong
+    water-filling cut (~23% forward error, 0.0612 vs 0.0792); float32 must
+    now match the float64 evaluation of the same quantized inputs.
+    """
+    n_total, nnei, sel = 1, 4, 3
+    sw32 = np.array([1.0, 0.1, 0.01, 5e-7], dtype=np.float32)
+
+    def run(prec: str) -> float:
+        la = LocalAtten(1, 1, 1, smooth=True, precision=prec, seed=1)
+        dt = np.float32 if prec == "float32" else np.float64
+        la.mapq.w = np.array([[1.0]], dtype=dt)
+        la.mapkv.w = np.array([[1.0, 1.0]], dtype=dt)
+        la.mapkv.b = np.array([0.0, 0.0], dtype=dt)
+        la.head_map.w = np.array([[1.0]], dtype=dt)
+        la.head_map.b = np.array([0.0], dtype=dt)
+        o = la.call_graph(
+            np.ones((n_total, 1), dtype=dt),
+            np.full((nnei, 1), -30.0, dtype=dt),
+            np.ones(nnei, dtype=bool),
+            sw32.astype(dt),
+            np.zeros(nnei, dtype=np.int64),
+            n_total,
+            sel,
+        )
+        return float(np.asarray(o)[0, 0])
+
+    np.testing.assert_allclose(run("float32"), run("float64"), rtol=1e-3)

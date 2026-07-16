@@ -124,15 +124,28 @@ def _slot_occupancy(
     sw_s = xp.take(slot_weight, order, axis=0)
     seg_s = xp.take(segment_ids, order, axis=0)
     ones = xp.ones((n,), dtype=dt, device=dev)
-    counts = segment_sum(ones, segment_ids, num_segments)  # (S,)
     n_pos = segment_sum(
         xp.astype(slot_weight > 0.0, dt), segment_ids, num_segments
     )  # (S,)
-    total_s = segment_sum(slot_weight, segment_ids, num_segments)  # (S,)
-    total_q = segment_sum(slot_weight * slot_weight, segment_ids, num_segments)
+    # The ENTIRE cut selection below runs in float64: the suffix moments are
+    # formed as ``total - prefix`` and the discriminant as ``S^2 - Q*room``,
+    # both ill-conditioned subtractions -- in float32, cutoff weights
+    # spanning ordinary decades (e.g. [1, 0.1, 0.01, 5e-7]) lose the small
+    # suffixes entirely, the valid saturated cut is rejected, and the
+    # fallback root violates the capacity equation by O(1).  The selection
+    # feeds ONLY comparisons (kstar), so the upcast costs no gradient and no
+    # export surface; the differentiable quantities at the chosen cut are
+    # rebuilt in the compute dtype from positive-only masked sums.
+    f64 = xp.float64
+    sw64 = xp.astype(slot_weight, f64)
+    ones64 = xp.ones((n,), dtype=f64, device=dev)
+    sw64_s = xp.take(sw64, order, axis=0)
+    counts64 = segment_sum(ones64, segment_ids, num_segments)  # (S,)
+    total_s = segment_sum(sw64, segment_ids, num_segments)  # (S,)
+    total_q = segment_sum(sw64 * sw64, segment_ids, num_segments)
     # within-segment 1-based rank of each sorted entry
-    offsets = xp.cumulative_sum(counts) - counts  # exclusive prefix
-    iota = xp.cumulative_sum(ones) - 1.0  # arange(n) as float
+    offsets = xp.cumulative_sum(counts64) - counts64  # exclusive prefix
+    iota = xp.cumulative_sum(ones64) - 1.0  # arange(n) as float
     rank = iota - xp.take(offsets, seg_s, axis=0) + 1.0  # (n,) 1-based
     # Per-rank suffix sums S_k / Q_k (weights strictly below rank k).  These
     # cumsums feed ONLY the cut-selection comparisons below, so no gradient
@@ -142,33 +155,39 @@ def _slot_occupancy(
     # (and padding workarounds trip inductor's unbacked_bindings on the
     # slice).  The differentiable sums at the chosen cut are rebuilt as
     # masked segment_sum below.
-    prefix_s = xp.cumulative_sum(sw_s)
-    prefix_q = xp.cumulative_sum(sw_s * sw_s)
+    prefix_s = xp.cumulative_sum(sw64_s)
+    prefix_q = xp.cumulative_sum(sw64_s * sw64_s)
     off_s = xp.take(xp.cumulative_sum(total_s) - total_s, seg_s, axis=0)
     off_q = xp.take(xp.cumulative_sum(total_q) - total_q, seg_s, axis=0)
     s_k = xp.take(total_s, seg_s, axis=0) - (prefix_s - off_s)  # (n,)
     q_k = xp.take(total_q, seg_s, axis=0) - (prefix_q - off_q)  # (n,)
-    cap_e = xp.take(capacity, seg_s, axis=0)  # (n,)
+    cap_e = xp.astype(xp.take(capacity, seg_s, axis=0), f64)  # (n,)
     room = cap_e - rank
     disc_k = s_k * s_k - q_k * room
     disc_pos = disc_k > 0.0
-    sq_k = xp.where(disc_pos, xp.sqrt(xp.where(disc_pos, disc_k, ones)), 0.0 * ones)
+    sq_k = xp.where(disc_pos, xp.sqrt(xp.where(disc_pos, disc_k, ones64)), 0.0 * ones64)
     den_k = s_k + sq_k
     den_k_pos = den_k > 0.0
     u_k = xp.where(
-        den_k_pos, room / xp.where(den_k_pos, den_k, ones), xp.zeros_like(room)
+        den_k_pos, room / xp.where(den_k_pos, den_k, ones64), xp.zeros_like(room)
     )
     # cut k (top-k entries saturated) is feasible iff a real water level
     # exists (disc >= 0) and the k-th largest weight is still saturated
     # (w_k * u_k >= 1); taking the LARGEST feasible k also puts every
     # unsaturated weight below the plateau (verified against a bisection
     # reference in the unit tests)
-    valid = xp.logical_and(xp.logical_and(room > 0.0, disc_k >= 0.0), sw_s * u_k >= 1.0)
-    kstar = segment_max(xp.where(valid, rank, xp.zeros_like(rank)), seg_s, num_segments)
-    kstar = xp.maximum(kstar, xp.zeros_like(kstar))  # empty segments: -inf -> 0
+    valid = xp.logical_and(
+        xp.logical_and(room > 0.0, disc_k >= 0.0), sw64_s * u_k >= 1.0
+    )
+    kstar64 = segment_max(
+        xp.where(valid, rank, xp.zeros_like(rank)), seg_s, num_segments
+    )
+    kstar64 = xp.maximum(kstar64, xp.zeros_like(kstar64))  # empty: -inf -> 0
+    kstar = xp.astype(kstar64, dt)  # small integer, exact in any dtype
     # differentiable S/Q of the unsaturated set (rank > kstar; the whole
-    # segment when kstar == 0): masked index_add, no scan involved
-    unsat = xp.astype(rank > xp.take(kstar, seg_s, axis=0), dt)
+    # segment when kstar == 0): masked index_add of POSITIVE terms -- no
+    # cancellation, safe in the compute dtype
+    unsat = xp.astype(rank > xp.take(kstar64, seg_s, axis=0), dt)
     s_star = segment_sum(sw_s * unsat, seg_s, num_segments)
     q_star = segment_sum(sw_s * sw_s * unsat, seg_s, num_segments)
     cap_rem = capacity - kstar
@@ -382,9 +401,13 @@ def segment_softmax(
         # value theta*P AND slope 1 (chi -> 1, (e-P)*chi' -> 0), so the
         # below-phantom surface carries no force kink (the relu form jumped
         # the slope theta*P -> P there).  The damped correction is bounded:
-        # with a = e/P, B = e * [theta + (1-theta)(a-1)a**(1/theta)] and
-        # min_a (a-1)a**(1/theta) >= -theta/e0 (e0 = Euler's number), so
-        # B >= theta*(1 - 1/e0)*e > 0.63*theta*e -- strictly positive with
+        # with a = e/P, factoring out e gives
+        # B = e * [theta + (1-theta)(a-1)a**(1/theta - 1)], and on (0, 1)
+        # the factor (a-1)a**(1/theta - 1) attains its minimum
+        # -theta*(1-theta)**(1/theta - 1) at a = 1 - theta, so
+        # B/e >= theta*(1 - (1-theta)**(1/theta)) >= theta*(1 - 1/e0)
+        # (e0 = Euler's number; (1-theta)**(1/theta) increases to 1/e0 as
+        # theta -> 0).  Hence B > 0.63*theta*e -- strictly positive with
         # per-entry weights bounded by ~1.6/theta.  theta == 1 is BITWISE
         # ``e`` with no special case: the (1 - theta) = 0 factor kills the
         # finite tail term exactly.  theta -> 0 or e -> 0 send the tail to

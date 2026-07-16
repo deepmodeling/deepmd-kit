@@ -620,3 +620,88 @@ class TestFloat32HighLogitBackward:
         w64 = w64 / w64.sum()
         ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
         np.testing.assert_allclose(np.asarray(g), ref, rtol=1e-4)
+
+
+class TestFloat32WaterFillingStability:
+    """OutisLi round 8: the active-set selection must survive float32 weights
+    spanning ordinary decades.  ``total - prefix`` suffix moments and the
+    ``S**2 - Q*room`` discriminant are ill-conditioned subtractions; in
+    float32 they rounded away a small positive discriminant, rejected the
+    valid saturated cut, and returned theta violating the defining capacity
+    equation (sum theta = 1.52 instead of 3.0 on the reviewer's repro).
+    The selection now runs in float64 internally (comparison-only, so no
+    gradient or export cost).
+    """
+
+    @staticmethod
+    def _bisect_theta(sw: np.ndarray, cap: float) -> np.ndarray:
+        def h(t):
+            return np.where(t >= 1.0, 1.0, t * (2.0 - t))
+
+        if np.count_nonzero(sw) <= cap:
+            return (sw > 0).astype(np.float64)
+        lo, hi = 0.0, 2.0 * cap / max(sw.sum(), 1e-300)
+        while h(sw * hi).sum() < cap:
+            hi *= 2.0
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            if h(sw * mid).sum() < cap:
+                lo = mid
+            else:
+                hi = mid
+        return h(sw * hi)
+
+    def test_reviewer_repro_float32(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        sw = np.array([1.0, 0.1, 0.01, 5e-7], dtype=np.float32)
+        seg = np.zeros(4, dtype=np.int64)
+        theta = _slot_occupancy(sw, seg, 1, np.array([3.0], dtype=np.float32))
+        ref = self._bisect_theta(sw.astype(np.float64), 3.0)
+        # float64 bisection: [1, 1, 0.9999010, 0.0000990], sum 3.0; the old
+        # float32 selection returned sum 1.5208207
+        np.testing.assert_allclose(theta.astype(np.float64), ref, atol=1e-5)
+        np.testing.assert_allclose(float(theta.sum()), 3.0, rtol=1e-5)
+
+    def test_log_spaced_float32_weights_match_bisection(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        rng = np.random.default_rng(17)
+        for cap in (1.0, 2.0, 5.0):
+            # weights log-spaced over 8 decades, the reviewer's failure mode
+            sw = (10.0 ** rng.uniform(-8, 0, size=12)).astype(np.float32)
+            seg = np.zeros(12, dtype=np.int64)
+            theta = _slot_occupancy(sw, seg, 1, np.array([cap], dtype=np.float32))
+            ref = self._bisect_theta(sw.astype(np.float64), cap)
+            np.testing.assert_allclose(theta.astype(np.float64), ref, atol=1e-4)
+            np.testing.assert_allclose(float(theta.sum()), cap, rtol=1e-4)
+
+    def test_float32_forward_matches_float64_reference(self) -> None:
+        """The reviewer's forward repro: float32 vs float64 evaluation of the
+        same quantized inputs must agree (the broken selection gave 0.0612
+        vs the 0.0792 reference through LocalAtten, ~23% error).
+        """
+        data32 = np.full(4, -30.0, dtype=np.float32)
+        sw32 = np.array([1.0, 0.1, 0.01, 5e-7], dtype=np.float32)
+        seg = np.zeros(4, dtype=np.int64)
+        w32 = segment_softmax(
+            data32,
+            seg,
+            1,
+            phantom_count=np.array([-1.0], dtype=np.float32),  # sel=3, n=4
+            phantom_logit=-20.0,
+            slot_weight=sw32,
+        )
+        w64 = segment_softmax(
+            data32.astype(np.float64),
+            seg,
+            1,
+            phantom_count=np.array([-1.0]),
+            phantom_logit=-20.0,
+            slot_weight=sw32.astype(np.float64),
+        )
+        np.testing.assert_allclose(w32.astype(np.float64), w64, rtol=1e-3, atol=1e-6)
