@@ -23,6 +23,9 @@ from deepmd.jax.model.ener_model import (
 from deepmd.jax.model.model import (
     get_model,
 )
+from deepmd.jax.train.trainer import (
+    prepare_input,
+)
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -163,6 +166,26 @@ class TestJAXSeZMModelFactory(unittest.TestCase):
                 self.assertEqual(updated["descriptor"]["sel"], 16)
                 self.assertEqual(min_nbor_dist, 0.75)
         self.assertEqual(update_sel.call_count, 4)
+
+    def test_dpa4_conservative_input_keeps_all_in_cutoff_neighbors(self) -> None:
+        """The JAX DPA4 input boundary must not truncate to the configured sel."""
+        import numpy as np
+
+        coord = np.asarray(
+            [[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.5]]]
+        )
+        atype = np.zeros((1, 4), dtype=np.int32)
+
+        _, _, nlist, _, _, _ = prepare_input(
+            rcut=2.0,
+            sel=[1],
+            coord=coord,
+            atype=atype,
+            conservative_nlist=True,
+        )
+
+        self.assertGreaterEqual(nlist.shape[-1], 4)
+        self.assertTrue(np.all(np.sum(nlist >= 0, axis=-1) >= 3))
 
     @patch("deepmd.jax.model.model.get_standard_model", side_effect=lambda data: data)
     def test_descriptor_exclude_types_feed_standard_model(

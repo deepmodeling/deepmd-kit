@@ -192,6 +192,9 @@ class JAXFullValidator(FullValidatorBase):
                 box=box_input,
                 fparam=fparam_input,
                 aparam=aparam_input,
+                conservative_nlist=(
+                    type(self.model.get_descriptor()).__name__ == "DescrptDPA4"
+                ),
             )
             batch_output = _evaluate_model_dict(
                 self.model,

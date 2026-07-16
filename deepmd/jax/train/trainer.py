@@ -869,6 +869,7 @@ class DPTrainer(AbstractTrainer):
             fparam=jax_data.get("fparam", None),
             aparam=jax_data.get("aparam", None),
             pair_excl=getattr(model.atomic_model, "pair_excl", None),
+            conservative_nlist=type(model.get_descriptor()).__name__ == "DescrptDPA4",
         )
         return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
 
@@ -1362,6 +1363,7 @@ def prepare_input(
     fparam: np.ndarray | None = None,
     aparam: np.ndarray | None = None,
     pair_excl: "PairExcludeMask | None" = None,
+    conservative_nlist: bool = False,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -1384,6 +1386,12 @@ def prepare_input(
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
         coord_normalized, atype, bb, rcut
     )
+    if conservative_nlist:
+        # DPA4 treats ``sel`` as an initial capacity rather than a truncation
+        # contract.  Use the full extended-atom capacity so every in-cutoff
+        # edge survives the dense JAX input boundary; padded entries remain
+        # masked by the lower descriptor path.
+        sel = [extended_coord.shape[1]] * len(sel)
     nlist = build_neighbor_list(
         extended_coord,
         extended_atype,
