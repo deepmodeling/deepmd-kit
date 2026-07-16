@@ -112,12 +112,14 @@ def _slot_occupancy(
     offsets = xp.cumulative_sum(counts) - counts  # exclusive prefix
     iota = xp.cumulative_sum(ones) - 1.0  # arange(n) as float
     rank = iota - xp.take(offsets, seg_s, axis=0) + 1.0  # (n,) 1-based
-    # suffix weight below rank k: T_k = total - (top-k prefix).  The entry
-    # axis is a data-dependent (unbacked) size under torch.export and this
-    # cumsum carries gradients, whose backward guards ``numel <= 1``; two
-    # zero pads make that guard statically false for any entry count.
-    pad2 = xp.zeros((2,), dtype=slot_weight.dtype, device=dev)
-    prefix = xp.cumulative_sum(xp.concat([pad2, sw_s]))[2:]
+    # suffix weight below rank k: T_k = total - (top-k prefix).  This cumsum
+    # feeds ONLY the ``valid`` comparison below, so no gradient ever flows
+    # through it -- deliberately: the entry axis is a data-dependent
+    # (unbacked) size under torch.export, and a gradient-carrying cumsum
+    # there guards ``numel <= 1`` in its backward (and padding workarounds
+    # trip inductor's unbacked_bindings on the slice).  The differentiable
+    # water mass ``t_star`` is recomputed via segment_sum instead.
+    prefix = xp.cumulative_sum(sw_s)
     seg_prefix_off = xp.take(xp.cumulative_sum(total) - total, seg_s, axis=0)
     t_k = xp.take(total, seg_s, axis=0) - (prefix - seg_prefix_off)  # (n,)
     cap_e = xp.take(capacity, seg_s, axis=0)  # (n,)
@@ -127,10 +129,11 @@ def _slot_occupancy(
     valid = xp.logical_and(room > 0.0, sw_s * room >= t_k)
     kstar = segment_max(xp.where(valid, rank, xp.zeros_like(rank)), seg_s, num_segments)
     kstar = xp.maximum(kstar, xp.zeros_like(kstar))  # empty segments: -inf -> 0
-    # T at the chosen cut (T = total when kstar == 0: no entry saturates)
-    at_star = xp.astype(rank == xp.take(kstar, seg_s, axis=0), t_k.dtype)
-    t_star = segment_sum(t_k * at_star, seg_s, num_segments)
-    t_star = xp.where(kstar > 0.0, t_star, total)
+    # water mass at the chosen cut: the total weight of the UNSATURATED
+    # entries (rank > kstar; equals total when kstar == 0).  Gradient-safe
+    # rebuild of T_{k*}: index_add of a masked term, no scan involved.
+    unsat = xp.astype(rank > xp.take(kstar, seg_s, axis=0), sw_s.dtype)
+    t_star = segment_sum(sw_s * unsat, seg_s, num_segments)
     # cap - kstar >= 1 whenever a feasible cut exists (room > 0); a
     # non-positive capacity has no slots at all -> lam = inf -> theta = 0
     den2 = capacity - kstar
