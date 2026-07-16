@@ -12,7 +12,6 @@ from deepmd.infer import (
     DeepEval,
 )
 
-
 MODEL_FILE = Path(__file__).with_name("deeppot_dpa_spin.yaml")
 ATOM_TYPES = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
 COORD = np.array(
