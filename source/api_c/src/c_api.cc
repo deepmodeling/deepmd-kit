@@ -733,7 +733,7 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
 namespace {
 
 constexpr char model_devi_nframes_error[] =
-    "Model-deviation C APIs support exactly one frame.";
+    "DeePMD-kit Error: Model-deviation C APIs support exactly one frame.";
 
 bool validate_model_devi_nframes(DP_DeepBaseModelDevi* dp, const int nframes) {
   if (nframes == 1) {

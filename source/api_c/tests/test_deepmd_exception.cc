@@ -17,7 +17,7 @@
 namespace {
 
 constexpr char model_devi_nframes_error[] =
-    "Model-deviation C APIs support exactly one frame.";
+    "DeePMD-kit Error: Model-deviation C APIs support exactly one frame.";
 
 template <typename MODEL, typename INVOKE, typename CHECK_OK>
 void expect_model_devi_frame_error(const INVOKE& invoke,
