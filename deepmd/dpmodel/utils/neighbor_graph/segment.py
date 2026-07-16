@@ -62,14 +62,19 @@ def _slot_occupancy(
     num_segments: int,
     capacity: Array,
 ) -> Array:
-    """Per-entry fractional slot occupancy by capped water-filling.
+    """Per-entry fractional slot occupancy by C1 capped water-filling.
 
-    Solves, independently per segment, ``theta_j = min(1, w_j / lam)`` with
-    the smallest ``lam >= 0`` such that ``sum_j theta_j <= capacity`` — the
-    projection of the weights onto the capped simplex. When the capacity is
-    not binding (``count(w_j > 0) <= capacity``) the water level is
-    ``lam = 0`` and every positive-weight entry gets ``theta_j == 1``
-    BITWISE (``w / max(w, 0) == w / w``); zero-weight entries get 0.
+    Solves, independently per segment, ``theta_j = h(w_j * u)`` with the
+    C1 plateau saturator ``h(t) = t * (2 - t)`` for ``t < 1`` and
+    ``h(t) = 1`` for ``t >= 1``, and the largest inverse water level
+    ``u >= 0`` such that ``sum_j theta_j <= capacity``.  Because
+    ``h'(1) = 0``, both the per-entry saturation boundary and the
+    water-filling active-set transitions are C1 in the weights -- the
+    min-based projection's kinks are exactly what this form removes.
+
+    When the capacity is not binding (``count(w_j > 0) <= capacity``)
+    every positive-weight entry gets ``theta_j == 1`` BITWISE (a literal
+    1.0 through the plateau branch); zero-weight entries get 0.
 
     Parameters
     ----------
@@ -86,13 +91,26 @@ def _slot_occupancy(
     Returns
     -------
     theta : Array
-        Per-entry occupancy in ``[0, 1]``, with shape ``(n,)``. Continuous in
-        ``slot_weight`` (piecewise smooth), with ``theta_j -> 0`` as
-        ``w_j -> 0`` whenever the segment's capacity is binding.
+        Per-entry occupancy in ``[0, 1]``, with shape ``(n,)``. C1 in
+        ``slot_weight``, with ``theta_j -> 0`` as ``w_j -> 0`` whenever the
+        segment's capacity is binding.
+
+    Notes
+    -----
+    For a cut with ``k`` saturated (plateau) entries the water equation
+    ``k + sum_unsat (2 w u - w^2 u^2) = capacity`` is quadratic in ``u``;
+    the physical (smaller) root in cancellation-free form is
+    ``u = (capacity - k) / (S + sqrt(S^2 - Q (capacity - k)))`` with
+    ``S = sum_unsat w`` and ``Q = sum_unsat w^2``.  The per-rank suffix
+    sums that SELECT the cut feed only comparisons (no gradient -- a
+    gradient-carrying cumsum on the data-dependent entry axis breaks
+    torch.export, see the inline comment), while the differentiable
+    ``S``/``Q`` at the chosen cut are rebuilt as masked ``segment_sum``.
     """
     xp = array_api_compat.array_namespace(slot_weight)
     dev = array_api_compat.device(slot_weight)
     n = slot_weight.shape[0]
+    dt = slot_weight.dtype
     # NOTE: no ``n == 0`` early-out -- the entry count is a data-dependent
     # (unbacked) symbol under torch.export and a Python branch on it raises
     # GuardOnDataDependentSymNode; every op below is empty-safe as-is.
@@ -105,51 +123,73 @@ def _slot_occupancy(
     )
     sw_s = xp.take(slot_weight, order, axis=0)
     seg_s = xp.take(segment_ids, order, axis=0)
-    ones = xp.ones((n,), dtype=slot_weight.dtype, device=dev)
+    ones = xp.ones((n,), dtype=dt, device=dev)
     counts = segment_sum(ones, segment_ids, num_segments)  # (S,)
-    total = segment_sum(slot_weight, segment_ids, num_segments)  # (S,)
+    n_pos = segment_sum(
+        xp.astype(slot_weight > 0.0, dt), segment_ids, num_segments
+    )  # (S,)
+    total_s = segment_sum(slot_weight, segment_ids, num_segments)  # (S,)
+    total_q = segment_sum(slot_weight * slot_weight, segment_ids, num_segments)
     # within-segment 1-based rank of each sorted entry
     offsets = xp.cumulative_sum(counts) - counts  # exclusive prefix
     iota = xp.cumulative_sum(ones) - 1.0  # arange(n) as float
     rank = iota - xp.take(offsets, seg_s, axis=0) + 1.0  # (n,) 1-based
-    # suffix weight below rank k: T_k = total - (top-k prefix).  This cumsum
-    # feeds ONLY the ``valid`` comparison below, so no gradient ever flows
-    # through it -- deliberately: the entry axis is a data-dependent
-    # (unbacked) size under torch.export, and a gradient-carrying cumsum
-    # there guards ``numel <= 1`` in its backward (and padding workarounds
-    # trip inductor's unbacked_bindings on the slice).  The differentiable
-    # water mass ``t_star`` is recomputed via segment_sum instead.
-    prefix = xp.cumulative_sum(sw_s)
-    seg_prefix_off = xp.take(xp.cumulative_sum(total) - total, seg_s, axis=0)
-    t_k = xp.take(total, seg_s, axis=0) - (prefix - seg_prefix_off)  # (n,)
+    # Per-rank suffix sums S_k / Q_k (weights strictly below rank k).  These
+    # cumsums feed ONLY the cut-selection comparisons below, so no gradient
+    # ever flows through them -- deliberately: the entry axis is a
+    # data-dependent (unbacked) size under torch.export, and a
+    # gradient-carrying cumsum there guards ``numel <= 1`` in its backward
+    # (and padding workarounds trip inductor's unbacked_bindings on the
+    # slice).  The differentiable sums at the chosen cut are rebuilt as
+    # masked segment_sum below.
+    prefix_s = xp.cumulative_sum(sw_s)
+    prefix_q = xp.cumulative_sum(sw_s * sw_s)
+    off_s = xp.take(xp.cumulative_sum(total_s) - total_s, seg_s, axis=0)
+    off_q = xp.take(xp.cumulative_sum(total_q) - total_q, seg_s, axis=0)
+    s_k = xp.take(total_s, seg_s, axis=0) - (prefix_s - off_s)  # (n,)
+    q_k = xp.take(total_q, seg_s, axis=0) - (prefix_q - off_q)  # (n,)
     cap_e = xp.take(capacity, seg_s, axis=0)  # (n,)
-    # cut k (top-k entries saturated at 1) is feasible iff the water level
-    # lam_k = T_k / (cap - k) does not exceed the k-th largest weight
     room = cap_e - rank
-    valid = xp.logical_and(room > 0.0, sw_s * room >= t_k)
+    disc_k = s_k * s_k - q_k * room
+    disc_pos = disc_k > 0.0
+    sq_k = xp.where(disc_pos, xp.sqrt(xp.where(disc_pos, disc_k, ones)), 0.0 * ones)
+    den_k = s_k + sq_k
+    den_k_pos = den_k > 0.0
+    u_k = xp.where(
+        den_k_pos, room / xp.where(den_k_pos, den_k, ones), xp.zeros_like(room)
+    )
+    # cut k (top-k entries saturated) is feasible iff a real water level
+    # exists (disc >= 0) and the k-th largest weight is still saturated
+    # (w_k * u_k >= 1); taking the LARGEST feasible k also puts every
+    # unsaturated weight below the plateau (verified against a bisection
+    # reference in the unit tests)
+    valid = xp.logical_and(xp.logical_and(room > 0.0, disc_k >= 0.0), sw_s * u_k >= 1.0)
     kstar = segment_max(xp.where(valid, rank, xp.zeros_like(rank)), seg_s, num_segments)
     kstar = xp.maximum(kstar, xp.zeros_like(kstar))  # empty segments: -inf -> 0
-    # water mass at the chosen cut: the total weight of the UNSATURATED
-    # entries (rank > kstar; equals total when kstar == 0).  Gradient-safe
-    # rebuild of T_{k*}: index_add of a masked term, no scan involved.
-    unsat = xp.astype(rank > xp.take(kstar, seg_s, axis=0), sw_s.dtype)
-    t_star = segment_sum(sw_s * unsat, seg_s, num_segments)
-    # cap - kstar >= 1 whenever a feasible cut exists (room > 0); a
-    # non-positive capacity has no slots at all -> lam = inf -> theta = 0
-    den2 = capacity - kstar
-    has_room = den2 > 0.0
-    lam = xp.where(
-        has_room,
-        t_star / xp.where(has_room, den2, xp.ones_like(den2)),
-        xp.full_like(den2, xp.inf),
+    # differentiable S/Q of the unsaturated set (rank > kstar; the whole
+    # segment when kstar == 0): masked index_add, no scan involved
+    unsat = xp.astype(rank > xp.take(kstar, seg_s, axis=0), dt)
+    s_star = segment_sum(sw_s * unsat, seg_s, num_segments)
+    q_star = segment_sum(sw_s * sw_s * unsat, seg_s, num_segments)
+    cap_rem = capacity - kstar
+    disc = s_star * s_star - q_star * cap_rem
+    # safe-where every branch BEFORE the sqrt/division (an unselected
+    # sqrt(0) backward is inf, and 0 * inf = NaN in float32 autodiff)
+    dpos = disc > 0.0
+    one_g = xp.ones_like(disc)
+    sq = xp.where(dpos, xp.sqrt(xp.where(dpos, disc, one_g)), xp.zeros_like(disc))
+    den_u = s_star + sq
+    upos = xp.logical_and(den_u > 0.0, cap_rem > 0.0)
+    u = xp.where(upos, cap_rem / xp.where(upos, den_u, one_g), xp.zeros_like(disc))
+    # binding <=> even full saturation of every positive weight exceeds cap
+    binding = n_pos > capacity
+    t = slot_weight * xp.take(u, segment_ids, axis=0)
+    theta_soft = xp.where(t >= 1.0, ones, t * (2.0 - t))
+    return xp.where(
+        xp.take(binding, segment_ids, axis=0),
+        theta_soft,
+        xp.astype(slot_weight > 0.0, dt),
     )
-    lam_e = xp.take(lam, segment_ids, axis=0)
-    # theta = w / max(w, lam); safe-where the w == lam == 0 case BEFORE the
-    # division (0/0 backward would poison gradients even at zero cotangent)
-    den = xp.maximum(slot_weight, lam_e)
-    pos = den > 0.0
-    den_safe = xp.where(pos, den, xp.ones_like(den))
-    return xp.where(pos, slot_weight / den_safe, xp.zeros_like(den))
 
 
 def segment_softmax(
@@ -210,34 +250,41 @@ def segment_softmax(
     -- a fixed ``sel``-width softmax whose padding slots each hold
     ``exp(-attnw_shift)`` -- on a ragged edge set whose entry count varies
     with geometry, via SOFT SLOT OCCUPANCY: each entry occupies
-    ``theta_j = min(1, sw_j / lam)`` of the segment's ``sel`` slots (capped
-    water-filling of the envelope weights, so ``sum theta <= sel``) and
-    contributes ``theta_j e_j + (1 - theta_j) relu(e_j - P)`` to the
-    denominator, with the unoccupied capacity contributing
-    ``relu(sel - sum theta) * P`` (``e_j = exp(l_j)``,
-    ``P = exp(phantom_logit)``). Properties:
+    ``theta_j`` of the segment's ``sel`` slots (C1 capped water-filling of
+    the envelope weights, see :func:`_slot_occupancy`) and contributes the
+    C1 bracket ``theta_j e_j + (1 - theta_j)(e_j - P) chi_j`` to the
+    denominator (``chi = (e/P)**(1/theta)`` below ``P``, else 1), with the
+    unoccupied capacity contributing ``relu(sel - sum theta) * P``
+    (``e_j = exp(l_j)``, ``P = exp(phantom_logit)``). Properties:
 
     - ``n_real <= sel``: every ``theta == 1`` bitwise, giving the EXACT
       dense fixed-width denominator ``sum e_j + (sel - n) P`` term for
       term, for arbitrary logits -- including logits below
       ``phantom_logit``.
-    - in-design (all logits >= ``phantom_logit``): the relu is the identity
-      and the total telescopes to the signed
+    - in-design (all logits >= ``phantom_logit``): ``chi == 1`` and the
+      total telescopes to the signed
       ``sum e_j - (n - sel) P``, independent of ``theta`` -- the sel-free
       carry-all compensation whose per-entry contribution vanishes at the
       cutoff (the boundary logit equals ``phantom_logit``), keeping the
       weights continuous when an entry enters or leaves for ARBITRARY
       degree.
-    - strictly positive for any finite logits: every term is non-negative
-      and the occupied mass is positive -- the raw signed denominator's
-      zero crossing (reachable for negative counts because the envelope
-      maps ``raw < -attnw_shift`` to ``l < phantom_logit`` at ``sw > 0``)
-      cannot occur; no floor term is needed.
+    - strictly positive for any finite logits: the bracket is bounded below
+      by ``theta (1 - 1/e0) e`` -- the raw signed denominator's zero
+      crossing (reachable for negative counts because the envelope maps
+      ``raw < -attnw_shift`` to ``l < phantom_logit`` at ``sw > 0``) cannot
+      occur; no floor term is needed.
+    - C1 (first-derivative-continuous) in the logits and envelope: the
+      damped tail meets the in-design branch at ``e == P`` with matching
+      slope, and the occupancy's plateau saturator makes water-filling
+      active-set changes kink-free -- weight GRADIENTS, hence forces, are
+      continuous across the below-phantom surface (second derivatives
+      still jump there: exact in-design linearity and smoothness beyond C1
+      are mutually exclusive with bitwise dense parity).
     - cutoff-continuous across the count 0 -> -1 transition for arbitrary
       logits: the entering entry has BOTH ``e -> P`` and ``theta -> 0``, so
       its bracket vanishes; per-entry weights are bounded by
-      ``1 / theta_j`` (at most ``n_real / sel``-scale), and the caller's
-      post-softmax ``sw`` factor keeps the boundary entry's own
+      ``(e0/(e0 - 1)) / theta_j`` (``n_real / sel``-scale), and the
+      caller's post-softmax ``sw`` factor keeps the boundary entry's own
       contribution vanishing.
     """
     xp = array_api_compat.array_namespace(data)
@@ -300,30 +347,13 @@ def segment_softmax(
         # ``sum_j e_j + (sel - n) * P`` crosses zero for negative counts --
         # a pole reachable with finite, valid model parameters.  Instead,
         # each entry occupies ``theta_j`` of the segment's ``sel`` dense
-        # slots (``theta`` = capped water-filling of the envelope weights,
-        # see :func:`_slot_occupancy`) and contributes
-        #
-        #     theta_j * e_j + (1 - theta_j) * relu(e_j - P)
-        #
-        # while the unoccupied capacity contributes
-        # ``relu(sel - sum theta) * P``.  Properties:
-        #
-        # - ``n <= sel``: theta == 1 BITWISE (water level 0) -> every
-        #   bracket is exactly ``e_j`` and the remainder is exactly
-        #   ``(sel - n) * P``: the dense fixed-width softmax, term for
-        #   term, for ARBITRARY logits (including below ``phantom_logit``).
-        # - in-design (all ``l_j >= phantom_logit``): the relu is the
-        #   identity and the total telescopes to the signed
-        #   ``sum e_j - (n - sel) * P`` INDEPENDENT of theta.
-        # - strictly positive: every term is non-negative and the occupied
-        #   mass ``sum theta_j e_j > 0`` whenever any theta > 0 -- no pole
-        #   for any finite logits, no floor needed.
-        # - cutoff-continuous: an edge at its boundary has ``e -> P`` AND
-        #   ``theta -> 0`` (its envelope weight vanishes), so its bracket
-        #   ``theta * e + (1 - theta) * relu(e - P) -> 0`` and the freed
-        #   capacity term picks up exactly nothing; per-entry weights are
-        #   bounded by ``1 / theta_j`` and their post-softmax ``sw``
-        #   factors keep the boundary contribution vanishing.
+        # slots (theta = C1 capped water-filling of the envelope weights,
+        # see :func:`_slot_occupancy`) and contributes the C1 bracket
+        # built below.  Properties (details in the class docstring Notes):
+        # bitwise dense for n <= sel; theta-independent signed formula
+        # in-design; strictly positive; C1 in logits and envelope (forces
+        # carry no kink at the below-phantom surface or at water-filling
+        # active-set changes); cutoff-continuous at every crossing.
         if mask is not None:
             m_f = xp.astype(mask, ex.dtype)
             n_real_seg = segment_sum(m_f, segment_ids, num_segments)
@@ -341,8 +371,36 @@ def segment_softmax(
         theta = _slot_occupancy(sw_eff, segment_ids, num_segments, cap)
         theta_b = xp.reshape(theta, theta.shape + (1,) * (ex.ndim - 1))
         ph_e = xp.take(ph_term, segment_ids, axis=0)  # (n, *f)
-        excess = xp.maximum(ex - ph_e, xp.zeros_like(ex))
-        bracket = theta_b * ex + (1.0 - theta_b) * excess
+        # Per-entry bracket, C1 in the logit:
+        #
+        #   B = theta*e + (1 - theta) * (e - P) * chi,
+        #   chi = (e/P)**(1/theta) for e < P, else 1
+        #
+        # For e >= P this is the exact linear in-design branch (telescopes
+        # to the signed formula, theta-independent).  For e < P the
+        # (e/P)**(1/theta) damping meets the linear branch at e == P with
+        # value theta*P AND slope 1 (chi -> 1, (e-P)*chi' -> 0), so the
+        # below-phantom surface carries no force kink (the relu form jumped
+        # the slope theta*P -> P there).  The damped correction is bounded:
+        # with a = e/P, B = e * [theta + (1-theta)(a-1)a**(1/theta)] and
+        # min_a (a-1)a**(1/theta) >= -theta/e0 (e0 = Euler's number), so
+        # B >= theta*(1 - 1/e0)*e > 0.63*theta*e -- strictly positive with
+        # per-entry weights bounded by ~1.6/theta.  theta == 1 is BITWISE
+        # ``e`` with no special case: the (1 - theta) = 0 factor kills the
+        # finite tail term exactly.  theta -> 0 or e -> 0 send the tail to
+        # zero (exp(log(e/P)/theta) underflows benignly); every log/division
+        # operand is safe-where substituted BEFORE the op (unselected-branch
+        # gradients would otherwise be 0 * inf = NaN in float32).
+        one_t = xp.ones_like(ex)
+        tail_on = xp.logical_and(xp.logical_and(ex < ph_e, ex > 0.0), theta_b > 0.0)
+        ex_t = xp.where(tail_on, ex, ph_e)
+        th_t = xp.where(tail_on, theta_b * one_t, one_t)
+        chi = xp.where(tail_on, xp.exp(xp.log(ex_t / ph_e) / th_t), one_t)
+        # zero-weight / underflowed entries contribute nothing below P
+        dead = xp.logical_and(ex < ph_e, xp.logical_not(tail_on))
+        chi = xp.where(dead, xp.zeros_like(chi), chi)
+        theta_dead = xp.where(dead, xp.zeros_like(theta_b), theta_b * one_t)
+        bracket = theta_dead * ex + (1.0 - theta_dead) * (ex - ph_e) * chi
         denom = segment_sum(bracket, segment_ids, num_segments)
         occ = segment_sum(theta, segment_ids, num_segments)  # (S,)
         free = xp.maximum(cap - occ, xp.zeros_like(cap))

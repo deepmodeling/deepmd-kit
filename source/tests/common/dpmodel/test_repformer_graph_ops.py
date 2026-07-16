@@ -585,3 +585,84 @@ def test_repformer_layer_call_graph_torch():
     )
     for r, g in zip(ref, got, strict=True):
         np.testing.assert_allclose(g.numpy(), r, rtol=1e-12, atol=1e-12)
+
+
+def test_local_atten_gradient_continuous_below_phantom():
+    """OutisLi round 6: C1 across the below-phantom surface through the real
+    LocalAtten path.  sel=1, sw=[1, 1], logits [-20 +/- eps, -18], values
+    [1, 2] (his construction): the relu bracket kept the OUTPUT continuous
+    (~2.1353353) but jumped d(output)/d(logit) from -0.009157818652523 to
+    -0.153650933331561.  The C1 tail matches the in-design (right) slope
+    from both sides.
+    """
+    la = LocalAtten(1, 1, 1, smooth=True, precision="float64", seed=1)
+    la.mapq.w = np.array([[1.0]])
+    # key = x (logit = q*k = x); value = 0.5*x + 11 -> v(-20)=1, v(-18)=2
+    la.mapkv.w = np.array([[1.0, 0.5]])
+    la.mapkv.b = np.array([0.0, 11.0])
+    la.head_map.w = np.array([[1.0]])
+    la.head_map.b = np.array([0.0])
+    n_total, sel = 1, 1
+
+    def out(x1: float) -> float:
+        gg1 = np.array([[x1], [-18.0]])
+        o = la.call_graph(
+            np.ones((n_total, 1)),
+            gg1,
+            np.ones(2, dtype=bool),
+            np.ones(2),
+            np.zeros(2, dtype=np.int64),
+            n_total,
+            sel,
+        )
+        return float(np.asarray(o)[0, 0])
+
+    # value continuity at the surface (his repro printed ~2.135335)
+    np.testing.assert_allclose(out(-20.0), 2.1353, rtol=1e-3)
+    d = 1e-6
+    left = (out(-20.0 - d) - out(-20.0 - 3.0 * d)) / (2.0 * d)
+    right = (out(-20.0 + 3.0 * d) - out(-20.0 + d)) / (2.0 * d)
+    # the in-design branch is unchanged, so the right slope equals his
+    # measured -0.153650933331561 plus the value-chain term 0.5 * w1
+    # (= exp(-2)/2: our value wiring v = 0.5*x + 11 varies with the swept
+    # feature); the relu bracket jumped the attention part of the left
+    # slope to -0.009157818652523
+    np.testing.assert_allclose(
+        right, -0.153650933331561 + 0.5 * np.exp(-2.0), rtol=1e-3
+    )
+    np.testing.assert_allclose(left, right, rtol=5e-3)
+
+
+def test_atten2map_gradient_continuous_below_phantom():
+    """Same C1-at-the-surface guarantee through the pair attention map:
+    sweep one edge feature so a single pair logit crosses -attnw_shift while
+    the segment stays binding (sel=1 < 2 keys); the FD slope of the
+    attention map must match across the crossing.
+    """
+    a2m = Atten2Map(1, 1, 1, has_gate=False, smooth=True, precision="float64", seed=2)
+    # q = g2, k = -g2 -> logit(q,k) = -g_q*g_k: negative-definite pairing
+    # keeps every pair logit NEAR the -20 phantom level (a positive pairing
+    # pins self-logits >= 0, drowning the crossing pair 20+ units below the
+    # segment max where the softmax renders it invisible to FD)
+    a2m.mapqk.w = np.array([[1.0, -1.0]])
+    n_total, nnei = 1, 2
+    dst = np.repeat(np.arange(n_total, dtype=np.int64), nnei)
+    mask = np.ones(nnei, dtype=bool)
+    q_e, k_e, pm = center_edge_pairs(
+        dst, mask, n_total, include_self=True, ordered=True, static_nnei=nnei
+    )
+    h2 = np.zeros((nnei, 3))
+    h2[:, 0] = 1.0
+
+    def out(x: float) -> float:
+        # pair logits: {-x*x, -5x, -5x, -25}; -5x crosses -20 at x = 4 with
+        # the self pair at -16 in-design and the (1,1) pair statically below
+        g2 = np.array([[x], [5.0]])
+        att = a2m.call_graph(g2, h2, np.ones(nnei), q_e, k_e, pm, n_total * nnei, 1)
+        return float(np.sum(np.asarray(att)))
+
+    d = 1e-6
+    left = (out(4.0 - 3.0 * d) - out(4.0 - d)) / (-2.0 * d)
+    right = (out(4.0 + d) - out(4.0 + 3.0 * d)) / (-2.0 * d)
+    assert abs(left) > 1e-6 and abs(right) > 1e-6
+    np.testing.assert_allclose(left, right, rtol=5e-3)

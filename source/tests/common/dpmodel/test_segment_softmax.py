@@ -148,10 +148,10 @@ class TestSignedPhantomStrictPositivity:
         )
         assert np.all(np.isfinite(w))
         assert np.all(w >= 0.0)
-        # occupancy bound: theta = 1/2 each -> w <= 1/theta = 2 (each edge
-        # gets the weight it would get alone in a dense sel=1 softmax; the
-        # old where-guard's [1, 1] came from a ZERO denominator instead)
-        assert np.all(w <= 2.0 + 1e-12)
+        # occupancy bound: theta = 1/2 each, bracket >= theta*(1-1/e)*ex
+        # -> w <= (e/(e-1))/theta ~= 3.2 (the old where-guard's [1, 1] came
+        # from a ZERO denominator instead)
+        assert np.all(w <= 3.2)
 
     def test_njzjz_repro_three_entries(self) -> None:
         data = np.array([-100.0, -100.0, -100.0])
@@ -241,8 +241,8 @@ class TestSignedPhantomStrictPositivity:
                 )
                 assert np.all(np.isfinite(w))
                 assert np.all(w >= 0.0)
-                # occupancy bound: 1/theta = n_real/sel = 2 here
-                assert np.all(w <= 2.0 + 1e-12)
+                # occupancy bound: (e/(e-1))/theta ~= 3.2 here (theta=1/2)
+                assert np.all(w <= 3.2)
                 outs.append(w)
             return np.stack(outs)
 
@@ -417,20 +417,25 @@ class TestSlotOccupancy:
     """Capped water-filling occupancy (the phantom-denominator slot model)."""
 
     @staticmethod
-    def _brute_force(sw: np.ndarray, cap: float) -> np.ndarray:
-        # bisection on the water level lam: sum min(1, sw/lam) == cap
+    def _h(t: np.ndarray) -> np.ndarray:
+        # C1 plateau saturator: t(2 - t) below the plateau, 1 above
+        return np.where(t >= 1.0, 1.0, t * (2.0 - t))
+
+    @classmethod
+    def _brute_force(cls, sw: np.ndarray, cap: float) -> np.ndarray:
+        # bisection on the inverse water level u: sum h(sw * u) == cap
         if np.count_nonzero(sw) <= cap:
             return (sw > 0).astype(np.float64)
-        # the water level can exceed max(sw): sum(sw)/cap is a valid upper
-        # bound (sum min(1, sw/lam) <= sum sw / lam == cap there)
-        lo, hi = 0.0, float(max(sw.sum() / cap, sw.max()))
+        lo, hi = 0.0, 2.0 * float(cap / max(sw.sum(), 1e-300))
+        while cls._h(sw * hi).sum() < cap:
+            hi *= 2.0
         for _ in range(200):
             mid = 0.5 * (lo + hi)
-            if np.minimum(1.0, sw / mid).sum() > cap:
+            if cls._h(sw * mid).sum() < cap:
                 lo = mid
             else:
                 hi = mid
-        return np.minimum(1.0, sw / hi)
+        return cls._h(sw * hi)
 
     def test_unbinding_capacity_is_bitwise_one(self) -> None:
         from deepmd.dpmodel.utils.neighbor_graph.segment import (
@@ -498,3 +503,63 @@ class TestSlotOccupancy:
             torch.from_numpy(sw), torch.from_numpy(seg), 2, torch.from_numpy(cap)
         )
         np.testing.assert_allclose(out.numpy(), ref, atol=1e-14)
+
+
+class TestGradientContinuity:
+    """C1 regressions (OutisLi round 6): the denominator must carry no
+    first-derivative jump at the below-phantom surface ``e == P`` or at the
+    water-filling active-set transitions -- logits vary smoothly with
+    coordinates, so a weight-gradient kink is a force discontinuity.
+    """
+
+    @staticmethod
+    def _w(l0: float) -> np.ndarray:
+        return segment_softmax(
+            np.array([l0, -18.0]),
+            np.array([0, 0]),
+            1,
+            phantom_count=np.array([-1.0]),  # sel=1, n=2: binding, theta=1/2
+            phantom_logit=-20.0,
+            slot_weight=np.ones(2),
+        )
+
+    def test_left_right_slope_match_at_phantom_logit(self) -> None:
+        """FD slopes of BOTH weights w.r.t. the crossing logit agree across
+        l = phantom_logit (the relu bracket jumped them by 1/theta = 2x).
+        """
+        d = 1e-6
+        left = (self._w(-20.0 - d) - self._w(-20.0 - 3.0 * d)) / (2.0 * d)
+        right = (self._w(-20.0 + 3.0 * d) - self._w(-20.0 + d)) / (2.0 * d)
+        assert np.all(np.abs(left) > 1e-4)  # nontrivial slopes
+        np.testing.assert_allclose(left, right, rtol=5e-3)
+
+    def test_theta_derivative_smooth_across_active_set_change(self) -> None:
+        """The occupancy's water-filling active-set transition (an entry
+        crossing the saturation plateau) is C1: the plateau's zero slope
+        makes the FD derivative of theta continuous.  A pole or kink would
+        keep an O(1) derivative step under grid refinement.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        seg = np.zeros(3, dtype=np.int64)
+        cap = np.array([2.0])
+
+        def dtheta(s: float, d: float = 1e-7) -> np.ndarray:
+            hi = _slot_occupancy(np.array([1.0, 0.2, s + d]), seg, 1, cap)
+            lo = _slot_occupancy(np.array([1.0, 0.2, s - d]), seg, 1, cap)
+            return (hi - lo) / (2.0 * d)
+
+        # the k*=1 <-> k*=0 transition sits near s ~ 0.40 for sw=[1, 0.2, s]
+        def max_step(num: int) -> float:
+            grid = np.linspace(0.2, 0.6, num)
+            ds = np.stack([dtheta(float(s)) for s in grid])
+            return float(np.abs(np.diff(ds, axis=0)).max())
+
+        coarse = max_step(41)
+        fine = max_step(401)
+        assert fine < 0.3 * coarse, (
+            f"theta derivative steps do not shrink under refinement "
+            f"({coarse:.5f} -> {fine:.5f}): active-set transition is not C1"
+        )
