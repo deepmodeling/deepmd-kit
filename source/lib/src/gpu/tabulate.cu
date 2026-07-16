@@ -442,11 +442,10 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       const int repeat_count = ii == breakpoint ? nnei - breakpoint : 1;
       FPTYPE xx = em_x[block_idx * nnei + ii];
       int table_idx = 0;
-      FPTYPE reg_em[MTILE] = {
-          em[block_idx * nnei * MTILE + ii * MTILE + 0],
-          em[block_idx * nnei * MTILE + ii * MTILE + 1],
-          em[block_idx * nnei * MTILE + ii * MTILE + 2],
-          em[block_idx * nnei * MTILE + ii * MTILE + 3]};
+      FPTYPE reg_em[MTILE] = {em[block_idx * nnei * MTILE + ii * MTILE + 0],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 1],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 2],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 3]};
       FPTYPE extrapolate_delta = (FPTYPE)0.;
       locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
                      extrapolate_delta);
@@ -465,21 +464,20 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
         }
 
         for (int kk = 0; kk < MTILE; kk++) {
-          sum[kk] += repeat_count *
-                     iteratorA[kk * last_layer_size + jj] * res;
+          sum[kk] += repeat_count * iteratorA[kk * last_layer_size + jj] * res;
         }
         res = reg_em[0] * iteratorA[0 * last_layer_size + jj];
         res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
         res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
         res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
-        Csub += repeat_count * res_grad *
-                (enable_se_atten ? res * t + res : res);
+        Csub +=
+            repeat_count * res_grad * (enable_se_atten ? res * t + res : res);
         if (enable_se_atten) {
           // A real neighbor owns one entry; the first sentinel owns the full
           // padding tail. No other warp writes these dy_dtwo positions.
           for (int ii2 = ii; ii2 < ii + repeat_count; ii2++) {
-            dy_dtwo[block_idx * nnei * last_layer_size +
-                    ii2 * last_layer_size + jj] = oldres * res;
+            dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
+                    jj] = oldres * res;
           }
         }
       }

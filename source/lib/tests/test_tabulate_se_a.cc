@@ -911,9 +911,9 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
     }
 
     deepmd::tabulate_fusion_se_a_grad_gpu<double>(
-        dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(),
-        em_x_dev, em_dev, two_embed_dev, dy_dev, test_nloc, test_nnei,
-        last_layer_size, true);
+        dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(), em_x_dev,
+        em_dev, two_embed_dev, dy_dev, test_nloc, test_nnei, last_layer_size,
+        true);
     deepmd::memcpy_device_to_host(dy_dem_x_dev, actual_dy_dem_x);
     deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
     if (two_embed_host != nullptr) {
