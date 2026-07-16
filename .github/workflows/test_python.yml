@@ -60,7 +60,9 @@ jobs:
           restore-keys: |
             test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
             test2-durations-combined-${{ matrix.python }}
-      - run: pytest --cov=deepmd source/tests --ignore=source/tests/tf2 --splits 12 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
+      # Keep neighboring tests together so expensive class-scoped setup is not
+      # dispersed across every shard by the per-test least-duration algorithm.
+      - run: pytest --cov=deepmd source/tests --ignore=source/tests/tf2 --splits 12 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm duration_based_chunks
         env:
           NUM_WORKERS: 0
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
