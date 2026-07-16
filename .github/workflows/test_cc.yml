@@ -92,7 +92,8 @@ jobs:
           export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
           pytest -q \
             source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_nopbc_nvnmd_amix \
-            source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_pbc_nvnmd_amix_maps_copied_neighbors
+            source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_pbc_nvnmd_amix_maps_copied_neighbors \
+            source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_external_nlist_amix
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
