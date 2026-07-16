@@ -322,14 +322,20 @@ void deepmd::env_mat_nbor_update(InputNlist& inlist,
                                  int*& nbor_list_dev,
                                  const int* mesh,
                                  const int size) {
-  int* mesh_host = new int[size];
-  memcpy_device_to_host(mesh, mesh_host, size);
-  memcpy(&inlist.ilist, 4 + mesh_host, sizeof(int*));
-  memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int*));
-  memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int**));
+  // Keep the decoded mesh storage exception-safe because capacity validation
+  // below can reject malformed external neighbor lists.
+  std::vector<int> mesh_host(size);
+  memcpy_device_to_host(mesh, mesh_host.data(), size);
+  memcpy(&inlist.ilist, 4 + mesh_host.data(), sizeof(int*));
+  memcpy(&inlist.numneigh, 8 + mesh_host.data(), sizeof(int*));
+  memcpy(&inlist.firstneigh, 12 + mesh_host.data(), sizeof(int**));
   const int ago = mesh_host[0];
   if (ago == 0 || gpu_inlist.inum < inlist.inum) {
     const int inum = inlist.inum;
+    // The row width is hard-capped because downstream GPU kernels use the
+    // same limit.  Reject oversized rows before allocating or copying device
+    // buffers; silently capping here would corrupt the following row.
+    int _max_nbor_size = validate_nlist_gpu_capacity(inlist, GPU_MAX_NBOR_SIZE);
     if (gpu_inlist.inum < inum) {
       delete_device_memory(gpu_inlist.ilist);
       delete_device_memory(gpu_inlist.numneigh);
@@ -340,7 +346,6 @@ void deepmd::env_mat_nbor_update(InputNlist& inlist,
     }
     memcpy_host_to_device(gpu_inlist.ilist, inlist.ilist, inum);
     memcpy_host_to_device(gpu_inlist.numneigh, inlist.numneigh, inum);
-    int _max_nbor_size = max_numneigh(inlist);
     if (_max_nbor_size <= 256) {
       _max_nbor_size = 256;
     } else if (_max_nbor_size <= 512) {
@@ -376,6 +381,5 @@ void deepmd::env_mat_nbor_update(InputNlist& inlist,
     memcpy_host_to_device(gpu_inlist.firstneigh, _firstneigh, inum);
     free(_firstneigh);
   }
-  delete[] mesh_host;
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

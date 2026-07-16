@@ -2,9 +2,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "device.h"
+#include "errors.h"
 #include "fmt_nlist.h"
 #include "neighbor_list.h"
 
@@ -185,6 +187,34 @@ TEST_F(TestNeighborList, cpu_lessmem) {
 }
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+TEST(TestNeighborListGpuConversion, rejects_row_larger_than_capacity) {
+  std::vector<int> ilist = {0};
+  std::vector<int> numneigh = {GPU_MAX_NBOR_SIZE + 1};
+  std::vector<int> neighbors(numneigh[0], 0);
+  std::vector<int*> firstneigh = {neighbors.data()};
+  deepmd::InputNlist cpu_nlist(1, ilist.data(), numneigh.data(),
+                               firstneigh.data());
+  deepmd::InputNlist gpu_nlist;
+  int* gpu_memory = nullptr;
+
+  // This is deliberately checked before any GPU allocation or copy, so the
+  // regression test is deterministic and cannot itself trigger corruption.
+  try {
+    deepmd::convert_nlist_gpu_device(gpu_nlist, cpu_nlist, gpu_memory,
+                                     GPU_MAX_NBOR_SIZE);
+    FAIL() << "Expected an oversized neighbor-list row to be rejected";
+  } catch (const deepmd::deepmd_exception& error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("4097 neighbors"), std::string::npos);
+    EXPECT_NE(message.find("capacity 4096"), std::string::npos);
+  }
+
+  EXPECT_EQ(gpu_nlist.inum, 0);
+  EXPECT_EQ(gpu_nlist.ilist, nullptr);
+  EXPECT_EQ(gpu_nlist.numneigh, nullptr);
+  EXPECT_EQ(gpu_nlist.firstneigh, nullptr);
+}
+
 TEST_F(TestNeighborList, gpu) {
   int mem_size = 48;
 
