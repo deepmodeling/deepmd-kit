@@ -22,6 +22,8 @@ y output
 //
 
 //- import the library of tensorflow
+#include <algorithm>
+
 #include "custom_op.h"
 #include "env_mat_nvnmd.h"
 
@@ -54,23 +56,41 @@ class MapFltNvnmdOp : public OpKernel {
   /// Compute the descriptor
   /// param: context
   void Compute(OpKernelContext* context) override {
-    DCHECK_EQ(3, context->num_inputs());
+    OP_REQUIRES(context, context->num_inputs() == 4,
+                deepmd::tf_compat::InvalidArgument(
+                    "MapFltNvnmd expects four input tensors"));
 
     const Tensor& t_x = context->input(0);
     const Tensor& t_table = context->input(1);
+    const Tensor& t_table_grad = context->input(2);
     const Tensor& t_table_info = context->input(3);
 
     const TensorShape& shX = t_x.shape();
     const TensorShape& shT = t_table.shape();
+    const TensorShape& shTG = t_table_grad.shape();
     const TensorShape& shI = t_table_info.shape();
+
+    OP_REQUIRES(context, shX.dims() == 2,
+                deepmd::tf_compat::InvalidArgument("Dim of x should be 2"));
+    OP_REQUIRES(context, shT.dims() == 2,
+                deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
+    OP_REQUIRES(context, shTG == shT,
+                deepmd::tf_compat::InvalidArgument(
+                    "table_grad shape should match table"));
+    OP_REQUIRES(
+        context, shI.dims() == 1,
+        deepmd::tf_compat::InvalidArgument("Dim of table_info should be 1"));
+    OP_REQUIRES(context, shT.dim_size(1) > 0 && shT.dim_size(1) % 4 == 0,
+                deepmd::tf_compat::InvalidArgument(
+                    "table width should be a positive multiple of 4"));
+    OP_REQUIRES(context, shI.dim_size(0) > 0 && shI.dim_size(0) % 5 == 0,
+                deepmd::tf_compat::InvalidArgument(
+                    "table_info length should be a positive multiple of 5"));
 
     int N = shX.dim_size(0);
     int D = shX.dim_size(1);
     int M = shT.dim_size(1) / 4;
     int S = shI.dim_size(0) / 5;
-
-    DCHECK_EQ(shX.dims(), 2);
-    DCHECK_EQ(shT.dims(), 2);
 
     /*
      * Calculate the output
@@ -93,6 +113,24 @@ class MapFltNvnmdOp : public OpKernel {
     auto table = t_table.flat<FPTYPE>().data();
     auto info = t_table_info.flat<FPTYPE>().data();
     auto y = t_y->flat<FPTYPE>().data();
+
+    // Values outside every configured interval intentionally map to zero.
+    // Initialize first so skipped entries never expose allocator contents.
+    if (t_y->NumElements() > 0) {
+      std::fill(y, y + t_y->NumElements(), FPTYPE(0));
+    }
+
+    for (int interval = 0; interval < S; ++interval) {
+      const FPTYPE x0 = info[interval * 5 + 0];
+      const FPTYPE x1 = info[interval * 5 + 1];
+      const FPTYPE dx = info[interval * 5 + 2];
+      const int n0 = int(info[interval * 5 + 3]);
+      const int n1 = int(info[interval * 5 + 4]);
+      OP_REQUIRES(
+          context,
+          x0 <= x1 && dx > 0 && n0 >= 0 && n1 > n0 && n1 <= shT.dim_size(0),
+          deepmd::tf_compat::InvalidArgument("invalid interval in table_info"));
+    }
 
     int ss, ii, jj;
     FPTYPE xi, x0, x1, dx;
