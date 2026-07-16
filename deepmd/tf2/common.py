@@ -414,10 +414,10 @@ def tf2_module(module: type[T]) -> type[T]:
         def __setattr__(self, name: str, value: Any) -> None:
             if name in self._tf2_array_variable_attr_names():
                 self._set_tf2_array_variable(name, value)
-                return
+                return None
             if name in self._tf2_array_variable_list_attr_names():
                 self._set_tf2_array_variable_list(name, value)
-                return
+                return None
             value = tf2_setattr(self, name, value)
             return super().__setattr__(name, value)
 
