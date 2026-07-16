@@ -7,6 +7,7 @@
 #include <exception>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "DeepPot.h"
@@ -307,6 +308,10 @@ std::vector<DefaultFParamCase> default_fparam_cases() {
           {"pytorch_pt2", Backend::PTExpt,
            "../../tests/infer/fparam_aparam_default.pt2",
            "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4,
+           /*supports_float=*/true},
+          {"jax_savedmodel", Backend::JAX,
+           "../../tests/infer/fparam_aparam_default.savedmodel",
+           "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4,
            /*supports_float=*/true}};
 }
 
@@ -473,6 +478,8 @@ class DefaultFParamDeepPotTest
  protected:
   deepmd::DeepPot dp;
   deepmd_test::DeepPotRef ref;
+  deepmd_test::DeepPotRef override_ref;
+  const std::vector<double> override_fparam = {0.5};
 
   void SetUp() override {
     const auto& param = GetParam();
@@ -484,6 +491,7 @@ class DefaultFParamDeepPotTest
     ASSERT_TRUE(path_exists(param.ref_path))
         << "Reference artifact is not available: " << param.ref_path;
     ref = load_fparam_ref(param.ref_path);
+    override_ref = load_expected_ref(param.ref_path, "override");
     ref.has_default_fparam = true;
     dp.init(param.model_path);
   }
@@ -1942,8 +1950,8 @@ TEST_P(DefaultFParamDeepPotTest, ComputeWithEmptyFParamFloat) {
 }
 
 TEST_P(DefaultFParamDeepPotTest, ComputeWithExplicitFParamDouble) {
-  check_fparam_compute_simple<double>(dp, ref, GetParam().double_tol,
-                                      deepmd_test::fparam_value());
+  check_fparam_compute_simple<double>(dp, override_ref, GetParam().double_tol,
+                                      override_fparam);
 }
 
 TEST_P(DefaultFParamDeepPotTest, ComputeWithExplicitFParamFloat) {
@@ -1951,8 +1959,8 @@ TEST_P(DefaultFParamDeepPotTest, ComputeWithExplicitFParamFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
-  check_fparam_compute_simple<float>(dp, ref, GetParam().float_tol,
-                                     deepmd_test::fparam_value());
+  check_fparam_compute_simple<float>(dp, override_ref, GetParam().float_tol,
+                                     override_fparam);
 }
 
 TEST_P(DefaultFParamDeepPotTest, LmpNlistWithEmptyFParamDouble) {
@@ -1967,6 +1975,78 @@ TEST_P(DefaultFParamDeepPotTest, LmpNlistWithEmptyFParamFloat) {
   }
   check_fparam_lmp_nlist<float>(dp, ref, GetParam().float_tol, {}, false, 1.0,
                                 1);
+}
+
+TEST_P(DefaultFParamDeepPotTest, LmpNlistWithExplicitFParamDouble) {
+  check_fparam_lmp_nlist<double>(dp, override_ref, GetParam().double_tol,
+                                 override_fparam, false, 1.0, 1);
+}
+
+TEST_P(DefaultFParamDeepPotTest, LmpNlistWithExplicitFParamFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  check_fparam_lmp_nlist<float>(dp, override_ref, GetParam().float_tol,
+                                override_fparam, false, 1.0, 1);
+}
+
+TEST_P(DefaultFParamDeepPotTest, JAXBroadcastsFParamAcrossFrames) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
+  }
+  const int nframes = 2;
+  const std::vector<double> coord =
+      repeat_values(deepmd_test::deeppot_coord(), nframes);
+  const std::vector<int> atype = deepmd_test::fparam_aparam_atype();
+  const std::vector<double> box =
+      repeat_values(deepmd_test::deeppot_box(), nframes);
+  const std::vector<double> aparam =
+      repeat_values(deepmd_test::aparam_value(), nframes);
+  const std::vector<
+      std::pair<std::vector<double>, const deepmd_test::DeepPotRef*>>
+      fparam_cases = {{{}, &ref}, {override_fparam, &override_ref}};
+  for (const auto& [fparam, expected_ref] : fparam_cases) {
+    SCOPED_TRACE(fparam.empty() ? "stored default" : "explicit override");
+    const std::vector<double> expected_virial =
+        deepmd_test::total_virial(*expected_ref);
+    std::vector<double> energy, force, virial;
+    dp.compute(energy, force, virial, coord, atype, box, fparam, aparam);
+
+    ASSERT_EQ(energy.size(), static_cast<size_t>(nframes));
+    ASSERT_EQ(force.size(), expected_ref->force.size() * nframes);
+    ASSERT_EQ(virial.size(), 9U * nframes);
+    for (int ff = 0; ff < nframes; ++ff) {
+      EXPECT_NEAR(energy[ff], deepmd_test::total_energy(*expected_ref),
+                  GetParam().double_tol);
+      for (size_t ii = 0; ii < expected_ref->force.size(); ++ii) {
+        EXPECT_NEAR(
+            force[static_cast<size_t>(ff) * expected_ref->force.size() + ii],
+            expected_ref->force[ii], GetParam().double_tol);
+      }
+      for (size_t ii = 0; ii < expected_virial.size(); ++ii) {
+        EXPECT_NEAR(virial[static_cast<size_t>(ff) * 9 + ii],
+                    expected_virial[ii], GetParam().double_tol);
+      }
+    }
+  }
+}
+
+TEST_P(DefaultFParamDeepPotTest, JAXRejectsInvalidFParamSize) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
+  }
+  const std::vector<double> coord = deepmd_test::deeppot_coord();
+  const std::vector<int> atype = deepmd_test::fparam_aparam_atype();
+  const std::vector<double> box = deepmd_test::deeppot_box();
+  const std::vector<double> aparam = deepmd_test::aparam_value();
+  const std::vector<double> invalid_fparam = {0.1, 0.2};
+  double energy = 0.0;
+  std::vector<double> force, virial;
+
+  EXPECT_THROW(dp.compute(energy, force, virial, coord, atype, box,
+                          invalid_fparam, aparam),
+               deepmd::deepmd_exception);
 }
 
 INSTANTIATE_TEST_SUITE_P(

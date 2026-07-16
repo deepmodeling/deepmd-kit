@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <ostream>
 #include <stdexcept>
@@ -439,10 +440,38 @@ inline std::vector<std::string> get_vector_string(
 template <typename T>
 inline TF_Tensor* create_tensor(const std::vector<T>& data,
                                 const std::vector<int64_t>& shape) {
+  size_t element_count = 1;
+  for (const int64_t dim : shape) {
+    if (dim < 0) {
+      throw deepmd::deepmd_exception(
+          "Cannot create a tensor with a negative dimension.");
+    }
+    const size_t size_dim = static_cast<size_t>(dim);
+    if (size_dim != 0 &&
+        element_count > std::numeric_limits<size_t>::max() / size_dim) {
+      throw deepmd::deepmd_exception("Tensor element count overflows size_t.");
+    }
+    element_count *= size_dim;
+  }
+  if (element_count != data.size()) {
+    throw deepmd::deepmd_exception(
+        "Tensor shape requires " + std::to_string(element_count) +
+        " values, but " + std::to_string(data.size()) + " were provided.");
+  }
+  if (element_count > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    throw deepmd::deepmd_exception("Tensor byte size overflows size_t.");
+  }
+  const size_t byte_size = element_count * sizeof(T);
   TF_Tensor* tensor =
-      TF_AllocateTensor(get_data_tensor_type(data), shape.data(), shape.size(),
-                        data.size() * sizeof(T));
-  memcpy(TF_TensorData(tensor), data.data(), TF_TensorByteSize(tensor));
+      TF_AllocateTensor(get_data_tensor_type(data), shape.data(),
+                        static_cast<int>(shape.size()), byte_size);
+  if (tensor == nullptr) {
+    throw deepmd::deepmd_exception(
+        "TensorFlow failed to allocate an input tensor.");
+  }
+  if (byte_size != 0) {
+    memcpy(TF_TensorData(tensor), data.data(), byte_size);
+  }
   return tensor;
 }
 
@@ -505,6 +534,59 @@ inline std::vector<double> make_charge_spin_input(
   throw deepmd::deepmd_exception(
       "charge_spin has " + std::to_string(source.size()) +
       " values but the model expects dim_chg_spin=" + std::to_string(dchgspin) +
+      " (per frame) or " + std::to_string(expected) + " (for " +
+      std::to_string(nframes) + " frames).");
+}
+
+inline std::vector<double> make_fparam_input(
+    const std::vector<double>& fparam,
+    const int dfparam,
+    const int nframes,
+    const bool has_default_fparam,
+    const std::vector<double>& default_fparam) {
+  if (dfparam == 0) {
+    if (!fparam.empty()) {
+      throw deepmd::deepmd_exception(
+          "fparam was provided, but this model has dim_fparam=0.");
+    }
+    return {};
+  }
+
+  const std::vector<double>* source = nullptr;
+  if (!fparam.empty()) {
+    source = &fparam;
+  } else if (!default_fparam.empty()) {
+    source = &default_fparam;
+  } else if (has_default_fparam) {
+    throw deepmd::deepmd_exception(
+        "fparam was omitted, but the model's default_fparam values are not "
+        "available. Regenerate the JAX SavedModel with an updated version of "
+        "deepmd-kit or provide fparam explicitly.");
+  } else {
+    throw deepmd::deepmd_exception(
+        "fparam is required for this model but was not provided, and no "
+        "default_fparam is stored in the model.");
+  }
+
+  const size_t dim = static_cast<size_t>(dfparam);
+  if (static_cast<size_t>(nframes) > std::numeric_limits<size_t>::max() / dim) {
+    throw deepmd::deepmd_exception("fparam element count overflows size_t.");
+  }
+  const size_t expected = static_cast<size_t>(nframes) * dim;
+  if (source->size() == expected) {
+    return *source;
+  }
+  if (source->size() == dim) {
+    std::vector<double> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(source->begin(), source->end(),
+                result.begin() + static_cast<size_t>(ff) * dim);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "fparam has " + std::to_string(source->size()) +
+      " values but the model expects dim_fparam=" + std::to_string(dfparam) +
       " (per frame) or " + std::to_string(expected) + " (for " +
       std::to_string(nframes) + " frames).");
 }
@@ -672,6 +754,26 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   } catch (tf_function_not_found& e) {
     has_default_fparam_ = false;
   }
+  if (dfparam > 0 && has_default_fparam_) {
+    try {
+      default_fparam_ = get_vector<double>(ctx, "get_default_fparam",
+                                           func_vector, device, status);
+      if (static_cast<int>(default_fparam_.size()) != dfparam) {
+        throw deepmd::deepmd_exception(
+            "default_fparam length (" + std::to_string(default_fparam_.size()) +
+            ") does not match dim_fparam (" + std::to_string(dfparam) + ").");
+      }
+    } catch (tf_function_not_found& e) {
+      default_fparam_.clear();
+      std::cerr << "WARNING: Model has has_default_fparam=true but the "
+                   "get_default_fparam function is missing. Empty fparam will "
+                   "not be substituted. Please regenerate the JAX SavedModel "
+                   "with an updated version of deepmd-kit."
+                << std::endl;
+    }
+  } else {
+    default_fparam_.clear();
+  }
   try {
     // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1, ...].
     // Fold exclusion into the LAMMPS nlist at ingestion (decision #18/A4); the
@@ -749,6 +851,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> box_double(box.begin(), box.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
+  fparam_double = make_fparam_input(fparam_double, dfparam, nframes,
+                                    has_default_fparam_, default_fparam_);
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
   std::vector<double> charge_spin_double =
       make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
@@ -912,6 +1016,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // float model interface
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
+  fparam_double = make_fparam_input(fparam_double, dfparam, nframes,
+                                    has_default_fparam_, default_fparam_);
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
   std::vector<double> charge_spin_double =
       make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
