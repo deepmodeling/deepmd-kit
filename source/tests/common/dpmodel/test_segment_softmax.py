@@ -563,3 +563,60 @@ class TestGradientContinuity:
             f"theta derivative steps do not shrink under refinement "
             f"({coarse:.5f} -> {fine:.5f}): active-set transition is not C1"
         )
+
+
+class TestFloat32HighLogitBackward:
+    """OutisLi round 7: in-design HIGH logits (count >= 0) make
+    ``ph_e = exp(phantom_logit - segment_max)`` subnormal in float32; a
+    ``log(ex_t / ph_e)`` tail -- even with the numerator where-substituted
+    -- overflows ``1 / ph_e`` (torch) or ``ph_e**2`` (jax) in the UNSELECTED
+    branch's backward, and 0 * inf poisons the selected gradient.  The
+    log-space chi must keep float32 gradients finite and exactly dense.
+    """
+
+    def test_torch_high_logits_backward_finite(self) -> None:
+        import torch
+
+        data = torch.tensor([68.0, 69.0], dtype=torch.float32, requires_grad=True)
+        ids = torch.tensor([0, 0], dtype=torch.int64)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([0.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+            slot_weight=torch.ones(2, dtype=torch.float32),
+        )
+        v = torch.tensor([1.0, 2.0])
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+        w64 = np.exp([68.0, 69.0] - np.float64(69.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(data.grad.numpy(), ref, rtol=1e-4)
+
+    def test_jax_high_logits_backward_finite(self) -> None:
+        jax = pytest.importorskip("jax")
+        jnp = jax.numpy
+
+        ids = np.array([0, 0], dtype=np.int64)
+        v = np.array([1.0, 2.0], dtype=np.float32)
+
+        def loss(x):
+            w = segment_softmax(
+                x,
+                jnp.asarray(ids),
+                1,
+                phantom_count=jnp.asarray([0.0], dtype=jnp.float32),
+                phantom_logit=-20.0,
+                slot_weight=jnp.ones(2, dtype=jnp.float32),
+            )
+            return (w * jnp.asarray(v)).sum()
+
+        # the reviewer's jax repro threshold: ph_e**2 underflows already here
+        g = jax.grad(loss)(jnp.asarray([24.0, 25.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+        w64 = np.exp([24.0, 25.0] - np.float64(25.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(np.asarray(g), ref, rtol=1e-4)

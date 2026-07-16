@@ -388,16 +388,32 @@ def segment_softmax(
         # per-entry weights bounded by ~1.6/theta.  theta == 1 is BITWISE
         # ``e`` with no special case: the (1 - theta) = 0 factor kills the
         # finite tail term exactly.  theta -> 0 or e -> 0 send the tail to
-        # zero (exp(log(e/P)/theta) underflows benignly); every log/division
-        # operand is safe-where substituted BEFORE the op (unselected-branch
-        # gradients would otherwise be 0 * inf = NaN in float32).
+        # zero.
+        #
+        # chi is computed ENTIRELY IN LOG SPACE: log(e/P) is the already
+        # available ``shifted - ph_arg``, so no log() and no division by
+        # ``ph_e`` ever enter the autodiff graph.  This matters for
+        # in-design HIGH logits (count >= 0): ``ph_e = exp(pl - m)`` goes
+        # subnormal when the segment max is large, and a log(ex_t / ph_e)
+        # formulation -- even with ex_t where-substituted to ph_e -- pushes
+        # ``1 / ph_e`` (torch) or ``ph_e**2`` (jax) past the float32 range
+        # in the UNSELECTED branch's backward, whose 0 * inf poisons the
+        # selected gradient with NaN.  The log-ratio is clamped at -1e4
+        # (exp(-1e4) == 0 in both precisions) so masked entries' -inf
+        # shifted logits cannot reach the division either; the only division
+        # is by the where-substituted theta.
         one_t = xp.ones_like(ex)
-        tail_on = xp.logical_and(xp.logical_and(ex < ph_e, ex > 0.0), theta_b > 0.0)
-        ex_t = xp.where(tail_on, ex, ph_e)
+        log_ratio = xp.maximum(
+            shifted - xp.take(ph_arg, segment_ids, axis=0),
+            xp.full_like(ex, -1.0e4),
+        )
+        below = log_ratio < 0.0
+        tail_on = xp.logical_and(below, theta_b > 0.0)
+        lr_t = xp.where(tail_on, log_ratio, xp.zeros_like(ex))
         th_t = xp.where(tail_on, theta_b * one_t, one_t)
-        chi = xp.where(tail_on, xp.exp(xp.log(ex_t / ph_e) / th_t), one_t)
-        # zero-weight / underflowed entries contribute nothing below P
-        dead = xp.logical_and(ex < ph_e, xp.logical_not(tail_on))
+        chi = xp.where(tail_on, xp.exp(lr_t / th_t), one_t)
+        # zero-occupancy entries contribute nothing below P
+        dead = xp.logical_and(below, xp.logical_not(tail_on))
         chi = xp.where(dead, xp.zeros_like(chi), chi)
         theta_dead = xp.where(dead, xp.zeros_like(theta_b), theta_b * one_t)
         bracket = theta_dead * ex + (1.0 - theta_dead) * (ex - ph_e) * chi

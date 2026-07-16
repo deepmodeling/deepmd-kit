@@ -666,3 +666,59 @@ def test_atten2map_gradient_continuous_below_phantom():
     right = (out(4.0 + d) - out(4.0 + 3.0 * d)) / (-2.0 * d)
     assert abs(left) > 1e-6 and abs(right) > 1e-6
     np.testing.assert_allclose(left, right, rtol=5e-3)
+
+
+def test_local_atten_float32_high_logit_backward_finite():
+    """OutisLi round 7 model-level repro: float32 LocalAtten.call_graph with
+    sel == n_real == 2, sw = [1, 1] and raw logits [68, 69] (in-design,
+    count 0).  Dense and graph forwards agree (~68.7311) but the graph
+    backward produced NaN g1/gg1 gradients through the inactive tail's
+    ``1 / ph_e`` overflow; gradients must be finite and match dense.
+    """
+    import torch
+
+    la = LocalAtten(1, 1, 1, smooth=True, precision="float32", seed=1)
+    la.mapq.w = np.array([[1.0]], dtype=np.float32)
+    la.mapkv.w = np.array([[1.0, 1.0]], dtype=np.float32)
+    la.mapkv.b = np.array([0.0, 0.0], dtype=np.float32)
+    la.head_map.w = np.array([[1.0]], dtype=np.float32)
+    la.head_map.b = np.array([0.0], dtype=np.float32)
+    n_total, nnei, sel = 1, 2, 2
+
+    gg1_np = np.array([[68.0], [69.0]], dtype=np.float32)
+    mask_np = np.ones(nnei, dtype=bool)
+    sw_np = np.ones(nnei, dtype=np.float32)
+
+    # graph route, torch float32, gradients w.r.t. g1 and gg1
+    g1_t = torch.ones(n_total, 1, dtype=torch.float32, requires_grad=True)
+    gg1_t = torch.from_numpy(gg1_np).clone().requires_grad_(True)
+    out_g = la.call_graph(
+        g1_t,
+        gg1_t,
+        torch.from_numpy(mask_np),
+        torch.from_numpy(sw_np),
+        torch.zeros(nnei, dtype=torch.int64),
+        n_total,
+        sel,
+    )
+    out_g.sum().backward()
+    assert torch.all(torch.isfinite(g1_t.grad))
+    assert torch.all(torch.isfinite(gg1_t.grad))
+
+    # dense reference gradients on the same weights
+    g1_d = torch.ones(1, 1, 1, dtype=torch.float32, requires_grad=True)
+    gg1_d = torch.from_numpy(gg1_np.reshape(1, 1, nnei, 1)).clone().requires_grad_(True)
+    out_d = la.call(
+        g1_d,
+        gg1_d,
+        torch.from_numpy(mask_np.reshape(1, 1, nnei)),
+        torch.from_numpy(sw_np.reshape(1, 1, nnei)),
+    )
+    out_d.sum().backward()
+    np.testing.assert_allclose(float(out_g.sum()), float(out_d.sum()), rtol=1e-6)
+    np.testing.assert_allclose(
+        g1_t.grad.numpy().reshape(-1), g1_d.grad.numpy().reshape(-1), rtol=1e-4
+    )
+    np.testing.assert_allclose(
+        gg1_t.grad.numpy().reshape(-1), gg1_d.grad.numpy().reshape(-1), rtol=1e-4
+    )
