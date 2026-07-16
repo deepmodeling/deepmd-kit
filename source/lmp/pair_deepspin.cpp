@@ -744,8 +744,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
                   numb_types_spin);
           error->all(FLERR, tmp);
         }
-        virtual_len[ii] =
-            utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
+        virtual_len[ii] = utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
       }
       iarg += numb_types_spin + 1;
     } else if (string(arg[iarg]) == string("spin_norm")) {
@@ -757,8 +756,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
                   numb_types_spin);
           error->all(FLERR, tmp);
         }
-        spin_norm[ii] =
-            utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
+        spin_norm[ii] = utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
       }
       iarg += numb_types_spin + 1;
     }
