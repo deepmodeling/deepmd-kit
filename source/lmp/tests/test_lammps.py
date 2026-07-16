@@ -745,7 +745,8 @@ def test_pair_deepmd_mpi_subcommunicators(tmp_path: Path) -> None:
             str(pb_file2.resolve()),
             str(output_a),
             str(output_b),
-        ]
+        ],
+        timeout=120,
     )
 
     np.testing.assert_allclose(np.loadtxt(output_a), expected_f)
