@@ -176,9 +176,23 @@ static void run_model(
   for (size_t ii = 0; ii < static_cast<size_t>(nframes) * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
+  if (output_ae.NumElements() % nframes != 0) {
+    throw deepmd::deepmd_exception(
+        "TensorFlow atomic-energy output is not divisible by nframes.");
+  }
+  const size_t nloc_energy = output_ae.NumElements() / nframes;
+  if (nloc_energy > nall) {
+    throw deepmd::deepmd_exception(
+        "TensorFlow atomic-energy output has more atoms than the extended "
+        "DeepSpin system.");
+  }
+  // Spin models emit atomic energies for physical atoms only. The extended
+  // virtual atoms sort after all physical types, so keep their slots zero and
+  // use the actual output width as the per-frame source stride.
   for (int ii = 0; ii < nframes; ++ii) {
-    for (int jj = 0; jj < nloc; ++jj) {
-      datom_energy[ii * nall + jj] = oae(ii * nloc + jj);
+    for (size_t jj = 0; jj < nloc_energy; ++jj) {
+      datom_energy[static_cast<size_t>(ii) * nall + jj] =
+          oae(static_cast<size_t>(ii) * nloc_energy + jj);
     }
   }
   for (size_t ii = 0; ii < static_cast<size_t>(nframes) * nall * 9; ++ii) {
@@ -602,7 +616,7 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
 
   std::vector<VALUETYPE> extend_dcoord;
   std::vector<int> extend_atype;
-  extend_nlist(extend_dcoord, extend_atype, dcoord_, dspin_, datype_);
+  extend_nlist(extend_dcoord, extend_atype, dcoord_, dspin_, datype_, nframes);
 
   atommap = deepmd::AtomMap(extend_atype.begin(), extend_atype.end());
 
@@ -636,13 +650,20 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
   // backward force and mag.
   dforce_.resize(static_cast<size_t>(nframes) * nloc * 3);
   dforce_mag_.resize(static_cast<size_t>(nframes) * nloc * 3);
-  for (int ii = 0; ii < nloc; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      dforce_[3 * ii + dd] = dforce_tmp[3 * ii + dd];
-      if (datype_[ii] < ntypes_spin) {
-        dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (ii + nloc) + dd];
-      } else {
-        dforce_mag_[3 * ii + dd] = 0.0;
+  const size_t extend_nall = extend_atype.size();
+  for (int ff = 0; ff < nframes; ++ff) {
+    for (int ii = 0; ii < nloc; ++ii) {
+      const size_t output_atom = static_cast<size_t>(ff) * nloc + ii;
+      const size_t extended_atom = static_cast<size_t>(ff) * extend_nall + ii;
+      for (int dd = 0; dd < 3; ++dd) {
+        dforce_[output_atom * 3 + dd] = dforce_tmp[extended_atom * 3 + dd];
+        if (datype_[ii] < ntypes_spin) {
+          const size_t virtual_atom =
+              static_cast<size_t>(ff) * extend_nall + ii + nloc;
+          dforce_mag_[output_atom * 3 + dd] = dforce_tmp[virtual_atom * 3 + dd];
+        } else {
+          dforce_mag_[output_atom * 3 + dd] = 0.0;
+        }
       }
     }
   }
@@ -735,7 +756,7 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
   extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
          extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
          new_idx_map, old_idx_map, lmp_list, dcoord_, datype_, nghost, dspin_,
-         ntypes, ntypes_spin);
+         ntypes, ntypes_spin, nframes);
   InputNlist extend_lmp_list(extend_inum, &extend_ilist[0], &extend_numneigh[0],
                              &extend_firstneigh[0]);
   extend_lmp_list.set_mask(lmp_list.mask);
@@ -808,22 +829,30 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
   dforce_mag_.resize(static_cast<size_t>(nframes) * nall * 3);
   datom_energy_.resize(static_cast<size_t>(nframes) * nall);
   datom_virial_.resize(static_cast<size_t>(nframes) * nall * 9);
-  for (int ii = 0; ii < nall; ++ii) {
-    int new_idx = new_idx_map[ii];
-    for (int dd = 0; dd < 3; ++dd) {
-      dforce_[3 * ii + dd] = dforce_tmp[3 * new_idx + dd];
-      datom_energy_[ii] = datom_energy_tmp[new_idx];
+  const size_t extended_nall = fwd_map.size();
+  for (int ff = 0; ff < nframes; ++ff) {
+    for (int ii = 0; ii < nall; ++ii) {
+      const int new_idx = new_idx_map[ii];
+      const size_t output_atom = static_cast<size_t>(ff) * nall + ii;
+      const size_t extended_atom =
+          static_cast<size_t>(ff) * extended_nall + new_idx;
+      datom_energy_[output_atom] = datom_energy_tmp[extended_atom];
+      for (int dd = 0; dd < 3; ++dd) {
+        dforce_[output_atom * 3 + dd] = dforce_tmp[extended_atom * 3 + dd];
 
-      if (datype_[ii] < ntypes_spin && ii < nloc) {
-        dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
-      } else if (datype_[ii] < ntypes_spin) {
-        dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (new_idx + nghost) + dd];
-      } else {
-        dforce_mag_[3 * ii + dd] = 0.0;
+        if (datype_[ii] < ntypes_spin) {
+          const int virtual_idx = new_idx + (ii < nloc ? nloc : nghost);
+          const size_t virtual_atom =
+              static_cast<size_t>(ff) * extended_nall + virtual_idx;
+          dforce_mag_[output_atom * 3 + dd] = dforce_tmp[virtual_atom * 3 + dd];
+        } else {
+          dforce_mag_[output_atom * 3 + dd] = 0.0;
+        }
       }
-    }
-    for (int dd = 0; dd < 9; ++dd) {
-      datom_virial_[ii * 9 + dd] = datom_virial_tmp[new_idx * 9 + dd];
+      for (int dd = 0; dd < 9; ++dd) {
+        datom_virial_[output_atom * 9 + dd] =
+            datom_virial_tmp[extended_atom * 9 + dd];
+      }
     }
   }
 }
@@ -1004,7 +1033,8 @@ void DeepSpinTF::extend(int& extend_inum,
                         const int nghost,
                         const std::vector<VALUETYPE>& spin,
                         const int numb_types,
-                        const int numb_types_spin) {
+                        const int numb_types_spin,
+                        const int nframes) {
   extend_ilist.clear();
   extend_numneigh.clear();
   extend_neigh.clear();
@@ -1021,8 +1051,10 @@ void DeepSpinTF::extend(int& extend_inum,
     get_vector<float>(spin_norm, "spin_attr/spin_norm");
   }
 
-  int nall = dcoord.size() / 3;
+  int nall = atype.size();
   int nloc = nall - nghost;
+  assert(static_cast<size_t>(nframes) * nall * 3 == dcoord.size());
+  assert(dcoord.size() == spin.size());
   assert(nloc == lmp_list.inum);
 
   // record numb_types_real and nloc_virt
@@ -1128,26 +1160,36 @@ void DeepSpinTF::extend(int& extend_inum,
   }
 
   // extend coord
-  extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
-  for (int ii = 0; ii < nloc; ii++) {
-    for (int jj = 0; jj < 3; jj++) {
-      extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];
-      if (atype[ii] < numb_types_spin) {
-        double temp_dcoord = dcoord[ii * 3 + jj] + spin[ii * 3 + jj] /
-                                                       spin_norm[atype[ii]] *
-                                                       virtual_len[atype[ii]];
-        extend_dcoord[(new_idx_map[ii] + nloc) * 3 + jj] = temp_dcoord;
+  extend_dcoord.resize(static_cast<size_t>(nframes) * extend_nall * 3);
+  for (int ff = 0; ff < nframes; ++ff) {
+    const size_t input_offset = static_cast<size_t>(ff) * nall * 3;
+    const size_t output_offset = static_cast<size_t>(ff) * extend_nall * 3;
+    for (int ii = 0; ii < nloc; ii++) {
+      for (int jj = 0; jj < 3; jj++) {
+        extend_dcoord[output_offset + new_idx_map[ii] * 3 + jj] =
+            dcoord[input_offset + ii * 3 + jj];
+        if (atype[ii] < numb_types_spin) {
+          const VALUETYPE temp_dcoord = dcoord[input_offset + ii * 3 + jj] +
+                                        spin[input_offset + ii * 3 + jj] /
+                                            spin_norm[atype[ii]] *
+                                            virtual_len[atype[ii]];
+          extend_dcoord[output_offset + (new_idx_map[ii] + nloc) * 3 + jj] =
+              temp_dcoord;
+        }
       }
     }
-  }
-  for (int ii = nloc; ii < nall; ii++) {
-    for (int jj = 0; jj < 3; jj++) {
-      extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];
-      if (atype[ii] < numb_types_spin) {
-        double temp_dcoord = dcoord[ii * 3 + jj] + spin[ii * 3 + jj] /
-                                                       spin_norm[atype[ii]] *
-                                                       virtual_len[atype[ii]];
-        extend_dcoord[(new_idx_map[ii] + nghost) * 3 + jj] = temp_dcoord;
+    for (int ii = nloc; ii < nall; ii++) {
+      for (int jj = 0; jj < 3; jj++) {
+        extend_dcoord[output_offset + new_idx_map[ii] * 3 + jj] =
+            dcoord[input_offset + ii * 3 + jj];
+        if (atype[ii] < numb_types_spin) {
+          const VALUETYPE temp_dcoord = dcoord[input_offset + ii * 3 + jj] +
+                                        spin[input_offset + ii * 3 + jj] /
+                                            spin_norm[atype[ii]] *
+                                            virtual_len[atype[ii]];
+          extend_dcoord[output_offset + (new_idx_map[ii] + nghost) * 3 + jj] =
+              temp_dcoord;
+        }
       }
     }
   }
@@ -1183,7 +1225,8 @@ template void DeepSpinTF::extend<double>(
     const int nghost,
     const std::vector<double>& spin,
     const int numb_types,
-    const int numb_types_spin);
+    const int numb_types_spin,
+    const int nframes);
 
 template void DeepSpinTF::extend<float>(
     int& extend_inum,
@@ -1202,14 +1245,16 @@ template void DeepSpinTF::extend<float>(
     const int nghost,
     const std::vector<float>& spin,
     const int numb_types,
-    const int numb_types_spin);
+    const int numb_types_spin,
+    const int nframes);
 
 template <typename VALUETYPE>
 void DeepSpinTF::extend_nlist(std::vector<VALUETYPE>& extend_dcoord,
                               std::vector<int>& extend_atype,
                               const std::vector<VALUETYPE>& dcoord_,
                               const std::vector<VALUETYPE>& dspin_,
-                              const std::vector<int>& datype_) {
+                              const std::vector<int>& datype_,
+                              const int nframes) {
   if (dtype == tensorflow::DT_DOUBLE) {
     get_vector<double>(virtual_len, "spin_attr/virtual_len");
     get_vector<double>(spin_norm, "spin_attr/spin_norm");
@@ -1228,20 +1273,27 @@ void DeepSpinTF::extend_nlist(std::vector<VALUETYPE>& extend_dcoord,
     }
   }
   int extend_nall = nloc + nloc_spin;
-  extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
+  assert(static_cast<size_t>(nframes) * nloc * 3 == dcoord_.size());
+  assert(dcoord_.size() == dspin_.size());
+  extend_dcoord.resize(static_cast<size_t>(nframes) * extend_nall * 3);
   extend_atype.resize(extend_nall);
   for (int ii = 0; ii < nloc; ii++) {
     extend_atype[ii] = datype_[ii];
     if (datype_[ii] < ntypes_spin) {
       extend_atype[ii + nloc] = datype_[ii] + ntypes - ntypes_spin;
     }
-    for (int jj = 0; jj < 3; jj++) {
-      extend_dcoord[ii * 3 + jj] = dcoord_[ii * 3 + jj];
-      if (datype_[ii] < ntypes_spin) {
-        extend_dcoord[(ii + nloc) * 3 + jj] =
-            dcoord_[ii * 3 + jj] + dspin_[ii * 3 + jj] /
-                                       spin_norm[datype_[ii]] *
-                                       virtual_len[datype_[ii]];
+    for (int ff = 0; ff < nframes; ++ff) {
+      const size_t input_offset = static_cast<size_t>(ff) * nloc * 3;
+      const size_t output_offset = static_cast<size_t>(ff) * extend_nall * 3;
+      for (int jj = 0; jj < 3; jj++) {
+        extend_dcoord[output_offset + ii * 3 + jj] =
+            dcoord_[input_offset + ii * 3 + jj];
+        if (datype_[ii] < ntypes_spin) {
+          extend_dcoord[output_offset + (ii + nloc) * 3 + jj] =
+              dcoord_[input_offset + ii * 3 + jj] +
+              dspin_[input_offset + ii * 3 + jj] / spin_norm[datype_[ii]] *
+                  virtual_len[datype_[ii]];
+        }
       }
     }
   }
@@ -1252,11 +1304,13 @@ template void DeepSpinTF::extend_nlist<double>(
     std::vector<int>& extend_atype,
     const std::vector<double>& dcoord_,
     const std::vector<double>& dspin_,
-    const std::vector<int>& datype_);
+    const std::vector<int>& datype_,
+    const int nframes);
 
 template void DeepSpinTF::extend_nlist<float>(std::vector<float>& extend_dcoord,
                                               std::vector<int>& extend_atype,
                                               const std::vector<float>& dcoord_,
                                               const std::vector<float>& dspin_,
-                                              const std::vector<int>& datype_);
+                                              const std::vector<int>& datype_,
+                                              const int nframes);
 #endif

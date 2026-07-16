@@ -13,6 +13,30 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
+namespace {
+template <typename T>
+std::vector<T> concatenate_frames(const std::vector<T>& first,
+                                  const std::vector<T>& second) {
+  std::vector<T> result = first;
+  result.insert(result.end(), second.begin(), second.end());
+  return result;
+}
+
+template <typename T>
+void expect_two_frame_values(const std::vector<T>& actual,
+                             const std::vector<T>& first,
+                             const std::vector<T>& second,
+                             const double tolerance) {
+  ASSERT_EQ(actual.size(), first.size() + second.size());
+  for (size_t ii = 0; ii < first.size(); ++ii) {
+    EXPECT_NEAR(actual[ii], first[ii], tolerance);
+  }
+  for (size_t ii = 0; ii < second.size(); ++ii) {
+    EXPECT_NEAR(actual[first.size() + ii], second[ii], tolerance);
+  }
+}
+}  // namespace
+
 template <class VALUETYPE>
 class TestInferDeepSpin : public ::testing::Test {
  protected:
@@ -158,6 +182,64 @@ TYPED_TEST(TestInferDeepSpin, cpu_build_nlist_atomic) {
   }
   for (int ii = 0; ii < (natoms + 2) * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+TYPED_TEST(TestInferDeepSpin, cpu_build_nlist_atomic_two_frames) {
+  using VALUETYPE = TypeParam;
+  auto coord_second = this->coord;
+  coord_second[0] += 0.07;
+  coord_second[3] -= 0.04;
+  auto spin_second = this->spin;
+  spin_second[2] *= -0.5;
+  spin_second[5] *= 0.25;
+
+  double energy_first, energy_second;
+  std::vector<VALUETYPE> force_first, force_mag_first, virial_first;
+  std::vector<VALUETYPE> atom_energy_first, atom_virial_first;
+  std::vector<VALUETYPE> force_second, force_mag_second, virial_second;
+  std::vector<VALUETYPE> atom_energy_second, atom_virial_second;
+  this->dp.compute(energy_first, force_first, force_mag_first, virial_first,
+                   atom_energy_first, atom_virial_first, this->coord,
+                   this->spin, this->atype, this->box);
+  this->dp.compute(energy_second, force_second, force_mag_second, virial_second,
+                   atom_energy_second, atom_virial_second, coord_second,
+                   spin_second, this->atype, this->box);
+  EXPECT_GT(std::fabs(energy_first - energy_second), EPSILON);
+
+  const auto coord = concatenate_frames(this->coord, coord_second);
+  const auto spin = concatenate_frames(this->spin, spin_second);
+  const auto box = concatenate_frames(this->box, this->box);
+  std::vector<double> energy;
+  std::vector<VALUETYPE> force, force_mag, virial, atom_energy, atom_virial;
+  this->dp.compute(energy, force, force_mag, virial, atom_energy, atom_virial,
+                   coord, spin, this->atype, box);
+
+  ASSERT_EQ(energy.size(), 2U);
+  EXPECT_NEAR(energy[0], energy_first, EPSILON);
+  EXPECT_NEAR(energy[1], energy_second, EPSILON);
+  {
+    SCOPED_TRACE("force");
+    expect_two_frame_values(force, force_first, force_second, EPSILON);
+  }
+  {
+    SCOPED_TRACE("magnetic force");
+    expect_two_frame_values(force_mag, force_mag_first, force_mag_second,
+                            EPSILON);
+  }
+  {
+    SCOPED_TRACE("virial");
+    expect_two_frame_values(virial, virial_first, virial_second, EPSILON);
+  }
+  {
+    SCOPED_TRACE("atomic energy");
+    expect_two_frame_values(atom_energy, atom_energy_first, atom_energy_second,
+                            EPSILON);
+  }
+  {
+    SCOPED_TRACE("atomic virial");
+    expect_two_frame_values(atom_virial, atom_virial_first, atom_virial_second,
+                            EPSILON);
   }
 }
 
@@ -330,7 +412,7 @@ TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist) {
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
 
-  std::vector<std::vector<int> > nlist_data = {{1}, {0}, {3}, {2}};
+  std::vector<std::vector<int>> nlist_data = {{1}, {0}, {3}, {2}};
   std::vector<int> ilist(natoms), numneigh(natoms);
   std::vector<int*> firstneigh(natoms);
   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
@@ -369,7 +451,7 @@ TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist_atomic) {
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
 
-  std::vector<std::vector<int> > nlist_data = {{1}, {0}, {3}, {2}};
+  std::vector<std::vector<int>> nlist_data = {{1}, {0}, {3}, {2}};
   std::vector<int> ilist(natoms), numneigh(natoms);
   std::vector<int*> firstneigh(natoms);
   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
@@ -396,5 +478,71 @@ TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist_atomic) {
   }
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist_atomic_two_frames) {
+  using VALUETYPE = TypeParam;
+  auto coord_second = this->coord;
+  coord_second[0] += 0.07;
+  coord_second[3] -= 0.04;
+  auto spin_second = this->spin;
+  spin_second[2] *= -0.5;
+  spin_second[5] *= 0.25;
+
+  const int natoms = static_cast<int>(this->atype.size());
+  std::vector<std::vector<int>> nlist_data = {{1}, {0}, {3}, {2}};
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, ilist.data(), numneigh.data(),
+                            firstneigh.data());
+  convert_nlist(inlist, nlist_data);
+
+  double energy_first, energy_second;
+  std::vector<VALUETYPE> force_first, force_mag_first, virial_first;
+  std::vector<VALUETYPE> atom_energy_first, atom_virial_first;
+  std::vector<VALUETYPE> force_second, force_mag_second, virial_second;
+  std::vector<VALUETYPE> atom_energy_second, atom_virial_second;
+  this->dp.compute(energy_first, force_first, force_mag_first, virial_first,
+                   atom_energy_first, atom_virial_first, this->coord,
+                   this->spin, this->atype, this->box, 0, inlist, 0);
+  this->dp.compute(energy_second, force_second, force_mag_second, virial_second,
+                   atom_energy_second, atom_virial_second, coord_second,
+                   spin_second, this->atype, this->box, 0, inlist, 0);
+  EXPECT_GT(std::fabs(energy_first - energy_second), EPSILON);
+
+  const auto coord = concatenate_frames(this->coord, coord_second);
+  const auto spin = concatenate_frames(this->spin, spin_second);
+  const auto box = concatenate_frames(this->box, this->box);
+  std::vector<double> energy;
+  std::vector<VALUETYPE> force, force_mag, virial, atom_energy, atom_virial;
+  this->dp.compute(energy, force, force_mag, virial, atom_energy, atom_virial,
+                   coord, spin, this->atype, box, 0, inlist, 0);
+
+  ASSERT_EQ(energy.size(), 2U);
+  EXPECT_NEAR(energy[0], energy_first, EPSILON);
+  EXPECT_NEAR(energy[1], energy_second, EPSILON);
+  {
+    SCOPED_TRACE("force");
+    expect_two_frame_values(force, force_first, force_second, EPSILON);
+  }
+  {
+    SCOPED_TRACE("magnetic force");
+    expect_two_frame_values(force_mag, force_mag_first, force_mag_second,
+                            EPSILON);
+  }
+  {
+    SCOPED_TRACE("virial");
+    expect_two_frame_values(virial, virial_first, virial_second, EPSILON);
+  }
+  {
+    SCOPED_TRACE("atomic energy");
+    expect_two_frame_values(atom_energy, atom_energy_first, atom_energy_second,
+                            EPSILON);
+  }
+  {
+    SCOPED_TRACE("atomic virial");
+    expect_two_frame_values(atom_virial, atom_virial_first, atom_virial_second,
+                            EPSILON);
   }
 }
