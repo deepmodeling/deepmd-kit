@@ -1156,6 +1156,46 @@ class TestProdEnvMat(tf.test.TestCase):
         np.testing.assert_array_equal(neighbor_mask, valid_neighbors)
         np.testing.assert_array_equal(neighbor_types, expected_types)
 
+    def test_pbc_nvnmd_amix_maps_copied_neighbors(self) -> None:
+        """Exercise the NVNMD AMix branch that remaps periodic atom copies."""
+        outputs = op_module.prod_env_mat_a_mix_nvnmd_quantize(
+            self.tcoord,
+            self.ttype,
+            self.tnatoms,
+            self.tbox,
+            tf.constant(np.zeros(6, dtype=np.int32)),
+            self.t_avg,
+            self.t_std,
+            rcut_a=-1,
+            rcut_r=self.rcut,
+            rcut_r_smth=self.rcut_smth,
+            sel_a=[self.nnei],
+            sel_r=[0],
+        )
+        self.sess.run(tf.global_variables_initializer())
+        nlist, neighbor_types, neighbor_mask = self.sess.run(
+            outputs[3:],
+            feed_dict={
+                self.tcoord: self.dcoord,
+                self.ttype: self.dtype,
+                self.tbox: self.dbox,
+                self.tnatoms: self.dnatoms,
+            },
+        )
+
+        nlist = nlist.reshape(self.nframes, self.nloc, self.nnei)
+        neighbor_types = neighbor_types.reshape(self.nframes, self.nloc, self.nnei)
+        neighbor_mask = neighbor_mask.reshape(self.nframes, self.nloc, self.nnei)
+        valid_neighbors = nlist >= 0
+        self.assertTrue(np.any(valid_neighbors))
+        self.assertTrue(np.all(nlist[valid_neighbors] < self.nall))
+        source_types = np.take_along_axis(
+            self.dtype[:, None, :], np.maximum(nlist, 0), axis=2
+        )
+        expected_types = np.where(valid_neighbors, source_types, self.ntypes)
+        np.testing.assert_array_equal(neighbor_mask, valid_neighbors)
+        np.testing.assert_array_equal(neighbor_types, expected_types)
+
     def test_external_nlist_amix(self) -> None:
         """Exercise the AMix CPU fallback with a pointer-based neighbor list."""
         ilist = np.arange(self.nloc, dtype=np.int32)

@@ -63,7 +63,7 @@ jobs:
           TF_INTRA_OP_PARALLELISM_THREADS: 1
           TF_INTER_OP_PARALLELISM_THREADS: 1
           CMAKE_GENERATOR: Ninja
-          CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
+          CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak -D_GLIBCXX_ASSERTIONS' || '' }}
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
           ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && 'TRUE' || 'FALSE' }}
           ENABLE_PYTORCH: ${{ matrix.enable_pytorch && 'TRUE' || 'FALSE' }}
@@ -87,6 +87,20 @@ jobs:
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
+      - name: Test AMix neighbor mapping with hardened libstdc++
+        run: |
+          export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
+          pytest -q \
+            source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_nopbc_nvnmd_amix \
+            source/tests/tf/test_prod_env_mat.py::TestProdEnvMat::test_pbc_nvnmd_amix_maps_copied_neighbors
+        env:
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
+          # This step targets libstdc++ bounds assertions. The main C++ test
+          # step above remains responsible for leak detection.
+          LSAN_OPTIONS: detect_leaks=0
+        if: ${{ matrix.check_memleak && matrix.enable_tensorflow }}
       # test ipi
       - run: |
           export PATH=${{ github.workspace }}/dp_test/bin:$PATH
