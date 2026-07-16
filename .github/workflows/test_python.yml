@@ -56,10 +56,10 @@ jobs:
           # the key must never match, even when restarting workflows, as that
           # will cause durations to get out of sync between groups, the
           # combined durations will be loaded if available
-          key: test2-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
+          key: test3-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
           restore-keys: |
-            test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
-            test2-durations-combined-${{ matrix.python }}
+            test3-durations-combined-${{ matrix.python }}-${{ github.sha }}
+            test3-durations-combined-${{ matrix.python }}
       # Keep neighboring tests together so expensive class-scoped setup is not
       # dispersed across every shard by the per-test least-duration algorithm.
       - run: pytest --cov=deepmd source/tests --ignore=source/tests/tf2 --splits 12 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm duration_based_chunks
@@ -134,8 +134,8 @@ jobs:
           # key won't match during the first run for the given commit, but
           # restore-key will if there's a previous stored durations file,
           # so cache will both be loaded and stored
-          key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
-          restore-keys: test2-durations-combined-${{ matrix.python }}
+          key: test3-durations-combined-${{ matrix.python }}-${{ github.sha }}
+          restore-keys: test3-durations-combined-${{ matrix.python }}
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
