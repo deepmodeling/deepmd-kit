@@ -11,6 +11,10 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.loss.loss import (
     Loss,
 )
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    masked_atom_num,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -105,12 +109,12 @@ class TensorLoss(Loss):
             if "mask" in model_dict:
                 # idiom 1: per-frame masked mean, then average over frames
                 maskf = xp.astype(model_dict["mask"], diff.dtype)  # [nf, natoms]
-                nf = local_pred.shape[0]
-                diff3d = xp.reshape(diff, (nf, natoms, self.tensor_size))
-                sq = xp.square(diff3d) * xp.reshape(maskf, (nf, natoms, 1))
-                per_frame_sum = xp.sum(xp.reshape(sq, (nf, -1)), axis=-1)  # [nf]
-                per_frame_dof = xp.sum(maskf, axis=-1) * self.tensor_size  # [nf]
-                l2_local_loss = xp.mean(per_frame_sum / per_frame_dof)
+                diff3d = xp.reshape(
+                    diff, (local_pred.shape[0], natoms, self.tensor_size)
+                )
+                l2_local_loss = masked_atom_mean(
+                    xp.square(diff3d), maskf, self.tensor_size
+                )
             else:
                 l2_local_loss = xp.mean(xp.square(diff))
             loss += local_weight * l2_local_loss
@@ -134,12 +138,7 @@ class TensorLoss(Loss):
             diff = global_pred - global_label
             # idiom 3: global tensor is already padding-invariant; plain mean suffices
             l2_global_loss = xp.mean(xp.square(diff))
-            if "mask" in model_dict:
-                atom_num = xp.mean(
-                    xp.astype(xp.sum(model_dict["mask"], axis=-1), diff.dtype)
-                )
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += global_weight * l2_global_loss
             more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
                 xp.sqrt(l2_global_loss) / atom_num, find_global
