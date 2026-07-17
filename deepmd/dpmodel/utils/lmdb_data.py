@@ -462,6 +462,9 @@ class LmdbDataReader:
 
         # Data requirements tracking
         self._data_requirements: dict[str, DataRequirementItem] = {}
+        # Availability signatures are decoded lazily and reused by every
+        # sampler epoch. Registering new requirements invalidates the cache.
+        self._find_signature_cache: dict[int, tuple[tuple[str, bool], ...]] = {}
 
     def _compute_natoms_vec(self, atype: np.ndarray) -> np.ndarray:
         """Compute natoms_vec from a frame's atype array.
@@ -710,6 +713,59 @@ class LmdbDataReader:
         """Register expected keys; missing keys get default fill + find_key=0.0."""
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
+        self._find_signature_cache.clear()
+
+    def get_find_signature(self, index: int) -> tuple[tuple[str, bool], ...]:
+        """Return the scalar availability signature for one retained frame.
+
+        The signature covers registered data requirements and optional model
+        inputs whose ``find_*`` flags are created by :meth:`__getitem__`.
+        Reading only msgpack keys avoids decoding large coordinate and label
+        arrays while the sampler partitions frames.
+        """
+        cached = self._find_signature_cache.get(index)
+        if cached is not None:
+            return cached
+        if index < 0 or index >= self.nframes:
+            raise IndexError(f"dataset index {index} out of range [0, {self.nframes})")
+
+        original_key = self._retained_keys[index]
+        key = format(original_key, self._frame_fmt).encode()
+        raw = self._txn.get(key)
+        if raw is None:
+            raise IndexError(
+                f"Frame {original_key} not found in LMDB (dataset index {index})"
+            )
+        raw_frame = msgpack.unpackb(raw, raw=False)
+        frame = {_KEY_REMAP.get(name, name): value for name, value in raw_frame.items()}
+        signature_keys = sorted(
+            set(self._data_requirements) | {"fparam", "aparam", "spin", "charge_spin"}
+        )
+        signature = []
+        for data_key in signature_keys:
+            find_key = f"find_{data_key}"
+            if find_key in frame:
+                find_value = _decode_value(frame[find_key])
+                available = bool(float(np.asarray(find_value).item()))
+            elif data_key == "min_pair_dist" and data_key in self._data_requirements:
+                # __getitem__ computes this requirement when it is not stored.
+                available = True
+            else:
+                available = data_key in frame
+            signature.append((find_key, available))
+
+        result = tuple(signature)
+        self._find_signature_cache[index] = result
+        return result
+
+    def group_indices_by_find_signature(
+        self, indices: list[int]
+    ) -> dict[tuple[tuple[str, bool], ...], list[int]]:
+        """Partition dataset indices into scalar-compatible label groups."""
+        groups: dict[tuple[tuple[str, bool], ...], list[int]] = {}
+        for index in indices:
+            groups.setdefault(self.get_find_signature(index), []).append(index)
+        return groups
 
     @property
     def data_requirements(self) -> list[DataRequirementItem]:
@@ -760,7 +816,10 @@ class LmdbDataReader:
         total = 0
         for nloc, indices in self._nloc_groups.items():
             bs = self.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
+            signature_groups = self.group_indices_by_find_signature(indices)
+            total += sum(
+                (len(group) + bs - 1) // bs for group in signature_groups.values()
+            )
         return total
 
     @property
@@ -815,10 +874,10 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
     etc. The array library is inferred from the first frame's ``coord``.
 
     Conventions match :func:`deepmd.dpmodel.utils.batch.normalize_batch`:
-    ``find_*`` flags are taken from the first frame (constant within a
-    batch); ``fid`` is collected as a list; ``type`` is dropped (callers
-    should already use ``atype``); other arrays are stacked along axis 0.
-    A ``sid`` placeholder is appended.
+    ``find_*`` flags remain scalar and must be constant within a batch;
+    ``fid`` is collected as a list; ``type`` is dropped (callers should
+    already use ``atype``); other arrays are stacked along axis 0. A ``sid``
+    placeholder is appended.
     """
     import array_api_compat
 
@@ -828,9 +887,25 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
     xp = array_api_compat.array_namespace(frames[0]["coord"])
     dev = array_api_compat.device(frames[0]["coord"])
     out: dict[str, Any] = {}
+    find_keys = sorted(
+        {key for frame in frames for key in frame if key.startswith("find_")}
+    )
+    for key in find_keys:
+        if any(key not in frame for frame in frames):
+            raise ValueError(
+                f"LMDB batch has inconsistent availability metadata for {key!r}"
+            )
+        values = [float(frame[key]) for frame in frames]
+        if any(value != values[0] for value in values[1:]):
+            raise ValueError(
+                f"LMDB batch mixes {key!r} values {values}; "
+                "SameNlocBatchSampler must group frames by label availability"
+            )
+        out[key] = frames[0][key]
+
     for key in frames[0]:
         if key.startswith("find_"):
-            out[key] = frames[0][key]
+            continue
         elif key == "fid":
             out[key] = [f[key] for f in frames]
         elif key == "type":
@@ -961,6 +1036,7 @@ def _expand_indices_by_blocks(
     rng: np.random.Generator,
     _block_total_actual: list[int] | None = None,
     _sid_to_blk_arr: np.ndarray | None = None,
+    _group_block_targets: list[int] | None = None,
 ) -> list[int]:
     """Expand frame indices according to block targets.
 
@@ -984,6 +1060,10 @@ def _expand_indices_by_blocks(
     _sid_to_blk_arr : np.ndarray or None
         Pre-computed system-id to block-index lookup array.  When provided,
         avoids rebuilding the mapping for each call.
+    _group_block_targets : list[int] or None
+        Exact target for each block in this group. Production samplers
+        allocate these targets globally across all ``(nloc, find-signature)``
+        groups so independent rounding cannot change a block's total size.
 
     Returns
     -------
@@ -1011,7 +1091,7 @@ def _expand_indices_by_blocks(
     idx_blks = _sid_to_blk_arr[idx_sids]
 
     # Pre-compute block_total_actual if not provided
-    if _block_total_actual is None:
+    if _block_total_actual is None and _group_block_targets is None:
         _block_total_actual = []
         for sys_ids, _ in block_targets:
             total = sum(int(np.sum(sid_arr == sid)) for sid in sys_ids)
@@ -1031,15 +1111,25 @@ def _expand_indices_by_blocks(
         if n_actual == 0:
             continue
 
-        _, block_total_target = block_targets[blk_idx]
-        block_total_act = _block_total_actual[blk_idx]
-
-        # Proportional target for this nloc subset
-        if block_total_act > 0:
-            target = round(block_total_target * n_actual / block_total_act)
+        if _group_block_targets is not None:
+            target = _group_block_targets[blk_idx]
         else:
-            target = n_actual
-        target = max(target, n_actual)  # never shrink
+            _, block_total_target = block_targets[blk_idx]
+            block_total_act = _block_total_actual[blk_idx]
+
+            # Backward-compatible fallback for direct callers. Samplers pass
+            # exact group targets allocated by _allocate_group_block_targets.
+            if block_total_act > 0:
+                target = round(block_total_target * n_actual / block_total_act)
+            else:
+                target = n_actual
+            target = max(target, n_actual)  # never shrink
+
+        if target < n_actual:
+            raise ValueError(
+                "Per-group auto-probability target cannot shrink original frames: "
+                f"target={target}, actual={n_actual}, block={blk_idx}"
+            )
 
         # Full copies + remainder
         deficit = target - n_actual
@@ -1063,13 +1153,88 @@ def _expand_indices_by_blocks(
     return []
 
 
+def _collect_sampling_groups(
+    reader: "LmdbDataReader",
+) -> list[tuple[int, list[int]]]:
+    """Collect batch groups in the stable order shared by iteration and len."""
+    groups: list[tuple[int, list[int]]] = []
+    for nloc in sorted(reader.nloc_groups):
+        signature_groups = reader.group_indices_by_find_signature(
+            list(reader.nloc_groups[nloc])
+        )
+        for signature in sorted(signature_groups):
+            groups.append((nloc, list(signature_groups[signature])))
+    return groups
+
+
+def _allocate_group_block_targets(
+    groups: list[tuple[int, list[int]]],
+    frame_system_ids: list[int] | np.ndarray,
+    block_targets: list[tuple[list[int], int]],
+) -> list[list[int]]:
+    """Allocate every block target exactly across homogeneous groups.
+
+    Original frames form the non-shrinking baseline. Each block's expansion
+    deficit is apportioned by actual group size using the integer largest-
+    remainder method. Stable group order breaks equal-remainder ties, which
+    keeps distributed ranks deterministic without floating-point rounding.
+    """
+    group_actual = [[0] * len(block_targets) for _ in groups]
+    system_to_block = {
+        system_id: block_index
+        for block_index, (system_ids, _target) in enumerate(block_targets)
+        for system_id in system_ids
+    }
+    for group_index, (_nloc, indices) in enumerate(groups):
+        for index in indices:
+            block_index = system_to_block.get(int(frame_system_ids[index]))
+            if block_index is not None:
+                group_actual[group_index][block_index] += 1
+
+    group_targets = [counts.copy() for counts in group_actual]
+    for block_index, (_system_ids, block_target) in enumerate(block_targets):
+        block_actual = sum(counts[block_index] for counts in group_actual)
+        if block_target < block_actual:
+            raise ValueError(
+                "Auto-probability block target cannot shrink original frames: "
+                f"target={block_target}, actual={block_actual}, block={block_index}"
+            )
+        if block_actual == 0:
+            if block_target != 0:
+                raise ValueError(
+                    "Cannot allocate a nonzero auto-probability target to an "
+                    f"empty block: target={block_target}, block={block_index}"
+                )
+            continue
+
+        deficit = block_target - block_actual
+        remainders: list[tuple[int, int]] = []
+        allocated = 0
+        for group_index, counts in enumerate(group_actual):
+            actual = counts[block_index]
+            quotient, remainder = divmod(deficit * actual, block_actual)
+            group_targets[group_index][block_index] += quotient
+            allocated += quotient
+            if actual > 0:
+                remainders.append((remainder, group_index))
+
+        # The largest-remainder method leaves fewer units than nonempty
+        # groups, so each selected group receives at most one final unit.
+        remainder_units = deficit - allocated
+        remainders.sort(key=lambda item: (-item[0], item[1]))
+        for _remainder, group_index in remainders[:remainder_units]:
+            group_targets[group_index][block_index] += 1
+
+    return group_targets
+
+
 def _build_all_batches(
     reader: "LmdbDataReader",
     shuffle: bool,
     rng: np.random.Generator,
     block_targets: list[tuple[list[int], int]] | None = None,
 ) -> list[list[int]]:
-    """Build the full list of same-nloc batches from the reader.
+    """Build batches homogeneous in atom count and label availability.
 
     This is the shared batch-construction logic used by both
     SameNlocBatchSampler (single-GPU) and DistributedSameNlocBatchSampler.
@@ -1090,22 +1255,23 @@ def _build_all_batches(
     Returns
     -------
     list[list[int]]
-        Each inner list is a batch of frame indices, all with the same nloc.
+        Each inner list has one nloc and one scalar ``find_*`` signature.
     """
+    groups = _collect_sampling_groups(reader)
+
     # Build per-group batches
     group_batches: list[list[list[int]]] = []
 
     # Pre-compute expensive objects once (avoids O(N) work per nloc group)
-    block_total_actual: list[int] | None = None
     sid_arr: np.ndarray | None = None
     sid_to_blk_arr: np.ndarray | None = None
+    group_block_targets: list[list[int]] | None = None
     if block_targets and reader.frame_system_ids is not None:
-        block_total_actual = []
-        for sys_ids, _ in block_targets:
-            total = sum(reader.system_nframes[s] for s in sys_ids)
-            block_total_actual.append(total)
         # Convert frame_system_ids to numpy once
         sid_arr = np.array(reader.frame_system_ids, dtype=np.int64)
+        group_block_targets = _allocate_group_block_targets(
+            groups, sid_arr, block_targets
+        )
         # Build sys_id -> block_idx lookup array once
         sys_to_block: dict[int, int] = {}
         for blk_idx, (sys_ids, _target) in enumerate(block_targets):
@@ -1116,17 +1282,18 @@ def _build_all_batches(
         for sid, blk in sys_to_block.items():
             sid_to_blk_arr[sid] = blk
 
-    for nloc in sorted(reader.nloc_groups.keys()):
-        indices = list(reader.nloc_groups[nloc])
-        # Expand indices by block targets if provided
-        if block_targets and sid_arr is not None:
+    for group_index, (nloc, original_indices) in enumerate(groups):
+        indices = original_indices
+        # Expand each availability group independently using targets that
+        # were allocated globally, preserving both scalar flags and totals.
+        if block_targets and sid_arr is not None and group_block_targets is not None:
             indices = _expand_indices_by_blocks(
                 indices,
                 sid_arr,
                 block_targets,
                 rng,
-                _block_total_actual=block_total_actual,
                 _sid_to_blk_arr=sid_to_blk_arr,
+                _group_block_targets=group_block_targets[group_index],
             )
         if shuffle:
             rng.shuffle(indices)
@@ -1152,11 +1319,12 @@ def _build_all_batches(
 
 
 class SameNlocBatchSampler:
-    """Batch sampler that groups frames by nloc.
+    """Batch sampler that groups frames by nloc and ``find_*`` signature.
 
     For mixed-nloc datasets with mixed_batch=False: each batch contains only
-    frames with the same nloc. Within each nloc group, frames are shuffled.
-    Groups are interleaved round-robin so training sees diverse nloc values.
+    frames with the same nloc and label availability. Within each group,
+    frames are shuffled. Groups are interleaved round-robin so training sees
+    diverse nloc and label combinations.
 
     When auto batch_size is used, batch_size is computed per-nloc-group.
 
@@ -1188,46 +1356,43 @@ class SameNlocBatchSampler:
         self._block_targets = block_targets
 
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches of frame indices, all with the same nloc."""
+        """Yield batches with one nloc and one scalar find signature."""
         rng = np.random.default_rng(self._seed)
         yield from _build_all_batches(
             self._reader, self._shuffle, rng, self._block_targets
         )
 
     def __len__(self) -> int:
-        """Total number of batches across all nloc groups (estimated)."""
-        total = 0
-        for nloc, indices in self._reader.nloc_groups.items():
-            n = len(indices)
-            if self._block_targets and self._reader.frame_system_ids is not None:
-                # Estimate expanded count for this nloc group
-                n = self._estimate_expanded_count(indices)
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (n + bs - 1) // bs
-        return total
+        """Total batches across nloc and label-availability groups."""
+        groups = _collect_sampling_groups(self._reader)
+        group_block_targets = None
+        assigned_system_ids: set[int] = set()
+        if self._block_targets and self._reader.frame_system_ids is not None:
+            group_block_targets = _allocate_group_block_targets(
+                groups,
+                self._reader.frame_system_ids,
+                self._block_targets,
+            )
+            assigned_system_ids = {
+                system_id
+                for system_ids, _target in self._block_targets
+                for system_id in system_ids
+            }
 
-    def _estimate_expanded_count(self, indices: list[int]) -> int:
-        """Estimate expanded index count for __len__ without RNG."""
-        if not self._block_targets or self._reader.frame_system_ids is None:
-            return len(indices)
-        sys_ids = self._reader.frame_system_ids
         total = 0
-        for blk_idx, (blk_sys_ids, block_target) in enumerate(self._block_targets):
-            blk_sys_set = set(blk_sys_ids)
-            n_in_nloc = sum(1 for i in indices if sys_ids[i] in blk_sys_set)
-            if n_in_nloc == 0:
-                continue
-            block_total_actual = sum(1 for sid in sys_ids if sid in blk_sys_set)
-            if block_total_actual > 0:
-                target = round(block_target * n_in_nloc / block_total_actual)
-            else:
-                target = n_in_nloc
-            total += max(target, n_in_nloc)
-        # Add unassigned
-        all_sys = set()
-        for blk_sys_ids, _ in self._block_targets:
-            all_sys.update(blk_sys_ids)
-        total += sum(1 for i in indices if sys_ids[i] not in all_sys)
+        for group_index, (nloc, indices) in enumerate(groups):
+            bs = self._reader.get_batch_size_for_nloc(nloc)
+            n = len(indices)
+            if (
+                group_block_targets is not None
+                and self._reader.frame_system_ids is not None
+            ):
+                unassigned = sum(
+                    int(self._reader.frame_system_ids[index]) not in assigned_system_ids
+                    for index in indices
+                )
+                n = unassigned + sum(group_block_targets[group_index])
+            total += (n + bs - 1) // bs
         return total
 
 
@@ -1502,6 +1667,51 @@ class LmdbTestData:
         """Nloc → list of frame indices in self._frames."""
         return self._nloc_groups
 
+    @staticmethod
+    def _frame_has_data(frame: dict[str, Any], key: str) -> bool:
+        """Resolve one frame's explicit or inferred ``find_*`` value."""
+        find_key = f"find_{key}"
+        if find_key in frame:
+            return bool(float(np.asarray(frame[find_key]).item()))
+        value = frame.get(key)
+        return isinstance(value, (np.ndarray, np.generic, int, float, bool))
+
+    @property
+    def find_signature_groups(
+        self,
+    ) -> dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]]:
+        """Group frames by atom count and scalar label availability."""
+        signature_keys = sorted(
+            set(self._requirements) | {"fparam", "aparam", "spin", "charge_spin"}
+        )
+        groups: dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]] = {}
+        for index, frame in enumerate(self._frames):
+            atype = frame.get("atype")
+            nloc = len(atype) if isinstance(atype, np.ndarray) else self._natoms
+            signature = tuple(
+                (f"find_{key}", self._frame_has_data(frame, key))
+                for key in signature_keys
+            )
+            groups.setdefault((nloc, signature), []).append(index)
+        return groups
+
+    def get_test_by_indices(self, frame_indices: list[int]) -> dict[str, Any]:
+        """Stack one homogeneous validation group selected by frame index."""
+        if not frame_indices:
+            raise ValueError("frame_indices must contain at least one frame")
+        frames = [self._frames[index] for index in frame_indices]
+        nlocs = {
+            len(frame["atype"])
+            for frame in frames
+            if isinstance(frame.get("atype"), np.ndarray)
+        }
+        if len(nlocs) != 1:
+            raise ValueError(
+                "LMDB validation group must contain exactly one atom count, "
+                f"got {sorted(nlocs)}"
+            )
+        return self._stack_frames(frames, nlocs.pop())
+
     def add(
         self,
         key: str,
@@ -1649,9 +1859,12 @@ class LmdbTestData:
             all_keys[key] = req
 
         for key, req_info in all_keys.items():
-            has_key = any(
-                key in f and isinstance(f.get(key), np.ndarray) for f in frames
-            )
+            availability = [self._frame_has_data(frame, key) for frame in frames]
+            if any(flag != availability[0] for flag in availability[1:]):
+                raise ValueError(
+                    f"LMDB validation group mixes find_{key} values {availability}"
+                )
+            has_key = availability[0]
             result[f"find_{key}"] = 1.0 if has_key else 0.0
 
             # Get repeat factor from registered requirements
@@ -1703,24 +1916,32 @@ class LmdbTestData:
 
 
 class LmdbTestDataNlocView:
-    """Thin wrapper exposing a fixed-``nloc`` view of :class:`LmdbTestData`.
+    """Expose one stack-compatible subset of :class:`LmdbTestData`.
 
     The underlying :class:`LmdbTestData` groups frames by atom count. This
-    view fixes one ``nloc`` group, so ``get_test()`` returns only the frames
-    with that atom count and all other attributes (``pbc``, ``mixed_type``,
-    …) are forwarded to the underlying object. It lets downstream consumers
-    that expect a ``DeepmdData``-style system (one fixed natoms per
-    ``get_test()``) work on mixed-nloc LMDB datasets without changes.
+    view fixes one ``nloc`` and can additionally select a homogeneous
+    label-availability subgroup. All other attributes (``pbc``,
+    ``mixed_type``, …) are forwarded to the underlying object. It lets
+    downstream consumers that expect a ``DeepmdData``-style system work on
+    mixed-nloc or partially labeled LMDB datasets without vector find flags.
     """
 
-    def __init__(self, lmdb_test_data: "LmdbTestData", nloc: int) -> None:
+    def __init__(
+        self,
+        lmdb_test_data: "LmdbTestData",
+        nloc: int,
+        frame_indices: list[int] | None = None,
+    ) -> None:
         self._inner = lmdb_test_data
         self._nloc = nloc
+        self._frame_indices = frame_indices
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
     def get_test(self) -> dict[str, Any]:
+        if self._frame_indices is not None:
+            return self._inner.get_test_by_indices(self._frame_indices)
         return self._inner.get_test(nloc=self._nloc)
 
 

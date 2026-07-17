@@ -38,6 +38,9 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.utils.argcheck import (
     normalize,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.eval_metrics import (
     SPIN_FULL_VALIDATION_PROFILE,
     compute_full_validation_spin_metrics,
@@ -144,6 +147,38 @@ def _create_mixed_nloc_lmdb(path: str) -> str:
                     ),
                 )
                 frame_idx += 1
+    env.close()
+    return path
+
+
+def _create_partially_labeled_lmdb(path: str) -> str:
+    """Create same-nloc validation frames with complementary labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [2, 4]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for frame_idx in range(nframes):
+            frame = _make_lmdb_frame(natoms=natoms, seed=frame_idx)
+            if frame_idx % 2 == 0:
+                frame.pop("forces")
+                frame["energies"]["data"] = np.array([2.0], dtype=np.float64).tobytes()
+            else:
+                frame.pop("energies")
+                frame["forces"]["data"] = np.ones(
+                    (natoms, 3), dtype=np.float64
+                ).tobytes()
+            txn.put(
+                format(frame_idx, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
     env.close()
     return path
 
@@ -450,6 +485,77 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertEqual(evaluate_system.call_count, 3)
         self.assertAlmostEqual(metrics["mae_e_per_atom"], 8.4)
         self.assertAlmostEqual(metrics["rmse_e_per_atom"], np.sqrt(75.6))
+
+    def test_full_validator_lmdb_excludes_default_filled_partial_labels(self) -> None:
+        """Each optional-label metric must see only frames that provide it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lmdb_path = _create_partially_labeled_lmdb(f"{tmpdir}/partial.lmdb")
+            validation_data = LmdbDataset(
+                lmdb_path,
+                type_map=["O", "H"],
+                batch_size=2,
+            )
+            validation_data.add_data_requirement(
+                [
+                    DataRequirementItem(
+                        "energy", 1, atomic=False, must=False, default=7.0
+                    ),
+                    DataRequirementItem(
+                        "force", 3, atomic=True, must=False, default=11.0
+                    ),
+                ]
+            )
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": False,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": "val.log",
+                    "full_val_start": 0.0,
+                },
+                validation_data=validation_data,
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                zero_stage=0,
+                restart_training=False,
+            )
+            observed_flags = []
+
+            def evaluate_label_group(data_system):
+                test_data = data_system.get_test()
+                natoms = int(test_data["type"].shape[1])
+                nframes = int(test_data["coord"].shape[0])
+                observed_flags.append(
+                    (
+                        float(test_data["find_energy"]),
+                        float(test_data["find_force"]),
+                        nframes,
+                    )
+                )
+                prediction = {
+                    "energy": np.zeros((nframes, 1)),
+                    "force": np.zeros((nframes, natoms, 3)),
+                }
+                return validator.profile.compute_system_metrics(
+                    prediction, test_data, natoms, True
+                )
+
+            with patch.object(
+                validator,
+                "_evaluate_system",
+                side_effect=evaluate_label_group,
+            ):
+                metrics = validator.evaluate_all_systems()
+
+        self.assertCountEqual(observed_flags, [(1.0, 0.0, 2), (0.0, 1.0, 2)])
+        self.assertAlmostEqual(metrics["mae_e_per_atom"], 2.0 / 6.0)
+        self.assertAlmostEqual(metrics["rmse_e_per_atom"], 2.0 / 6.0)
+        self.assertAlmostEqual(metrics["mae_f"], 1.0)
+        self.assertAlmostEqual(metrics["rmse_f"], 1.0)
 
     def test_full_validator_lmdb_snapshot_requires_type_map(self) -> None:
         validator = FullValidator(

@@ -85,6 +85,33 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
     env.close()
 
 
+def _create_partially_labeled_lmdb(path: str) -> None:
+    """Write frames split between energy-only and force-only labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    metadata = {
+        "nframes": nframes,
+        "frame_idx_fmt": fmt,
+        "system_info": {"natoms": [3, 3]},
+        "frame_nlocs": [natoms] * nframes,
+    }
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms, index)
+            if index % 2 == 0:
+                frame.pop("forces")
+            else:
+                frame.pop("energies")
+            txn.put(
+                format(index, fmt).encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+
+
 class TestLmdbDataSystemGetBatch(unittest.TestCase):
     """LmdbDataSystem.get_batch produces a numpy dict that normalize_batch accepts."""
 
@@ -158,6 +185,43 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         batch = ds.get_batch()
         self.assertIn("energy", batch)
         self.assertIn("find_energy", batch)
+
+    def test_partial_labels_are_batched_by_availability(self) -> None:
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        partial_path = os.path.join(self.tmpdir, "partial.lmdb")
+        _create_partially_labeled_lmdb(partial_path)
+        ds = LmdbDataSystem(
+            lmdb_path=partial_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+        old_iter = ds._iter
+        # Realize the old iterator before requirements change so this checks
+        # replacement rather than two independently-created lazy generators.
+        next(old_iter)
+        ds.add_data_requirements(
+            [
+                DataRequirementItem(
+                    "energy", ndof=1, atomic=False, must=False, default=7.0
+                ),
+                DataRequirementItem(
+                    "force", ndof=3, atomic=True, must=False, default=11.0
+                ),
+            ]
+        )
+        self.assertIsNot(ds._iter, old_iter)
+
+        batches = [ds.get_batch(), ds.get_batch()]
+        observed = {
+            (float(batch["find_energy"]), float(batch["find_force"]))
+            for batch in batches
+        }
+        self.assertEqual(observed, {(1.0, 0.0), (0.0, 1.0)})
+        self.assertTrue(all(batch["coord"].shape[0] == 2 for batch in batches))
 
 
 class TestLmdbTrainingLoop(unittest.TestCase):

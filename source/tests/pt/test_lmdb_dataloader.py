@@ -24,6 +24,9 @@ from deepmd.dpmodel.utils.lmdb_data import (
     _remap_keys,
     merge_lmdb,
 )
+from deepmd.pt.loss.ener import (
+    EnergyStdLoss,
+)
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
@@ -79,6 +82,37 @@ def _create_test_lmdb(path: str, nframes: int = 10, natoms: int = 6) -> None:
             key = format(i, fmt).encode()
             frame = _make_frame(natoms=natoms, seed=i)
             txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+
+
+def _create_partially_labeled_lmdb(path: str) -> None:
+    """Create same-nloc frames with complementary energy/force labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [3, 3]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms=natoms, seed=index)
+            if index % 2 == 0:
+                frame.pop("forces")
+                frame["energies"]["data"] = np.array([2.0], dtype=np.float64).tobytes()
+            else:
+                frame.pop("energies")
+                frame["forces"]["data"] = np.ones(
+                    (natoms, 3), dtype=np.float64
+                ).tobytes()
+            txn.put(
+                format(index, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
     env.close()
 
 
@@ -312,6 +346,106 @@ class TestDataLoaderIteration:
             total_frames = sum(batch["coord"].shape[0] for batch in dl)
         assert total_frames == 10
 
+    def test_partial_labels_form_homogeneous_loss_batches(self, tmp_path, monkeypatch):
+        """Default-filled labels must never share a scalar flag with real ones."""
+        monkeypatch.setattr("deepmd.pt.loss.ener.env.DEVICE", torch.device("cpu"))
+        path = str(tmp_path / "partial.lmdb")
+        _create_partially_labeled_lmdb(path)
+        ds = LmdbDataset(path, type_map=["O", "H"], batch_size=2)
+        ds.add_data_requirement(
+            [
+                DataRequirementItem("energy", 1, atomic=False, must=False, default=7.0),
+                DataRequirementItem("force", 3, atomic=True, must=False, default=11.0),
+            ]
+        )
+
+        sampler = SameNlocBatchSampler(ds._reader, shuffle=True, seed=11)
+        batches = list(sampler)
+        assert len(sampler) == len(batches) == 2
+        for indices in batches:
+            signatures = {ds._reader.get_find_signature(index) for index in indices}
+            assert len(signatures) == 1
+
+        distributed_batches = []
+        for rank in range(2):
+            distributed = DistributedSameNlocBatchSampler(
+                ds._reader,
+                rank=rank,
+                world_size=2,
+                shuffle=True,
+                seed=11,
+            )
+            rank_batches = list(distributed)
+            assert len(distributed) == len(rank_batches) == 1
+            distributed_batches.extend(rank_batches)
+        assert sorted(index for batch in distributed_batches for index in batch) == [
+            0,
+            1,
+            2,
+            3,
+        ]
+
+        loss_module = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+        )
+        force_loss_module = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+        )
+        observed_flags = set()
+        with torch.device("cpu"):
+            batches = list(ds._inner_dataloader)
+            stat_batches = [
+                batch for dataloader in ds.dataloaders for batch in dataloader
+            ]
+        assert {
+            (float(batch["find_energy"]), float(batch["find_force"]))
+            for batch in stat_batches
+        } == {(1.0, 0.0), (0.0, 1.0)}
+        for batch in batches:
+            flags = (float(batch["find_energy"]), float(batch["find_force"]))
+            observed_flags.add(flags)
+
+            def zero_model(_batch=batch, **kwargs):
+                return {
+                    "energy": torch.zeros_like(_batch["energy"]),
+                    "force": torch.zeros_like(_batch["force"]),
+                }
+
+            _, loss, _ = loss_module(
+                {},
+                zero_model,
+                {
+                    "energy": batch["energy"],
+                    "find_energy": batch["find_energy"],
+                },
+                natoms=6,
+                learning_rate=1.0,
+            )
+            if flags[0] == 0.0:
+                assert loss.item() == 0.0
+            else:
+                assert loss.item() > 0.0
+
+            _, force_loss, _ = force_loss_module(
+                {},
+                zero_model,
+                {
+                    "force": batch["force"],
+                    "find_force": batch["find_force"],
+                },
+                natoms=6,
+                learning_rate=1.0,
+            )
+            if flags[1] == 0.0:
+                assert force_loss.item() == 0.0
+            else:
+                assert force_loss.item() > 0.0
+        assert observed_flags == {(1.0, 0.0), (0.0, 1.0)}
+
 
 # ============================================================
 # Collate function
@@ -355,6 +489,14 @@ class TestCollate:
             {"coord": np.zeros((2, 3)), "box": None},
         ]
         assert _collate_lmdb_batch(frames)["box"] is None
+
+    def test_collate_rejects_mixed_find_flags(self):
+        frames = [
+            {"coord": np.zeros((2, 3)), "find_energy": 1.0},
+            {"coord": np.zeros((2, 3)), "find_energy": 0.0},
+        ]
+        with pytest.raises(ValueError, match="mixes 'find_energy' values"):
+            _collate_lmdb_batch(frames)
 
 
 # ============================================================
