@@ -276,11 +276,9 @@ class EnvMatStatSe(EnvMatStat):
             device=array_api_compat.device(data[0]["coord"]),
         )
         for system in data:
-            coord, atype, box = (
-                system["coord"],
-                system["atype"],
-                system["box"],
-            )
+            coord = system["coord"]
+            atype = system["atype"]
+            box = system.get("box")
             nframes, nloc = atype.shape[:2]
             pair_excl = None
             if "pair_exclude_types" in system:
