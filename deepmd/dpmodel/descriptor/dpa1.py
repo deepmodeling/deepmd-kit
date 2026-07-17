@@ -596,18 +596,25 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         sw
             The smooth switch function.
         """
-        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        nloc = nlist.shape[1]
-        nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
-        # graph-eligible configs route through the graph-native adapter (decision
-        # #14: graph = single math source, dense call = thin adapter). Ineligible
-        # configs (compressed descriptors) and the ghost case with no mapping
-        # fall back to the legacy dense body. The graph needs `mapping` to fold
-        # ghosts to local owners; without it only nall == nloc is valid.
-        if self.uses_graph_lower() and (mapping is not None or nall == nloc):
-            return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
-        else:
-            return self._call_dense(coord_ext, atype_ext, nlist)
+        # The dense ``call`` always runs the legacy dense body -- it is the
+        # cross-backend consistency reference and must match the tf/pt/pd/jax
+        # dense descriptors bit-for-bit. It previously routed graph-eligible
+        # configs through ``_call_graph_adapter`` (decision #14), but the
+        # adapter is bit-exact ONLY in the trivial-statistics regime
+        # (``davg == 0``): the dense se_atten body leaks a phantom
+        # padding-neighbor ``-davg/dstd`` residual (``EnvMat.call`` subtracts
+        # ``davg`` AFTER the padding rows' geometry is weight-zeroed, and
+        # neither the empty ``exclude_types`` mask nor the attention layers
+        # re-mask it) that the graph path deliberately omits -- the graph
+        # output is the physically correct one, but ``call`` must reproduce
+        # the dense reference. The former gate also made ``mapping`` -- an
+        # argument that only enables ghost folding on graph routes -- silently
+        # change the numerics of a dense call. The graph-native route is
+        # reached exclusively through :meth:`call_graph` (pt_expt
+        # ``forward_atomic_graph`` and the graph ``.pt2``), never through
+        # ``call``. ``_call_graph_adapter`` is retained as the
+        # bit-exact-regime reference exercised by the adapter parity tests.
+        return self._call_dense(coord_ext, atype_ext, nlist)
 
     def _call_graph_adapter(
         self,
@@ -616,14 +623,27 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None,
     ) -> Array:
-        """Regime-1 dense->graph adapter (the eligible ``call`` path).
+        """Regime-1 dense->graph adapter.
 
         Builds a NeighborGraph from the dense quartet with the SHAPE-STATIC
         converter (``compact=False``, so this is jit/export-traceable -- no
         ``nonzero``), runs :meth:`call_graph`, and reconstructs the dense-shaped
-        ``sw``. Preserves the dense 5-tuple ABI exactly; masked invalid edges
-        contribute zero in ``call_graph``'s ``segment_sum`` so the output is
-        identical to the legacy dense body.
+        ``sw``. Preserves the dense 5-tuple ABI; masked invalid edges
+        contribute zero in ``call_graph``'s ``segment_sum``.
+
+        Bit-exact vs :meth:`_call_dense` **only in the trivial-statistics
+        regime** (``davg == 0``). For nonzero ``davg`` the dense body leaks a
+        phantom padding-neighbor ``-davg/dstd`` residual into every padding
+        slot (``EnvMat.call`` subtracts ``davg`` AFTER the padding geometry is
+        weight-zeroed; with empty ``exclude_types`` nothing re-masks it, at
+        any ``attn_layer``) that the graph path deliberately omits. The graph
+        kernel additionally applies the slot-0 statistics ``[:, 0, :]`` to
+        every edge -- exact for real stat-computed tables (slot-uniform by
+        construction), not for artificially slot-varying ones. This is why
+        the dense :meth:`call` does NOT route here: it is the cross-backend
+        consistency reference. This method is retained as the
+        bit-exact-regime reference exercised by the adapter parity tests; the
+        production graph route is :meth:`call_graph`.
 
         Parameters
         ----------
