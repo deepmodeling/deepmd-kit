@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-from copy import (
-    deepcopy,
-)
 from pathlib import (
     Path,
 )
@@ -58,6 +55,60 @@ def _load_dpa4_example() -> dict[str, Any]:
     )
     with example_path.open(encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def _energy_model_params() -> dict[str, Any]:
+    """Build a minimal PT energy-model configuration."""
+    return {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "se_e2_a",
+            "sel": [4, 4],
+            "rcut": 3.0,
+            "rcut_smth": 2.5,
+            "neuron": [4, 8],
+            "axis_neuron": 4,
+            "precision": "float64",
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [8],
+            "precision": "float64",
+        },
+    }
+
+
+def _energy_stat_sample() -> list[dict[str, Any]]:
+    """Build statistics data for the minimal PT energy model."""
+    return [
+        {
+            "coord": torch.tensor(
+                [
+                    [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                    [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
+                ],
+                dtype=torch.float64,
+                device=DEVICE,
+            ),
+            "atype": torch.tensor(
+                [[0, 0], [1, 1]],
+                dtype=torch.int64,
+                device=DEVICE,
+            ),
+            "box": None,
+            "natoms": torch.tensor(
+                [[2, 2, 2, 0], [2, 2, 0, 2]],
+                dtype=torch.int64,
+                device=DEVICE,
+            ),
+            "energy": torch.tensor(
+                [[2.0], [4.0]],
+                dtype=torch.float64,
+                device=DEVICE,
+            ),
+            "find_energy": np.float32(1.0),
+        }
+    ]
 
 
 def test_default_stat_file_mode_remains_writable(tmp_path: Path) -> None:
@@ -149,58 +200,13 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
 
 
 def test_energy_model_reloads_update_cache_in_read_mode(tmp_path: Path) -> None:
-    model_params = {
-        "type_map": ["O", "H"],
-        "descriptor": {
-            "type": "se_e2_a",
-            "sel": [4, 4],
-            "rcut": 3.0,
-            "rcut_smth": 2.5,
-            "neuron": [4, 8],
-            "axis_neuron": 4,
-            "precision": "float64",
-        },
-        "fitting_net": {
-            "type": "ener",
-            "neuron": [8],
-            "precision": "float64",
-        },
-    }
-    sampled = [
-        {
-            "coord": torch.tensor(
-                [
-                    [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-                    [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
-                ],
-                dtype=torch.float64,
-                device=DEVICE,
-            ),
-            "atype": torch.tensor(
-                [[0, 0], [1, 1]],
-                dtype=torch.int64,
-                device=DEVICE,
-            ),
-            "box": None,
-            "natoms": torch.tensor(
-                [[2, 2, 2, 0], [2, 2, 0, 2]],
-                dtype=torch.int64,
-                device=DEVICE,
-            ),
-            "energy": torch.tensor(
-                [[2.0], [4.0]],
-                dtype=torch.float64,
-                device=DEVICE,
-            ),
-            "find_energy": np.float32(1.0),
-        }
-    ]
+    sampled = _energy_stat_sample()
     stat_file = tmp_path / "stat.hdf5"
 
     update_path = _prepare_stat_file_path(str(stat_file), "update")
     assert isinstance(update_path, DPH5Path)
     try:
-        update_model = get_model(deepcopy(model_params)).to(DEVICE)
+        update_model = get_model(_energy_model_params()).to(DEVICE)
         update_model.compute_or_load_stat(lambda: sampled, update_path)
         stat_root = update_path / "O H"
         assert (stat_root / "bias_atom_energy").is_file()
@@ -211,11 +217,68 @@ def test_energy_model_reloads_update_cache_in_read_mode(tmp_path: Path) -> None:
     read_path = _prepare_stat_file_path(str(stat_file), "read")
     assert isinstance(read_path, DPH5Path)
     try:
-        read_model = get_model(deepcopy(model_params)).to(DEVICE)
+        read_model = get_model(_energy_model_params()).to(DEVICE)
         read_model.compute_or_load_stat(
             lambda: pytest.fail("complete read-only cache must not sample data"),
             read_path,
         )
+    finally:
+        _close_stat_path(read_path)
+
+
+def test_read_mode_rejects_missing_descriptor_stats_before_sampling(
+    tmp_path: Path,
+) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    with h5py.File(stat_file, "w") as file:
+        file.create_group("O H")
+
+    read_path = _prepare_stat_file_path(str(stat_file), "read")
+    assert isinstance(read_path, DPH5Path)
+    try:
+        model = get_model(_energy_model_params()).to(DEVICE)
+        with pytest.raises(FileNotFoundError, match="environment statistics"):
+            model.compute_or_load_stat(
+                lambda: pytest.fail("read-only cache miss must not sample data"),
+                read_path,
+            )
+    finally:
+        _close_stat_path(read_path)
+
+    with h5py.File(stat_file, "r") as file:
+        assert list(file.keys()) == ["O H"]
+        assert len(file["O H"]) == 0
+
+
+def test_read_mode_rejects_partial_descriptor_stats_before_sampling(
+    tmp_path: Path,
+) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    update_path = _prepare_stat_file_path(str(stat_file), "update")
+    assert isinstance(update_path, DPH5Path)
+    try:
+        model = get_model(_energy_model_params()).to(DEVICE)
+        model.compute_or_load_stat(_energy_stat_sample, update_path)
+    finally:
+        _close_stat_path(update_path)
+
+    with h5py.File(stat_file, "r+") as file:
+        type_map_group = file["O H"]
+        descriptor_groups = [
+            value for value in type_map_group.values() if isinstance(value, h5py.Group)
+        ]
+        assert len(descriptor_groups) == 1
+        del descriptor_groups[0]["r_0"]
+
+    read_path = _prepare_stat_file_path(str(stat_file), "read")
+    assert isinstance(read_path, DPH5Path)
+    try:
+        model = get_model(_energy_model_params()).to(DEVICE)
+        with pytest.raises(FileNotFoundError, match="'r_0'"):
+            model.compute_or_load_stat(
+                lambda: pytest.fail("partial read-only cache must not sample data"),
+                read_path,
+            )
     finally:
         _close_stat_path(read_path)
 
