@@ -924,6 +924,13 @@ class _CompiledModel(torch.nn.Module):
             nloc,
             rcut,
             sel,
+            # Keep the candidate list merged, matching eager training's
+            # DefaultNeighborList contract. forward_common_lower always calls
+            # model.format_nlist, which performs the type split for non-mixed
+            # descriptors. The shared builder globally truncates to sum(sel)
+            # before either split, so distinguish_types=True would only move
+            # the same layout transform earlier without changing the final
+            # formatted neighbor list consumed by the lower model.
             distinguish_types=False,
             # model-level pair exclusion is a nlist-BUILD transform (decision
             # #18/A4); the compiled dense lower consumes a pre-excluded nlist.

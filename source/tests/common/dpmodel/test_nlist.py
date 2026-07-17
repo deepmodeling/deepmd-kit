@@ -21,6 +21,7 @@ from deepmd.dpmodel.utils import (
     extend_coord_with_ghosts,
     get_multiple_nlist_key,
     inter2phys,
+    nlist_distinguish_types,
 )
 
 
@@ -152,6 +153,51 @@ class TestDPModelFormatNlist(unittest.TestCase):
             nlist,
         )
         np.testing.assert_allclose(self.expected_nlist, nlist1)
+
+
+class TestNeighborTypeLayout(unittest.TestCase):
+    """Document global candidate selection followed by per-type layout."""
+
+    def test_lower_type_split_matches_early_type_split(self) -> None:
+        """An earlier type split must preserve the final formatted nlist."""
+        # The two closest candidates are type 0, while the farther type-1 atom
+        # is still inside rcut. The established contract first keeps the global
+        # sum(sel) nearest candidates and only then lays them out by type.
+        coord = np.array(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [1.5, 0.0, 0.0],
+                    [2.0, 0.0, 0.0],
+                ]
+            ],
+            dtype=np.float64,
+        )
+        atype = np.array([[0, 0, 0, 1]], dtype=np.int64)
+        sel = [1, 1]
+
+        merged = build_neighbor_list(
+            coord,
+            atype,
+            nloc=1,
+            rcut=3.0,
+            sel=sel,
+            distinguish_types=False,
+        )
+        lower_formatted = nlist_distinguish_types(merged, atype, sel)
+        early_formatted = build_neighbor_list(
+            coord,
+            atype,
+            nloc=1,
+            rcut=3.0,
+            sel=sel,
+            distinguish_types=True,
+        )
+
+        np.testing.assert_array_equal(merged[0, 0], [1, 2])
+        np.testing.assert_array_equal(lower_formatted, early_formatted)
+        np.testing.assert_array_equal(lower_formatted[0, 0], [1, -1])
 
 
 dtype = np.float64
