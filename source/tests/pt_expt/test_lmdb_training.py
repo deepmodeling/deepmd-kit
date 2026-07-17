@@ -89,8 +89,8 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
 
 
 def _create_mixed_nloc_test_lmdb(path: str) -> None:
-    """Write an LMDB with four six-atom and four nine-atom frames."""
-    frame_nlocs = [6] * 4 + [9] * 4
+    """Write an LMDB with five six-atom and five nine-atom frames."""
+    frame_nlocs = [6] * 5 + [9] * 5
     env = lmdb.open(path, map_size=10 * 1024 * 1024)
     fmt = "012d"
     metadata = {
@@ -207,8 +207,41 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         self.assertEqual(len(sampled), 2)
         self.assertEqual(
             sorted(sample["atype"].shape for sample in sampled),
+            [(5, 6), (5, 9)],
+        )
+
+    def test_stat_input_limits_batches_per_nloc_group(self) -> None:
+        """Statistics honor the requested batch cap for every nloc group."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.mixed_lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+
+        sampled = make_stat_input(ds, nbatches=2)
+
+        self.assertEqual(
+            sorted(sample["atype"].shape for sample in sampled),
             [(4, 6), (4, 9)],
         )
+
+    def test_stat_batches_restart_after_non_divisible_pass(self) -> None:
+        """Statistical batches restart after including a partial tail batch."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.mixed_lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+
+        for sys_idx, nloc in enumerate((6, 9)):
+            self.assertEqual(ds.get_stat_numb_batches(sys_idx), 3)
+            shapes = [ds.get_stat_batch(sys_idx)["atype"].shape for _ in range(4)]
+            self.assertEqual(
+                shapes,
+                [(2, nloc), (2, nloc), (1, nloc), (2, nloc)],
+            )
 
 
 class TestLmdbTrainingLoop(unittest.TestCase):

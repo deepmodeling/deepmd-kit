@@ -63,7 +63,11 @@ def collect_batches(
     Parameters
     ----------
     data
-        The data (must support ``get_nsystems()`` and ``get_batch(sys_idx=)``)
+        The data source. It must support ``get_nsystems()`` and
+        ``get_batch(sys_idx=)``. Optional ``get_stat_nsystems()``,
+        ``get_stat_numb_batches(sys_idx)``, and ``get_stat_batch(sys_idx)``
+        hooks may expose shape-compatible logical systems and their available
+        batches specifically for statistics.
     nbatches : int
         The number of batches per system
     merge_sys : bool (True)
@@ -112,8 +116,11 @@ def make_stat_input(
     Parameters
     ----------
     data
-        The multi-system data manager
-        (must support ``get_nsystems()`` and ``get_batch(sys_idx=)``).
+        The multi-system data manager. It must support ``get_nsystems()`` and
+        ``get_batch(sys_idx=)``. Optional ``get_stat_nsystems()``,
+        ``get_stat_numb_batches(sys_idx)``, and ``get_stat_batch(sys_idx)``
+        hooks may expose shape-compatible logical systems and their available
+        batches specifically for statistics.
     nbatches : int
         Number of batches to collect per system.
 
