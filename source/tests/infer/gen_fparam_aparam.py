@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate fparam_aparam .pt2 test models from pre-committed .pth.
+"""Generate fparam_aparam test models from a pre-committed .pth.
 
 Converts the pre-committed fparam_aparam_default.pth (checked into git) to
-.pt2 format. Produces:
+portable inference formats. Produces:
   - fparam_aparam_default.pt2: model WITH default_fparam
+  - fparam_aparam_default.savedmodel: JAX model WITH default_fparam
   - fparam_aparam.pt2: same weights WITHOUT default_fparam
   - fparam_aparam.pth: same weights WITHOUT default_fparam (torch.jit)
 Also prints reference values for C++ tests.
@@ -30,6 +31,9 @@ from gen_common import (
 def main():
     import torch
 
+    from deepmd.jax.utils.serialization import (
+        deserialize_to_file as jax_deserialize_to_file,
+    )
     from deepmd.pt.model.model import (
         get_model,
     )
@@ -71,6 +75,10 @@ def main():
     pt_expt_deserialize_to_file(
         pt2_default_path, copy.deepcopy(data_default), do_atomic_virial=True
     )
+
+    savedmodel_default_path = os.path.join(base_dir, "fparam_aparam_default.savedmodel")
+    print(f"Exporting to {savedmodel_default_path} ...")  # noqa: T201
+    jax_deserialize_to_file(savedmodel_default_path, copy.deepcopy(data_default))
 
     # ---- 3. Export fparam_aparam.pt2 and .pth (without default_fparam) ----
     config_no_default = copy.deepcopy(config)
@@ -135,6 +143,7 @@ def main():
     atype = [0, 0, 0, 0, 0, 0]
     box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0], dtype=np.float64)
     fparam_val = np.array([0.25852028], dtype=np.float64)
+    fparam_override = np.array([0.5], dtype=np.float64)
     aparam_val = np.array([0.25852028] * 6, dtype=np.float64)
 
     e, f, v, ae, av = dp.eval(
@@ -177,6 +186,14 @@ def main():
         aparam=aparam_val,
         atomic=True,
     )
+    _e_override, f_override, _v_override, ae_override, av_override = dp_default.eval(
+        coord,
+        box,
+        atype,
+        fparam=fparam_override,
+        aparam=aparam_val,
+        atomic=True,
+    )
     ref_path_default = os.path.join(base_dir, "fparam_aparam_default.expected")
     write_expected_ref(
         ref_path_default,
@@ -185,6 +202,11 @@ def main():
                 "expected_e": ae_d[0, :, 0],
                 "expected_f": f_d[0],
                 "expected_v": av_d[0],
+            },
+            "override": {
+                "expected_e": ae_override[0, :, 0],
+                "expected_f": f_override[0],
+                "expected_v": av_override[0],
             },
         },
         source_script="source/tests/infer/gen_fparam_aparam.py",
