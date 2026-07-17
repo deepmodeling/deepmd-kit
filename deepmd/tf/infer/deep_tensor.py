@@ -202,6 +202,9 @@ class DeepTensor(DeepEval):
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
+        # Keep the original boundary semantics separate from the identity box
+        # used only to satisfy TensorFlow's non-optional box placeholder.
+        neighbor_cell = cells if pbc else None
 
         # sort inputs
         coords, atom_types, imap, sel_at, sel_imap = self.sort_input(
@@ -227,7 +230,7 @@ class DeepTensor(DeepEval):
                 _,
             ) = self.build_neighbor_list(
                 coords,
-                cells if cells is not None else None,
+                neighbor_cell,
                 atom_types,
                 imap,
                 self.neighbor_list,
@@ -346,6 +349,9 @@ class DeepTensor(DeepEval):
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
+        # Keep the original boundary semantics separate from the identity box
+        # used only to satisfy TensorFlow's non-optional box placeholder.
+        neighbor_cell = cells if pbc else None
         nout = self.output_dim
 
         # sort inputs
@@ -373,7 +379,7 @@ class DeepTensor(DeepEval):
                 ghost_map,
             ) = self.build_neighbor_list(
                 coords,
-                cells if cells is not None else None,
+                neighbor_cell,
                 atom_types,
                 imap,
                 self.neighbor_list,
