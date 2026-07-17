@@ -28,6 +28,10 @@ DPDipoleModel_ = make_model(DPDipoleAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("dipole")
 class DipoleModel(DPModelCommon, DPDipoleModel_):
+    r"""Dipole model reducing atomic contributions as
+    :math:`\boldsymbol\mu=\sum_i\boldsymbol\mu_i`.
+    """
+
     def __init__(
         self,
         *args: Any,

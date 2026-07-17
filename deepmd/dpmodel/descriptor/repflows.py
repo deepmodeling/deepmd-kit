@@ -1070,6 +1070,8 @@ def symmetrization_op_dynamic(
 
 
 class RepFlowLayer(NativeOP):
+    r"""Residual node/edge/angle update :math:`(n,e,a)^{l+1}=\Phi_l(n,e,a)`."""
+
     # Mirrors the descriptor-block internal switch.  The owning block writes the
     # instance value during construction/deserialization.
     _use_static_dynamic_sel: bool = False

@@ -26,6 +26,19 @@ from deepmd.utils.version import (
 class TensorLoss(Loss):
     r"""Loss on local and global tensors (e.g. dipole, polarizability).
 
+    With atomic tensors :math:`T_i`, global tensor :math:`T`, and optional
+    atomic scalar weights :math:`a_i`, the objective is
+
+    .. math::
+
+       L=p_{\mathrm{atom}}\left\langle
+       [a_i(T_i-\hat T_i)]^2\right\rangle
+       +p_{\mathrm{global}}\left\langle(T-\hat T)^2\right\rangle.
+
+    Padded atoms are omitted from the local mean.  Reported global RMSE is
+    divided by the number of real atoms, matching the convention for
+    extensive tensor labels.
+
     Parameters
     ----------
     tensor_name : str
@@ -78,7 +91,11 @@ class TensorLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the weighted local and global tensor MSE.
+
+        This applies the objective in :class:`TensorLoss`, including optional
+        per-atom weights and padding masks.
+        """
         del learning_rate, mae
         first_key = next(iter(model_dict))
         xp = array_api_compat.array_namespace(model_dict[first_key])

@@ -142,8 +142,63 @@ if TYPE_CHECKING:
 @BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")
 class DescrptDPA4(NativeOP, BaseDescriptor):
-    """
+    r"""
     SeZM descriptor.
+
+    DPA4 stores the state of atom :math:`i` at layer :math:`l` as SO(3)
+    coefficients :math:`\mathbf h_i^{(l,\ell,m)}`.  For an edge :math:`j\to i`,
+    the source state is rotated into an edge-aligned frame, processed by an
+    SO(2)-equivariant convolution, and rotated back:
+
+    .. math::
+        \mathbf q_{ji}^{(l)} =
+        \mathbf D(\hat{\mathbf r}_{ji})^{-1}\mathbf h_j^{(l)},
+        \qquad
+        \mathbf m_{ji}^{(l)} =
+        \mathbf D(\hat{\mathbf r}_{ji})
+        \operatorname{SO2Conv}\!\left(
+        \mathbf q_{ji}^{(l)},\boldsymbol\rho(r_{ji})\right),
+
+    where :math:`\mathbf D` contains Wigner-D rotation blocks and
+    :math:`\boldsymbol\rho` is the radial embedding multiplied by a smooth
+    cutoff envelope.  In the baseline residual path, the aggregated message is
+    first added directly to the node state, after which every equivariant FFN
+    subblock applies its own residual update:
+
+    .. math::
+
+        \mathbf M_i^{(l)}=\sum_{j\in\mathcal N(i)}
+        w_{ji}\mathbf m_{ji}^{(l)},\qquad
+        \mathbf u_i^{(l,0)}=\mathbf h_i^{(l)}+\mathbf M_i^{(l)},
+
+    .. math::
+
+        \mathbf u_i^{(l,r)}=\mathbf u_i^{(l,r-1)}+
+        \operatorname{FFN}_{\mathrm{eq},r}
+        \!\left(\mathbf u_i^{(l,r-1)}\right),\qquad
+        \mathbf h_i^{(l+1)}=\mathbf u_i^{(l,B)}.
+
+    Consequently, one FFN subblock gives
+    :math:`\mathbf h_i^{(l+1)}=\mathbf h_i^{(l)}+\mathbf M_i^{(l)}+
+    \operatorname{FFN}_{\mathrm{eq}}(\mathbf h_i^{(l)}+\mathbf M_i^{(l)})`.
+    The AttnRes modes replace these baseline shortcuts with selective
+    depth-wise aggregation before the SO(2) and/or FFN units.
+
+    The final read-out applies the configured scalar/equivariant read-out to
+    the last interaction state and then keeps its invariant scalar output:
+
+    .. math::
+        \mathcal D_i = \operatorname{ScalarReadout}_{\mathrm{mode}}
+        \left(\mathbf h_i^{(L)}\right).
+
+    In ``so3_readout="none"`` mode, coefficients with :math:`\ell>0` are
+    discarded and the :math:`\ell=0` slice is processed by the configured
+    learned scalar residual FFN stack.  In ``"glu"`` and ``"mlp"`` modes,
+    equivariant residual read-out blocks first fold higher-degree coefficients
+    into the scalar channel before extraction.
+
+    The weights :math:`w_{ji}` are either cutoff-envelope weights or normalized
+    attention weights, depending on ``n_atten_head``.
 
     Execution outline
     -----------------
