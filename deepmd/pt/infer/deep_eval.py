@@ -29,6 +29,7 @@ from deepmd.infer.deep_dos import (
 from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
+    _standardize_fparam_aparam,
 )
 from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
@@ -543,6 +544,14 @@ class DeepEval(DeepEvalBackend):
             cells = np.array(cells)
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
+        )
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
         )
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
@@ -1311,6 +1320,17 @@ class DeepEval(DeepEvalBackend):
             cells = np.array(cells)
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
+        )
+        # Normalize shared parameter shorthand before auto batching. Otherwise
+        # a one-dimensional fparam/aparam is passed unchanged to every split,
+        # and _eval_embedding cannot reshape it to the split frame count.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
         )
         return self._eval_func(self._eval_embedding, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, charge_spin, dtype

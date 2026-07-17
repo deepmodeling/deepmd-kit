@@ -314,6 +314,101 @@ class TestEmbeddingDeepEvalAPI(unittest.TestCase):
             np.float64,
         )
 
+    def test_backend_embedding_normalizes_parameter_shorthand_before_batching(
+        self,
+    ) -> None:
+        """Shared fparam/aparam forms must survive one-frame auto batching."""
+        params = _se_e2_a_params()
+        params["fitting_net"]["numb_fparam"] = 2
+        params["fitting_net"]["numb_aparam"] = 1
+        model = get_model(params)
+        _randomize(model)
+        path = self._save_checkpoint(model, params, "se_e2_a_params.pt")
+
+        natoms = int(self.atype_np.shape[0])
+        coords = np.repeat(self.coord_np, 2, axis=0)
+        cells = np.repeat(self.cell_np, 2, axis=0)
+        fparam_shared = np.array([0.25, -0.5], dtype=np.float64)
+        fparam_full = np.repeat(fparam_shared[None, :], 2, axis=0)
+        aparam_shared = np.linspace(0.1, 0.7, natoms, dtype=np.float64)[:, None]
+        aparam_full = np.repeat(aparam_shared[None, :, :], 2, axis=0)
+
+        # A batch budget of exactly natoms forces each of the two frames into
+        # a separate backend call and exposes normalization done too late.
+        dp = DeepPot(path, auto_batch_size=natoms, no_jit=True)
+        backend = dp.deep_eval
+        self.assertIsInstance(backend, PTDeepEval)
+        self.assertEqual(backend.auto_batch_size.current_batch_size, natoms)
+
+        full = backend.eval_embedding(
+            coords,
+            cells,
+            self.atype_np,
+            fparam=fparam_full,
+            aparam=aparam_full,
+        )
+        shared = backend.eval_embedding(
+            coords,
+            cells,
+            self.atype_np,
+            fparam=fparam_shared,
+            aparam=aparam_shared,
+        )
+        for full_value, shared_value in zip(full, shared, strict=True):
+            np.testing.assert_allclose(shared_value, full_value)
+
+        np.testing.assert_allclose(
+            backend.eval_descriptor(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=fparam_shared,
+                aparam=aparam_shared,
+            ),
+            backend.eval_descriptor(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=fparam_full,
+                aparam=aparam_full,
+            ),
+        )
+        np.testing.assert_allclose(
+            backend.eval_fitting_last_layer(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=fparam_shared,
+                aparam=aparam_shared,
+            ),
+            backend.eval_fitting_last_layer(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=fparam_full,
+                aparam=aparam_full,
+            ),
+        )
+
+        scalar_aparam = np.array([0.35], dtype=np.float64)
+        scalar_full = np.full((2, natoms, 1), scalar_aparam.item())
+        scalar = backend.eval_embedding(
+            coords,
+            cells,
+            self.atype_np,
+            fparam=fparam_shared,
+            aparam=scalar_aparam,
+        )
+        scalar_reference = backend.eval_embedding(
+            coords,
+            cells,
+            self.atype_np,
+            fparam=fparam_full,
+            aparam=scalar_full,
+        )
+        for scalar_value, reference_value in zip(scalar, scalar_reference, strict=True):
+            np.testing.assert_allclose(scalar_value, reference_value)
+
     def test_legacy_frozen_model_uses_baked_in_hook(self) -> None:
         # Frozen ``.pth`` files predating ``forward_embedding`` still carry the
         # descriptor / fitting hooks baked into the TorchScript module. The
