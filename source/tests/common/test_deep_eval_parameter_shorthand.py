@@ -8,7 +8,6 @@ from deepmd.infer.deep_eval import (
     _standardize_fparam_aparam,
 )
 
-
 NFRAMES = 3
 NATOMS = 4
 DIM_FPARAM = 2
