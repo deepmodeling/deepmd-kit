@@ -103,8 +103,7 @@ def segment_envelope_gated_softmax(
 
     # === Step 1. Build factor-wise effective logits ===
     # Computing the logarithms before multiplying the factors avoids losing a
-    # physically nonzero edge when ``edge_env**2 * src_weight * edge_mask``
-    # underflows.
+    # physically nonzero edge when ``edge_env**2 * src_weight`` underflows.
     logits_2d = xp.astype(xp.reshape(logits, (n_edge, n_channel)), compute_dtype)
     edge_env_1d = xp.astype(xp.reshape(edge_env, (n_edge,)), compute_dtype)
     edge_positive = edge_env_1d > 0.0
