@@ -11,15 +11,22 @@ artifact (no ``forward_lower_with_comm`` sidecar) — multi-rank inference
 must fail fast at the C++ dispatch instead of silently skipping the
 exchange.
 
-This test verifies:
-  1. The .pt2 archive is produced and the with-comm artifact is ABSENT.
+Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` now resolves
+to ``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
+True``; ``canonical_model_eligible`` is dpa1-specific so DPA4 never takes the
+``"dpa1_canonical"`` branch), while ``"nlist"`` stays reachable for
+back-compat. This test verifies, per ``lower_kind``:
+  1. The .pt2 archive is produced and the with-comm artifact is ABSENT
+     (neither lower kind implements cross-rank ghost exchange for DPA4).
   2. ``metadata.json`` carries the correct ``type_map``/``rcut``,
-     ``has_message_passing: true`` (DPA4 is a message-passing descriptor)
-     and ``has_comm_artifact: false`` (no lower path implements the
-     cross-rank exchange).
+     ``has_message_passing: true``, ``has_comm_artifact: false``, and
+     ``lower_input_kind == expected_input_kind``; the graph kind additionally
+     carries ``graph_edge_dtype``.
   3. The regular artifact loads via ``aoti_load_package``.
-  4. The loaded artifact's ``forward_common_lower`` output matches the
-     eager model (fp64 AOTI parity, rtol 1e-10).
+  4. The loaded artifact reproduces the eager model: the ``"nlist"`` kind
+     against ``forward_common_lower`` (dense ABI, fp64 AOTI parity, rtol
+     1e-10); the ``"graph"`` kind against ``forward_common_lower_graph``
+     (NeighborGraph ABI, same tolerance).
 """
 
 from __future__ import (
@@ -32,15 +39,20 @@ import zipfile
 
 import numpy as np
 import pytest
+import torch
 
 # Note: registration of the deepmd_export::border_op opaque wrapper (needed by
 # the with-comm artifact) happens inside ``deserialize_to_file`` via
 # ``ensure_comm_registered()``; no explicit comm import is required here.
+from deepmd.pt_expt.model.ener_model import (
+    _translate_energy_keys,
+)
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
+    build_synthetic_graph_inputs,
     deserialize_to_file,
 )
 
@@ -76,18 +88,26 @@ _DPA4_CONFIG = {
     os.environ.get("CI") == "true",
     reason="AOTInductor compile is slow (minutes); run locally only by default.",
 )
-def test_dpa4_freeze_to_pt2(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "lower_kind,expected_input_kind",
+    [
+        ("auto", "graph"),  # default now resolves to the graph lower
+        ("nlist", "nlist"),  # dense kind stays reachable for back-compat
+    ],
+)
+def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     """End-to-end: DPA4 model freezes to a single-artifact .pt2 (no
-    with-comm sidecar) and the regular artifact reproduces the eager
-    ``forward_common_lower``.
+    with-comm sidecar) under both lower kinds, and the regular artifact
+    reproduces the matching eager forward (dense ``forward_common_lower``
+    for ``"nlist"``, ``forward_common_lower_graph`` for ``"graph"``).
     """
     model = get_model(_DPA4_CONFIG)
     model.to("cpu")
     model.eval()
 
     # 1. Serialize → deserialize_to_file (compiles and packs both artifacts).
-    pt2_path = str(tmp_path / "test_dpa4.pt2")
-    deserialize_to_file(pt2_path, {"model": model.serialize()})
+    pt2_path = str(tmp_path / f"test_dpa4_{expected_input_kind}.pt2")
+    deserialize_to_file(pt2_path, {"model": model.serialize()}, lower_kind=lower_kind)
     assert os.path.exists(pt2_path)
 
     # 2. ZIP layout + metadata sanity. PyTorch's strict layout puts our
@@ -105,6 +125,7 @@ def test_dpa4_freeze_to_pt2(tmp_path) -> None:
     # implements the cross-rank exchange (see module docstring).
     assert meta["has_message_passing"] is True
     assert meta["has_comm_artifact"] is False
+    assert meta["lower_input_kind"] == expected_input_kind
 
     # 3. The regular artifact loads.
     from torch._inductor import (
@@ -113,43 +134,117 @@ def test_dpa4_freeze_to_pt2(tmp_path) -> None:
 
     regular = aoti_load_package(pt2_path)
 
-    # 4. Eager reference vs. AOTI artifact parity on forward_common_lower.
-    sample = _make_sample_inputs(model, nframes=1, has_spin=False)
-    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = sample
+    if expected_input_kind == "nlist":
+        # 4a. Dense-ABI eager reference vs. AOTI artifact parity on
+        # forward_common_lower.
+        sample = _make_sample_inputs(model, nframes=1, has_spin=False)
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = sample
 
-    eager_out = model.forward_common_lower(
-        ext_coord.detach().requires_grad_(True),
-        ext_atype,
-        nlist_t,
-        mapping_t,
-        fparam=fparam,
-        aparam=aparam,
-        do_atomic_virial=False,
-        charge_spin=charge_spin,
-    )
-
-    artifact_out = regular(
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
-    )
-
-    # The AOTI artifact returns the internal forward_common_lower keys; compare
-    # every key it produces against the eager reference (fp64 AOTI tolerance).
-    compared = 0
-    for key, val in artifact_out.items():
-        if key not in eager_out or eager_out[key] is None or val is None:
-            continue
-        np.testing.assert_allclose(
-            val.detach().cpu().numpy(),
-            eager_out[key].detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
-            err_msg=f"artifact vs eager forward_common_lower differs: {key}",
+        eager_out = model.forward_common_lower(
+            ext_coord.detach().requires_grad_(True),
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=False,
+            charge_spin=charge_spin,
         )
-        compared += 1
-    # Guard against a vacuous pass (no overlapping keys compared).
-    assert compared > 0, (
-        f"no overlapping output keys compared; artifact keys="
-        f"{sorted(artifact_out)}, eager keys={sorted(eager_out)}"
-    )
-    # The energy output must be among the compared keys.
-    assert "energy_redu" in artifact_out or "energy" in artifact_out
+
+        artifact_out = regular(
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+        )
+
+        # The AOTI artifact returns the internal forward_common_lower keys;
+        # compare every key it produces against the eager reference (fp64
+        # AOTI tolerance).
+        compared = 0
+        for key, val in artifact_out.items():
+            if key not in eager_out or eager_out[key] is None or val is None:
+                continue
+            np.testing.assert_allclose(
+                val.detach().cpu().numpy(),
+                eager_out[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"artifact vs eager forward_common_lower differs: {key}",
+            )
+            compared += 1
+        # Guard against a vacuous pass (no overlapping keys compared).
+        assert compared > 0, (
+            f"no overlapping output keys compared; artifact keys="
+            f"{sorted(artifact_out)}, eager keys={sorted(eager_out)}"
+        )
+        # The energy output must be among the compared keys.
+        assert "energy_redu" in artifact_out or "energy" in artifact_out
+    else:
+        # 4b. NeighborGraph-ABI eager reference vs. AOTI artifact parity on
+        # forward_common_lower_graph. Metadata carries the edge dtype the
+        # graph artifact was frozen with.
+        assert meta["graph_edge_dtype"] in ("float32", "float64")
+
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=None,
+            nframes=1,
+            nloc=6,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+
+        eager_internal = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+        )
+        # The graph AOTI artifact was frozen via forward_lower_graph_exportable,
+        # which translates the internal fitting keys ("energy_redu",
+        # "energy_derv_r", ...) to the public forward_lower convention
+        # ("energy", "force", ...) -- see ener_model.py:441. Apply the same
+        # translation to the eager reference so the two key sets line up.
+        eager_out = _translate_energy_keys(
+            eager_internal,
+            do_grad_r=model.do_grad_r("energy"),
+            do_grad_c=model.do_grad_c("energy"),
+            do_atomic_virial=True,
+            local=True,
+        )
+
+        artifact_out = regular(
+            atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
+
+        # Compare every key the artifact produces against the (translated)
+        # eager reference.
+        compared = 0
+        for key, val in artifact_out.items():
+            if key not in eager_out or eager_out[key] is None or val is None:
+                continue
+            np.testing.assert_allclose(
+                val.detach().cpu().numpy(),
+                eager_out[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=(
+                    f"artifact vs eager forward_common_lower_graph differs: {key}"
+                ),
+            )
+            compared += 1
+        assert compared > 0, (
+            f"no overlapping output keys compared; artifact keys="
+            f"{sorted(artifact_out)}, eager keys={sorted(eager_out)}"
+        )
+        assert "energy_redu" in artifact_out or "energy" in artifact_out

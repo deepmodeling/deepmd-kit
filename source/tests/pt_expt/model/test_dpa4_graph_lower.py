@@ -10,6 +10,17 @@ DPA4/SeZM inherits the routing with ZERO new plumbing code once
 ``DescrptDPA4.uses_graph_lower()`` reports ``True`` -- these tests PROVE
 that inheritance (routing/parity/persistence), following the dpa2 pattern
 in ``test_dpa2_graph_lower.py``.
+
+Task 8 (graph ``.pt2`` export) adds ``test_graph_lower_symbolic_trace`` and
+``test_graph_lower_torch_export``: both went GREEN with zero production
+changes -- ``forward_lower_graph_exportable``/``forward_common_lower_graph``
+and ``_build_graph_dynamic_shapes`` are already output-agnostic over the
+descriptor, so DPA4 (channels=16, n_radial=8, lmax=2, mmax=1, n_blocks=2,
+SO(3) grid readout) traces and ``torch.export``s through the SAME generic
+machinery Task 7 built for dpa1/dpa2, with no ``int()``/``.item()`` calls or
+data-dependent ``if`` on a traced tensor anywhere in the DPA4-specific code
+path exercised here (``AOTI indirect-indexing`` was already globally
+disabled for DPA4 per Task 6). No trap-class fix was needed.
 """
 
 import numpy as np
@@ -241,3 +252,205 @@ class TestDpa4GraphLower:
         model.atomic_model.descriptor.disable_graph_lower()
         model.forward_common(self.coord.clone().requires_grad_(True), self.atype, box)
         assert calls["n"] == 0, "disabled route must not call DescrptDPA4.call_graph"
+
+    def test_graph_lower_symbolic_trace(self) -> None:
+        """``make_fx`` symbolic trace of ``forward_lower_graph_exportable``
+        reproduces the eager graph lower bit-tight, on a message-sensitive
+        (jittered) model.
+
+        ``forward_common_lower_graph`` computes force/virial via a single
+        ``torch.autograd.grad`` backward through its own ``edge_vec`` leaf
+        (see ``edge_transform_output.py:106``); tracing the whole exportable
+        wrapper with ``make_fx`` therefore traces that backward pass too --
+        this is what makes the DPA4 SO(3)/GridMLP compute graph, including
+        its analytic force/virial, ``.pt2``-exportable.  ``model.to("cpu")``
+        before tracing mirrors the real ``.pt2`` export path (make_fx traces
+        on CPU by design, ``serialization.py:924``) and the dpa1 CUDA lesson
+        (traced inputs and params must share a device).
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = _make_message_sensitive_model(self.device).to("cpu")
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs)
+        ref = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+        )
+        for key in ("energy", "force", "virial"):
+            assert torch.isfinite(out[key]).all(), f"non-finite traced {key}"
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
+
+    def test_graph_lower_torch_export(self) -> None:
+        """``torch.export.export`` the traced graph lower with the
+        production dynamic shapes (``_build_graph_dynamic_shapes``): the
+        edge axis ``E``, the flat node axis ``N``, and the frame axis ``nf``
+        are all dynamic. Must export without ``GuardOnDataDependentSymNode``
+        and the resulting exported program must reproduce the eager graph
+        lower AND generalize to a different (smaller) system size than the
+        one it was traced/exported on -- proving the dynamism is real, not
+        an artifact baked to the trace-time shapes.
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            _build_graph_dynamic_shapes,
+            build_synthetic_graph_inputs,
+        )
+
+        model = _make_message_sensitive_model(self.device).to("cpu")
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            charge_spin=cs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        dynamic_shapes = _build_graph_dynamic_shapes(
+            atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
+        exported = torch.export.export(
+            traced,
+            (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs),
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+        loaded = exported.module()
+
+        # Re-run on a SMALLER system (different nframes/nloc/edge count) to
+        # prove the exported program is genuinely dynamic, not specialized
+        # to the trace-time shapes.
+        small = build_synthetic_graph_inputs(
+            model,
+            e_max=None,
+            nframes=1,
+            nloc=3,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        (
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            s_fp,
+            s_ap,
+            s_cs,
+        ) = small
+        out = loaded(
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            s_fp,
+            s_ap,
+            s_cs,
+        )
+        ref = model.forward_common_lower_graph(
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            destination_sorted=True,
+            fparam=s_fp,
+            aparam=s_ap,
+            do_atomic_virial=True,
+        )
+        for key in ("energy", "force", "virial"):
+            assert torch.isfinite(out[key]).all(), f"non-finite exported {key}"
+        tol = {"rtol": 1e-10, "atol": 1e-10}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
