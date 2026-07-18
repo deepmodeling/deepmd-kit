@@ -1447,96 +1447,69 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None,
         )
 
-    def call_with_edges(
+    def _call_graph_impl(
         self,
-        *,
-        coord_ext: Array,
-        atype_ext: Array,
+        atype_flat: Array,
         edge_index: Array,
         edge_vec: Array,
         edge_mask: Array,
+        *,
+        nf: int,
+        n_out_nodes: int,
+        has_exclude_types: bool,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
-        nloc: int | None = None,
     ) -> tuple[Array, Array]:
-        """
-        Compute the descriptor from a sparse edge list.
-
-        Two node-set conventions share this path. In the single-domain path
-        (``comm_dict`` is ``None``) the nodes are exactly the local atoms and
-        ``edge_index`` source/destination both index ``[0, nf*nloc)``. In the
-        parallel (LAMMPS multi-rank) path the nodes span the extended region
-        (local owners followed by ghosts), ``edge_index`` indexes the extended
-        atoms directly, and each interaction block refreshes ghost-node features
-        from their owner ranks at the SO(2) convolution input (see
-        :func:`~deepmd.pt.model.descriptor.sezm_nn.block.exchange_ghost_features`).
+        """Edge-native descriptor core on the flat node axis.
 
         Parameters
         ----------
-        coord_ext
-            Coordinates with shape (nf, n*3) or (nf, n, 3) in Å, where ``n`` is
-            ``nloc`` in the single-domain path and ``nall`` in the parallel path.
-        atype_ext
-            Atom types with shape (nf, n). In the parallel path this spans the
-            extended region so ghost type embeddings are available for the
-            edge-type and environment-seed features.
+        atype_flat
+            Flat node types with shape (N,).
         edge_index
-            Edge indices with shape (2, E).
+            Edge endpoints with shape (2, E), rows are (src, dst).
         edge_vec
-            Edge vectors with shape (E, 3) in Å.
+            Neighbor-minus-center edge vectors with shape (E, 3).
         edge_mask
-            Edge mask with shape (E,).
+            Valid-edge mask with shape (E,).
+        nf
+            Frame count (only consumed by the charge/spin FiLM conditioning).
+        n_out_nodes
+            Leading node count kept for the read-out (owned atoms).
+        has_exclude_types
+            Whether the builder should filter excluded type pairs. The graph
+            route passes ``False``: exclusion is applied once, upstream, on
+            the graph's ``edge_mask``.
         force_embedding
-            Optional precomputed equivariant force embedding with shape
-            ``(nf * nloc, D, 1, channels)``, where
-            ``D = (node_init_lmax + 1) ** 2``. This tensor is added to the
-            initial SO(3) backbone state before the interaction blocks.
+            Optional per-node force conditioning, shape (N, D, 1, C).
         charge_spin
-            Frame-level charge and spin conditions with shape (nf, 2).
+            Optional charge/spin conditioning.
+        spin
+            Optional per-node spin vectors, shape (N, 3).
         comm_dict
-            Border-exchange tensors for parallel inference. When provided, the
-            node set spans the extended region and ghost features are exchanged
-            via ``deepmd_export::border_op`` between interaction blocks.
-        nloc
-            Number of owned (local) atoms per frame. Required when ``comm_dict``
-            is provided; the final scalar read-out is restricted to these atoms.
+            MPI communication metadata forwarded to the interaction blocks.
 
         Returns
         -------
         tuple[Array, Array]
-            The scalar descriptor with shape ``(nf, nloc, channels)`` and the
-            final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
+            Flat ``(n_out_nodes, channels)`` read-out in global precision and
+            the full multipole feature tensor ``x``.
         """
-        xp = array_api_compat.array_namespace(coord_ext, atype_ext, edge_vec)
-        device = array_api_compat.device(coord_ext)
-        # === Step 1. Setup dimensions ===
-        # ``n_per_frame`` is the per-frame node count: ``nloc`` in the
-        # single-domain path and ``nall`` in the parallel path. ``out_nloc`` is
-        # the owned-atom count used for the final local read-out.
-        coord_ext = xp.astype(coord_ext, get_xp_precision(xp, self.compute_precision))
-        nf, n_per_frame = atype_ext.shape[:2]
-        parallel = comm_dict is not None
-        if parallel:
-            # Multi-rank parallel inference requires a custom border-exchange
-            # communication op that is not available in the dpmodel backend.
-            raise NotImplementedError(
-                "multi-rank comm_dict inference is not supported in the dpmodel backend"
-            )
-        out_nloc = nloc if parallel else n_per_frame
-        atype_flat = xp.reshape(atype_ext, (-1,))  # (N,)
+        xp = array_api_compat.array_namespace(edge_vec)
+        device = array_api_compat.device(edge_vec)
 
         # === Step 2. Type embedding (l=0) ===
         type_ebed = xp.reshape(
-            self.type_embedding(atype_ext), (-1, self.channels)
+            self.type_embedding(atype_flat), (-1, self.channels)
         )  # (N, C)
         if self.charge_spin_embedding is not None:
             type_ebed = self._apply_charge_spin_embedding(
                 type_ebed,
                 charge_spin,
                 nf=nf,
-                nloc=n_per_frame,
+                nloc=n_out_nodes // nf,
             )
         n_nodes = type_ebed.shape[0]
 
@@ -1562,7 +1535,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
-            has_exclude_types=bool(self.exclude_types),
+            has_exclude_types=has_exclude_types,
             edge_type_keep_mask=self._edge_type_keep_mask,
             # Random local-Z roll is a training-only augmentation;
             # the model is roll-equivariant, so inference fixes gamma.
@@ -1698,17 +1671,97 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # equals the whole node set and the slice is a no-op. Parallel
         # (single-frame): it drops the trailing ghost rows that only fed message
         # passing -- LAMMPS orders owned atoms before ghosts, so they lead.
-        n_out_nodes = nf * out_nloc
         x = x[:n_out_nodes]
 
         # === Step 12. Final l=0 output mixing ===
         x_scalar = self._apply_readout(x, n_out_nodes)
 
-        # === Step 13. Reshape to (nf, nloc, channels) and return ===
-        descriptor = xp.reshape(
-            x_scalar, (nf, out_nloc, self.channels)
-        )  # (nf, nloc, C)
-        return xp.astype(descriptor, get_xp_precision(xp, "global")), x
+        return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
+
+    def call_with_edges(
+        self,
+        *,
+        coord_ext: Array,
+        atype_ext: Array,
+        edge_index: Array,
+        edge_vec: Array,
+        edge_mask: Array,
+        force_embedding: Array | None = None,
+        charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict[str, Array] | None = None,
+        nloc: int | None = None,
+    ) -> tuple[Array, Array]:
+        """
+        Compute the descriptor from a sparse edge list.
+
+        Two node-set conventions share this path. In the single-domain path
+        (``comm_dict`` is ``None``) the nodes are exactly the local atoms and
+        ``edge_index`` source/destination both index ``[0, nf*nloc)``. In the
+        parallel (LAMMPS multi-rank) path the nodes span the extended region
+        (local owners followed by ghosts), ``edge_index`` indexes the extended
+        atoms directly, and each interaction block refreshes ghost-node features
+        from their owner ranks at the SO(2) convolution input (see
+        :func:`~deepmd.pt.model.descriptor.sezm_nn.block.exchange_ghost_features`).
+
+        Parameters
+        ----------
+        coord_ext
+            Coordinates with shape (nf, n*3) or (nf, n, 3) in Å, where ``n`` is
+            ``nloc`` in the single-domain path and ``nall`` in the parallel path.
+        atype_ext
+            Atom types with shape (nf, n). In the parallel path this spans the
+            extended region so ghost type embeddings are available for the
+            edge-type and environment-seed features.
+        edge_index
+            Edge indices with shape (2, E).
+        edge_vec
+            Edge vectors with shape (E, 3) in Å.
+        edge_mask
+            Edge mask with shape (E,).
+        force_embedding
+            Optional precomputed equivariant force embedding with shape
+            ``(nf * nloc, D, 1, channels)``, where
+            ``D = (node_init_lmax + 1) ** 2``. This tensor is added to the
+            initial SO(3) backbone state before the interaction blocks.
+        charge_spin
+            Frame-level charge and spin conditions with shape (nf, 2).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            node set spans the extended region and ghost features are exchanged
+            via ``deepmd_export::border_op`` between interaction blocks.
+        nloc
+            Number of owned (local) atoms per frame. Required when ``comm_dict``
+            is provided; the final scalar read-out is restricted to these atoms.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            The scalar descriptor with shape ``(nf, nloc, channels)`` and the
+            final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
+        """
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, edge_vec)
+        nf, n_per_frame = atype_ext.shape[0], atype_ext.shape[1]
+        parallel = comm_dict is not None
+        if parallel:
+            raise NotImplementedError(
+                "multi-rank comm_dict inference is not supported in the dpmodel backend"
+            )
+        out_nloc = nloc if parallel else n_per_frame
+        x_scalar, x = self._call_graph_impl(
+            xp.reshape(atype_ext, (-1,)),
+            edge_index,
+            edge_vec,
+            edge_mask,
+            nf=nf,
+            n_out_nodes=nf * out_nloc,
+            has_exclude_types=bool(self.exclude_types),
+            force_embedding=force_embedding,
+            charge_spin=charge_spin,
+            spin=spin,
+            comm_dict=comm_dict,
+        )
+        return xp.reshape(x_scalar, (nf, out_nloc, self.channels)), x
 
     def _forward_blocks(
         self,
