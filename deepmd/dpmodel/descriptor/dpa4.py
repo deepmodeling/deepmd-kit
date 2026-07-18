@@ -1391,8 +1391,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Returns
         -------
         tuple[Array, Array]
-            Flat ``(n_out_nodes, channels)`` read-out in global precision and
-            the full multipole feature tensor ``x``.
+            Read-out with the SO(3) singleton axes still attached, shape
+            ``(n_out_nodes, 1, 1, channels)``, in global precision, and the
+            full multipole feature tensor ``x``. Callers (``_call_graph_common``
+            and its callers in turn) flatten the singleton axes.
         """
         xp = array_api_compat.array_namespace(edge_vec)
         device = array_api_compat.device(edge_vec)
@@ -1421,7 +1423,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Step 3. Build edge cache once (sparse edges) ===
         edge_cache = _edge_cache_from_arrays(
             type_ebed=type_ebed,
-            atype_flat=atype_flat,
             edge_index=edge_index,
             edge_vec=edge_vec,
             edge_mask=edge_mask,

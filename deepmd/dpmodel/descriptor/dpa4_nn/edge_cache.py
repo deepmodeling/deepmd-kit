@@ -230,7 +230,6 @@ def compute_edge_src_gate(
 def _edge_cache_from_arrays(
     *,
     type_ebed: Any,
-    atype_flat: Any,
     edge_index: Any,
     edge_vec: Any,
     edge_mask: Any,
@@ -258,8 +257,6 @@ def _edge_cache_from_arrays(
     ----------
     type_ebed
         Per-node type embedding with shape (N, C), where N=nf*nloc.
-    atype_flat
-        Flattened local atom types with shape (N,).
     edge_index
         Edge indices with shape (2, E).
     edge_vec

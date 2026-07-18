@@ -27,10 +27,11 @@ Single-rank cells covered here (all on this single artifact):
 - virial / type_map / real-units / si-units variants mirror the dpa3
   single-rank set.
 
-Deferred (NOT covered): live multi-rank parity. DPA4 multi-rank
-inference is out of PR-3 scope and has no mpi runner script. The C++
-with-comm dispatch is exercised for DPA4 only at the single-rank level
-here; multi-rank DPA4 is left to a follow-up.
+Deferred (NOT covered): live multi-rank parity. DPA4's ``.pt2`` archive
+carries no with-comm artifact, so multi-rank LAMMPS inference fails fast
+at the first force evaluation instead of running (see the module-level
+note); there is no with-comm dispatch to exercise here, and no mpi runner
+script. Multi-rank DPA4 support is left to a follow-up.
 
 Tolerances match test_lammps_dpa3_pt2.py exactly (pytest.approx defaults
 for pe/forces; per-atom virial compared with pytest.approx).

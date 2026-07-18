@@ -52,10 +52,11 @@ def build_sparse_edges_from_nlist(coord, nlist):
     """Extract the valid physical edges of a padded neighbor list.
 
     The padded layout keeps one slot per neighbor (``-1`` marks padding). The
-    sparse contract for :meth:`DescrptDPA4.call_with_edges` is one explicit edge
-    per kept slot, indexing the flattened frame-major node axis
-    (``node = f * nloc + i``). The edge vector points from the center toward the
-    neighbor, matching the padded path's ``r_j - r_i``.
+    graph-route edge contract -- edges packed into a :class:`NeighborGraph`
+    and consumed by ``call_graph`` -- is one explicit edge per kept slot,
+    indexing the flattened frame-major node axis (``node = f * nloc + i``).
+    The edge vector points from the center toward the neighbor, matching the
+    padded path's ``r_j - r_i``.
 
     Parameters
     ----------

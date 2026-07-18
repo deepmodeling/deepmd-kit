@@ -437,8 +437,8 @@ pair_coeff * * O H
 features at every interaction block, but no export path (dense or
 graph-native) implements the cross-rank ghost-feature exchange yet, so no
 `.pt2` archive carries a with-comm artifact. A multi-rank LAMMPS run raises an
-error at pair-style setup instead of silently running without the cross-rank
-exchange. Use a single MPI rank (one process, optionally with one GPU) for
+error at the first force evaluation instead of silently running without the
+cross-rank exchange. Use a single MPI rank (one process, optionally with one GPU) for
 DPA4/SeZM until cross-rank support ships. The remainder of this subsection
 describes the intended multi-rank workflow for when that support lands.
 :::
@@ -504,8 +504,8 @@ error at freeze time instead of exporting a silently-dense-only artifact.
 Like the dense route (see [Multi-GPU (MPI)
 inference](#multi-gpu-mpi-inference) above), the graph route does not
 implement cross-rank ghost exchange, so a graph-frozen `.pt2` is single-rank
-only; multi-rank LAMMPS runs raise an error at pair-style setup for both
-lower kinds.
+only; multi-rank LAMMPS runs raise an error at the first force evaluation for
+both lower kinds.
 
 ## Embedding extraction
 
@@ -623,7 +623,7 @@ closed over the one-hop neighbor shell.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
 - Multi-rank (multi-GPU/MPI) LAMMPS inference is not currently supported and
-  fails fast at pair-style setup; run on a single MPI rank. See
+  fails fast at the first force evaluation; run on a single MPI rank. See
   [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
 - The pt_expt graph-native inference route (`--lower-kind graph`) is
   single-rank only and unavailable for spin, charge/spin conditioning, or ZBL

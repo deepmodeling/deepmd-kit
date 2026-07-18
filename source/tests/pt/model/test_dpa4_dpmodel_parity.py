@@ -2890,7 +2890,6 @@ def _dp_cache_from_padded(
     edge_mask = np.asarray(graph.edge_mask) & pair_keep_mask.reshape(-1)
     cache = _edge_cache_from_arrays(
         type_ebed=type_ebed,
-        atype_flat=np.zeros(nf * nloc, dtype=np.int64),
         edge_index=graph.edge_index,
         edge_vec=graph.edge_vec,
         edge_mask=edge_mask,
