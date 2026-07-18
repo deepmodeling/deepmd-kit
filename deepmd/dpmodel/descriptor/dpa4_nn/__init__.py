@@ -30,7 +30,6 @@ from .cartesian import (
 )
 from .edge_cache import (
     EdgeCache,
-    build_edge_cache,
     build_edge_cache_from_edges,
     build_edge_type_feat,
     compute_edge_src_gate,
@@ -164,7 +163,6 @@ __all__ = [
     "WignerDCalculator",
     "apply_lora_to_sezm",
     "build_cartesian_basis",
-    "build_edge_cache",
     "build_edge_cache_from_edges",
     "build_edge_cartesian_tensors",
     "build_edge_quaternion",
