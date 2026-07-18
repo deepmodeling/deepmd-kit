@@ -325,6 +325,13 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
   }
+  if (lower_input_is_edge_) {
+    std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
+                 "schema (pt-backend SeZM/DPA4 freeze). Support will be "
+                 "removed in a future release; refreeze the checkpoint with "
+                 "the pt_expt backend (graph schema)."
+              << std::endl;
+  }
   graph_edge_fp32_ = false;
   if (metadata.obj_val.count("graph_edge_dtype")) {
     const std::string graph_edge_dtype =

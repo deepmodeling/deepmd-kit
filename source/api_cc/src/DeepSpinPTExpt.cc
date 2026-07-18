@@ -171,6 +171,13 @@ void DeepSpinPTExpt::init(const std::string& model,
   } else {
     lower_input_is_edge_ = false;
   }
+  if (lower_input_is_edge_) {
+    std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
+                 "schema (pt-backend SeZM/DPA4 freeze). Support will be "
+                 "removed in a future release; refreeze the checkpoint with "
+                 "the pt_expt backend (graph schema)."
+              << std::endl;
+  }
 
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {

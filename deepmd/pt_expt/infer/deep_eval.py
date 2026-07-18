@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -115,6 +116,29 @@ def _is_pt_backend_dpa4_params(model_params: dict[str, Any]) -> bool:
     return False
 
 
+def _warn_legacy_edge_vec(metadata: dict) -> None:
+    """Warn once per model load when an edge_vec-schema artifact is opened.
+
+    The ``edge_vec`` lower schema is produced only by the pt backend's
+    SeZM/DPA4 freeze and is superseded by the NeighborGraph lower. Support
+    will be removed in a future release; energy SeZM checkpoints can be
+    refrozen through the pt_expt backend (graph schema) instead.
+
+    Parameters
+    ----------
+    metadata
+        The ``metadata.json`` dict of the opened ``.pt2`` archive.
+    """
+    if metadata.get("lower_input_kind") == "edge_vec":
+        warnings.warn(
+            "This .pt2 uses the deprecated edge_vec lower schema (pt-backend "
+            "SeZM/DPA4 freeze). Support will be removed in a future release; "
+            "refreeze the checkpoint with the pt_expt backend (graph schema).",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+
 class DeepEval(DeepEvalBackend):
     """PyTorch Exportable backend implementation of DeepEval.
 
@@ -183,6 +207,11 @@ class DeepEval(DeepEvalBackend):
                 "backend: expected `.pt2` / `.pte` (deployable archives) or "
                 "`.pt` (training checkpoint)."
             )
+
+        # Single choke point: self.metadata is set by all three loaders
+        # above (_load_pt2 / _load_pte / _load_pt), so this is the one
+        # place that sees every model load regardless of archive kind.
+        _warn_legacy_edge_vec(self.metadata)
 
         # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
         # (_eval_model_graph); fail fast instead of silently ignoring it on
