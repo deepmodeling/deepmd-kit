@@ -342,7 +342,9 @@ class DPAtomicModel(BaseAtomicModel):
         )
 
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        type_embedding = self.descriptor.type_embedding.call()
+        # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
+        # embeds types internally from ``atype`` and returns None.
+        type_embedding = self.descriptor.graph_type_embedding_table()
         gg, rot_mat = self.descriptor.call_graph(
             graph, atype, type_embedding=type_embedding, comm_dict=comm_dict
         )
