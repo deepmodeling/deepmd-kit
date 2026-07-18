@@ -432,24 +432,29 @@ pair_coeff * * O H
 
 ### Multi-GPU (MPI) inference
 
-The exported `.pt2` runs across multiple GPUs in LAMMPS using MPI domain
-decomposition. Multi-GPU support is built into the package by `dp --pt freeze`,
-so no extra freeze options are needed and the same `.pt2` file serves both
-single- and multi-GPU runs.
+:::{important}
+**Multi-rank inference currently fails fast.** DPA4/SeZM reads ghost-neighbour
+features at every interaction block, but no export path (dense or
+graph-native) implements the cross-rank ghost-feature exchange yet, so no
+`.pt2` archive carries a with-comm artifact. A multi-rank LAMMPS run raises an
+error at pair-style setup instead of silently running without the cross-rank
+exchange. Use a single MPI rank (one process, optionally with one GPU) for
+DPA4/SeZM until cross-rank support ships. The remainder of this subsection
+describes the intended multi-rank workflow for when that support lands.
+:::
 
-Launch LAMMPS with one MPI rank per GPU and make the target devices visible:
+The exported `.pt2` is intended to eventually run across multiple GPUs in
+LAMMPS using MPI domain decomposition, with the same `.pt2` file serving both
+single- and multi-GPU runs and no extra freeze options needed. The launch
+recipe:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 ```
 
 Each MPI rank uses at most one GPU, so `CUDA_VISIBLE_DEVICES` must list every
-GPU the run may use. If only one device is visible, all ranks share it: results
-stay correct, but the GPU work is serialized and that device's memory grows
-with the rank count.
-
-DPA4/SeZM exchanges neighbor information across the domain boundary, so the
-LAMMPS atom map must be enabled:
+GPU the run may use. DPA4/SeZM exchanges neighbor information across the
+domain boundary, so the LAMMPS atom map must be enabled:
 
 ```lammps
 atom_modify map yes
@@ -457,7 +462,7 @@ pair_style deepmd frozen_model.pt2
 pair_coeff * * O H
 ```
 
-Two settings improve multi-GPU runs:
+Two settings will improve multi-GPU runs once cross-rank support ships:
 
 - For fast GPU-to-GPU exchange, build the C++ interface against a
   [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library;
@@ -466,8 +471,41 @@ Two settings improve multi-GPU runs:
   memory stable. A zero skin rebuilds the neighbor list every step and can
   substantially increase memory use.
 
-Multi-GPU inference applies to the plain energy model. ZBL zone bridging and
-spin models run on a single MPI rank.
+## Graph-native inference route (pt_expt)
+
+In the pt_expt backend, a plain-energy DPA4/SeZM descriptor (no native or
+`deepspin` spin, no frame-level charge/spin conditioning `add_chg_spin_ebd`,
+and no ZBL zone bridging) can be frozen through a NeighborGraph-native
+inference path instead of the legacy dense neighbor-list path:
+
+```bash
+dp --pt_expt freeze -o model.pt2 --lower-kind graph
+```
+
+As with DPA-1's and DPA-2's graph paths (see [Difference among different
+backends](train-se-atten.md#difference-among-different-backends) and the
+"Graph-native inference route (pt_expt)" section of [DPA-2's
+documentation](dpa2.md)), the graph route is a sel-free, carry-all builder:
+it considers every neighbor within `rcut` rather than the capacity fixed by
+`sel`. For the default conservative-energy path, `sel` is already only an
+initial search capacity that grows on demand (see the note in [Minimal
+input](#minimal-input)), so graph and dense results agree there down to
+floating-point noise. Where `sel` does act as a hard cap -- the `dens`
+denoising path, or the `deepspin` virtual-atom spin scheme, both of which
+size the neighbor list to `sum(sel)` -- the graph route's larger neighbor set
+can diverge from the dense route, the same deliberate divergence documented
+for DPA-1/DPA-2.
+
+A DPA4/SeZM descriptor configured with spin, charge/spin conditioning, or ZBL
+zone bridging is not graph-eligible and always runs the dense route
+regardless of `--lower-kind`; `--lower-kind graph` on such a model raises an
+error at freeze time instead of exporting a silently-dense-only artifact.
+
+Like the dense route (see [Multi-GPU (MPI)
+inference](#multi-gpu-mpi-inference) above), the graph route does not
+implement cross-rank ghost exchange, so a graph-frozen `.pt2` is single-rank
+only; multi-rank LAMMPS runs raise an error at pair-style setup for both
+lower kinds.
 
 ## Embedding extraction
 
@@ -584,8 +622,13 @@ closed over the one-hop neighbor shell.
 - DPA4/SeZM is implemented for the PyTorch backend only.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
-- Multi-GPU (MPI) LAMMPS inference is supported for the plain energy model;
-  ZBL zone bridging and spin models run on a single MPI rank.
+- Multi-rank (multi-GPU/MPI) LAMMPS inference is not currently supported and
+  fails fast at pair-style setup; run on a single MPI rank. See
+  [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
+- The pt_expt graph-native inference route (`--lower-kind graph`) is
+  single-rank only and unavailable for spin, charge/spin conditioning, or ZBL
+  zone-bridging configurations, which stay on the dense route. See
+  [Graph-native inference route (pt_expt)](#graph-native-inference-route-pt_expt).
 
 ## Citation
 
