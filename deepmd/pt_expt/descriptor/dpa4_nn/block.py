@@ -38,7 +38,7 @@ from deepmd.pt_expt.common import (
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        EdgeFeatureCache,
+        EdgeCache,
     )
 
 # Environment values that enable an inference flag.
@@ -76,7 +76,7 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
     def _run_so2_unit(
         self,
         x: torch.Tensor,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: torch.Tensor,
         comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:

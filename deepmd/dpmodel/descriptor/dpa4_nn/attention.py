@@ -52,8 +52,8 @@ def segment_envelope_gated_softmax(
         denominator sum are scattered over these indices, which makes the
         normalization layout-agnostic: it is correct both for the padded
         ``call`` (where ``dst == repeat(arange(n_nodes), nnei)``) and for the
-        sparse ``call_with_edges`` (arbitrary ``dst`` order and per-node
-        degree).
+        graph-native ``call_graph`` route (arbitrary ``dst`` order and
+        per-node degree).
     n_nodes
         Number of nodes.
     z_bias_raw
@@ -124,8 +124,8 @@ def segment_envelope_gated_softmax(
     # === Step 2. Destination-wise max for stable exponentials ===
     # Destination segment max over ``dst`` (pt ``scatter_reduce`` amax). The
     # scatter is layout-agnostic and the maximum is order-independent, so the
-    # padded ``call`` stays bit-exact while the sparse ``call_with_edges`` is
-    # handled by the same code path.
+    # padded ``call`` stays bit-exact while the graph-native ``call_graph``
+    # route is handled by the same code path.
     group_max = xp_maximum_at(
         xp.full((n_nodes, n_channel), float("-inf"), dtype=logits.dtype, device=device),
         dst,

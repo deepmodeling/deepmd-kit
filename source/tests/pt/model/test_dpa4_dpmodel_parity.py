@@ -2858,19 +2858,19 @@ def _dp_cache_from_padded(
     padded-quartet contract it pinned now lives in
     ``DescrptDPA4._graph_from_padded_nlist`` (``src_ok`` sanitization) +
     ``graph_from_dense_quartet`` (row-major shape-static conversion) +
-    ``build_edge_cache_from_edges`` (the one edge-native cache core). This
+    ``_edge_cache_from_arrays`` (the one edge-native cache core). This
     helper chains them exactly as the production dense adapter does, so the
     padded parity tests keep pinning the same contract against the surviving
     architecture.
 
     The fixture's ``pair_keep_mask`` (which the dense builder folded into its
     validity mask) is ANDed into the graph's ``edge_mask`` before the core --
-    mirroring what the canonical ``apply_pair_exclusion`` transform does --
-    and the core runs with ``has_exclude_types=False``, matching the
-    production graph route's single-exclusion-site contract. ``from_edges``
-    folds masking into the per-edge weights and leaves ``edge_mask`` unset;
-    the padded tests assert on the validity mask, so it is attached to the
-    returned cache.
+    mirroring what the canonical ``apply_pair_exclusion`` transform does,
+    matching the production graph route's single-exclusion-site contract
+    (the core itself has no exclusion parameter and never re-applies it).
+    ``_edge_cache_from_arrays`` folds masking into the per-edge weights and
+    leaves ``edge_mask`` unset; the padded tests assert on the validity
+    mask, so it is attached to the returned cache.
     """
     import dataclasses
 
@@ -2878,7 +2878,7 @@ def _dp_cache_from_padded(
         _graph_from_padded_nlist,
     )
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        build_edge_cache_from_edges,
+        _edge_cache_from_arrays,
     )
 
     nf, nloc, _ = nlist.shape
@@ -2888,9 +2888,8 @@ def _dp_cache_from_padded(
     atype_ext_dummy = np.zeros((nf, nall), dtype=np.int64)
     graph, _ = _graph_from_padded_nlist(coord, atype_ext_dummy, nlist, mapping)
     edge_mask = np.asarray(graph.edge_mask) & pair_keep_mask.reshape(-1)
-    cache = build_edge_cache_from_edges(
+    cache = _edge_cache_from_arrays(
         type_ebed=type_ebed,
-        # unused: has_exclude_types=False keeps the type-exclusion path off
         atype_flat=np.zeros(nf * nloc, dtype=np.int64),
         edge_index=graph.edge_index,
         edge_vec=graph.edge_vec,
@@ -2902,8 +2901,6 @@ def _dp_cache_from_padded(
         bridging_switch=None,
         edge_envelope=edge_envelope,
         radial_basis=radial_basis,
-        has_exclude_types=False,
-        edge_type_keep_mask=None,
         random_gamma=random_gamma,
         wigner_calc=wigner_calc,
         gamma=gamma,

@@ -16,12 +16,99 @@ from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
-from .test_dpa4_sparse_edges import (
-    build_neighbor_list_np,  # noqa: F401  (re-exported for Task 10's fold-in)
-    build_sparse_edges_from_nlist,
-    make_descriptor,
-    make_inputs,
-)
+
+def build_neighbor_list_np(coord, rcut, nnei):
+    """Build a padded, distance-sorted gas-phase neighbor list (no PBC).
+
+    Parameters
+    ----------
+    coord
+        Coordinates with shape (nf, nloc, 3).
+    rcut
+        Cutoff radius.
+    nnei
+        Number of neighbor slots; pads with -1.
+
+    Returns
+    -------
+    np.ndarray
+        Neighbor list with shape (nf, nloc, nnei) holding local indices.
+    """
+    nf, nloc, _ = coord.shape
+    nlist = -np.ones((nf, nloc, nnei), dtype=np.int64)
+    for f in range(nf):
+        dist = np.linalg.norm(coord[f][:, None, :] - coord[f][None, :, :], axis=-1)
+        for i in range(nloc):
+            neighbors = [
+                (dist[i, j], j) for j in range(nloc) if j != i and dist[i, j] < rcut
+            ]
+            neighbors.sort()
+            for slot, (_, j) in enumerate(neighbors[:nnei]):
+                nlist[f, i, slot] = j
+    return nlist
+
+
+def build_sparse_edges_from_nlist(coord, nlist):
+    """Extract the valid physical edges of a padded neighbor list.
+
+    The padded layout keeps one slot per neighbor (``-1`` marks padding). The
+    sparse contract for :meth:`DescrptDPA4.call_with_edges` is one explicit edge
+    per kept slot, indexing the flattened frame-major node axis
+    (``node = f * nloc + i``). The edge vector points from the center toward the
+    neighbor, matching the padded path's ``r_j - r_i``.
+
+    Parameters
+    ----------
+    coord
+        Coordinates with shape (nf, nloc, 3).
+    nlist
+        Neighbor list with shape (nf, nloc, nnei); -1 marks padding.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``edge_index`` with shape (2, E) (rows are src, dst) and ``edge_vec``
+        with shape (E, 3), aligned on the same edge axis in row-major
+        ``(frame, center, slot)`` order.
+    """
+    nf, nloc, nnei = nlist.shape
+    src, dst, vec = [], [], []
+    for f in range(nf):
+        for i in range(nloc):
+            for s in range(nnei):
+                j = int(nlist[f, i, s])
+                if j < 0:
+                    continue
+                src.append(f * nloc + j)
+                dst.append(f * nloc + i)
+                vec.append(coord[f, j] - coord[f, i])
+    edge_index = np.asarray([src, dst], dtype=np.int64)  # (2, E)
+    edge_vec = np.asarray(vec, dtype=np.float64)  # (E, 3)
+    return edge_index, edge_vec
+
+
+def make_descriptor() -> DescrptDPA4:
+    return DescrptDPA4(
+        ntypes=3,
+        sel=8,
+        rcut=4.0,
+        channels=16,
+        n_radial=8,
+        lmax=2,
+        mmax=1,
+        n_blocks=2,
+        precision="float64",
+        seed=7,
+        random_gamma=False,
+    )
+
+
+def make_inputs(seed=7, nf=2, nloc=6, rcut=4.0, nnei=8, ntypes=3):
+    rng = np.random.default_rng(seed)
+    coord = rng.uniform(0.0, 3.5, size=(nf, nloc, 3))
+    atype = rng.integers(0, ntypes, size=(nf, nloc))
+    nlist = build_neighbor_list_np(coord, rcut, nnei)
+    return coord, atype, nlist
 
 
 def make_graph_from_nlist(coord, nlist):

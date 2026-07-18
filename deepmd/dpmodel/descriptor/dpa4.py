@@ -87,7 +87,7 @@ from .dpa4_nn.block import (
 )
 from .dpa4_nn.edge_cache import (
     EdgeCache,
-    build_edge_cache_from_edges,
+    _edge_cache_from_arrays,
     edge_cache_to_dtype,
 )
 from .dpa4_nn.embedding import (
@@ -287,7 +287,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
     Execution outline
     -----------------
-    1. Build a per-forward `EdgeFeatureCache` (geometry, envelope, Wigner-D).
+    1. Build a per-forward `EdgeCache` (geometry, envelope, Wigner-D).
     2. Build radial/type edge features once and reuse across blocks.
     3. Run `SeZMInteractionBlock` stack with optional l/m schedules.
     4. Extract scalar channels and apply the final scalar FFN.
@@ -1239,9 +1239,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
-        edge_index: Array | None = None,
-        edge_vec: Array | None = None,
-        edge_mask: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
         fparam: Array | None = None,
         force_embedding: Array | None = None,
@@ -1267,15 +1264,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Neighbor list with shape (nf, nloc, nnei).
         mapping
             Extended-to-local mapping with shape (nf, nall), or None.
-        edge_index
-            Fixed-shape edge indices with shape (2, E). If provided, the descriptor
-            uses the edge-list path and ignores `nlist` and `mapping`.
-        edge_vec
-            Fixed-shape edge vectors with shape (E, 3) in Å. Required when
-            `edge_index` is provided.
-        edge_mask
-            Fixed-shape edge mask with shape (E,). Required when `edge_index`
-            is provided.
         comm_dict
             Communication dictionary for parallel inference (unused).
         fparam
@@ -1308,32 +1296,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             coord_ext = xp.reshape(coord_ext, (coord_ext.shape[0], -1, 3))
         elif coord_ext.ndim != 3:
             raise ValueError("coord_ext must have shape (nf, nall*3) or (nf, nall, 3)")
-
-        if edge_index is not None:
-            nf_edge = atype_ext.shape[0]
-            charge_spin = self._canonicalize_charge_spin(
-                charge_spin,
-                nf=nf_edge,
-                dtype=coord_ext.dtype,
-                device=device,
-            )
-            descriptor, _ = self.call_with_edges(
-                coord_ext=coord_ext,
-                atype_ext=atype_ext,
-                edge_index=edge_index,
-                edge_vec=edge_vec,
-                edge_mask=edge_mask,
-                force_embedding=force_embedding,
-                charge_spin=charge_spin,
-                spin=spin,
-            )
-            return (
-                descriptor,
-                None,
-                None,
-                None,
-                None,
-            )
 
         # === Dense-nlist adapter over the graph-native core ===
         # ``graph_from_dense_quartet`` enumerates edges row-major over
@@ -1393,7 +1355,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         *,
         nf: int,
         n_out_nodes: int,
-        has_exclude_types: bool,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
         spin: Array | None = None,
@@ -1414,11 +1375,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         nf
             Frame count (only consumed by the charge/spin FiLM conditioning).
         n_out_nodes
-            Leading node count kept for the read-out (owned atoms).
-        has_exclude_types
-            Whether the builder should filter excluded type pairs. The graph
-            route passes ``False``: exclusion is applied once, upstream, on
-            the graph's ``edge_mask``.
+            Leading node count kept for the read-out (owned atoms). Pair
+            exclusion is not this core's responsibility: it is applied
+            exactly once, upstream, on the graph's ``edge_mask`` (see
+            ``_call_graph_common``).
         force_embedding
             Optional per-node force conditioning, shape (N, D, 1, C).
         charge_spin
@@ -1459,7 +1419,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
 
         # === Step 3. Build edge cache once (sparse edges) ===
-        edge_cache = build_edge_cache_from_edges(
+        edge_cache = _edge_cache_from_arrays(
             type_ebed=type_ebed,
             atype_flat=atype_flat,
             edge_index=edge_index,
@@ -1472,8 +1432,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
-            has_exclude_types=has_exclude_types,
-            edge_type_keep_mask=self._edge_type_keep_mask,
             # Random local-Z roll is a training-only augmentation;
             # the model is roll-equivariant, so inference fixes gamma.
             random_gamma=False,
@@ -1615,91 +1573,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
 
-    def call_with_edges(
-        self,
-        *,
-        coord_ext: Array,
-        atype_ext: Array,
-        edge_index: Array,
-        edge_vec: Array,
-        edge_mask: Array,
-        force_embedding: Array | None = None,
-        charge_spin: Array | None = None,
-        spin: Array | None = None,
-        comm_dict: dict[str, Array] | None = None,
-        nloc: int | None = None,
-    ) -> tuple[Array, Array]:
-        """
-        Compute the descriptor from a sparse edge list.
-
-        Two node-set conventions share this path. In the single-domain path
-        (``comm_dict`` is ``None``) the nodes are exactly the local atoms and
-        ``edge_index`` source/destination both index ``[0, nf*nloc)``. In the
-        parallel (LAMMPS multi-rank) path the nodes span the extended region
-        (local owners followed by ghosts), ``edge_index`` indexes the extended
-        atoms directly, and each interaction block refreshes ghost-node features
-        from their owner ranks at the SO(2) convolution input (see
-        :func:`~deepmd.pt.model.descriptor.sezm_nn.block.exchange_ghost_features`).
-
-        Parameters
-        ----------
-        coord_ext
-            Coordinates with shape (nf, n*3) or (nf, n, 3) in Å, where ``n`` is
-            ``nloc`` in the single-domain path and ``nall`` in the parallel path.
-        atype_ext
-            Atom types with shape (nf, n). In the parallel path this spans the
-            extended region so ghost type embeddings are available for the
-            edge-type and environment-seed features.
-        edge_index
-            Edge indices with shape (2, E).
-        edge_vec
-            Edge vectors with shape (E, 3) in Å.
-        edge_mask
-            Edge mask with shape (E,).
-        force_embedding
-            Optional precomputed equivariant force embedding with shape
-            ``(nf * nloc, D, 1, channels)``, where
-            ``D = (node_init_lmax + 1) ** 2``. This tensor is added to the
-            initial SO(3) backbone state before the interaction blocks.
-        charge_spin
-            Frame-level charge and spin conditions with shape (nf, 2).
-        comm_dict
-            Border-exchange tensors for parallel inference. When provided, the
-            node set spans the extended region and ghost features are exchanged
-            via ``deepmd_export::border_op`` between interaction blocks.
-        nloc
-            Number of owned (local) atoms per frame. Required when ``comm_dict``
-            is provided; the final scalar read-out is restricted to these atoms.
-
-        Returns
-        -------
-        tuple[Array, Array]
-            The scalar descriptor with shape ``(nf, nloc, channels)`` and the
-            final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
-        """
-        xp = array_api_compat.array_namespace(coord_ext, atype_ext, edge_vec)
-        nf, n_per_frame = atype_ext.shape[0], atype_ext.shape[1]
-        parallel = comm_dict is not None
-        if parallel:
-            raise NotImplementedError(
-                "multi-rank comm_dict inference is not supported in the dpmodel backend"
-            )
-        out_nloc = nloc if parallel else n_per_frame
-        x_scalar, x = self._call_graph_impl(
-            xp.reshape(atype_ext, (-1,)),
-            edge_index,
-            edge_vec,
-            edge_mask,
-            nf=nf,
-            n_out_nodes=nf * out_nloc,
-            has_exclude_types=bool(self.exclude_types),
-            force_embedding=force_embedding,
-            charge_spin=charge_spin,
-            spin=spin,
-            comm_dict=comm_dict,
-        )
-        return xp.reshape(x_scalar, (nf, out_nloc, self.channels)), x
-
     def _call_graph_common(
         self,
         graph: NeighborGraph,
@@ -1759,8 +1632,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         if self.exclude_types:
             # Canonical NeighborGraph transform: exclusion lands on the
-            # graph's edge_mask exactly once; the edge-cache core below is
-            # called with has_exclude_types=False and never re-applies.
+            # graph's edge_mask exactly once; the edge-cache core below has
+            # no exclusion parameter and never re-applies it.
             graph = apply_pair_exclusion(graph, atype_flat, self.emask)
         n = atype_flat.shape[0] if n_out_nodes is None else n_out_nodes
         return self._call_graph_impl(
@@ -1770,7 +1643,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             graph.edge_mask,
             nf=nf,
             n_out_nodes=n,
-            has_exclude_types=False,
             force_embedding=force_embedding,
             charge_spin=charge_spin,
             spin=spin,
@@ -1988,7 +1860,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         Parameters
         ----------
-        edge_cache : EdgeFeatureCache
+        edge_cache : EdgeCache
             Per-edge cache. ``edge_quat`` is populated by the cache builder; the
             fallback covers caches produced without it.
 
@@ -2117,42 +1989,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         scalar, vector = self.spin_embedding(xp.reshape(spin, (n_nodes, 3)), atype_flat)
         type_ebed = type_ebed + xp.astype(scalar, type_ebed.dtype)
         return type_ebed, vector
-
-    def _edge_type_keep_mask(
-        self,
-        atype_flat: Array,
-        src: Array,
-        dst: Array,
-    ) -> Array:
-        """
-        Build keep mask for edge pairs based on excluded type pairs.
-
-        Parameters
-        ----------
-        atype_flat
-            Flattened local atom types with shape (N,).
-        src
-            Source indices with shape (E,).
-        dst
-            Destination indices with shape (E,).
-
-        Returns
-        -------
-        Array
-            Boolean mask with shape (E,), True means keep.
-        """
-        xp = array_api_compat.array_namespace(atype_flat, src, dst)
-        if len(self.emask.exclude_types) == 0:
-            return xp.ones_like(src, dtype=xp.bool)
-        device = array_api_compat.device(atype_flat)
-        type_i = xp.take(atype_flat, dst, axis=0)
-        type_j = xp.take(atype_flat, src, axis=0)
-        type_i = xp.where(type_i >= 0, type_i, self.ntypes)
-        type_j = xp.where(type_j >= 0, type_j, self.ntypes)
-        type_ij = type_i * (self.ntypes + 1) + type_j
-        type_mask = xp_asarray_nodetach(xp, self.emask.type_mask[...], device=device)
-        keep = xp.take(type_mask, xp.astype(type_ij, xp.int64), axis=0)
-        return xp.astype(keep, xp.bool)
 
     @staticmethod
     def _broadcast_grid_setting(

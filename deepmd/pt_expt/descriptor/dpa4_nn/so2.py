@@ -47,7 +47,7 @@ from deepmd.pt_expt.common import (
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        EdgeFeatureCache,
+        EdgeCache,
     )
 
 
@@ -234,7 +234,7 @@ class SO2Convolution(SO2ConvolutionDP):
             self._value_path = make_cute_value_path(self)
 
     def _rotate_to_local(
-        self, x: torch.Tensor, edge_cache: EdgeFeatureCache
+        self, x: torch.Tensor, edge_cache: EdgeCache
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if self.use_triton_infer and not self.training:
             # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the block
@@ -248,7 +248,7 @@ class SO2Convolution(SO2ConvolutionDP):
         return super()._rotate_to_local(x, edge_cache)
 
     def _rotate_back(
-        self, x_local: torch.Tensor, edge_cache: EdgeFeatureCache, n_edge: int
+        self, x_local: torch.Tensor, edge_cache: EdgeCache, n_edge: int
     ) -> torch.Tensor:
         if self.use_triton_infer and not self.training:
             Dt_full = edge_cache.Dt_full
@@ -268,7 +268,7 @@ class SO2Convolution(SO2ConvolutionDP):
     def _flash_aggregate(
         self,
         x_local_flash: torch.Tensor,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         attn_alpha: torch.Tensor,
         x_l0_node: torch.Tensor,
         n_node: int,

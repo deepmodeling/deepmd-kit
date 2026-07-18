@@ -44,7 +44,6 @@ from .wignerd import (
 )
 
 WignerCalculatorFn = Callable[[Any], "tuple[Any, Any]"]
-EdgeTypeKeepMaskFn = Callable[[Any, Any, Any], Any]
 
 
 @dataclass
@@ -104,7 +103,7 @@ class EdgeCache:
         Validity mask for the padded standard-path layout with shape (E,) or
         (E, 1); 1 marks a real edge, 0 a padded/invalid slot. ``None`` means
         all slots are valid (e.g. the sparse
-        :func:`build_edge_cache_from_edges` path, where masking is folded into
+        :func:`_edge_cache_from_arrays` path, where masking is folded into
         the per-edge weights). This field has no pt counterpart.
     """
 
@@ -228,7 +227,7 @@ def compute_edge_src_gate(
     return xp.take(eta, src, axis=0)[:, None]
 
 
-def build_edge_cache_from_edges(
+def _edge_cache_from_arrays(
     *,
     type_ebed: Any,
     atype_flat: Any,
@@ -242,8 +241,6 @@ def build_edge_cache_from_edges(
     bridging_switch: Callable[[Any], Any] | None,
     edge_envelope: Callable[[Any], Any],
     radial_basis: Callable[[Any], Any],
-    has_exclude_types: bool,
-    edge_type_keep_mask: EdgeTypeKeepMaskFn,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
@@ -251,6 +248,11 @@ def build_edge_cache_from_edges(
 ) -> EdgeCache:
     """
     Build the global edge cache from a sparse edge list.
+
+    Private core, invoked only from ``DescrptDPA4._call_graph_impl``. Pair
+    exclusion is not applied here: it is the canonical ``apply_pair_exclusion``
+    transform's responsibility, applied exactly once upstream on the
+    ``NeighborGraph``'s ``edge_mask`` (see ``DescrptDPA4._call_graph_common``).
 
     Parameters
     ----------
@@ -284,10 +286,6 @@ def build_edge_cache_from_edges(
         C^3 edge envelope module.
     radial_basis
         Radial basis module.
-    has_exclude_types
-        Whether excluded type pairs should be filtered in this path.
-    edge_type_keep_mask
-        Callable that builds the keep mask for edge type exclusions.
     random_gamma
         Whether to apply a random roll around the local +Z axis before
         constructing Wigner-D blocks.
@@ -313,10 +311,8 @@ def build_edge_cache_from_edges(
     src = xp.astype(edge_index[0, ...], xp.int64)
     dst = xp.astype(edge_index[1, ...], xp.int64)
 
-    # === Step 1. Normalize mask and apply type exclusions ===
+    # === Step 1. Normalize mask ===
     edge_keep = xp.astype(edge_mask, xp.bool)
-    if has_exclude_types:
-        edge_keep = edge_keep & edge_type_keep_mask(atype_flat, src, dst)
 
     # === Step 2. Promote geometry dtype ===
     edge_vec = xp.astype(edge_vec, compute_dtype)
