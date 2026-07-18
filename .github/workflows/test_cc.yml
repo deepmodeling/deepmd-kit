@@ -76,7 +76,7 @@ jobs:
         if: matrix.enable_paddle
       - run: |
           export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-          pytest --cov=deepmd source/lmp/tests
+          source/install/retry_on_sigterm.sh 3 pytest --cov=deepmd source/lmp/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1

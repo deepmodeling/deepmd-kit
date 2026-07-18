@@ -13,6 +13,15 @@ import torch.nn.functional as torch_func
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.triton.dpa1.activation import (
+    ACT_CODES,
+)
+from deepmd.kernels.triton.dpa1.se_conv import (
+    se_atten_conv,
+)
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -288,6 +297,24 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # For type embedding compression
         self.register_buffer(
             "type_embd_data", torch.zeros(0, dtype=self.prec, device=env.DEVICE)
+        )
+
+        # Opt-in fused environment-convolution routing (inference only, gated by
+        # ``DP_TRITON_INFER``). The fused kernel folds the last embedding layer
+        # (its ``tanh`` activation, timestep and residual, doubling or identity),
+        # the type-pair gate (strip only), the smooth cutoff and the moment
+        # reduction into one node-parallel pass; the two embedding GEMMs stay on
+        # cuBLAS. It requires no attention layer and a last-layer activation the
+        # kernel inlines (``tanh`` or ``silu``, forward and backward); arbitrary
+        # channel widths are handled by masked padding inside the kernel. Both
+        # ``strip`` (type-pair gate) and ``concat`` (type feature folded into the
+        # embedding input, no gate) are supported. Any other configuration keeps
+        # the dense reference path.
+        self.use_triton_infer = triton_infer_level() >= 1
+        self.se_conv_eligible = (
+            self.tebd_input_mode in ("strip", "concat")
+            and self.attn_layer == 0
+            and self.filter_layers.networks[0].layers[-1].activate_name in ACT_CODES
         )
 
     def get_rcut(self) -> float:
@@ -592,6 +619,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
         ss = rr[:, :, :1]
+        # Whether the pair representation ``g2`` is produced this pass. The
+        # compressed and fused strip paths form only the moment tensor and
+        # leave ``g2`` empty; the flag drives the return below.
+        g2_is_none = self.geo_compress
         if self.tebd_input_mode in ["concat"]:
             atype_tebd_ext = extended_atype_embd
             # nb x (nloc x nnei) x nt
@@ -613,16 +644,45 @@ class DescrptBlockSeAtten(DescriptorBlock):
             else:
                 # nfnl x nnei x (1 + tebd_dim)
                 ss = torch.concat([ss, nlist_tebd], dim=2)
-            # nfnl x nnei x ng
-            gg = self.filter_layers.networks[0](ss)
-            input_r = torch.nn.functional.normalize(
-                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            # nfnl x 4 x ng
-            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+            if (
+                not torch.jit.is_scripting()
+                and self.use_triton_infer
+                and self.se_conv_eligible
+                and not self.training
+                and not self.geo_compress
+                and rr.is_cuda
+            ):
+                # Fused environment convolution (concat, opt-in inference path).
+                # The type feature already enters through ``ss`` (the concat
+                # embedding input), so no type gate is applied; the final
+                # embedding layer (its timestep and residual) and the moment
+                # reduction collapse into one node-parallel Triton kernel while
+                # the two embedding GEMMs stay on cuBLAS.
+                xyz_scatter = se_atten_conv(
+                    self.filter_layers.networks[0],
+                    ss,
+                    None,
+                    None,
+                    None,
+                    rr,
+                    gated=0,
+                )
+                # ``gg`` (the pair representation g2) is not formed on this path;
+                # it is returned as ``None``, so a zero-element placeholder keeps
+                # ``gg`` a tensor without the full (nf, nloc, nnei, ng) allocation.
+                gg = xyz_scatter.new_empty(0)
+                g2_is_none = True
+            else:
+                # nfnl x nnei x ng
+                gg = self.filter_layers.networks[0](ss)
+                input_r = torch.nn.functional.normalize(
+                    rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+                )
+                gg = self.dpa1_attention(
+                    gg, nlist_mask, input_r=input_r, sw=sw
+                )  # shape is [nframes*nloc, self.neei, out_size]
+                # nfnl x 4 x ng
+                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
             assert self.filter_layers_strip is not None
             assert type_embedding is not None
@@ -632,82 +692,108 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape(nb, nloc * nnei)
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
+            # Per-edge row index into the (padded) type-pair embedding table.
             if self.type_one_side:
                 if self.tebd_compress:
                     tt_full = self.type_embd_data
                 else:
                     # (ntypes+1, tebd_dim) -> (ntypes+1, ng)
                     tt_full = self.filter_layers_strip.networks[0](type_embedding)
-                # (nf*nl*nnei,) -> (nf*nl*nnei, ng)
-                gg_t = tt_full[nei_type.view(-1).type(torch.long)]
+                tebd_idx = nei_type.view(-1).to(torch.long)
             else:
                 idx_i = torch.tile(
                     atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
-                idx_j = nei_type.view(-1)
-                # (nf x nl x nnei)
-                idx = (idx_i + idx_j).to(torch.long)
+                tebd_idx = (idx_i + nei_type.view(-1)).to(torch.long)
                 if self.tebd_compress:
                     # ((ntypes+1)^2, ng)
                     tt_full = self.type_embd_data
                 else:
-                    # ((ntypes+1)^2) * (ntypes+1)^2 * nt
                     type_embedding_nei = torch.tile(
                         type_embedding.view(1, ntypes_with_padding, nt),
                         [ntypes_with_padding, 1, 1],
                     )
-                    # (ntypes+1)^2 * ((ntypes+1)^2) * nt
                     type_embedding_center = torch.tile(
                         type_embedding.view(ntypes_with_padding, 1, nt),
                         [1, ntypes_with_padding, 1],
                     )
-                    # ((ntypes+1)^2 * (ntypes+1)^2) * (nt+nt)
                     two_side_type_embedding = torch.cat(
                         [type_embedding_nei, type_embedding_center], -1
                     ).reshape(-1, nt * 2)
                     tt_full = self.filter_layers_strip.networks[0](
                         two_side_type_embedding
                     )
-                # (nf x nl x nnei) x ng
-                gg_t = tt_full[idx]
-            # (nf x nl) x nnei x ng
-            gg_t = gg_t.reshape(nfnl, nnei, ng)
-            if self.smooth:
-                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-            if self.geo_compress:
-                ss = ss.reshape(-1, 1)
-                gg_t = gg_t.reshape(-1, gg_t.size(-1))
-                xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
-                    self.compress_data[0].contiguous(),
-                    self.compress_info[0].cpu().contiguous(),
-                    ss.contiguous(),
-                    rr.contiguous(),
-                    gg_t.contiguous(),
-                    self.filter_neuron[-1],
-                    self.is_sorted,
-                )[0]
-                # to make torchscript happy
-                gg = torch.empty(
-                    nframes,
-                    nloc,
-                    self.nnei,
-                    self.filter_neuron[-1],
-                    dtype=gg_t.dtype,
-                    device=gg_t.device,
+            if (
+                not torch.jit.is_scripting()
+                and self.use_triton_infer
+                and self.se_conv_eligible
+                and not self.training
+                and not self.geo_compress
+                and rr.is_cuda
+            ):
+                # Fused environment convolution (opt-in inference path). The
+                # final embedding layer (its timestep and residual), the
+                # type-pair gate, the smooth cutoff and the moment reduction
+                # collapse into one node-parallel Triton kernel; the two
+                # embedding GEMMs remain on cuBLAS. The
+                # ``torch.jit.is_scripting`` guard keeps the
+                # TorchScript freeze (LAMMPS) on the dense reference path, since
+                # the operator is a ``triton_op`` composable only under eager
+                # and ``make_fx`` / ``torch.compile``.
+                sw_eff = sw if self.smooth else torch.ones_like(sw)
+                xyz_scatter = se_atten_conv(
+                    self.filter_layers.networks[0],
+                    ss,
+                    tt_full,
+                    tebd_idx,
+                    sw_eff.reshape(nfnl, self.nnei),
+                    rr,
+                    gated=1,
                 )
+                # ``gg`` (the pair representation g2) is not formed on this path;
+                # it is returned as ``None``, so a zero-element placeholder keeps
+                # ``gg`` a tensor without the full (nf, nloc, nnei, ng) allocation.
+                gg = xyz_scatter.new_empty(0)
+                g2_is_none = True
             else:
-                # nfnl x nnei x ng
-                gg_s = self.filter_layers.networks[0](ss)
-                # nfnl x nnei x ng
-                gg = gg_s * gg_t + gg_s
-                input_r = torch.nn.functional.normalize(
-                    rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-                )
-                gg = self.dpa1_attention(
-                    gg, nlist_mask, input_r=input_r, sw=sw
-                )  # shape is [nframes*nloc, self.neei, out_size]
-                # nfnl x 4 x ng
-                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+                # (nf x nl) x nnei x ng
+                gg_t = tt_full[tebd_idx].reshape(nfnl, nnei, ng)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                if self.geo_compress:
+                    ss = ss.reshape(-1, 1)
+                    gg_t = gg_t.reshape(-1, gg_t.size(-1))
+                    xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
+                        self.compress_data[0].contiguous(),
+                        self.compress_info[0].cpu().contiguous(),
+                        ss.contiguous(),
+                        rr.contiguous(),
+                        gg_t.contiguous(),
+                        self.filter_neuron[-1],
+                        self.is_sorted,
+                    )[0]
+                    # to make torchscript happy
+                    gg = torch.empty(
+                        nframes,
+                        nloc,
+                        self.nnei,
+                        self.filter_neuron[-1],
+                        dtype=gg_t.dtype,
+                        device=gg_t.device,
+                    )
+                else:
+                    # nfnl x nnei x ng
+                    gg_s = self.filter_layers.networks[0](ss)
+                    # nfnl x nnei x ng
+                    gg = gg_s * gg_t + gg_s
+                    input_r = torch.nn.functional.normalize(
+                        rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+                    )
+                    gg = self.dpa1_attention(
+                        gg, nlist_mask, input_r=input_r, sw=sw
+                    )  # shape is [nframes*nloc, self.neei, out_size]
+                    # nfnl x 4 x ng
+                    xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         else:
             raise NotImplementedError
 
@@ -722,7 +808,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return (
             result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
             gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1])
-            if not self.geo_compress
+            if not g2_is_none
             else None,
             dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),

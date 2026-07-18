@@ -75,6 +75,8 @@ from .se_t_tebd import (
 
 
 class RepinitArgs:
+    r"""Representation initialization parameters for :math:`\mathcal G`."""
+
     def __init__(
         self,
         rcut: float,
@@ -185,6 +187,8 @@ class RepinitArgs:
 
 
 class RepformerArgs:
+    r"""Representation update parameters for :math:`\mathcal G^{l+1}=\Phi_l(\mathcal G^l)`."""
+
     def __init__(
         self,
         rcut: float,

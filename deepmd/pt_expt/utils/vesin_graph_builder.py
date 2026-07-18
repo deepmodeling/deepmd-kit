@@ -35,6 +35,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     apply_pair_exclusion,
+    attach_edge_csr,
     neighbor_graph_from_ijs,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
@@ -97,6 +98,8 @@ def build_neighbor_graph_vesin(
     rcut: float,
     layout: GraphLayout | None = None,
     *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
     pair_excl: PairExcludeMask | None = None,
     compact: bool = False,
 ) -> NeighborGraph:
@@ -107,16 +110,21 @@ def build_neighbor_graph_vesin(
 
     Parameters
     ----------
-    coord
-        (nf, nloc, 3) or (nf, nloc*3) local coordinates (torch tensor).
-    atype
-        (nf, nloc) local atom types; ``type < 0`` marks a virtual atom.
-    box
-        (nf, 3, 3) simulation cell, or ``None`` for non-periodic.
-    rcut
-        cutoff radius.
-    layout
-        edge-axis length policy; ``None`` => dynamic with ``min_edges`` guards.
+    coord : torch.Tensor
+        Coordinates with shape ``(nf, nloc, 3)``.
+    atype : torch.Tensor
+        Atom types with shape ``(nf, nloc)``.
+    box : torch.Tensor or None
+        Simulation cells with shape ``(nf, 3, 3)``.
+    rcut : float
+        Cutoff radius.
+    layout : GraphLayout or None
+        Edge-axis length policy.
+    with_csr : bool
+        Whether to construct destination/source CSR views.
+    canonicalize : bool
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
     pair_excl
         Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
         for model-level ``pair_exclude_types``. When given,
@@ -151,7 +159,16 @@ def build_neighbor_graph_vesin(
         empty_S = torch.zeros((0, 3), dtype=torch.int64, device=dev)
         empty_nf = torch.zeros((0,), dtype=torch.int64, device=dev)
         return neighbor_graph_from_ijs(
-            empty_i, empty_i, empty_S, coord, box, empty_nf, nloc, layout=layout
+            empty_i,
+            empty_i,
+            empty_S,
+            coord,
+            box,
+            empty_nf,
+            nloc,
+            layout=layout,
+            with_csr=with_csr,
+            canonicalize=canonicalize,
         )
 
     i_parts, j_parts, S_parts, nf_parts = [], [], [], []
@@ -199,9 +216,18 @@ def build_neighbor_graph_vesin(
     # out-of-cell (unwrapped) positions natively, so no normalize_coord is
     # needed and S is consistent with the original coords as searched.
     graph = neighbor_graph_from_ijs(
-        i_all, j_all, S_all, coord, box, nf_all, nloc, layout=layout
+        i_all,
+        j_all,
+        S_all,
+        coord,
+        box,
+        nf_all,
+        nloc,
+        layout=layout,
     )
     if pair_excl is not None:
         at_flat = torch.as_tensor(atype, device=dev).reshape(-1)
         graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
     return graph

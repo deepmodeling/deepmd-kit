@@ -125,6 +125,9 @@ TEST_P(UniversalDeepPotCTest, Metadata) {
   EXPECT_EQ(DP_DeepPotGetDimAParam(dp), ref.dim_aparam);
   EXPECT_EQ(DP_DeepPotIsAParamNAll(dp), ref.aparam_nall);
   EXPECT_EQ(DP_DeepPotHasDefaultFParam(dp), ref.has_default_fparam);
+  EXPECT_FALSE(DP_DeepPotSupportsDeviceEdgeInference(dp));
+  EXPECT_FALSE(DP_DeepPotUsesFP32EdgeVectors(dp));
+  EXPECT_FALSE(DP_DeepPotUsesCanonicalGraphInference(dp));
 
   const char* type_map = DP_DeepPotGetTypeMap(dp);
   EXPECT_STREQ(type_map, ref.type_map.c_str());

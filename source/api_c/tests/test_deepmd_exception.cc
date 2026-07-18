@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "c_api.h"
@@ -190,6 +191,17 @@ TEST_P(TestModelDeviInvalidFrameCount, rejects_every_count_except_one) {
 INSTANTIATE_TEST_SUITE_P(UnsupportedFrameCounts,
                          TestModelDeviInvalidFrameCount,
                          ::testing::Values(-1, 0, 2));
+
+TEST(TestInputNlist, move_assignment_transfers_c_handle) {
+  deepmd::hpp::InputNlist source;
+  DP_Nlist* source_handle = source.nl;
+  deepmd::hpp::InputNlist target;
+
+  target = std::move(source);
+
+  EXPECT_EQ(target.nl, source_handle);
+  EXPECT_EQ(source.nl, nullptr);
+}
 
 TEST(TestChargeSpinValidation, exact_frame_values_use_input_storage) {
   std::vector<double> charge_spin = {1.0, 2.0, 3.0, 4.0};
