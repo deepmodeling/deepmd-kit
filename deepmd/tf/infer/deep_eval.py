@@ -13,6 +13,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.common import (
     make_default_mesh,
@@ -110,6 +113,7 @@ class DeepEval(DeepEvalBackend):
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
@@ -305,6 +309,22 @@ class DeepEval(DeepEvalBackend):
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.
@@ -1121,6 +1141,22 @@ class DeepEval(DeepEvalBackend):
         model_def_script = script.decode("utf-8")
         return json.loads(model_def_script)["model"]
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.tf.model.model import (
+            Model,
+        )
+        from deepmd.tf.utils.graph import (
+            load_graph_def,
+        )
+
+        graph, graph_def = load_graph_def(str(self.model_file))
+
+        model_def_script = self.get_model_def_script()
+        model = Model(**model_def_script)
+        # important! must be called before serialize
+        model.init_variables(graph=graph, graph_def=graph_def)
+        return model.serialize()
+
     def get_model(self) -> "tf.Graph":
         """Get the TensorFlow graph.
 
@@ -1172,6 +1208,7 @@ class DeepEvalOld:
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
@@ -1229,6 +1266,28 @@ class DeepEvalOld:
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.

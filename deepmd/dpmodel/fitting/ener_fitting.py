@@ -22,6 +22,12 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("ener")
 class EnergyFittingNet(InvarFitting):
+    # Compose rather than replace the base documentation so AutoAPI/numpydoc
+    # retains the fitting equations and complete Parameters section.
+    __doc__ = r"""Fit scalar atomic energies :math:`E_i=F_\theta(\mathcal D_i)`.
+
+        """ + (InvarFitting.__doc__ or "")
+
     def __init__(
         self,
         ntypes: int,

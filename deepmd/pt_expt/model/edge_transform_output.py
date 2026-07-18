@@ -18,6 +18,15 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     frame_id_from_n_node,
     segment_sum,
 )
+from deepmd.kernels.cuda.edge_force_virial import (
+    edge_force_virial as fused_edge_force_virial,
+)
+from deepmd.kernels.cuda.edge_force_virial import (
+    op_available as fused_scatter_available,
+)
+from deepmd.kernels.utils import (
+    cuda_infer_level,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -29,13 +38,33 @@ def edge_energy_deriv(
     edge_index: torch.Tensor,
     edge_mask: torch.Tensor,
     n_node: torch.Tensor,
+    destination_order: torch.Tensor | None = None,
+    destination_row_ptr: torch.Tensor | None = None,
+    source_order: torch.Tensor | None = None,
+    source_row_ptr: torch.Tensor | None = None,
+    node_capacity: int | None = None,
+    *,
     do_atomic_virial: bool = False,
     create_graph: bool = False,
+    force_precision: torch.dtype | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Return (force, atom_virial_or_None, virial) from a graph energy.
 
     g_e = dE/d(edge_vec) via one torch.autograd.grad, then the shared
-    edge_force_virial scatter.
+    edge_force_virial scatter. At ``DP_CUDA_INFER >= 1`` (and with the C++
+    operator library loaded) the scatter runs through the fused
+    ``deepmd::edge_force_virial`` operator instead of the array-API kernel
+    chain; the routing is device-free so a CPU ``make_fx`` trace bakes the
+    operator into the exported graph.
+
+    ``g_e`` is the gradient with respect to the fp64 ``edge_vec`` leaf, but the
+    descriptor and fitting compute -- hence g_e's numerical content -- are in
+    the model precision (fp32 for an fp32 model). For inference, scattering the
+    force / virial in that ``force_precision`` rather than the fp64 leaf dtype
+    halves the atomic-scatter traffic at no accuracy cost: the per-node force is
+    a small neighbor sum and the per-frame virial uses a hierarchical block
+    reduction. A retained graph (training / double backward) keeps the fp64 leaf
+    dtype so training numerics are unchanged.
 
     Parameters
     ----------
@@ -49,6 +78,14 @@ def edge_energy_deriv(
         (E,) valid-edge mask.
     n_node
         (nf,) per-frame node counts.
+    destination_order, source_order
+        (E,) destination/source-grouped edge permutations.
+    destination_row_ptr, source_row_ptr
+        (N + 1,) destination/source CSR offsets.
+    node_capacity
+        Static node-axis size ``N``.  ``None`` (eager default) falls back to
+        ``int(n_node.sum())``.  Pass a static value (e.g. ``atype.shape[0]``)
+        to keep this function trace-safe under ``make_fx``/``torch.export``.
     do_atomic_virial
         whether to materialize the per-atom virial (else ``None`` is returned).
     create_graph
@@ -69,9 +106,40 @@ def edge_energy_deriv(
         create_graph=create_graph,
         retain_graph=True,
     )
-    force, atom_virial, virial = edge_force_virial(
-        g_e, edge_vec, edge_index, edge_mask, n_node
-    )
+    if (
+        force_precision is not None
+        and not create_graph
+        and g_e.dtype != force_precision
+    ):
+        g_e = g_e.to(force_precision)
+        edge_vec = edge_vec.to(force_precision)
+    if (
+        cuda_infer_level() >= 1
+        and not create_graph
+        and fused_scatter_available()
+        and destination_order is not None
+        and destination_row_ptr is not None
+        and source_order is not None
+        and source_row_ptr is not None
+    ):
+        n_cap = node_capacity if node_capacity is not None else int(n_node.sum())
+        force, atom_virial, virial = fused_edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            n_node,
+            n_cap,
+            do_atomic_virial,
+        )
+    else:
+        force, atom_virial, virial = edge_force_virial(
+            g_e, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
+        )
     return force, (atom_virial if do_atomic_virial else None), virial
 
 
@@ -82,6 +150,8 @@ def fit_output_to_model_output_graph(
     do_atomic_virial: bool = False,
     create_graph: bool = True,
     mask: torch.Tensor | None = None,
+    node_capacity: int | None = None,
+    force_precision: torch.dtype | None = None,
 ) -> dict[str, torch.Tensor]:
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
 
@@ -115,6 +185,19 @@ def fit_output_to_model_output_graph(
         Whether the backward retains a graph (training).
     mask
         (N,) flat realness mask; used only for intensive-output reduction.
+    node_capacity
+        Authoritative node-axis size ``N`` = the scatter bound for the
+        per-node force/atom-virial assembly. Pass the INPUT ``atype.shape[0]``
+        (the pristine node-axis symbol that ``edge_index`` indexes into by
+        construction); ``None`` falls back to the descriptor/fitting output's
+        ``fit_ret.shape[0]`` (value-equal). This makes the scatter bound the
+        input node axis rather than a re-derived shape -- hardening; the actual
+        CUDA out-of-bounds device-assert is prevented by the index clamp in
+        :func:`~deepmd.dpmodel.utils.neighbor_graph.derivatives.edge_force_virial`.
+    force_precision
+        Compute precision (model dtype) in which to assemble the force / virial
+        during inference, decoupled from the fp64 ``edge_vec`` leaf; see
+        :func:`edge_energy_deriv`. ``None`` keeps the leaf dtype.
 
     Returns
     -------
@@ -131,9 +214,22 @@ def fit_output_to_model_output_graph(
     edge_mask = graph.edge_mask
     n_node = graph.n_node
     redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
-    nf = int(n_node.shape[0])
-    N = int(n_node.sum())
-    frame_id = frame_id_from_n_node(n_node)  # (N,) int64 frame index per atom
+    # Keep ``nf`` as a (possibly symbolic) shape value: under symbolic make_fx /
+    # torch.export ``n_node`` dim-0 is the dynamic frame axis, and ``int()`` on a
+    # SymInt SPECIALIZES it -- baking the trace-time frame count into every
+    # per-frame reduction (energy_redu / virial) and breaking multi-frame infer.
+    nf = n_node.shape[0]
+    # Derive N from the fitting output's leading shape rather than int(n_node.sum()).
+    # shape attributes are always static Python ints (or SymInts in symbolic-mode
+    # tracing) and are trace-safe; reading a tensor VALUE via int() is not.
+    N = (
+        node_capacity
+        if node_capacity is not None
+        else next(iter(fit_ret.values())).shape[0]
+    )
+    frame_id = frame_id_from_n_node(
+        n_node, n_total=N
+    )  # (N,) int64 frame index per atom
     model_ret: dict[str, torch.Tensor] = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -172,8 +268,14 @@ def fit_output_to_model_output_graph(
                 edge_index,
                 edge_mask,
                 n_node,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                graph.source_order,
+                graph.source_row_ptr,
+                node_capacity=N,
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
+                force_precision=force_precision if not create_graph else None,
             )
             # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
             ff_list.append(force.reshape(N, 1, 3))

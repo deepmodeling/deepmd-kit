@@ -154,19 +154,19 @@ def get_trainer(
     ]:
         # get data modifier
         modifier = None
-        modifier_params = model_params_single.get("modifier", None)
+        modifier_params = model_params_single.get("modifier")
         if modifier_params is not None:
             modifier = get_data_modifier(modifier_params).to(DEVICE)
 
         training_dataset_params = data_dict_single["training_data"]
-        validation_dataset_params = data_dict_single.get("validation_data", None)
+        validation_dataset_params = data_dict_single.get("validation_data")
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
 
         # stat files
-        stat_file_path_single = data_dict_single.get("stat_file", None)
+        stat_file_path_single = data_dict_single.get("stat_file")
         if rank != 0:
             stat_file_path_single = None
         elif stat_file_path_single is not None:
@@ -185,7 +185,7 @@ def get_trainer(
             dataset_params: dict[str, Any],
         ) -> DpLoaderSet:
             """Create a DpLoaderSet from systems with pattern expansion."""
-            patterns = dataset_params.get("rglob_patterns", None)
+            patterns = dataset_params.get("rglob_patterns")
             systems = process_systems(systems, patterns=patterns)
             return DpLoaderSet(
                 systems,

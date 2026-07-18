@@ -23,6 +23,9 @@ from typing import (
 
 import array_api_compat
 
+from .graph import (
+    frame_id_from_n_node,
+)
 from .segment import (
     segment_sum,
 )
@@ -80,27 +83,38 @@ def edge_force_virial(
         frame via the frame of their ``dst`` node.
     """
     xp = array_api_compat.array_namespace(g_e)
-    # node-axis size; when a static ``node_capacity`` is supplied (the jax/export
-    # path) short-circuit so we never call int() on the traced ``sum(n_node)``.
-    n_out = int(node_capacity) if node_capacity is not None else int(xp.sum(n_node))
+    # A supplied capacity remains symbolic under export; converting it to int
+    # would specialize the dynamic node axis to the trace sample.
+    n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
     nf = n_node.shape[0]
-    # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
-    # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
+    if isinstance(n_out, int) and n_out == 0:
+        device = array_api_compat.device(g_e)
+        return (
+            xp.zeros((0, 3), dtype=g_e.dtype, device=device),
+            xp.zeros((0, 3, 3), dtype=g_e.dtype, device=device),
+            xp.zeros((nf, 3, 3), dtype=g_e.dtype, device=device),
+        )
+    # Padding edges carry no force or virial contribution.
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    src = edge_index[0]
-    dst = edge_index[1]
+    # Real endpoints are already in range. Modulo leaves them unchanged while
+    # bounding masked sentinel endpoints after export removes symbolic shape
+    # equalities between the endpoint and output node axes.
+    src = edge_index[0] % n_out
+    dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
     force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
     # per-edge virial w_e[k, j] = -g_e[k] * edge_vec[j]  (broadcast, no einsum)
     w_edge = -(g[:, :, None] * edge_vec[:, None, :])  # (E, 3, 3)
     # atom virial: full-to-src
     atom_virial = segment_sum(w_edge, src, n_out)  # (N, 3, 3)
-    # per-frame virial: assign each edge to the frame of its dst node. Node
-    # ``k`` belongs to frame ``searchsorted(cumsum(n_node), k, "right")`` because
-    # real nodes are compact frame-major (frame f owns a contiguous block).
-    boundaries = xp.cumulative_sum(n_node)  # (nf,) per-frame node upper bounds
-    edge_frame = xp.astype(
-        xp.searchsorted(boundaries, dst, side="right"), xp.int64
-    )  # (E,) in [0, nf)
-    virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
+    # Per-frame virial: reduce the PER-ATOM virial by its node frame (N -> nf)
+    # rather than the per-edge virial by its edge frame (E -> nf). Real edges
+    # never cross frames (``src`` and ``dst`` share a frame), so summing the
+    # full-to-``src`` atom virial over a frame's nodes equals summing ``w_edge``
+    # over that frame's edges. Reducing the N nodes instead of the E >> N edges
+    # avoids serializing ~E scatter-adds into a single per-frame accumulator --
+    # the single-frame (inference) worst case, where every edge targets one slot
+    # and the scatter degenerates into a fully contended atomic reduction.
+    node_frame = frame_id_from_n_node(n_node, n_total=n_out)  # (N,) frame per node
+    virial = segment_sum(atom_virial, node_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial

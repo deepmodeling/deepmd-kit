@@ -79,6 +79,21 @@ def xp_transpose_01342(x: Array) -> Array:
     return x
 
 
+def _statically_compatible_shape(
+    actual: tuple,
+    expected: tuple,
+) -> bool:
+    if len(actual) != len(expected):
+        return False
+    static_int = (int, np.integer)
+    return all(
+        not isinstance(actual_dim, static_int)
+        or not isinstance(expected_dim, static_int)
+        or actual_dim == expected_dim
+        for actual_dim, expected_dim in zip(actual, expected, strict=True)
+    )
+
+
 @DescriptorBlock.register("se_repformer")
 @DescriptorBlock.register("se_uni")
 class DescrptBlockRepformers(NativeOP, DescriptorBlock):
@@ -504,7 +519,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                 "implementation; pass a valid mapping or override the method "
                 "for parallel comm handling."
             )
-        return xp_take_along_axis(g1, mapping_tiled, axis=1)
+        xp = array_api_compat.array_namespace(g1, mapping_tiled)
+        mapping_mask = mapping_tiled >= 0
+        mapping_tiled = xp.where(
+            mapping_mask, mapping_tiled, xp.zeros_like(mapping_tiled)
+        )
+        g1_ext = xp_take_along_axis(g1, mapping_tiled, axis=1)
+        return xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
 
     def call(
         self,
@@ -536,7 +557,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
         atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
-        assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
+        assert _statically_compatible_shape(atype_embd.shape, (nf, nloc, self.g1_dim))
 
         g1 = self.act(atype_embd)
         # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
@@ -944,6 +965,34 @@ def symmetrization_op(
 
 
 class Atten2Map(NativeOP):
+    r"""Masked and smoothed angular attention map.
+
+    Define the raw logits and the (not necessarily unit-vector) angular factor
+    by
+
+    .. math::
+
+        L_{ijk}^{(h)}=\frac{q_{ij}^{(h)}\cdot k_{ik}^{(h)}}{\sqrt d},
+        \qquad
+        G_{ijk}=\mathbf h_{ij}\cdot\mathbf h_{ik}.
+
+    When ``has_gate=True``, :math:`G_{ijk}` also gates the logits, so let
+    :math:`\widetilde L=L G`; otherwise let :math:`\widetilde L=L`.  In the
+    smooth path the normalized attention and returned map are
+
+    .. math::
+
+        \overline A_{ijk}^{(h)}=\operatorname{softmax}_k\!\left(
+        (\widetilde L_{ijk}^{(h)}+c)s_{ij}s_{ik}-c\right),\qquad
+        M_{ijk}^{(h)}=s_{ij}s_{ik}\overline A_{ijk}^{(h)}
+        \frac{G_{ijk}}{\sqrt 3}.
+
+    Without smoothing, masked softmax replaces the first expression and the
+    cutoff factors are omitted.  Invalid query and key entries are zeroed.  The
+    factor :math:`G_{ijk}/\sqrt 3` multiplies the returned map unconditionally,
+    including when ``has_gate=False``.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1073,6 +1122,17 @@ class Atten2Map(NativeOP):
 
 
 class Atten2MultiHeadApply(NativeOP):
+    r"""Multi-head attention application.
+
+    ``Atten2Map`` has already applied masking, smoothing, and softmax.  This
+    stage therefore computes the value aggregation and head projection only:
+
+    .. math::
+        O_{ij}^{(h)}=\sum_k A_{ijk}^{(h)}V_{ik}^{(h)},\qquad
+        O_{ij}=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        O_{ij}^{(h)}\right).
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1164,6 +1224,20 @@ class Atten2MultiHeadApply(NativeOP):
 
 
 class Atten2EquiVarApply(NativeOP):
+    r"""Equivariant attention application preserving rotation laws.
+
+    For attention matrix :math:`A_{ijk}^{(h)}` and equivariant neighbor vectors
+    :math:`\mathbf h_{ik}`, each head produces
+
+    .. math::
+        \mathbf u_{ij}^{(h)} = \sum_k A_{ijk}^{(h)}\mathbf h_{ik},
+        \qquad
+        \mathbf u_{ij} = \sum_h w_h\mathbf u_{ij}^{(h)}.
+
+    The attention weights and head mixing coefficients are scalars, so the
+    output follows the same rotation law as :math:`\mathbf h`.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1242,6 +1316,20 @@ class Atten2EquiVarApply(NativeOP):
 
 
 class LocalAtten(NativeOP):
+    r"""Local attention with masked, smoothed softmax weights.
+
+    For each head, the query is formed from the destination feature and keys
+    and values from its neighbors.  The logits use the standard scaling and
+    the cutoff-smoothed softmax when enabled:
+
+    .. math::
+        L_{ij}^{(h)}=q_i^{(h)}\cdot k_{ij}^{(h)}/\sqrt{d},\qquad
+        A_{ij}^{(h)}=s_{ij}\operatorname{softmax}_j\!\left(
+        (L_{ij}^{(h)}+c)s_{ij}-c\right),\qquad
+        O_i=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        \sum_j A_{ij}^{(h)}v_{ij}^{(h)}\right).
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1383,6 +1471,8 @@ class LocalAtten(NativeOP):
 
 
 class RepformerLayer(NativeOP):
+    r"""Residual representation update :math:`(G_1,G_2,H_2)^{l+1}=\Phi_l(...)`."""
+
     def __init__(
         self,
         rcut: float,
@@ -1827,8 +1917,8 @@ class RepformerLayer(NativeOP):
         nf, nloc, nnei, _ = g2.shape
         # g1, _ = xp.split(g1_ext, [nloc], axis=1)
         g1 = xp_take_first_n(g1_ext, 1, nloc)
-        assert (nf, nloc) == g1.shape[:2]
-        assert (nf, nloc, nnei) == h2.shape[:3]
+        assert _statically_compatible_shape(g1.shape[:2], (nf, nloc))
+        assert _statically_compatible_shape(h2.shape[:3], (nf, nloc, nnei))
 
         g2_update: list[Array] = [g2]
         h2_update: list[Array] = [h2]

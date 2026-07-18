@@ -406,7 +406,12 @@ class FinetuneTest:
                 sampled = make_stat_input(data, nbatches=1)
 
                 ntest = 1
-                prec = 1e-10
+                # The two type-map-remapped DPA1 models are mixed_types, so each
+                # routes through the carry-all graph path. Its ``segment_sum``
+                # lowers to ``torch.index_add``: bit-exact on CPU, but the two
+                # models' different edge orderings accumulate via CUDA atomicAdd
+                # in different (non-deterministic) orders, giving ~1e-7 diffs.
+                prec = 1e-10 if DEVICE.type == "cpu" else 1e-5
                 box = torch.tensor(
                     sampled[0]["box"][:ntest], dtype=torch.float64, device=DEVICE
                 )

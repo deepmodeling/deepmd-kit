@@ -192,7 +192,7 @@ jobs:
   pass:
     name: Pass testing build wheels
     needs: [build_wheels, build_sdist, build_docker, build_pypi_index]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed

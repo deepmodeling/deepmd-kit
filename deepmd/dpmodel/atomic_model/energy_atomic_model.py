@@ -14,6 +14,11 @@ from .dp_atomic_model import (
 
 
 class DPEnergyAtomicModel(DPAtomicModel):
+    r"""Atomic energy model with :math:`E_i=F_\theta(\mathcal D_i)`.
+
+    The frame energy is :math:`E=\sum_iE_i`.
+    """
+
     def __init__(
         self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
     ) -> None:

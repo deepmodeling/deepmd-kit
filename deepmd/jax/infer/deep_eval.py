@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -40,6 +41,9 @@ from deepmd.infer.deep_polar import (
 )
 from deepmd.infer.deep_pot import (
     DeepPot,
+)
+from deepmd.infer.deep_property import (
+    DeepProperty,
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,
@@ -152,7 +156,8 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The evaluator of the model type."""
-        model_output_type = self.dp.model_output_type()
+        model = self.get_model()
+        model_output_type = model.model_output_type()
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -163,6 +168,8 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif self._get_property_var_name(model) in model_output_type:
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -177,7 +184,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return 0
+        return self.dp.get_numb_dos()
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
@@ -186,6 +193,31 @@ class DeepEval(DeepEvalBackend):
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return 0
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        JAX-native ``.jax``/``.hlo`` inputs return the lossless, weight-bearing
+        ``model`` subtree from the file payload. TensorFlow-wrapped
+        ``.savedmodel`` inputs cannot be converted back losslessly; for that
+        format this method reconstructs the model tree from the definition
+        script, so trained weights are not preserved.
+        """
+        if str(self.model_path).endswith(".savedmodel"):
+            from deepmd.jax.model.model import (
+                get_model,
+            )
+
+            return get_model(self.get_model_def_script()).serialize()
+
+        from deepmd.jax.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.model_path)
+        if "model" not in data:
+            raise RuntimeError("Serialized model data does not contain key 'model'.")
+        return data["model"]
 
     def eval(
         self,
@@ -225,7 +257,11 @@ class DeepEval(DeepEvalBackend):
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
         **kwargs
-            Other parameters
+            Other parameters.
+            charge_spin : array-like, optional
+                The per-frame charge/spin conditioning input. The array can be
+                of size nframes x dim_chg_spin, or dim_chg_spin to reuse the
+                same value for all frames.
 
         Returns
         -------
@@ -234,6 +270,7 @@ class DeepEval(DeepEvalBackend):
             variables, and the values are the corresponding output arrays.
         """
         # convert all of the input to numpy array
+        charge_spin = kwargs.pop("charge_spin", None)
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
         if cells is not None:
@@ -243,8 +280,14 @@ class DeepEval(DeepEvalBackend):
         )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, request_defs
+            coords, cells, atom_types, fparam, aparam, charge_spin, request_defs
         )
+        # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
+        # its tuple, which would make ``zip`` iterate over the array's frame
+        # axis. Re-wrap so the request-def names line up (a single request def
+        # arises for global-only DOS/property inference at atomic=False).
+        if not isinstance(out, tuple):
+            out = (out,)
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -271,9 +314,9 @@ class DeepEval(DeepEvalBackend):
             The requested output definitions.
         """
         if atomic:
-            return list(self.output_def.var_defs.values())
+            output_defs = list(self.output_def.var_defs.values())
         else:
-            return [
+            output_defs = [
                 x
                 for x in self.output_def.var_defs.values()
                 if x.category
@@ -281,8 +324,18 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
+        # Avoid allocating the quadratic Hessian placeholder when the frozen
+        # model does not provide that output.
+        if not self.get_has_hessian():
+            output_defs = [
+                x
+                for x in output_defs
+                if x.category != OutputVariableCategory.DERV_R_DERV_R
+            ]
+        return output_defs
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
@@ -336,6 +389,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ) -> tuple[np.ndarray, ...]:
         model = self.dp
@@ -369,17 +423,34 @@ class DeepEval(DeepEvalBackend):
             aparam_input = aparam.reshape(nframes, natoms, self.get_dim_aparam())
         else:
             aparam_input = None
+        if charge_spin is not None and not self.has_chg_spin_ebd():
+            warnings.warn(
+                "charge_spin was provided, but this model does not support "
+                "charge/spin conditioning. The provided charge_spin will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+        charge_spin_input = (
+            np.asarray(charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION)
+            if self.has_chg_spin_ebd() and charge_spin is not None
+            else None
+        )
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
         )
+        model_kwargs = {
+            "box": to_jax_array(box_input),
+            "fparam": to_jax_array(fparam_input),
+            "aparam": to_jax_array(aparam_input),
+            "do_atomic_virial": do_atomic_virial,
+        }
+        if self.has_chg_spin_ebd():
+            model_kwargs["charge_spin"] = to_jax_array(charge_spin_input)
         batch_output = model(
             to_jax_array(coord_input),
             to_jax_array(type_input),
-            box=to_jax_array(box_input),
-            fparam=to_jax_array(fparam_input),
-            aparam=to_jax_array(aparam_input),
-            do_atomic_virial=do_atomic_virial,
+            **model_kwargs,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -433,6 +504,10 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
 
+    def get_has_hessian(self) -> bool:
+        """Check if the model has Hessian output."""
+        return self.get_model_def_script().get("hessian_mode", False)
+
     def get_model(self) -> Any:
         """Get the JAX model as BaseModel.
 
@@ -446,3 +521,21 @@ class DeepEval(DeepEvalBackend):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.dp.has_default_fparam()
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        if hasattr(self.dp, "has_chg_spin_ebd"):
+            return self.dp.has_chg_spin_ebd()
+        return False
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if hasattr(self.dp, "get_dim_chg_spin"):
+            return self.dp.get_dim_chg_spin()
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if hasattr(self.dp, "has_default_chg_spin"):
+            return self.dp.has_default_chg_spin()
+        return False

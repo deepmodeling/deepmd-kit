@@ -36,6 +36,7 @@ class PPPMDPLR : public PPPM {
   void fieldforce_ad() override;
 
  private:
+  void clear_fele();
   std::vector<double> fele;
 };
 

@@ -10,11 +10,14 @@
       "rcut": 6.0,
       "channels": 32,
       "n_radial": 16,
+      "edge_norm": false,
       "use_env_seed": true,
+      "edge_cartesian": false,
+      "node_cartesian": "none",
       "lmax": 3,
       "mmax": 1,
       "n_blocks": 2,
-      "so2_layers": 3,
+      "mixing_layers": 3,
       "radial_so2_mode": "degree_channel",
       "radial_so2_rank": 1,
       "n_focus": 2,
@@ -121,6 +124,7 @@
   "validating": {
     "compiled_infer": false,
     "tf32_infer": false,
+    "amp_infer": false,
     "save_best_dir": "ckpt_best"
   }
 }

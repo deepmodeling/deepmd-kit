@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
+
 import array_api_compat
 
 from deepmd.dpmodel.array_api import (
@@ -13,6 +18,32 @@ from .region import (
     to_face_distance,
 )
 
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+
+
+def _is_ndtensorflow_namespace(xp: Any) -> bool:
+    return getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow"
+
+
+def _arange_nbuff(nbuff: Array, index: int, xp: Any, device: Any) -> Array:
+    bound = nbuff[index]
+    if not _is_ndtensorflow_namespace(xp):
+        bound = int(bound)
+    return xp.arange(-bound, bound + 1, 1, dtype=xp.int64, device=device)
+
+
+def _size(x: Array, xp: Any) -> Any:
+    if _is_ndtensorflow_namespace(xp):
+        return x.size
+    return array_api_compat.size(x)
+
+
+def _is_static_shape(shape: Any) -> bool:
+    return all(isinstance(dim, int) for dim in shape)
+
 
 def extend_input_and_build_neighbor_list(
     coord: Array,
@@ -21,6 +52,7 @@ def extend_input_and_build_neighbor_list(
     sel: list[int],
     mixed_types: bool = False,
     box: Array | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
@@ -41,9 +73,59 @@ def extend_input_and_build_neighbor_list(
         rcut,
         sel,
         distinguish_types=(not mixed_types),
+        pair_excl=pair_excl,
     )
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     return extended_coord, extended_atype, mapping, nlist
+
+
+def apply_pair_exclusion_nlist(
+    nlist: Array,
+    atype_ext: Array,
+    pair_excl: "PairExcludeMask | None",
+) -> Array:
+    """Apply model-level pair-type exclusion to a dense neighbor list.
+
+    Replaces excluded neighbor entries with ``-1`` so that downstream
+    descriptors see them as empty slots.  Identity (returns ``nlist``
+    unchanged) when *pair_excl* is ``None`` or its exclude-types list is
+    empty.
+
+    This is the nlist-representation counterpart of
+    :func:`deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
+
+    Parameters
+    ----------
+    nlist : Array
+        Dense neighbor list of shape ``(nf, nloc, nnei)``.  Entries equal
+        to ``-1`` indicate empty / padding slots.
+    atype_ext : Array
+        Extended atom types of shape ``(nf, nall)``.
+    pair_excl : PairExcludeMask or None
+        Exclusion mask object, or ``None`` / empty to skip.
+
+    Returns
+    -------
+    Array
+        Neighbor list of the same shape with excluded entries set to ``-1``.
+        Erasing ``-1`` entries a second time is a no-op (idempotent).
+
+    Notes
+    -----
+    Exclusion is a nlist-BUILD transform (decision #18/A4), same as the graph
+    route: it is applied ONCE where the nlist is built — the Python builders
+    (``build_neighbor_list(pair_excl=...)`` / the NeighborList strategies) or
+    the C++ ingestion seam (``applyPairExclusionNlist`` in
+    ``source/api_cc/include/commonPT.h``, same table lookup and variable
+    names). The lower interfaces (``call_lower`` / ``forward_common_atomic``
+    and the exported artifacts) consume a pre-excluded nlist and never
+    re-apply it.
+    """
+    if pair_excl is None or len(pair_excl.exclude_types) == 0:
+        return nlist
+    xp = array_api_compat.array_namespace(nlist, atype_ext)
+    pair_mask = pair_excl.build_type_exclude_mask(nlist, atype_ext)
+    return xp.where(pair_mask == 1, nlist, xp.full_like(nlist, -1))
 
 
 ## translated from torch implementation by chatgpt
@@ -54,6 +136,7 @@ def build_neighbor_list(
     rcut: float,
     sel: int | list[int],
     distinguish_types: bool = True,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
@@ -75,6 +158,12 @@ def build_neighbor_list(
         types.
     distinguish_types : bool
         distinguish different types.
+    pair_excl : PairExcludeMask or None, optional
+        When provided, excluded type pairs are erased from the returned
+        neighbor list (entries set to ``-1``) immediately after the
+        geometric search.  This is a convenience shortcut for calling
+        :func:`apply_pair_exclusion_nlist` separately.  ``None`` (default)
+        leaves the list unchanged.
 
     Returns
     -------
@@ -97,10 +186,17 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if array_api_compat.size(coord) > 0:
+    if _size(coord, xp) > 0:
         xmax = xp.max(coord) + 2.0 * rcut
     else:
-        xmax = 2.0 * rcut
+        if _is_ndtensorflow_namespace(xp):
+            xmax = xp.asarray(
+                2.0 * rcut,
+                dtype=coord.dtype,
+                device=array_api_compat.device(coord),
+            )
+        else:
+            xmax = 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
     coord1 = xp.where(
@@ -115,13 +211,14 @@ def build_neighbor_list(
         xp.reshape(coord1, (batch_size, -1, 3))[:, None, :, :]
         - xp.reshape(coord0, (batch_size, -1, 3))[:, :, None, :]
     )
-    assert list(diff.shape) == [batch_size, nloc, nall, 3]
+    if _is_static_shape(diff.shape):
+        assert list(diff.shape) == [batch_size, nloc, nall, 3]
     rr = xp.linalg.vector_norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
     rr -= xp.eye(nloc, nall, dtype=diff.dtype, device=array_api_compat.device(diff))[
         xp.newaxis, :, :
     ]
-    nlist = xp.argsort(rr, axis=-1)
+    nlist = xp.astype(xp.argsort(rr, axis=-1), xp.int64)
     rr = xp.sort(rr, axis=-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
@@ -130,7 +227,7 @@ def build_neighbor_list(
         rr = rr[:, :, :nsel]
         nlist = nlist[:, :, :nsel]
     else:
-        rr = xp.concatenate(
+        rr = xp.concat(
             [
                 rr,
                 xp.ones(
@@ -142,7 +239,7 @@ def build_neighbor_list(
             ],
             axis=-1,
         )
-        nlist = xp.concatenate(
+        nlist = xp.concat(
             [
                 nlist,
                 xp.ones(
@@ -153,7 +250,8 @@ def build_neighbor_list(
             ],
             axis=-1,
         )
-    assert list(nlist.shape) == [batch_size, nloc, nsel]
+    if _is_static_shape(nlist.shape):
+        assert list(nlist.shape) == [batch_size, nloc, nsel]
     nlist = xp.where(
         xp.logical_or((rr > rcut), is_vir[:, :nloc, None]),
         xp.full_like(nlist, -1),
@@ -161,9 +259,8 @@ def build_neighbor_list(
     )
 
     if distinguish_types:
-        return nlist_distinguish_types(nlist, atype, sel)
-    else:
-        return nlist
+        nlist = nlist_distinguish_types(nlist, atype, sel)
+    return apply_pair_exclusion_nlist(nlist, atype, pair_excl)
 
 
 def nlist_distinguish_types(
@@ -193,6 +290,115 @@ def nlist_distinguish_types(
         )
         ret_nlist.append(inlist[..., :ss])
     ret = xp.concat(ret_nlist, axis=-1)
+    return ret
+
+
+def format_nlist(
+    extended_coord: Array,
+    nlist: Array,
+    nnei: int,
+    rcut: float,
+    extra_nlist_sort: bool = False,
+) -> Array:
+    """Format a neighbor list to a fixed neighbor count.
+
+    If the input neighbor axis is shorter than ``nnei``, pad it with ``-1``.
+    If the input neighbor axis is longer than ``nnei``, sort neighbors by
+    distance, mask neighbors outside ``rcut`` with ``-1``, and truncate to
+    ``nnei`` entries. Otherwise, preserve the input order and mask neighbors
+    outside ``rcut`` with ``-1``. When ``extra_nlist_sort`` is true, use the
+    sort-and-truncate path even when the input neighbor axis is not longer than
+    ``nnei``.
+
+    Parameters
+    ----------
+    extended_coord : Array
+        Extended coordinates of shape ``[nf, nall, 3]`` or
+        ``[nf, nall * 3]``.
+    nlist : Array
+        Neighbor list of shape ``[nf, nloc, n_nnei]``. Invalid neighbor
+        entries are marked with ``-1``.
+    nnei : int
+        Target number of selected neighbors.
+    rcut : float
+        Cutoff radius. Neighbors farther than ``rcut`` are marked with ``-1``.
+    extra_nlist_sort : bool, optional
+        Whether to force distance sorting and truncation even when the input
+        neighbor axis is not larger than ``nnei``. This is needed by models
+        whose lower-level forward path requires a sorted neighbor list.
+
+    Returns
+    -------
+    Array
+        Formatted neighbor list of shape ``[nf, nloc, nnei]``. Missing or
+        out-of-cutoff neighbors are marked with ``-1``.
+    """
+    xp = array_api_compat.array_namespace(extended_coord, nlist)
+    n_nf, n_nloc, n_nnei = nlist.shape
+    extended_coord = extended_coord.reshape([n_nf, -1, 3])
+    ret = nlist
+
+    if n_nnei < nnei:
+        ret = xp.concat(
+            [
+                nlist,
+                -1
+                * xp.ones(
+                    [n_nf, n_nloc, nnei - n_nnei],
+                    dtype=nlist.dtype,
+                    device=array_api_compat.device(nlist),
+                ),
+            ],
+            axis=-1,
+        )
+
+    # Order matters for torch.export: Python evaluates `or` left-to-right
+    # with short-circuit.  When `extra_nlist_sort=True` (Python bool) is
+    # on the left, the right-hand `n_nnei > nnei` is not evaluated, so no
+    # symbolic guard is registered on the dynamic `n_nnei` dimension.
+    # Swapping the operands would force the SymInt comparison to run and
+    # emit an `_assert_scalar` node in the exported graph.
+    if extra_nlist_sort or n_nnei > nnei:
+        # Sort the padded list so forced sorting preserves the requested width
+        # when the input has fewer than ``nnei`` entries (issue #5629).
+        n_nf, n_nloc, n_nnei = ret.shape
+        m_real_nei = ret >= 0
+        ret = xp.where(m_real_nei, ret, 0)
+        coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
+        index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
+        coord1 = xp_take_along_axis(extended_coord, index, axis=1)
+        coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
+        rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+        rr = xp.where(m_real_nei, rr, float("inf"))
+        rr, ret_mapping = xp.sort(rr, axis=-1), xp.argsort(rr, axis=-1)
+        ret = xp_take_along_axis(ret, ret_mapping, axis=2)
+        ret = xp.where(rr > rcut, -1, ret)
+        ret = ret[..., :nnei]
+    else:
+        # not extra_nlist_sort and n_nnei <= nnei: no reordering is
+        # needed (these descriptors reduce over neighbors order-
+        # independently), but we must still drop neighbors beyond rcut.
+        # The C++/LAMMPS neighbor list is built with rcut+skin and is
+        # NOT rcut-filtered before forward_lower; without this, out-of-
+        # rcut neighbors leak into the descriptor whenever the per-atom
+        # neighbor count <= nnei (this branch), making the result
+        # order-dependent (see discussion #5438).
+        if n_nnei == nnei:
+            ret = nlist
+        # else (n_nnei < nnei): `ret` is already padded to nnei above.
+        n_nf, n_nloc, n_pad = ret.shape
+        m_real_nei = ret >= 0
+        coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
+        index = xp.tile(
+            xp.where(m_real_nei, ret, 0).reshape(n_nf, n_nloc * n_pad, 1),
+            (1, 1, 3),
+        )
+        coord1 = xp_take_along_axis(extended_coord, index, axis=1)
+        coord1 = coord1.reshape(n_nf, n_nloc, n_pad, 3)
+        rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+        ret = xp.where(m_real_nei & (rr > rcut), -1, ret)
+    if isinstance(ret.shape[-1], int):
+        assert ret.shape[-1] == nnei
     return ret
 
 
@@ -314,27 +520,10 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(
-            -int(nbuff[0]),
-            int(nbuff[0]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
-        yi = xp.arange(
-            -int(nbuff[1]),
-            int(nbuff[1]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
-        zi = xp.arange(
-            -int(nbuff[2]),
-            int(nbuff[2]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
+        device = array_api_compat.device(coord)
+        xi = _arange_nbuff(nbuff, 0, xp, device)
+        yi = _arange_nbuff(nbuff, 1, xp, device)
+        zi = _arange_nbuff(nbuff, 2, xp, device)
         xyz = xp.linalg.outer(
             xi, xp.asarray([1, 0, 0], device=array_api_compat.device(xi))
         )[:, xp.newaxis, xp.newaxis, :]

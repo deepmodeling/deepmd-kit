@@ -75,6 +75,8 @@ from .se_t_tebd import (
 
 
 class RepinitArgs:
+    r"""Representation initialization parameters for :math:`\mathcal G`."""
+
     def __init__(
         self,
         rcut: float,
@@ -185,6 +187,8 @@ class RepinitArgs:
 
 
 class RepformerArgs:
+    r"""Representation update parameters for :math:`\mathcal G^{l+1}=\Phi_l(\mathcal G^l)`."""
+
     def __init__(
         self,
         rcut: float,
@@ -936,7 +940,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             mapping_ext = xp.tile(
                 xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1])
             )
+            mapping_mask = mapping_ext >= 0
+            mapping_ext = xp.where(
+                mapping_mask, mapping_ext, xp.zeros_like(mapping_ext)
+            )
             g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+            g1_ext = xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
         else:
             # parallel mode: hand the local-only g1 to the repformer block;
             # its per-layer override fills ghosts via the MPI exchange.

@@ -327,7 +327,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="frozen_model",
-        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
+        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: suffix is .savedmodeltf; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
     )
     parser_frz.add_argument(
         "-n",
@@ -349,6 +349,22 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
+    )
+    parser_frz.add_argument(
+        "--hessian",
+        action="store_true",
+        default=False,
+        help="(Supported backend: JAX) Add the Hessian to the frozen model output.",
+    )
+    parser_frz.add_argument(
+        "--lower-kind",
+        default="nlist",
+        type=str,
+        choices=["nlist", "graph"],
+        help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
+        "frozen .pt2: 'nlist' (default, dense neighbor-list lower) or 'graph' "
+        "(NeighborGraph edge-list lower; only for graph-eligible models, currently "
+        "dpa1 with attn_layer=0). 'graph' selects the C++ graph inference path.",
     )
 
     # * test script ********************************************************************
@@ -585,6 +601,8 @@ def main_parser() -> argparse.ArgumentParser:
             dp compress
             dp --tf compress -i frozen_model.pb -o compressed_model.pb
             dp --pt compress -i frozen_model.pth -o compressed_model.pth
+            dp --dp compress -i frozen_model.dp -o compressed_model.dp
+            dp --jax compress -i frozen_model.hlo -o compressed_model.hlo
         """
         ),
     )
@@ -593,14 +611,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--input",
         default="frozen_model",
         type=str,
-        help="The original frozen model, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="The original frozen model or checkpoint, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: .tf2 checkpoint directory or checkpoint prefix; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-o",
         "--output",
         default="frozen_model_compressed",
         type=str,
-        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; TensorFlow2 backend: suffix is .savedmodeltf; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-s",
@@ -646,6 +664,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="The training script of the input frozen model",
+    )
+    parser_compress.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="Task head (alias: model branch) to compress if in multi-task mode.",
     )
 
     # * print docs script **************************************************************
@@ -1018,6 +1043,7 @@ def main_parser() -> argparse.ArgumentParser:
             "fitting-net",
             "size",
             "observed-type",
+            "serialization-tree",
         ],
         nargs="+",
     )

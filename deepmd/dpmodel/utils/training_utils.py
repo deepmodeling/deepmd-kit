@@ -2,6 +2,7 @@
 import logging
 from collections.abc import (
     Iterable,
+    Sized,
 )
 
 import numpy as np
@@ -110,7 +111,7 @@ def resolve_model_prob(
                 "number of systems per task."
             )
         for ii, model_key in enumerate(model_keys):
-            model_prob[ii] = float(len(model_training_data[model_key]))
+            model_prob[ii] = float(_training_data_size(model_training_data[model_key]))
     if not np.all(np.isfinite(model_prob)):
         raise ValueError("Model prob must be finite.")
     if np.any(model_prob < 0.0):
@@ -119,6 +120,14 @@ def resolve_model_prob(
     if sum_prob <= 0.0:
         raise ValueError("Sum of model prob must be larger than 0!")
     return model_prob / sum_prob
+
+
+def _training_data_size(training_data: object) -> int:
+    if hasattr(training_data, "get_nsystems"):
+        return int(training_data.get_nsystems())
+    if not isinstance(training_data, Sized):
+        return 1
+    return len(training_data)
 
 
 def resolve_model_prob_from_epochs(

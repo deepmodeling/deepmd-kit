@@ -7,6 +7,7 @@ from __future__ import (
 
 import logging
 import re
+import shutil
 import traceback
 from contextlib import (
     nullcontext,
@@ -53,10 +54,9 @@ from deepmd.utils.argcheck import (
     resolve_full_validation_start_step,
 )
 from deepmd.utils.eval_metrics import (
-    FULL_VALIDATION_METRIC_FAMILY_BY_KEY,
-    FULL_VALIDATION_METRIC_KEY_MAP,
-    FULL_VALIDATION_WEIGHTED_METRIC_KEYS,
-    compute_energy_type_metrics,
+    ENERGY_FULL_VALIDATION_PROFILE,
+    SPIN_FULL_VALIDATION_PROFILE,
+    FullValidationMetricProfile,
 )
 from deepmd.utils.weight_avg import (
     weighted_average,
@@ -74,15 +74,6 @@ if TYPE_CHECKING:
         DeepmdData,
     )
 
-LOG_COLUMN_ORDER = [
-    ("E_MAE", "mae_e_per_atom"),
-    ("E_RMSE", "rmse_e_per_atom"),
-    ("F_MAE", "mae_f"),
-    ("F_RMSE", "rmse_f"),
-    ("V_MAE", "mae_v_per_atom"),
-    ("V_RMSE", "rmse_v_per_atom"),
-]
-
 TOPK_RECORDS_INFO_KEY = "full_validation_topk_records"
 BEST_METRIC_NAME_INFO_KEY = "full_validation_metric"
 STALE_FULL_VALIDATION_INFO_KEYS = (
@@ -96,11 +87,6 @@ VAL_LOG_SIGNIFICANT_DIGITS = 5
 VAL_LOG_COLUMN_GAP = "   "
 VAL_LOG_HEADER_PREFIX = "# "
 VAL_LOG_DATA_PREFIX = "  "
-METRIC_LOG_UNIT_MAP = {
-    "e": ("meV/atom", 1000.0),
-    "f": ("meV/Å", 1000.0),
-    "v": ("meV/atom", 1000.0),
-}
 
 
 @dataclass(frozen=True)
@@ -122,48 +108,63 @@ class BestCheckpointRecord:
     step: int
 
 
-def build_best_checkpoint_glob(best_checkpoint_prefix: str) -> str:
+def build_best_checkpoint_glob(
+    best_checkpoint_prefix: str, best_checkpoint_suffix: str = ".pt"
+) -> str:
     """Build the glob pattern for managed best checkpoints."""
-    return f"{best_checkpoint_prefix}-*.t-*.pt"
+    return f"{best_checkpoint_prefix}-*.t-*{best_checkpoint_suffix}"
 
 
-def build_best_checkpoint_pattern(best_checkpoint_prefix: str) -> re.Pattern[str]:
+def build_best_checkpoint_pattern(
+    best_checkpoint_prefix: str, best_checkpoint_suffix: str = ".pt"
+) -> re.Pattern[str]:
     """Build the regex pattern for managed best checkpoints."""
-    return re.compile(rf"^{re.escape(best_checkpoint_prefix)}-(\d+)\.t-(\d+)\.pt$")
+    return re.compile(
+        rf"^{re.escape(best_checkpoint_prefix)}-(\d+)\.t-(\d+)"
+        rf"{re.escape(best_checkpoint_suffix)}$"
+    )
 
 
-def parse_validation_metric(metric: str) -> tuple[str, str]:
-    """Parse the configured full validation metric."""
+def select_metric_profile(model: torch.nn.Module) -> FullValidationMetricProfile:
+    """Select the metric profile for a model based on its spin capability."""
+    has_spin = getattr(model, "has_spin", False)
+    if callable(has_spin):
+        has_spin = has_spin()
+    return SPIN_FULL_VALIDATION_PROFILE if has_spin else ENERGY_FULL_VALIDATION_PROFILE
+
+
+def parse_validation_metric(
+    metric: str, profile: FullValidationMetricProfile
+) -> tuple[str, str]:
+    """Parse the configured full validation metric against a profile."""
     normalized_metric = normalize_full_validation_metric(metric)
-    if normalized_metric not in FULL_VALIDATION_METRIC_KEY_MAP:
-        supported_metrics = ", ".join(
-            item.upper() for item in FULL_VALIDATION_METRIC_KEY_MAP
-        )
+    if normalized_metric not in profile.metric_key_map:
+        supported_metrics = ", ".join(item.upper() for item in profile.metric_key_map)
         raise ValueError(
             "validating.validation_metric must be one of "
             f"{supported_metrics}, got {metric!r}."
         )
-    return normalized_metric, FULL_VALIDATION_METRIC_KEY_MAP[normalized_metric]
+    return normalized_metric, profile.metric_key_map[normalized_metric]
 
 
 def format_metric_for_log(
-    metric_name: str, metric_value: float
+    metric_name: str, metric_value: float, profile: FullValidationMetricProfile
 ) -> tuple[str, float, str]:
     """Format a full validation metric for user-facing logging."""
     metric_family, metric_kind = metric_name.split(":")
-    metric_unit, metric_scale = METRIC_LOG_UNIT_MAP[metric_family]
+    metric_unit, metric_scale = profile.unit_by_family[metric_family]
     metric_label = f"{metric_family.upper()}:{metric_kind.upper()}"
     return metric_label, metric_value * metric_scale, metric_unit
 
 
 def format_metric_value_for_table(
-    metric_key: str, metric_value: float
+    metric_key: str, metric_value: float, profile: FullValidationMetricProfile
 ) -> tuple[float, str]:
     """Format one table metric value and its unit for `val.log`."""
-    metric_family = FULL_VALIDATION_METRIC_FAMILY_BY_KEY.get(metric_key)
+    metric_family = profile.metric_family_by_key.get(metric_key)
     if metric_family is None:
         raise ValueError(f"Unknown full validation metric key: {metric_key}")
-    metric_unit, metric_scale = METRIC_LOG_UNIT_MAP[metric_family]
+    metric_unit, metric_scale = profile.unit_by_family[metric_family]
     return metric_value * metric_scale, metric_unit
 
 
@@ -208,6 +209,7 @@ class FullValidator:
         checkpoint_dir: Path | None = None,
         full_val_file: str | Path | None = None,
         best_checkpoint_prefix: str = BEST_CKPT_PREFIX,
+        best_checkpoint_suffix: str = ".pt",
         metric_name_info_key: str = BEST_METRIC_NAME_INFO_KEY,
         topk_records_info_key: str = TOPK_RECORDS_INFO_KEY,
         stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
@@ -216,6 +218,7 @@ class FullValidator:
     ) -> None:
         self.validation_data = validation_data
         self.model = model
+        self.profile = select_metric_profile(model)
         self.state_store = state_store
         self.rank = rank
         self.zero_stage = zero_stage
@@ -227,9 +230,12 @@ class FullValidator:
         self.topk_records_info_key = topk_records_info_key
         self.stale_state_keys = stale_state_keys
         self.best_checkpoint_prefix = best_checkpoint_prefix
-        self.best_checkpoint_glob = build_best_checkpoint_glob(best_checkpoint_prefix)
+        self.best_checkpoint_suffix = best_checkpoint_suffix
+        self.best_checkpoint_glob = build_best_checkpoint_glob(
+            best_checkpoint_prefix, best_checkpoint_suffix
+        )
         self.best_checkpoint_pattern = build_best_checkpoint_pattern(
-            best_checkpoint_prefix
+            best_checkpoint_prefix, best_checkpoint_suffix
         )
         self.emit_best_save_log = emit_best_save_log
         self.model_eval_context = model_eval_context or nullcontext
@@ -239,7 +245,7 @@ class FullValidator:
         self.save_best = bool(validating_params.get("save_best", True))
         self.max_best_ckpt = int(validating_params.get("max_best_ckpt", 1))
         self.metric_name, self.metric_key = parse_validation_metric(
-            str(validating_params.get("validation_metric", "E:MAE"))
+            str(validating_params.get("validation_metric", "E:MAE")), self.profile
         )
         resolved_log_file = (
             full_val_file
@@ -263,8 +269,10 @@ class FullValidator:
         )
         self.auto_batch_size = AutoBatchSize(silent=True)
         self.table_column_specs = []
-        for column_name, metric_key in LOG_COLUMN_ORDER:
-            _, metric_unit = format_metric_value_for_table(metric_key, 1.0)
+        for column_name, metric_key in self.profile.column_order:
+            _, metric_unit = format_metric_value_for_table(
+                metric_key, 1.0, self.profile
+            )
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(
                 (metric_key, header_label, max(len(header_label), 18))
@@ -410,7 +418,7 @@ class FullValidator:
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
             metric_key: float(aggregated[metric_key])
-            for _, metric_key in LOG_COLUMN_ORDER
+            for _, metric_key in self.profile.column_order
             if metric_key in aggregated
         }
 
@@ -432,6 +440,16 @@ class FullValidator:
                 yield LmdbTestDataNlocView(lmdb_test_data, nloc)
             return
 
+        if hasattr(validation_data, "_reader"):
+            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
+            for nloc in sorted(lmdb_test_data.nloc_groups.keys()):
+                yield LmdbTestDataNlocView(lmdb_test_data, nloc)
+            return
+
+        if hasattr(validation_data, "data_systems"):
+            yield from validation_data.data_systems
+            return
+
         for dataset in validation_data.systems:
             if not isinstance(dataset, DeepmdDataSetForLoader):
                 raise TypeError(
@@ -440,7 +458,7 @@ class FullValidator:
                 )
             yield dataset.data_system
 
-    def _get_lmdb_test_data_snapshot(self, lmdb_dataset: LmdbDataset) -> LmdbTestData:
+    def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
 
         Reuses the ``type_map`` and previously-registered
@@ -451,12 +469,32 @@ class FullValidator:
         if self._lmdb_test_data is not None:
             return self._lmdb_test_data
 
+        reader = getattr(lmdb_dataset, "_reader", None)
+        lmdb_path = getattr(lmdb_dataset, "lmdb_path", None)
+        if lmdb_path is None and reader is not None:
+            lmdb_path = getattr(reader, "lmdb_path", None)
+        type_map = getattr(lmdb_dataset, "type_map", None)
+        if type_map is None and reader is not None:
+            type_map = getattr(reader, "type_map", None)
+        data_requirements = getattr(lmdb_dataset, "data_requirements", None)
+        if data_requirements is None and reader is not None:
+            data_requirements = getattr(reader, "data_requirements", None)
+        if lmdb_path is None:
+            raise TypeError(
+                "Full validation could not resolve the LMDB path from "
+                f"{type(lmdb_dataset)!r}."
+            )
+        if type_map is None:
+            raise TypeError(
+                "Full validation could not resolve the LMDB type_map from "
+                f"{type(lmdb_dataset)!r}."
+            )
+
         self._lmdb_test_data = LmdbTestData(
-            lmdb_dataset.lmdb_path,
-            type_map=list(lmdb_dataset.type_map),
+            lmdb_path,
+            type_map=list(type_map),
             shuffle_test=False,
         )
-        data_requirements = lmdb_dataset.data_requirements
         if data_requirements:
             self._lmdb_test_data.add_data_requirement(data_requirements)
         return self._lmdb_test_data
@@ -468,7 +506,14 @@ class FullValidator:
         test_data = data_system.get_test()
         natoms = int(test_data["type"].shape[1])
         nframes = int(test_data["coord"].shape[0])
-        include_virial = data_system.pbc and bool(test_data.get("find_virial", 0.0))
+        include_virial = (
+            not self.profile.needs_spin
+            and data_system.pbc
+            and bool(test_data.get("find_virial", 0.0))
+        )
+        spin = (
+            test_data["spin"].reshape(nframes, -1) if self.profile.needs_spin else None
+        )
         prediction = self._predict_outputs(
             coord=test_data["coord"].reshape(nframes, -1),
             atom_types=test_data["type"],
@@ -478,18 +523,13 @@ class FullValidator:
             and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
+            spin=spin,
             include_virial=include_virial,
             natoms=natoms,
             nframes=nframes,
         )
-        shared_metrics = compute_energy_type_metrics(
-            prediction=prediction,
-            test_data=test_data,
-            natoms=natoms,
-            has_pbc=data_system.pbc,
-        )
-        return shared_metrics.as_weighted_average_errors(
-            FULL_VALIDATION_WEIGHTED_METRIC_KEYS
+        return self.profile.compute_system_metrics(
+            prediction, test_data, natoms, data_system.pbc
         )
 
     def _predict_outputs(
@@ -500,11 +540,17 @@ class FullValidator:
         box: np.ndarray | None,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        spin: np.ndarray | None,
         include_virial: bool,
         natoms: int,
         nframes: int,
     ) -> dict[str, np.ndarray]:
-        """Predict energy, force, and virial for the full validation batch."""
+        """Predict energy and forces for the full validation batch.
+
+        Energy and real-atom force are always produced. The virial is added
+        for periodic energy-type systems, while magnetic force and its atom
+        mask are added for spin systems.
+        """
 
         def predict_batch(
             coord_batch: np.ndarray,
@@ -512,6 +558,7 @@ class FullValidator:
             box_batch: np.ndarray | None,
             fparam_batch: np.ndarray | None,
             aparam_batch: np.ndarray | None,
+            spin_batch: np.ndarray | None,
         ) -> dict[str, np.ndarray]:
             coord_input = torch.tensor(
                 coord_batch.reshape(-1, natoms, 3).astype(
@@ -521,7 +568,7 @@ class FullValidator:
                 ),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
-            )
+            ).requires_grad_(True)
             type_input = torch.tensor(
                 atom_types_batch.astype(np.int64),
                 dtype=torch.long,
@@ -551,6 +598,20 @@ class FullValidator:
                 )
             else:
                 aparam_input = None
+            if spin_batch is not None:
+                spin_kwargs = {
+                    "spin": torch.tensor(
+                        spin_batch.reshape(-1, natoms, 3).astype(
+                            NP_PRECISION_DICT[
+                                RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]
+                            ]
+                        ),
+                        dtype=GLOBAL_PT_FLOAT_PRECISION,
+                        device=DEVICE,
+                    )
+                }
+            else:
+                spin_kwargs = {}
 
             # Do not use `torch.no_grad()` here: force/virial predictions rely on
             # autograd inside the model even during evaluation.
@@ -560,6 +621,7 @@ class FullValidator:
                 box=box_input,
                 fparam=fparam_input,
                 aparam=aparam_input,
+                **spin_kwargs,
             )
             if isinstance(batch_output, tuple):
                 batch_output = batch_output[0]
@@ -572,6 +634,17 @@ class FullValidator:
                 .numpy()
                 .reshape(-1, natoms * 3),
             }
+            if spin_batch is not None:
+                prediction["force_mag"] = (
+                    batch_output["force_mag"]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .reshape(-1, natoms * 3)
+                )
+                prediction["mask_mag"] = (
+                    batch_output["mask_mag"].detach().cpu().numpy().reshape(-1, natoms)
+                )
             if include_virial:
                 if "virial" not in batch_output:
                     raise KeyError(
@@ -592,11 +665,15 @@ class FullValidator:
             box,
             fparam,
             aparam,
+            spin,
         )
         prediction = {
             "energy": batch_prediction["energy"],
             "force": batch_prediction["force"],
         }
+        if spin is not None:
+            prediction["force_mag"] = batch_prediction["force_mag"]
+            prediction["mask_mag"] = batch_prediction["mask_mag"]
         if include_virial:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
@@ -662,7 +739,7 @@ class FullValidator:
 
     def _best_checkpoint_name(self, step: int, rank: int) -> str:
         """Build the best-checkpoint filename for one step."""
-        return f"{self.best_checkpoint_prefix}-{step}.t-{rank}.pt"
+        return f"{self.best_checkpoint_prefix}-{step}.t-{rank}{self.best_checkpoint_suffix}"
 
     def _best_checkpoint_path(self, step: int, rank: int) -> Path:
         """Build the best-checkpoint path for one step."""
@@ -673,10 +750,18 @@ class FullValidator:
         best_checkpoints = [
             path
             for path in self.checkpoint_dir.glob(self.best_checkpoint_glob)
-            if path.is_file() and not path.is_symlink()
+            if path.exists() and not path.is_symlink()
         ]
         best_checkpoints.sort(key=lambda path: path.stat().st_mtime)
         return best_checkpoints
+
+    @staticmethod
+    def _remove_checkpoint_path(path: Path) -> None:
+        """Remove one managed checkpoint path, file or directory."""
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
 
     def _expected_topk_checkpoint_names(self) -> dict[int, str]:
         """Return the expected checkpoint filename for each retained step."""
@@ -723,9 +808,9 @@ class FullValidator:
                 temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
         for checkpoint_path in stale_files:
-            checkpoint_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(checkpoint_path)
         for temp_path, final_path in temp_moves:
-            final_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(final_path)
             temp_path.rename(final_path)
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
@@ -734,7 +819,7 @@ class FullValidator:
             self._reconcile_best_checkpoints()
             return
         for checkpoint_path in self._list_best_checkpoints():
-            checkpoint_path.unlink(missing_ok=True)
+            self._remove_checkpoint_path(checkpoint_path)
 
     def _raise_if_distributed_error(
         self,
@@ -762,7 +847,7 @@ class FullValidator:
         self._write_log_file(result)
         if self.emit_best_save_log and result.saved_best_path is not None:
             metric_label, metric_value, metric_unit = format_metric_for_log(
-                self.metric_name, result.selected_metric_value
+                self.metric_name, result.selected_metric_value, self.profile
             )
             log.info(
                 f"Saved best model to {result.saved_best_path} "
@@ -778,10 +863,7 @@ class FullValidator:
                 for _, header_label, column_width in self.table_column_specs:
                     header += VAL_LOG_COLUMN_GAP + f"{header_label:^{column_width}s}"
                 header += "\n"
-                header += (
-                    "# E uses per-atom energy, F uses component-wise force errors, "
-                    "and V uses virial normalized by natoms.\n"
-                )
+                header += self.profile.log_header_note
                 fout.write(header)
                 self._should_write_header = False
                 self._write_mode = "a"
@@ -794,7 +876,7 @@ class FullValidator:
                 metric_value = result.metrics.get(metric_key, float("nan"))
                 if not np.isnan(metric_value):
                     metric_value, _ = format_metric_value_for_table(
-                        metric_key, metric_value
+                        metric_key, metric_value, self.profile
                     )
                 metric_text = format_metric_number_for_log(metric_value)
                 line += VAL_LOG_COLUMN_GAP + f"{metric_text:^{column_width}s}"
@@ -802,7 +884,7 @@ class FullValidator:
             fout.write(line)
             if result.saved_best_path is not None:
                 metric_label, metric_value, metric_unit = format_metric_for_log(
-                    self.metric_name, result.selected_metric_value
+                    self.metric_name, result.selected_metric_value, self.profile
                 )
                 fout.write(
                     "# saved best checkpoint: "

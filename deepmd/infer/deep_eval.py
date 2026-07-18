@@ -93,6 +93,19 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
+    def close(self) -> None:
+        """Release resources held by the backend.
+
+        The base implementation does nothing. Backends that hold persistent
+        resources (such as a TensorFlow session) should override it.
+        """
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
     def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
@@ -362,7 +375,31 @@ class DeepEvalBackend(ABC):
     @property
     @abstractmethod
     def model_type(self) -> type["DeepEval"]:
-        """The the evaluator of the model type."""
+        """The evaluator of the model type.
+
+        Each backend implements the dispatch on its own module so it can import
+        the concrete ``Deep*`` wrapper classes at the top level. Those wrappers
+        import ``DeepEval`` from this module, so a dispatch here would form an
+        import cycle (flagged by CodeQL). :meth:`_get_property_var_name` is
+        provided for the shared property branch.
+        """
+
+    @staticmethod
+    def _get_property_var_name(model: Any) -> str | None:
+        """Return the property variable name of ``model``, or ``None``.
+
+        Used by every backend's ``model_type`` to detect a property model.
+        ``get_var_name`` may be absent (dpmodel/pt live models expose it only on
+        property models) or present-but-unimplemented (jax/tf2 artifacts always
+        define it and raise ``NotImplementedError`` otherwise), so probe
+        defensively.
+        """
+        if not hasattr(model, "get_var_name"):
+            return None
+        try:
+            return model.get_var_name()
+        except NotImplementedError:
+            return None
 
     @abstractmethod
     def get_sel_type(self) -> list[int]:
@@ -401,7 +438,24 @@ class DeepEvalBackend(ABC):
         return False
 
     def get_var_name(self) -> str:
-        """Get the name of the fitting property."""
+        """Get the name of the fitting property (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_var_name"):
+            return model.get_var_name()
+        raise NotImplementedError
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the property (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_task_dim"):
+            return model.get_task_dim()
+        raise NotImplementedError
+
+    def get_intensive(self) -> bool:
+        """Whether the property is intensive (property models only)."""
+        model = self.get_model()
+        if hasattr(model, "get_intensive"):
+            return model.get_intensive()
         raise NotImplementedError
 
     @abstractmethod
@@ -433,6 +487,27 @@ class DeepEvalBackend(ABC):
         model
             The model module implemented by the deep learning framework.
         """
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        Most in-tree backends return the lossless, weight-bearing ``model``
+        subtree from the serialized file payload. Backends that cannot recover a
+        lossless tree may override this method to document and implement their
+        narrower behavior.
+
+        Returns
+        -------
+        dict
+            Serialized model tree that can be consumed by ``Node.deserialize``.
+        """
+        model = self.get_model()
+        if hasattr(model, "serialize"):
+            return model.serialize()
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement serialize(), and its "
+            "model object has no serialize() method."
+        )
 
 
 def _cast_output_dtype(array: np.ndarray, dtype: str) -> np.ndarray:
@@ -506,6 +581,7 @@ class DeepEval(ABC):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
+        self.model_file = model_file
         self.deep_eval = DeepEvalBackend(
             model_file,
             self.output_def,
@@ -517,10 +593,30 @@ class DeepEval(ABC):
         if self.deep_eval.get_has_spin() and hasattr(self, "output_def_mag"):
             self.deep_eval.output_def = self.output_def_mag
 
+    def close(self) -> None:
+        """Close the underlying backend evaluator, releasing its resources."""
+        self.deep_eval.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
     @property
     @abstractmethod
     def output_def(self) -> ModelOutputDef:
         """Returns the output variable definitions."""
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model as a model tree.
+
+        Most backends return the lossless, weight-bearing ``model`` subtree from
+        the serialized file payload. JAX ``.savedmodel`` inputs are the known
+        exception: they are reconstructed from the model definition script and
+        therefore do not preserve trained weights.
+        """
+        return self.deep_eval.serialize()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

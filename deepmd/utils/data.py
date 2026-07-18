@@ -535,6 +535,9 @@ class DeepmdData:
                     frame_data,
                     self,
                 )
+                # propagate any exception raised inside the modifier instead of
+                # silently returning (and caching) an unmodified frame
+                future.result()
             if self.use_modifier_cache:
                 # Cache the modified frame to avoid recomputation
                 self._modified_frame_cache[index] = copy.deepcopy(frame_data)

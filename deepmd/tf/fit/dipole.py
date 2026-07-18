@@ -187,7 +187,7 @@ class DipoleFittingSeA(Fitting):
         rot_mat_i = tf.slice(rot_mat, [0, start_index, 0], [-1, natoms, -1])
         rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
         layer = inputs_i
-        for ii in range(0, len(self.n_neuron)):
+        for ii in range(len(self.n_neuron)):
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
                 layer += one_layer(
                     layer,
@@ -282,8 +282,8 @@ class DipoleFittingSeA(Fitting):
         """
         if input_dict is None:
             input_dict = {}
-        type_embedding = input_dict.get("type_embedding", None)
-        atype = input_dict.get("atype", None)
+        type_embedding = input_dict.get("type_embedding")
+        atype = input_dict.get("atype")
         nframes = input_dict.get("nframes")
         start_index = 0
         inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])

@@ -446,18 +446,18 @@ class ReducedEquivariantRMSNorm(nn.Module):
         Parameters
         ----------
         x
-            Input tensor with shape (E, F, D_m_trunc, C).
+            Input tensor with shape (F, E, D_m_trunc, C).
 
         Returns
         -------
         torch.Tensor
-            Normalized tensor with shape `(E, F, D_m_trunc, C)`, same dtype as
+            Normalized tensor with shape `(F, E, D_m_trunc, C)`, same dtype as
             input.
         """
         in_dtype = x.dtype
         x = x.to(dtype=self.dtype)
-        x0 = x[:, :, :1, :]  # (E, F, 1, C)
-        xt = x[:, :, 1:, :]  # (E, F, D_m_trunc-1, C)
+        x0 = x[:, :, :1, :]  # (F, E, 1, C)
+        xt = x[:, :, 1:, :]  # (F, E, D_m_trunc-1, C)
 
         # === Step 1. Center the scalar slice ===
         x0 = x0 - x0.mean(dim=-1, keepdim=True)
@@ -480,13 +480,13 @@ class ReducedEquivariantRMSNorm(nn.Module):
         expanded_scale = torch.index_select(
             self.adam_scale, dim=1, index=self.degree_index_m
         )
-        expanded_scale = expanded_scale.unsqueeze(0)  # (1, F, D_m_trunc, C)
+        expanded_scale = expanded_scale.unsqueeze(1)  # (F, 1, D_m_trunc, C)
         x0 = x0 * expanded_scale[:, :, :1, :]
         if xt.numel() > 0:
             xt = xt * expanded_scale[:, :, 1:, :]
 
         # === Step 4. Add scalar bias and restore layout ===
-        bias0 = self.bias0.reshape(1, self.n_focus, 1, -1)  # (1, F, 1, C)
+        bias0 = self.bias0.reshape(self.n_focus, 1, 1, -1)  # (F, 1, 1, C)
         x0 = x0 + bias0
 
         out = x0 if xt.numel() == 0 else torch.cat([x0, xt], dim=2)

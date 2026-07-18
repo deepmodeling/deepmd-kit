@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script is used to retry the uv command if the error "error decoding response body" is encountered.
+# This script is used to retry the uv command if a transient network error is encountered.
 # See also:
 # https://github.com/astral-sh/uv/issues/2586
 # https://github.com/astral-sh/uv/issues/3456
@@ -15,16 +15,16 @@ while true; do
 		rm -f "${tmpstderr}"
 		exit 0
 	fi
-	# check if "error decoding response body" is in the stderr
-	if grep -q "error decoding response body" "${tmpstderr}"; then
-		echo "Retrying uv in 1 s..."
+	# check if a retryable network error is in the stderr
+	if grep -qE "error decoding response body|network timeout|I/O operation failed during extraction|Failed to download distribution" "${tmpstderr}"; then
+		echo "Retrying uv in 5 s..."
 		max_retry=$((max_retry - 1))
 		if [ $max_retry -eq 0 ]; then
 			echo "Max retry reached, exiting..."
 			rm -f "${tmpstderr}"
 			exit 1
 		fi
-		sleep 1
+		sleep 5
 	else
 		rm -f "${tmpstderr}"
 		exit $exit_code

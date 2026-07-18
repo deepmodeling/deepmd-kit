@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate deeppot_dpa1.pth and deeppot_dpa1.pt2 test models.
+"""Generate deeppot_dpa1.pth, deeppot_dpa1.pt2, and deeppot_dpa1_graph.pt2 test models.
 
-Creates a DPA1 model from dpmodel config, serializes, and exports to both
-.pth (torch.jit) and .pt2 (torch.export) from the same weights.
-Also prints reference values for C++ tests (PBC and NoPbc).
+Creates two DPA1 models from dpmodel configs:
+  - deeppot_dpa1.pt2 / deeppot_dpa1.pth  (attn_layer=2, dense nlist-form export)
+  - deeppot_dpa1_graph.pt2                (attn_layer=0, graph-form export via
+                                            lower_kind="graph"; the graph forward
+                                            is eligible only when attn_layer==0)
+
+Both are serialized and exported to their respective formats from the same weights.
+Reference sidecar files (.expected) consumed by C++ gtests are also written:
+  - deeppot_dpa1.expected   — from the nlist .pt2 eval (existing)
+  - deeppot_dpa1_graph.expected — from an independent NLIST .pt2 eval (NOT the
+      graph .pt2; dpmodel se_atten has no analytical force, so the dense nlist
+      path is the independent ground truth). At non-binding sel the graph and
+      nlist paths see the same neighbor set, so the graph .pt2 is sanity-checked
+      against this reference at ≤1e-5.
 """
 
 import copy
@@ -171,6 +182,157 @@ def main():
     print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
     print(f"// .pth vs .pt2 NoPbc energy diff: {abs(e_np[0, 0] - e_pth_np[0, 0]):.2e}")  # noqa: T201
 
+    # ============================================================
+    # Section B: graph-eligible DPA1 (attn_layer=0) model
+    # ============================================================
+    # attn_layer=0 disables the attention layers, making the descriptor
+    # a plain two-body embedding (se_e2_a-like) that is eligible for the
+    # NeighborGraph forward path (forward_lower_graph_exportable).
+    # Config mirrors DPA1_CONFIG in
+    # source/tests/pt_expt/utils/test_graph_pt2_metadata.py
+    graph_config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "se_atten",
+            "sel": 30,
+            "rcut_smth": 2.0,
+            "rcut": 6.0,
+            "neuron": [2, 4, 8],
+            "axis_neuron": 4,
+            "attn": 5,
+            "attn_layer": 0,
+            "attn_dotr": True,
+            "attn_mask": False,
+            "activation_function": "tanh",
+            "scaling_factor": 1.0,
+            "normalize": True,
+            "temperature": 1.0,
+            "type_one_side": True,
+            "seed": 1,
+        },
+        "fitting_net": {
+            "neuron": [5, 5, 5],
+            "resnet_dt": True,
+            "seed": 1,
+        },
+    }
+
+    print("\n---- Building graph-eligible DPA1 (attn_layer=0) ----")  # noqa: T201
+
+    # ---- B.1  Build dpmodel, serialize ----
+    model_g = get_model(copy.deepcopy(graph_config))
+    model_dict_g = model_g.serialize()
+
+    data_g = {
+        "model": copy.deepcopy(model_dict_g),
+        "model_def_script": graph_config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    # ---- B.2  Compute reference via nlist .pt2 (independent of graph path) ----
+    # The reference for deeppot_dpa1_graph.expected comes from the NLIST .pt2
+    # (dense-quartet forward), NOT the graph .pt2.  This ensures the C++ gtest
+    # (B2.5) independently validates the graph AOTI path against a known-good
+    # nlist evaluation.
+    #
+    # The nlist .pt2 is also PERSISTED (deeppot_dpa1_graph_nlist_ref.pt2): the
+    # C++ gtest loads it alongside the graph .pt2 to cross-check graph≈dense at
+    # 1e-9 on arbitrary system sizes (dynamic-edge-axis cases) without baking a
+    # second reference block into the .expected sidecar.  Same weights as the
+    # graph model, so at non-binding sel the two paths must agree.
+    nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa1_graph_nlist_ref.pt2")
+    print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        nlist_ref_pt2,
+        copy.deepcopy(data_g),
+        do_atomic_virial=True,
+        lower_kind="nlist",  # independent: dense nlist, NOT graph
+    )
+    dp_nlist_ref = DeepPot(nlist_ref_pt2)
+
+    # PBC reference from nlist path
+    e_r1, f_r1, v_r1, ae_r1, av_r1 = dp_nlist_ref.eval(coord, box, atype, atomic=True)
+    # NoPBC reference from nlist path
+    e_rnp, f_rnp, v_rnp, ae_rnp, av_rnp = dp_nlist_ref.eval(
+        coord, None, atype, atomic=True
+    )
+
+    print(f"Nlist ref PBC energy: {e_r1[0, 0]:.18e}")  # noqa: T201
+    print(f"Nlist ref NoPBC energy: {e_rnp[0, 0]:.18e}")  # noqa: T201
+    max_ref_force_pbc = float(np.max(np.abs(f_r1)))
+    max_ref_force_nopbc = float(np.max(np.abs(f_rnp)))
+    print(f"Nlist ref PBC max |force|: {max_ref_force_pbc:.6e}")  # noqa: T201
+    print(f"Nlist ref NoPBC max |force|: {max_ref_force_nopbc:.6e}")  # noqa: T201
+    if max_ref_force_pbc < 1e-10:
+        raise RuntimeError(
+            f"Graph model nlist-ref forces are degenerate "
+            f"(max={max_ref_force_pbc:.2e}); weights may need perturbation."
+        )
+
+    # ---- B.3  Write sidecar reference file ----
+    graph_ref_path = os.path.join(base_dir, "deeppot_dpa1_graph.expected")
+    write_expected_ref(
+        graph_ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae_r1[0, :, 0],
+                "expected_f": f_r1[0],
+                "expected_v": av_r1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_rnp[0, :, 0],
+                "expected_f": f_rnp[0],
+                "expected_v": av_rnp[0],
+            },
+        },
+        source_script="source/tests/infer/gen_dpa1.py",
+    )
+    print(f"Wrote {graph_ref_path}")  # noqa: T201
+
+    # ---- B.4  Export graph-form .pt2 ----
+    graph_pt2_path = os.path.join(base_dir, "deeppot_dpa1_graph.pt2")
+    print(f"Exporting to {graph_pt2_path} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        graph_pt2_path,
+        copy.deepcopy(data_g),
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    print("Graph .pt2 export done.")  # noqa: T201
+
+    # ---- B.5  Sanity-check: graph .pt2 vs nlist reference ----
+    # Both use the SAME weights; at non-binding sel the math is equivalent.
+    # Verifies that forward_lower_graph_exportable + edge_energy_deriv match
+    # the nlist forward for this concrete system.
+    dp_graph = DeepPot(graph_pt2_path)
+
+    # PBC sanity check
+    e_g1, f_g1, v_g1, ae_g1, av_g1 = dp_graph.eval(coord, box, atype, atomic=True)
+    force_diff_pbc = float(np.max(np.abs(f_g1[0] - f_r1[0])))
+    print(  # noqa: T201
+        f"Graph .pt2 vs nlist ref PBC force max diff: {force_diff_pbc:.2e}"
+    )
+    if force_diff_pbc > 1e-5:
+        raise RuntimeError(
+            f"BLOCKED: graph .pt2 PBC force differs from nlist reference by "
+            f"{force_diff_pbc:.2e} (threshold 1e-5)."
+        )
+
+    # NoPBC sanity check
+    e_gnp, f_gnp, v_gnp, ae_gnp, av_gnp = dp_graph.eval(coord, None, atype, atomic=True)
+    force_diff_nopbc = float(np.max(np.abs(f_gnp[0] - f_rnp[0])))
+    print(  # noqa: T201
+        f"Graph .pt2 vs nlist ref NoPBC force max diff: {force_diff_nopbc:.2e}"
+    )
+    if force_diff_nopbc > 1e-5:
+        raise RuntimeError(
+            f"BLOCKED: graph .pt2 NoPBC force differs from nlist reference by "
+            f"{force_diff_nopbc:.2e} (threshold 1e-5)."
+        )
+
+    print("\nAll graph sanity checks passed.")  # noqa: T201
     print("\nDone!")  # noqa: T201
 
 

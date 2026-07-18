@@ -120,7 +120,7 @@ static const char cite_user_deepmd_package[] =
 PairDeepSpin::PairDeepSpin(LAMMPS* lmp)
     : PairDeepBaseModel(
           lmp, cite_user_deepmd_package, deep_spin, deep_spin_model_devi) {
-  // Constructor body can be empty
+  print_summary("  ");
 }
 
 PairDeepSpin::~PairDeepSpin() {
@@ -140,7 +140,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
                "centroid/stress/atom command for 9-element atomic virial.");
   }
   bool do_ghost = true;
-  //  dpa2 communication
+  // Ghost communicator used to assemble the send/recv swap metadata.
   commdata_ = (CommBrickDeepSpin*)comm;
   double** x = atom->x;
   double** f = atom->f;
@@ -201,8 +201,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     }
   }
 
-  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
-  // the LAMMPS atom-map; harmless for other models).
+  // Owner mapping for message-passing .pt2 models that gather ghost features
+  // through the LAMMPS atom map; unused by other models.
   std::vector<int> mapping_vec(nall, -1);
   if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     for (size_t ii = 0; ii < nall; ++ii) {
@@ -229,7 +229,6 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     make_fparam_from_compute(fparam);
   }
 
-  // int ago = numb_models > 1 ? 0 : neighbor->ago;
   int ago = neighbor->ago;
   if (numb_models > 1) {
     if (multi_models_no_mod_devi &&
@@ -283,17 +282,10 @@ void PairDeepSpin::compute(int eflag, int vflag) {
             eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
           }
         }
-        // Added by Davide Tisi 2020
-        // interface the atomic virial computed by DeepMD
-        // with the one used in centroid atoms
+        // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
+        // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
         if (cvflag_atom) {
           for (int ii = 0; ii < nall; ++ii) {
-            // vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-            // vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-            // vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-            // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-            // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-            // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
             cvatom[ii][0] +=
                 scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
             cvatom[ii][1] +=
@@ -355,18 +347,11 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
         }
       }
-      // Added by Davide Tisi 2020
-      // interface the atomic virial computed by DeepMD
-      // with the one used in centroid atoms
+      // Map the 9-component DeePMD atomic virial onto the LAMMPS centroid
+      // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
       if (cvflag_atom) {
         dvatom = all_atom_virial[0];
         for (int ii = 0; ii < nall; ++ii) {
-          // vatom[ii][0] += 1.0 * dvatom[9*ii+0];
-          // vatom[ii][1] += 1.0 * dvatom[9*ii+4];
-          // vatom[ii][2] += 1.0 * dvatom[9*ii+8];
-          // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
-          // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
-          // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
           cvatom[ii][0] +=
               scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
           cvatom[ii][1] +=
@@ -482,7 +467,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
              << " " << setw(18) << all_fm_min << " " << setw(18) << all_fm_avg;
         }
         if (out_each == 1) {
-          // need support for spin atomic force.
+          // Only the per-atom force deviation is gathered here.
           vector<double> std_f_all(atom->natoms);
           // Gather std_f and tags
           tagint* tag = atom->tag;
@@ -861,6 +846,27 @@ void PairDeepSpin::coeff(int narg, char** arg) {
     }
   }
   if (narg <= 2) {
+    // A bare `pair_coeff * *` maps LAMMPS atom types onto the model's first
+    // ntypes elements by position. When the model type_map has more entries
+    // than the system has atom types (e.g. a periodic-table pretrained or
+    // fine-tuned model), that positional mapping may mislabel the species, so
+    // warn and recommend naming the elements explicitly.
+    std::string type_map_str;
+    deep_spin.get_type_map(type_map_str);
+    std::istringstream iss(type_map_str);
+    std::string type_name;
+    int model_ntypes = 0;
+    while (iss >> type_name) {
+      ++model_ntypes;
+    }
+    if (model_ntypes > n) {
+      error->warning(
+          FLERR, "pair_coeff * * maps the system atom types onto the first " +
+                     std::to_string(n) + " of the model's " +
+                     std::to_string(model_ntypes) +
+                     " element types; list the elements explicitly, e.g. "
+                     "pair_coeff * * Fe C, to avoid a possible mislabeling.");
+    }
     type_idx_map.resize(n);
     for (int ii = 0; ii < n; ++ii) {
       type_idx_map[ii] = ii;

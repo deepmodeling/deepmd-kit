@@ -21,8 +21,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -46,6 +47,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.ener import EnerFitting as EnerFittingTF
 else:
     EnerFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import EnergyFittingNet as EnerFittingTF2
+else:
+    EnerFittingTF2 = None
 if INSTALLED_PD:
     import paddle
 
@@ -74,14 +82,57 @@ else:
     EnerFittingStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32", "bfloat16"),  # precision
-    (True, False),  # mixed_types
-    ((0, None), (1, None), (1, [1.0])),  # (numb_fparam, default_fparam)
-    ((0, False), (1, False), (1, True)),  # (numb_aparam, use_aparam_as_mask)
-    ([], [-12345.6, None]),  # atom_ener
+ENER_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
+    "fparam",
+    "aparam",
+    "atom_ener",
 )
+
+ENER_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+    "fparam": (0, None),
+    "aparam": (0, False),
+    "atom_ener": [],
+}
+
+
+def ener_fitting_case(**overrides: Any) -> tuple:
+    case = ENER_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in ENER_FITTING_CASE_FIELDS)
+
+
+ENER_FITTING_CURATED_CASES = (
+    ener_fitting_case(),
+    ener_fitting_case(resnet_dt=False),
+    ener_fitting_case(precision="float32"),
+    ener_fitting_case(precision="bfloat16"),
+    ener_fitting_case(mixed_types=False),
+    ener_fitting_case(fparam=(1, None)),
+    ener_fitting_case(fparam=(1, [1.0])),
+    ener_fitting_case(aparam=(1, False)),
+    ener_fitting_case(aparam=(1, True)),
+    ener_fitting_case(atom_ener=[-12345.6, None]),
+    ener_fitting_case(
+        resnet_dt=False,
+        precision="float32",
+        mixed_types=False,
+        fparam=(1, [1.0]),
+        aparam=(1, True),
+        atom_ener=[-12345.6, None],
+    ),
+)
+
+ENER_FITTING_STAT_CURATED_CASES = (
+    ener_fitting_case(fparam=(3, None), aparam=(3, False)),
+)
+
+
+@parameterized_cases(*ENER_FITTING_CURATED_CASES)
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -160,6 +211,24 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return not INSTALLED_TF or default_fparam is not None
 
     @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return (
+            not INSTALLED_TF2
+            or precision == "bfloat16"
+            or default_fparam is not None
+            or use_aparam_as_mask
+            or atom_ener != []
+        )
+
+    @property
     def skip_pt_expt(self) -> bool:
         (
             resnet_dt,
@@ -173,6 +242,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return CommonTest.skip_pt_expt or precision == "bfloat16"
 
     tf_class = EnerFittingTF
+    tf2_class = EnerFittingTF2
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
     pt_expt_class = EnerFittingPTExpt
@@ -304,6 +374,26 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             aparam=self.aparam if numb_aparam else None,
         )["energy"]
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam)
+                if (numb_fparam and default_fparam is None)
+                else None,
+                aparam=to_tensorflow_array(self.aparam) if numb_aparam else None,
+            )["energy"]
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         (
             resnet_dt,
@@ -420,14 +510,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True,),  # resnet_dt
-    ("float64",),  # precision
-    (True,),  # mixed_types
-    ((3, None),),  # (numb_fparam, default_fparam)
-    ((3, False),),  # (numb_aparam, use_aparam_as_mask)
-    ([],),  # atom_ener
-)
+@parameterized_cases(*ENER_FITTING_STAT_CURATED_CASES)
 class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -473,7 +556,26 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
     def skip_pd(self) -> bool:
         return not INSTALLED_PD
 
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return (
+            not INSTALLED_TF2
+            or precision == "bfloat16"
+            or default_fparam is not None
+            or use_aparam_as_mask
+            or atom_ener != []
+        )
+
     tf_class = EnerFittingTF
+    tf2_class = EnerFittingTF2
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
     pt_expt_class = EnerFittingPTExpt
@@ -660,6 +762,38 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam,
             aparam=self.aparam,
         )["energy"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        tf2_stat_data = [
+            {
+                "fparam": to_tensorflow_array(d["fparam"]),
+                "aparam": to_tensorflow_array(d["aparam"]),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
+            }
+            for d in self.stat_data
+        ]
+        tf2_obj.compute_input_stats(tf2_stat_data, protection=1e-2)
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam)
+                if self.fparam is not None
+                else None,
+                aparam=to_tensorflow_array(self.aparam)
+                if self.aparam is not None
+                else None,
+            )["energy"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (

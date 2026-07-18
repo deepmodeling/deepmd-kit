@@ -868,28 +868,46 @@ namespace hpp {
  * @param[in] charge_spin The per-frame charge/spin values.
  * @param[in] dchgspin The model's charge/spin dimension (0 if unsupported).
  * @param[in] nframes The number of frames.
- * @return charge_spin.data() if non-empty and valid, otherwise nullptr.
+ * @param[out] charge_spin_tiled Scratch storage used when one frame's
+ * charge_spin should be broadcast to all frames.
+ * @return charge_spin.data() or charge_spin_tiled.data() if non-empty and
+ * valid, otherwise nullptr.
  */
 template <typename FPTYPE>
 inline const FPTYPE* validate_charge_spin(
     const std::vector<FPTYPE>& charge_spin,
     const int dchgspin,
-    const unsigned int nframes) {
+    const unsigned int nframes,
+    std::vector<FPTYPE>& charge_spin_tiled) {
+  charge_spin_tiled.clear();
   if (charge_spin.empty()) {
     return nullptr;
   }
   if (dchgspin == 0) {
-    throw deepmd::hpp::deepmd_exception(
-        "charge_spin was provided, but this model does not support "
-        "charge/spin conditioning");
+    std::cerr << "WARNING: charge_spin was provided, but this model does not "
+                 "support charge/spin conditioning. The provided charge_spin "
+                 "will be ignored."
+              << std::endl;
+    return nullptr;
   }
-  if (charge_spin.size() != static_cast<size_t>(nframes) * dchgspin) {
-    throw deepmd::hpp::deepmd_exception(
-        "the dim of charge_spin provided is not consistent with what the "
-        "model uses");
+  const size_t dim = static_cast<size_t>(dchgspin);
+  const size_t expected_size = static_cast<size_t>(nframes) * dim;
+  if (charge_spin.size() == expected_size) {
+    return charge_spin.data();
   }
-  return charge_spin.data();
+  if (charge_spin.size() == dim) {
+    charge_spin_tiled.resize(expected_size);
+    for (unsigned int ff = 0; ff < nframes; ++ff) {
+      std::copy(charge_spin.begin(), charge_spin.end(),
+                charge_spin_tiled.begin() + ff * dim);
+    }
+    return charge_spin_tiled.data();
+  }
+  throw deepmd::hpp::deepmd_exception(
+      "the dim of charge_spin provided is not consistent with what the "
+      "model uses");
 }
+
 /**
  * @brief Neighbor list.
  **/
@@ -940,7 +958,33 @@ struct InputNlist {
                             recvproc,
                             world,
                             nprocs)) {};
-  ~InputNlist() { DP_DeleteNlist(nl); };
+  InputNlist(const InputNlist&) = delete;
+  InputNlist& operator=(const InputNlist&) = delete;
+  InputNlist(InputNlist&& other) noexcept
+      : nl(other.nl),
+        inum(other.inum),
+        ilist(other.ilist),
+        numneigh(other.numneigh),
+        firstneigh(other.firstneigh) {
+    other.nl = nullptr;
+  }
+  InputNlist& operator=(InputNlist&& other) noexcept {
+    if (this != &other) {
+      DP_DeleteNlist(nl);
+      nl = other.nl;
+      inum = other.inum;
+      ilist = other.ilist;
+      numneigh = other.numneigh;
+      firstneigh = other.firstneigh;
+      other.nl = nullptr;
+    }
+    return *this;
+  }
+  ~InputNlist() {
+    if (nl != nullptr) {
+      DP_DeleteNlist(nl);
+    }
+  };
   /// @brief C API neighbor list.
   DP_Nlist* nl;
   /// @brief Number of core region atoms
@@ -1176,6 +1220,112 @@ class DeepPot : public DeepBaseModel {
   }
 
   /**
+   * @brief Evaluate a device-resident edge graph with FP64 edge vectors.
+   *
+   * Edge, coordinate, type, and output pointers reside on the model device.
+   * Frame and atomic parameters remain host-resident because LAMMPS assembles
+   * them from computes, fixes, and pair-style settings.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr) {
+    DP_DeepPotComputeEdgesGPU(dp, d_atom_energy, d_force, d_atom_virial,
+                              d_coord, d_atype, d_edge_index, d_edge_vec, nloc,
+                              nedge, fparam.empty() ? nullptr : fparam.data(),
+                              static_cast<int64_t>(fparam.size()),
+                              aparam.empty() ? nullptr : aparam.data(),
+                              static_cast<int64_t>(aparam.size()), nall_nodes,
+                              comm_nlist != nullptr ? comm_nlist->nl : nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Evaluate a device-resident edge graph with FP32 edge vectors.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const float* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr) {
+    DP_DeepPotComputeEdgesGPUFloat32(
+        dp, d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+        d_edge_index, d_edge_vec, nloc, nedge,
+        fparam.empty() ? nullptr : fparam.data(),
+        static_cast<int64_t>(fparam.size()),
+        aparam.empty() ? nullptr : aparam.data(),
+        static_cast<int64_t>(aparam.size()), nall_nodes,
+        comm_nlist != nullptr ? comm_nlist->nl : nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Evaluate a compact canonical graph on the model device.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const int64_t* d_atype,
+                                   const int64_t* d_source,
+                                   const float* d_edge_vec,
+                                   const int64_t* d_destination_row_ptr,
+                                   const int64_t* d_source_row_ptr,
+                                   const int64_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const int64_t edge_storage) {
+    DP_DeepPotComputeCanonicalGraphGPU(
+        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_source,
+        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+        nloc, nall_nodes, edge_storage);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Query whether the loaded artifact supports device-edge inference.
+   */
+  bool supports_device_edge_inference() const {
+    const bool result = DP_DeepPotSupportsDeviceEdgeInference(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the loaded artifact expects FP32 edge vectors.
+   */
+  bool uses_fp32_edge_vectors() const {
+    const bool result = DP_DeepPotUsesFP32EdgeVectors(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the compact canonical graph ABI is active.
+   */
+  bool uses_canonical_graph_inference() const {
+    const bool result = DP_DeepPotUsesCanonicalGraphInference(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
@@ -1193,9 +1343,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
@@ -1232,8 +1383,9 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
     // non-charge_spin models still work against an older libdeepmd_c.
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, charge_spin__, ener_,
@@ -1261,9 +1413,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
@@ -1305,8 +1458,9 @@ class DeepPot : public DeepBaseModel {
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotCompute<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, fparam__, aparam__,
@@ -1336,9 +1490,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
@@ -1379,8 +1534,9 @@ class DeepPot : public DeepBaseModel {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                        box_, nghost, lmp_list.nl, ago, fparam__,
@@ -1412,9 +1568,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
@@ -1462,8 +1619,9 @@ class DeepPot : public DeepBaseModel {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                        box_, nghost, lmp_list.nl, ago, fparam__,
@@ -2277,9 +2435,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    **/
   template <typename VALUETYPE>
@@ -2293,7 +2452,6 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
-    // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -2319,8 +2477,9 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotModelDeviCompute<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, fparam__, aparam__, charge_spin__,
@@ -2364,9 +2523,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    **/
   template <typename VALUETYPE>
@@ -2382,7 +2542,6 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
-    // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -2412,8 +2571,9 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotModelDeviCompute<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, fparam__, aparam__, charge_spin__,
@@ -2469,9 +2629,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    **/
   template <typename VALUETYPE>
@@ -2516,8 +2677,9 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
@@ -2564,9 +2726,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
-   * @param[in] charge_spin The per-frame charge/spin input. The array can be
-   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
-   *with the same charge_spin. Leave it empty to use the model's stored
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
    *default_chg_spin.
    **/
   template <typename VALUETYPE>
@@ -2617,8 +2780,9 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    const VALUETYPE* charge_spin__ =
-        validate_charge_spin(charge_spin, dchgspin, nframes);
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
@@ -2918,9 +3082,9 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       for (int j = 0; j < natoms; j++) {
         atom_energy[i][j] = atom_energy_flat[i * natoms + j];
       }
-      // for (int j = 0; j < natoms * 9; j++) {
-      //   atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
-      // }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
     }
   };
 
