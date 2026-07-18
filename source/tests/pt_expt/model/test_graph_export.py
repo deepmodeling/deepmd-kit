@@ -160,6 +160,9 @@ def test_graph_export_aparam_flat_node_axis():
         lower_kind="graph",
     )
     loaded = exported.module()
+    # ``_trace_and_export`` moves the exported program to ``env.DEVICE``; run the
+    # eager reference there too so both sides use matching-device inputs.
+    model.to(env.DEVICE)
 
     # nf=1, N=1 (single node: zero real edges, guard rows only) and a
     # multi-frame nf=3, N=15 system: both must pass the input guards and
@@ -171,7 +174,7 @@ def test_graph_export_aparam_flat_node_axis():
             nframes=nframes,
             nloc=nloc,
             dtype=torch.float64,
-            device=torch.device("cpu"),
+            device=env.DEVICE,
         )
         (
             a2,
@@ -191,9 +194,9 @@ def test_graph_export_aparam_flat_node_axis():
         # single-rank runtime: every node is owned
         nl2 = nn2.clone()
         # distinct per-row values so the sensitivity check below is real
-        ap2 = torch.linspace(0.1, 0.9, ap2.numel(), dtype=torch.float64).reshape(
-            ap2.shape
-        )
+        ap2 = torch.linspace(
+            0.1, 0.9, ap2.numel(), dtype=torch.float64, device=ap2.device
+        ).reshape(ap2.shape)
         out = loaded(a2, nn2, nl2, ei2, ev2, em2, do2, drp2, so2, srp2, fp2, ap2, cs2)
         ref = model.forward_common_lower_graph(
             a2,

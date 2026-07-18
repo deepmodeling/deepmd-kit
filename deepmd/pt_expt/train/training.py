@@ -691,12 +691,20 @@ def _trace_and_compile_graph(
     # sel-derived estimate overflows whenever the real degree exceeds sel),
     # then prime-padded to stay distinct from nf and N.  ``+ 2`` keeps at
     # least two masked padding rows so the padded-tail branch is traced.
+    # Trace on the MODEL's device, not the global ``DEVICE``: make_fx keeps the
+    # real model parameters (``_allow_non_fake_inputs``), so the synthetic trace
+    # inputs must live where the model does. A CUDA training run keeps the model
+    # on ``DEVICE`` (these match), but callers that trace a CPU-placed model
+    # (e.g. the graph .pt2/export path, which moves the model to CPU to dodge a
+    # CUDA autograd-stream limitation) would otherwise mix a CPU model with
+    # CUDA inputs and fail only on a GPU host.
+    _trace_device = next(model.parameters()).device
     e_real = count_synthetic_graph_edges(
         model,
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
     )
     e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
@@ -705,7 +713,7 @@ def _trace_and_compile_graph(
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,

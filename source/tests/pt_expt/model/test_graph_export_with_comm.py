@@ -16,6 +16,9 @@ import zipfile
 
 import pytest
 
+from deepmd.pt_expt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
 )
@@ -239,15 +242,27 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     atype = np.array([[i % 2 for i in range(n_total)]])
     graph = build_neighbor_graph(coord, atype, None, rcut, canonicalize=True)
 
-    atype_t = torch.tensor(atype.reshape(-1), dtype=torch.int64)
-    n_node_t = torch.as_tensor(np.asarray(graph.n_node), dtype=torch.int64)
-    ei = torch.as_tensor(np.asarray(graph.edge_index), dtype=torch.int64)
-    ev = torch.as_tensor(np.asarray(graph.edge_vec), dtype=torch.float64)
-    em = torch.as_tensor(np.asarray(graph.edge_mask), dtype=torch.bool)
-    do_t = torch.as_tensor(np.asarray(graph.destination_order), dtype=torch.int64)
-    drp_t = torch.as_tensor(np.asarray(graph.destination_row_ptr), dtype=torch.int64)
-    so_t = torch.as_tensor(np.asarray(graph.source_order), dtype=torch.int64)
-    srp_t = torch.as_tensor(np.asarray(graph.source_row_ptr), dtype=torch.int64)
+    # Graph inputs live on the device the exported program was moved to
+    # (env.DEVICE); the 8 comm tensors below stay on CPU (host control metadata).
+    atype_t = torch.tensor(atype.reshape(-1), dtype=torch.int64, device=DEVICE)
+    n_node_t = torch.as_tensor(
+        np.asarray(graph.n_node), dtype=torch.int64, device=DEVICE
+    )
+    ei = torch.as_tensor(np.asarray(graph.edge_index), dtype=torch.int64, device=DEVICE)
+    ev = torch.as_tensor(np.asarray(graph.edge_vec), dtype=torch.float64, device=DEVICE)
+    em = torch.as_tensor(np.asarray(graph.edge_mask), dtype=torch.bool, device=DEVICE)
+    do_t = torch.as_tensor(
+        np.asarray(graph.destination_order), dtype=torch.int64, device=DEVICE
+    )
+    drp_t = torch.as_tensor(
+        np.asarray(graph.destination_row_ptr), dtype=torch.int64, device=DEVICE
+    )
+    so_t = torch.as_tensor(
+        np.asarray(graph.source_order), dtype=torch.int64, device=DEVICE
+    )
+    srp_t = torch.as_tensor(
+        np.asarray(graph.source_row_ptr), dtype=torch.int64, device=DEVICE
+    )
 
     sendlist_indices = np.ascontiguousarray(
         np.arange(nghost, dtype=np.int32)
@@ -265,7 +280,7 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     )
 
     def run(n_local_val: int) -> torch.Tensor:
-        n_local_t = torch.tensor([n_local_val], dtype=torch.int64)
+        n_local_t = torch.tensor([n_local_val], dtype=torch.int64, device=DEVICE)
         out = loaded(
             atype_t,
             n_node_t,
