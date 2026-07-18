@@ -114,6 +114,8 @@ def merge_env_stat(
 
 
 class EnvMatStat(BaseEnvMatStat):
+    r"""Environment statistics estimating :math:`\mu=\langle R\rangle` and scale."""
+
     def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 

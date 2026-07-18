@@ -1277,6 +1277,34 @@ def symmetrization_op_graph(
 
 
 class Atten2Map(NativeOP):
+    r"""Masked and smoothed angular attention map.
+
+    Define the raw logits and the (not necessarily unit-vector) angular factor
+    by
+
+    .. math::
+
+        L_{ijk}^{(h)}=\frac{q_{ij}^{(h)}\cdot k_{ik}^{(h)}}{\sqrt d},
+        \qquad
+        G_{ijk}=\mathbf h_{ij}\cdot\mathbf h_{ik}.
+
+    When ``has_gate=True``, :math:`G_{ijk}` also gates the logits, so let
+    :math:`\widetilde L=L G`; otherwise let :math:`\widetilde L=L`.  In the
+    smooth path the normalized attention and returned map are
+
+    .. math::
+
+        \overline A_{ijk}^{(h)}=\operatorname{softmax}_k\!\left(
+        (\widetilde L_{ijk}^{(h)}+c)s_{ij}s_{ik}-c\right),\qquad
+        M_{ijk}^{(h)}=s_{ij}s_{ik}\overline A_{ijk}^{(h)}
+        \frac{G_{ijk}}{\sqrt 3}.
+
+    Without smoothing, masked softmax replaces the first expression and the
+    cutoff factors are omitted.  Invalid query and key entries are zeroed.  The
+    factor :math:`G_{ijk}/\sqrt 3` multiplies the returned map unconditionally,
+    including when ``has_gate=False``.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1523,6 +1551,17 @@ class Atten2Map(NativeOP):
 
 
 class Atten2MultiHeadApply(NativeOP):
+    r"""Multi-head attention application.
+
+    ``Atten2Map`` has already applied masking, smoothing, and softmax.  This
+    stage therefore computes the value aggregation and head projection only:
+
+    .. math::
+        O_{ij}^{(h)}=\sum_k A_{ijk}^{(h)}V_{ik}^{(h)},\qquad
+        O_{ij}=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        O_{ij}^{(h)}\right).
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1650,6 +1689,20 @@ class Atten2MultiHeadApply(NativeOP):
 
 
 class Atten2EquiVarApply(NativeOP):
+    r"""Equivariant attention application preserving rotation laws.
+
+    For attention matrix :math:`A_{ijk}^{(h)}` and equivariant neighbor vectors
+    :math:`\mathbf h_{ik}`, each head produces
+
+    .. math::
+        \mathbf u_{ij}^{(h)} = \sum_k A_{ijk}^{(h)}\mathbf h_{ik},
+        \qquad
+        \mathbf u_{ij} = \sum_h w_h\mathbf u_{ij}^{(h)}.
+
+    The attention weights and head mixing coefficients are scalars, so the
+    output follows the same rotation law as :math:`\mathbf h`.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1761,6 +1814,20 @@ class Atten2EquiVarApply(NativeOP):
 
 
 class LocalAtten(NativeOP):
+    r"""Local attention with masked, smoothed softmax weights.
+
+    For each head, the query is formed from the destination feature and keys
+    and values from its neighbors.  The logits use the standard scaling and
+    the cutoff-smoothed softmax when enabled:
+
+    .. math::
+        L_{ij}^{(h)}=q_i^{(h)}\cdot k_{ij}^{(h)}/\sqrt{d},\qquad
+        A_{ij}^{(h)}=s_{ij}\operatorname{softmax}_j\!\left(
+        (L_{ij}^{(h)}+c)s_{ij}-c\right),\qquad
+        O_i=\operatorname{HeadMap}\!\left(\operatorname{concat}_h
+        \sum_j A_{ij}^{(h)}v_{ij}^{(h)}\right).
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -1991,6 +2058,8 @@ class LocalAtten(NativeOP):
 
 
 class RepformerLayer(NativeOP):
+    r"""Residual representation update :math:`(G_1,G_2,H_2)^{l+1}=\Phi_l(...)`."""
+
     def __init__(
         self,
         rcut: float,
