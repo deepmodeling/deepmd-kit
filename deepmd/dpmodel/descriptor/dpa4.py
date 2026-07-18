@@ -63,6 +63,9 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -128,6 +131,9 @@ if TYPE_CHECKING:
 
     from deepmd.dpmodel.array_api import (
         Array,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
     )
     from deepmd.utils.data_system import (
         DeepmdDataSystem,
@@ -580,6 +586,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         **kwargs: Any,
     ) -> None:
         self.version = float(self.LATEST_VERSION)
+        self._graph_lower_disabled = False
         self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
@@ -1763,6 +1770,67 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )
         return xp.reshape(x_scalar, (nf, out_nloc, self.channels)), x
 
+    def call_graph(
+        self,
+        graph: NeighborGraph,
+        atype: Array,
+        type_embedding: Array | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[Array, None]:
+        """Graph-native descriptor forward on the flat node axis.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph for the local atoms (ghost-free). ``edge_vec`` is
+            the geometry/autograd leaf; ``edge_mask`` flags valid edges.
+        atype
+            Flat node types with shape (N,).
+        type_embedding
+            Accepted for graph-seam interface stability and ignored: DPA4
+            embeds types internally (``SeZMTypeEmbedding``) from ``atype``.
+        comm_dict
+            Not supported: DPA4 has no cross-rank ghost exchange on any
+            lower path.
+
+        Returns
+        -------
+        tuple[Array, None]
+            Flat ``(N, channels)`` descriptor in global precision, and
+            ``None`` (DPA4 produces no equivariant rot_mat for the fitting).
+
+        Raises
+        ------
+        NotImplementedError
+            When ``comm_dict`` is provided.
+        """
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "multi-rank comm_dict inference is not supported on the "
+                "DPA4 graph route"
+            )
+        if self.exclude_types:
+            # Canonical NeighborGraph transform: exclusion lands on the
+            # graph's edge_mask exactly once; the edge-cache builder below
+            # is called with has_exclude_types=False and never re-applies.
+            graph = apply_pair_exclusion(graph, atype, self.emask)
+        n_nodes = atype.shape[0]
+        x_scalar, _ = self._call_graph_impl(
+            atype,
+            graph.edge_index,
+            graph.edge_vec,
+            graph.edge_mask,
+            nf=1,
+            n_out_nodes=n_nodes,
+            has_exclude_types=False,
+        )
+        # ``_call_graph_impl`` returns the read-out with its SO(3) singleton
+        # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
+        # graph-seam contract shape (n_nodes, channels).
+        xp = array_api_compat.array_namespace(x_scalar)
+        x_scalar = xp.reshape(x_scalar, (n_nodes, self.channels))
+        return x_scalar, None
+
     def _forward_blocks(
         self,
         x: Array,
@@ -2387,6 +2455,38 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         bridging models and multi-rank inference fails fast instead.
         """
         return self.bridging_switch is None
+
+    def uses_graph_lower(self) -> bool:
+        """Whether this descriptor supports the sel-free NeighborGraph lower.
+
+        Returns
+        -------
+        bool
+            False when the escape hatch has been pulled or when the model
+            uses conditioning inputs (charge/spin FiLM, native spin,
+            SFPG bridging) that ride only the dense ``call`` signature.
+        """
+        if self._graph_lower_disabled:
+            return False
+        if self.charge_spin_embedding is not None:
+            return False
+        if self.spin_embedding is not None:
+            return False
+        if self.bridging_switch is not None:
+            return False
+        return True
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """DPA4 attention is a per-edge scatter softmax; no pair axis."""
+        return False
+
+    def disable_graph_lower(self) -> None:
+        """Route this descriptor through the legacy dense lower."""
+        self._graph_lower_disabled = True
+
+    def graph_type_embedding_table(self) -> None:
+        """DPA4 embeds types internally; the graph seam passes nothing."""
+        return None
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False
