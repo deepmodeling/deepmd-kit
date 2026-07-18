@@ -504,8 +504,8 @@ def build_edge_cache_from_edges(
     xp = array_api_compat.array_namespace(type_ebed, edge_index, edge_vec)
     device = array_api_compat.device(edge_vec)
     n_nodes = type_ebed.shape[0]
-    src = xp.astype(edge_index[0], xp.int64)
-    dst = xp.astype(edge_index[1], xp.int64)
+    src = xp.astype(edge_index[0, ...], xp.int64)
+    dst = xp.astype(edge_index[1, ...], xp.int64)
 
     # === Step 1. Normalize mask and apply type exclusions ===
     edge_keep = xp.astype(edge_mask, xp.bool)

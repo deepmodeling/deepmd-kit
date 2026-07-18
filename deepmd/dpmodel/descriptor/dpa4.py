@@ -50,7 +50,6 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
     xp_scatter_sum,
-    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -65,6 +64,7 @@ from deepmd.dpmodel.utils.exclude_mask import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
+    graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -87,7 +87,6 @@ from .dpa4_nn.block import (
 )
 from .dpa4_nn.edge_cache import (
     EdgeCache,
-    build_edge_cache,
     build_edge_cache_from_edges,
     edge_cache_to_dtype,
 )
@@ -141,6 +140,86 @@ if TYPE_CHECKING:
     from deepmd.utils.path import (
         DPPath,
     )
+
+
+def _graph_from_padded_nlist(
+    coord_ext: Array,
+    atype_ext: Array,
+    nlist: Array,
+    mapping: Array | None,
+) -> tuple[NeighborGraph, Array]:
+    """Dense-topology extraction for DPA4: ``src_ok``-sanitized nlist -> graph.
+
+    This is the ONE owner of DPA4's dense-nlist topology contract. It
+    reproduces the pt SeZM ``edge_keep`` semantics (pt's ``src_ok`` filter,
+    see ``deepmd.pt.model.descriptor.sezm_nn.edge_cache.build_edge_cache``):
+    beyond the native ``nlist == -1`` padding, a neighbor slot is also
+    invalid when its LOCAL source index falls outside ``[0, nloc)`` --
+
+    - ``mapping`` given: the mapped owner ``mapping[nlist]`` is out of range
+      (covers broken ghosts with ``mapping == -1``, which pt drops and the
+      retired dp dense builder masked);
+    - ``mapping is None`` (neighbor indices already local): the entry itself
+      is out of ``[0, nloc)``.
+
+    Invalid slots are rewritten to ``-1`` BEFORE conversion, so
+    :func:`graph_from_dense_quartet` treats them as native padding (masked
+    edge, in-range placeholder indices, zero geometry) -- semantically
+    identical to the retired dense builder's masked slots. The gather that
+    tests the mapped source uses ``where(nlist >= 0, nlist, 0)`` clamping,
+    so no negative index is ever gathered. The ``mapping is None`` identity
+    case itself is owned by :func:`graph_from_dense_quartet` (applied after
+    this sanitization). This contract is pinned by
+    ``source/tests/pt/model/test_dpa4_dpmodel_parity.py``
+    (``TestEdgeCacheParity`` and the descriptor-parity fixtures with a
+    broken ghost mapping).
+
+    Parameters
+    ----------
+    coord_ext
+        Extended coordinates with shape (nf, nall, 3), already in the
+        caller's compute precision (edge vectors are subtracted inside the
+        converter in this dtype).
+    atype_ext
+        Extended atom types with shape (nf, nall).
+    nlist
+        Padded neighbor list with shape (nf, nloc, nnei); ``-1`` is padding.
+    mapping
+        Extended -> local-owner index with shape (nf, nall), or ``None``
+        when neighbor indices are already local.
+
+    Returns
+    -------
+    tuple[NeighborGraph, Array]
+        The shape-static row-major graph over the local atoms and the flat
+        local atom types with shape (nf * nloc,).
+    """
+    xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+    device = array_api_compat.device(nlist)
+    nf, nloc, _ = nlist.shape
+    nlist = xp.astype(nlist, xp.int64)
+    valid = nlist >= 0
+    nl_safe = xp.where(valid, nlist, xp.zeros_like(nlist))
+    if mapping is None:
+        # Neighbor indices are already local owners.
+        src_local = nl_safe
+    else:
+        nall = atype_ext.shape[1]
+        mapping_flat = xp.astype(xp.reshape(mapping, (-1,)), xp.int64)
+        frame_idx = xp.reshape(xp.arange(nf, dtype=xp.int64, device=device), (nf, 1, 1))
+        src_local = xp.reshape(
+            xp.take(
+                mapping_flat,
+                xp.reshape(frame_idx * nall + nl_safe, (-1,)),
+                axis=0,
+            ),
+            nlist.shape,
+        )
+    valid = valid & (src_local >= 0) & (src_local < nloc)
+    nlist_sane = xp.where(
+        valid, nl_safe, xp.full(nlist.shape, -1, dtype=xp.int64, device=device)
+    )
+    return graph_from_dense_quartet(coord_ext, atype_ext, nlist_sane, mapping)
 
 
 @BaseDescriptor.register("SeZM")
@@ -1256,198 +1335,49 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 None,
             )
 
-        # === Step 1. Setup dimensions ===
+        # === Dense-nlist adapter over the graph-native core ===
+        # ``graph_from_dense_quartet`` enumerates edges row-major over
+        # (frame, center, slot) -- the exact accumulation order of the old
+        # padded builder -- so the destination scatters reassociate identically
+        # and existing parity tolerances hold. The dense body is no longer a
+        # second copy of the edge math: ``call`` and ``call_graph`` share the
+        # one graph-native owner via ``_call_graph_common``.
+        nf, nloc, _ = nlist.shape
+        # Geometry enters in compute precision, as the old dense Step 1 did:
+        # edge vectors must be SUBTRACTED in compute precision (inside the
+        # converter), not computed in fp64 and cast after -- the two round
+        # differently for fp32 models.
         coord_ext = xp.astype(coord_ext, get_xp_precision(xp, self.compute_precision))
-        nf, nloc, nnei = nlist.shape
-        nall = coord_ext.shape[1]
-        n_nodes = nf * nloc
         charge_spin = self._canonicalize_charge_spin(
             charge_spin,
             nf=nf,
             dtype=coord_ext.dtype,
             device=device,
         )
-
-        # === Step 2. Excluded type pairs ===
-        if self.exclude_types:
-            # (nf, nloc, nnei), True means keep.
-            pair_keep_mask = xp.astype(
-                self.emask.build_type_exclude_mask(nlist, atype_ext), xp.bool
-            )
-        else:
-            pair_keep_mask = xp.ones_like(nlist, dtype=xp.bool)
-
-        # === Step 3. Type embedding (l=0) ===
-        atype_loc = xp_take_first_n(atype_ext, 1, nloc)  # (nf, nloc)
-        type_ebed = xp.reshape(
-            self.type_embedding(atype_loc), (n_nodes, self.channels)
-        )  # (N, C)
-        if self.charge_spin_embedding is not None:
-            type_ebed = self._apply_charge_spin_embedding(
-                type_ebed,
-                charge_spin,
-                nf=nf,
-                nloc=nloc,
-            )
-
-        # Native spin: condition the l=0 type features on the spin magnitude
-        # and hold the l=1 direction coefficients for the backbone seed.
-        spin_vec = None
-        if self.spin_embedding is not None and spin is not None:
-            type_ebed, spin_vec = self._apply_spin_embedding(
-                type_ebed, spin, xp.reshape(atype_loc, (-1,)), n_nodes=n_nodes
-            )
-
-        # === Step 4. Build edge cache once (geometry + RBF + Wigner-D) ===
-        # Zone bridging (InnerClamp + SFPG + ZBL) is not routed through the
-        # standard DeePMD path: bridging only makes physical sense when
-        # paired with the ZBL energy that ``SeZMModel`` injects on the
-        # sparse-edge path, so ``forward`` keeps the original
-        # bridging-free aggregation semantics.
-        edge_cache = build_edge_cache(
-            type_ebed=type_ebed,
-            extended_coord=coord_ext,
-            nlist=nlist,
-            mapping=mapping,
-            pair_keep_mask=pair_keep_mask,
-            eps=self.eps,
-            deg_norm_floor=(self.deg_norm_floor if self.version >= 1.1 else self.eps),
-            edge_envelope=self.edge_envelope,
-            radial_basis=self.radial_basis,
-            n_radial=self.radial_basis.n_radial,
-            # Random local-Z roll is a training-only augmentation;
-            # the model is roll-equivariant, so inference fixes gamma.
-            random_gamma=False,
-            wigner_calc=self.wigner_calc,
-            build_wigner=self._need_full_wigner,
+        # ``_graph_from_padded_nlist`` owns the dense-topology contract: the
+        # pt-mirroring ``src_ok`` sanitization (out-of-range / broken-mapping
+        # sources masked) and, via ``graph_from_dense_quartet``, the
+        # ``mapping is None`` identity case (neighbor indices already local).
+        graph, atype_flat = _graph_from_padded_nlist(
+            coord_ext, atype_ext, nlist, mapping
         )
-
-        ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
-        x0 = type_ebed  # (N, C)
-        x0_out = x0  # (N, C)
-
-        # === Step 5. Compute radial features once (fp32+) ===
-        # Shape: (E, (node_init_lmax+1)*C) -> (E, node_init_lmax+1, C)
-        radial_feat = xp.reshape(
-            self.radial_embedding(edge_cache.edge_rbf),
-            (-1, self.node_init_lmax + 1, self.channels),
-        )  # (E, node_init_lmax+1, C)
-        if self.version >= 1.1:
-            radial_feat = radial_feat * xp.reshape(edge_cache.edge_env, (-1, 1, 1))
-
-        # === Step 6. Env FiLM conditioning (optional, fp32+) ===
-        if self.use_env_seed:
-            atype_flat = xp.reshape(atype_loc, (-1,))  # (N,)
-            spin_flat = (
-                xp.reshape(spin, (n_nodes, 3))
-                if (self.spin_embedding is not None and spin is not None)
-                else None
-            )
-            film = self.env_seed_embedding(
-                edge_cache=edge_cache,
-                atype_flat=atype_flat,
-                n_nodes=n_nodes,
-                spin=spin_flat,
-            )  # (N, 2*C)
-            scale_logits = film[:, : self.channels]  # (N, C)
-            shift_logits = film[:, self.channels :]  # (N, C)
-            scale_hat = (
-                self.film_scale_norm(scale_logits) if self.edge_norm else scale_logits
-            )  # (N, C)
-            shift_hat = (
-                self.film_shift_norm(shift_logits) if self.edge_norm else shift_logits
-            )  # (N, C)
-            scale_strength = xp.exp(
-                xp_asarray_nodetach(
-                    xp, self.film_scale_strength_log[...], device=device
-                )
-            )
-            shift_strength = xp.exp(
-                xp_asarray_nodetach(
-                    xp, self.film_shift_strength_log[...], device=device
-                )
-            )
-            scale = 1.0 + scale_strength * xp.tanh(scale_hat)  # (N, C)
-            shift = shift_strength * xp.tanh(shift_hat)  # (N, C)
-            x0_out = x0 * scale + shift
-
-        # === Step 7. Build backbone l=0 features ===
-        x = xp.concat(
-            [
-                xp.reshape(x0_out, (n_nodes, 1, 1, self.channels)),
-                xp.zeros(
-                    (n_nodes, ebed_dim_0 - 1, 1, self.channels),
-                    dtype=type_ebed.dtype,
-                    device=device,
-                ),
-            ],
-            axis=1,
-        )  # (N, D, 1, C)
-
-        # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
-        if self.use_gie:
-            # GIE only needs l>=1, slice radial_feat[:, 1:, :]
-            zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
-            spin_l1_message = (
-                self.spin_embedding.edge_l1(
-                    xp.reshape(spin, (n_nodes, 3)),
-                    xp.reshape(atype_loc, (-1,)),
-                    edge_cache,
-                )
-                if (self.spin_embedding is not None and spin is not None)
-                else None
-            )
-            x = (
-                x
-                + self.gie(
-                    n_nodes=n_nodes,
-                    edge_cache=edge_cache,
-                    radial_feat=radial_feat[:, 1:, :],
-                    zonal_coupling=zonal_coupling,
-                    spin_l1_message=spin_l1_message,
-                )[:, :, None, :]
-            )
-
-        # === Step 9. Add the on-site native spin l=1 to the backbone ===
-        # The neighbor-spin l=1 is aggregated inside GIE (degree-normalized like
-        # the geometry); the atom's own spin direction is added here, un-normalized.
-        if spin_vec is not None:
-            spin_l1_rows = xp_asarray_nodetach(xp, self._spin_l1_rows, device=device)
-            spin_l1_src = spin_vec[:, :, None, :]  # (N, 3, 1, C)
-            scatter_index = xp.broadcast_to(
-                xp.reshape(spin_l1_rows, (1, 3, 1, 1)), spin_l1_src.shape
-            )
-            x = xp_scatter_sum(x, 1, scatter_index, spin_l1_src)
-
-        # === Step 10. Fuse edge type features into radial features (fp32+) ===
-        radial_feat = radial_feat + xp.reshape(
-            edge_cache.edge_type_feat, (-1, 1, self.channels)
+        # ``comm_dict`` (multi-rank) is unsupported; ``_call_graph_common`` is
+        # the single validation owner and raises before touching the core.
+        x_scalar, _ = self._call_graph_common(
+            graph,
+            atype_flat,
+            nf=nf,
+            n_out_nodes=nf * nloc,
+            force_embedding=force_embedding,
+            charge_spin=charge_spin,
+            spin=spin,
+            comm_dict=comm_dict,
         )
-        radial_feat = xp.astype(radial_feat, get_xp_precision(xp, self.precision))
-        rad_feat_per_block = [
-            radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
-        ]  # list of (E, lmax+1, C)
-
-        # === Step 11. Convert to self.dtype and run blocks ===
-        # The block stage is skipped entirely when there are no interaction
-        # blocks (zero-block descriptor) or no valid edges, sparing the working
-        # edge-cache dtype cast that only the blocks consume.
-        x = xp.astype(x, get_xp_precision(xp, self.precision))  # (N, D, 1, C)
-        if force_embedding is not None:
-            x = x + xp.astype(force_embedding, get_xp_precision(xp, self.precision))
-        if self.blocks and edge_cache.src.shape[0] > 0:
-            edge_cache = edge_cache_to_dtype(
-                edge_cache, get_xp_precision(xp, self.precision)
-            )
-            x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
-
-        # === Step 12. Final l=0 output mixing ===
-        x_scalar = self._apply_readout(x, n_nodes)
-
-        # === Step 13. Reshape to (nf, nloc, channels) and return ===
-        descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))  # (nf, nloc, C)
+        # ``_call_graph_common`` returns (nf*nloc, 1, 1, channels) already in
+        # global precision; flatten the SO(3) singleton axes to (nf, nloc, C).
+        descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))
         return (
-            xp.astype(descriptor, get_xp_precision(xp, "global")),
+            descriptor,
             None,
             None,
             None,
@@ -1678,7 +1608,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # equals the whole node set and the slice is a no-op. Parallel
         # (single-frame): it drops the trailing ghost rows that only fed message
         # passing -- LAMMPS orders owned atoms before ghosts, so they lead.
-        x = x[:n_out_nodes]
+        x = x[:n_out_nodes, ...]
 
         # === Step 12. Final l=0 output mixing ===
         x_scalar = self._apply_readout(x, n_out_nodes)
@@ -1770,6 +1700,82 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )
         return xp.reshape(x_scalar, (nf, out_nloc, self.channels)), x
 
+    def _call_graph_common(
+        self,
+        graph: NeighborGraph,
+        atype_flat: Array,
+        *,
+        nf: int = 1,
+        n_out_nodes: int | None = None,
+        force_embedding: Array | None = None,
+        charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[Array, Array]:
+        """Shared graph-route trunk: comm validation + pair exclusion + core.
+
+        This is the ONE site applying pair exclusion (canonical
+        ``apply_pair_exclusion`` on the graph's ``edge_mask``); the edge-cache
+        core below never re-applies it. Both descriptor entries -- the
+        graph-native ``call_graph`` and the dense-nlist ``call`` adapter --
+        funnel through here so exclusion and comm validation live in exactly
+        one place.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph; ``edge_vec`` is the geometry leaf.
+        atype_flat
+            Flat node types with shape (N,).
+        nf
+            Frame count (charge/spin FiLM conditioning only).
+        n_out_nodes
+            Owned-node count kept for the read-out; ``None`` means all nodes.
+        force_embedding
+            Optional per-node force conditioning.
+        charge_spin
+            Optional charge/spin conditioning (already canonicalized).
+        spin
+            Optional per-node spin vectors.
+        comm_dict
+            Not supported; raises.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            Read-out with the SO(3) singleton axes still attached, shape
+            ``(n, 1, 1, channels)``, in global precision, and the multipole
+            tensor.
+
+        Raises
+        ------
+        NotImplementedError
+            When ``comm_dict`` is provided (no DPA4 lower path implements
+            cross-rank exchange).
+        """
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "multi-rank comm_dict inference is not supported by DPA4"
+            )
+        if self.exclude_types:
+            # Canonical NeighborGraph transform: exclusion lands on the
+            # graph's edge_mask exactly once; the edge-cache core below is
+            # called with has_exclude_types=False and never re-applies.
+            graph = apply_pair_exclusion(graph, atype_flat, self.emask)
+        n = atype_flat.shape[0] if n_out_nodes is None else n_out_nodes
+        return self._call_graph_impl(
+            atype_flat,
+            graph.edge_index,
+            graph.edge_vec,
+            graph.edge_mask,
+            nf=nf,
+            n_out_nodes=n,
+            has_exclude_types=False,
+            force_embedding=force_embedding,
+            charge_spin=charge_spin,
+            spin=spin,
+        )
+
     def call_graph(
         self,
         graph: NeighborGraph,
@@ -1804,27 +1810,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         NotImplementedError
             When ``comm_dict`` is provided.
         """
-        if comm_dict is not None:
-            raise NotImplementedError(
-                "multi-rank comm_dict inference is not supported on the "
-                "DPA4 graph route"
-            )
-        if self.exclude_types:
-            # Canonical NeighborGraph transform: exclusion lands on the
-            # graph's edge_mask exactly once; the edge-cache builder below
-            # is called with has_exclude_types=False and never re-applies.
-            graph = apply_pair_exclusion(graph, atype, self.emask)
         n_nodes = atype.shape[0]
-        x_scalar, _ = self._call_graph_impl(
-            atype,
-            graph.edge_index,
-            graph.edge_vec,
-            graph.edge_mask,
-            nf=1,
-            n_out_nodes=n_nodes,
-            has_exclude_types=False,
-        )
-        # ``_call_graph_impl`` returns the read-out with its SO(3) singleton
+        x_scalar, _ = self._call_graph_common(graph, atype, comm_dict=comm_dict)
+        # ``_call_graph_common`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
         # graph-seam contract shape (n_nodes, channels).
         xp = array_api_compat.array_namespace(x_scalar)
