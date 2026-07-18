@@ -4,13 +4,17 @@
 from dataclasses import (
     dataclass,
 )
+from pathlib import (
+    Path,
+)
 
 import pytest
 
 from .ci_split import (
+    _DurationSeed,
+    _load_durations,
     _split_items,
     _TestGroup,
-    _unit_key,
 )
 
 
@@ -72,21 +76,40 @@ class TestUnitConstruction:
         assert len({_owner(groups, item) for item in module_items}) == 1
 
     def test_explicit_group_joins_classes_across_modules(self) -> None:
-        first = _item(
-            "tests/test_a.py::FirstClass::test_one",
-            cls=FirstClass,
-            explicit_group="shared-model",
-        )
-        second = _item(
-            "tests/test_b.py::SecondClass::test_two",
-            cls=SecondClass,
-            explicit_group="shared-model",
-        )
-        groups = _split_items([first, second], {}, splits=2)
+        first_class = [
+            _item(
+                f"tests/test_a.py::FirstClass::test_{index}",
+                cls=FirstClass,
+                explicit_group="shared-model",
+            )
+            for index in range(2)
+        ]
+        second_class = [
+            _item(
+                f"tests/test_b.py::SecondClass::test_{index}",
+                cls=SecondClass,
+                explicit_group="shared-model",
+            )
+            for index in range(2)
+        ]
+        groups = _split_items(first_class + second_class, {}, splits=2)
 
-        assert _owner(groups, first) == _owner(groups, second)
+        assert len({_owner(groups, item) for item in first_class + second_class}) == 1
 
-    def test_unit_key_rejects_empty_explicit_group(self) -> None:
+    def test_partial_method_marker_is_rejected(self) -> None:
+        items = [
+            _item(
+                "tests/test_a.py::FirstClass::test_marked",
+                cls=FirstClass,
+                explicit_group="shared-model",
+            ),
+            _item("tests/test_a.py::FirstClass::test_unmarked", cls=FirstClass),
+        ]
+
+        with pytest.raises(pytest.UsageError, match="must mark every test"):
+            _split_items(items, {}, splits=2)
+
+    def test_empty_explicit_group_is_rejected(self) -> None:
         item = _item(
             "tests/test_a.py::FirstClass::test_one",
             cls=FirstClass,
@@ -94,7 +117,7 @@ class TestUnitConstruction:
         )
 
         with pytest.raises(pytest.UsageError, match="non-empty string"):
-            _unit_key(item)
+            _split_items([item], {}, splits=1)
 
 
 class TestUnitBalancing:
@@ -128,6 +151,21 @@ class TestUnitBalancing:
 
         assert [len(group.items) for group in groups] == [7, 7]
 
+    def test_committed_seed_weights_expensive_units_without_cache(self) -> None:
+        slow = [
+            _item(f"tests/test_slow.py::FirstClass::test_{index}", cls=FirstClass)
+            for index in range(2)
+        ]
+        fast = [_item("tests/test_fast.py::test_value")]
+        seed = _DurationSeed(
+            default_test_duration=1.0,
+            units={"class:tests/test_slow.py::FirstClass": 20.0},
+        )
+
+        groups = _split_items(slow + fast, {}, splits=2, seed=seed)
+
+        assert sorted(group.estimated_duration for group in groups) == [1.0, 20.0]
+
     def test_assignment_is_deterministic_and_preserves_collection_order(self) -> None:
         items = [_item(f"tests/test_{index}.py::test_value") for index in range(8)]
 
@@ -140,3 +178,12 @@ class TestUnitBalancing:
         for group in first:
             indices = [items.index(item) for item in group.items]
             assert indices == sorted(indices)
+
+    def test_malformed_legacy_duration_list_is_usage_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "durations.json"
+        path.write_text('[["valid", 1.0], ["broken"]]', encoding="utf-8")
+
+        with pytest.raises(pytest.UsageError, match="invalid legacy list"):
+            _load_durations(path)

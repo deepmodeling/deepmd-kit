@@ -57,16 +57,19 @@ jobs:
           # will cause durations to get out of sync between groups, the
           # combined durations will be loaded if available
           key: test4-durations-split-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.python }}-${{ matrix.group }}
-          # Warm-start the first grouped run from the existing per-test
-          # timings instead of treating every test as equally expensive.
           restore-keys: |
             test4-durations-combined-${{ matrix.python }}-${{ github.sha }}
             test4-durations-combined-${{ matrix.python }}
-            test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
-            test2-durations-combined-${{ matrix.python }}
+      - name: Prepare independent duration inputs
+        run: |
+          for output in main tf2 jax2tf consistent_tf2; do
+            if [ -f .test_durations ]; then
+              cp .test_durations ".test_durations_${output}"
+            fi
+          done
       # Keep fixture-sharing classes/modules together, then balance those
       # indivisible units by their recorded durations.
-      - run: python -m pytest -p source.tests.ci_split --cov=deepmd source/tests --ignore=source/tests/tf2 --ci-splits 12 --ci-group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations
+      - run: python -m pytest -p source.tests.ci_split --cov=deepmd source/tests --ignore=source/tests/tf2 --ci-splits 12 --ci-group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations_main
         env:
           NUM_WORKERS: 0
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
@@ -74,29 +77,38 @@ jobs:
       - name: Test TF2 eager mode
         run: |
           run_pytest_allow_no_tests() {
+            local durations_path=$1
+            shift
             set +e
-            pytest "$@"
+            pytest "$@" \
+              --store-durations \
+              --clean-durations \
+              --durations-path="$durations_path"
             local status=$?
             set -e
             if [ "$status" -eq 5 ]; then
               # pytest-split may leave an individual shard with no selected
               # tests after path/-k filtering. Other shards still cover the
               # selected tests, so do not fail the whole matrix for exit 5.
+              printf '{}\n' > "$durations_path"
               return 0
             fi
             return "$status"
           }
 
-          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+          run_pytest_allow_no_tests .test_durations_tf2 \
+            --cov=deepmd --cov-append \
             source/tests/tf2 \
             --splits 12 \
             --group ${{ matrix.group }}
-          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+          run_pytest_allow_no_tests .test_durations_jax2tf \
+            --cov=deepmd --cov-append \
             source/tests/consistent/io/test_io.py \
             source/jax2tf_tests \
             --splits 12 \
             --group ${{ matrix.group }}
-          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+          run_pytest_allow_no_tests .test_durations_consistent_tf2 \
+            --cov=deepmd --cov-append \
             source/tests/consistent \
             -k tf2 \
             --splits 12 \
@@ -106,7 +118,8 @@ jobs:
           DP_TEST_TF2_ONLY: 1
           DP_DTYPE_PROMOTION_STRICT: 1
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
-      - run: mv .test_durations .test_durations_${{ matrix.group }}
+      - name: Combine shard durations
+        run: jq -s 'reduce .[] as $durations ({}; . * $durations)' .test_durations_main .test_durations_tf2 .test_durations_jax2tf .test_durations_consistent_tf2 > .test_durations_${{ matrix.group }}
       - name: Upload partial durations
         uses: actions/upload-artifact@v7
         with:
@@ -139,16 +152,14 @@ jobs:
           # restore-key will if there's a previous stored durations file,
           # so cache will both be loaded and stored
           key: test4-durations-combined-${{ matrix.python }}-${{ github.sha }}
-          restore-keys: |
-            test4-durations-combined-${{ matrix.python }}
-            test2-durations-combined-${{ matrix.python }}
+          restore-keys: test4-durations-combined-${{ matrix.python }}
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: split-${{ matrix.python }}-*
           merge-multiple: true
       - name: Combine test durations
-        run: jq -s add .test_durations_* > .test_durations
+        run: jq -s 'reduce .[] as $durations ({}; . * $durations)' .test_durations_* > .test_durations
   pass:
     name: Pass testing Python
     needs: [testpython, update_durations]

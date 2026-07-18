@@ -20,6 +20,7 @@ from __future__ import (
 import heapq
 import json
 import math
+import sys
 from collections import (
     OrderedDict,
 )
@@ -55,7 +56,17 @@ class _SplitItem(Protocol):
     nodeid: str
     cls: type[object] | None
 
-    def get_closest_marker(self, name: str) -> pytest.Mark | None: ...
+    def get_closest_marker(self, name: str) -> pytest.Mark | None:
+        """Return the closest marker with the requested name."""
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class _DurationSeed:
+    """Version-controlled estimates used before a runtime cache exists."""
+
+    default_test_duration: float = 1.0
+    units: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,12 +104,8 @@ def _explicit_group_name(item: _SplitItem) -> str | None:
     return name
 
 
-def _unit_key(item: _SplitItem) -> str:
-    """Return a deterministic fixture-sharing unit key for a pytest item."""
-    explicit_name = _explicit_group_name(item)
-    if explicit_name is not None:
-        return f"explicit:{explicit_name}"
-
+def _base_unit_key(item: _SplitItem) -> str:
+    """Return the class/module unit that must never be split."""
     # nodeid contains a repository-relative path, unlike item.path which may
     # contain runner-specific checkout prefixes.
     path = item.nodeid.split("::", maxsplit=1)[0]
@@ -120,25 +127,68 @@ def _relevant_durations(
 
 
 def _build_units(
-    items: list[_SplitItem], durations: dict[str, float]
+    items: list[_SplitItem],
+    durations: dict[str, float],
+    seed: _DurationSeed,
 ) -> list[_TestUnit]:
-    """Aggregate test items and their estimated durations into stable units."""
+    """Build complete class/module units, then merge explicit unit groups."""
     relevant = _relevant_durations(items, durations)
-    fallback_duration = sum(relevant.values()) / len(relevant) if relevant else 1.0
-    units: OrderedDict[str, _TestUnit] = OrderedDict()
+    fallback_duration = (
+        sum(relevant.values()) / len(relevant)
+        if relevant
+        else seed.default_test_duration
+    )
+    base_units: OrderedDict[str, _TestUnit] = OrderedDict()
     for item in items:
-        key = _unit_key(item)
-        unit = units.setdefault(key, _TestUnit(key=key))
+        key = _base_unit_key(item)
+        unit = base_units.setdefault(key, _TestUnit(key=key))
         unit.items.append(item)
-        unit.estimated_duration += relevant.get(item.nodeid, fallback_duration)
-    return list(units.values())
+
+    for unit in base_units.values():
+        known_durations = [
+            relevant[item.nodeid] for item in unit.items if item.nodeid in relevant
+        ]
+        if known_durations:
+            missing_count = len(unit.items) - len(known_durations)
+            unit.estimated_duration = sum(known_durations) + (
+                missing_count * fallback_duration
+            )
+        else:
+            unit.estimated_duration = seed.units.get(
+                unit.key,
+                len(unit.items) * seed.default_test_duration,
+            )
+
+    merged_units: OrderedDict[str, _TestUnit] = OrderedDict()
+    for unit in base_units.values():
+        explicit_names = [
+            name
+            for item in unit.items
+            if (name := _explicit_group_name(item)) is not None
+        ]
+        if explicit_names and len(explicit_names) != len(unit.items):
+            raise pytest.UsageError(
+                "ci_split_group must mark every test in its class/module unit"
+            )
+        if len(set(explicit_names)) > 1:
+            raise pytest.UsageError(
+                "a class/module unit cannot use multiple ci_split_group names"
+            )
+        key = f"explicit:{explicit_names[0]}" if explicit_names else unit.key
+        merged = merged_units.setdefault(key, _TestUnit(key=key))
+        merged.items.extend(unit.items)
+        merged.estimated_duration += unit.estimated_duration
+    return list(merged_units.values())
 
 
 def _split_items(
-    items: list[_SplitItem], durations: dict[str, float], splits: int
+    items: list[_SplitItem],
+    durations: dict[str, float],
+    splits: int,
+    seed: _DurationSeed | None = None,
 ) -> list[_TestGroup]:
     """Assign indivisible units using deterministic LPT bin packing."""
-    units = _build_units(items, durations)
+    units = _build_units(items, durations, seed or _DurationSeed())
     item_index = {id(item): index for index, item in enumerate(items)}
 
     # The group index breaks equal-duration ties deterministically.  Sorting
@@ -171,14 +221,19 @@ def _split_items(
 def _load_durations(path: Path) -> dict[str, float]:
     """Load pytest-split's duration cache, including its legacy list format."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, json.JSONDecodeError) as exc:
         raise pytest.UsageError(f"cannot read duration cache {path}: {exc}") from exc
 
     if isinstance(data, list):
-        data = dict(data)
+        try:
+            data = dict(data)
+        except (TypeError, ValueError) as exc:
+            raise pytest.UsageError(
+                f"duration cache {path} contains an invalid legacy list"
+            ) from exc
     if not isinstance(data, dict):
         raise pytest.UsageError(f"duration cache {path} must contain a JSON object")
     try:
@@ -187,6 +242,30 @@ def _load_durations(path: Path) -> dict[str, float]:
         raise pytest.UsageError(
             f"duration cache {path} contains a non-numeric duration"
         ) from exc
+
+
+def _load_duration_seed(path: Path) -> _DurationSeed:
+    """Load the version-controlled fallback for the first grouped CI run."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise pytest.UsageError(f"cannot read duration seed {path}: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("units"), dict):
+        raise pytest.UsageError(f"duration seed {path} has an invalid schema")
+    try:
+        default = float(data["default_test_duration"])
+        units = {str(key): float(value) for key, value in data["units"].items()}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise pytest.UsageError(
+            f"duration seed {path} contains a non-numeric duration"
+        ) from exc
+    if default <= 0 or not math.isfinite(default):
+        raise pytest.UsageError(
+            f"duration seed {path} has an invalid default_test_duration"
+        )
+    if any(value <= 0 or not math.isfinite(value) for value in units.values()):
+        raise pytest.UsageError(f"duration seed {path} has an invalid unit duration")
+    return _DurationSeed(default_test_duration=default, units=units)
 
 
 def pytest_addoption(parser: Parser) -> None:
@@ -238,7 +317,11 @@ def pytest_collection_modifyitems(config: Config, items: list[nodes.Item]) -> No
 
     durations_path = Path(config.getoption("durations_path"))
     durations = _load_durations(durations_path)
-    groups = _split_items(items, durations, splits)
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    seed = _load_duration_seed(
+        Path(__file__).with_name(f"ci_split_seed_{python_version}.json")
+    )
+    groups = _split_items(items, durations, splits, seed)
     selected = groups[group_index - 1]
     selected_ids = {id(item) for item in selected.items}
     deselected = [item for item in items if id(item) not in selected_ids]
@@ -247,10 +330,10 @@ def pytest_collection_modifyitems(config: Config, items: list[nodes.Item]) -> No
 
     reporter = config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
-        cache_state = "warm" if durations else "empty"
+        estimate_source = "runtime cache" if durations else "committed seed"
         reporter.write_line(
             "[deepmd-ci-split] "
             f"group {group_index}/{splits}: {len(selected.items)} tests in "
             f"{selected.unit_count} units, estimated "
-            f"{selected.estimated_duration:.2f}s ({cache_state} cache)"
+            f"{selected.estimated_duration:.2f}s ({estimate_source})"
         )
