@@ -50,10 +50,17 @@ from deepmd.pt_expt.model.ener_model import (
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
+from deepmd.pt_expt.model.model import (
+    BaseModel,
+)
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
     build_synthetic_graph_inputs,
     deserialize_to_file,
+)
+
+from ...common.dpmodel.test_dpa4_call_graph import (
+    _jitter_zero_arrays,
 )
 
 # Small fp64 DPA4 config (channels 16, n_radial 8, lmax 2, mmax 1,
@@ -106,8 +113,23 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     model.eval()
 
     # 1. Serialize → deserialize_to_file (compiles and packs both artifacts).
+    #
+    # DPA4 deliberately zero-initializes several residual output
+    # projections (see ``_jitter_zero_arrays``'s docstring), so a fresh,
+    # untrained model is architecturally edge-INDEPENDENT: force/virial are
+    # ~0 regardless of edge handling. That would make the AOTI-vs-eager
+    # parity below vacuous (it couldn't catch an inductor miscompile of the
+    # edge scatter/index_add path) for either lower kind, so the jitter is
+    # applied uniformly to both parametrizations.
+    data = {"model": model.serialize()}
+    _jitter_zero_arrays(data["model"], np.random.default_rng(99))
+    # Rebuild the eager reference model from the SAME jittered dict that
+    # gets frozen below, so the AOTI artifact and the eager reference
+    # compared against it are the same (edge-sensitive) model.
+    model = BaseModel.deserialize(data["model"]).to("cpu")
+    model.eval()
     pt2_path = str(tmp_path / f"test_dpa4_{expected_input_kind}.pt2")
-    deserialize_to_file(pt2_path, {"model": model.serialize()}, lower_kind=lower_kind)
+    deserialize_to_file(pt2_path, data, lower_kind=lower_kind)
     assert os.path.exists(pt2_path)
 
     # 2. ZIP layout + metadata sanity. PyTorch's strict layout puts our
@@ -149,6 +171,15 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
             aparam=aparam,
             do_atomic_virial=False,
             charge_spin=charge_spin,
+        )
+
+        # Anti-vacuity guard: fresh DPA4 is edge-independent (forces ~0);
+        # confirm the jitter above made the eager reference force
+        # non-trivial, else the AOTI parity below would pass trivially.
+        f_ref = eager_out["energy_derv_r"].detach().cpu().numpy()
+        assert np.abs(f_ref).max() > 1e-6, (
+            f"eager reference force is near-zero ({np.abs(f_ref).max():.3e}); "
+            f"jitter not effective -- AOTI parity check would be vacuous"
         )
 
         artifact_out = regular(
@@ -221,6 +252,15 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
             do_grad_c=model.do_grad_c("energy"),
             do_atomic_virial=True,
             local=True,
+        )
+
+        # Anti-vacuity guard: fresh DPA4 is edge-independent (forces ~0);
+        # confirm the jitter above made the eager reference force
+        # non-trivial, else the AOTI parity below would pass trivially.
+        f_ref = eager_out["force"].detach().cpu().numpy()
+        assert np.abs(f_ref).max() > 1e-6, (
+            f"eager reference force is near-zero ({np.abs(f_ref).max():.3e}); "
+            f"jitter not effective -- AOTI parity check would be vacuous"
         )
 
         artifact_out = regular(
