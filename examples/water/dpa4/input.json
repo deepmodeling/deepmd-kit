@@ -72,6 +72,7 @@
   },
   "training": {
     "stat_file": "./dpa4.hdf5",
+    "stat_file_mode": "update",
     "training_data": {
       "systems": [
         "../data/data_0",

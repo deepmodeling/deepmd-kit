@@ -370,6 +370,15 @@ class EnvMatStatSe(EnvMatStat):
                     env_mats[f"a_{type_i}"] = dd[:, 1:]
                 yield self.compute_stat(env_mats)
 
+    def get_stat_keys(self) -> list[str]:
+        """Get the dataset names required for a complete statistics cache."""
+        components = ("r", "a") if self.last_dim == 4 else ("r",)
+        return [
+            f"{component}_{type_i}"
+            for type_i in range(self.descriptor.get_ntypes())
+            for component in components
+        ]
+
     def get_hash(self) -> str:
         """Get the hash of the environment matrix.
 
