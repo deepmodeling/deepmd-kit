@@ -24,12 +24,6 @@ from deepmd.common import (
     make_default_mesh,
     rglob_sys_str,
 )
-from deepmd.dpmodel.utils.lmdb_data import (
-    LmdbDataReader,
-    SameNlocBatchSampler,
-    compute_block_targets,
-    is_lmdb,
-)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -59,6 +53,12 @@ def validate_lmdb_systems(
     LMDB stores multiple logical systems inside one database, so mixing an
     LMDB path with other expanded paths is ambiguous and unsupported.
     """
+    # Import after data_system has initialized. Importing the dpmodel package
+    # at module load time re-enters this module through descriptor utilities.
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
     lmdb_paths = [path for path in systems if is_lmdb(path)]
     if not lmdb_paths:
         return None
@@ -733,6 +733,14 @@ class LmdbDataSystem:
         auto_prob_style: str | None = None,
         seed: int | None = None,
     ) -> None:
+        # Keep the framework-agnostic LMDB implementation lazy so importing a
+        # legacy backend cannot create a data_system <-> dpmodel import cycle.
+        from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbDataReader,
+            SameNlocBatchSampler,
+            compute_block_targets,
+        )
+
         if not type_map:
             raise ValueError(
                 "LMDB datasets require a non-empty model/type_map because "
@@ -1339,6 +1347,12 @@ def process_systems(
     result_systems: list of str
         The valid systems
     """
+    # See validate_lmdb_systems: this must remain a local import because
+    # deepmd.dpmodel initializes descriptors that depend on data_system.
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
     # Normalize input to a list of paths to search
     if isinstance(systems, str):
         search_paths = [systems]
