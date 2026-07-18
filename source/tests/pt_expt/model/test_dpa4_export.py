@@ -1,18 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Model-level freeze test for the DPA4/SeZM energy model.
 
-Mirrors the DPA3 ``test_export_with_comm`` round-trip: a DPA4 model is a
-GNN (``has_message_passing_across_ranks() == True``), so
-``deserialize_to_file`` produces a .pt2 archive containing TWO compiled
-artifacts:
-  * the regular ``forward_lower`` (no comm), packed at the top of the ZIP;
-  * a ``forward_lower_with_comm`` variant nested at
-    ``model/extra/forward_lower_with_comm.pt2``.
+A DPA4 model is a message-passing GNN (``has_message_passing() == True``),
+but no lower path implements cross-rank ghost-feature exchange: the dense
+``call`` never forwards ``comm_dict`` to the interaction blocks, and the
+NeighborGraph route raises on it. Consequently
+``has_message_passing_across_ranks()`` is False, and
+``deserialize_to_file`` produces a .pt2 archive with a SINGLE compiled
+artifact (no ``forward_lower_with_comm`` sidecar) — multi-rank inference
+must fail fast at the C++ dispatch instead of silently skipping the
+exchange.
 
 This test verifies:
-  1. The .pt2 archive is produced and both artifacts are present.
-  2. ``metadata.json`` carries the correct ``type_map``/``rcut`` and
-     ``has_message_passing: true`` (DPA4 is a message-passing descriptor).
+  1. The .pt2 archive is produced and the with-comm artifact is ABSENT.
+  2. ``metadata.json`` carries the correct ``type_map``/``rcut``,
+     ``has_message_passing: true`` (DPA4 is a message-passing descriptor)
+     and ``has_comm_artifact: false`` (no lower path implements the
+     cross-rank exchange).
   3. The regular artifact loads via ``aoti_load_package``.
   4. The loaded artifact's ``forward_common_lower`` output matches the
      eager model (fp64 AOTI parity, rtol 1e-10).
@@ -73,8 +77,9 @@ _DPA4_CONFIG = {
     reason="AOTInductor compile is slow (minutes); run locally only by default.",
 )
 def test_dpa4_freeze_to_pt2(tmp_path) -> None:
-    """End-to-end: DPA4 model freezes to a dual-artifact .pt2 and the
-    regular artifact reproduces the eager ``forward_common_lower``.
+    """End-to-end: DPA4 model freezes to a single-artifact .pt2 (no
+    with-comm sidecar) and the regular artifact reproduces the eager
+    ``forward_common_lower``.
     """
     model = get_model(_DPA4_CONFIG)
     model.to("cpu")
@@ -90,14 +95,16 @@ def test_dpa4_freeze_to_pt2(tmp_path) -> None:
     with zipfile.ZipFile(pt2_path, "r") as zf:
         names = set(zf.namelist())
         meta = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
-        assert "model/extra/forward_lower_with_comm.pt2" in names, (
-            f"with-comm artifact missing; names={sorted(names)}"
+        assert "model/extra/forward_lower_with_comm.pt2" not in names, (
+            f"with-comm artifact present but no lower path implements "
+            f"cross-rank exchange; names={sorted(names)}"
         )
     assert meta["type_map"] == _DPA4_CONFIG["type_map"]
     assert meta["rcut"] == model.get_rcut()
-    # DPA4 is a message-passing GNN descriptor.
+    # DPA4 is a message-passing GNN descriptor, but no lower path
+    # implements the cross-rank exchange (see module docstring).
     assert meta["has_message_passing"] is True
-    assert meta["has_comm_artifact"] is True
+    assert meta["has_comm_artifact"] is False
 
     # 3. The regular artifact loads.
     from torch._inductor import (

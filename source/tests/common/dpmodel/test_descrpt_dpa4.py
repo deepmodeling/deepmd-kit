@@ -94,12 +94,15 @@ class TestDescrptDPA4:
 
     def test_message_passing_semantics(self) -> None:
         # SeZM always resolves ghost neighbours on the lower path, so it always
-        # reports message passing; cross-rank ghost exchange is needed only when
-        # zone bridging is disabled (a BridgingSwitch cannot be reproduced by a
-        # single rank for ghost owners).
+        # reports message passing. But no lower path (dense or graph) actually
+        # implements the cross-rank ghost-feature exchange: the dense ``call``
+        # never forwards ``comm_dict`` to the interaction blocks, and the
+        # NeighborGraph route raises on it. So no with-comm artifact is ever
+        # exported, and multi-rank inference fails fast instead of silently
+        # dropping the exchange, regardless of zone-bridging configuration.
         dd = make_descriptor()
         assert dd.has_message_passing() is True
-        assert dd.has_message_passing_across_ranks() is True
+        assert dd.has_message_passing_across_ranks() is False
         dd_bridge = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
         assert dd_bridge.has_message_passing() is True
         assert dd_bridge.has_message_passing_across_ranks() is False

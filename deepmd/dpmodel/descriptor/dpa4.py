@@ -2445,16 +2445,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return True
 
     def has_message_passing_across_ranks(self) -> bool:
-        """Whether multi-rank inference needs cross-rank ghost-feature exchange.
+        """Whether multi-rank inference needs a with-comm artifact.
 
-        SeZM reads ghost-neighbour features at every interaction block, so a
-        domain-decomposed run must exchange them through ``border_op``. Source
-        Freeze Propagation bridging is excluded: its per-node gate folds a
-        node's entire outgoing-edge set, which a single rank cannot observe for
-        ghost owners, so the edge-based with-comm artifact is not exported for
-        bridging models and multi-rank inference fails fast instead.
+        SeZM physically reads ghost-neighbour features at every interaction
+        block, but NO lower path implements the cross-rank exchange: the
+        dense ``call`` never forwards ``comm_dict`` to the blocks and the
+        graph route raises on it. Answering False keeps the freeze from
+        emitting a with-comm artifact with dead comm inputs; combined with
+        ``has_message_passing() is True`` the C++ dispatch then fails fast
+        on multi-rank runs instead of silently skipping the exchange.
         """
-        return self.bridging_switch is None
+        return False
 
     def uses_graph_lower(self) -> bool:
         """Whether this descriptor supports the sel-free NeighborGraph lower.
