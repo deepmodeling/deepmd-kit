@@ -209,3 +209,28 @@ def test_uses_graph_lower_feature_gates() -> None:
         assert dd.uses_graph_lower() is True
         setattr(dd, attr, object())  # any non-None sentinel
         assert dd.uses_graph_lower() is False, attr
+
+
+def test_dpa4_ener_fitting_call_graph_matches_dense() -> None:
+    # The inherited flat-N call_graph must be bit-identical to the dense
+    # call for the custom GLU fitting nets.
+    from deepmd.dpmodel.fitting.dpa4_ener import (
+        SeZMEnergyFittingNet,
+    )
+
+    rng = np.random.default_rng(11)
+    ntypes, nf, nloc, nd = 3, 2, 6, 16
+    ft = SeZMEnergyFittingNet(
+        ntypes=ntypes,
+        dim_descrpt=nd,
+        neuron=[24, 24],
+        precision="float64",
+        seed=5,
+    )
+    dd = rng.standard_normal((nf, nloc, nd))
+    atype = rng.integers(0, ntypes, size=(nf, nloc))
+    ref = np.asarray(ft(dd, atype)["energy"])
+    got = np.asarray(
+        ft.call_graph(dd.reshape(nf * nloc, nd), atype.reshape(-1))["energy"]
+    )
+    np.testing.assert_allclose(got.reshape(ref.shape), ref, rtol=1e-12, atol=1e-14)
