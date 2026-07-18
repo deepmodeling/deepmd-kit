@@ -671,9 +671,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         -------
         torch.nn.Module
             A traced module whose ``forward`` accepts ``(atype, n_node,
-            edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin,
-            send_list, send_proc, recv_proc, send_num, recv_num,
-            communicator, nlocal, nghost, n_local)`` and returns a dict with the
+            n_local, edge_index, edge_vec, edge_mask, destination_order,
+            destination_row_ptr, source_order, source_row_ptr, fparam,
+            aparam, charge_spin, send_list, send_proc, recv_proc, send_num,
+            recv_num, communicator, nlocal, nghost)`` and returns a dict with the
             SAME public keys as :meth:`forward_lower_graph_exportable`
             (``atom_energy``, ``energy``, ``force``, ``virial``,
             ``atom_virial`` when ``do_atomic_virial``).

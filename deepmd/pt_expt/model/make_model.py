@@ -547,7 +547,15 @@ def make_model(
             n_node
                 (nf,) per-frame total node counts, including halo nodes.
             n_local
-                (nf,) per-frame owned node counts.
+                (nf,) per-frame owned node counts for multi-rank inference.
+                When given, ghost rows (index ``>= n_local[frame]``) are
+                excluded from the DIFFERENTIATED ``<var>_redu`` (and thus
+                from force/virial/atom-virial, which are ``grad`` of that
+                reduction) -- each ghost atom is owned, and counted, on
+                another rank. The per-node output (``<var>``) itself stays
+                FULL/unmasked. ``None`` (default) is the single-rank/
+                all-owned behavior. See
+                :func:`~deepmd.pt_expt.model.edge_transform_output.fit_output_to_model_output_graph`.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
@@ -577,16 +585,6 @@ def make_model(
             charge_spin
                 charge/spin conditioning. Ignored in PR-A; accepted for ABI
                 stability with charge/spin-conditioned descriptors.
-            n_local
-                Per-rank local (owned) atom counts for multi-rank inference,
-                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
-                are excluded from the DIFFERENTIATED ``<var>_redu`` (and thus
-                from force/virial/atom-virial, which are ``grad`` of that
-                reduction) -- each ghost atom is owned, and counted, on
-                another rank. The per-node output (``<var>``) itself stays
-                FULL/unmasked. ``None`` (default) is the single-rank/
-                all-owned behavior. See
-                :func:`~deepmd.pt_expt.model.edge_transform_output.fit_output_to_model_output_graph`.
             comm_dict
                 MPI communication metadata for parallel inference. ``None``
                 (default) for non-parallel inference/training. Forwarded to

@@ -240,6 +240,19 @@ def main():
         os.environ.get("DP_GEN_UNDER_SANITIZER", "") == "lsan"
         or "lsan" in os.environ.get("LD_PRELOAD", "").lower()
     ):
+        # remove any graph artifacts left by a previous non-LSAN run of a
+        # REUSED workspace: skipping regeneration alone leaves them present,
+        # and the C++ tests' skip_if_artifact_missing would then execute
+        # them under LSAN and hit the very crash this branch avoids
+        for name in (
+            "deeppot_dpa2_graph_nlist_ref.pt2",
+            "deeppot_dpa2_graph.pt2",
+            "deeppot_dpa2_graph.expected",
+            "deeppot_dpa2_graph_aparam.pt2",
+        ):
+            stale = os.path.join(base_dir, name)
+            if os.path.exists(stale):
+                os.remove(stale)
         print(  # noqa: T201
             "\n// Skipping DPA2 graph section under LeakSanitizer "
             "(AOTInductor .pt2 backward is incompatible with the LSAN runtime; "

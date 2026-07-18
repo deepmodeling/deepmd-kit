@@ -137,6 +137,15 @@ class Border : public torch::autograd::Function<Border> {
                     world, &request);
         }
         if (nsend) {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+          // the index_select pack above is an asynchronous kernel launch;
+          // the pre-loop fence only ordered work launched BEFORE it, so
+          // CUDA-aware MPI must be ordered behind the pack explicitly or
+          // MPI_Send races with stale device data
+          if (cuda_aware != 0 && send_g1_tensor.is_cuda()) {
+            DPErrcheck(gpuDeviceSynchronize());
+          }
+#endif
           MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
                    world);
         }
@@ -329,6 +338,15 @@ class Border : public torch::autograd::Function<Border> {
                     world, &request);
         }
         if (nsend) {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+          // chained reverse communication: a PRIOR iteration's asynchronous
+          // index_add_ may write rows this iteration sends, and the pre-loop
+          // fence cannot order those later launches -- fence before letting
+          // CUDA-aware MPI read the device buffer
+          if (cuda_aware != 0 && d_local_g1_tensor.is_cuda()) {
+            DPErrcheck(gpuDeviceSynchronize());
+          }
+#endif
           MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
                    world);
         }

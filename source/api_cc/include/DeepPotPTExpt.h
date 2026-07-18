@@ -633,7 +633,8 @@ class DeepPotPTExpt : public DeepPotBackend {
    *        ``.pt2`` artifact with comm tensors appended.
    *
    * Positional AOTI input order mirrors ``run_model_graph``: ``(atype,
-   * n_node, edge_index, edge_vec, edge_mask, [fparam], [aparam],
+   * n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
+   * destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
    * [charge_spin], comm_tensors...)``.  The graph is built on the
    * EXTENDED region (``fold_to_local=false``): ghost nodes are distinct and
    * their embeddings are filled in-place by ``border_op`` inside the

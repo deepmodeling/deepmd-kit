@@ -187,9 +187,11 @@ def forbidden_dims_from_model(
         for _d in _p.shape
         if _d > 1
     }
-    for _getter in (model.get_dim_fparam, model.get_dim_aparam):
+    for _getter_name in ("get_dim_fparam", "get_dim_aparam"):
         try:
-            _dim = _getter()
+            # resolve inside the try: a model without the accessor must fall
+            # through the best-effort path, not raise during tuple building
+            _dim = getattr(model, _getter_name)()
             if _dim > 1:
                 forbidden.add(int(_dim))
         except Exception:
