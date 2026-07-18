@@ -95,7 +95,14 @@ def make_message_sensitive_descriptor(seed: int = 99) -> DescrptDPA4:
 def test_call_graph_matches_dense() -> None:
     # Same physical edges (non-binding sel) => same descriptor within fp64
     # scatter-reassociation tolerance; output is flat (N, C).
-    dd = make_descriptor()
+    #
+    # NOTE: uses make_message_sensitive_descriptor(), not the plain
+    # make_descriptor() fixture -- see that helper's docstring. A bare
+    # make_descriptor() is architecturally edge-independent (multiple
+    # zero-init residual output projections), so this parity check would
+    # pass trivially (0.0 == 0.0) regardless of whether call_graph's edge
+    # handling is correct.
+    dd = make_message_sensitive_descriptor()
     coord, atype, nlist = make_inputs()
     nf, nloc = atype.shape
     out_dense = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
@@ -108,7 +115,11 @@ def test_call_graph_matches_dense() -> None:
 
 def test_call_graph_matches_dense_permuted_edges() -> None:
     # Arbitrary edge order (the graph contract) must not change the result.
-    dd = make_descriptor()
+    #
+    # NOTE: uses make_message_sensitive_descriptor() -- see
+    # test_call_graph_matches_dense's NOTE above; a bare make_descriptor()
+    # is edge-independent, so permuting its (irrelevant) edges is vacuous.
+    dd = make_message_sensitive_descriptor()
     coord, atype, nlist = make_inputs()
     nf, nloc = atype.shape
     out_dense = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
@@ -116,6 +127,33 @@ def test_call_graph_matches_dense_permuted_edges() -> None:
     np.testing.assert_allclose(
         out_graph.reshape(nf, nloc, -1), out_dense, rtol=1e-10, atol=1e-12
     )
+
+
+def test_message_sensitive_fixture_is_edge_dependent() -> None:
+    """Pin that make_message_sensitive_descriptor() is edge-dependent.
+
+    The two parity tests above (and the exclude_types test below) are only
+    meaningful because make_message_sensitive_descriptor() jitters DPA4's
+    zero-init residual projections so the output actually depends on
+    edges/messages -- a bare make_descriptor() does not (see
+    _jitter_zero_arrays's docstring). This test durably pins that
+    edge-sensitivity: it runs call_graph once as-is and once with every
+    edge masked out, and asserts the outputs differ by a non-trivial
+    margin. If a future change to the fixture (or to DPA4's zero-init
+    scheme) silently made it edge-independent again, this test fails loud
+    instead of the parity tests above going quietly vacuous.
+    """
+    dd = make_message_sensitive_descriptor()
+    coord, atype, nlist = make_inputs()
+    graph = make_graph_from_nlist(coord, nlist)
+    graph_no_edges = dataclasses.replace(
+        graph, edge_mask=np.zeros_like(graph.edge_mask)
+    )
+    out_with_edges, _ = dd.call_graph(graph, atype.reshape(-1))
+    out_no_edges, _ = dd.call_graph(graph_no_edges, atype.reshape(-1))
+    out_with_edges = np.asarray(out_with_edges)
+    out_no_edges = np.asarray(out_no_edges)
+    assert np.max(np.abs(out_with_edges - out_no_edges)) > 1e-6
 
 
 def test_call_graph_exclude_types_matches_dense() -> None:
