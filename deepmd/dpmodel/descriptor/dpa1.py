@@ -2198,6 +2198,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
 
 class NeighborGatedAttention(NativeOP):
+    r"""Gated neighbor aggregation :math:`h_i'=h_i+\sum_j a_{ij}v_{ij}`."""
+
     def __init__(
         self,
         layer_num: int,
@@ -2331,6 +2333,21 @@ class NeighborGatedAttention(NativeOP):
 
 
 class NeighborGatedAttentionLayer(NativeOP):
+    r"""Single gated neighbor-attention residual layer.
+
+    For neighbor features :math:`\mathbf X`, the layer applies gated attention,
+    adds a residual connection, and normalizes the result:
+
+    .. math::
+        \mathbf X' = \operatorname{LayerNorm}\!\left(
+        \mathbf X + \operatorname{GatedAttention}
+        (\mathbf X, \mathbf M, \mathbf R, \mathbf S)\right),
+
+    where :math:`\mathbf M` is the neighbor mask and the optional
+    :math:`\mathbf R` and :math:`\mathbf S` supply directional and switching
+    information.
+    """
+
     def __init__(
         self,
         nnei: int,
@@ -2390,6 +2407,12 @@ class NeighborGatedAttentionLayer(NativeOP):
         input_r: Array | None = None,
         sw: Array | None = None,
     ) -> Array:
+        r"""Apply attention, its residual connection, and layer normalization.
+
+        .. math::
+            H_{\mathrm{out}}=\operatorname{LayerNorm}
+            \left(H+\operatorname{GatedAttention}(H,M,R,S)\right).
+        """
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -2439,6 +2462,35 @@ class NeighborGatedAttentionLayer(NativeOP):
 
 
 class GatedAttentionLayer(NativeOP):
+    r"""Projected gated self-attention output.
+
+    With projected queries, keys, and values, the layer returns only the
+    attention output (the residual connection is applied by
+    :class:`NeighborGatedAttentionLayer`):
+
+    .. math::
+        Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
+        L=\alpha\,\widetilde Q\widetilde K^T,\qquad
+        S_{ij}=s_i s_j,
+
+    .. math::
+
+        \overline L_{ij}=(L_{ij}+c)S_{ij}-c,\qquad
+        \overline A_{ij}=\operatorname{softmax}_{j}(\overline L_{ij}),
+        \qquad A_{ij}=S_{ij}\overline A_{ij},
+
+        O=\operatorname{reshape}((A\odot R)V)W_{\mathrm{out}}.
+
+    Here the tildes denote optional per-vector normalization of :math:`Q`,
+    :math:`K`, and :math:`V`.  The implementation uses
+    :math:`\alpha=(d\,s)^{-1/2}` for ``scaling_factor`` :math:`s`, or the
+    configured ``temperature`` value when it is provided.  Neighbor masks and
+    cutoff smoothing modifies both the logits before softmax and, through
+    :math:`S`, the attention amplitude afterward.  Without smoothing, invalid
+    keys are masked before softmax and invalid query rows are zeroed.  The
+    optional angular matrix :math:`R` is applied after these operations.
+    """
+
     def __init__(
         self,
         nnei: int,

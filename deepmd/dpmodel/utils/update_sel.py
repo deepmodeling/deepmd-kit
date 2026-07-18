@@ -9,6 +9,8 @@ from deepmd.utils.update_sel import (
 
 
 class UpdateSel(BaseUpdateSel):
+    r"""Neighbor-selection update computing :math:`n_{sel}` from statistics."""
+
     @property
     def neighbor_stat(self) -> type[NeighborStat]:
         return NeighborStat
