@@ -13,22 +13,40 @@ boundaries can use ``@pytest.mark.ci_split_group("name")`` to opt into the same
 explicit unit.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import heapq
 import json
 import math
-from collections import OrderedDict
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from collections import (
+    OrderedDict,
+)
+from dataclasses import (
+    dataclass,
+    field,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+)
 
 import pytest
 
 if TYPE_CHECKING:
-    from _pytest import nodes
-    from _pytest.config import Config
-    from _pytest.config.argparsing import Parser
+    from _pytest import (
+        nodes,
+    )
+    from _pytest.config import (
+        Config,
+    )
+    from _pytest.config.argparsing import (
+        Parser,
+    )
 
 
 class _SplitItem(Protocol):

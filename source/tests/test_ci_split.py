@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Unit tests for fixture-aware CI test splitting."""
 
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+)
 
 import pytest
 
 from .ci_split import (
-    _TestGroup,
     _split_items,
+    _TestGroup,
     _unit_key,
 )
 
