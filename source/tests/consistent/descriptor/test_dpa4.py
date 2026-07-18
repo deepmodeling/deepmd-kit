@@ -149,6 +149,10 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             "grid_mlp": grid_mlp,
             "so3_readout": so3_readout,
             "random_gamma": False,
+            # JAX currently supports DPA4 without the backend-specific AMP
+            # policy. Keep cross-backend consistency cases within that shared
+            # feature subset; AMP behavior has dedicated backend tests.
+            "use_amp": False,
             "precision": precision,
             "trainable": False,
             "seed": 20251208,
