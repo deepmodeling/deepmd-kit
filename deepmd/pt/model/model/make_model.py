@@ -304,6 +304,27 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def set_out_bias(self, out_bias: torch.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
 
+        def predict_atomic_outputs_for_stat(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Return atomic outputs through the standard atomic-model path."""
+            return self.atomic_model._get_forward_wrapper_func()(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+            )
+
         def change_out_bias(
             self,
             merged: Any,
@@ -329,6 +350,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self.atomic_model.change_out_bias(
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
+                model_forward=self.predict_atomic_outputs_for_stat
+                if bias_adjust_mode == "change-by-statistic"
+                else None,
             )
 
         def forward_common_lower(

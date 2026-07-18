@@ -232,6 +232,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         @functools.lru_cache
         def wrapped_sampler() -> list[dict]:
             sampled = sampled_func()
+            if not sampled:
+                return sampled
             if self.pair_excl is not None:
                 pair_exclude_types = self.pair_excl.get_exclude_types()
                 for sample in sampled:
@@ -596,6 +598,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
+        model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -615,14 +618,20 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
+        model_forward
+            Complete model-level atomic predictor used by
+            ``change-by-statistic``. Atomic models fall back to their own
+            standard predictor when called directly.
         """
         if bias_adjust_mode == "change-by-statistic":
+            if model_forward is None:
+                model_forward = self._get_forward_wrapper_func()
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
                 keys=self.bias_keys,
                 stat_file_path=stat_file_path,
-                model_forward=self._get_forward_wrapper_func(),
+                model_forward=model_forward,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
                 stats_distinguish_types=self.get_compute_stats_distinguish_types(),
@@ -672,7 +681,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
+            del spin
             with (
                 torch.no_grad()
             ):  # it's essential for pure torch forward function to use auto_batchsize

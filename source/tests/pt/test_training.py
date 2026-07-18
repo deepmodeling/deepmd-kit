@@ -36,12 +36,19 @@ from deepmd.pt.entrypoints.main import train as train_entry
 from deepmd.pt.train.ema import (
     EMA_CHECKPOINT_KEY,
 )
+from deepmd.pt.train.training import (
+    all_ranks_have_valid_frames,
+)
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
 from deepmd.pt.utils.multi_task import (
     _cascade_top_level_defaults,
     preprocess_shared_params,
+)
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+    select_batch_frames,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -89,6 +96,87 @@ def _training_timeout(seconds: int) -> Callable[[_F], _F]:
 
 
 TRAINING_TEST_TIMEOUT = _training_timeout(60)
+
+
+class TestStatisticsFrameFiltering(unittest.TestCase):
+    """Verify statistics use the training minimum-distance frame semantics."""
+
+    def test_min_pair_dist_filters_every_frame_aligned_tensor(self) -> None:
+        batch = {
+            "coord": torch.arange(18, dtype=torch.float64, device="cpu").reshape(
+                2, 3, 3
+            ),
+            "atype": torch.tensor(
+                [[0, 0, 1], [0, 1, 1]], dtype=torch.long, device="cpu"
+            ),
+            "energy": torch.tensor(
+                [[1000.0], [2.0]], dtype=torch.float64, device="cpu"
+            ),
+            "natoms": torch.tensor([[3, 3, 2, 1], [3, 3, 1, 2]], device="cpu"),
+            "min_pair_dist": torch.tensor(
+                [[0.5], [1.0]], dtype=torch.float64, device="cpu"
+            ),
+            "fid": ["rejected", "accepted"],
+            "find_energy": np.float32(1.0),
+        }
+        filtered_batch = select_batch_frames(
+            batch,
+            torch.tensor([False, True], device="cpu"),
+        )
+        self.assertEqual(filtered_batch["fid"], ["accepted"])
+        sampled = make_stat_input(
+            [object()],
+            [[batch]],
+            nbatches=1,
+            min_pair_dist=0.8,
+        )
+
+        self.assertEqual(sampled[0]["coord"].shape[0], 1)
+        self.assertEqual(sampled[0]["atype"].shape[0], 1)
+        self.assertEqual(sampled[0]["natoms"].shape[0], 1)
+        torch.testing.assert_close(
+            sampled[0]["energy"].cpu(),
+            torch.tensor([[2.0]], dtype=torch.float64, device="cpu"),
+        )
+
+    def test_min_pair_dist_skips_system_without_valid_frames(self) -> None:
+        batch = {
+            "coord": torch.zeros(1, 2, 3, device="cpu"),
+            "atype": torch.zeros(1, 2, dtype=torch.long, device="cpu"),
+            "energy": torch.zeros(1, 1, device="cpu"),
+            "natoms": torch.tensor([[2, 2, 2]], device="cpu"),
+            "min_pair_dist": torch.tensor([[0.5]], device="cpu"),
+            "find_energy": np.float32(1.0),
+        }
+        sampled = make_stat_input(
+            [object()],
+            [[batch]],
+            nbatches=1,
+            min_pair_dist=0.8,
+        )
+        self.assertEqual(sampled, [])
+
+    def test_distributed_filter_skips_when_any_rank_is_empty(self) -> None:
+        """The global MIN decision prevents invalid fallback frames."""
+
+        def mark_remote_rank_empty(
+            valid_flag: torch.Tensor,
+            op: Any,
+        ) -> None:
+            self.assertEqual(op, torch.distributed.ReduceOp.MIN)
+            valid_flag.zero_()
+
+        with (
+            patch(
+                "deepmd.pt.train.training.dist.get_backend",
+                return_value="gloo",
+            ),
+            patch(
+                "deepmd.pt.train.training.dist.all_reduce",
+                side_effect=mark_remote_rank_empty,
+            ),
+        ):
+            self.assertFalse(all_ranks_have_valid_frames(local_has_valid=True))
 
 
 class DPTrainTest:
