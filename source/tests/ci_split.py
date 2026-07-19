@@ -20,7 +20,6 @@ from __future__ import (
 import heapq
 import json
 import math
-import sys
 from collections import (
     OrderedDict,
 )
@@ -59,14 +58,6 @@ class _SplitItem(Protocol):
     def get_closest_marker(self, name: str) -> pytest.Mark | None:
         """Return the closest marker with the requested name."""
         raise NotImplementedError
-
-
-@dataclass(frozen=True)
-class _DurationSeed:
-    """Version-controlled estimates used before a runtime cache exists."""
-
-    default_test_duration: float = 1.0
-    units: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,15 +120,10 @@ def _relevant_durations(
 def _build_units(
     items: list[_SplitItem],
     durations: dict[str, float],
-    seed: _DurationSeed,
 ) -> list[_TestUnit]:
     """Build complete class/module units, then merge explicit unit groups."""
     relevant = _relevant_durations(items, durations)
-    fallback_duration = (
-        sum(relevant.values()) / len(relevant)
-        if relevant
-        else seed.default_test_duration
-    )
+    fallback_duration = sum(relevant.values()) / len(relevant) if relevant else 1.0
     base_units: OrderedDict[str, _TestUnit] = OrderedDict()
     for item in items:
         key = _base_unit_key(item)
@@ -154,10 +140,7 @@ def _build_units(
                 missing_count * fallback_duration
             )
         else:
-            unit.estimated_duration = seed.units.get(
-                unit.key,
-                len(unit.items) * seed.default_test_duration,
-            )
+            unit.estimated_duration = len(unit.items) * fallback_duration
 
     merged_units: OrderedDict[str, _TestUnit] = OrderedDict()
     for unit in base_units.values():
@@ -185,10 +168,9 @@ def _split_items(
     items: list[_SplitItem],
     durations: dict[str, float],
     splits: int,
-    seed: _DurationSeed | None = None,
 ) -> list[_TestGroup]:
     """Assign indivisible units using deterministic LPT bin packing."""
-    units = _build_units(items, durations, seed or _DurationSeed())
+    units = _build_units(items, durations)
     item_index = {id(item): index for index, item in enumerate(items)}
 
     # The group index breaks equal-duration ties deterministically.  Sorting
@@ -244,30 +226,6 @@ def _load_durations(path: Path) -> dict[str, float]:
         ) from exc
 
 
-def _load_duration_seed(path: Path) -> _DurationSeed:
-    """Load the version-controlled fallback for the first grouped CI run."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise pytest.UsageError(f"cannot read duration seed {path}: {exc}") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("units"), dict):
-        raise pytest.UsageError(f"duration seed {path} has an invalid schema")
-    try:
-        default = float(data["default_test_duration"])
-        units = {str(key): float(value) for key, value in data["units"].items()}
-    except (KeyError, TypeError, ValueError) as exc:
-        raise pytest.UsageError(
-            f"duration seed {path} contains a non-numeric duration"
-        ) from exc
-    if default <= 0 or not math.isfinite(default):
-        raise pytest.UsageError(
-            f"duration seed {path} has an invalid default_test_duration"
-        )
-    if any(value <= 0 or not math.isfinite(value) for value in units.values()):
-        raise pytest.UsageError(f"duration seed {path} has an invalid unit duration")
-    return _DurationSeed(default_test_duration=default, units=units)
-
-
 def pytest_addoption(parser: Parser) -> None:
     """Declare CI-specific split options without activating pytest-split."""
     group = parser.getgroup("DeePMD grouped CI splitting")
@@ -317,11 +275,7 @@ def pytest_collection_modifyitems(config: Config, items: list[nodes.Item]) -> No
 
     durations_path = Path(config.getoption("durations_path"))
     durations = _load_durations(durations_path)
-    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    seed = _load_duration_seed(
-        Path(__file__).with_name(f"ci_split_seed_{python_version}.json")
-    )
-    groups = _split_items(items, durations, splits, seed)
+    groups = _split_items(items, durations, splits)
     selected = groups[group_index - 1]
     selected_ids = {id(item) for item in selected.items}
     deselected = [item for item in items if id(item) not in selected_ids]
@@ -330,7 +284,7 @@ def pytest_collection_modifyitems(config: Config, items: list[nodes.Item]) -> No
 
     reporter = config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
-        estimate_source = "runtime cache" if durations else "committed seed"
+        estimate_source = "runtime cache" if durations else "test-count fallback"
         reporter.write_line(
             "[deepmd-ci-split] "
             f"group {group_index}/{splits}: {len(selected.items)} tests in "

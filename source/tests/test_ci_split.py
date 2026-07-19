@@ -11,7 +11,6 @@ from pathlib import (
 import pytest
 
 from .ci_split import (
-    _DurationSeed,
     _load_durations,
     _split_items,
     _TestGroup,
@@ -150,21 +149,6 @@ class TestUnitBalancing:
         groups = _split_items(items, {}, splits=2)
 
         assert [len(group.items) for group in groups] == [7, 7]
-
-    def test_committed_seed_weights_expensive_units_without_cache(self) -> None:
-        slow = [
-            _item(f"tests/test_slow.py::FirstClass::test_{index}", cls=FirstClass)
-            for index in range(2)
-        ]
-        fast = [_item("tests/test_fast.py::test_value")]
-        seed = _DurationSeed(
-            default_test_duration=1.0,
-            units={"class:tests/test_slow.py::FirstClass": 20.0},
-        )
-
-        groups = _split_items(slow + fast, {}, splits=2, seed=seed)
-
-        assert sorted(group.estimated_duration for group in groups) == [1.0, 20.0]
 
     def test_assignment_is_deterministic_and_preserves_collection_order(self) -> None:
         items = [_item(f"tests/test_{index}.py::test_value") for index in range(8)]
