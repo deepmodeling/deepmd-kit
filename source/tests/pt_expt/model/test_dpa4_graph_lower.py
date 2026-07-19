@@ -454,3 +454,79 @@ class TestDpa4GraphLower:
         torch.testing.assert_close(
             out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
         )
+
+    def test_graph_lower_do_atomic_virial_filtering(self) -> None:
+        """``do_atomic_virial`` is a pure output filter, not a compute switch.
+
+        Production semantics already compute the per-atom virial
+        unconditionally on the graph route and discard it when unrequested
+        (``edge_transform_output.py:143-146``; the freeze forces ``True``
+        for graph kinds); ``_translate_energy_keys`` (``local=True``) then
+        emits ``atom_virial`` only when requested. This pins the ``False``
+        filtering branch at the model-forward level, eagerly (no AOTI
+        compile, no ``make_fx`` trace): call ``forward_common_lower_graph``
+        twice on the SAME jittered model and inputs -- once with
+        ``do_atomic_virial=True``, once ``False`` -- translate both to the
+        public keys, and assert the atom-virial key is the only asymmetry:
+        every key present in both outputs is bit-identical
+        (``torch.equal``), i.e. the flag must not perturb
+        energy/force/virial at all.
+        """
+        from deepmd.pt_expt.model.ener_model import (
+            _translate_energy_keys,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            build_synthetic_graph_inputs,
+        )
+
+        model = _make_message_sensitive_model(self.device).to("cpu")
+        model.eval()
+        sample = build_synthetic_graph_inputs(
+            model,
+            e_max=175,
+            nframes=2,
+            nloc=7,
+            dtype=torch.float64,
+            device=torch.device("cpu"),
+        )
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+
+        def _run(do_atomic_virial: bool) -> dict[str, torch.Tensor]:
+            model_ret = model.forward_common_lower_graph(
+                atype,
+                n_node,
+                n_local,
+                ei,
+                ev,
+                em,
+                do,
+                drp,
+                so,
+                srp,
+                destination_sorted=True,
+                fparam=fp,
+                aparam=ap,
+                do_atomic_virial=do_atomic_virial,
+            )
+            return _translate_energy_keys(
+                model_ret,
+                do_grad_r=model.do_grad_r("energy"),
+                do_grad_c=model.do_grad_c("energy"),
+                do_atomic_virial=do_atomic_virial,
+                local=True,
+            )
+
+        out_true = _run(True)
+        out_false = _run(False)
+
+        assert "atom_virial" in out_true, "requesting the flag must produce the key"
+        assert "atom_virial" not in out_false, (
+            "not requesting the flag must drop the key"
+        )
+        # Sanity: atom_virial is the ONLY asymmetry between the two outputs.
+        assert set(out_true) - {"atom_virial"} == set(out_false)
+        for key in out_false:
+            assert torch.equal(out_true[key], out_false[key]), (
+                f"do_atomic_virial must be a pure output filter; {key} differs "
+                f"between the True/False calls"
+            )
