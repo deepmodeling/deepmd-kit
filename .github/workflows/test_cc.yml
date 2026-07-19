@@ -36,6 +36,11 @@ jobs:
             enable_paddle: true
     steps:
       - uses: actions/checkout@v7
+      - name: Set up GCC
+        uses: egor-tensin/setup-gcc@v2
+        with:
+          version: latest
+          platform: x64
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
