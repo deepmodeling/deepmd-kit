@@ -14,39 +14,35 @@ name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' && 'cpu' || 'ubuntu-22.04' }}
     strategy:
       matrix:
-        # LeakSanitizer hangs in the ARC-based CPU runner, so keep leak checks
-        # on the GitHub-hosted image while moving the regular tests to ARC.
+        # Only regular jobs run the LAMMPS tests. Use self-hosted CPU runners
+        # for those jobs in deepmodeling, with a hosted fallback for forks.
         include:
           - check_memleak: true
             enable_tensorflow: true
             enable_pytorch: true
             enable_paddle: false
-            runner: ubuntu-22.04
           - check_memleak: true
             enable_tensorflow: false
             enable_pytorch: false
             enable_paddle: true
-            runner: ubuntu-22.04
           - check_memleak: false
             enable_tensorflow: true
             enable_pytorch: true
             enable_paddle: false
-            runner: cpu
           - check_memleak: false
             enable_tensorflow: false
             enable_pytorch: false
             enable_paddle: true
-            runner: cpu
     steps:
       - uses: actions/checkout@v7
       - name: Install GCC
         run: |
           sudo apt-get update
           sudo apt-get install --yes build-essential
-        if: matrix.runner == 'cpu'
+        if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
