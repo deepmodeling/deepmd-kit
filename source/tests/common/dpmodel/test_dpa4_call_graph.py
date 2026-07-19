@@ -16,6 +16,10 @@ from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
+)
+
 
 def build_neighbor_list_np(coord, rcut, nnei):
     """Build a padded, distance-sorted gas-phase neighbor list (no PBC).
@@ -142,34 +146,6 @@ def _run_graph(dd, coord, atype, nlist, permute_seed=None):
     return np.asarray(out)
 
 
-def _jitter_zero_arrays(node, rng: np.random.Generator) -> None:
-    """Recursively replace exactly-zero float arrays with small noise.
-
-    DPA4 deliberately zero-initializes several residual output projections
-    (``SO2Convolution.post_focus_mix``, ``EquivariantFFN.so3_linear_2`` --
-    both per-block and the top-level ``output_ffn`` -- see the "Zero-
-    initialized so residual path starts near-identity" comments in
-    ``dpa4_nn/so2.py``/``dpa4_nn/ffn.py``) so a freshly constructed,
-    untrained descriptor is architecturally edge/message independent: its
-    scalar read-out is exactly the type embedding regardless of geometry,
-    neighbors, or ``exclude_types``. That makes a bare ``make_descriptor()``
-    vacuous for an exclusion anti-vacuity check -- excluding pairs cannot
-    change an output that never depended on edges. This jitters those (and
-    only those -- non-zero arrays such as the learned type embedding are
-    untouched) in a serialized parameter tree in place, in a fixed
-    depth-first order, so two calls seeded identically stay bit-identical.
-    """
-    if isinstance(node, dict):
-        for value in node.values():
-            _jitter_zero_arrays(value, rng)
-    elif isinstance(node, list):
-        for value in node:
-            _jitter_zero_arrays(value, rng)
-    elif isinstance(node, np.ndarray):
-        if node.dtype.kind == "f" and node.size > 0 and np.all(node == 0.0):
-            node[...] = rng.normal(0.0, 0.05, size=node.shape)
-
-
 def make_message_sensitive_descriptor(seed: int = 99) -> DescrptDPA4:
     """A ``make_descriptor()`` variant with its zero-init residuals jittered.
 
@@ -179,7 +155,7 @@ def make_message_sensitive_descriptor(seed: int = 99) -> DescrptDPA4:
     ``exclude_types`` still share every other weight.
     """
     data = make_descriptor().serialize()
-    _jitter_zero_arrays(data, np.random.default_rng(seed))
+    jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
@@ -227,8 +203,8 @@ def test_message_sensitive_fixture_is_edge_dependent() -> None:
     meaningful because make_message_sensitive_descriptor() jitters DPA4's
     zero-init residual projections so the output actually depends on
     edges/messages -- a bare make_descriptor() does not (see
-    _jitter_zero_arrays's docstring). This test durably pins that
-    edge-sensitivity: it runs call_graph once as-is and once with every
+    jitter_zero_arrays's docstring in dpa4_fixtures.py). This test durably
+    pins that edge-sensitivity: it runs call_graph once as-is and once with every
     edge masked out, and asserts the outputs differ by a non-trivial
     margin. If a future change to the fixture (or to DPA4's zero-init
     scheme) silently made it edge-independent again, this test fails loud

@@ -43,8 +43,8 @@ from deepmd.pt_expt.utils import (
     env,
 )
 
-from ...common.dpmodel.test_dpa4_call_graph import (
-    _jitter_zero_arrays,
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
 )
 from ...seed import (
     GLOBAL_SEED,
@@ -90,22 +90,22 @@ def _make_message_sensitive_model(device, seed: int = 99) -> EnergyModel:
     """A ``_make_model()`` variant with the zero-init residuals jittered.
 
     DPA4 deliberately zero-initializes several residual output projections
-    (see the ``_jitter_zero_arrays`` docstring in
-    ``test_dpa4_call_graph.py``) so a freshly constructed, untrained
+    (see the ``jitter_zero_arrays`` docstring in
+    ``source/tests/dpa4_fixtures.py``) so a freshly constructed, untrained
     descriptor is architecturally edge/message INDEPENDENT: its scalar
     read-out is exactly the type embedding regardless of geometry or
     neighbors. That makes a bare ``_make_model()`` VACUOUS for a
     graph-vs-dense parity check -- the two routes would agree trivially
     because neither route's output depends on the edges at all. This
-    jitters those (and only those) zero arrays in the descriptor's
-    serialized parameter tree in place, so the model's energy genuinely
-    depends on the neighbor edges (pinned by an in-test coordinate-
-    perturbation guard in ``test_forward_common_graph_matches_dense``).
+    jitters every exactly-zero float array in the descriptor's serialized
+    parameter tree in place, so the model's energy genuinely depends on
+    the neighbor edges (pinned by an in-test coordinate-perturbation guard
+    in ``test_forward_common_graph_matches_dense``).
     """
     model = _make_model(device)
     ds = model.atomic_model.descriptor
     data = ds.serialize()
-    _jitter_zero_arrays(data, np.random.default_rng(seed))
+    jitter_zero_arrays(data, np.random.default_rng(seed))
     jittered = DescrptDPA4.deserialize(data).to(device)
     # Standard torch.nn.Module submodule replacement: "descriptor" is
     # already a registered submodule of atomic_model, so this rebinds the

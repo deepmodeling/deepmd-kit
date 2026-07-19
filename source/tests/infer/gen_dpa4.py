@@ -295,18 +295,19 @@ def main():
 
     # ---- B.1  Build a fresh DPA4 model; jitter zero-init residuals ----
     # A freshly built DPA4 zero-initializes several residual output
-    # projections (see step 2b above and the ``_jitter_zero_arrays``
-    # docstring in source/tests/common/dpmodel/test_dpa4_call_graph.py), so
-    # its output is architecturally edge-independent until those branches
-    # are perturbed away from exactly zero. Section A already does this via
-    # in-place torch-parameter replacement (step 2b); this section instead
-    # follows the dict-level ``_jitter_zero_arrays`` pattern used by
+    # projections (see step 2b above and the ``jitter_zero_arrays``
+    # docstring in source/tests/dpa4_fixtures.py), so its output is
+    # architecturally edge-independent until those branches are perturbed
+    # away from exactly zero. Section A already does this via in-place
+    # torch-parameter replacement (step 2b); this section instead follows
+    # the dict-level ``jitter_zero_arrays`` pattern used by
     # test_dpa4_call_graph.py / test_dpa4_graph_lower.py, for consistency
     # with the rest of the DPA4 graph test suite. Inlined here (rather than
-    # imported from that test module) because gen_dpa4.py is a standalone
-    # script run outside pytest's package machinery -- importing a
-    # source/tests/... test module from it would need ad hoc sys.path /
+    # imported from source/tests/dpa4_fixtures.py) because gen_dpa4.py is a
+    # standalone script run outside pytest's package machinery -- importing
+    # a source/tests/... module from it would need ad hoc sys.path /
     # package surgery for no real benefit.
+    # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in sync.
     def _jitter_zero_arrays(node, rng: np.random.Generator) -> None:
         if isinstance(node, dict):
             for value in node.values():

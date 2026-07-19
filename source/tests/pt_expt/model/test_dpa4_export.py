@@ -62,8 +62,8 @@ from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
 )
 
-from ...common.dpmodel.test_dpa4_call_graph import (
-    _jitter_zero_arrays,
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
 )
 
 
@@ -132,14 +132,15 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     # 1. Serialize → deserialize_to_file (compiles and packs both artifacts).
     #
     # DPA4 deliberately zero-initializes several residual output
-    # projections (see ``_jitter_zero_arrays``'s docstring), so a fresh,
-    # untrained model is architecturally edge-INDEPENDENT: force/virial are
-    # ~0 regardless of edge handling. That would make the AOTI-vs-eager
-    # parity below vacuous (it couldn't catch an inductor miscompile of the
-    # edge scatter/index_add path) for either lower kind, so the jitter is
-    # applied uniformly to both parametrizations.
+    # projections (see ``jitter_zero_arrays``'s docstring in
+    # ``dpa4_fixtures.py``), so a fresh, untrained model is architecturally
+    # edge-INDEPENDENT: force/virial are ~0 regardless of edge handling.
+    # That would make the AOTI-vs-eager parity below vacuous (it couldn't
+    # catch an inductor miscompile of the edge scatter/index_add path) for
+    # either lower kind, so the jitter is applied uniformly to both
+    # parametrizations.
     data = {"model": model.serialize()}
-    _jitter_zero_arrays(data["model"], np.random.default_rng(99))
+    jitter_zero_arrays(data["model"], np.random.default_rng(99))
     # Rebuild the eager reference model from the SAME jittered dict that
     # gets frozen below, so the AOTI artifact and the eager reference
     # compared against it are the same (edge-sensitive) model.
