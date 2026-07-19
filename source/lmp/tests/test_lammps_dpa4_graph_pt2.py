@@ -9,21 +9,25 @@ fixture is graph-eligible; the weights are freshly jittered (see gen_dpa4.py
 Section B.1) so the fixture is geometry-sensitive rather than the
 architecturally edge-independent output of a fresh, untrained DPA4.
 
-DPA4 declares no cross-rank exchange (``has_message_passing_across_ranks() ==
-False``, see the Task-6 fix in ``deepmd/dpmodel/descriptor/dpa4.py``): no
-lower path implements ghost feature exchange across MPI ranks, so
-``deserialize_to_file`` never emits a nested with-comm artifact for DPA4 --
-unlike DPA2 (whose repformer participates in per-layer ghost exchange).
-Multi-rank LAMMPS inference for a graph-lower, message-passing model
-therefore has no with-comm route to fall back on and fails fast in C++
-(Task 6); this file intentionally covers SINGLE-RANK only, mirroring the
-single-rank half of ``test_lammps_dpa2_graph_pt2.py`` (its multi-rank
-with-comm section has no DPA4 counterpart).
+DPA4's SeZM descriptor reads ghost-neighbour features at every interaction
+block (``has_message_passing_across_ranks()`` returns ``self.bridging_switch
+is None`` -- true for the plain (non-bridging) config exercised here), so
+the GRAPH export auto-embeds a nested with-comm AOTI artifact
+(``forward_lower_with_comm.pt2``) alongside the plain graph forward, the
+same as DPA2's repformer. The DENSE (nlist) ``.pt2`` remains a single
+comm-less artifact -- see ``test_lammps_dpa4_pt2.py``.
 
 Single-rank LAMMPS folds ghosts onto local owners (``fold_to_local=True``,
-``N == nloc``) and requires ``atom_modify map yes`` (``has_message_passing_``
-== True) so the C++ side can resolve ghost-to-local mapping from the LAMMPS
-atom-map.
+``N == nloc``) and uses the plain graph artifact, exactly as before.
+Multi-rank LAMMPS keeps the extended region (``N == nall_real``) and routes
+to the with-comm artifact: the C++ ``DeepPotPTExpt`` drives
+``deepmd_export::border_op`` once per interaction block to exchange ghost
+node/edge features across ranks, masks the fitting reduction to owned nodes
+only, and LAMMPS reverse-comm folds the returned per-extended-atom forces
+back onto their owners -- the same generic dispatch (``has_message_passing_``
++ ``has_comm_artifact_`` + ``lower_input_kind == "graph"``) that already
+serves DPA2, with zero C++ changes required for DPA4 (see
+``source/api_cc/src/DeepPotPTExpt.cc``).
 
 Reference values come from ``source/tests/infer/gen_dpa4.py`` (the same
 ``deeppot_dpa4_graph.expected`` the C++ gtest uses). A second, independent
@@ -33,7 +37,13 @@ regression that only breaks the *C++* graph ingestion (not the Python
 export path already cross-checked at gen-time) still gets caught.
 """
 
+import importlib.util
 import os
+import shutil
+import signal
+import subprocess as sp
+import sys
+import tempfile
 from pathlib import (
     Path,
 )
@@ -73,6 +83,15 @@ ref_file = (
     / "infer"
     / "deeppot_dpa4_graph.expected"
 )
+# The MPI runner is backend-agnostic (DATAFILE PB_FILE OUTPUT + flags); reuse
+# the DPA3 driver verbatim rather than duplicate it (same pattern as
+# test_lammps_dpa1_graph_pt2.py / test_lammps_dpa2_graph_pt2.py).
+mpi_runner = Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"
+
+# Ceiling for EVERY mpirun invocation (parse mode included): a with-comm
+# desync hangs the collective forever, so an unbounded should-succeed
+# regression would hang the whole suite.
+_MPI_DEFAULT_TIMEOUT = 600.0
 
 # Reference values written by source/tests/infer/gen_dpa4.py (PBC case).
 # Guarded with try/except because gen_dpa4.py only runs when PyTorch is built,
@@ -109,6 +128,20 @@ coord = np.array(
 type_OH = np.array([1, 2, 2, 1, 2, 2])
 
 data_file = Path(__file__).parent / "data_dpa4_graph_pt2.lmp"
+# Wide-box, 3-way x-split variant for the genuinely-empty-rank MPI corner
+# (``processors 3 1 1``), same construction as
+# ``test_lammps_dpa2_graph_pt2.py``'s ``data_file_empty_rank`` fixture but
+# with DPA4's ghost cutoff: rcut(4.0)+skin(2.0)=6.0 (vs dpa2's 8.0). Atoms
+# stay in x in [0.25, 12.83] near the left edge of a [0, 90] box. With 3
+# even x-slabs of width 30, rank 0 owns [0, 30) (all atoms), rank 2 owns
+# [60, 90) (empty of local atoms but picks up a periodic ghost of the
+# x~0.25 atoms wrapped around the box's x=90/x=0 seam, since that distance
+# ~0.25 is well within the ghost cutoff), and rank 1 (the MIDDLE slab,
+# [30, 60)) borders neither the real atoms directly (nearest real atom at
+# distance 30-12.83 ~= 17.17 > 6) nor the periodic seam -- so rank 1 is the
+# genuinely empty rank (zero owned AND zero ghost atoms) this fixture is
+# built to produce.
+data_file_empty_rank = Path(__file__).parent / "data_dpa4_graph_pt2_empty_rank.lmp"
 
 
 def setup_module() -> None:
@@ -117,11 +150,14 @@ def setup_module() -> None:
             "Skip test because PyTorch support is not enabled.",
         )
     write_lmp_data(box, coord, type_OH, data_file)
+    box_empty_rank = np.array([0, 90, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data(box_empty_rank, coord, type_OH, data_file_empty_rank)
 
 
 def teardown_module() -> None:
-    if data_file.exists():
-        os.remove(data_file)
+    for f in [data_file, data_file_empty_rank]:
+        if f.exists():
+            os.remove(f)
 
 
 def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
@@ -238,3 +274,214 @@ def test_pair_deepmd_graph_matches_nlist_ref() -> None:
     assert id_graph == id_nlist
     assert e_graph == pytest.approx(e_nlist, rel=0, abs=1e-6)
     np.testing.assert_allclose(f_graph, f_nlist, atol=1e-6, rtol=0)
+
+
+# ---------------------------------------------------------------------------
+# Multi-rank tests (message-passing with-comm graph route).
+#
+# DPA4's SeZM descriptor participates in per-block ghost exchange, so
+# multi-rank LAMMPS routes to the nested with-comm artifact instead of the
+# plain graph artifact used above. These tests are the correctness gate for
+# that machinery on DPA4, mirroring ``test_lammps_dpa2_graph_pt2.py``'s
+# multi-rank section (the SAME generic C++ dispatch; DPA4 required zero C++
+# changes, see the module docstring).
+# ---------------------------------------------------------------------------
+
+
+def _run_mpi_subprocess(
+    extra_args: list[str] | None = None,
+    nprocs: int = 2,
+    data_path: Path | None = None,
+    processors: str | None = None,
+    runner_args: list[str] | None = None,
+    pb: Path | None = None,
+    capture: bool = False,
+    timeout: float | None = None,
+) -> dict:
+    """Invoke the (backend-agnostic) DPA3 MPI runner under
+    ``mpirun -n <nprocs>`` against the dpa4 graph .pt2 and return
+    ``{"pe": float, "forces": (n, 3), "virials": (n, 9)}``.
+
+    ``nprocs == 1`` forces ``--processors 1 1 1`` so the C++ side sees
+    ``nprocs == 1`` and routes to the plain (single-rank) graph artifact --
+    a same-archive reference for the multi-rank comparison.  ``pb``
+    overrides the model archive (defaults to ``deeppot_dpa4_graph.pt2``).
+
+    EVERY run is bounded: ``timeout`` (seconds, default
+    ``_MPI_DEFAULT_TIMEOUT``) covers the parse path too, so a deadlocked
+    collective in a should-succeed regression cannot hang the suite -- on
+    expiry the WHOLE mpirun process group is SIGKILLed (killing only mpirun
+    can leave orphaned ranks blocking in the collective and holding the
+    GPU).  With ``capture=True``, return raw subprocess info
+    (``returncode``, ``stdout``, ``stderr``, ``timed_out``) instead of
+    parsed output -- used by the fail-fast tests; a timeout there returns
+    ``timed_out=True`` with ``returncode=None`` for the caller to assert
+    on.  In parse mode a timeout raises ``RuntimeError`` and a nonzero exit
+    raises ``subprocess.CalledProcessError`` (matching the old
+    ``check_call`` behavior).
+    """
+    if data_path is None:
+        data_path = data_file
+    if pb is None:
+        pb = pb_file
+    if timeout is None:
+        timeout = _MPI_DEFAULT_TIMEOUT
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
+        out_path = f.name
+    try:
+        argv = [
+            "mpirun",
+            "-n",
+            str(nprocs),
+            sys.executable,
+            str(mpi_runner),
+            str(data_path.resolve()),
+            str(pb.resolve()),
+            out_path,
+        ]
+        if processors is not None:
+            argv.extend(["--processors", processors])
+        elif nprocs == 1:
+            argv.extend(["--processors", "1 1 1"])
+        if extra_args:
+            argv.extend(extra_args)
+        if runner_args:
+            argv.extend(runner_args)
+        proc = sp.Popen(
+            argv,
+            stdout=sp.PIPE if capture else None,
+            stderr=sp.PIPE if capture else None,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except sp.TimeoutExpired:
+            # Kill the whole process group: killing only mpirun can
+            # leave the deadlocked ranks orphaned (still blocking in
+            # the collective and holding the GPU).
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+            if capture:
+                return {
+                    "returncode": None,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                    "timed_out": True,
+                }
+            raise RuntimeError(
+                f"mpirun timed out after {timeout}s (process group killed); "
+                "a should-succeed MPI regression is deadlocked."
+            ) from None
+        if capture:
+            return {
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "timed_out": False,
+            }
+        if proc.returncode != 0:
+            raise sp.CalledProcessError(proc.returncode, argv)
+        with open(out_path) as fh:
+            lines = fh.read().strip().splitlines()
+        pe = float(lines[0])
+        rows = np.array(
+            [list(map(float, line.split())) for line in lines[1:]],
+            dtype=np.float64,
+        )
+        forces = rows[:, :3]
+        virials = rows[:, 3:]
+        return {"pe": pe, "forces": forces, "virials": virials}
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa4_graph_matches_single_rank() -> None:
+    """Multi-rank (``-n 2``) with-comm graph route must equal single-rank
+    (``-n 1``, plain graph artifact) on the SAME archive and trajectory.
+
+    THE gate on the DPA4 with-comm graph machinery: per-block
+    ``deepmd_export::border_op`` ghost exchange, the owned-node energy
+    mask (extended region includes ghost nodes that must not contribute
+    to the reduced energy), and the reverse-comm force fold back onto
+    owners. A wrong-but-finite divergence in any of the three would show
+    up here even though there is no hardcoded reference value.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2)
+    out_ref = _run_mpi_subprocess(nprocs=1)
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    # Same tolerance as test_lammps_dpa2_graph_pt2.py's twin: a relative
+    # component absorbs the tiny ordering-dependent floating-point
+    # divergence the with-comm route's per-layer ghost exchange plus atomic
+    # index_add can introduce on CUDA, without loosening the CPU-exact
+    # (bit-reproducible) case.
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=1e-8
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa4_graph_empty_rank_does_not_silently_succeed() -> None:
+    """A genuinely empty rank (zero owned AND zero ghost atoms) under the
+    message-passing with-comm graph route must NOT silently produce
+    wrong-but-plausible numbers.
+
+    DPA4's with-comm route needs every rank to participate in the per-block
+    MPI ghost exchange (``border_op``); a rank with zero nodes has nothing
+    to export in the traced graph (violates the exported
+    ``Dim("n_node_total", min=1)`` and would desync the collective ghost
+    exchange across ranks). The C++ side (``DeepPotPTExpt.cc``, the SAME
+    model-agnostic guard already exercised by
+    ``test_lammps_dpa2_graph_pt2.py``) throws a clear, actionable error on
+    the empty rank instead of running.
+
+    The failure is COLLECTIVE and PROMPT: before entering the per-layer
+    ``border_op`` collectives, every rank participates in a communicator-
+    wide min-reduction of its node count (``deepmd_export::
+    allreduce_min_int``), so the non-empty peers detect the empty rank and
+    throw the same error instead of blocking forever waiting for it.  A
+    timeout is therefore a FAILURE of this test (it would mean the
+    preflight regressed back into the historical deadlock), and the
+    documented error message must appear on a nonzero exit.
+
+    ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
+    verified (see the module-level comment above the fixture) to put the
+    MIDDLE rank in a genuinely empty state, using DPA4's own ghost cutoff
+    (rcut(4.0)+skin(2.0)=6.0, vs dpa2's 8.0).
+    """
+    out = _run_mpi_subprocess(
+        nprocs=3,
+        data_path=data_file_empty_rank,
+        processors="3 1 1",
+        capture=True,
+        timeout=120,
+    )
+    assert not out["timed_out"], (
+        "Multi-rank graph run with an empty rank timed out instead of "
+        "failing promptly: the collective empty-rank preflight "
+        "(allreduce_min_int) must make every rank throw BEFORE the "
+        "per-layer border_op collectives."
+    )
+    assert out["returncode"] != 0, (
+        "Expected the multi-rank message-passing graph run to fail loudly "
+        "on a genuinely empty rank, but it exited 0.\n"
+        f"stdout:\n{out['stdout'][-2000:]}\nstderr:\n{out['stderr'][-2000:]}"
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "zero owned+ghost atoms" in combined, (
+        "Expected the documented fail-loud message ('zero owned+ghost "
+        f"atoms'), got:\n{combined[-2000:]}"
+    )

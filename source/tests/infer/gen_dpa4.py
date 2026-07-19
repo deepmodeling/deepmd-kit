@@ -393,6 +393,9 @@ def main():
     # ---- B.3  Export graph-form .pt2 (SAME jittered weights) ----
     graph_pt2_path = os.path.join(base_dir, "deeppot_dpa4_graph.pt2")
     print(f"Exporting to {graph_pt2_path} (lower_kind='graph') ...")  # noqa: T201
+    # has_message_passing_across_ranks() is True -> the graph export
+    # auto-embeds model/extra/forward_lower_with_comm.pt2 (multi-rank
+    # LAMMPS).
     pt_expt_deserialize_to_file(
         graph_pt2_path,
         copy.deepcopy(data_g),
