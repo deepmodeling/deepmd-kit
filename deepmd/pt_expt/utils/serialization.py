@@ -121,7 +121,9 @@ def _metadata_value_to_json(value: Any) -> Any:
     return value
 
 
-def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
+def _needs_with_comm_artifact(
+    model: torch.nn.Module, lower_kind: str = "nlist"
+) -> bool:
     """Return ``True`` if the model needs a "with-comm" AOTI artifact compiled.
 
     The with-comm artifact carries the per-layer ``deepmd_export::border_op``
@@ -136,14 +138,47 @@ def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
     descriptor classes implement explicitly. Returns ``False`` defensively
     when the model has no single descriptor (linear/zbl/frozen) or when
     the method is somehow missing or raises.
+
+    Not every lower path that needs cross-rank exchange implements it: DPA4's
+    graph lower carries a real per-layer ``border_op`` exchange, but its
+    dense (nlist) lower's adapter raises on ``comm_dict``. ``lower_kind``
+    selects which lower is being traced so the gate can consult the
+    per-lower capability instead of assuming both lowers agree. Non-graph
+    kinds additionally check ``descriptor.dense_lower_supports_comm()``
+    (absent on descriptors, such as dpa2/dpa3, whose dense lower always
+    supports comm — treated as ``True``).
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The wrapped pt_expt model.
+    lower_kind : str
+        Which lower is being traced/frozen: ``"graph"`` or ``"nlist"``
+        (dense). Defaults to ``"nlist"``.
+
+    Returns
+    -------
+    bool
+        Whether a with-comm artifact should be built for this lower kind.
     """
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
     if desc is None or not hasattr(desc, "has_message_passing_across_ranks"):
         return False
     try:
-        return bool(desc.has_message_passing_across_ranks())
+        across = bool(desc.has_message_passing_across_ranks())
     except (AttributeError, NotImplementedError):
         return False
+    if not across:
+        return False
+    if lower_kind == "graph":
+        return True
+    # Non-graph kinds trace the DENSE with-comm wrapper; a descriptor whose
+    # dense lower has no comm implementation (DPA4: the dense adapter raises
+    # on comm_dict) must not emit a dead or untraceable dense artifact.
+    # Descriptors without the method (dpa2/dpa3/...) implement dense comm —
+    # it is their production multi-rank path.
+    dense_ok = getattr(desc, "dense_lower_supports_comm", None)
+    return True if dense_ok is None else bool(dense_ok())
 
 
 def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
@@ -979,7 +1014,7 @@ def _collect_metadata(
     # Whether multi-rank LAMMPS needs a second "with-comm" AOTI artifact
     # (per-layer ghost-feature MPI exchange via deepmd_export::border_op).
     # The C++ DeepPotPTExpt / DeepSpinPTExpt loaders branch on this flag.
-    meta["has_comm_artifact"] = _needs_with_comm_artifact(model)
+    meta["has_comm_artifact"] = _needs_with_comm_artifact(model, lower_kind)
 
     # Whether the model's regular .pt2 graph consumes the ``mapping``
     # tensor to gather per-layer ghost-atom features from local atoms.
@@ -1450,7 +1485,7 @@ def _trace_and_export(
             )
 
             ensure_comm_registered()
-            if not _needs_with_comm_artifact(model):
+            if not _needs_with_comm_artifact(model, lower_kind):
                 raise ValueError(
                     "with_comm_dict=True requested but the model's "
                     "descriptor does not need cross-rank message passing "
@@ -1636,7 +1671,7 @@ def _trace_and_export(
         )
 
         ensure_comm_registered()
-        if not _needs_with_comm_artifact(model):
+        if not _needs_with_comm_artifact(model, lower_kind):
             raise ValueError(
                 "with_comm_dict=True requested but the model's descriptor "
                 "does not need cross-rank message passing "

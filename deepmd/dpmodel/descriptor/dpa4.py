@@ -2294,15 +2294,27 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return True
 
     def has_message_passing_across_ranks(self) -> bool:
-        """Whether multi-rank inference needs a with-comm artifact.
+        """Whether multi-rank inference needs cross-rank ghost exchange.
 
-        SeZM physically reads ghost-neighbour features at every interaction
-        block, but NO lower path implements the cross-rank exchange: the
-        dense ``call`` never forwards ``comm_dict`` to the blocks and the
-        graph route raises on it. Answering False keeps the freeze from
-        emitting a with-comm artifact with dead comm inputs; combined with
-        ``has_message_passing() is True`` the C++ dispatch then fails fast
-        on multi-rank runs instead of silently skipping the exchange.
+        SeZM reads ghost-neighbour features at every interaction block; the
+        GRAPH lower implements the exchange via per-block ``border_op``
+        (pt_expt ``exchange_ghost_features``). Source Freeze Propagation
+        bridging is excluded: its per-node gate folds a node's entire
+        outgoing-edge set, which a single rank cannot observe for ghost
+        owners, so bridging models fail fast on multi-rank instead.
+
+        The DENSE (nlist) lower remains comm-less — see
+        :meth:`dense_lower_supports_comm`; the freeze machinery consults both
+        so nlist-kind artifacts carry ``has_comm_artifact=False``.
+        """
+        return self.bridging_switch is None
+
+    def dense_lower_supports_comm(self) -> bool:
+        """The DPA4 dense (nlist) lower has no comm_dict implementation.
+
+        The dense adapter raises on ``comm_dict``; only the graph lower
+        exchanges ghosts. Consulted by the freeze machinery for non-graph
+        lower kinds so no dead-comm dense artifact is ever emitted.
         """
         return False
 

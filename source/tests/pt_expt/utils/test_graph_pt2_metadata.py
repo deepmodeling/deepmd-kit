@@ -19,6 +19,7 @@ import torch
 
 from deepmd.pt_expt.utils.serialization import (
     _graph_edge_dtype,
+    _needs_with_comm_artifact,
     _supports_graph_export,
     deserialize_to_file,
 )
@@ -352,3 +353,70 @@ DPA2_GUARD_CONFIG = {
     },
     "fitting_net": {"neuron": [8, 8], "seed": 1},
 }
+
+
+def _build_model(model_kind: str) -> torch.nn.Module:
+    """Build a small pt_expt model for ``_needs_with_comm_artifact`` tests.
+
+    No AOTI compile is involved — the caller only inspects the returned
+    model's descriptor capability methods.
+
+    Parameters
+    ----------
+    model_kind : str
+        ``"dpa4"`` (bridging-free SeZM, config shared with
+        ``test_dpa4_export.py``) or ``"dpa2"`` (``DPA2_GUARD_CONFIG`` above).
+
+    Returns
+    -------
+    torch.nn.Module
+        The constructed pt_expt model, on CPU, in eval mode.
+    """
+    from deepmd.pt_expt.model.get_model import (
+        get_model as get_pt_expt_model,
+    )
+
+    if model_kind == "dpa4":
+        from ..model.test_dpa4_export import (
+            _DPA4_CONFIG,
+        )
+
+        config = _DPA4_CONFIG
+    elif model_kind == "dpa2":
+        config = DPA2_GUARD_CONFIG
+    else:
+        raise ValueError(f"unknown model_kind {model_kind!r}")
+    model = get_pt_expt_model(copy.deepcopy(config))
+    model.to("cpu")
+    model.eval()
+    return model
+
+
+@pytest.mark.parametrize(
+    "model_kind,lower_kind,expected",
+    [
+        ("dpa4", "graph", True),  # graph lower has real border exchange now
+        (
+            "dpa4",
+            "nlist",
+            False,
+        ),  # dense lower is comm-less: no artifact, no trace crash
+        (
+            "dpa2",
+            "nlist",
+            True,
+        ),  # dense with-comm is dpa2's production MP path — unchanged
+        ("dpa2", "graph", True),  # graph with-comm unchanged
+    ],
+)
+def test_needs_with_comm_artifact_kind_aware(model_kind, lower_kind, expected) -> None:
+    """``_needs_with_comm_artifact`` is lower-kind-aware for DPA4, unchanged for dpa2.
+
+    DPA4's graph lower carries a real per-layer ``border_op`` exchange, but
+    its dense (nlist) lower adapter raises on ``comm_dict`` — so the dense
+    kind must not request a with-comm artifact (it would crash the trace).
+    dpa2 implements comm on both lowers (no ``dense_lower_supports_comm``
+    override), so both kinds stay ``True``.
+    """
+    model = _build_model(model_kind)
+    assert _needs_with_comm_artifact(model, lower_kind) is expected
