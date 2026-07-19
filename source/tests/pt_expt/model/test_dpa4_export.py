@@ -176,8 +176,14 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     if expected_input_kind == "nlist":
         # 4a. Dense-ABI eager reference vs. AOTI artifact parity on
         # forward_common_lower.
+        # _make_sample_inputs creates tensors on _env.DEVICE (CUDA on a GPU
+        # box); the eager reference model lives on CPU, so make explicit CPU
+        # copies for it. The artifact call below gets separate _env.DEVICE
+        # copies via _to_artifact_device.
         sample = _make_sample_inputs(model, nframes=1, has_spin=False)
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = sample
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = tuple(
+            t if t is None else t.to("cpu") for t in sample
+        )
 
         eager_out = model.forward_common_lower(
             ext_coord.detach().requires_grad_(True),
