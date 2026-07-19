@@ -47,7 +47,7 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.training_utils import (
     resolve_model_prob,
@@ -385,9 +385,9 @@ class Trainer(AbstractTrainer):
             resume=init_model is not None or restart_model is not None
         )
 
-        lr_params = dict(config["learning_rate"])
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
         self.optimizer = self._build_optimizer(config.get("optimizer", {}))
         self.model_container = _TaskModelContainer(self.models)
         self.step = tf.Variable(0, dtype=tf.int64, trainable=False, name="step")

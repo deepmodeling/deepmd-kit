@@ -18,6 +18,7 @@ from unittest.mock import (
     patch,
 )
 
+import pytest
 import torch
 
 from deepmd.loggers.training import (
@@ -310,6 +311,39 @@ class TestTraining(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         self._run_training(config)
+
+    @pytest.mark.timeout(60)
+    def test_zero_start_warmup_schedulers_construct(self) -> None:
+        """Cosine and WSD warmup must initialize LambdaLR without division by zero."""
+        for schedule_type in ("cosine", "wsd"):
+            with self.subTest(schedule_type=schedule_type):
+                config = _make_config(self.data_dir, numb_steps=4)
+                config["learning_rate"] = {
+                    "type": schedule_type,
+                    "start_lr": 1e-3,
+                    "stop_lr": 1e-5,
+                    "warmup_steps": 1,
+                }
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+
+                tmpdir = tempfile.mkdtemp(prefix=f"pt_expt_{schedule_type}_warmup_")
+                old_cwd = os.getcwd()
+                try:
+                    os.chdir(tmpdir)
+                    trainer = get_trainer(config)
+
+                    self.assertEqual(trainer.lr_schedule.value(0), 0.0)
+                    self.assertEqual(trainer.scheduler.get_last_lr(), [0.0])
+                    self.assertTrue(
+                        all(
+                            group["initial_lr"] == trainer.lr_schedule.start_lr
+                            for group in trainer.optimizer.param_groups
+                        )
+                    )
+                finally:
+                    os.chdir(old_cwd)
+                    shutil.rmtree(tmpdir, ignore_errors=True)
 
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_loop(self, mocked_eval) -> None:
