@@ -67,6 +67,12 @@ def exchange_ghost_features(
     -------
     torch.Tensor
         ``x`` with ghost rows refreshed, same shape.
+
+    Raises
+    ------
+    NotImplementedError
+        When ``comm_dict`` carries ``has_spin`` — spin models do not route
+        the DPA4 graph lower.
     """
     if "has_spin" in comm_dict:
         raise NotImplementedError("spin models do not route the DPA4 graph lower")

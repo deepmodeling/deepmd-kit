@@ -281,6 +281,21 @@ def test_dpa4_exchange_schedule_counts() -> None:
     assert calls["n"] == expected
 
 
+def test_dpa4_exchange_rejects_spin_comm() -> None:
+    """A ``comm_dict`` describing a spin system raises ``NotImplementedError``
+    -- spin models never route the graph lower (``disable_graph_lower``),
+    so a ``has_spin`` comm_dict reaching the graph exchange seam is a
+    programming error, not a supported configuration.
+    """
+    from deepmd.pt_expt.descriptor.dpa4_nn.block import (
+        exchange_ghost_features,
+    )
+
+    x = torch.zeros(3, 2, 1, 4, dtype=torch.float64)
+    with pytest.raises(NotImplementedError, match="spin"):
+        exchange_ghost_features(x, {"has_spin": torch.ones(1)})
+
+
 class TestDpa4GraphLower:
     def setup_method(self) -> None:
         self.device = env.DEVICE
