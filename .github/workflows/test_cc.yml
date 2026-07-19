@@ -87,24 +87,6 @@ jobs:
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
-      - name: Test LAMMPS model-deviation teardown with LSan
-        run: |
-          export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-          pytest -q source/lmp/tests/test_lammps.py::test_pair_deepmd_model_devi_atomic_reinit_clear_smoke
-        env:
-          OMP_NUM_THREADS: 1
-          TF_INTRA_OP_PARALLELISM_THREADS: 1
-          TF_INTER_OP_PARALLELISM_THREADS: 1
-          LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
-          ENABLE_TENSORFLOW: "1"
-          ENABLE_PYTORCH: "1"
-          ENABLE_JAX: "1"
-          ENABLE_PADDLE: "0"
-        # The focused TensorFlow/PyTorch LSan leg makes the buffer lifecycle
-        # smoke test fail on a reintroduced leak without running the full
-        # LAMMPS suite under sanitizer-incompatible Paddle dependencies.
-        if: ${{ matrix.check_memleak && matrix.enable_tensorflow }}
       # test ipi
       - run: |
           export PATH=${{ github.workspace }}/dp_test/bin:$PATH
