@@ -756,15 +756,22 @@ inline void remap_graph_outputs_to_dense_keys(
 
 /**
  * @brief Remap NeighborGraph public outputs onto the dense internal-key layout
- *        for the MULTI-RANK (extended-region) non-message-passing path.
+ *        for the MULTI-RANK (extended-region) path.
  *
  * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes: ghost
  * (halo) atoms are distinct nodes, so the per-node ``force`` is already the
  * EXTENDED force (one row per extended atom).  Ghost reaction forces stay on
  * their ghost rows and are folded back to their owning rank by LAMMPS
  * reverse-comm — exactly as the dense path returns its extended force.  No
- * zero-padding (unlike the single-rank helper) and no with-comm artifact (dpa1
- * is non-MP).
+ * zero-padding (unlike the single-rank helper).
+ *
+ * Shared by both multi-rank graph routes: non-message-passing models (dpa1)
+ * run this on the plain extended-region artifact (no comm), while
+ * message-passing models (DPA2/DPA3) run it on the with-comm artifact's
+ * output -- ``border_op`` inside that artifact fills ghost-node embeddings
+ * in-place before the model reduces energy/force/virial, so by the time
+ * outputs reach this function the two cases are indistinguishable: it is
+ * the ``atom_energy[0:nloc]``-only reduction below that matters either way.
  *
  * Key differences from the single-rank helper:
  *   - ``energy_redu`` = sum of the LOCAL atom energies

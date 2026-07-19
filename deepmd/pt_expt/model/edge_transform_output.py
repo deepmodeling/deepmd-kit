@@ -12,6 +12,9 @@ from deepmd.dpmodel import (
     get_deriv_name,
     get_reduce_name,
 )
+from deepmd.dpmodel.model.edge_transform_output import (
+    node_ownership_mask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     edge_force_virial,
@@ -151,6 +154,7 @@ def fit_output_to_model_output_graph(
     create_graph: bool = True,
     mask: torch.Tensor | None = None,
     node_capacity: int | None = None,
+    n_local: torch.Tensor | None = None,
     force_precision: torch.dtype | None = None,
 ) -> dict[str, torch.Tensor]:
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
@@ -194,6 +198,20 @@ def fit_output_to_model_output_graph(
         input node axis rather than a re-derived shape -- hardening; the actual
         CUDA out-of-bounds device-assert is prevented by the index clamp in
         :func:`~deepmd.dpmodel.utils.neighbor_graph.derivatives.edge_force_virial`.
+    n_local
+        ``(nf,)`` per-frame OWNED node counts for multi-rank ghost exclusion
+        (owned-prefix layout, :func:`~deepmd.dpmodel.model.edge_transform_output.node_ownership_mask`).
+        When given, every reducible per-node value is masked to zero on ghost
+        rows (index ``>= n_local[frame]``) BEFORE the per-frame
+        ``segment_sum`` -- each ghost atom is owned (and counted) on another
+        rank, so it must not double-count into THIS rank's differentiated
+        energy. Critically, the mask is applied BEFORE ``edge_energy_deriv``
+        differentiates the reduced value, so ``grad(energy, edge_vec)`` (and
+        therefore force/virial/atom-virial) only carries owned-energy terms.
+        The per-node output (``<var>``) itself stays FULL/unmasked (the C++
+        caller slices owned rows itself; ghost partial forces are
+        reverse-commed by LAMMPS -- dpa1-MP precedent). ``None`` (default):
+        unchanged single-rank behavior.
     force_precision
         Compute precision (model dtype) in which to assemble the force / virial
         during inference, decoupled from the fp64 ``edge_vec`` leaf; see
@@ -230,6 +248,13 @@ def fit_output_to_model_output_graph(
     frame_id = frame_id_from_n_node(
         n_node, n_total=N
     )  # (N,) int64 frame index per atom
+    # owned-node (multi-rank ghost) mask: (N,) bool, True for owned rows.
+    # Computed once (array-API pure, works directly on torch tensors) and
+    # applied to every reducible per-node value BEFORE its segment_sum, so
+    # the downstream force/virial autograd (which differentiates the
+    # ALREADY-masked ``<var>_redu``) only carries owned-energy terms.
+    owned = node_ownership_mask(n_node, n_local, N) if n_local is not None else None
+    owned_e = owned.to(redu_prec) if owned is not None else None
     model_ret: dict[str, torch.Tensor] = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -239,13 +264,22 @@ def fit_output_to_model_output_graph(
         kk_redu = get_reduce_name(kk)
         # segment_sum reduces axis 0 (the flat atom axis) per frame
         vv_e = vv.to(redu_prec)  # (N, *shape)
+        if owned_e is not None:
+            vv_e = vv_e * owned_e.reshape(N, *([1] * (vv_e.ndim - 1)))
         redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
         if vdef.intensive:
             if mask is not None:
                 # real-atom count per frame: segment_sum of the mask
-                cnt = segment_sum(mask.to(redu_prec), frame_id, nf)  # (nf,)
+                cnt_mask = mask.to(redu_prec)
+                if owned_e is not None:
+                    cnt_mask = cnt_mask * owned_e
+                cnt = segment_sum(cnt_mask, frame_id, nf)  # (nf,)
                 # broadcast cnt to (nf, 1, ..., 1) to match redu shape
                 cnt = cnt.reshape(nf, *([1] * (redu.ndim - 1)))
+            elif owned_e is not None:
+                cnt = segment_sum(owned_e, frame_id, nf).reshape(
+                    nf, *([1] * (redu.ndim - 1))
+                )
             else:
                 cnt = n_node.to(redu_prec).reshape(nf, *([1] * (redu.ndim - 1)))
             redu = redu / cnt

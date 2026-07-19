@@ -91,3 +91,32 @@ Model compression is supported when {ref}`repinit/tebd_input_mode <model[standar
 
 An example is given in `examples/water/dpa2/input_torch_compressible.json`.
 The performance improvement will be limited if other parts are more expensive.
+
+## Graph-native inference route (pt_expt) {{ pytorch_icon }}
+
+In the pt_expt backend, a graph-eligible DPA-2 descriptor (`repinit/use_three_body` `false` -- the three-body sub-block is not graph-eligible -- and not compressed) can be frozen through a NeighborGraph-native inference path instead of the legacy dense neighbor-list path:
+
+```bash
+dp --pt_expt freeze -o model.pt2 --lower-kind graph
+```
+
+As with DPA-1's graph path (see [Difference among different backends](train-se-atten.md#difference-among-different-backends)), the graph route considers all neighbors within the cutoff rather than a fixed, padded selection, so its numeric result can differ slightly (down to the AOTInductor floating-point noise floor at non-binding `sel`, larger if `sel` is binding) from the dense/`nlist` path.
+
+:::{note}
+**Default route change in pt_expt (eager & training).** For a graph-eligible DPA-2 descriptor, the pt_expt backend now defaults to the carry-all graph route not only for `--lower-kind graph` freezing but also in **eager inference/evaluation and in (compiled) training** (`neighbor_graph_method=None` resolves to the graph). This changes the numerical behavior of existing pt_expt configurations relative to the dense neighbor-list route (by the amounts described above — negligible at non-binding `sel`). The other backends (dpmodel/PyTorch/Paddle/TensorFlow/JAX) are unaffected: they keep the dense route as their only path.
+
+To retain the legacy dense route on pt_expt:
+
+- **Inference / evaluation:** pass `neighbor_graph_method="legacy"` to `forward_common` / `call_common` (forces the dense neighbor-list path).
+- **Training:** call `model.atomic_model.descriptor.disable_graph_lower()` on the constructed model before training. This flips `uses_graph_lower()` to `False`, which both the eager forward and the compiled-training lower honor, so both run the dense route consistently (the same mechanism the spin model uses to stay on the dense path). A first-class training-config knob for this is planned as a follow-up.
+:::
+
+:::{note}
+**Smoothness at the cutoff.** The graph route is exactly smooth at the cutoff, like the dense path. The non-attention channels (environment matrix, switch envelope, convolution, drrd/grrg, g1g1, symmetrization) are smooth by construction. The repformer *attention* channels (`update_g1_has_attn`, `update_g2_has_attn`) additionally use a fixed-phantom-count softmax: the dense smooth-attention denominator keeps exactly `sel − n_real` padding terms at $e^{-\mathrm{attnw\_shift}}$ (a geometry-independent count); the graph kernels reproduce this by excluding masked pairs from the softmax and adding $\max(\mathrm{sel} - n_\mathrm{real}, 0)$ phantom denominator terms per center. An edge entering the cutoff sphere does so at logit $-\mathrm{attnw\_shift}$ exactly while the phantom count drops by one, so the swap is value-preserving and the energy/force are continuous (verified at the float64 noise floor, $\lesssim 10^{-13}$). This also makes the carry-all graph attention agree with the dense attention term-for-term at non-binding `sel`. The only residual $e^{-20}$-scale discontinuity remains for a center with `sel` or more *real* neighbors within the block cutoff — a regime where the dense path itself suffers a far larger discontinuity from truncating a real neighbor, i.e. where `sel` is misconfigured.
+:::
+
+DPA-2's repformer block performs message passing (per-layer neighbor feature aggregation), so a graph-frozen `.pt2` archive additionally embeds a with-comm AOTInductor artifact. Multi-rank LAMMPS runs dispatch to this artifact and drive an MPI ghost-atom exchange (`border_op`) once per repformer layer, instead of folding ghosts onto local owners as the non-message-passing (e.g. DPA-1) graph path does. `.pt2` archives frozen with `--lower-kind graph` before this artifact was introduced do not carry it and must be re-frozen to support multi-rank inference.
+
+Per-atom virial on the graph route uses a different (but equally valid) decomposition than the dense path: each edge's full bond-virial contribution is assigned to its source (neighbor) atom, whereas the dense path's autograd-based per-atom decomposition distributes message-passing contributions across atoms differently. For non-message-passing descriptors the two conventions coincide; for DPA-2 they differ elementwise. Only the *total* virial (summed over all atoms) is convention-independent between the two paths; per-atom virial values from the graph and dense routes should not be compared directly.
+
+Multi-rank message-passing inference on the graph route requires every MPI rank to own or ghost at least one atom -- a rank with zero atoms in both categories raises an error rather than silently desynchronizing the collective per-layer ghost exchange. Pick a domain decomposition that keeps every rank non-empty, or use the dense (`nlist`, the default) artifact, which has no such restriction.

@@ -792,6 +792,54 @@ class TestRestart(unittest.TestCase):
         self.assertTrue(os.path.exists(ckpt), "Checkpoint not created")
         return ckpt
 
+    def test_disable_graph_lower_persists_across_restart(self) -> None:
+        """The documented training opt-out survives a REAL save/restart.
+
+        Regression (OutisLi review): ``disable_graph_lower()`` flipped only
+        a plain python bool, which a checkpoint restart silently reset --
+        the fresh model is rebuilt from config before ``load_state_dict``,
+        and neither the state-dict keys nor ``_extra_state.model_params``
+        carried the choice; on a binding-sel system the route-only switch
+        changed the training equation (energy by ~0.6) without warning.
+        The knob now lives in a persistent descriptor buffer
+        (``graph_lower_disabled``), so every state_dict round-trips it and
+        ``uses_graph_lower()`` re-syncs from the restored buffer.
+        """
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_hatch_restart_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                config = _make_config(self.data_dir, numb_steps=1)
+                config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                trainer = get_trainer(config)
+                desc = trainer.model.atomic_model.descriptor
+                self.assertTrue(desc.uses_graph_lower())
+                desc.disable_graph_lower()
+                self.assertFalse(desc.uses_graph_lower())
+                trainer.run()
+
+                ckpt_path = os.path.join(tmpdir, "model.ckpt.pt")
+                self.assertTrue(os.path.exists(ckpt_path))
+
+                config2 = _make_config(self.data_dir, numb_steps=2)
+                config2["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, restart_model=ckpt_path)
+                desc2 = trainer2.model.atomic_model.descriptor
+                self.assertFalse(
+                    desc2.uses_graph_lower(),
+                    "disable_graph_lower() must survive a checkpoint restart "
+                    "(route-only silent flip changes the training equation)",
+                )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_restart(self) -> None:
         """Train 5 steps, restart from checkpoint, train 5 more."""
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_restart_")

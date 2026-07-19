@@ -66,7 +66,13 @@ else:
 	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
 		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
 		if [ -n "${_LSAN_LIB}" ] && [ -f "${_LSAN_LIB}" ]; then
-			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
+			# DP_GEN_UNDER_SANITIZER: explicit signal for gen scripts that need
+			# to skip sanitizer-incompatible sections (e.g. gen_dpa2.py's
+			# AOTInductor graph .pt2 eval, which can SEGV under the LSAN
+			# runtime). Sniffing LD_PRELOAD inside the gen script is NOT
+			# reliable: the sanitizer runtime removes its own entry from the
+			# process environment during startup.
+			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0 DP_GEN_UNDER_SANITIZER=lsan"
 		fi
 	fi
 	# Run gen scripts in parallel for faster model generation.

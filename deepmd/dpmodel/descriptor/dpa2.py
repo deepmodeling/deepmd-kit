@@ -19,6 +19,7 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     cast_precision,
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -602,6 +603,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
         self.compress = False
+        # graph-native lower opt-out flag (mirrors DescrptDPA1); not
+        # serialized, re-derived structurally at construction/deserialization.
+        self._graph_lower_disabled = False
 
         self.repinit_out_dim = self.repinit.dim_out
         if self.repinit_args.use_three_body:
@@ -708,6 +712,84 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.env_protection
+
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this descriptor supports the graph-native lower.
+
+        Graph-eligible: repinit (``tebd_input_mode`` in ``{"concat",
+        "strip"}``) + repformers, with ALL repformer update toggles
+        included (attention rides ``center_edge_pairs``, see PR-D).
+        Ineligible (fall back to the legacy dense path): three-body repinit
+        (needs the angle machinery -- PR-G-dpa3), compressed descriptors
+        (geo/tebd tabulation is dense-only), and the explicit disable flag
+        (used by e.g. the spin model wrapper).
+
+        Returns
+        -------
+        uses_graph_lower : bool
+            Whether the graph-native lower (:meth:`call_graph`) is supported
+            for the current descriptor configuration.
+        """
+        if self._graph_lower_disabled:
+            return False
+        if self.compress:
+            return False
+        if self.use_three_body:
+            return False
+        # Nonzero-mean checkpoints stay on the legacy route: the dense
+        # repinit accumulates the (sel - n_real) padding slots' -davg/dstd
+        # environment rows, which the sel-free carry-all lower has no
+        # phantom-row counterpart for -- a checkpoint trained against the
+        # dense expression (set_davg_zero=False + compute_input_stats) would
+        # otherwise be silently evaluated with a different function
+        # (observed ~4e-2 energy shift at NON-binding sel, attention off).
+        # Reproducing the dense padding term on the graph route is a
+        # versioned training/migration change, not a default flip.
+        if not self.repinit_args.set_davg_zero:
+            return False
+        if not self.repformer_args.set_davg_zero:
+            return False
+        return self.repinit.tebd_input_mode in ("concat", "strip")
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The compact ``center_edge_pairs`` realization (unbacked-SymInt
+        ``nonzero``/``repeat`` sizes, ``pairs.py``) backs the repformer's
+        nnei-x-nnei attention (``update_g2_has_attn``: Atten2Map /
+        MultiHeadApply) and the equivariant pair update (``update_h2``:
+        EquiVarApply).  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Derived from the EFFECTIVE per-layer flags, not the configured
+        arguments: the LAST repformer layer is built with
+        ``update_chnnl_2=False``, which forces its ``update_g2_has_attn``
+        and ``update_h2`` off -- so e.g. ``nlayers=1`` never runs
+        ``center_edge_pairs`` even when the arguments enable it, and old
+        torch stays usable.  This mirrors the gate
+        ``DescrptBlockRepformers.call_graph`` itself uses to decide whether
+        to build the pairs.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return any(
+            ll.update_g2_has_attn or ll.update_h2 for ll in self.repformers.layers
+        )
+
+    def disable_graph_lower(self) -> None:
+        """Force the legacy dense lower for this descriptor.
+
+        This is an explicit opt-out knob used by contexts where the
+        graph-native lower is unsupported or undesirable (e.g. spin
+        models). After calling this, :meth:`uses_graph_lower` returns
+        ``False`` regardless of the descriptor configuration. The flag is
+        not serialized; it is re-derived structurally at spin-model
+        construction/deserialization.
+        """
+        self._graph_lower_disabled = True
 
     def share_params(
         self, base_class: Any, shared_level: int, resume: bool = False
@@ -883,6 +965,366 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # The dense ``call`` always runs the legacy dense body -- it is the
+        # cross-backend consistency reference and must match the tf/pt/pd/jax
+        # dense descriptors bit-for-bit. Unlike ``DescrptDPA1.call`` (whose
+        # graph adapter is bit-exact because its default repinit uses
+        # ``attn_layer > 0``, where the real attention masks padding), DPA2's
+        # repinit is hardwired to ``attn_layer == 0``. There the dense
+        # se_atten body leaks a phantom padding-neighbor ``-davg/dstd``
+        # residual that the graph path deliberately does NOT reproduce (see
+        # :meth:`call_graph`'s Notes; the graph output is the
+        # physically-correct one). That makes ``_call_graph_adapter`` diverge
+        # from ``_call_dense`` for any model with non-trivial statistics
+        # (nonzero ``davg`` or non-unit ``dstd``) -- an accepted graph/dense
+        # divergence (see ``KNOWN_GRAPH_DENSE_DIVERGENT``). The graph-native
+        # route is therefore reached exclusively through :meth:`call_graph`
+        # (pt_expt ``forward_atomic_graph`` and the C++ graph ``.pt2``), never
+        # through ``call``. ``_call_graph_adapter`` is retained as the
+        # bit-exact-regime reference exercised by ``TestDPA2AdapterBitExact``.
+        return self._call_dense(
+            coord_ext,
+            atype_ext,
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            comm_dict=comm_dict,
+            charge_spin=charge_spin,
+        )
+
+    def _call_graph_adapter(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None,
+    ) -> tuple[Array, Array, None, None, Array]:
+        """Dense-quartet -> shape-static graph -> call_graph -> dense-ABI 5-tuple.
+
+        Builds a NeighborGraph from the dense quartet with the SHAPE-STATIC
+        converter (``compact=False``, jit/export-traceable -- no
+        ``nonzero``), runs :meth:`call_graph`, and reconstructs the dense
+        5-tuple ABI. The per-block edge masks in :meth:`call_graph` (dist
+        filter + slot filter against ``static_nnei``) replicate
+        ``build_multiple_neighbor_list``'s ``nlist[:, :, :ns]`` slicing.
+
+        Bit-exact vs :meth:`_call_dense` **only in the trivial-statistics
+        regime** (``davg == 0`` and ``dstd == 1``, i.e. ``set_davg_zero`` with
+        actually-zero stats). For any model with nonzero ``davg`` or non-unit
+        ``dstd`` this adapter DIFFERS from ``_call_dense``: DPA2's repinit is
+        always ``attn_layer == 0``, where the dense body leaks a phantom
+        padding-neighbor ``-davg/dstd`` residual that the graph path
+        deliberately omits (see :meth:`call_graph`'s Notes). This is why the
+        default dense :meth:`call` does NOT route here -- the graph-native
+        route lives in :meth:`call_graph`. This method is retained as the
+        bit-exact-regime reference exercised by ``TestDPA2AdapterBitExact``.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nall x 3)
+        atype_ext
+            The extended atom types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to local region. shape: nf x nall.
+            ``None`` is allowed only when nall == nloc (identity mapping).
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant single-particle representation.
+            shape: nf x nloc x ng x 3
+        g2
+            ``None`` for this descriptor (graph-native repformers carries g2
+            internally; the dense 5-tuple ABI never surfaces it for dpa2).
+        h2
+            ``None`` for this descriptor.
+        sw
+            The smooth switch function, at the REPFORMER block's own
+            ``nsel`` width (matching :meth:`_call_dense`, whose ``sw`` comes
+            from the repformer sub-nlist, narrower than the outer ``nlist``).
+            shape: nf x nloc x repformers.get_nsel()
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            graph_from_dense_quartet,
+        )
+
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        nframes, nloc, nnei = nlist.shape
+        graph, atype_local = graph_from_dense_quartet(
+            coord_ext, atype_ext, nlist, mapping
+        )
+        g1, rot_mat, sw = self.call_graph(
+            graph, atype_local, static_nnei=nnei, return_sw=True
+        )
+        g1 = xp.reshape(g1, (nframes, nloc, *g1.shape[1:]))
+        rot_mat = xp.reshape(rot_mat, (nframes, nloc, *rot_mat.shape[1:]))
+        # call_graph's per-block truncation already narrows the repformer
+        # edge axis to the repformer block's own nsel width (matching the
+        # dense body's sw, which comes from a nlist already truncated to
+        # repformers.get_nsel() columns) -- a plain reshape suffices.
+        sw = xp.reshape(sw, (nframes, nloc, -1))
+        return g1, rot_mat, None, None, sw
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        type_embedding: Array | None = None,
+        static_nnei: int | None = None,
+        comm_dict: dict | None = None,
+        return_sw: bool = False,
+    ) -> tuple[Array, Array] | tuple[Array, Array, Array]:
+        """Descriptor-level graph-native forward: one carry-all graph at the
+        model rcut (== repinit rcut), per-block edge masks in place of
+        ``build_multiple_neighbor_list``.
+
+        This is what :meth:`~deepmd.dpmodel.atomic_model.dp_atomic_model.
+        DPAtomicModel.forward_atomic_graph` calls. Geometry enters only
+        through ``graph.edge_vec``; the descriptor is graph-native from
+        repinit through repformers (three-body repinit is graph-ineligible
+        and gated out by :meth:`uses_graph_lower`).
+
+        Notes
+        -----
+        **Dense's ``attn_layer=0`` padding-slot leak is intentionally NOT
+        reproduced here.** When ``set_davg_zero=False`` (nonzero ``mean``)
+        AND ``exclude_types == []``, the dense
+        :meth:`DescrptBlockSeAtten.call` that backs ``repinit`` (always
+        ``attn_layer=0`` in DPA2) leaks a data-dependent residual from its
+        padding neighbor slots into the output: ``PairExcludeMask.
+        build_type_exclude_mask`` short-circuits to an all-ones mask when no
+        types are excluded, which is the *only* real/padding mask that code
+        path applies at ``attn_layer=0`` (the identity ``NeighborGatedAttention``
+        with zero layers masks nothing). The padding rows' geometry is
+        already weight-zeroed inside ``_make_env_mat``, but ``EnvMat.call``
+        subtracts ``davg`` AFTER that zeroing, so every padding slot carries
+        a deterministic ``-davg/dstd`` residual (padding-count/sel-dependent)
+        that nothing re-masks before it reaches ``gr``. This graph path
+        masks/zeros every
+        padding and excluded edge before each ``segment_sum``, so it does NOT
+        reproduce that leak. In this regime :meth:`call_graph` (and the dense
+        adapter, :meth:`_call_graph_adapter`) deliberately DIFFER from
+        :meth:`_call_dense` -- the graph output is the physically correct
+        one, and the divergence is a pre-existing dense-body bug (present
+        since ``attn_layer=0`` was introduced, not caused by this task) that
+        is documented, not bit-matched, here. Bit-exactness vs the dense body
+        (as exercised by ``TestDPA2AdapterBitExact``) holds in every OTHER
+        regime: ``set_davg_zero=True``, or non-empty ``exclude_types`` (which
+        supplies a real mask independent of ``davg``), or configurations with
+        no padding slots within ``rcut``.
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`.
+        atype
+            (N,) flat LOCAL atom types where ``N = sum(n_node)``.
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table. Defaults
+            to ``self.type_embedding.call()`` when not provided.
+        static_nnei
+            When the graph uses the shape-static center-major layout
+            (``graph_from_dense_quartet`` / ``from_dense_quartet(compact=
+            False)``, ``E = n_center * nnei``), pass ``nnei`` so the
+            per-block edge masks and the repformer attention edge-pair
+            enumeration stay jit/export-traceable (no ``nonzero``). ``None``
+            (carry-all / compact graphs) selects the dynamic eager form
+            (sel is normalization-only there, decision #9).
+        comm_dict
+            MPI communication metadata forwarded to the repformer block
+            (the message-passing part). ``None`` for non-parallel inference
+            (default).
+        return_sw
+            When True, also return the repformer block's smooth switch
+            function on the flat edge axis.
+
+        Returns
+        -------
+        g1 : Array
+            (N, dim_out) descriptor, flat node axis.
+        rot_mat : Array
+            (N, dim_emb, 3) equivariant single-particle representation,
+            flat node axis.
+        sw : Array
+            (E,) smooth switch, zeroed on padding/ineligible edges. Only
+            returned when ``return_sw`` is True.
+        """
+        import dataclasses
+
+        from deepmd.dpmodel.utils.safe_gradient import (
+            safe_for_vector_norm,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec, atype)
+        dev = array_api_compat.device(graph.edge_vec)
+        # manual @cast_precision: the decorator casts array ARGUMENTS, but
+        # the graph's only float input (edge_vec) is inside the
+        # NeighborGraph dataclass, invisible to it. Cast edge_vec down to
+        # the descriptor precision on entry and the outputs back to the
+        # caller's dtype on exit (dpa1 precedent).
+        in_dtype = graph.edge_vec.dtype
+        prec = get_xp_precision(xp, self.precision)
+        if in_dtype != prec:
+            graph = dataclasses.replace(graph, edge_vec=xp.astype(graph.edge_vec, prec))
+        dist = safe_for_vector_norm(graph.edge_vec, axis=-1)  # (E,)
+        e_ax = graph.edge_mask.shape[0]
+
+        def _block_graph(rc: float, ns: int) -> tuple[Any, int | None]:
+            """Per-block view of the model graph (local closure).
+
+            Graph analogue of ``build_multiple_neighbor_list``
+            (nlist.py:408): dist mask always; slot TRUNCATION only in the
+            shape-static dense-adapter layout, replicating the dense
+            ``nlist[:, :, :ns]`` slicing.
+
+            Parameters
+            ----------
+            rc
+                The block cutoff radius.
+            ns
+                The block sel (dense sub-nlist width).
+
+            Returns
+            -------
+            block_graph : NeighborGraph
+                The block-restricted graph view.
+            block_static_nnei : int | None
+                The block's static width (``ns``) in the shape-static
+                layout, ``None`` for carry-all graphs.
+
+            Notes
+            -----
+            The genuine array-width SLICE (rather than an edge_mask AND)
+            keeps the shape-static pair enumeration
+            (``center_edge_pairs``/``static_nnei``) at exactly the dense
+            sub-nlist width ``ns``: the pair count stays minimal, and the
+            attention softmax sees the same present-slot layout as the
+            dense body. (Before the fixed-phantom-count compensation in
+            ``segment_softmax`` this width-match was also required for
+            numeric parity -- extra always-masked pairs each contributed
+            ``exp(-attnw_shift)`` to the denominator; the compensation has
+            since made the denominator width-independent.) Carry-all graphs
+            (``static_nnei is None``) have no static width at all: sel is
+            normalization-only there (spec decision #9), and the compact
+            attention pairing groups per-center dynamically, so no
+            truncation is needed or possible.
+            """
+            if static_nnei is None or ns >= static_nnei:
+                m = graph.edge_mask & (dist <= rc)
+                return dataclasses.replace(graph, edge_mask=m), static_nnei
+            n_center = e_ax // static_nnei
+            ei = xp.reshape(graph.edge_index, (2, n_center, static_nnei))[:, :, :ns]
+            ei = xp.reshape(ei, (2, n_center * ns))
+            ev = xp.reshape(graph.edge_vec, (n_center, static_nnei, 3))[:, :ns, :]
+            ev = xp.reshape(ev, (n_center * ns, 3))
+            em = xp.reshape(graph.edge_mask, (n_center, static_nnei))[:, :ns]
+            em = xp.reshape(em, (n_center * ns,))
+            dd = xp.reshape(dist, (n_center, static_nnei))[:, :ns]
+            dd = xp.reshape(dd, (n_center * ns,))
+            em = em & (dd <= rc)
+            sliced = dataclasses.replace(
+                graph, edge_index=ei, edge_vec=ev, edge_mask=em
+            )
+            return sliced, ns
+
+        tebd_table = (
+            type_embedding if type_embedding is not None else self.type_embedding.call()
+        )
+        # NB: no xp.asarray(..., device=) wrap -- it detaches the
+        # type-embedding gradient under torch (the dpa1 lesson).
+        atype_local = xp.asarray(atype, device=dev)
+        g1_inp = xp.take(tebd_table, atype_local, axis=0)  # (N, tebd_dim)
+        # repinit (attn_layer == 0 se_atten block; call_graph exists since PR-A)
+        repinit_graph, repinit_static_nnei = _block_graph(
+            self.repinit.get_rcut(), self.repinit.get_nsel()
+        )
+        g1, _ = self.repinit.call_graph(
+            repinit_graph,
+            atype,
+            type_embedding=tebd_table,
+            static_nnei=repinit_static_nnei,
+        )
+        # three-body is graph-ineligible (uses_graph_lower gates it out)
+        g1 = self.g1_shape_tranform(g1)
+        if self.add_tebd_to_repinit_out:
+            assert self.tebd_transform is not None
+            g1 = g1 + self.tebd_transform(g1_inp)
+        # dense does the mapping gather to g1_ext here; the graph has ONE
+        # flat node space -- nothing to do (extended multi-rank ghost refresh
+        # happens inside the repformer layer loop via
+        # `_exchange_ghosts_graph`).
+        repformer_graph, repformer_static_nnei = _block_graph(
+            self.repformers.get_rcut(), self.repformers.get_nsel()
+        )
+        g1, g2, h2, rot_mat, sw = self.repformers.call_graph(
+            repformer_graph,
+            atype,
+            g1,
+            comm_dict=comm_dict,
+            static_nnei=repformer_static_nnei,
+        )
+        if self.concat_output_tebd:
+            g1 = xp.concat([g1, g1_inp], axis=-1)
+        if in_dtype != prec:
+            g1 = xp.astype(g1, in_dtype)
+            rot_mat = xp.astype(rot_mat, in_dtype)
+            sw = xp.astype(sw, in_dtype)
+        if return_sw:
+            return g1, rot_mat, sw
+        return g1, rot_mat
+
+    def _call_dense(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
+        """Legacy dense descriptor body (the ineligible/no-mapping-ghost
+        ``call`` path).
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping, maps extended region index to local region.
+        comm_dict
+            MPI communication metadata for parallel inference. Forwarded to
+            the repformer block (the message-passing part). The repinit
+            sub-block does no message passing and does not receive it.
+            ``None`` for non-parallel inference (default).
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            shape: nf x nloc x nnei x ng
+        h2
+            The rotationally equivariant pair-partical representation.
+            shape: nf x nloc x nnei x 3
+        sw
+            The smooth switch function. shape: nf x nloc x nnei
+
+        """
+        del fparam, charge_spin
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape

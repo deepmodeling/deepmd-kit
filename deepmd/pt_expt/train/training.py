@@ -615,8 +615,6 @@ def _trace_and_compile_graph(
         Per-task buffers promoted to FX placeholders (see
         :func:`_detect_task_buffers`).
     """
-    import math
-
     from torch._decomp import (
         get_decompositions,
     )
@@ -676,10 +674,6 @@ def _trace_and_compile_graph(
     while (trace_nf * nloc_trace) in (_forbidden | {trace_nf}):
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
-    # Static edge capacity, prime-padded to stay distinct from nf and N.
-    nnei = sum(model.get_sel())
-    e_max_base = max(math.ceil(1.25 * nloc_trace * nnei), 7)
-    e_max = _next_safe_prime(e_max_base, _forbidden | {trace_nf, trace_N})
 
     # Shared with the .pt2 export trace (serialization.py) so the two graph
     # traces can never desync on the input schema.  Training uses the run-time
@@ -687,16 +681,39 @@ def _trace_and_compile_graph(
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
         check_graph_trace_torch_version,
+        count_synthetic_graph_edges,
     )
 
     check_graph_trace_torch_version(model)
+
+    # Static edge capacity: derived from the ACTUAL edge count of the
+    # synthetic trace system (the carry-all builder is sel-free; a
+    # sel-derived estimate overflows whenever the real degree exceeds sel),
+    # then prime-padded to stay distinct from nf and N.  ``+ 2`` keeps at
+    # least two masked padding rows so the padded-tail branch is traced.
+    # Trace on the MODEL's device, not the global ``DEVICE``: make_fx keeps the
+    # real model parameters (``_allow_non_fake_inputs``), so the synthetic trace
+    # inputs must live where the model does. A CUDA training run keeps the model
+    # on ``DEVICE`` (these match), but callers that trace a CPU-placed model
+    # (e.g. the graph .pt2/export path, which moves the model to CPU to dodge a
+    # CUDA autograd-stream limitation) would otherwise mix a CPU model with
+    # CUDA inputs and fail only on a GPU host.
+    _trace_device = next(model.parameters()).device
+    e_real = count_synthetic_graph_edges(
+        model,
+        nframes=trace_nf,
+        nloc=nloc_trace,
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=_trace_device,
+    )
+    e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
         model,
         e_max=e_max,
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -1053,14 +1070,20 @@ class _CompiledModel(torch.nn.Module):
             *task_buf_vals,
         )
 
-        # Translate forward_lower keys -> forward keys.
-        # ``extended_force`` lives on all extended atoms (nf, nall, 3).
-        # Ghost-atom forces must be scatter-summed back to local atoms
-        # via ``mapping`` — the same operation ``communicate_extended_output``
-        # performs in the uncompiled path.
+        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
+        # every key passes through unchanged (energy models emit
+        # atom_energy/energy/virial/..., property/dos/... models their own
+        # keys -- the hardcoded energy-key copy here used to KeyError on any
+        # non-energy fitting), EXCEPT the extended-region keys
+        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
+        # (nf, nall, 9): their ghost rows are scatter-summed back onto
+        # local owners via ``mapping`` -- the same fold
+        # ``communicate_extended_output`` performs in the uncompiled path
+        # (which exposes them as ``force`` / ``atom_virial``).  Folding
+        # both keeps the compiled and uncompiled outputs key-for-key
+        # consistent, including for a future atom-virial training
+        # objective.
         out: dict[str, torch.Tensor] = {}
-        out["atom_energy"] = result["atom_energy"]
-        out["energy"] = result["energy"]
         if "extended_force" in result:
             ext_force = result["extended_force"]  # (nf, nall, 3)
             idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
@@ -1069,14 +1092,21 @@ class _CompiledModel(torch.nn.Module):
             )
             force.scatter_add_(1, idx, ext_force)
             out["force"] = force
-        if "virial" in result:
-            out["virial"] = result["virial"]
         if "extended_virial" in result:
-            out["extended_virial"] = result["extended_virial"]
-        if "atom_virial" in result:
-            out["atom_virial"] = result["atom_virial"]
-        if "mask" in result:
-            out["mask"] = result["mask"]
+            ext_virial = result["extended_virial"]  # (nf, nall, 9)
+            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
+            atom_virial = torch.zeros(
+                nframes,
+                nloc,
+                ext_virial.shape[-1],
+                dtype=ext_virial.dtype,
+                device=ext_virial.device,
+            )
+            atom_virial.scatter_add_(1, idx, ext_virial)
+            out["atom_virial"] = atom_virial
+        for key, val in result.items():
+            if key not in ("extended_force", "extended_virial"):
+                out[key] = val
         return out
 
     def _forward_graph(
@@ -1108,6 +1138,12 @@ class _CompiledModel(torch.nn.Module):
 
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
+        # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
+        # every per-node tensor of the graph schema (the trace sample from
+        # build_synthetic_graph_inputs is flat too, so the compiled lower's
+        # input spec expects it).
+        if aparam is not None:
+            aparam = aparam.reshape(nframes * nloc, -1)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
