@@ -14,7 +14,7 @@ name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ubuntu-22.04
+    runs-on: cpu
     strategy:
       matrix:
         include:
