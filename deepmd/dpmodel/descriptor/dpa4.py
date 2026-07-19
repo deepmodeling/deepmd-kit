@@ -1265,7 +1265,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         mapping
             Extended-to-local mapping with shape (nf, nall), or None.
         comm_dict
-            Communication dictionary for parallel inference (unused).
+            Communication dictionary for parallel inference. The dense
+            (nlist) lower does not implement multi-rank exchange; a non-None
+            value raises ``NotImplementedError`` here, before the graph
+            build.
         fparam
             Frame parameters with shape (nf, nfp). Not used by SeZM, kept for
             interface compatibility.
@@ -1289,6 +1292,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None (not used).
         sw
             None (not used).
+
+        Raises
+        ------
+        NotImplementedError
+            When ``comm_dict`` is provided.
         """
         xp = array_api_compat.array_namespace(coord_ext, atype_ext)
         device = array_api_compat.device(coord_ext)
@@ -1323,8 +1331,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph, atype_flat = _graph_from_padded_nlist(
             coord_ext, atype_ext, nlist, mapping
         )
-        # ``comm_dict`` (multi-rank) is unsupported; ``_call_graph_common`` is
-        # the single validation owner and raises before touching the core.
+        # The dense (nlist) lower has no comm implementation of its own and
+        # never will: it is the one owner of that rejection, so it raises
+        # here, before the graph build, instead of forwarding ``comm_dict``
+        # into the shared trunk (which now threads comm through to the
+        # graph-native leaf for the graph route).
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "the DPA4 dense (nlist) lower does not implement comm_dict "
+                "multi-rank exchange; freeze with the graph lower for "
+                "multi-rank inference"
+            )
         x_scalar, _ = self._call_graph_common(
             graph,
             atype_flat,
@@ -1333,7 +1350,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             force_embedding=force_embedding,
             charge_spin=charge_spin,
             spin=spin,
-            comm_dict=comm_dict,
         )
         # ``_call_graph_common`` returns (nf*nloc, 1, 1, channels) already in
         # global precision; flatten the SO(3) singleton axes to (nf, nloc, C).
@@ -1586,14 +1602,20 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         spin: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
     ) -> tuple[Array, Array]:
-        """Shared graph-route trunk: comm validation + pair exclusion + core.
+        """Shared graph-route trunk: pair exclusion + comm threading + core.
 
         This is the ONE site applying pair exclusion (canonical
         ``apply_pair_exclusion`` on the graph's ``edge_mask``); the edge-cache
         core below never re-applies it. Both descriptor entries -- the
         graph-native ``call_graph`` and the dense-nlist ``call`` adapter --
-        funnel through here so exclusion and comm validation live in exactly
-        one place.
+        funnel through here so exclusion lives in exactly one place. The
+        dense ``call`` adapter rejects ``comm_dict`` itself before reaching
+        this trunk (it owns that rejection); the graph route has no comm
+        opinion at this layer and simply threads ``comm_dict`` down to the
+        interaction blocks, whose per-block ``exchange_ghost_features`` leaf
+        is the dpmodel backend's actual guard (mirrors dpa2's
+        ``_exchange_ghosts_graph`` base; pt_expt overrides the leaf with a
+        real ``border_op``).
 
         Parameters
         ----------
@@ -1612,7 +1634,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         spin
             Optional per-node spin vectors.
         comm_dict
-            Not supported; raises.
+            Border-exchange tensors, forwarded unchanged to the interaction
+            blocks; ``None`` for single-rank inference.
 
         Returns
         -------
@@ -1624,13 +1647,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Raises
         ------
         NotImplementedError
-            When ``comm_dict`` is provided (no DPA4 lower path implements
-            cross-rank exchange).
+            When ``comm_dict`` is provided and a block actually needs the
+            cross-rank exchange (raised by the per-block leaf, not here).
         """
-        if comm_dict is not None:
-            raise NotImplementedError(
-                "multi-rank comm_dict inference is not supported by DPA4"
-            )
         if self.exclude_types:
             # Canonical NeighborGraph transform: exclusion lands on the
             # graph's edge_mask exactly once; the edge-cache core below has
@@ -1647,6 +1666,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             force_embedding=force_embedding,
             charge_spin=charge_spin,
             spin=spin,
+            comm_dict=comm_dict,
         )
 
     def call_graph(
@@ -1669,8 +1689,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Accepted for graph-seam interface stability and ignored: DPA4
             embeds types internally (``SeZMTypeEmbedding``) from ``atype``.
         comm_dict
-            Not supported: DPA4 has no cross-rank ghost exchange on any
-            lower path.
+            Border-exchange tensors for parallel inference, threaded down to
+            the interaction blocks. The dpmodel backend implements no
+            cross-rank exchange on any lower path: a block that actually
+            needs it raises from the ``exchange_ghost_features`` leaf (see
+            ``_call_graph_common``), not here.
 
         Returns
         -------
@@ -1681,7 +1704,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Raises
         ------
         NotImplementedError
-            When ``comm_dict`` is provided.
+            When ``comm_dict`` is provided and a block needs the cross-rank
+            exchange (raised by the per-block leaf).
         """
         n_nodes = atype.shape[0]
         x_scalar, _ = self._call_graph_common(graph, atype, comm_dict=comm_dict)

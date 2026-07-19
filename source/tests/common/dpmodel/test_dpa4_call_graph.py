@@ -615,3 +615,42 @@ def test_call_dense_golden() -> None:
     assert ext_atype.shape[1] > coord_b.shape[1]  # ghosts present
     outB = np.asarray(ddB.call(ext_coord, ext_atype, nlist_b, mapping=mapping)[0])
     np.testing.assert_allclose(outB, _GOLDEN_CALL_DENSE_B, rtol=1e-10, atol=1e-12)
+
+
+def test_dense_call_comm_dict_raises() -> None:
+    # The dense lower has no comm implementation; the dense adapter is the
+    # one owner of that rejection.
+    dd = make_descriptor()
+    coord, atype, nlist = make_inputs()
+    nf, nloc = atype.shape
+    with pytest.raises(NotImplementedError, match="dense"):
+        dd.call(coord.reshape(nf, -1), atype, nlist, comm_dict={"dummy": None})
+
+
+def test_call_graph_comm_dict_reaches_leaf_stub() -> None:
+    # The graph trunk now threads comm_dict; in the pure-dpmodel backend the
+    # per-block exchange leaf is the guard (mirrors dpa2's
+    # _exchange_ghosts_graph base). ``make_descriptor()`` leaves
+    # ``use_env_seed`` at its class default (True), so ``_block_comm``
+    # forwards comm_dict starting at block 0 already (block 0 is only
+    # skipped when ``use_env_seed=False``) -- the leaf raise fires on the
+    # first block regardless of ``n_blocks``. ``n_blocks=2`` is not load
+    # bearing for reaching the leaf here; it just matches the shared
+    # ``make_descriptor()`` fixture used across this file.
+    dd = make_descriptor()
+    coord, atype, nlist = make_inputs()
+    graph = make_graph_from_nlist(coord, nlist)
+    fake_comm = dict.fromkeys(
+        (
+            "send_list",
+            "send_proc",
+            "recv_proc",
+            "send_num",
+            "recv_num",
+            "communicator",
+            "nlocal",
+            "nghost",
+        )
+    )
+    with pytest.raises(NotImplementedError, match="dpmodel backend"):
+        dd.call_graph(graph, atype.reshape(-1), comm_dict=fake_comm)
