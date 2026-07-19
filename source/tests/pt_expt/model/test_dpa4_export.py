@@ -2,26 +2,27 @@
 """Model-level freeze test for the DPA4/SeZM energy model.
 
 A DPA4 model is a message-passing GNN (``has_message_passing() == True``),
-but no lower path implements cross-rank ghost-feature exchange: the dense
-``call`` never forwards ``comm_dict`` to the interaction blocks, and the
-NeighborGraph route raises on it. Consequently
-``has_message_passing_across_ranks()`` is False, and
-``deserialize_to_file`` produces a .pt2 archive with a SINGLE compiled
-artifact (no ``forward_lower_with_comm`` sidecar) — multi-rank inference
-must fail fast at the C++ dispatch instead of silently skipping the
-exchange.
+and cross-rank ghost-feature exchange is implemented ONLY on the
+NeighborGraph lower: it carries a real per-layer ``border_op`` exchange
+(``has_message_passing_across_ranks()`` is True). The dense (nlist) lower's
+``call`` adapter still raises on ``comm_dict`` (``dense_lower_supports_comm()``
+is False), so ``deserialize_to_file`` embeds the ``forward_lower_with_comm``
+sidecar for the ``"graph"`` kind only; the ``"nlist"`` kind stays a SINGLE
+compiled artifact and multi-rank inference on it must fail fast at the C++
+dispatch instead of silently skipping the exchange.
 
 Task 8 parametrizes the freeze over ``lower_kind``: ``"auto"`` now resolves
 to ``"graph"`` (``_resolve_lower_kind`` sees ``model_uses_graph_lower() is
 True``; ``canonical_model_eligible`` is dpa1-specific so DPA4 never takes the
 ``"dpa1_canonical"`` branch), while ``"nlist"`` stays reachable for
 back-compat. This test verifies, per ``lower_kind``:
-  1. The .pt2 archive is produced and the with-comm artifact is ABSENT
-     (neither lower kind implements cross-rank ghost exchange for DPA4).
+  1. The .pt2 archive is produced and the with-comm artifact is PRESENT for
+     the ``"graph"`` kind (cross-rank exchange) and ABSENT for the
+     ``"nlist"`` kind (dense lower is comm-less).
   2. ``metadata.json`` carries the correct ``type_map``/``rcut``,
-     ``has_message_passing: true``, ``has_comm_artifact: false``, and
-     ``lower_input_kind == expected_input_kind``; the graph kind additionally
-     carries ``graph_edge_dtype``.
+     ``has_message_passing: true``, kind-conditional ``has_comm_artifact``,
+     and ``lower_input_kind == expected_input_kind``; the graph kind
+     additionally carries ``graph_edge_dtype``.
   3. The regular artifact loads via ``aoti_load_package``.
   4. The loaded artifact reproduces the eager model: the ``"nlist"`` kind
      against ``forward_common_lower`` (dense ABI, fp64 AOTI parity, rtol
@@ -155,16 +156,21 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     with zipfile.ZipFile(pt2_path, "r") as zf:
         names = set(zf.namelist())
         meta = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
-        assert "model/extra/forward_lower_with_comm.pt2" not in names, (
-            f"with-comm artifact present but no lower path implements "
-            f"cross-rank exchange; names={sorted(names)}"
-        )
+        if expected_input_kind == "graph":
+            assert "model/extra/forward_lower_with_comm.pt2" in names, (
+                "graph kind must embed the with-comm sidecar (multi-rank)"
+            )
+            assert meta["has_comm_artifact"] is True
+        else:
+            assert "model/extra/forward_lower_with_comm.pt2" not in names, (
+                "nlist kind must stay single-artifact (dense lower is comm-less)"
+            )
+            assert meta["has_comm_artifact"] is False
     assert meta["type_map"] == _DPA4_CONFIG["type_map"]
     assert meta["rcut"] == model.get_rcut()
-    # DPA4 is a message-passing GNN descriptor, but no lower path
+    # DPA4 is a message-passing GNN descriptor; only the graph lower
     # implements the cross-rank exchange (see module docstring).
     assert meta["has_message_passing"] is True
-    assert meta["has_comm_artifact"] is False
     assert meta["lower_input_kind"] == expected_input_kind
 
     # 3. The regular artifact loads.
