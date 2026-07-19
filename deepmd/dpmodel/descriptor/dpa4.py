@@ -1324,13 +1324,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             dtype=coord_ext.dtype,
             device=device,
         )
-        # ``_graph_from_padded_nlist`` owns the dense-topology contract: the
-        # pt-mirroring ``src_ok`` sanitization (out-of-range / broken-mapping
-        # sources masked) and, via ``graph_from_dense_quartet``, the
-        # ``mapping is None`` identity case (neighbor indices already local).
-        graph, atype_flat = _graph_from_padded_nlist(
-            coord_ext, atype_ext, nlist, mapping
-        )
         # The dense (nlist) lower has no comm implementation of its own and
         # never will: it is the one owner of that rejection, so it raises
         # here, before the graph build, instead of forwarding ``comm_dict``
@@ -1342,6 +1335,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "multi-rank exchange; freeze with the graph lower for "
                 "multi-rank inference"
             )
+        # ``_graph_from_padded_nlist`` owns the dense-topology contract: the
+        # pt-mirroring ``src_ok`` sanitization (out-of-range / broken-mapping
+        # sources masked) and, via ``graph_from_dense_quartet``, the
+        # ``mapping is None`` identity case (neighbor indices already local).
+        graph, atype_flat = _graph_from_padded_nlist(
+            coord_ext, atype_ext, nlist, mapping
+        )
         x_scalar, _ = self._call_graph_common(
             graph,
             atype_flat,
