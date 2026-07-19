@@ -168,7 +168,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 fitting,
                 graph,
                 atype,
-                descriptor.type_embedding.call(),
+                # descriptor-owned hook (single owner for the graph-route tebd
+                # table); value-identical for dpa1, the only canonical-eligible
+                # descriptor.
+                descriptor.graph_type_embedding_table(),
                 output_mask,
                 atom_bias,
                 do_atomic_virial,
