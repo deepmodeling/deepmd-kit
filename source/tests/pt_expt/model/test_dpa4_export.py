@@ -53,6 +53,9 @@ from deepmd.pt_expt.model.get_model import (
 from deepmd.pt_expt.model.model import (
     BaseModel,
 )
+from deepmd.pt_expt.utils import (
+    env as _env,
+)
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
     build_synthetic_graph_inputs,
@@ -62,6 +65,20 @@ from deepmd.pt_expt.utils.serialization import (
 from ...common.dpmodel.test_dpa4_call_graph import (
     _jitter_zero_arrays,
 )
+
+
+def _to_artifact_device(*tensors: torch.Tensor | None) -> tuple:
+    """Move sample tensors to the AOTI artifact's compile device.
+
+    ``deserialize_to_file`` runs ``move_to_device_pass(exported, _env.DEVICE)``
+    before AOTI compile, so a CUDA box produces a CUDA-only artifact; feeding
+    it CPU tensors triggers an illegal-memory-access at the AOTI boundary.
+    The eager reference stays on CPU untouched -- only the artifact call
+    needs the move. ``None`` placeholders (unset fparam/aparam/charge_spin)
+    pass through unchanged.
+    """
+    return tuple(t if t is None else t.to(_env.DEVICE) for t in tensors)
+
 
 # Small fp64 DPA4 config (channels 16, n_radial 8, lmax 2, mmax 1,
 # n_blocks 2) — large enough to exercise the SO(2)/SO(3) + attention +
@@ -182,8 +199,28 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
             f"jitter not effective -- AOTI parity check would be vacuous"
         )
 
-        artifact_out = regular(
+        # The artifact is compiled for _env.DEVICE (move_to_device_pass in
+        # deserialize_to_file); move inputs there while the eager reference
+        # above stays on CPU.
+        (
+            d_ext_coord,
+            d_ext_atype,
+            d_nlist_t,
+            d_mapping_t,
+            d_fparam,
+            d_aparam,
+            d_charge_spin,
+        ) = _to_artifact_device(
             ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+        )
+        artifact_out = regular(
+            d_ext_coord,
+            d_ext_atype,
+            d_nlist_t,
+            d_mapping_t,
+            d_fparam,
+            d_aparam,
+            d_charge_spin,
         )
 
         # The AOTI artifact returns the internal forward_common_lower keys;
@@ -263,8 +300,40 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
             f"jitter not effective -- AOTI parity check would be vacuous"
         )
 
-        artifact_out = regular(
+        # The artifact is compiled for _env.DEVICE (move_to_device_pass in
+        # deserialize_to_file); move inputs there while the eager reference
+        # above stays on CPU.
+        (
+            d_atype,
+            d_n_node,
+            d_n_local,
+            d_ei,
+            d_ev,
+            d_em,
+            d_do,
+            d_drp,
+            d_so,
+            d_srp,
+            d_fp,
+            d_ap,
+            d_cs,
+        ) = _to_artifact_device(
             atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs
+        )
+        artifact_out = regular(
+            d_atype,
+            d_n_node,
+            d_n_local,
+            d_ei,
+            d_ev,
+            d_em,
+            d_do,
+            d_drp,
+            d_so,
+            d_srp,
+            d_fp,
+            d_ap,
+            d_cs,
         )
 
         # Compare every key the artifact produces against the (translated)
