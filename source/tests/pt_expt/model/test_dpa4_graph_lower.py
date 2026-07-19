@@ -23,6 +23,8 @@ path exercised here (``AOTI indirect-indexing`` was already globally
 disabled for DPA4 per Task 6). No trap-class fix was needed.
 """
 
+import ctypes
+
 import numpy as np
 import pytest
 import torch
@@ -49,6 +51,52 @@ from ...dpa4_fixtures import (
 from ...seed import (
     GLOBAL_SEED,
 )
+
+# ---------------------------------------------------------------------------
+# Self-comm-dict helper -- copied from
+# ``source/tests/pt_expt/model/test_dpa2_graph_lower.py`` (also duplicated in
+# ``source/tests/pt_expt/descriptor/test_repflow_parallel.py`` and
+# ``test_repformer_parallel.py``; the repo precedent for this generic,
+# model-independent helper is a per-file copy, not a cross-test-module
+# import). Builds a single-rank, self-only MPI ``comm_dict`` whose effect is
+# a plain gather from the sendlist-indexed local rows into the ghost slots,
+# so the ``border_op`` self-send branch (no MPI runtime needed) can be
+# exercised eagerly.
+
+
+def _addr_of(np_arr: np.ndarray) -> int:
+    """Return the raw int address of a numpy array's data buffer."""
+    return np_arr.ctypes.data_as(ctypes.c_void_p).value
+
+
+def _build_self_comm_dict(
+    *,
+    nloc: int,
+    nghost: int,
+    sendlist_indices: np.ndarray,
+    keepalive: list,
+) -> dict:
+    """Build a comm_dict for a single-rank self-exchange.
+
+    ``sendlist_indices`` (int32, length ``nghost``) gives the local row to
+    copy into each successive ghost slot ``[nloc, nloc + nghost)``.  Control
+    tensors are forced to CPU: the C++ ``border_op`` host-side code
+    dereferences ``data_ptr<int>()`` directly.
+    """
+    sendlist_indices = np.ascontiguousarray(sendlist_indices, dtype=np.int32)
+    keepalive.append(sendlist_indices)
+    addr = _addr_of(sendlist_indices)
+    return {
+        "send_list": torch.tensor([addr], dtype=torch.int64, device="cpu"),
+        "send_proc": torch.zeros(1, dtype=torch.int32, device="cpu"),
+        "recv_proc": torch.zeros(1, dtype=torch.int32, device="cpu"),
+        "send_num": torch.tensor([nghost], dtype=torch.int32, device="cpu"),
+        "recv_num": torch.tensor([nghost], dtype=torch.int32, device="cpu"),
+        "communicator": torch.zeros(1, dtype=torch.int64, device="cpu"),
+        "nlocal": torch.tensor(nloc, dtype=torch.int32, device="cpu"),
+        "nghost": torch.tensor(nghost, dtype=torch.int32, device="cpu"),
+    }
+
 
 # Small fp64 DPA4/SeZM config -- copied verbatim from the descriptor block of
 # ``source/tests/pt_expt/model/test_dpa4_export.py``'s ``_DPA4_CONFIG`` (that
@@ -112,6 +160,125 @@ def _make_message_sensitive_model(device, seed: int = 99) -> EnergyModel:
     # ``_modules`` entry in place.
     model.atomic_model.descriptor = jittered
     return model
+
+
+def _small_graph_inputs(
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Small 6-atom fp64 fixture (same geometry recipe as
+    ``TestDpa4GraphLower.setup_method``) for descriptor-level graph tests
+    that don't need a full model forward.
+    """
+    generator = torch.Generator(device=device).manual_seed(GLOBAL_SEED)
+    cell = torch.rand([3, 3], dtype=torch.float64, device=device, generator=generator)
+    cell = (cell + cell.T) + 5.0 * torch.eye(3, device=device)
+    coord = torch.rand([6, 3], dtype=torch.float64, device=device, generator=generator)
+    coord = torch.matmul(coord, cell).unsqueeze(0)  # [1, 6, 3]
+    atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64, device=device)
+    box = cell.reshape(1, 9)
+    return coord, atype, box
+
+
+def _graph_from(
+    coord: torch.Tensor, atype: torch.Tensor, box: torch.Tensor, rcut: float
+):
+    """Build a carry-all ``NeighborGraph`` for the small fixture."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    return build_neighbor_graph(coord, atype, box, rcut)
+
+
+def test_dpa4_exchange_border_op_self_communication() -> None:
+    """Real ``border_op`` through the self-send branch: owned rows must be
+    untouched; ghost rows must be overwritten with the sendlist-named owner
+    rows. Exercises the actual custom op end-to-end, no MPI runtime needed.
+    """
+    from deepmd.pt_expt.descriptor.dpa4_nn.block import (
+        exchange_ghost_features,
+    )
+    from deepmd.pt_expt.utils.comm import (
+        ensure_comm_registered,
+    )
+
+    ensure_comm_registered()
+    nlocal, nghost = 4, 3
+    n, d, c = nlocal + nghost, 4, 5
+    owners = np.array([1, 0, 2], dtype=np.int32)  # ghost i mirrors owned row owners[i]
+    keepalive: list = []
+    comm = _build_self_comm_dict(
+        nloc=nlocal,
+        nghost=nghost,
+        sendlist_indices=owners,
+        keepalive=keepalive,
+    )
+    x = torch.arange(n * d * c, dtype=torch.float64).reshape(n, d, 1, c)
+    x_in = x.clone()
+    out = exchange_ghost_features(x, comm)
+    assert out.shape == (n, d, 1, c)
+    torch.testing.assert_close(out[:nlocal], x_in[:nlocal])  # owned untouched
+    for gi, owner in enumerate(owners):
+        torch.testing.assert_close(out[nlocal + gi], x_in[int(owner)])
+    del keepalive
+
+
+def test_dpa4_exchange_schedule_counts() -> None:
+    """Pin the per-block border-exchange schedule on OUR graph route
+    (mirrors the pt-native ``TestSeZMExchangeSchedule``,
+    ``source/tests/pt/model/test_sezm_parallel.py:467-529``): block 0 skips
+    the exchange unless ``use_env_seed``.
+
+    COUNT DERIVATION: ``DescrptDPA4._block_comm``
+    (``deepmd/dpmodel/descriptor/dpa4.py:2215``) forwards ``comm_dict`` to
+    every block except block 0 when ``use_env_seed`` is False -- the
+    fixture descriptor defaults ``use_env_seed=True`` (plan-premise
+    correction: block 0 forwards too here). Every DPA4 block
+    unconditionally runs exactly one SO(2) unit per forward (dpmodel
+    ``SeZMInteractionBlock.call`` invokes ``_run_so2_unit`` exactly once on
+    every branch -- fast path, full-attn-res, block-attn-res --
+    ``deepmd/dpmodel/descriptor/dpa4_nn/block.py:840,894,958``), so the
+    expected count is derived from the descriptor's own ``blocks``/
+    ``use_env_seed`` attributes below, not hardcoded (it would differ for a
+    fixture with an SO2-free block, which this one does not have).
+    """
+    import deepmd.pt_expt.descriptor.dpa4_nn.block as blk_mod
+
+    device = env.DEVICE
+    dd = _make_message_sensitive_model(device).atomic_model.descriptor
+    coord, atype, box = _small_graph_inputs(device)
+    graph = _graph_from(coord, atype, box, dd.get_rcut())
+
+    calls = {"n": 0}
+
+    def _counting_exchange(
+        x: torch.Tensor, comm_dict: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        calls["n"] += 1
+        return x
+
+    fake_comm = dict.fromkeys(
+        (
+            "send_list",
+            "send_proc",
+            "recv_proc",
+            "send_num",
+            "recv_num",
+            "communicator",
+            "nlocal",
+            "nghost",
+        )
+    )
+    orig = blk_mod.exchange_ghost_features
+    blk_mod.exchange_ghost_features = _counting_exchange
+    try:
+        dd.call_graph(graph, atype.reshape(-1), comm_dict=fake_comm)
+    finally:
+        blk_mod.exchange_ghost_features = orig
+
+    n_blocks = len(dd.blocks)
+    expected = n_blocks if dd.use_env_seed else n_blocks - 1
+    assert calls["n"] == expected
 
 
 class TestDpa4GraphLower:
