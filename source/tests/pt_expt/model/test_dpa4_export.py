@@ -121,10 +121,12 @@ _DPA4_CONFIG = {
     ],
 )
 def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
-    """End-to-end: DPA4 model freezes to a single-artifact .pt2 (no
-    with-comm sidecar) under both lower kinds, and the regular artifact
-    reproduces the matching eager forward (dense ``forward_common_lower``
-    for ``"nlist"``, ``forward_common_lower_graph`` for ``"graph"``).
+    """End-to-end: DPA4 model freezes to a .pt2 archive with kind-conditional
+    artifact layout (with-comm sidecar embedded for the ``"graph"`` kind's
+    multi-rank exchange, single-artifact for the ``"nlist"`` kind's comm-less
+    dense lower), and the regular artifact reproduces the matching eager
+    forward (dense ``forward_common_lower`` for ``"nlist"``,
+    ``forward_common_lower_graph`` for ``"graph"``).
     """
     model = get_model(_DPA4_CONFIG)
     model.to("cpu")
