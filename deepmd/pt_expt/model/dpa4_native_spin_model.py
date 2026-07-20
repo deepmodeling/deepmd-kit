@@ -6,6 +6,9 @@ from typing import (
 )
 
 import torch
+from torch.fx.experimental.proxy_tensor import (
+    make_fx,
+)
 
 from deepmd.dpmodel.model.dpa4_native_spin_model import (
     DPA4NativeSpinModel as DPA4NativeSpinModelDP,
@@ -13,6 +16,47 @@ from deepmd.dpmodel.model.dpa4_native_spin_model import (
 from deepmd.pt_expt.common import (
     torch_module,
 )
+
+
+def _translate_spin_energy_keys(
+    model_ret: dict[str, torch.Tensor],
+    *,
+    do_atomic_virial: bool,
+) -> dict[str, torch.Tensor]:
+    """Map internal fitting keys -> public native-spin model keys.
+
+    The graph-spin twin of
+    :func:`deepmd.pt_expt.model.ener_model._translate_energy_keys`, kept
+    LOCAL to this module (not merged into the energy translate) because
+    ``force_mag`` is MANDATORY here -- there is no ``do_grad_r``-style
+    filter, unlike the energy path's optional ``force``/``virial`` keys.
+
+    Parameters
+    ----------
+    model_ret
+        The internal-key dict returned by ``forward_common_lower_graph``
+        (``energy``, ``energy_redu``, ``energy_derv_r``,
+        ``energy_derv_r_mag``, ``energy_derv_c_redu``, and
+        ``energy_derv_c`` when ``do_atomic_virial``).
+    do_atomic_virial
+        Whether to also emit ``atom_virial``.
+
+    Returns
+    -------
+    dict
+        Public-key dict: ``atom_energy``, ``energy``, ``force``,
+        ``force_mag``, ``virial``, and (when ``do_atomic_virial``)
+        ``atom_virial``.
+    """
+    out: dict[str, torch.Tensor] = {}
+    out["atom_energy"] = model_ret["energy"]
+    out["energy"] = model_ret["energy_redu"]
+    out["force"] = model_ret["energy_derv_r"].squeeze(-2)
+    out["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
+    out["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+    if do_atomic_virial:
+        out["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
+    return out
 
 
 @torch_module
@@ -124,3 +168,170 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
         if do_atomic_virial:
             out["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         return out
+
+    def forward_lower_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        spin: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        destination_sorted: bool = False,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace the graph-spin lower into an exportable module.
+
+        THIS METHOD OWNS the positional ``.pt2`` ABI for graph-spin models
+        (mirrored verbatim by the with-comm / C++ / serialization follow-up
+        tasks): ``spin`` sits at index 10, right after the shared
+        ``NeighborGraph`` CSR block and before the conditional
+        ``fparam``/``aparam`` tail -- unlike the (non-spin) energy model's
+        :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`,
+        there is NO ``charge_spin`` slot (native spin rejects
+        ``add_chg_spin_ebd`` at build, see
+        ``deepmd/dpmodel/model/get_model.py:get_sezm_spin_model``) and NO
+        with-comm variant (single-rank only; multi-rank graph-spin is a
+        later task in this plan).
+
+        Two-layer make_fx trace, mirroring
+        :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`:
+        the inner layer
+        (:meth:`~deepmd.pt_expt.model.make_model.make_model.forward_common_lower_graph_exportable`
+        on ``self.backbone_model``) traces ``forward_common_lower_graph``
+        with ``spin`` as a SECOND autograd leaf next to ``edge_vec`` (fixing
+        ``charge_spin=None`` -- this wrapper's ABI never exposes that slot);
+        this outer layer re-traces with the PUBLIC positional ABI above and
+        translates the internal fitting keys to the public output keys via
+        :func:`_translate_spin_energy_keys` (``force_mag`` mandatory, unlike
+        the energy path's ``do_grad_r``-gated ``force``).
+
+        Parameters
+        ----------
+        atype
+            (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
+        n_node
+            (nf,) per-frame total node counts.
+        n_local
+            (nf,) per-frame owned node counts.
+        edge_index
+            (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+        edge_vec
+            (E, 3) neighbor-minus-center edge vectors (sample for tracing).
+        edge_mask
+            (E,) valid-edge mask (sample for tracing).
+        destination_order
+            (E,) destination-grouped edge permutation.
+        destination_row_ptr
+            (N + 1,) destination CSR offsets.
+        source_order
+            (E,) source-grouped edge permutation.
+        source_row_ptr
+            (N + 1,) source CSR offsets.
+        spin
+            (N, 3) per-node native spin (sample for tracing). ALWAYS present
+            in this ABI, unlike the energy model's optional ``charge_spin``.
+        fparam
+            Frame parameter, ``(nf, ndf)``, or ``None`` when
+            ``dim_fparam == 0``.
+        aparam
+            Atomic parameter, ``(N, nda)``, or ``None`` when
+            ``dim_aparam == 0``.
+        do_atomic_virial
+            Whether to also return ``atom_virial``.
+        destination_sorted
+            Static export-time assertion that the payload is
+            destination-major and ``destination_order`` is identity.
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx`` (e.g.
+            ``tracing_mode="symbolic"``).
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module whose ``forward`` accepts ``(atype, n_node,
+            n_local, edge_index, edge_vec, edge_mask, destination_order,
+            destination_row_ptr, source_order, source_row_ptr, spin,
+            fparam, aparam)`` and returns a dict with the public keys
+            ``atom_energy``, ``energy``, ``force``, ``force_mag``,
+            ``virial``, and (when ``do_atomic_virial``) ``atom_virial``.
+        """
+        traced = self.backbone_model.forward_common_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=None,
+            spin=spin,
+            destination_sorted=destination_sorted,
+            **make_fx_kwargs,
+        )
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            spin: torch.Tensor,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            model_ret = traced(
+                atype,
+                n_node,
+                n_local,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
+                fparam,
+                aparam,
+                None,
+                spin,
+            )
+            return _translate_spin_energy_keys(
+                model_ret,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            spin,
+            fparam,
+            aparam,
+        )

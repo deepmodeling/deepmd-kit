@@ -1017,6 +1017,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
             destination_sorted: bool = False,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
@@ -1049,6 +1050,15 @@ def make_model(
                 destination-major and ``destination_order`` is identity.
             fparam, aparam, do_atomic_virial, charge_spin
                 As in ``forward_common_lower_graph``.
+            spin
+                Per-node native spin, flat ``(N, 3)``, or ``None``. Threaded
+                through to ``forward_common_lower_graph`` the same way as
+                ``charge_spin``; when given, the trace additionally carries a
+                SECOND autograd leaf so the returned dict carries
+                ``<var>_derv_r_mag`` for every ``r_differentiable`` reducible
+                output. ``None`` (default) is the existing, unconditioned
+                trace with no mag output -- used by every non-spin caller of
+                this generic (descriptor-agnostic) exportable.
             **make_fx_kwargs
                 Extra keyword arguments forwarded to ``make_fx``
                 (e.g. ``tracing_mode="symbolic"``).
@@ -1059,8 +1069,8 @@ def make_model(
                 A traced module whose ``forward`` accepts
                 ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
                 destination_order, destination_row_ptr, source_order,
-                source_row_ptr, fparam, aparam, charge_spin)`` and returns a
-                dict with the same internal keys as
+                source_row_ptr, fparam, aparam, charge_spin, spin)`` and
+                returns a dict with the same internal keys as
                 ``forward_common_lower_graph``.
             """
             validate_graph_csr_for_export(
@@ -1089,10 +1099,12 @@ def make_model(
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
+                spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
-                # forward_common_lower_graph creates the autograd leaf from
-                # edge_vec internally, so no outer detach/requires_grad_ here
-                # (it would only add spurious ops to the traced graph).
+                # forward_common_lower_graph creates the autograd leaf(s) from
+                # edge_vec (and spin, when given) internally, so no outer
+                # detach/requires_grad_ here (it would only add spurious ops
+                # to the traced graph).
                 return model.forward_common_lower_graph(
                     atype,
                     n_node,
@@ -1109,6 +1121,7 @@ def make_model(
                     fparam=fparam,
                     aparam=aparam,
                     charge_spin=charge_spin,
+                    spin=spin,
                 )
 
             return make_fx(fn, **make_fx_kwargs)(
@@ -1125,6 +1138,7 @@ def make_model(
                 fparam,
                 aparam,
                 charge_spin,
+                spin,
             )
 
         def forward_common_lower_exportable_with_comm(

@@ -419,3 +419,293 @@ class TestDPA4NativeSpinModelParity:
         torch.testing.assert_close(
             out_pt["mask_mag"], out_pte["mask_mag"], rtol=0, atol=0, msg="mask_mag"
         )
+
+
+# =============================================================================
+# Task 5: ``forward_lower_graph_exportable`` -- the graph-spin ``.pt2``
+# exportable ABI (spin at positional index 10). ``make_fx``/``torch.export``
+# tracing is CPU-only by design (``serialization.py:924`` moves the model
+# to CPU before tracing) -- both tests below build the model AND the sample
+# inputs on CPU explicitly, mirroring ``test_dpa4_graph_lower.py``'s
+# ``test_graph_lower_symbolic_trace``/``test_graph_lower_torch_export``.
+# =============================================================================
+
+
+def _build_native_spin_model_cpu(seed: int = 21) -> DPA4NativeSpinModel:
+    """Build the jittered pt_expt ``DPA4NativeSpinModel`` wrapper on CPU.
+
+    Mirrors ``_jittered_wrapper`` above but pinned to CPU from construction
+    (export tracing is CPU-only; the dpa1 CUDA lesson is that traced inputs
+    and params must share a device). DPA4 zero-initializes residual
+    projections, so jittering is needed to make ``force_mag`` genuinely
+    non-trivial -- otherwise the trace-vs-eager comparisons below would be
+    vacuous (both sides identically zero).
+    """
+    cpu = torch.device("cpu")
+    model = get_model(NATIVE_SPIN_CONFIG)
+    ds = model.backbone_model.atomic_model.descriptor
+    data = ds.serialize()
+    jitter_zero_arrays(data, np.random.default_rng(seed))
+    model.backbone_model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(cpu)
+    return model.to(cpu).eval()
+
+
+def _build_spin_graph_sample(
+    model: DPA4NativeSpinModel,
+    *,
+    nframes: int = 2,
+    nloc: int = 7,
+    e_max: int | None = 175,
+) -> tuple[torch.Tensor, ...]:
+    """Build a small CPU sample matching the graph-spin positional ABI.
+
+    Reuses :func:`build_synthetic_graph_inputs` (canonicalized,
+    destination-major) for the shared ``NeighborGraph`` CSR block, then adds
+    a ``spin`` tensor at index 10 -- a small NON-ZERO sample (not
+    ``torch.zeros``: an all-zero spin leaf can hit degenerate branches in
+    the equivariant spin embedding) matching the flat node axis ``N`` that
+    ``atype`` shares.
+
+    Returns
+    -------
+    tuple
+        ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+        destination_order, destination_row_ptr, source_order,
+        source_row_ptr, spin, fparam, aparam)`` -- the exact positional
+        order of ``DPA4NativeSpinModel.forward_lower_graph_exportable``.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        build_synthetic_graph_inputs,
+    )
+
+    sample = build_synthetic_graph_inputs(
+        model.backbone_model,
+        e_max=e_max,
+        nframes=nframes,
+        nloc=nloc,
+        dtype=torch.float64,
+        device=torch.device("cpu"),
+        want_charge_spin=False,
+    )
+    (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, _cs) = sample
+    generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+    spin = 0.1 + torch.rand(atype.shape[0], 3, dtype=torch.float64, generator=generator)
+    return atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap
+
+
+class TestDPA4NativeSpinGraphLowerExportable:
+    """``forward_lower_graph_exportable`` establishes the positional ``.pt2``
+    ABI for graph-spin models (spin at index 10, no ``charge_spin`` slot, no
+    with-comm variant) -- Tasks 6/7/9 mirror this ABI.
+    """
+
+    def test_graph_lower_exportable_symbolic_trace(self) -> None:
+        """``make_fx`` traces the graph-spin closure on CPU; the traced
+        output matches the eager ``forward_common_lower_graph`` reference
+        (same graph inputs -- the same physical system) bit-tight, and
+        includes a genuinely non-trivial ``force_mag``.
+        """
+        model = _build_native_spin_model_cpu()
+        sample = _build_spin_graph_sample(model)
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap = sample
+
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            spin,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap)
+        for key in (
+            "atom_energy",
+            "energy",
+            "force",
+            "force_mag",
+            "virial",
+            "atom_virial",
+        ):
+            assert key in out, f"missing output key {key}"
+            assert torch.isfinite(out[key]).all(), f"non-finite traced {key}"
+
+        # Anti-vacuity: the jittered model's force_mag must be non-trivial,
+        # else the parity check below would trivially pass with both sides
+        # at zero.
+        assert out["force_mag"].abs().max().item() > 1e-6
+
+        ref = model.backbone_model.forward_common_lower_graph(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            destination_sorted=True,
+            do_atomic_virial=True,
+            fparam=fp,
+            aparam=ap,
+            spin=spin,
+        )
+        tol = {"rtol": 1e-12, "atol": 1e-12}
+        torch.testing.assert_close(out["atom_energy"], ref["energy"], **tol)
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["force_mag"],
+            ref["energy_derv_r_mag"].reshape(out["force_mag"].shape),
+            **tol,
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["atom_virial"],
+            ref["energy_derv_c"].reshape(out["atom_virial"].shape),
+            **tol,
+        )
+
+    def test_graph_lower_exportable_torch_export(self) -> None:
+        """``torch.export.export`` succeeds with a dynamic ``nedge`` (and
+        ``N``/``nframes``) axis; the exported program reproduces the eager
+        graph lower AND generalizes to a different (smaller) system size
+        than the one it was traced/exported on.
+        """
+        model = _build_native_spin_model_cpu()
+        sample = _build_spin_graph_sample(model)
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap = sample
+
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            spin,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+
+        nframes_dim = torch.export.Dim("nframes", min=1)
+        n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+        nedge_dim = torch.export.Dim("nedge", min=2)
+        dynamic_shapes = (
+            {0: n_node_total_dim},  # atype
+            {0: nframes_dim},  # n_node
+            {0: nframes_dim},  # n_local
+            {1: nedge_dim},  # edge_index
+            {0: nedge_dim},  # edge_vec
+            {0: nedge_dim},  # edge_mask
+            {0: nedge_dim},  # destination_order
+            {0: n_node_total_dim + 1},  # destination_row_ptr
+            {0: nedge_dim},  # source_order
+            {0: n_node_total_dim + 1},  # source_row_ptr
+            {0: n_node_total_dim},  # spin -- shares atype's N axis
+            {0: nframes_dim} if fp is not None else None,  # fparam
+            {0: n_node_total_dim} if ap is not None else None,  # aparam
+        )
+        exported = torch.export.export(
+            traced,
+            (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap),
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+        loaded = exported.module()
+
+        # Re-run on a SMALLER system to prove the exported program is
+        # genuinely dynamic, not specialized to the trace-time shapes.
+        small = _build_spin_graph_sample(model, nframes=1, nloc=3, e_max=None)
+        (
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            s_spin,
+            s_fp,
+            s_ap,
+        ) = small
+        out = loaded(
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            s_spin,
+            s_fp,
+            s_ap,
+        )
+        ref = model.backbone_model.forward_common_lower_graph(
+            s_atype,
+            s_n_node,
+            s_n_local,
+            s_ei,
+            s_ev,
+            s_em,
+            s_do,
+            s_drp,
+            s_so,
+            s_srp,
+            destination_sorted=True,
+            do_atomic_virial=True,
+            fparam=s_fp,
+            aparam=s_ap,
+            spin=s_spin,
+        )
+        for key in ("energy", "force", "force_mag", "virial", "atom_virial"):
+            assert torch.isfinite(out[key]).all(), f"non-finite exported {key}"
+        tol = {"rtol": 1e-10, "atol": 1e-10}
+        torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
+        torch.testing.assert_close(
+            out["force"], ref["energy_derv_r"].reshape(out["force"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["force_mag"],
+            ref["energy_derv_r_mag"].reshape(out["force_mag"].shape),
+            **tol,
+        )
+        torch.testing.assert_close(
+            out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
+        )
+        torch.testing.assert_close(
+            out["atom_virial"],
+            ref["energy_derv_c"].reshape(out["atom_virial"].shape),
+            **tol,
+        )
