@@ -326,12 +326,19 @@ class TestDpa2GraphLower:
             box,
             neighbor_graph_method="legacy",
         )
-        # with the hatch on, default (None) == legacy (dense), bit-identical
+        # With the hatch on, default (None) takes the same dense path as legacy,
+        # so the energy is bit-identical. The force goes through a scatter/index_add
+        # in the backward, which is non-deterministic on CUDA across two separate
+        # passes, so it matches only to reduction-order noise (~1e-18), far below
+        # any real route divergence (>=1e-8, cf. test_binding_sel_diverges).
         torch.testing.assert_close(
             default_after["energy_redu"], legacy["energy_redu"], rtol=0, atol=0
         )
         torch.testing.assert_close(
-            default_after["energy_derv_r"], legacy["energy_derv_r"], rtol=0, atol=0
+            default_after["energy_derv_r"],
+            legacy["energy_derv_r"],
+            rtol=1e-10,
+            atol=1e-12,
         )
 
     def test_binding_sel_diverges(self) -> None:
@@ -745,7 +752,7 @@ class TestDpa2GraphLower:
             "box": self.cell.clone(),
         }
         model.atomic_model.descriptor.compute_input_stats([sample])
-        davg = np.asarray(model.atomic_model.descriptor.repinit.mean)
+        davg = np.asarray(model.atomic_model.descriptor.repinit.mean.detach().cpu())
         assert np.abs(davg).max() > 0, "computed statistics must be nonzero"
 
         # 1. the gate: nonzero-mean configs stay on the legacy route.

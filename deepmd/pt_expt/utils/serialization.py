@@ -1505,6 +1505,26 @@ def _trace_and_export(
                 "the energy-output requirement); freeze with the default "
                 "lower_kind instead."
             )
+        # Defense-in-depth: every production caller (freeze entrypoint,
+        # compress, _resolve_lower_kind auto) gates on model_uses_graph_lower
+        # upstream, but a direct programmatic call with lower_kind="graph"
+        # on a graph-INELIGIBLE model (e.g. set_davg_zero=False dpa2,
+        # use_three_body, or disable_graph_lower()) would otherwise trace a
+        # silently divergent artifact.  Assert the gate at the innermost
+        # layer too.
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower,
+        )
+
+        if not model_uses_graph_lower(model):
+            raise ValueError(
+                f"lower_kind={lower_kind!r} requested but the model is not "
+                "graph-lower eligible (model_uses_graph_lower() is False: "
+                "check uses_graph_lower() gates such as set_davg_zero, "
+                "compression, use_three_body, disable_graph_lower(), and "
+                "the energy-output requirement); freeze with the default "
+                "lower_kind instead."
+            )
         if with_comm_dict and not hasattr(
             model, "forward_lower_graph_exportable_with_comm"
         ):

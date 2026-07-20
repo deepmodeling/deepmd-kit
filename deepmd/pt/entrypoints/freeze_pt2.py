@@ -853,6 +853,11 @@ def freeze_sezm_to_pt2(
         free by-product of the single backward, so exporting it carries no
         compute cost.
     """
+    log.info(
+        "Set DP_TRITON_INFER to the desired level (0-3) before freezing; "
+        "the selected Triton inference kernels are baked into the .pt2 archive."
+    )
+
     from torch._inductor import (
         aoti_compile_and_package,
     )

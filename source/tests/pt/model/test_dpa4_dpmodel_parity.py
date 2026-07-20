@@ -8,6 +8,7 @@ into the dpmodel module via ``pt_state_to_numpy``, compare forwards with
 ``assert_parity``) are added by the tasks that port each module.
 """
 
+import math
 import subprocess
 import sys
 
@@ -2249,6 +2250,178 @@ class TestSO2Parity:
         # invalid slots must produce exactly zero attention weights
         np.testing.assert_array_equal(alpha_dp[~valid], 0.0)
         assert np.all(np.isfinite(alpha_dp))
+
+    def test_high_logit_edge_vanishes_continuously(self) -> None:
+        """A vanishing high-logit edge must agree with the physical limit."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = np.array([[[0.0]], [[20.0]]], dtype=np.float64)
+        dst = np.zeros(2, dtype=np.int64)
+        z_bias_raw = np.array([[math.log(math.expm1(1.0))]], dtype=np.float64)
+        eps = 1.0e-7
+
+        def evaluate(crossing_envelope: float) -> np.ndarray:
+            edge_env = np.array([[1.0], [crossing_envelope]], dtype=np.float64)
+            alpha_dp = dp_softmax(logits, edge_env, dst, 1, z_bias_raw, eps)
+            alpha_pt = pt_softmax(
+                to_pt(logits),
+                to_pt(edge_env),
+                to_pt(dst),
+                1,
+                to_pt(z_bias_raw),
+                eps,
+            )
+            assert_parity(alpha_dp, alpha_pt)
+            return np.asarray(alpha_dp)
+
+        near = evaluate(1.0e-12)
+        zero = evaluate(0.0)
+        near_mass = math.exp(20.0) * 1.0e-24
+        near_denominator = 2.0 + eps + near_mass
+        np.testing.assert_allclose(
+            near[1, 0, 0],
+            near_mass / near_denominator,
+            rtol=1.0e-12,
+            atol=0.0,
+        )
+        expected_stable = 1.0 / (2.0 + eps)
+        np.testing.assert_allclose(
+            near[0, 0, 0], expected_stable, rtol=1.0e-12, atol=0.0
+        )
+        np.testing.assert_allclose(
+            zero[0, 0, 0], expected_stable, rtol=1.0e-12, atol=0.0
+        )
+        assert zero[1, 0, 0] == 0.0
+
+    def test_envelope_nextafter_cutoff_attention(self) -> None:
+        """Adjacent float32 distances must remain stable in both implementations."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            C3CutoffEnvelope as PTEnvelope,
+        )
+
+        rcut = np.float32(6.0)
+        zero = np.float32(0.0)
+        r_near = np.nextafter(rcut, zero)
+        r_inner = np.nextafter(r_near, zero)
+        distances = np.array([r_near, r_inner], dtype=np.float32)[:, None]
+        envelope_dp = np.asarray(
+            DPEnvelope(6.0, exponent=5, precision="float32").call(distances)
+        )
+        envelope_pt = PTEnvelope(6.0, exponent=5, dtype=torch.float32)(to_pt(distances))
+
+        distance64 = distances[:, 0].astype(np.float64)
+        u = (6.0 - distance64) / 6.0
+        x = 1.0 - u
+        reference = u**4 * (1.0 + x * (4.0 + x * (10.0 + x * (20.0 + 35.0 * x))))
+        np.testing.assert_allclose(
+            envelope_dp[:, 0].astype(np.float64),
+            reference,
+            rtol=1.0e-6,
+            atol=0.0,
+        )
+        assert_parity(envelope_dp, envelope_pt, rtol=1.0e-6, atol=0.0)
+        assert np.all(envelope_dp >= 0.0)
+
+        logits = np.array([[[0.0]], [[20.0]]], dtype=np.float32)
+        dst = np.zeros(2, dtype=np.int64)
+        z_bias_raw = np.array([[math.log(math.expm1(1.0))]], dtype=np.float32)
+        for edge_envelope in envelope_dp[:, 0]:
+            edge_env = np.array([[1.0], [edge_envelope]], dtype=np.float32)
+            alpha_dp = np.asarray(
+                dp_softmax(logits, edge_env, dst, 1, z_bias_raw, 1.0e-7)
+            )
+            alpha_pt = pt_softmax(
+                to_pt(logits),
+                to_pt(edge_env),
+                to_pt(dst),
+                1,
+                to_pt(z_bias_raw),
+                1.0e-7,
+            )
+            assert_parity(
+                alpha_dp,
+                alpha_pt,
+                rtol=1.0e-5,
+                atol=float(np.finfo(np.float32).tiny),
+            )
+            assert 0.0 <= alpha_dp[1, 0, 0] < 1.0e-30
+
+    def test_tiny_source_weight_hessian(self) -> None:
+        """The dpmodel and pt paths must preserve the physical Hessian."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=PT_DEVICE
+        )
+        edge_env = torch.ones((2, 1), dtype=torch.float32, device=PT_DEVICE)
+        dst = torch.zeros(2, dtype=torch.int64, device=PT_DEVICE)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=PT_DEVICE
+        )
+        eps = 1.0e-7
+
+        def dp_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return dp_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        def pt_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return pt_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
+
+        def physical_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            edge_mass = source_weight * torch.exp(logits[:, 0, 0])
+            return (edge_mass / (null_mass + edge_mass.sum())).sum()
+
+        source_weight = torch.tensor(
+            [1.0, 1.0e-30], dtype=torch.float32, device=PT_DEVICE
+        )
+        hessian_dp = torch.autograd.functional.hessian(dp_attention_sum, source_weight)
+        hessian_pt = torch.autograd.functional.hessian(pt_attention_sum, source_weight)
+        reference = torch.autograd.functional.hessian(physical_sum, source_weight)
+        assert bool(torch.isfinite(hessian_dp).all())
+        torch.testing.assert_close(
+            hessian_dp[0, 0],
+            reference[0, 0],
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+        torch.testing.assert_close(hessian_dp, hessian_pt, rtol=1.0e-5, atol=32.0)
+        torch.testing.assert_close(hessian_dp, reference, rtol=1.0e-5, atol=32.0)
 
     def test_segment_softmax_arbitrary_degree(self) -> None:
         # The destination scatter is layout-agnostic: E need not be a multiple

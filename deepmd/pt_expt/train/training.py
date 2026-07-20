@@ -40,7 +40,7 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -711,12 +711,20 @@ def _trace_and_compile_graph(
     # sel-derived estimate overflows whenever the real degree exceeds sel),
     # then prime-padded to stay distinct from nf and N.  ``+ 2`` keeps at
     # least two masked padding rows so the padded-tail branch is traced.
+    # Trace on the MODEL's device, not the global ``DEVICE``: make_fx keeps the
+    # real model parameters (``_allow_non_fake_inputs``), so the synthetic trace
+    # inputs must live where the model does. A CUDA training run keeps the model
+    # on ``DEVICE`` (these match), but callers that trace a CPU-placed model
+    # (e.g. the graph .pt2/export path, which moves the model to CPU to dodge a
+    # CUDA autograd-stream limitation) would otherwise mix a CPU model with
+    # CUDA inputs and fail only on a GPU host.
+    _trace_device = next(model.parameters()).device
     e_real = count_synthetic_graph_edges(
         model,
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
     )
     e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
@@ -725,7 +733,7 @@ def _trace_and_compile_graph(
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -1514,9 +1522,9 @@ class Trainer(AbstractTrainer):
             self.model_prob = None
 
         # Learning rate -------------------------------------------------------
-        lr_params = config["learning_rate"].copy()
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
@@ -1573,7 +1581,11 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = training_params.get("opt_type", "Adam")
-        initial_lr = float(self.lr_schedule.value(self.start_step))
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
 
         if opt_type == "Adam":
             self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
@@ -1586,6 +1598,9 @@ class Trainer(AbstractTrainer):
             )
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
@@ -1771,6 +1786,8 @@ class Trainer(AbstractTrainer):
 
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
+                for param_group in self.optimizer.param_groups:
+                    param_group["initial_lr"] = initial_lr
                 # rebuild scheduler from the resumed step.
                 # last_epoch handles the step offset; the lambda must NOT
                 # add self.start_step again (that would double-count).
