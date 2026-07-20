@@ -203,11 +203,17 @@ class TestGraphForceMag:
         assert "energy_derv_r_mag" not in out0
         out1 = self.model.call_common(self.coord, self.atype, self.box)
         assert "energy_derv_r_mag" not in out1
+        # The graph-route reduction (segment_sum) and force assembly
+        # (edge_force_virial) scatter through ``index_add``, whose atomicAdd is
+        # non-deterministic on CUDA (1-2 fp64 ULP run-to-run); on CPU it is
+        # exact. So "the spin-less branch is a no-op" is a bit-exact claim on
+        # CPU and an eval-determinism claim (~1e-10) on CUDA. See CLAUDE.md.
+        det_rtol, det_atol = (0.0, 0.0) if self.device.type == "cpu" else (1e-10, 1e-12)
         torch.testing.assert_close(
-            out0["energy_redu"], out1["energy_redu"], rtol=0, atol=0
+            out0["energy_redu"], out1["energy_redu"], rtol=det_rtol, atol=det_atol
         )
         torch.testing.assert_close(
-            out0["energy_derv_r"], out1["energy_derv_r"], rtol=0, atol=0
+            out0["energy_derv_r"], out1["energy_derv_r"], rtol=det_rtol, atol=det_atol
         )
 
     def test_dense_route_spin_raises(self) -> None:
