@@ -281,6 +281,7 @@ def make_model(
             charge_spin: Array | None = None,
             neighbor_list: NeighborList | None = None,
             neighbor_graph_method: str | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -308,6 +309,13 @@ def make_model(
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+
+            spin
+                Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Only the
+                NeighborGraph lower consumes it (native magnetic conditioning,
+                e.g. DPA4/SeZM); the dense (nlist) route has no spin support
+                and raises if ``spin`` is supplied without a graph
+                ``neighbor_graph_method``.
 
             neighbor_list
                 Neighbor-list construction strategy for the DENSE-nlist path
@@ -350,10 +358,15 @@ def make_model(
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, cs, _, input_prec = self._input_type_cast(
-                coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            cc, bb, fp, ap, cs, sp, input_prec = self._input_type_cast(
+                coord,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
-            del coord, box, fparam, aparam, charge_spin
+            del coord, box, fparam, aparam, charge_spin, spin
             graph_method = self._resolve_graph_method(neighbor_graph_method)
             # ``neighbor_list`` is a DENSE-nlist strategy; the graph path cannot
             # consume it. Reject an explicit graph+nlist combination, and
@@ -371,6 +384,13 @@ def make_model(
             # models on dense (a None check, so it stays jit/export-safe)
             if cs is not None:
                 graph_method = None
+            # model-level spin rides ONLY the NeighborGraph lower
+            if sp is not None and graph_method is None:
+                raise NotImplementedError(
+                    "model-level spin rides only the NeighborGraph lower; the "
+                    "dense (nlist) route has no spin support -- use a graph "
+                    "neighbor_graph_method"
+                )
             if graph_method is not None:
                 # carry-all NeighborGraph energy forward (Option B / decision #17)
                 model_predict = self._call_common_graph(
@@ -381,6 +401,7 @@ def make_model(
                     ap,
                     graph_method,
                     do_atomic_virial,
+                    spin=sp,
                 )
             else:
                 # legacy dense-nlist path (builds the extended quartet)
@@ -445,6 +466,7 @@ def make_model(
             ap: Array | None,
             method: str,
             do_atomic_virial: bool = False,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Carry-all graph forward (opt-in, Option B).
 
@@ -469,6 +491,10 @@ def make_model(
                 the carry-all builder, ``"dense"`` or ``"ase"``.
             do_atomic_virial
                 whether to calculate the atomic virial.
+            spin
+                Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Flattened
+                to the flat node axis ``(N, 3)`` and forwarded unchanged to
+                :meth:`call_lower_graph`.
 
             Returns
             -------
@@ -522,6 +548,7 @@ def make_model(
                     if ap is not None
                     else None
                 ),
+                spin=(xp.reshape(spin, (nf * nloc, 3)) if spin is not None else None),
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.

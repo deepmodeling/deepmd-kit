@@ -135,6 +135,18 @@ def make_base_model() -> type[object]:
                     )
 
                     return SpinModel.deserialize(data)
+                if model_type in ("dpa4_native_spin", "sezm_native_spin"):
+                    # DPA4NativeSpinModel is not a BaseModel subclass either
+                    # (same reasoning as SpinModel above); dispatch directly.
+                    # NOTE: the "sezm_native_spin" alias only covers the wire
+                    # TYPE STRING with dpmodel structure -- it does not claim
+                    # whole-model conversion of pt-serialized checkpoints
+                    # (pt's SeZMAtomicModel dict layout differs).
+                    from deepmd.dpmodel.model.dpa4_native_spin_model import (
+                        DPA4NativeSpinModel,
+                    )
+
+                    return DPA4NativeSpinModel.deserialize(data)
                 return cls.get_class_by_type(model_type).deserialize(data)
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 

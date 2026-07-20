@@ -31,6 +31,9 @@ from deepmd.dpmodel.model.dos_model import (
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
+from deepmd.dpmodel.model.dpa4_native_spin_model import (
+    DPA4NativeSpinModel,
+)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
@@ -46,6 +49,8 @@ from deepmd.dpmodel.model.spin_model import (
 from deepmd.utils.spin import (
     Spin,
 )
+
+_DPA4_SEZM_DESCRIPTOR_TYPES = ("dpa4", "DPA4", "sezm", "SeZM")
 
 
 def _get_standard_model_components(
@@ -97,7 +102,7 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
-    elif fitting_net_type in ["ener", "direct_force_ener"]:
+    elif fitting_net_type in ["ener", "direct_force_ener", "dpa4_ener", "sezm_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
@@ -164,6 +169,11 @@ def get_spin_model(data: dict) -> SpinModel:
     data : dict
         The data to construct the model.
     """
+    if data["descriptor"]["type"] in _DPA4_SEZM_DESCRIPTOR_TYPES:
+        raise NotImplementedError(
+            "the virtual-atom (deepspin) scheme is not supported for "
+            "DPA4/SeZM; use spin scheme 'native'"
+        )
     data = copy.deepcopy(data)
     # include virtual spin and placeholder types
     data["type_map"] += [item + "_spin" for item in data["type_map"]]
@@ -190,6 +200,39 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
+def get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
+    """Get a DPA4/SeZM native (virtual-atom-free) spin model from a dictionary.
+
+    Unlike :func:`get_spin_model`, no virtual atoms or doubled type map are
+    introduced: ``spin`` is injected into the descriptor config as
+    ``use_spin`` and consumed by the descriptor's equivariant spin embedding.
+
+    Parameters
+    ----------
+    data : dict
+        The data to construct the model.
+    """
+    data = copy.deepcopy(data)
+    if data["descriptor"]["type"] not in _DPA4_SEZM_DESCRIPTOR_TYPES:
+        raise NotImplementedError(
+            "spin scheme 'native' requires the DPA4/SeZM descriptor"
+        )
+    if data["descriptor"].get("add_chg_spin_ebd", False):
+        raise NotImplementedError(
+            "charge-spin FiLM combined with native spin on the graph route "
+            "is a follow-up; use one or the other"
+        )
+    spin_cfg = data.pop("spin")
+    use_spin = [bool(flag) for flag in spin_cfg["use_spin"]]
+    spin = Spin(
+        use_spin=use_spin,
+        virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+    )
+    data["descriptor"]["use_spin"] = use_spin
+    backbone_model = get_standard_model(data)
+    return DPA4NativeSpinModel(backbone_model=backbone_model, spin=spin)
+
+
 def get_model(data: dict) -> BaseModel:
     """Get a model from a dictionary.
 
@@ -201,6 +244,8 @@ def get_model(data: dict) -> BaseModel:
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
+            if data["spin"].get("scheme", "deepspin") == "native":
+                return get_dpa4_native_spin_model(data)
             return get_spin_model(data)
         elif "use_srtab" in data:
             return get_zbl_model(data)
