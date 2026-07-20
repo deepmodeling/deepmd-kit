@@ -584,8 +584,11 @@ def make_model(
                 multi-rank graphs the ghost rows are included; their values
                 are inert under the owned-node mask).
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``, forwarded to the atomic model's
+                ``forward_common_atomic_graph`` (and, from there, the
+                descriptor's ``call_graph`` for descriptors that declare
+                ``supports_charge_spin``; currently DPA4 only).
             spin
                 Per-node native spin, flat ``(N, 3)``, or ``None``. When given,
                 a SECOND autograd leaf is created next to ``edge_vec`` and
@@ -738,6 +741,7 @@ def make_model(
             method: str,
             do_atomic_virial: bool = False,
             spin: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Carry-all graph forward with autograd force/virial (pt_expt override).
 
@@ -767,6 +771,10 @@ def make_model(
                 Flattened to ``(N, 3)`` and forwarded into
                 :meth:`forward_common_lower_graph`, completing the seam
                 ``call_common`` (dpmodel, shared) opens for the graph route.
+            charge_spin
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``. Unflattened (per-frame) and forwarded unchanged into
+                :meth:`forward_common_lower_graph`.
 
             Returns
             -------
@@ -818,6 +826,7 @@ def make_model(
                 fparam=fp,
                 aparam=ap_flat,
                 spin=spin_flat,
+                charge_spin=charge_spin,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
             # outputs (N = nf * nloc for a carry-all rectangular graph).

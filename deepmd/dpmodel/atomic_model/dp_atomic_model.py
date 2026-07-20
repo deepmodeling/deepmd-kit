@@ -137,6 +137,14 @@ class DPAtomicModel(BaseAtomicModel):
         self.supports_native_spin: bool = getattr(
             self.descriptor, "supports_native_spin", lambda: False
         )()
+        # Same capability-guard pattern as ``supports_native_spin`` above, for
+        # the frame-level ``charge_spin`` FiLM kwarg: only DPA4's
+        # ``call_graph`` declares it (see ``DescrptDPA4.supports_charge_spin``);
+        # other descriptors' ``call_graph`` would ``TypeError`` on an
+        # unconditional ``charge_spin=`` kwarg.
+        self.supports_charge_spin: bool = getattr(
+            self.descriptor, "supports_charge_spin", lambda: False
+        )()
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:
@@ -336,8 +344,11 @@ class DPAtomicModel(BaseAtomicModel):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded to the
+            descriptor's ``call_graph`` only when
+            ``self.supports_charge_spin`` (currently DPA4 only); ignored (not
+            forwarded, never a ``TypeError``) for descriptors without that
+            capability, keeping the interface stable for all of them.
         spin
             flat (N, 3) per-node spin, forwarded to the descriptor's
             ``call_graph``; None for spin-less models.
@@ -363,15 +374,20 @@ class DPAtomicModel(BaseAtomicModel):
         # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
         # embeds types internally from ``atype`` and returns None.
         type_embedding = self.descriptor.graph_type_embedding_table()
-        # See ``self.supports_native_spin`` in ``__init__``: only forward the
-        # ``spin`` keyword to descriptors whose ``call_graph`` declares it.
+        # See ``self.supports_native_spin``/``self.supports_charge_spin`` in
+        # ``__init__``: only forward the ``spin``/``charge_spin`` keyword to
+        # descriptors whose ``call_graph`` declares it.
         spin_kwargs = {"spin": spin} if self.supports_native_spin else {}
+        charge_spin_kwargs = (
+            {"charge_spin": charge_spin} if self.supports_charge_spin else {}
+        )
         gg, rot_mat = self.descriptor.call_graph(
             graph,
             atype,
             type_embedding=type_embedding,
             comm_dict=comm_dict,
             **spin_kwargs,
+            **charge_spin_kwargs,
         )
         fparam_node = None
         if fparam is not None:

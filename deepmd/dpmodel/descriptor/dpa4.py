@@ -1676,6 +1676,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         type_embedding: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
         spin: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, None]:
         """Graph-native descriptor forward on the flat node axis.
 
@@ -1700,6 +1701,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None. Consumed by ``spin_embedding`` (l=0 magnitude into the type
             embedding, l=1 into the backbone and per-edge source features).
             Ghost-free graphs need only per-local-atom spin.
+        charge_spin
+            Frame-level charge/spin conditioning with shape ``(nf, 2)`` (or a
+            shape ``_canonicalize_charge_spin`` can broadcast to it), or
+            ``None``. This is the SAME per-descriptor canonicalization the
+            dense ``call`` adapter applies (default-fill from
+            ``default_chg_spin`` when configured, shape validation,
+            broadcast to ``nf``); ``call_graph`` is the one owner of that
+            step on the graph route. ``nf`` is recovered from
+            ``graph.n_node.shape[0]`` (a static shape, safe under
+            ``torch.export``); each frame's node block must therefore hold
+            exactly ``N // nf`` nodes, which single-rank carry-all graphs
+            built from a rectangular ``(nf, nloc)`` input always satisfy.
 
         Returns
         -------
@@ -1714,8 +1727,15 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             exchange (raised by the per-block leaf).
         """
         n_nodes = atype.shape[0]
+        nf = graph.n_node.shape[0]
+        charge_spin = self._canonicalize_charge_spin(
+            charge_spin,
+            nf=nf,
+            dtype=graph.edge_vec.dtype,
+            device=array_api_compat.device(graph.edge_vec),
+        )
         x_scalar, _ = self._call_graph_common(
-            graph, atype, spin=spin, comm_dict=comm_dict
+            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
         # ``_call_graph_common`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
@@ -2332,19 +2352,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Returns
         -------
         bool
-            False when the escape hatch has been pulled or when the model
-            uses conditioning inputs (charge/spin FiLM, SFPG bridging) that
-            still ride only the dense ``call`` signature. Native spin
-            (``spin_embedding``) IS supported on the graph lower: it is
-            threaded through ``call_graph`` like any other per-node input.
+            False only when the escape hatch has been pulled
+            (``disable_graph_lower()`` / ``_graph_lower_disabled``). Every
+            conditioning input DPA4 supports -- native spin
+            (``spin_embedding``), charge/spin FiLM (``charge_spin_embedding``),
+            and SFPG bridging (``bridging_switch``) -- rides the graph lower:
+            spin and charge_spin are threaded through ``call_graph`` like any
+            other per-node/per-frame input, and bridging is applied inside
+            the shared ``_call_graph_impl`` trunk with no extra threading (it
+            reads ``self.bridging_switch`` directly). Bridging models still
+            fail multi-rank fast via ``has_message_passing_across_ranks``.
         """
-        if self._graph_lower_disabled:
-            return False
-        if self.charge_spin_embedding is not None:
-            return False
-        if self.bridging_switch is not None:
-            return False
-        return True
+        return not self._graph_lower_disabled
 
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""
@@ -2352,6 +2371,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
     def supports_native_spin(self) -> bool:
         """DPA4 accepts a per-node ``spin`` on ``call_graph`` (native magnetic conditioning); other descriptors do not."""
+        return True
+
+    def supports_charge_spin(self) -> bool:
+        """DPA4 accepts a frame-level ``charge_spin`` on ``call_graph`` (FiLM conditioning); other descriptors do not."""
         return True
 
     def disable_graph_lower(self) -> None:

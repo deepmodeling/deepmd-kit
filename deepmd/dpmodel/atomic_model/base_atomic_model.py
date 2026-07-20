@@ -406,8 +406,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded unchanged to
+            :meth:`forward_atomic_graph`, which only passes it on to the
+            descriptor's ``call_graph`` for descriptors that declare
+            ``supports_charge_spin`` (currently DPA4 only).
         spin
             flat (N, 3) per-node spin, forwarded unchanged to
             :meth:`forward_atomic_graph` (and, from there, the descriptor's

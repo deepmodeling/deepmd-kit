@@ -310,6 +310,16 @@ def make_model(
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
 
+            charge_spin
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``. Both the dense (nlist) and NeighborGraph lowers
+                consume it (currently only DPA4/SeZM); the graph route no
+                longer forces this model onto dense (former ``cs -> dense``
+                gate removed) -- it threads through
+                ``_call_common_graph``/``call_lower_graph`` to the
+                descriptor's ``call_graph``, gated per-descriptor by
+                ``supports_charge_spin``.
+
             spin
                 Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Only the
                 NeighborGraph lower consumes it (native magnetic conditioning,
@@ -380,10 +390,6 @@ def make_model(
                         "pass one or the other"
                     )
                 graph_method = None
-            # the graph lower does not consume charge_spin yet -> keep those
-            # models on dense (a None check, so it stays jit/export-safe)
-            if cs is not None:
-                graph_method = None
             # model-level spin rides ONLY the NeighborGraph lower
             if sp is not None and graph_method is None:
                 raise NotImplementedError(
@@ -402,6 +408,7 @@ def make_model(
                     graph_method,
                     do_atomic_virial,
                     spin=sp,
+                    charge_spin=cs,
                 )
             else:
                 # legacy dense-nlist path (builds the extended quartet)
@@ -467,6 +474,7 @@ def make_model(
             method: str,
             do_atomic_virial: bool = False,
             spin: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Carry-all graph forward (opt-in, Option B).
 
@@ -495,6 +503,12 @@ def make_model(
                 Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Flattened
                 to the flat node axis ``(N, 3)`` and forwarded unchanged to
                 :meth:`call_lower_graph`.
+            charge_spin
+                Frame-level charge/spin conditioning, ``(nf, 2)`` or ``None``.
+                Unflattened (per-frame, not per-node) and forwarded unchanged
+                to :meth:`call_lower_graph`, whose ``n_node`` here is always
+                the rectangular ``full(nf, nloc)`` this method builds -- the
+                one shape the descriptor's per-frame FiLM division requires.
 
             Returns
             -------
@@ -549,6 +563,7 @@ def make_model(
                     else None
                 ),
                 spin=(xp.reshape(spin, (nf * nloc, 3)) if spin is not None else None),
+                charge_spin=charge_spin,
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.

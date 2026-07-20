@@ -234,6 +234,74 @@ def test_call_graph_spin_matches_dense_adapter() -> None:
     )
 
 
+def make_charge_spin_descriptor(seed: int = 99) -> DescrptDPA4:
+    """An ``add_chg_spin_ebd`` variant of ``make_message_sensitive_descriptor()``.
+
+    Charge/spin FiLM conditions the type embedding directly (see
+    ``_apply_charge_spin_embedding``), which -- per
+    ``jitter_zero_arrays``'s docstring -- IS the fresh descriptor's scalar
+    read-out (zero-init residuals make the blocks near-identity), so even a
+    bare ``make_descriptor(add_chg_spin_ebd=True)`` would already be
+    charge_spin-sensitive. Jittered anyway for consistency with every other
+    graph-route fixture in this module (project convention: all
+    sensitivity/parity fixtures jitter).
+    """
+    dd = DescrptDPA4(
+        ntypes=3,
+        sel=8,
+        rcut=4.0,
+        channels=16,
+        n_radial=8,
+        lmax=2,
+        mmax=1,
+        n_blocks=2,
+        precision="float64",
+        seed=7,
+        random_gamma=False,
+        add_chg_spin_ebd=True,
+    )
+    data = dd.serialize()
+    jitter_zero_arrays(data, np.random.default_rng(seed))
+    return DescrptDPA4.deserialize(data)
+
+
+def test_call_graph_charge_spin_sensitivity() -> None:
+    """call_graph(charge_spin=...) must change the output (teeth: charge_spin reaches the trunk)."""
+    dd = make_charge_spin_descriptor()
+    coord, atype, nlist = make_inputs()
+    graph = make_graph_from_nlist(coord, nlist)
+    atype_flat = atype.reshape(-1)
+    nf = atype.shape[0]
+    cs0 = np.tile(np.array([[0.0, 1.0]]), (nf, 1))
+    cs1 = np.tile(np.array([[1.0, 1.0]]), (nf, 1))
+    out0, _ = dd.call_graph(graph, atype_flat, charge_spin=cs0)
+    out1, _ = dd.call_graph(graph, atype_flat, charge_spin=cs1)
+    assert not np.allclose(np.asarray(out0), np.asarray(out1))
+
+
+def test_call_graph_charge_spin_matches_dense_adapter() -> None:
+    """Graph-lower charge_spin path == dense adapter charge_spin path (shared trunk, 1e-12).
+
+    Uses DISTINCT charge_spin values per frame (nf=2) so the test also pins
+    the per-frame (nf, 2) -> flat-N association: a wrong nf threaded into
+    ``_apply_charge_spin_embedding`` would either shape-error or silently mix
+    the two frames' conditioning.
+    """
+    dd = make_charge_spin_descriptor()
+    coord, atype, nlist = make_inputs()
+    nf, nloc = atype.shape
+    cs = np.array([[0.3, -0.7], [1.0, 0.2]])
+    ref, *_ = dd.call(coord.reshape(nf, -1), atype, nlist, charge_spin=cs)
+    graph, atype_flat = _graph_from_padded_nlist(coord, atype, nlist, None)
+    out, _ = dd.call_graph(graph, atype_flat, charge_spin=cs)
+    np.testing.assert_allclose(
+        np.asarray(out).reshape(nf, nloc, -1),
+        np.asarray(ref),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
 def test_call_graph_matches_dense() -> None:
     # Same physical edges (non-binding sel) => same descriptor within fp64
     # scatter-reassociation tolerance; output is flat (N, C).
@@ -385,20 +453,18 @@ def test_supports_native_spin_capability_gate() -> None:
 
 
 def test_uses_graph_lower_feature_gates() -> None:
-    # Conditioning inputs that still ride only the dense call signature must
-    # gate the graph route off. Exercise each gate attribute directly (the
-    # constructor kwargs for charge-spin/bridging are heavyweight).
-    for attr in ("charge_spin_embedding", "bridging_switch"):
+    # Every conditioning input DPA4 supports now rides the graph lower: native
+    # spin, charge/spin FiLM, and SFPG bridging. Only the explicit escape
+    # hatch (disable_graph_lower / _graph_lower_disabled) gates it off.
+    for attr in ("charge_spin_embedding", "bridging_switch", "spin_embedding"):
         dd = make_descriptor()
         assert dd.uses_graph_lower() is True
         setattr(dd, attr, object())  # any non-None sentinel
-        assert dd.uses_graph_lower() is False, attr
-    # native spin is now threaded through the graph lower (this task); a
-    # non-None spin_embedding must NOT disable it any more.
+        assert dd.uses_graph_lower() is True, attr
     dd = make_descriptor()
     assert dd.uses_graph_lower() is True
-    dd.spin_embedding = object()  # any non-None sentinel
-    assert dd.uses_graph_lower() is True
+    dd.disable_graph_lower()
+    assert dd.uses_graph_lower() is False
 
 
 def test_dpa4_ener_fitting_call_graph_matches_dense() -> None:
@@ -424,6 +490,158 @@ def test_dpa4_ener_fitting_call_graph_matches_dense() -> None:
         ft.call_graph(dd.reshape(nf * nloc, nd), atype.reshape(-1))["energy"]
     )
     np.testing.assert_allclose(got.reshape(ref.shape), ref, rtol=1e-12, atol=1e-14)
+
+
+def make_bridging_descriptor(seed: int = 99) -> DescrptDPA4:
+    """A SFPG-bridging variant of ``make_message_sensitive_descriptor()``.
+
+    ``inner_clamp_r_inner``/``inner_clamp_r_outer`` build ``InnerClamp`` (edge
+    distance freeze) and ``BridgingSwitch`` (per-source edge gate) -- see
+    ``test_message_passing_semantics`` in ``test_descrpt_dpa4.py`` for the
+    same construction. Jittered for the same message-sensitivity reason as
+    ``make_message_sensitive_descriptor``.
+    """
+    dd = DescrptDPA4(
+        ntypes=2,
+        sel=8,
+        rcut=4.0,
+        channels=16,
+        n_radial=8,
+        lmax=2,
+        mmax=1,
+        n_blocks=2,
+        precision="float64",
+        seed=7,
+        random_gamma=False,
+        inner_clamp_r_inner=0.8,
+        inner_clamp_r_outer=1.2,
+    )
+    data = dd.serialize()
+    jitter_zero_arrays(data, np.random.default_rng(seed))
+    return DescrptDPA4.deserialize(data)
+
+
+def _sphere_points(n_points: int, radius: float) -> np.ndarray:
+    """Deterministic Fibonacci-like sphere sampling around the origin."""
+    idx = np.arange(n_points, dtype=np.float64)
+    phi = np.pi * (3.0 - np.sqrt(5.0))  # golden-angle step
+    z = 1.0 - 2.0 * (idx + 0.5) / float(n_points)
+    rho = np.sqrt(np.clip(1.0 - z * z, 0.0, None))
+    theta = phi * idx
+    return np.stack(
+        [radius * rho * np.cos(theta), radius * rho * np.sin(theta), radius * z],
+        axis=-1,
+    )  # (n_points, 3)
+
+
+def _frozen_sphere_descriptor_outputs(
+    dd: DescrptDPA4, near_distance: float, n_points: int = 12
+) -> np.ndarray:
+    """3-atom probe (A, B, C): A fixed at the origin, B rigidly slides on a
+    sphere of radius ``near_distance`` around A (inside the frozen zone), C
+    anchored well outside the bridging window as an ordinary GNN neighbor of
+    both. Returns the flat call_graph output reshaped to (n_points, 3, C).
+
+    Mirrors pt's ``TestSourceFreezePropagationGate._build_three_atom_box`` /
+    ``_evaluate_frozen_sphere_atom_energies``, at the descriptor level (no
+    fitting net needed: if the descriptor feature of A is invariant, any
+    downstream per-atom fitting net -- itself a function of A's fixed
+    descriptor and fixed type only -- is trivially invariant too).
+    """
+    directions = _sphere_points(n_points, near_distance)
+    coord = np.zeros((n_points, 3, 3), dtype=np.float64)
+    coord[:, 1, :] = directions  # B rotates around A, radius fixed
+    coord[:, 2, :] = np.array([2.4, 0.0, 0.0])  # C: ordinary neighbor, static
+    atype = np.tile(np.array([[0, 1, 0]], dtype=np.int64), (n_points, 1))
+    nlist = build_neighbor_list_np(coord, dd.get_rcut(), nnei=4)
+    graph = make_graph_from_nlist(coord, nlist)
+    out, _ = dd.call_graph(graph, atype.reshape(-1))
+    return np.asarray(out).reshape(n_points, 3, -1)
+
+
+def test_call_graph_bridging_frozen_sphere_invariance() -> None:
+    """SFPG bridging on the graph route: A's descriptor must be invariant to
+    the rigid motion of its frozen partner B (inside r_inner=0.8).
+    """
+    dd = make_bridging_descriptor()
+    out = _frozen_sphere_descriptor_outputs(dd, near_distance=0.5)
+    span_a = np.max(np.abs(out[:, 0, :] - out[0:1, 0, :]))
+    assert span_a < 1e-10, span_a
+
+
+def test_call_graph_bridging_leak_reopens_when_gate_disabled() -> None:
+    """Ablation: clearing bridging_switch (InnerClamp stays active) must
+    reopen the direction/multi-hop leak on the graph route -- pins that SFPG,
+    not InnerClamp alone, owns the invariance above.
+    """
+    dd = make_bridging_descriptor()
+    dd.bridging_switch = None
+    out = _frozen_sphere_descriptor_outputs(dd, near_distance=0.5)
+    span_a = np.max(np.abs(out[:, 0, :] - out[0:1, 0, :]))
+    assert span_a > 1e-6, span_a
+
+
+def test_charge_spin_model_routes_through_graph_lower() -> None:
+    """A native charge_spin DPA4 model must reach ``call_graph`` (not the old
+    ``cs -> dense`` gate) when a graph ``neighbor_graph_method`` is requested,
+    and the output must still be charge_spin-sensitive.
+    """
+    from unittest.mock import (
+        patch,
+    )
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["Ni", "O"],
+        "descriptor": {
+            "type": "dpa4",
+            "rcut": 4.0,
+            "sel": 8,
+            "channels": 16,
+            "n_radial": 8,
+            "lmax": 2,
+            "mmax": 1,
+            "n_blocks": 2,
+            "precision": "float64",
+            "seed": 7,
+            "random_gamma": False,
+            "add_chg_spin_ebd": True,
+        },
+        "fitting_net": {"type": "dpa4_ener", "neuron": [8, 8]},
+    }
+    model = get_model(config)
+    data = model.serialize()
+    jitter_zero_arrays(data, np.random.default_rng(17))
+    model = type(model).deserialize(data)
+
+    rng = np.random.default_rng(23)
+    nf, nloc = 1, 6
+    coord = rng.uniform(0.5, 3.5, size=(nf, nloc, 3))
+    atype = rng.integers(0, 2, size=(nf, nloc))
+    box = 8.0 * np.eye(3, dtype=np.float64)[None]
+    cs0 = np.array([[0.0, 1.0]])
+    cs1 = np.array([[1.0, 1.0]])
+
+    descriptor_cls = type(model.atomic_model.descriptor)
+    with patch.object(
+        descriptor_cls,
+        "call_graph",
+        autospec=True,
+        wraps=descriptor_cls.call_graph,
+    ) as spy:
+        out0 = model.call_common(
+            coord, atype, box, charge_spin=cs0, neighbor_graph_method="dense"
+        )
+        assert spy.call_count >= 1, (
+            "charge_spin must not force the model back onto the dense lower"
+        )
+    out1 = model.call_common(
+        coord, atype, box, charge_spin=cs1, neighbor_graph_method="dense"
+    )
+    assert not np.allclose(out0["energy_redu"], out1["energy_redu"])
 
 
 # Golden values pinned at the pre-reroute dense ``call`` (Task 7 controller
