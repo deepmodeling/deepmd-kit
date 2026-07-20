@@ -727,7 +727,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
@@ -740,7 +740,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             bias_out, std_out = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,

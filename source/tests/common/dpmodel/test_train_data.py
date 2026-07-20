@@ -3,6 +3,10 @@ import pytest
 
 from deepmd.dpmodel.train.data import (
     _print_summary,
+    iter_training_task_configs,
+)
+from deepmd.utils.stat_file import (
+    StatFileSpec,
 )
 
 
@@ -28,3 +32,18 @@ def test_print_summary_does_not_swallow_internal_type_error() -> None:
 
     with pytest.raises(TypeError, match="internal summary failure"):
         _print_summary(BrokenSummary(), "training", [1.0])
+
+
+def test_training_task_config_preserves_stat_file_mode() -> None:
+    config = {
+        "model": {},
+        "training": {
+            "training_data": {},
+            "stat_file": "stat.hdf5",
+            "stat_file_mode": "read",
+        },
+    }
+
+    task = next(iter_training_task_configs(config))
+
+    assert task.stat_file_spec == StatFileSpec("stat.hdf5", "read")

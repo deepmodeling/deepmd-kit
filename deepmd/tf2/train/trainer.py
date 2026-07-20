@@ -86,13 +86,15 @@ from deepmd.utils.finetune import (
 from deepmd.utils.model_stat import (
     make_stat_input,
 )
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    stat_file_specs_by_task,
+)
 
 if TYPE_CHECKING:
     from deepmd.utils.data_system import (
         DeepmdDataSystem,
-    )
-    from deepmd.utils.path import (
-        DPPath,
     )
 
 log = logging.getLogger(__name__)
@@ -211,7 +213,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | Mapping[str, DeepmdDataSystem],
-        stat_file_path: DPPath | Mapping[str, DPPath | None] | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem
         | Mapping[str, DeepmdDataSystem | None]
         | None = None,
@@ -267,10 +269,9 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         self.num_steps = int(training_params["numb_steps"])
@@ -361,10 +362,11 @@ class Trainer(AbstractTrainer):
                     "data stating for task %s... (this step may take long time)",
                     model_key,
                 )
-                self.models[model_key].compute_or_load_stat(
-                    self._sample_funcs[model_key],
-                    stat_file_path=self.stat_file_path_by_task[model_key],
-                )
+                with open_stat_file(self.stat_file_specs[model_key]) as stat_file_path:
+                    self.models[model_key].compute_or_load_stat(
+                        self._sample_funcs[model_key],
+                        stat_file_path=stat_file_path,
+                    )
 
         if self.finetune_model is not None:
             self._apply_finetune()

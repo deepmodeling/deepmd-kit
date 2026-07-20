@@ -14,8 +14,6 @@ from typing import (
     Any,
 )
 
-import h5py
-
 from deepmd.dpmodel.train import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
@@ -38,8 +36,8 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -164,21 +162,6 @@ def _build_data_system(
     )
 
 
-def _ensure_stat_file_path(stat_file_path: str | None) -> DPPath | None:
-    """Create a stat-file target and return a DPPath wrapper."""
-    if stat_file_path is None:
-        return None
-    path = Path(stat_file_path)
-    if not path.exists():
-        if stat_file_path.endswith((".h5", ".hdf5")):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with h5py.File(path, "w"):
-                pass
-        else:
-            path.mkdir(parents=True, exist_ok=True)
-    return DPPath(stat_file_path, "a")
-
-
 def get_trainer(
     config: dict[str, Any],
     init_model: str | None = None,
@@ -195,7 +178,7 @@ def get_trainer(
 
     def factory(
         task_config: TrainingTaskConfig,
-    ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, DPPath | None]:
+    ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, StatFileSpec]:
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
             dict(task_config.training_data_params), type_map, seed=data_seed
@@ -208,27 +191,27 @@ def get_trainer(
         return (
             train_data,
             validation_data,
-            _ensure_stat_file_path(task_config.stat_file),
+            task_config.stat_file_spec,
         )
 
-    train_data_map, validation_data_map, stat_file_path_map = make_task_maps(
+    train_data_map, validation_data_map, stat_file_spec_map = make_task_maps(
         config, factory
     )
     print_data_summaries(train_data_map, validation_data_map)
     if multi_task:
         train_data = train_data_map
         validation_data = validation_data_map
-        stat_file_path = stat_file_path_map
+        stat_file_spec = stat_file_spec_map
     else:
         task_key = next(iter(train_data_map))
         train_data = train_data_map[task_key]
         validation_data = validation_data_map[task_key]
-        stat_file_path = stat_file_path_map[task_key]
+        stat_file_spec = stat_file_spec_map[task_key]
 
     trainer = training.Trainer(
         config,
         train_data,
-        stat_file_path=stat_file_path,
+        stat_file_spec=stat_file_spec,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
