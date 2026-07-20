@@ -20,6 +20,13 @@ jobs:
     # The full CUDA suite (serial pytest ~3h43m + C++ + LAMMPS) exceeds the
     # default 360-min job limit; the self-hosted GPU runner has no hard cap.
     timeout-minutes: 480
+    # Share ONE AOTInductor on-disk compile cache across every step: the two
+    # pytest lanes AND the C++ fixture builds (gen_*.py in test_cc_local.sh)
+    # all drive the same inductor backend on the same architectures, so the C++
+    # fixture compiles reuse the kernels the Python lane just built. actions/cache
+    # (below) persists it across runs so unchanged models never recompile.
+    env:
+      TORCHINDUCTOR_CACHE_DIR: ${{ github.workspace }}/.inductor-cache
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     # container:
     #   image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
@@ -27,6 +34,17 @@ jobs:
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       - uses: actions/checkout@v7
+      - name: Cache AOTInductor compile artifacts
+        # Restored AFTER checkout so checkout's git-clean can't wipe it. The repo
+        # Actions cache is capped at 10 GB; if the inductor cache outgrows it the
+        # oldest entries are evicted -- correctness is unaffected (inductor
+        # re-validates each graph; a miss just recompiles).
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.inductor-cache
+          key: inductor-cuda-${{ github.sha }}
+          restore-keys: |
+            inductor-cuda-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -73,18 +91,28 @@ jobs:
         # Peak GPU memory of the compile group is negligible, so the two groups
         # coexist on one device without contention.
         run: |
-          nice -n 15 python -m pytest source/tests -m "aoti_compile" \
-            -p no:cacheprovider --junit-xml=junit-aoti.xml &
+          # Cap the compile lane's inductor compile threads to ~half the cores
+          # so the GPU lane keeps CPU for its host-side dispatch; nice it too.
+          nc=$(( $(nproc) / 2 )); [ "$nc" -lt 1 ] && nc=1
+          ( t0=$(date +%s)
+            TORCHINDUCTOR_COMPILE_THREADS=$nc nice -n 15 \
+              python -m pytest source/tests -m "aoti_compile" \
+                -p no:cacheprovider --junit-xml=junit-aoti.xml
+            rc=$?; echo "[lane aoti_compile] wall=$(( $(date +%s) - t0 ))s exit=$rc"
+            exit $rc ) &
           pid_a=$!
-          python -m pytest source/tests -m "not aoti_compile" \
-            -p no:cacheprovider --junit-xml=junit-gpu.xml &
+          ( t0=$(date +%s)
+            python -m pytest source/tests -m "not aoti_compile" \
+              -p no:cacheprovider --junit-xml=junit-gpu.xml
+            rc=$?; echo "[lane gpu] wall=$(( $(date +%s) - t0 ))s exit=$rc"
+            exit $rc ) &
           pid_b=$!
           rc_a=0; wait $pid_a || rc_a=$?
           rc_b=0; wait $pid_b || rc_b=$?
           # pytest exit 5 == "no tests collected"; harmless for the compile group
           # (e.g. if a branch has no .pt2-freezing tests), a real error otherwise.
           [ "$rc_a" = 5 ] && rc_a=0
-          echo "aoti_compile group exit=$rc_a ; gpu group exit=$rc_b"
+          echo "lane exit codes: aoti_compile=$rc_a gpu=$rc_b"
           exit $(( rc_a != 0 || rc_b != 0 ))
         env:
           NUM_WORKERS: 0
@@ -93,6 +121,17 @@ jobs:
           XLA_PYTHON_CLIENT_PREALLOCATE: false
           XLA_PYTHON_CLIENT_ALLOCATOR: platform
           FLAGS_use_stride_compute_kernel: 0
+      - name: Upload per-lane JUnit reports
+        # junit-aoti.xml = compile lane (T_A), junit-gpu.xml = GPU lane (T_B);
+        # used to compare the two lanes against the pre-split serial baseline.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-pytest-junit
+          path: |
+            junit-aoti.xml
+            junit-gpu.xml
+          if-no-files-found: warn
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       - run: |
