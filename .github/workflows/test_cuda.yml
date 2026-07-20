@@ -63,7 +63,29 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
-      - run: python -m pytest source/tests
+      - name: Run Python tests (overlap AOTI compiles with GPU unit tests)
+        # The tests that freeze a .pt2 (-m aoti_compile) are CPU-bound: the GPU
+        # sits ~idle (measured ~98% idle, <250 MiB) while inductor/g++/ptxas
+        # generate code. Run them concurrently with the GPU-bound tests that do
+        # NOT compile a .pt2 so the compile CPU-time overlaps the GPU unit tests
+        # instead of serializing in front of them. The compile group is niced so
+        # the latency-sensitive GPU dispatch of the GPU group keeps CPU priority.
+        # Peak GPU memory of the compile group is negligible, so the two groups
+        # coexist on one device without contention.
+        run: |
+          nice -n 15 python -m pytest source/tests -m "aoti_compile" \
+            -p no:cacheprovider --junit-xml=junit-aoti.xml &
+          pid_a=$!
+          python -m pytest source/tests -m "not aoti_compile" \
+            -p no:cacheprovider --junit-xml=junit-gpu.xml &
+          pid_b=$!
+          rc_a=0; wait $pid_a || rc_a=$?
+          rc_b=0; wait $pid_b || rc_b=$?
+          # pytest exit 5 == "no tests collected"; harmless for the compile group
+          # (e.g. if a branch has no .pt2-freezing tests), a real error otherwise.
+          [ "$rc_a" = 5 ] && rc_a=0
+          echo "aoti_compile group exit=$rc_a ; gpu group exit=$rc_b"
+          exit $(( rc_a != 0 || rc_b != 0 ))
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
