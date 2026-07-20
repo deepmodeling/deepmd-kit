@@ -15,16 +15,23 @@ plain ``"dpa4"`` model config reaches this trunk directly via
 """
 
 import copy
+import os
 
 import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+)
 from deepmd.pt.model.model import (
     get_model as pt_get_model,
 )
 from deepmd.pt_expt.descriptor.dpa4 import (
     DescrptDPA4,
+)
+from deepmd.pt_expt.entrypoints.main import (
+    get_trainer,
 )
 from deepmd.pt_expt.fitting.dpa4_ener import (
     SeZMEnergyFittingNet,
@@ -40,6 +47,12 @@ from deepmd.pt_expt.model.get_model import (
 )
 from deepmd.pt_expt.utils import (
     env as _env,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
 )
 
 from ...dpa4_fixtures import (
@@ -709,3 +722,181 @@ class TestDPA4NativeSpinGraphLowerExportable:
             ref["energy_derv_c"].reshape(out["atom_virial"].shape),
             **tol,
         )
+
+
+# =============================================================================
+# Task 11: training smoke -- native-spin DPA4 through the real pt_expt
+# trainer (data loading, ``ener_spin`` loss dispatch, ``ModelWrapper``,
+# graph-route autograd ``force_mag``), not a hand-rolled forward/backward.
+# =============================================================================
+
+# Small fp64 native-spin DPA4/SeZM training config. Reuses the real NiO spin
+# dataset (``source/tests/pt/NiO/data``, type_map ["Ni", "O"], 32 atoms: 16
+# Ni carrying a magnetic moment, 16 O not) that ``source/tests/pt/
+# test_finetune_spin.py``'s ``TestSpinFinetuneSeA`` already exercises for the
+# (unrelated) virtual-atom scheme with ``rcut=4.0``, ``sel=[20, 20]`` -- rcut
+# reused verbatim here since it is known to see a sane number of neighbors on
+# this system; DPA4's ``sel`` is only an initial search-capacity hint (grows
+# on demand, never truncates the energy path), so a single scalar sel=40
+# (>= the se_e2_a per-type total of 40) is a safe, generous starting point.
+# The descriptor is intentionally tiny (channels=8, n_radial=4, lmax=1,
+# mmax=1, n_blocks=1) to keep the smoke test fast: this test proves the
+# training PLUMBING (data requirement, loss dispatch, wrapper spin
+# threading, autograd gradient flow), not model quality.
+_TRAIN_MODEL_CONFIG = {
+    "type": "dpa4",
+    "type_map": ["Ni", "O"],
+    "descriptor": {
+        "type": "dpa4",
+        "rcut": 4.0,
+        "sel": 40,
+        "channels": 8,
+        "n_radial": 4,
+        "lmax": 1,
+        "mmax": 1,
+        "n_blocks": 1,
+        "precision": "float64",
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [8],
+        "precision": "float64",
+        "seed": 1,
+    },
+    "spin": {"use_spin": [True, False], "scheme": "native"},
+}
+
+
+def _make_train_config(data_dir: str, numb_steps: int = 2) -> dict:
+    """Build a minimal native-spin DPA4 training config pointing at *data_dir*.
+
+    Loss prefactors mirror ``source/tests/pt/test_finetune_spin.py``'s
+    ``TestSpinFinetuneSeA.setUp`` (the reference pt spin-training config):
+    ``ener_spin`` with both real-force (``fr``) and magnetic-force (``fm``)
+    terms enabled, so a nonzero magnetic force error actually contributes to
+    the loss (and therefore to the backward pass that reaches the
+    spin-embedding parameters).
+    """
+    return {
+        "model": copy.deepcopy(_TRAIN_MODEL_CONFIG),
+        "learning_rate": {
+            "type": "exp",
+            "decay_steps": 500,
+            "start_lr": 0.001,
+            "stop_lr": 3.51e-8,
+        },
+        "loss": {
+            "type": "ener_spin",
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1,
+            "start_pref_fr": 1000,
+            "limit_pref_fr": 1,
+            "start_pref_fm": 1000,
+            "limit_pref_fm": 1,
+        },
+        "training": {
+            "training_data": {"systems": [data_dir], "batch_size": 1},
+            "validation_data": {
+                "systems": [data_dir],
+                "batch_size": 1,
+                "numb_btch": 1,
+            },
+            "numb_steps": numb_steps,
+            "seed": 10,
+            "disp_file": "lcurve.out",
+            "disp_freq": 1,
+            "save_freq": numb_steps,
+        },
+    }
+
+
+class TestDPA4NativeSpinTrainingSmoke:
+    """End-to-end training smoke for the native-spin DPA4 trainer.
+
+    Exercises the FULL production training path -- data loading, the
+    ``ener_spin`` loss dispatch, ``ModelWrapper.forward``, and the
+    graph-route backbone's autograd ``force_mag`` -- on the real NiO spin
+    dataset, not a hand-rolled forward/backward.
+
+    Writing this test surfaced three real gaps (all in ``deepmd/dpmodel`` or
+    ``deepmd/pt_expt``, none in the read-only ``deepmd/pt``), fixed in the
+    same commit as this test:
+
+    1. ``ModelWrapper.forward`` (``deepmd/pt_expt/train/wrapper.py``) had no
+       ``spin`` parameter, so a spin-labeled batch's ``spin`` key made
+       ``self.wrapper(**input_dict, ...)`` raise ``TypeError``. Fixed by
+       mirroring ``deepmd.pt.train.wrapper.ModelWrapper.forward``'s
+       ``has_spin``-gated threading.
+    2. ``get_additional_data_requirement``
+       (``deepmd/pt_expt/train/training.py``) never declared ``spin`` as a
+       data requirement, so the data loader never learned to read
+       ``spin.npy`` in the first place. Fixed by mirroring
+       ``deepmd.pt.train.training.get_additional_data_requirement``'s
+       ``has_spin`` branch.
+    3. ``DPA4NativeSpinModel.forward`` (``deepmd/pt_expt/model/
+       dpa4_native_spin_model.py``) accepted no ``charge_spin`` keyword, but
+       ``ModelWrapper`` always forwards one -- fixed by accepting (and
+       passing through) ``charge_spin``, mirroring pt's
+       ``SeZMNativeSpinModel.forward``. Separately, ``EnergySpinLoss.call``
+       (``deepmd/dpmodel/loss/ener_spin.py``) diffed the flat
+       ``(nf, natoms * 3)`` data-loader label directly against the model's
+       ``(nf, natoms, 3)`` prediction for ``force``/``force_mag`` -- unlike
+       every sibling atomic-label loss (``dos.py``/``tensor.py``), which
+       reshape the label to the canonical atomic shape before use. Fixed by
+       adding the same reshape.
+    """
+
+    def setup_method(self) -> None:
+        self.data_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "pt", "NiO", "data", "single"
+        )
+        if not os.path.isdir(self.data_dir):
+            pytest.skip(f"NiO spin data not found: {self.data_dir}")
+
+    def test_training_smoke(self, tmp_path) -> None:
+        """Run 2 training steps; assert finite loss and a live spin-embedding grad."""
+        config = _make_train_config(self.data_dir, numb_steps=2)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            trainer = get_trainer(config)
+            assert isinstance(
+                trainer.wrapper.model[DEFAULT_TASK_KEY], DPA4NativeSpinModel
+            )
+
+            tasks = trainer._make_training_tasks()
+            task = trainer.select_task(tasks)
+
+            for step in range(2):
+                result = trainer.train_step(task, step)
+                loss = result.payload["loss"]
+                assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
+
+            # force_mag gradients flow into training: after the last step's
+            # backward(), a spin-embedding parameter carries a nonzero grad.
+            # ``optimizer.step()`` reads (but does not clear) ``.grad``, so
+            # this checks the SAME gradient the optimizer just consumed --
+            # ``train_step`` only calls ``zero_grad()`` at the START of the
+            # NEXT call, not after ``optimizer.step()``.
+            spin_params = [
+                (name, p)
+                for name, p in trainer.wrapper.named_parameters()
+                if "spin_embedding" in name
+            ]
+            assert spin_params, "no spin_embedding parameter found in the model"
+            nonzero = [
+                name
+                for name, p in spin_params
+                if p.grad is not None and torch.any(p.grad != 0)
+            ]
+            assert nonzero, (
+                "no spin_embedding parameter has a nonzero grad after "
+                "training -- force_mag gradients are not flowing into "
+                "training"
+            )
+        finally:
+            os.chdir(old_cwd)

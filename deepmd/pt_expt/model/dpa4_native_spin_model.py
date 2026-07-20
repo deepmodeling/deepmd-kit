@@ -148,6 +148,7 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return native-spin model predictions with public output keys.
 
@@ -167,6 +168,13 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
             atomic parameter. nf x nloc x nda
         do_atomic_virial
             If calculate the atomic virial.
+        charge_spin
+            Frame-level charge/spin conditioning, shape nf x 2. Accepted for
+            call-signature compatibility with ``ModelWrapper.forward`` (which
+            always forwards this keyword); charge-spin FiLM combined with
+            native spin is rejected at construction time
+            (``add_chg_spin_ebd`` on the descriptor), so this is always
+            ``None`` in practice for a model this class can build.
 
         Returns
         -------
@@ -187,6 +195,7 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
             spin=spin,
         )
         out: dict[str, torch.Tensor] = {

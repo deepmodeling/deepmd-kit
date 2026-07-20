@@ -88,6 +88,34 @@ type_NiO = np.array([1, 1, 2, 2])
 # see the module docstring). expected_av / expected_v mirror
 # test_lammps_spin_pt2.py's sign convention: LAMMPS reports the *negative*
 # of DeepPot's atomic virial.
+#
+# Regeneration recipe (run once, offline, from the repo root, after
+# ``python source/tests/infer/gen_dpa4_spin.py`` has produced
+# ``source/tests/infer/deeppot_dpa4_spin_graph.pt2``):
+#
+#   import numpy as np
+#   from deepmd.infer import DeepPot
+#   dp = DeepPot("source/tests/infer/deeppot_dpa4_spin_graph.pt2")
+#   e, f, v, ae, av, fm, mm = dp.eval(
+#       coord.reshape(1, -1, 3),
+#       box.reshape(1, 9) if box is not None else None,
+#       type_NiO - 1,  # LAMMPS 1-based type -> deepmd 0-based atype (Ni=0, O=1)
+#       atomic=True,
+#       spin=spin.reshape(1, -1, 3),
+#   )
+#
+# using the ``box``/``coord``/``spin``/``type_NiO`` arrays defined above
+# (this module's fixed 4-atom NiO system). ``e``/``f``/``ae`` map directly to
+# ``expected_e``/``expected_f``/``expected_ae`` below (reshaped/squeezed to
+# drop the leading frame axis); ``av`` (NOT ``v`` -- the per-atom virial,
+# since ``expected_v`` below is shape ``(4, 9)``) is sign-flipped to give
+# ``expected_v``, per the LAMMPS-vs-DeepPot atomic-virial sign convention
+# noted above. ``fm`` is the RAW ``dE/dspin`` -- exactly ``_expected_fm_raw``
+# below, BEFORE the ``spin_norm / hbar`` scaling applied further down to
+# produce ``expected_fm`` (the value actually compared against LAMMPS's own
+# ``fm`` output; see the comment on that scaling below). ``mm`` (mask_mag) is
+# unused here -- the fixed system's spin-active/non-magnetic split is
+# already known (2 Ni + 2 O) and hardcoded via ``_spin_norm`` below.
 expected_e = 2.3446106979205501e00
 expected_ae = np.array(
     [

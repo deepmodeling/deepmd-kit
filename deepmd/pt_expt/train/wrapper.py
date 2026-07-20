@@ -139,6 +139,7 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
+        spin: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
@@ -164,6 +165,16 @@ class ModelWrapper(torch.nn.Module):
             "aparam": aparam,
             "charge_spin": charge_spin,
         }
+        # ``spin`` (native or virtual-atom magnetic moment) is only accepted
+        # by spin-capable model forward()s; mirrors
+        # ``deepmd.pt.train.wrapper.ModelWrapper.forward``'s ``has_spin`` gate
+        # so non-spin models (whose forward() has no ``spin`` parameter) are
+        # never called with an unexpected keyword argument.
+        has_spin = getattr(self.model[task_key], "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin:
+            input_dict["spin"] = spin
 
         if self.inference_only:
             with self._frozen_parameter_context():
