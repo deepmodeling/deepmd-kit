@@ -9,7 +9,7 @@ all -- spin rides the NeighborGraph lower exclusively (see
 ``source/tests/infer/gen_dpa4_spin.py``). The fixture is also exported with
 ``has_comm_artifact=false`` unconditionally (no nested with-comm AOTI
 artifact), so multi-rank LAMMPS has no cross-rank ghost-feature-exchange
-route to fall back to: ``DeepSpinPTExpt::compute_inner`` fails fast on
+route to fall back to: ``DeepSpinPTExpt::compute`` fails fast on
 *any* ``nprocs > 1`` run of a graph-kind spin archive, independent of the
 usual ``has_comm_artifact_`` / ``atom_map`` decision matrix used for energy
 models and for the virtual-atom spin scheme (see
@@ -457,7 +457,7 @@ def test_pair_deepspin_mpi_fails_fast() -> None:
     assert not out["timed_out"], (
         "Multi-rank graph-spin run timed out instead of failing promptly: "
         "the has_comm_artifact=false fail-fast guard "
-        "(DeepSpinPTExpt::compute_inner) must throw on nprocs > 1 before "
+        "(DeepSpinPTExpt::compute) must throw on nprocs > 1 before "
         "any collective communication is attempted."
     )
     assert out["returncode"] != 0, (
