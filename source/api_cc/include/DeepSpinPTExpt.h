@@ -194,6 +194,13 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   // Whether the exported graph consumes the compact edge schema (native spin,
   // shared with DeepPotPTExpt) rather than the deepspin-scheme nlist contract.
   bool lower_input_is_edge_ = false;
+  // Whether the exported graph consumes the NeighborGraph schema (native
+  // spin, single-rank only -- see run_model_graph). Mutually exclusive with
+  // lower_input_is_edge_.
+  bool lower_input_is_graph_ = false;
+  // Edge-vector precision recorded by the .pt2 artifact for the graph route
+  // (mirrors DeepPotPTExpt); read from metadata ``graph_edge_dtype``.
+  bool graph_edge_fp32_ = false;
   int nnei;  // expected nlist nnei dimension (= sum(sel))
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;         // cached mapping tensor (LAMMPS path)
@@ -231,6 +238,27 @@ class DeepSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& spin,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam);
+
+  /**
+   * @brief Run the native-spin NeighborGraph artifact: the 10 base graph
+   * tensors (see commonPT.h GraphTensorPack), the per-node spin leaf
+   * (always present, positional index 10), then the conditional
+   * fparam/aparam tail. No charge_spin slot -- native spin has none.
+   * Single-rank only (no with-comm sibling; see DeepSpinPTExpt.cc compute()).
+   */
+  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
+                                             const torch::Tensor& n_node,
+                                             const torch::Tensor& n_local,
+                                             const torch::Tensor& edge_index,
+                                             const torch::Tensor& edge_vec,
+                                             const torch::Tensor& edge_mask,
+                                             const torch::Tensor& destination_order,
+                                             const torch::Tensor& destination_row_ptr,
+                                             const torch::Tensor& source_order,
+                                             const torch::Tensor& source_row_ptr,
+                                             const torch::Tensor& spin,
+                                             const torch::Tensor& fparam,
+                                             const torch::Tensor& aparam);
 
   /**
    * @brief Run the native-spin parallel edge artifact: the energy edge
