@@ -16,6 +16,8 @@ date: 2021-12-6
 
 */
 
+#include <cstring>
+
 #include "coord.h"
 #include "custom_op.h"
 #include "errors.h"
@@ -112,28 +114,29 @@ static void _map_nei_info_cpu(int* nlist,
                               const bool& b_nlist_map);
 
 template <typename FPTYPE>
-static void _prepare_coord_nlist_cpu(OpKernelContext* context,
-                                     FPTYPE const** coord,
-                                     std::vector<FPTYPE>& coord_cpy,
-                                     int const** type,
-                                     std::vector<int>& type_cpy,
-                                     std::vector<int>& idx_mapping,
-                                     deepmd::InputNlist& inlist,
-                                     std::vector<int>& ilist,
-                                     std::vector<int>& numneigh,
-                                     std::vector<int*>& firstneigh,
-                                     std::vector<std::vector<int>>& jlist,
-                                     int& new_nall,
-                                     int& mem_cpy,
-                                     int& mem_nnei,
-                                     int& max_nbor_size,
-                                     const FPTYPE* box,
-                                     const int* mesh_tensor_data,
-                                     const int& nloc,
-                                     const int& nei_mode,
-                                     const float& rcut_r,
-                                     const int& max_cpy_trial,
-                                     const int& max_nnei_trial);
+static tensorflow::Status _prepare_coord_nlist_cpu(
+    FPTYPE const** coord,
+    std::vector<FPTYPE>& coord_cpy,
+    int const** type,
+    std::vector<int>& type_cpy,
+    std::vector<int>& idx_mapping,
+    deepmd::InputNlist& inlist,
+    std::vector<int>& ilist,
+    std::vector<int>& numneigh,
+    std::vector<int*>& firstneigh,
+    std::vector<std::vector<int>>& jlist,
+    int& new_nall,
+    int& mem_cpy,
+    int& mem_nnei,
+    int& max_nbor_size,
+    const FPTYPE* box,
+    const int* mesh_tensor_data,
+    const int_64 mesh_tensor_size,
+    const int& nloc,
+    const int& nei_mode,
+    const float& rcut_r,
+    const int& max_cpy_trial,
+    const int& max_nnei_trial);
 
 // instance of function
 
@@ -228,39 +231,104 @@ static void _map_nei_info_cpu(int* nlist,
                            ntypes, b_nlist_map);
 }
 
+static tensorflow::Status _prepare_mesh_nlist_cpu(
+    deepmd::InputNlist& inlist,
+    std::vector<int>& ilist,
+    std::vector<int>& numneigh,
+    std::vector<int*>& firstneigh,
+    std::vector<std::vector<int>>& jlist,
+    int& max_nbor_size,
+    const int* mesh_tensor_data,
+    const int_64 mesh_tensor_size,
+    const int nloc,
+    const int nall) {
+  // Tensor-stored lists use a 16-int header followed by ilist, numneigh,
+  // and the concatenated neighbor rows. Validate every offset before copying
+  // because this input can be constructed directly by callers.
+  const int_64 header_size = 16 + static_cast<int_64>(2) * nloc;
+  if (mesh_tensor_size < header_size) {
+    return errors::InvalidArgument("invalid mesh tensor");
+  }
+
+  const int* ilist_in = mesh_tensor_data + 16;
+  const int* numneigh_in = mesh_tensor_data + 16 + nloc;
+  const int* neighbors_in = mesh_tensor_data + header_size;
+  std::vector<int_64> neighbor_offset(nloc + 1, 0);
+  int supplied_max_nbor_size = 0;
+  for (int ii = 0; ii < nloc; ++ii) {
+    const int_64 neighbor_count = numneigh_in[ii];
+    if (neighbor_count < 0 ||
+        neighbor_offset[ii] > mesh_tensor_size - header_size - neighbor_count) {
+      return errors::InvalidArgument("invalid mesh tensor");
+    }
+    neighbor_offset[ii + 1] = neighbor_offset[ii] + neighbor_count;
+    supplied_max_nbor_size = std::max(supplied_max_nbor_size, numneigh_in[ii]);
+  }
+
+  std::vector<unsigned char> seen(static_cast<size_t>(nloc), 0);
+  for (int ii = 0; ii < nloc; ++ii) {
+    const int i_idx = ilist_in[ii];
+    if (i_idx < 0 || i_idx >= nloc || seen[static_cast<size_t>(i_idx)]) {
+      return errors::InvalidArgument("invalid mesh tensor");
+    }
+    seen[static_cast<size_t>(i_idx)] = 1;
+    for (int_64 jj = neighbor_offset[ii]; jj < neighbor_offset[ii + 1]; ++jj) {
+      // Downstream environment-matrix kernels index both coordinates and
+      // atom types with this value, so accept only live frame atoms.
+      if (neighbors_in[jj] < 0 || neighbors_in[jj] >= nall) {
+        return errors::InvalidArgument("invalid mesh tensor");
+      }
+    }
+  }
+
+  for (int ii = 0; ii < nloc; ++ii) {
+    ilist[ii] = ilist_in[ii];
+    numneigh[ii] = numneigh_in[ii];
+    jlist[ii].assign(neighbors_in + neighbor_offset[ii],
+                     neighbors_in + neighbor_offset[ii + 1]);
+    firstneigh[ii] = jlist[ii].data();
+  }
+  inlist = deepmd::InputNlist(nloc, ilist.data(), numneigh.data(),
+                              firstneigh.data());
+  max_nbor_size = std::max(max_nbor_size, supplied_max_nbor_size);
+  return tensorflow::Status();
+}
+
 template <typename FPTYPE>
-static void _prepare_coord_nlist_cpu(OpKernelContext* context,
-                                     FPTYPE const** coord,
-                                     std::vector<FPTYPE>& coord_cpy,
-                                     int const** type,
-                                     std::vector<int>& type_cpy,
-                                     std::vector<int>& idx_mapping,
-                                     deepmd::InputNlist& inlist,
-                                     std::vector<int>& ilist,
-                                     std::vector<int>& numneigh,
-                                     std::vector<int*>& firstneigh,
-                                     std::vector<std::vector<int>>& jlist,
-                                     int& new_nall,
-                                     int& mem_cpy,
-                                     int& mem_nnei,
-                                     int& max_nbor_size,
-                                     const FPTYPE* box,
-                                     const int* mesh_tensor_data,
-                                     const int& nloc,
-                                     const int& nei_mode,
-                                     const float& rcut_r,
-                                     const int& max_cpy_trial,
-                                     const int& max_nnei_trial) {
+static tensorflow::Status _prepare_coord_nlist_cpu(
+    FPTYPE const** coord,
+    std::vector<FPTYPE>& coord_cpy,
+    int const** type,
+    std::vector<int>& type_cpy,
+    std::vector<int>& idx_mapping,
+    deepmd::InputNlist& inlist,
+    std::vector<int>& ilist,
+    std::vector<int>& numneigh,
+    std::vector<int*>& firstneigh,
+    std::vector<std::vector<int>>& jlist,
+    int& new_nall,
+    int& mem_cpy,
+    int& mem_nnei,
+    int& max_nbor_size,
+    const FPTYPE* box,
+    const int* mesh_tensor_data,
+    const int_64 mesh_tensor_size,
+    const int& nloc,
+    const int& nei_mode,
+    const float& rcut_r,
+    const int& max_cpy_trial,
+    const int& max_nnei_trial) {
   inlist.inum = nloc;
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     // build nlist by myself
     // normalize and copy coord
     if (nei_mode == 1) {
       int copy_ok = _norm_copy_coord_cpu(coord_cpy, type_cpy, idx_mapping,
                                          new_nall, mem_cpy, *coord, box, *type,
                                          nloc, max_cpy_trial, rcut_r);
-      OP_REQUIRES(context, copy_ok,
-                  errors::Aborted("cannot allocate mem for copied coords"));
+      if (!copy_ok) {
+        return errors::Aborted("cannot allocate mem for copied coords");
+      }
       *coord = &coord_cpy[0];
       *type = &type_cpy[0];
     }
@@ -268,11 +336,19 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
     int build_ok = _build_nlist_cpu(ilist, numneigh, firstneigh, jlist,
                                     max_nbor_size, mem_nnei, *coord, nloc,
                                     new_nall, max_nnei_trial, rcut_r);
-    OP_REQUIRES(context, build_ok,
-                errors::Aborted("cannot allocate mem for nlist"));
+    if (!build_ok) {
+      return errors::Aborted("cannot allocate mem for nlist");
+    }
     inlist.ilist = &ilist[0];
     inlist.numneigh = &numneigh[0];
     inlist.firstneigh = &firstneigh[0];
+  } else if (nei_mode == 4) {
+    tensorflow::Status status = _prepare_mesh_nlist_cpu(
+        inlist, ilist, numneigh, firstneigh, jlist, max_nbor_size,
+        mesh_tensor_data, mesh_tensor_size, nloc, new_nall);
+    if (!status.ok()) {
+      return status;
+    }
   } else {
     // copy pointers to nlist data
     memcpy(&inlist.ilist, 4 + mesh_tensor_data, sizeof(int*));
@@ -280,6 +356,7 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
     memcpy(&inlist.firstneigh, 12 + mesh_tensor_data, sizeof(int**));
     max_nbor_size = max_numneigh(inlist);
   }
+  return tensorflow::Status();
 }
 
 /*
@@ -506,11 +583,14 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
         std::vector<int> type_cpy;
         int frame_nall = nall;
         // prepare coord and nlist
-        _prepare_coord_nlist_cpu<FPTYPE>(
-            context, &coord, coord_cpy, &type, type_cpy, idx_mapping, inlist,
-            ilist, numneigh, firstneigh, jlist, frame_nall, mem_cpy, mem_nnei,
-            max_nbor_size, box, mesh_tensor.flat<int>().data(), nloc, nei_mode,
-            rcut_r, max_cpy_trial, max_nnei_trial);
+        OP_REQUIRES_OK(
+            context,
+            _prepare_coord_nlist_cpu<FPTYPE>(
+                &coord, coord_cpy, &type, type_cpy, idx_mapping, inlist, ilist,
+                numneigh, firstneigh, jlist, frame_nall, mem_cpy, mem_nnei,
+                max_nbor_size, box, mesh_tensor.flat<int>().data(),
+                mesh_tensor.NumElements(), nloc, nei_mode, rcut_r,
+                max_cpy_trial, max_nnei_trial));
         // launch the cpu compute function
         deepmd::prod_env_mat_a_nvnmd_quantize_cpu(
             em, em_deriv, rij, nlist, coord, type, inlist, max_nbor_size, avg,
@@ -789,17 +869,20 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
         std::vector<int> type_cpy;
         int frame_nall = nall;
         // prepare coord and nlist
-        _prepare_coord_nlist_cpu<FPTYPE>(
-            context, &coord, coord_cpy, &f_type, type_cpy, idx_mapping, inlist,
-            ilist, numneigh, firstneigh, jlist, frame_nall, mem_cpy, mem_nnei,
-            max_nbor_size, box, mesh_tensor.flat<int>().data(), nloc, nei_mode,
-            rcut_r, max_cpy_trial, max_nnei_trial);
+        OP_REQUIRES_OK(
+            context,
+            _prepare_coord_nlist_cpu<FPTYPE>(
+                &coord, coord_cpy, &f_type, type_cpy, idx_mapping, inlist,
+                ilist, numneigh, firstneigh, jlist, frame_nall, mem_cpy,
+                mem_nnei, max_nbor_size, box, mesh_tensor.flat<int>().data(),
+                mesh_tensor.NumElements(), nloc, nei_mode, rcut_r,
+                max_cpy_trial, max_nnei_trial));
         // launch the cpu compute function
         deepmd::prod_env_mat_a_nvnmd_quantize_cpu(
             em, em_deriv, rij, nlist, coord, type, inlist, max_nbor_size, avg,
             std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, f_type);
         // do nlist mapping if coords were copied
-        _map_nei_info_cpu(nlist, ntype, nmask, type, &idx_mapping[0], nloc,
+        _map_nei_info_cpu(nlist, ntype, nmask, type, idx_mapping.data(), nloc,
                           nnei, ntypes, b_nlist_map);
       }
     }

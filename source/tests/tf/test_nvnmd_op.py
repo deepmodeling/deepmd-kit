@@ -421,5 +421,73 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
         tf.reset_default_graph()
 
 
+class TestOpProdEnvMatNvnmdTensorNlist(tf.test.TestCase):
+    """Verify NVNMD env-mat ops honor neighbor lists stored in mesh tensors."""
+
+    def setUp(self) -> None:
+        self.coord = np.array([[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]])
+        self.atype = np.array([[0, 0, 0]], dtype=np.int32)
+        self.natoms = np.array([3, 3, 3], dtype=np.int32)
+        self.box = np.array([[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]])
+        self.sel = [2]
+        self.ndescrpt = 4 * sum(self.sel)
+        self.avg = np.zeros((1, self.ndescrpt))
+        self.std = np.ones((1, self.ndescrpt))
+
+        # All atoms are mutually within rcut, but this caller-provided list
+        # deliberately retains only one cyclic neighbor per local atom.
+        header = np.zeros(16, dtype=np.int32)
+        ilist = np.array([0, 1, 2], dtype=np.int32)
+        numneigh = np.ones(3, dtype=np.int32)
+        jlist = np.array([2, 0, 1], dtype=np.int32)
+        self.mesh = np.concatenate((header, ilist, numneigh, jlist))
+        self.expected_nlist = np.array([[2, -1, 0, -1, 1, -1]], dtype=np.int32)
+
+    def _run_op(self, mixed_types: bool, mesh: np.ndarray | None = None) -> np.ndarray:
+        op = (
+            op_module.prod_env_mat_a_mix_nvnmd_quantize
+            if mixed_types
+            else op_module.prod_env_mat_a_nvnmd_quantize
+        )
+        outputs = op(
+            tf.constant(self.coord, dtype=tf.float64),
+            tf.constant(self.atype),
+            tf.constant(self.natoms),
+            tf.constant(self.box, dtype=tf.float64),
+            tf.constant(self.mesh if mesh is None else mesh),
+            tf.constant(self.avg, dtype=tf.float64),
+            tf.constant(self.std, dtype=tf.float64),
+            rcut_a=-1.0,
+            rcut_r=3.0,
+            rcut_r_smth=0.5,
+            sel_a=self.sel,
+            sel_r=[0],
+        )
+        with self.cached_session() as sess:
+            return sess.run(outputs[3])
+
+    def test_standard_op_uses_tensor_neighbor_list(self) -> None:
+        np.testing.assert_array_equal(self._run_op(False), self.expected_nlist)
+
+    def test_mixed_type_op_uses_tensor_neighbor_list(self) -> None:
+        np.testing.assert_array_equal(self._run_op(True), self.expected_nlist)
+
+    def test_rejects_truncated_tensor_neighbor_list(self) -> None:
+        """Reject mode-4 tensors before reading an incomplete list header."""
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, self.mesh[:17])
+
+    def test_rejects_out_of_range_tensor_neighbor_index(self) -> None:
+        """Reject neighbors that would index beyond this frame's atoms."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[-1] = self.natoms[1]
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, invalid_mesh)
+
+
 if __name__ == "__main__":
     unittest.main()
