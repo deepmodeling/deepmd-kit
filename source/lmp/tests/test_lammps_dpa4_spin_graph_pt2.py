@@ -16,21 +16,42 @@ models and for the virtual-atom spin scheme (see
 ``source/api_cc/src/DeepSpinPTExpt.cc``, the
 ``lower_input_is_graph_ && multi_rank && has_message_passing_`` guard).
 
-Reference (energy / force / force_mag / virial) values below were computed
-once via ``deepmd.infer.DeepPot.eval`` on ``deeppot_dpa4_spin_graph.pt2``
-for the fixed 4-atom NiO system reused from ``test_lammps_spin_pt2.py``
-(box 13x13x13, same coordinates/type ordering: 2 spin-active Ni + 2
-non-magnetic O) -- i.e. exactly the Task 7 graph-spin Python eval path,
-driven here through LAMMPS instead.
+Reference (energy / force / force_mag / virial) values are computed LIVE at
+test-setup time via ``deepmd.infer.DeepPot.eval`` on
+``deeppot_dpa4_spin_graph.pt2`` for the fixed 4-atom NiO system reused from
+``test_lammps_spin_pt2.py`` (box 13x13x13, same coordinates/type ordering: 2
+spin-active Ni + 2 non-magnetic O) -- i.e. exactly the Task 7 graph-spin
+Python eval path, driven here through LAMMPS instead.
+
+The reference is deliberately NOT hardcoded (a previous revision hardcoded
+it and went stale within ~1e-6 the moment master's ``dpa4_nn``
+physical-null-mass-attention change shifted DPA4 numerics -- exactly the
+fragility flagged in the Task 10 review). Nor is it read from a sidecar
+``.expected`` file produced by ``source/tests/infer/gen_dpa4_spin.py``:
+that script's own PBC eval uses a DIFFERENT 6-atom (3 Ni + 3 O) system in a
+6x6x6 box (see its module docstring / ``_COORDS`` / ``_CELL`` / ``_SPINS``),
+and that box's edge length (6.0) exactly equals DPA4's ghost cutoff
+(rcut(4.0)+skin(2.0)=6.0) -- not a safe geometry to reuse for a LAMMPS
+periodic run. Instead, ``_compute_expected`` below loads the archive and
+evaluates it, at test-setup time, on THIS module's own fixed geometry --
+mirroring ``test_lammps_model_devi_pt2.py``'s ``_compute_expected`` pattern
+(subprocess-isolated, so importing ``deepmd``'s Python package does not
+share a process with the LAMMPS plugin's own loaded ``libdeepmd_op_pt.so``).
+This keeps the reference correct-by-construction: it always reflects
+whatever the current archive produces, so a real DPA4 numerics shift is
+caught by comparing against the *previous* run's output changing (reviewed
+in the PR), not by a silently-stale hardcoded array.
 """
 
 import importlib.util
+import json
 import os
 import shutil
 import signal
 import subprocess as sp
 import sys
 import tempfile
+import textwrap
 from pathlib import (
     Path,
 )
@@ -83,66 +104,6 @@ spin = np.array(
 )
 type_NiO = np.array([1, 1, 2, 2])
 
-# Reference values from deepmd.infer.DeepPot.eval(..., spin=spin) on
-# deeppot_dpa4_spin_graph.pt2 for the system above (computed once offline;
-# see the module docstring). expected_av / expected_v mirror
-# test_lammps_spin_pt2.py's sign convention: LAMMPS reports the *negative*
-# of DeepPot's atomic virial.
-#
-# Regeneration recipe (run once, offline, from the repo root, after
-# ``python source/tests/infer/gen_dpa4_spin.py`` has produced
-# ``source/tests/infer/deeppot_dpa4_spin_graph.pt2``):
-#
-#   import numpy as np
-#   from deepmd.infer import DeepPot
-#   dp = DeepPot("source/tests/infer/deeppot_dpa4_spin_graph.pt2")
-#   e, f, v, ae, av, fm, mm = dp.eval(
-#       coord.reshape(1, -1, 3),
-#       box.reshape(1, 9) if box is not None else None,
-#       type_NiO - 1,  # LAMMPS 1-based type -> deepmd 0-based atype (Ni=0, O=1)
-#       atomic=True,
-#       spin=spin.reshape(1, -1, 3),
-#   )
-#
-# using the ``box``/``coord``/``spin``/``type_NiO`` arrays defined above
-# (this module's fixed 4-atom NiO system). ``e``/``f``/``ae`` map directly to
-# ``expected_e``/``expected_f``/``expected_ae`` below (reshaped/squeezed to
-# drop the leading frame axis); ``av`` (NOT ``v`` -- the per-atom virial,
-# since ``expected_v`` below is shape ``(4, 9)``) is sign-flipped to give
-# ``expected_v``, per the LAMMPS-vs-DeepPot atomic-virial sign convention
-# noted above. ``fm`` is the RAW ``dE/dspin`` -- exactly ``_expected_fm_raw``
-# below, BEFORE the ``spin_norm / hbar`` scaling applied further down to
-# produce ``expected_fm`` (the value actually compared against LAMMPS's own
-# ``fm`` output; see the comment on that scaling below). ``mm`` (mask_mag) is
-# unused here -- the fixed system's spin-active/non-magnetic split is
-# already known (2 Ni + 2 O) and hardcoded via ``_spin_norm`` below.
-expected_e = 2.3446106979205501e00
-expected_ae = np.array(
-    [
-        5.6007587197408659e-01,
-        4.0092286275099903e-01,
-        6.9179401747409552e-01,
-        6.9181794572136912e-01,
-    ]
-)
-expected_f = np.array(
-    [
-        [-1.3324305442433643e-01, 5.3499008613075223e-02, -2.1571616033805491e-01],
-        [1.2792742332316817e-01, -5.3518911559650446e-02, 2.1519707821828571e-01],
-        [1.0822753105286880e00, 1.0065026530991443e00, -1.4738926455238310e00],
-        [-1.0769596794275196e00, -1.0064827501525693e00, 1.4744117276436002e00],
-    ]
-)
-# Raw DeepEval force_mag (dE/dspin), BEFORE LAMMPS's own spin-dynamics unit
-# convention is applied.
-_expected_fm_raw = np.array(
-    [
-        [2.0524302733427091e-02, -8.4015035747638245e-03, 3.8224710881061427e-02],
-        [-2.0164441845905290e-01, 8.4351600022754797e-02, 1.8298077837080096e-01],
-        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
-        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
-    ]
-)
 # LAMMPS's ``fm`` (what ``compute property/atom fmx fmy fmz`` reports) is
 # NOT the raw DeepEval force_mag: pair_deepspin.cpp scales it by
 # ``spin_norm / hbar`` per atom (metal-units ``hbar = 6.5821191e-04``, see
@@ -151,50 +112,95 @@ _expected_fm_raw = np.array(
 # test_lammps_spin_pt2.py). ``spin_norm`` is 0 for the two non-magnetic O
 # atoms, so the scaling is a no-op there (0 stays 0).
 _HBAR_METAL = 6.5821191e-04
-_spin_norm = np.linalg.norm(spin, axis=1)
-expected_fm = _expected_fm_raw * (_spin_norm / _HBAR_METAL)[:, None]
-# Per-atom virial, sign-flipped (LAMMPS convention) relative to DeepPot's
-# atomic virial output.
-expected_v = -np.array(
-    [
-        -4.2918792055893495e-03,
-        8.3110521134303061e-03,
-        1.7241815457408119e-02,
-        1.1926757510913758e-04,
-        -2.2730896013015287e-05,
-        -3.1745300418736588e-05,
-        1.1142878725624991e-01,
-        -4.6116975570851690e-02,
-        -8.3115587171492200e-02,
-        -7.4305849714402294e-02,
-        3.1128126231708988e-02,
-        5.6231453837925868e-02,
-        3.9551912767818186e-02,
-        -1.6569044537869740e-02,
-        -2.9931177229700148e-02,
-        -2.6928649990912962e-01,
-        1.1280920942139185e-01,
-        2.0378437830961091e-01,
-        -4.0583473930473013e-01,
-        -3.8244570231040009e-01,
-        5.6053129139996127e-01,
-        -3.8220789092383661e-01,
-        -3.5706837580311901e-01,
-        5.2303030431741482e-01,
-        5.6081442964078232e-01,
-        5.2342390128425265e-01,
-        -7.6665623649745862e-01,
-        -4.0916165894703893e-01,
-        -3.8224312875315491e-01,
-        5.5990542803278998e-01,
-        -3.8271294213750534e-01,
-        -3.5753445910214326e-01,
-        5.2371244713553355e-01,
-        5.6026058034045267e-01,
-        5.2340133163384406e-01,
-        -7.6667237309746128e-01,
-    ]
-).reshape(4, 9)
+
+# Reference values (energy / atom-energy / force / force_mag / virial),
+# populated by ``_compute_expected`` in ``setup_module`` -- see the module
+# docstring for why these are computed live via a DeepPot subprocess call
+# rather than hardcoded or read from a sidecar file.
+expected_e = None
+expected_ae = None
+expected_f = None
+expected_fm = None
+expected_v = None
+
+
+def _cell_from_lammps_box(lmp_box: np.ndarray) -> np.ndarray:
+    """Convert a LAMMPS ``xlo xhi ylo yhi zlo zhi xy xz yz`` box spec to a
+    flat, row-major 3x3 cell matrix (deepmd's ``box`` convention).
+    """
+    xlo, xhi, ylo, yhi, zlo, zhi, xy, xz, yz = lmp_box
+    return np.array(
+        [
+            xhi - xlo,
+            0.0,
+            0.0,
+            xy,
+            yhi - ylo,
+            0.0,
+            xz,
+            yz,
+            zhi - zlo,
+        ]
+    )
+
+
+def _compute_expected() -> None:
+    """Load ``deeppot_dpa4_spin_graph.pt2`` via ``DeepPot`` and evaluate the
+    module's fixed 4-atom NiO system to obtain the Python reference.
+
+    Runs in a subprocess to avoid importing ``deepmd`` in the LAMMPS test
+    process (see ``test_lammps_model_devi_pt2.py``'s ``_compute_expected``
+    for the same precaution: the LAMMPS plugin already loads
+    ``libdeepmd_op_pt.so`` at the C++ level, and importing the Python
+    package on top of that can segfault).
+    """
+    global expected_e, expected_ae, expected_f, expected_fm, expected_v
+
+    cell = _cell_from_lammps_box(box)
+    atype = (type_NiO - 1).tolist()  # LAMMPS 1-based -> deepmd 0-based (Ni=0, O=1)
+
+    script = textwrap.dedent(f"""\
+        import json
+        import numpy as np
+        from deepmd.infer import DeepPot
+
+        dp = DeepPot({str(pb_file.resolve())!r})
+        e, f, v, ae, av, fm, mm = dp.eval(
+            np.array({coord.tolist()!r}).reshape(1, -1, 3),
+            np.array({cell.tolist()!r}).reshape(1, 9),
+            {atype!r},
+            atomic=True,
+            spin=np.array({spin.tolist()!r}).reshape(1, -1, 3),
+        )
+        print(json.dumps({{
+            "e": float(e[0, 0]),
+            "ae": np.asarray(ae[0]).reshape(-1).tolist(),
+            "f": np.asarray(f[0]).tolist(),
+            "fm": np.asarray(fm[0]).tolist(),
+            "av": np.asarray(av[0]).tolist(),
+        }}))
+    """)
+    proc = sp.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
+    result = json.loads(proc.stdout.strip())
+
+    expected_e = result["e"]
+    expected_ae = np.array(result["ae"])
+    expected_f = np.array(result["f"])
+    # Raw DeepEval force_mag (dE/dspin), scaled by LAMMPS's own
+    # spin_norm / hbar unit convention (see the comment on ``_HBAR_METAL``
+    # above) before comparison.
+    fm_raw = np.array(result["fm"])
+    spin_norm = np.linalg.norm(spin, axis=1)
+    expected_fm = fm_raw * (spin_norm / _HBAR_METAL)[:, None]
+    # Per-atom virial, sign-flipped (LAMMPS convention) relative to DeepPot's
+    # atomic virial output (mirrors test_lammps_spin_pt2.py's convention).
+    expected_v = -np.array(result["av"])
 
 
 def setup_module() -> None:
@@ -202,6 +208,9 @@ def setup_module() -> None:
         pytest.skip(
             "Skip test because PyTorch support is not enabled.",
         )
+    if not pb_file.exists():
+        pytest.skip("deeppot_dpa4_spin_graph.pt2 not found")
+    _compute_expected()
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 
