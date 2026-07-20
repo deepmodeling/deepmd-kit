@@ -64,14 +64,20 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
     """pt_expt native-spin DPA4/SeZM model.
 
     Mirrors :class:`deepmd.dpmodel.model.dpa4_native_spin_model.DPA4NativeSpinModel`
-    (construction, delegation, output defs, (de)serialization are all
-    inherited unchanged), but overrides :meth:`forward`: the pt_expt
-    backbone's ``call_common`` (Task 3 of the "DPA4 native spin on the
-    NeighborGraph route" plan) produces REAL autograd
-    ``energy_derv_r``/``energy_derv_r_mag``/``energy_derv_c_redu`` tensors,
-    unlike the dpmodel parent's energy-only ``call`` (which is restricted to
-    ``force``/``force_mag``/``virial`` as ``None`` placeholders because
-    dpmodel has no autograd).
+    (construction, delegation, output defs are all inherited unchanged), but
+    overrides two methods:
+
+    - :meth:`forward`: the pt_expt backbone's ``call_common`` (Task 3 of the
+      "DPA4 native spin on the NeighborGraph route" plan) produces REAL
+      autograd ``energy_derv_r``/``energy_derv_r_mag``/``energy_derv_c_redu``
+      tensors, unlike the dpmodel parent's energy-only ``call`` (which is
+      restricted to ``force``/``force_mag``/``virial`` as ``None``
+      placeholders because dpmodel has no autograd).
+    - :meth:`deserialize`: the dpmodel parent's version hardcodes the
+      DPMODEL (numpy) ``BaseModel`` to rebuild ``backbone_model``, which
+      would produce a backbone missing the pt_expt/torch export machinery
+      (see the override's docstring); this class rebuilds it through the
+      pt_expt registry instead.
     """
 
     def __getattr__(self, name: str) -> Any:
@@ -99,6 +105,39 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
         if backbone is not None:
             return getattr(backbone, name)
         raise AttributeError(name)
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DPA4NativeSpinModel":
+        """Rebuild ``backbone_model`` through the pt_expt registry.
+
+        The dpmodel parent's ``deserialize`` (inherited otherwise) imports
+        ``deepmd.dpmodel.model.base_model.BaseModel`` at ITS OWN module
+        level, hardcoded regardless of which subclass's ``deserialize`` is
+        actually invoked -- so calling it on this pt_expt subclass would
+        still rebuild a plain numpy dpmodel ``backbone_model`` (missing
+        every pt_expt/torch export method, e.g.
+        ``forward_common_lower_graph_exportable``) and then let the
+        ``@torch_module`` auto-wrap machinery paper over it with a
+        dynamically-generated wrapper that only covers the dpmodel object's
+        OWN methods -- which never included the pt_expt-only export
+        machinery to begin with. Mirrors
+        :meth:`~deepmd.pt_expt.model.spin_model.SpinModel.deserialize`'s
+        override for exactly the same reason.
+        """
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+        from deepmd.utils.spin import (
+            Spin,
+        )
+
+        data = data.copy()
+        data.pop("@class", None)
+        data.pop("@version", None)
+        data.pop("type", None)
+        spin = Spin.deserialize(data.pop("spin"))
+        backbone_model = BaseModel.deserialize(data.pop("backbone_model"))
+        return cls(backbone_model=backbone_model, spin=spin)
 
     def forward(
         self,

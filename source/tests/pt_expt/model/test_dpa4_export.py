@@ -66,6 +66,10 @@ from deepmd.pt_expt.utils.serialization import (
 from ...dpa4_fixtures import (
     jitter_zero_arrays,
 )
+from .test_dpa4_native_spin import (
+    NATIVE_SPIN_CONFIG,
+    _build_native_spin_model_cpu,
+)
 
 
 def _to_artifact_device(*tensors: torch.Tensor | None) -> tuple:
@@ -372,3 +376,111 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
             f"{sorted(artifact_out)}, eager keys={sorted(eager_out)}"
         )
         assert "energy_redu" in artifact_out or "energy" in artifact_out
+
+
+# =============================================================================
+# Task 6: graph-kind ``.pt2`` freeze for the NATIVE-spin DPA4 wrapper
+# (``DPA4NativeSpinModel``, type ``dpa4_native_spin``) -- spin rides the
+# NeighborGraph lower ONLY (no dense/nlist lower, no with-comm sidecar: see
+# ``_needs_with_comm_artifact``'s native-spin first rule). The VIRTUAL-atom
+# spin scheme (``SpinModel``, type ``spin_ener``) has no graph-lower
+# implementation at all and must keep raising ``NotImplementedError``.
+# =============================================================================
+
+# Minimal virtual-atom (deepspin) spin config: a non-GNN se_e2_a backbone is
+# enough to prove the graph-form rejection still fires for "spin_ener" --
+# the rejection happens before any tracing/AOTI compile, so this stays fast.
+_VIRTUAL_SPIN_CONFIG = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [4, 4],
+        "rcut_smth": 0.5,
+        "rcut": 4.0,
+        "neuron": [4, 4],
+        "resnet_dt": False,
+        "axis_neuron": 2,
+        "precision": "float64",
+        "type_one_side": True,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [4, 4],
+        "resnet_dt": True,
+        "precision": "float64",
+        "seed": 1,
+    },
+    "spin": {
+        "use_spin": [True, False],
+        "virtual_scale": [0.3140],
+    },
+}
+
+
+def _freeze_native_spin(model_file) -> None:
+    """Freeze a jittered native-spin DPA4 model to a graph-kind ``.pt2``.
+
+    Mirrors ``test_dpa4_freeze_to_pt2``'s serialize -> ``deserialize_to_file``
+    sequence, but native spin has ONLY a graph lower (no dense/nlist lower --
+    see ``DPA4NativeSpinModel``'s module docstring), so ``lower_kind="graph"``
+    is explicit rather than parametrized. ``_build_native_spin_model_cpu``
+    already jitters DPA4's zero-initialized residual projections (else the
+    model is architecturally spin-independent -- see that helper's
+    docstring), so no extra jitter step is needed here.
+    """
+    model = _build_native_spin_model_cpu()
+    data = {"model": model.serialize()}
+    deserialize_to_file(str(model_file), data, lower_kind="graph")
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+def test_native_spin_graph_freeze(tmp_path) -> None:
+    """Native-spin DPA4 freezes to a graph-kind .pt2: metadata + no sidecar."""
+    model_file = tmp_path / "dpa4_spin_graph.pt2"
+    _freeze_native_spin(model_file)
+
+    with zipfile.ZipFile(model_file) as z:
+        names = z.namelist()
+        # AOTInductor also embeds its OWN internal per-kernel files whose
+        # names end with "metadata.json" (e.g.
+        # "<hash>.wrapper_metadata.json", "<hash>.kernel_metadata.json"
+        # under "data/aotinductor/model/") -- read the exact PyTorch
+        # PT2_EXTRA_PREFIX path for OUR sidecar, not a fragile
+        # ``endswith("metadata.json")`` scan (mirrors
+        # ``test_dpa4_freeze_to_pt2`` above).
+        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+
+    assert md["type_map"] == NATIVE_SPIN_CONFIG["type_map"]
+    assert md["lower_input_kind"] == "graph"
+    assert md["is_spin"] is True
+    assert md["has_comm_artifact"] is False
+    assert md["has_message_passing"] is True
+    assert md["ntypes_spin"] == 1  # use_spin=[True, False]
+    assert md["use_spin"] == [True, False]
+    assert "force_mag" in md["output_keys"]
+    for key in ("atom_energy", "energy", "force", "virial"):
+        assert key in md["output_keys"]
+    assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
+
+
+def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
+    """spin_ener (virtual) graph freeze keeps raising ``NotImplementedError``.
+
+    The virtual-atom scheme doubles the atom count (real + virtual) and has
+    no graph-lower implementation; only the native scheme
+    (``dpa4_native_spin``) is graph-eligible (see the module docstring
+    above).
+    """
+    model = get_model(_VIRTUAL_SPIN_CONFIG)
+    model.to("cpu")
+    model.eval()
+    data = {"model": model.serialize()}
+    assert data["model"]["type"] == "spin_ener"
+
+    with pytest.raises(NotImplementedError, match="graph-form"):
+        deserialize_to_file(
+            str(tmp_path / "virtual_spin_graph.pt2"), data, lower_kind="graph"
+        )
