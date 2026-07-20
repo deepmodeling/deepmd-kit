@@ -519,6 +519,7 @@ def make_model(
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
             comm_dict: dict | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
@@ -585,6 +586,15 @@ def make_model(
             charge_spin
                 charge/spin conditioning. Ignored in PR-A; accepted for ABI
                 stability with charge/spin-conditioned descriptors.
+            spin
+                Per-node native spin, flat ``(N, 3)``, or ``None``. When given,
+                a SECOND autograd leaf is created next to ``edge_vec`` and
+                forwarded through the atomic-model chain to the descriptor
+                (native spin conditioning, e.g. DPA4/SeZM); the returned dict
+                additionally carries ``<var>_derv_r_mag = -d<var>_redu/dspin``
+                for every ``r_differentiable`` reducible output. ``None``
+                (default) is the existing, unconditioned graph lower with no
+                mag output.
             comm_dict
                 MPI communication metadata for parallel inference. ``None``
                 (default) for non-parallel inference/training. Forwarded to
@@ -612,6 +622,14 @@ def make_model(
 
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)
+            if spin is not None:
+                # second autograd leaf: force_mag = -dE/dspin (native spin).
+                # Deliberately a SEPARATE leaf/backward from edge_vec rather
+                # than a joint grad([edge_vec, spin]) call (as pt does in
+                # deepmd/pt/model/model/transform_output.py:212) -- this keeps
+                # edge_energy_deriv's signature untouched; see the second
+                # torch.autograd.grad call in fit_output_to_model_output_graph.
+                spin = spin.detach().requires_grad_(True)
             graph = NeighborGraph(
                 n_node=n_node,
                 edge_index=edge_index,
@@ -626,7 +644,9 @@ def make_model(
             )
             # Level 2 emits force as a value through the inference-only custom
             # operator pipeline. Ineligible models use the autograd lower.
-            if not self.training and cuda_infer_level() >= 2:
+            # The fused pipeline has no mag output, so spin-conditioned models
+            # always take the autograd lower below.
+            if not self.training and cuda_infer_level() >= 2 and spin is None:
                 fused = _fused_energy_force_graph(self, graph, atype, do_atomic_virial)
                 if fused is not None:
                     return fused
@@ -636,6 +656,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
+                spin=spin,
                 comm_dict=comm_dict,
             )
             # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output.
@@ -647,6 +668,7 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                spin_leaf=spin,
                 # Assemble force / virial in the descriptor compute precision
                 # (fp32 for an fp32 model) rather than the fp64 edge_vec leaf;
                 # the gradient content is only that precision, so the coarser
@@ -715,6 +737,7 @@ def make_model(
             ap: torch.Tensor | None,
             method: str,
             do_atomic_virial: bool = False,
+            spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Carry-all graph forward with autograd force/virial (pt_expt override).
 
@@ -739,6 +762,11 @@ def make_model(
                 the carry-all builder, ``"dense"`` or ``"ase"``.
             do_atomic_virial
                 whether to calculate the atomic virial.
+            spin
+                Per-local-atom native spin, ``(nf, nloc, 3)``, or ``None``.
+                Flattened to ``(N, 3)`` and forwarded into
+                :meth:`forward_common_lower_graph`, completing the seam
+                ``call_common`` (dpmodel, shared) opens for the graph route.
 
             Returns
             -------
@@ -771,8 +799,9 @@ def make_model(
             )
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
-            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+            # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
             ap_flat = ap.reshape(nf * nloc, ap.shape[-1]) if ap is not None else None
+            spin_flat = spin.reshape(nf * nloc, 3) if spin is not None else None
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
@@ -788,6 +817,7 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap_flat,
+                spin=spin_flat,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
             # outputs (N = nf * nloc for a carry-all rectangular graph).
