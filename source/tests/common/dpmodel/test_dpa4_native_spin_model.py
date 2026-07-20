@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """dpmodel tests for :class:`DPA4NativeSpinModel` (model-level native spin)."""
 
+import copy
+
 import numpy as np
 import pytest
 
@@ -105,3 +107,22 @@ class TestDPA4NativeSpinModel:
         cfg = {**NATIVE_SPIN_CONFIG, "spin": {"use_spin": [True, False]}}
         with pytest.raises(NotImplementedError):
             get_model(cfg)
+
+    def test_non_dpa4_descriptor_raises(self):
+        cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        cfg["descriptor"] = {"type": "se_e2_a"}
+        with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
+            get_model(cfg)
+
+    def test_add_chg_spin_ebd_raises(self):
+        cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        cfg["descriptor"]["add_chg_spin_ebd"] = True
+        with pytest.raises(NotImplementedError, match="charge-spin"):
+            get_model(cfg)
+
+    def test_translated_output_def_has_spin_keys(self):
+        out_def = self.model.translated_output_def()
+        assert "mask_mag" in out_def
+        assert "force_mag" in out_def
+        assert "energy" in out_def
+        assert "force" in out_def

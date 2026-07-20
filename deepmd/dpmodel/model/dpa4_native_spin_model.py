@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from copy import (
+    deepcopy,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -145,6 +148,39 @@ class DPA4NativeSpinModel(NativeOP):
         backbone_def = self.backbone_model.atomic_output_def()
         backbone_def["energy"].magnetic = True
         return ModelOutputDef(backbone_def)
+
+    def translated_output_def(self) -> dict[str, Any]:
+        """Get the translated output definition.
+
+        Maps internal output names to user-facing names, e.g.
+        ``energy`` -> ``atom_energy``, ``energy_redu`` -> ``energy``,
+        ``energy_derv_r`` -> ``force``, ``energy_derv_r_mag`` ->
+        ``force_mag``. Built from this wrapper's OWN
+        :meth:`model_output_def` (which sets ``energy.magnetic = True`),
+        not the (non-spin) backbone's -- mirrors
+        :meth:`~deepmd.dpmodel.model.spin_model.SpinModel.translated_output_def`.
+        """
+        out_def_data = self.model_output_def().get_data()
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
+        output_def = {
+            f"atom_{var_name}": out_def_data[var_name],
+            var_name: out_def_data[f"{var_name}_redu"],
+            "mask_mag": out_def_data["mask_mag"],
+        }
+        if self.backbone_model.do_grad_r(var_name):
+            output_def["force"] = deepcopy(out_def_data[f"{var_name}_derv_r"])
+            output_def["force"].squeeze(-2)
+            output_def["force_mag"] = deepcopy(out_def_data[f"{var_name}_derv_r_mag"])
+            output_def["force_mag"].squeeze(-2)
+        if self.backbone_model.do_grad_c(var_name):
+            output_def["virial"] = deepcopy(out_def_data[f"{var_name}_derv_c_redu"])
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = deepcopy(out_def_data[f"{var_name}_derv_c"])
+            output_def["atom_virial"].squeeze(-2)
+        return output_def
 
     # =========================================================================
     # Forward
