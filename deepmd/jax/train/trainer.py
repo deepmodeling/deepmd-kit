@@ -54,7 +54,8 @@ from deepmd.dpmodel.train.validation import (
     resolve_best_checkpoint_dir,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    BaseLR,
+    make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.multi_task import (
     apply_shared_links,
@@ -283,11 +284,9 @@ class DPTrainer(AbstractTrainer):
             }
         return {DEFAULT_TASK_KEY: BaseModel.deserialize(model_data["model"])}
 
-    def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> LearningRateExp:
-        lr_type = lr_param.get("type", "exp")
-        if lr_type == "exp":
-            return LearningRateExp(**lr_param, num_steps=self.num_steps)
-        raise RuntimeError("unknown learning_rate type " + lr_type)
+    def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> BaseLR:
+        """Construct the schema-selected shared learning-rate schedule."""
+        return make_learning_rate_schedule(lr_param, self.num_steps)
 
     def _build_losses(
         self,

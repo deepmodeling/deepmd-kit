@@ -17,6 +17,9 @@ jobs:
   test_cuda:
     name: Test Python and C++ on CUDA
     runs-on: gpu
+    # The full CUDA suite (serial pytest ~3h43m + C++ + LAMMPS) exceeds the
+    # default 360-min job limit; the self-hosted GPU runner has no hard cap.
+    timeout-minutes: 480
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     # container:
     #   image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04

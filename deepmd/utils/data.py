@@ -195,7 +195,7 @@ class DeepmdData:
         # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
         if key.startswith("atomic_"):
             key = "atom_" + key[7:]
-        self.data_dict[key] = {
+        data_config = {
             "ndof": ndof,
             "atomic": atomic,
             "must": must,
@@ -206,8 +206,12 @@ class DeepmdData:
             "default": default,
             "dtype": dtype,
             "output_natoms_for_type_sel": output_natoms_for_type_sel,
-            "special_shape": special_shape,
         }
+        if special_shape is not None:
+            # Preserve the established dictionary schema for ordinary labels;
+            # only non-standard tensors need this extra shape contract.
+            data_config["special_shape"] = special_shape
+        self.data_dict[key] = data_config
         return self
 
     def reduce(self, key_out: str, key_in: str) -> "DeepmdData":
@@ -1182,7 +1186,7 @@ class DataRequirementItem:
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "key": self.key,
             "ndof": self.ndof,
             "atomic": self.atomic,
@@ -1193,8 +1197,10 @@ class DataRequirementItem:
             "default": self.default,
             "dtype": self.dtype,
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
-            "special_shape": self.special_shape,
         }
+        if self.special_shape is not None:
+            data["special_shape"] = self.special_shape
+        return data
 
     def __getitem__(self, key: str) -> np.ndarray:
         if key not in self.dict:

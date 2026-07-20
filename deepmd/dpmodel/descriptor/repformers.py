@@ -527,6 +527,173 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_ext = xp_take_along_axis(g1, mapping_tiled, axis=1)
         return xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
 
+    def _exchange_ghosts_graph(
+        self,
+        g1: Array,
+        comm_dict: dict | None,
+        n_total: int,
+    ) -> Array:
+        """Per-layer node-channel refresh on the graph path.
+
+        Ghost-free graphs (Python single-rank; src IS the local owner) and
+        extended single-process graphs need NO exchange -- identity. The
+        pt_expt subclass overrides this to overwrite ghost rows via
+        ``deepmd_export::border_op`` when ``comm_dict`` is provided (C++
+        multi-rank extended-region graphs).
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+        comm_dict
+            MPI communication metadata; must be ``None`` on this (dpmodel)
+            path.
+        n_total
+            Total number of nodes (unused here; the pt_expt override needs
+            it).
+
+        Returns
+        -------
+        g1 : Array
+            The (unchanged) node channel, with shape [n_total, ng1].
+
+        Raises
+        ------
+        NotImplementedError
+            If ``comm_dict`` is not ``None``.
+        """
+        del n_total
+        if comm_dict is not None:
+            raise NotImplementedError(
+                "comm_dict on the dpmodel graph path requires the pt_expt "
+                "_exchange_ghosts_graph override (MPI border_op)"
+            )
+        return g1
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        g1_input: Array,
+        comm_dict: dict | None = None,
+        static_nnei: int | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
+        """Graph twin of :meth:`call` on the flat node/edge axes.
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph` whose
+            ``edge_index = [src, dst]`` (src = neighbor local owner, dst = center),
+            ``edge_vec = r_src - r_dst`` and ``edge_mask`` marks real edges.
+        atype
+            (N,) flat node atom types (``N = sum(graph.n_node)``).
+        g1_input
+            (N, g1_dim) node channel BEFORE the block activation -- the flat
+            twin of the dense ``atype_embd`` (``atype_embd_ext`` sliced to the
+            first ``nloc`` atoms); the block applies ``self.act`` to it, exactly
+            like the dense body.
+        comm_dict
+            MPI communication metadata forwarded to :meth:`_exchange_ghosts_graph`.
+            ``None`` for non-parallel inference (dpmodel default: identity).
+        static_nnei
+            When the graph uses the shape-static center-major layout
+            (``graph_from_dense_quartet`` / ``from_dense_quartet(compact=False)``,
+            ``E = n_center * nnei``), pass ``nnei`` so the attention edge-pair
+            enumeration stays jit/export-traceable (no ``nonzero``). ``None``
+            (carry-all / compact graphs) selects the dynamic eager form.
+
+        Returns
+        -------
+        g1 : Array
+            (N, dim_out) updated node channel.
+        g2 : Array
+            (E, ng2) updated edge channel, invariant.
+        h2 : Array
+            (E, 3) updated edge channel, equivariant.
+        rot_mat : Array
+            (N, dim_emb, 3) rotationally equivariant single-particle
+            representation.
+        sw : Array
+            (E,) smooth switch, zeroed on padding edges.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            apply_pair_exclusion,
+            center_edge_pairs,
+            edge_env_mat,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec, atype)
+        n_total = atype.shape[0]
+        # descriptor-block exclude_types: same canonical transform as dense
+        # nlist erasure (repformers.call:541-543)
+        graph = apply_pair_exclusion(graph, atype, self.emask)
+        src = graph.edge_index[0, :]
+        dst = graph.edge_index[1, :]
+        center_type = xp.take(atype, dst, axis=0)
+        rr, sw_e = edge_env_mat(
+            graph.edge_vec,
+            center_type,
+            self.mean[:, 0, :],
+            self.stddev[:, 0, :],
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+            edge_mask=graph.edge_mask,
+            return_sw=True,
+        )  # (E, 4), (E, 1)
+        sw = sw_e[:, 0]  # (E,), zeroed on padding
+        g1 = self.act(g1_input)  # (N, g1_dim)
+        if not self.direct_dist:
+            g2, h2 = rr[:, :1], rr[:, 1:]
+        else:
+            g2 = safe_for_vector_norm(graph.edge_vec, axis=-1, keepdims=True)
+            g2 = g2 / self.rcut
+            h2 = graph.edge_vec / self.rcut
+        g2 = self.act(self.g2_embd(g2))  # (E, ng2)
+        pairs = None
+        # DescrptBlockRepformers has no block-wide `update_chnnl_2` (that flag
+        # lives per-layer: the last layer always sets it False, see __init__'s
+        # `update_chnnl_2=(ii != nlayers - 1)`). Precompute the shared
+        # (topology-only) edge pairs iff ANY layer actually consumes them.
+        if any(ll.update_g2_has_attn or ll.update_h2 for ll in self.layers):
+            pairs = center_edge_pairs(
+                dst,
+                graph.edge_mask,
+                n_total,
+                include_self=True,
+                ordered=True,
+                static_nnei=static_nnei,
+            )
+        for ll in self.layers:
+            g1 = self._exchange_ghosts_graph(g1, comm_dict, n_total)
+            g1, g2, h2 = ll.call_graph(
+                g1,
+                g2,
+                h2,
+                src,
+                dst,
+                graph.edge_mask,
+                sw,
+                n_total,
+                self.nnei,
+                pairs,
+            )
+        h2g2 = _cal_hg_graph(
+            g2,
+            h2,
+            graph.edge_mask,
+            sw,
+            dst,
+            n_total,
+            self.nnei,
+            smooth=self.smooth,
+            epsilon=self.epsilon,
+            use_sqrt_nnei=self.use_sqrt_nnei,
+        )  # (N, 3, ng2)
+        rot_mat = xp.matrix_transpose(h2g2)  # (N, ng2, 3)
+        return g1, g2, h2, rot_mat, sw
+
     def call(
         self,
         nlist: Array,
@@ -964,6 +1131,151 @@ def symmetrization_op(
     return grrg
 
 
+def _cal_hg_graph(
+    g: Array,
+    h: Array,
+    edge_mask: Array,
+    sw: Array,
+    dst: Array,
+    n_total: int,
+    nnei: int,
+    smooth: bool = True,
+    epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
+) -> Array:
+    """Graph twin of :func:`_cal_hg`: hg[n, a, b] = sum_{e: dst(e)=n} h_e[a] g_e[b].
+
+    Parameters
+    ----------
+    g
+        Flat edge-wise invariant rep, with shape [n_edge, ng].
+    h
+        Flat edge-wise equivariant rep, with shape [n_edge, 3].
+    edge_mask
+        Edge mask, where zero means no edge, with shape [n_edge].
+    sw
+        The switch function per edge, with shape [n_edge].
+    dst
+        Destination (center) node index of each edge, with shape [n_edge].
+    n_total
+        Total number of nodes.
+    nnei
+        The block sel (the smooth-branch normalization constant, spec
+        decision #9: sel = normalization only).
+    smooth
+        Whether to use the smooth (sw-weighted, sel-normalized) branch.
+    epsilon
+        Degree-normalization protection for the non-smooth branch.
+    use_sqrt_nnei
+        Whether to normalize by sqrt(nnei) instead of nnei.
+
+    Returns
+    -------
+    hg : Array
+        Transposed rotation matrix per node, with shape [n_total, 3, ng].
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        segment_sum,
+    )
+
+    xp = array_api_compat.array_namespace(g, h)
+    g = g * xp.astype(edge_mask[:, None], g.dtype)
+    if not smooth:
+        deg = segment_sum(xp.astype(edge_mask, g.dtype), dst, n_total)  # (N,)
+        if not use_sqrt_nnei:
+            invnnei = 1.0 / (epsilon + deg)
+        else:
+            invnnei = 1.0 / (epsilon + xp.sqrt(deg))
+        invnnei = invnnei[:, None, None]
+    else:
+        g = g * sw[:, None]
+        invnnei = 1.0 / float(nnei) if not use_sqrt_nnei else 1.0 / (float(nnei) ** 0.5)
+    hg = segment_sum(h[:, :, None] * g[:, None, :], dst, n_total)  # (N, 3, ng)
+    return hg * invnnei
+
+
+def _cal_grrg_graph(hg: Array, axis_neuron: int) -> Array:
+    """Graph twin of :func:`_cal_grrg` (node-local, no neighbor axis).
+
+    Parameters
+    ----------
+    hg
+        Transposed rotation matrix per node, with shape [n_total, 3, ng].
+    axis_neuron
+        Size of the submatrix of hg (embedding matrix).
+
+    Returns
+    -------
+    grrg : Array
+        Atomic invariant rep, with shape [n_total, axis_neuron * ng].
+    """
+    xp = array_api_compat.array_namespace(hg)
+    n, _, ng = hg.shape
+    hgm = hg[..., :axis_neuron]  # (N, 3, axis)
+    grrg = xp.matmul(xp.matrix_transpose(hgm), hg) / (3.0**1)  # (N, axis, ng)
+    return xp.reshape(grrg, (n, axis_neuron * ng))
+
+
+def symmetrization_op_graph(
+    g: Array,
+    h: Array,
+    edge_mask: Array,
+    sw: Array,
+    dst: Array,
+    n_total: int,
+    nnei: int,
+    axis_neuron: int,
+    smooth: bool = True,
+    epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
+) -> Array:
+    """Graph twin of :func:`symmetrization_op`.
+
+    Parameters
+    ----------
+    g
+        Flat edge-wise invariant rep, with shape [n_edge, ng].
+    h
+        Flat edge-wise equivariant rep, with shape [n_edge, 3].
+    edge_mask
+        Edge mask, where zero means no edge, with shape [n_edge].
+    sw
+        The switch function per edge, with shape [n_edge].
+    dst
+        Destination (center) node index of each edge, with shape [n_edge].
+    n_total
+        Total number of nodes.
+    nnei
+        The block sel (the smooth-branch normalization constant).
+    axis_neuron
+        Size of the submatrix of hg (embedding matrix).
+    smooth
+        Whether to use the smooth (sw-weighted, sel-normalized) branch.
+    epsilon
+        Degree-normalization protection for the non-smooth branch.
+    use_sqrt_nnei
+        Whether to normalize by sqrt(nnei) instead of nnei.
+
+    Returns
+    -------
+    grrg : Array
+        Atomic invariant rep, with shape [n_total, axis_neuron * ng].
+    """
+    hg = _cal_hg_graph(
+        g,
+        h,
+        edge_mask,
+        sw,
+        dst,
+        n_total,
+        nnei,
+        smooth=smooth,
+        epsilon=epsilon,
+        use_sqrt_nnei=use_sqrt_nnei,
+    )
+    return _cal_grrg_graph(hg, axis_neuron)
+
+
 class Atten2Map(NativeOP):
     r"""Masked and smoothed angular attention map.
 
@@ -1082,6 +1394,123 @@ class Atten2Map(NativeOP):
         ret = xp_transpose_01342(ret)
         return ret
 
+    def call_graph(
+        self,
+        g2: Array,
+        h2: Array,
+        sw: Array,
+        q_e: Array,
+        k_e: Array,
+        pair_mask: Array,
+        e_tot: int,
+        sel: int,
+    ) -> Array:
+        """Graph twin of :meth:`call`: per-pair attention map over edges sharing a center.
+
+        The dense (nnei, nnei) square becomes ordered+self edge pairs; the
+        softmax over the key axis becomes a segment_softmax grouped by the
+        query edge. The dense post-softmax query-row AND key-column zeroing
+        both collapse to ``pair_mask`` (a pair is real iff BOTH edges are
+        real).
+
+        Parameters
+        ----------
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        sw
+            The switch function per edge, with shape [n_edge].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        pair_mask
+            Pair validity (both edges real), with shape [n_pair].
+        e_tot
+            Total number of edges (the number of softmax segments).
+        sel
+            The block sel: the fixed dense softmax width used for the
+            phantom-count compensation of the smooth branch.
+
+        Returns
+        -------
+        attn : Array
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+
+        Notes
+        -----
+        The smooth branch reproduces dense's FIXED-WIDTH softmax denominator
+        exactly: dense keeps every one of its ``sel`` key slots in the
+        denominator, the non-real ones each at ``exp(-attnw_shift)``. Here the
+        masked pairs are excluded from the softmax and replaced by
+        ``sel - n_real`` SIGNED phantom denominator terms per query edge, so
+        the phantom COUNT is geometry-independent. Without this, one phantom
+        per PRESENT pair would make the denominator term count change when an
+        edge enters/leaves the graph at the model cutoff -- an
+        ``O(exp(-attnw_shift))`` energy/force discontinuity -- and differ from
+        dense by ``O(sel * exp(-attnw_shift))``.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_softmax,
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(g2, h2)
+        e_ax = g2.shape[0]
+        nd, nh = self.hidden_dim, self.head_num
+        g2qk = self.mapqk(g2)  # (E, nd * nh * 2)
+        g2qk = xp.reshape(g2qk, (e_ax, nd, nh * 2))  # heads LAST, dense order
+        g2q = g2qk[:, :, :nh]  # (E, nd, nh)
+        g2k = g2qk[:, :, nh:]  # (E, nd, nh)
+        # per-pair, per-head logits
+        attnw = (
+            xp.sum(xp.take(g2q, q_e, axis=0) * xp.take(g2k, k_e, axis=0), axis=1)
+            / nd**0.5
+        )  # (P, nh)
+        if self.has_gate:
+            gate = xp.sum(
+                xp.take(h2, q_e, axis=0) * xp.take(h2, k_e, axis=0), axis=-1
+            )  # (P,)
+            attnw = attnw * gate[:, None]
+        sw_q = xp.take(sw, q_e, axis=0)  # (P,)
+        sw_k = xp.take(sw, k_e, axis=0)
+        if self.smooth:
+            attnw = (attnw + self.attnw_shift) * sw_q[:, None] * sw_k[
+                :, None
+            ] - self.attnw_shift
+            # dense-width phantom compensation (see docstring): real pairs per
+            # query edge, then sel - n_real phantoms at exp(-shift)
+            pm = xp.astype(pair_mask, attnw.dtype)
+            n_real = segment_sum(pm, q_e, e_tot)  # (e_tot,)
+            # SIGNED count: beyond sel it subtracts the excess phantom-level
+            # terms, so the boundary-pair denominator increment vanishes for
+            # ARBITRARY degree (a clamped count left a finite
+            # exp(-attnw_shift) step at the cutoff whenever n_real > sel).
+            phantom = sel - n_real
+            attnw = segment_softmax(
+                attnw,
+                q_e,
+                e_tot,
+                mask=pair_mask,
+                phantom_count=phantom,
+                phantom_logit=-self.attnw_shift,
+                # per-pair slot weight: the KEY edge's envelope (the pair's
+                # logit reaches -attnw_shift when the key edge exits; sw_q
+                # is constant within the segment and applied post-softmax)
+                slot_weight=sw_k,
+            )
+        else:
+            attnw = segment_softmax(attnw, q_e, e_tot, mask=pair_mask)
+        attnw = attnw * xp.astype(pair_mask[:, None], attnw.dtype)
+        if self.smooth:
+            attnw = attnw * sw_q[:, None] * sw_k[:, None]
+        h2h2t = (
+            xp.sum(xp.take(h2, q_e, axis=0) * xp.take(h2, k_e, axis=0), axis=-1)
+            / 3.0**0.5
+        )  # (P,)
+        return attnw * h2h2t[:, None]  # (P, nh)
+
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
 
@@ -1185,6 +1614,42 @@ class Atten2MultiHeadApply(NativeOP):
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
+    def call_graph(
+        self, AA: Array, g2: Array, q_e: Array, k_e: Array, e_tot: int
+    ) -> Array:
+        """Graph twin of :meth:`call`: out[q] = sum_k AA[q,k] g2v[k] per head.
+
+        Parameters
+        ----------
+        AA
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        e_tot
+            Total number of edges.
+
+        Returns
+        -------
+        g2_new : Array
+            Attention-updated edge channel, with shape [n_edge, ng2].
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(AA, g2)
+        e_ax, ng2 = g2.shape
+        nh = self.head_num
+        g2v = xp.reshape(self.mapv(g2), (e_ax, ng2, nh))
+        contrib = AA[:, None, :] * xp.take(g2v, k_e, axis=0)  # (P, ng2, nh)
+        ret = segment_sum(contrib, q_e, e_tot)  # (E, ng2, nh)
+        ret = xp.reshape(ret, (e_ax, ng2 * nh))  # nh-fastest == dense reshape
+        return self.head_map(ret)  # (E, ng2)
+
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
 
@@ -1279,6 +1744,39 @@ class Atten2EquiVarApply(NativeOP):
         ret = xp.reshape(ret, (nf, nloc, nnei, 3, nh))
         # nf x nloc x nnei x 3
         return xp.squeeze(self.head_map(ret), axis=-1)
+
+    def call_graph(
+        self, AA: Array, h2: Array, q_e: Array, k_e: Array, e_tot: int
+    ) -> Array:
+        """Graph twin of :meth:`call` (heads applied to the equivariant channel).
+
+        Parameters
+        ----------
+        AA
+            Attention map on the flat pair axis, with shape [n_pair, nh].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        q_e
+            Query edge index of each pair, with shape [n_pair].
+        k_e
+            Key edge index of each pair, with shape [n_pair].
+        e_tot
+            Total number of edges.
+
+        Returns
+        -------
+        h2_new : Array
+            Attention-updated equivariant edge channel, with shape
+            [n_edge, 3].
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(AA, h2)
+        contrib = AA[:, None, :] * xp.take(h2, k_e, axis=0)[:, :, None]  # (P, 3, nh)
+        ret = segment_sum(contrib, q_e, e_tot)  # (E, 3, nh)
+        return xp.squeeze(self.head_map(ret), axis=-1)  # (E, 3)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -1425,6 +1923,95 @@ class LocalAtten(NativeOP):
         # nf x nloc x ng1
         ret = self.head_map(ret)
         return ret
+
+    def call_graph(
+        self,
+        g1: Array,
+        gg1: Array,
+        edge_mask: Array,
+        sw: Array,
+        dst: Array,
+        n_total: int,
+        sel: int,
+    ) -> Array:
+        """Graph twin of :meth:`call`: per-center attention over its edges.
+
+        The dense softmax over the neighbor axis becomes a segment_softmax
+        over ``dst``.
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+        gg1
+            Neighbor (source-node) g1 gathered per edge, with shape
+            [n_edge, ng1].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function per edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape
+            [n_edge].
+        n_total
+            Total number of nodes (the number of softmax segments).
+        sel
+            The block sel: the fixed dense softmax width used for the
+            phantom-count compensation of the smooth branch.
+
+        Returns
+        -------
+        g1_attn : Array
+            Attention-updated node channel, with shape [n_total, ng1].
+
+        Notes
+        -----
+        The smooth branch uses the dense-width phantom compensation (see
+        :meth:`Atten2Map.call_graph`): masked edges are excluded from the
+        softmax and ``sel - n_real`` SIGNED phantom denominator terms at
+        ``exp(-attnw_shift)`` are added per center, keeping the denominator
+        term count geometry-independent (continuous at the cutoff, and equal
+        to the dense softmax at non-binding ``sel``).
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_softmax,
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(g1, gg1)
+        ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
+        g1q = xp.reshape(self.mapq(g1), (n_total, nd, nh))
+        gg1kv = xp.reshape(self.mapkv(gg1), (gg1.shape[0], nd + ni, nh))
+        gg1k = gg1kv[:, :nd, :]  # (E, nd, nh)
+        gg1v = gg1kv[:, nd:, :]  # (E, ni, nh)
+        attnw = xp.sum(xp.take(g1q, dst, axis=0) * gg1k, axis=1) / nd**0.5  # (E, nh)
+        if self.smooth:
+            attnw = (attnw + self.attnw_shift) * sw[:, None] - self.attnw_shift
+            em = xp.astype(edge_mask, attnw.dtype)
+            n_real = segment_sum(em, dst, n_total)  # (n_total,)
+            # SIGNED count: see Atten2Map.call_graph -- beyond sel the excess
+            # is subtracted so the boundary-edge denominator increment
+            # vanishes for arbitrary degree.
+            phantom = sel - n_real
+            attnw = segment_softmax(
+                attnw,
+                dst,
+                n_total,
+                mask=edge_mask,
+                phantom_count=phantom,
+                phantom_logit=-self.attnw_shift,
+                slot_weight=sw,
+            )
+        else:
+            attnw = segment_softmax(attnw, dst, n_total, mask=edge_mask)
+        attnw = attnw * xp.astype(edge_mask[:, None], attnw.dtype)
+        if self.smooth:
+            attnw = attnw * sw[:, None]
+        # out[n, h, :] = sum_{e in n} w[e, h] v[e, :, h]  (head-major, dense order)
+        contrib = attnw[:, :, None] * xp.matrix_transpose(gg1v)  # (E, nh, ni)
+        ret = segment_sum(contrib, dst, n_total)  # (N, nh, ni)
+        ret = xp.reshape(ret, (n_total, nh * ni))
+        return self.head_map(ret)  # (N, ng1)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -1851,6 +2438,68 @@ class RepformerLayer(NativeOP):
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
+    def _update_g1_conv_graph(
+        self,
+        gg1: Array,
+        g2: Array,
+        edge_mask: Array,
+        sw: Array,
+        dst: Array,
+        n_total: int,
+        nnei: int,
+    ) -> Array:
+        """
+        Graph twin of :meth:`_update_g1_conv` (segment_sum over dst).
+
+        Parameters
+        ----------
+        gg1
+            Edge-wise atomic invariant rep, with shape [n_edge, ng1].
+        g2
+            Edge-wise pair invariant rep, with shape [n_edge, ng2].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        n_total
+            Total number of nodes.
+        nnei
+            The block sel: the smooth-branch normalization constant AND the
+            fixed dense softmax width for the attention phantom-count
+            compensation (see :meth:`Atten2Map.call_graph`).
+
+        Returns
+        -------
+        g1_conv : Array
+            Convolution-updated node channel, with shape [n_total, ng1].
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            segment_sum,
+        )
+
+        xp = array_api_compat.array_namespace(gg1, g2, edge_mask, sw)
+        assert self.proj_g1g2 is not None
+        if not self.g1_out_conv:
+            # gg1  : n_edge x ng2
+            gg1 = self.proj_g1g2(gg1)
+        # else gg1  : n_edge x ng1
+        gg1 = gg1 * xp.astype(edge_mask[:, None], gg1.dtype)
+        if not self.smooth:
+            # normalized by number of neighbors, not smooth
+            deg = segment_sum(xp.astype(edge_mask, gg1.dtype), dst, n_total)  # (N,)
+            invnnei = (1.0 / (self.epsilon + deg))[:, None]  # (N, 1)
+        else:
+            gg1 = gg1 * sw[:, None]
+            invnnei = 1.0 / float(nnei)
+        if not self.g1_out_conv:
+            # (N, ng2)
+            return segment_sum(g2 * gg1, dst, n_total) * invnnei
+        # (N, ng1)
+        g2p = self.proj_g1g2(g2)
+        return segment_sum(g2p * gg1, dst, n_total) * invnnei
+
     def _update_g2_g1g1(
         self,
         g1: Array,  # nf x nloc x ng1
@@ -1879,6 +2528,43 @@ class RepformerLayer(NativeOP):
         ret = _apply_nlist_mask(ret, nlist_mask)
         if self.smooth:
             ret = _apply_switch(ret, sw)
+        return ret
+
+    def _update_g2_g1g1_graph(
+        self,
+        g1: Array,
+        src: Array,
+        dst: Array,
+        edge_mask: Array,
+        sw: Array,
+    ) -> Array:
+        """
+        Graph twin of :meth:`_update_g2_g1g1`: per-edge g1_center * g1_neighbor.
+
+        Parameters
+        ----------
+        g1
+            Atomic invariant rep, with shape [n_total, ng1].
+        src
+            Source (neighbor) node index of each edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+
+        Returns
+        -------
+        g1g1 : Array
+            Per-edge center-neighbor g1 product, with shape [n_edge, ng1].
+        """
+        xp = array_api_compat.array_namespace(g1, edge_mask, sw)
+        # (n_edge, ng1)
+        ret = xp.take(g1, dst, axis=0) * xp.take(g1, src, axis=0)
+        ret = ret * xp.astype(edge_mask[:, None], ret.dtype)
+        if self.smooth:
+            ret = ret * sw[:, None]
         return ret
 
     def call(
@@ -2015,6 +2701,174 @@ class RepformerLayer(NativeOP):
             g1_update.append(self.loc_attn(g1, gg1, nlist_mask, sw))
 
         # update
+        if self.update_chnnl_2:
+            g2_new = self.list_update(g2_update, "g2")
+            h2_new = self.list_update(h2_update, "h2")
+        else:
+            g2_new, h2_new = g2, h2
+        g1_new = self.list_update(g1_update, "g1")
+        return g1_new, g2_new, h2_new
+
+    def call_graph(
+        self,
+        g1: Array,
+        g2: Array,
+        h2: Array,
+        src: Array,
+        dst: Array,
+        edge_mask: Array,
+        sw: Array,
+        n_total: int,
+        nnei: int,
+        pairs: tuple[Array, Array, Array] | None = None,
+    ) -> tuple[Array, Array, Array]:
+        """Graph twin of :meth:`call`. One residual update of (g1, g2, h2) on
+        the flat node/edge axes; the neighbor axis of every dense reduction is
+        replaced by segment ops over ``dst``.
+
+        Parameters
+        ----------
+        g1
+            Flat node-wise atomic invariant rep, with shape [n_total, ng1].
+            Unlike :meth:`call`, this is the FULL node channel with no
+            local/ghost slice: ghost-free graphs have no ghosts, and extended
+            (multi-rank) graphs deliberately compute ghost rows here and let
+            the later communication step overwrite them.
+        g2
+            Flat edge-wise pair invariant rep, with shape [n_edge, ng2].
+        h2
+            Flat edge-wise pair equivariant rep, with shape [n_edge, 3].
+        src
+            Source (neighbor) node index of each edge, with shape [n_edge].
+        dst
+            Destination (center) node index of each edge, with shape [n_edge].
+        edge_mask
+            Edge mask, where zero means no edge, with shape [n_edge].
+        sw
+            The switch function, with shape [n_edge].
+        n_total
+            Total number of nodes.
+        nnei
+            The block sel: the smooth-branch normalization constant AND the
+            fixed dense softmax width for the attention phantom-count
+            compensation (see :meth:`Atten2Map.call_graph`).
+        pairs
+            ``(q_e, k_e, pair_mask)`` from
+            :func:`~deepmd.dpmodel.utils.neighbor_graph.center_edge_pairs`.
+            Required iff ``self.update_g2_has_attn or self.update_h2``.
+
+        Returns
+        -------
+        g1_new : [n_total, ng1]     updated node channel
+        g2_new : [n_edge, ng2]      updated edge channel, invariant
+        h2_new : [n_edge, 3]        updated edge channel, equivariant
+        """
+        xp = array_api_compat.array_namespace(g1, g2, h2)
+        cal_gg1 = (
+            self.update_g1_has_drrd
+            or self.update_g1_has_conv
+            or self.update_g1_has_attn
+            or self.update_g2_has_g1g1
+        )
+        e_tot = g2.shape[0]
+
+        g2_update: list[Array] = [g2]
+        h2_update: list[Array] = [h2]
+        g1_update: list[Array] = [g1]
+        g1_mlp: list[Array] = [g1] if not self.g1_out_mlp else []
+        if self.g1_out_mlp:
+            assert self.g1_self_mlp is not None
+            g1_update.append(self.act(self.g1_self_mlp(g1)))
+
+        gg1 = xp.take(g1, src, axis=0) if cal_gg1 else None  # (E, ng1)
+
+        if self.update_chnnl_2:
+            assert self.linear2 is not None
+            g2_update.append(self.act(self.linear2(g2)))
+
+            if self.update_g2_has_g1g1:
+                assert self.proj_g1g1g2 is not None
+                g2_update.append(
+                    self.proj_g1g1g2(
+                        self._update_g2_g1g1_graph(g1, src, dst, edge_mask, sw)
+                    )
+                )
+
+            if self.update_g2_has_attn or self.update_h2:
+                assert self.attn2g_map is not None
+                assert pairs is not None, (
+                    "center_edge_pairs required for g2 attention on the graph path"
+                )
+                q_e, k_e, pair_mask = pairs
+                AAg = self.attn2g_map.call_graph(
+                    g2, h2, sw, q_e, k_e, pair_mask, e_tot, nnei
+                )  # (P, nh)
+                if self.update_g2_has_attn:
+                    assert self.attn2_mh_apply is not None
+                    assert self.attn2_lm is not None
+                    g2_2 = self.attn2_mh_apply.call_graph(AAg, g2, q_e, k_e, e_tot)
+                    g2_update.append(self.attn2_lm(g2_2))
+                if self.update_h2:
+                    assert self.attn2_ev_apply is not None
+                    h2_update.append(
+                        self.attn2_ev_apply.call_graph(AAg, h2, q_e, k_e, e_tot)
+                    )
+
+        if self.update_g1_has_conv:
+            assert gg1 is not None
+            g1_conv = self._update_g1_conv_graph(
+                gg1, g2, edge_mask, sw, dst, n_total, nnei
+            )
+            if not self.g1_out_conv:
+                g1_mlp.append(g1_conv)
+            else:
+                g1_update.append(g1_conv)
+
+        if self.update_g1_has_grrg:
+            g1_mlp.append(
+                symmetrization_op_graph(
+                    g2,
+                    h2,
+                    edge_mask,
+                    sw,
+                    dst,
+                    n_total,
+                    nnei,
+                    self.axis_neuron,
+                    smooth=self.smooth,
+                    epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                )
+            )
+
+        if self.update_g1_has_drrd:
+            assert gg1 is not None
+            g1_mlp.append(
+                symmetrization_op_graph(
+                    gg1,
+                    h2,
+                    edge_mask,
+                    sw,
+                    dst,
+                    n_total,
+                    nnei,
+                    self.axis_neuron,
+                    smooth=self.smooth,
+                    epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                )
+            )
+
+        g1_1 = self.act(self.linear1(xp.concat(g1_mlp, axis=-1)))
+        g1_update.append(g1_1)
+
+        if self.update_g1_has_attn:
+            assert gg1 is not None
+            assert self.loc_attn is not None
+            g1_update.append(
+                self.loc_attn.call_graph(g1, gg1, edge_mask, sw, dst, n_total, nnei)
+            )
+
         if self.update_chnnl_2:
             g2_new = self.list_update(g2_update, "g2")
             h2_new = self.list_update(h2_update, "h2")

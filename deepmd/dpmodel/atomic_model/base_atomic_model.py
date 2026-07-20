@@ -381,6 +381,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
@@ -406,6 +407,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         charge_spin
             charge/spin conditioning. Unused by the dpa1 graph path; accepted so
             the interface stays stable for charge/spin-conditioned descriptors.
+        comm_dict
+            MPI communication metadata forwarded to :meth:`forward_atomic_graph`
+            (and, from there, the descriptor's ``call_graph``). ``None`` for
+            non-parallel inference (default). Mirrors :meth:`forward_common_atomic`'s
+            ``comm_dict`` on the dense route.
 
         Returns
         -------
@@ -420,6 +426,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            comm_dict=comm_dict,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)
 

@@ -583,3 +583,188 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam,
             charge_spin,
         )
+
+    def forward_lower_graph_exportable_with_comm(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        send_list: torch.Tensor,
+        send_proc: torch.Tensor,
+        recv_proc: torch.Tensor,
+        send_num: torch.Tensor,
+        recv_num: torch.Tensor,
+        communicator: torch.Tensor,
+        nlocal: torch.Tensor,
+        nghost: torch.Tensor,
+        do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace ``forward_common_lower_graph`` with comm_dict tensors as
+        additional positional inputs -- the with-comm counterpart of
+        :meth:`forward_lower_graph_exportable` for message-passing graph
+        descriptors (dpa2's repformer block drives cross-rank ghost refresh
+        via ``deepmd_export::border_op``, see
+        :meth:`~deepmd.pt_expt.descriptor.repformers.
+        DescrptBlockRepformers._exchange_ghosts_graph`).
+
+        Mirrors the dense ``forward_common_lower_exportable_with_comm``
+        (``pt_expt/model/make_model.py``): packs the 8 trailing positional
+        comm tensors into a ``comm_dict`` inside the traced function. Also
+        derives ``n_local`` (the per-frame OWNED node count, reshaped to
+        ``(1,)``; single-frame -- LAMMPS always drives inference with
+        ``nf=1``) from the scalar ``nlocal`` tensor, so the differentiated
+        reduction excludes ghost (not-owned) nodes (see
+        :meth:`forward_common_lower_graph`'s ``n_local`` parameter). Unlike
+        the plain-graph export path (which traces
+        ``forward_common_lower_graph_exportable`` and then wraps a SECOND
+        make_fx trace around the key-translation closure), this method
+        traces ONCE: the comm-dict packing, ``n_local`` derivation, the
+        ``forward_common_lower_graph`` call and the key translation all live
+        in a single traced ``fn`` -- following the dense with-comm
+        precedent, which is also a single trace.
+
+        Parameters
+        ----------
+        atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin, do_atomic_virial
+            As in :meth:`forward_lower_graph_exportable`.
+        send_list, send_proc, recv_proc, send_num, recv_num, communicator, nlocal, nghost
+            The 8 comm tensors (see ``_make_comm_sample_inputs`` in
+            ``serialization.py``), packed into ``comm_dict`` inside the
+            traced function.
+
+            Runtime device contract: ALL 8 stay on CPU, symmetric with
+            the dense with-comm artifact -- they are consumed only by the
+            opaque ``border_op`` whose HOST code dereferences their
+            ``data_ptr`` (``send_list`` carries raw host pointers) and
+            reads ``nlocal``/``nghost`` via cheap host ``.item()`` calls.
+            Deriving the in-graph owned count from a device-placed
+            ``nlocal`` instead (the previous design) made every per-layer
+            ``border_op`` forward AND custom backward pull the scalars
+            back with synchronizing D2H reads (``4 * nlayers`` per MD
+            step).  The C++ ``run_model_graph_with_comm`` implements this
+            placement.
+        n_local
+            (1,) int64 ON THE MODEL DEVICE: the per-frame OWNED node
+            count consumed IN-GRAPH by the owned-node energy mask (it
+            becomes a device kernel operand after
+            ``move_to_device_pass``, like ``n_node``; a CPU tensor fed
+            there is read as a device pointer -- CUDA illegal memory
+            access).  Carries the same value as the ``nlocal`` comm
+            tensor; the two inputs exist precisely to separate the
+            device-compute role from the host-MPI-control role.
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``
+            (e.g. ``tracing_mode="symbolic"``).
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module whose ``forward`` accepts ``(atype, n_node,
+            n_local, edge_index, edge_vec, edge_mask, destination_order,
+            destination_row_ptr, source_order, source_row_ptr, fparam,
+            aparam, charge_spin, send_list, send_proc, recv_proc, send_num,
+            recv_num, communicator, nlocal, nghost)`` and returns a dict with the
+            SAME public keys as :meth:`forward_lower_graph_exportable`
+            (``atom_energy``, ``energy``, ``force``, ``virial``,
+            ``atom_virial`` when ``do_atomic_virial``).
+        """
+        model = self
+        do_grad_r = self.do_grad_r("energy")
+        do_grad_c = self.do_grad_c("energy")
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
+            send_list: torch.Tensor,
+            send_proc: torch.Tensor,
+            recv_proc: torch.Tensor,
+            send_num: torch.Tensor,
+            recv_num: torch.Tensor,
+            communicator: torch.Tensor,
+            nlocal: torch.Tensor,
+            nghost: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            comm_dict = {
+                "send_list": send_list,
+                "send_proc": send_proc,
+                "recv_proc": recv_proc,
+                "send_num": send_num,
+                "recv_num": recv_num,
+                "communicator": communicator,
+                "nlocal": nlocal,
+                "nghost": nghost,
+            }
+            # ``n_local`` (slot 2, DEVICE) is the owned-count input consumed
+            # by the in-graph owned-node mask; the CPU ``nlocal`` comm
+            # tensor is host control metadata for border_op only.
+            model_ret = model.forward_common_lower_graph(
+                atype,
+                n_node,
+                n_local,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
+                destination_sorted=True,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                comm_dict=comm_dict,
+            )
+            return _translate_energy_keys(
+                model_ret,
+                do_grad_r=do_grad_r,
+                do_grad_c=do_grad_c,
+                do_atomic_virial=do_atomic_virial,
+                local=True,
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fparam,
+            aparam,
+            charge_spin,
+            send_list,
+            send_proc,
+            recv_proc,
+            send_num,
+            recv_num,
+            communicator,
+            nlocal,
+            nghost,
+        )

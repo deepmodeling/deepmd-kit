@@ -165,6 +165,25 @@ class TestEnergyLossHuber(TestEnergyLossBase):
 class TestEnergyLossHessian(TestEnergyLossBase):
     """Test Hessian loss inside the dpmodel energy loss."""
 
+    def test_disabled_hessian_preserves_standard_serialization(self) -> None:
+        """Default losses must keep the pre-Hessian serialization contract."""
+        loss_fn = EnergyLoss(starter_learning_rate=1.0)
+
+        data = loss_fn.serialize()
+
+        self.assertNotIn("start_pref_h", data)
+        self.assertNotIn("limit_pref_h", data)
+        self.assertNotIn(
+            "hessian",
+            {item.key for item in loss_fn.label_requirement},
+        )
+        self.assertTrue(
+            all(
+                "special_shape" not in item.to_dict()
+                for item in loss_fn.label_requirement
+            )
+        )
+
     def test_forward_hessian(self) -> None:
         loss_fn = EnergyLoss(
             starter_learning_rate=1.0,

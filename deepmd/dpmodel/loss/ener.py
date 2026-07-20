@@ -865,7 +865,7 @@ class EnergyLoss(Loss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
             "@version": 4,
             "starter_learning_rate": self.starter_learning_rate,
@@ -884,8 +884,6 @@ class EnergyLoss(Loss):
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
             "numb_generalized_coord": self.numb_generalized_coord,
-            "start_pref_h": self.start_pref_h,
-            "limit_pref_h": self.limit_pref_h,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
@@ -893,6 +891,12 @@ class EnergyLoss(Loss):
             "use_default_pf": self.use_default_pf,
             "intensive_ener_virial": self.intensive_ener_virial,
         }
+        if self.has_h:
+            # Keep the established cross-backend serialization unchanged for
+            # ordinary energy losses; Hessian-only fields are an opt-in schema.
+            data["start_pref_h"] = self.start_pref_h
+            data["limit_pref_h"] = self.limit_pref_h
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "Loss":

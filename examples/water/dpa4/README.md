@@ -7,7 +7,7 @@ water example dataset. The recommended model and descriptor type is `DPA4`;
 Input files:
 
 - `input.json`: baseline conservative energy training, using a compact
-  DPA4-Neo-style parameter set.
+  DPA4-Mini-style parameter set.
 - `input-zbl.json`: energy training with ZBL zone bridging.
 - `input_dens.json`: direct-force denoising training.
 - `input_multitask.json`: multitask training with a shared descriptor and
