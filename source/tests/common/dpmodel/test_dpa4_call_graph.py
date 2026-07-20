@@ -6,9 +6,21 @@ import dataclasses
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.descriptor import (
+    DescrptSeA,
+)
 from deepmd.dpmodel.descriptor.dpa4 import (
     DescrptDPA4,
     _graph_from_padded_nlist,
+)
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
+from deepmd.dpmodel.fitting.dpa4_ener import (
+    SeZMEnergyFittingNet,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
@@ -328,6 +340,48 @@ def test_capability_flags() -> None:
     assert dd.graph_type_embedding_table() is None
     dd.disable_graph_lower()
     assert dd.uses_graph_lower() is False
+
+
+def test_supports_native_spin_capability_gate() -> None:
+    """Pin the explicit ``supports_native_spin`` capability method (not duck-typed).
+
+    ``DPAtomicModel.supports_native_spin`` is cached from the descriptor's
+    ``supports_native_spin()`` method (see ``DPAtomicModel.__init__``), not
+    from a `hasattr` probe on an internal descriptor attribute. A DPA4
+    descriptor reports the capability explicitly; a descriptor lacking the
+    method (or lacking native spin support altogether) must default to
+    ``False`` via the defensive ``getattr(..., lambda: False)()`` call.
+    """
+    # DPA4 explicitly declares native spin support.
+    dd = make_descriptor()
+    assert dd.supports_native_spin() is True
+    ft = SeZMEnergyFittingNet(
+        ntypes=3,
+        dim_descrpt=dd.get_dim_out(),
+        neuron=[16],
+        precision="float64",
+        seed=5,
+    )
+    dpa4_model = DPAtomicModel(dd, ft, type_map=["A", "B", "C"])
+    assert dpa4_model.supports_native_spin is True
+
+    # A non-DPA4 descriptor has no supports_native_spin method at all; the
+    # defensive getattr must fall back to False rather than raising.
+    assert (
+        getattr(dd, "not_a_real_method", lambda: False)() is False
+    )  # sanity: getattr fallback semantics
+    se_a = DescrptSeA(4.0, 3.5, [8, 8, 8])
+    assert not hasattr(se_a, "supports_native_spin")
+    assert getattr(se_a, "supports_native_spin", lambda: False)() is False
+    ft_se_a = InvarFitting(
+        "energy",
+        3,
+        se_a.get_dim_out(),
+        1,
+        mixed_types=se_a.mixed_types(),
+    )
+    se_a_model = DPAtomicModel(se_a, ft_se_a, type_map=["A", "B", "C"])
+    assert se_a_model.supports_native_spin is False
 
 
 def test_uses_graph_lower_feature_gates() -> None:

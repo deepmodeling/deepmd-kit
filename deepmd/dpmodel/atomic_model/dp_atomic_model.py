@@ -124,16 +124,19 @@ class DPAtomicModel(BaseAtomicModel):
             self.descriptor, "add_chg_spin_ebd", False
         )
         # Structural capability: only descriptors with a native spin
-        # conditioning mechanism (currently DPA4's ``spin_embedding``) accept
-        # a ``spin`` kwarg on ``call_graph`` at all -- unlike ``charge_spin``,
-        # which every descriptor's dense ``call()`` accepts (and ignores) for
-        # interface stability, the graph-native ``call_graph`` signature is
+        # conditioning mechanism (currently DPA4) accept a ``spin`` kwarg on
+        # ``call_graph`` at all -- unlike ``charge_spin``, which every
+        # descriptor's dense ``call()`` accepts (and ignores) for interface
+        # stability, the graph-native ``call_graph`` signature is
         # per-descriptor, so ``forward_atomic_graph`` must not pass the
         # keyword to a descriptor whose ``call_graph`` does not declare it
-        # (that would be a ``TypeError``, not a no-op). Checked structurally
-        # (attribute presence, not truthiness) so it stays correct regardless
-        # of whether this particular instance enabled spin.
-        self.supports_native_spin: bool = hasattr(self.descriptor, "spin_embedding")
+        # (that would be a ``TypeError``, not a no-op). Queried via the
+        # explicit ``supports_native_spin`` capability method (see
+        # ``DescrptDPA4.supports_native_spin``), defensively via ``getattr``
+        # so descriptors without the method default to unsupported.
+        self.supports_native_spin: bool = getattr(
+            self.descriptor, "supports_native_spin", lambda: False
+        )()
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:

@@ -2350,6 +2350,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""
         return False
 
+    def supports_native_spin(self) -> bool:
+        """DPA4 accepts a per-node ``spin`` on ``call_graph`` (native magnetic conditioning); other descriptors do not."""
+        return True
+
     def disable_graph_lower(self) -> None:
         """Route this descriptor through the legacy dense lower."""
         self._graph_lower_disabled = True
