@@ -26,6 +26,9 @@ from deepmd.pt_expt.model.dipole_model import (
 from deepmd.pt_expt.model.dos_model import (
     DOSModel,
 )
+from deepmd.pt_expt.model.dpa4_native_spin_model import (
+    DPA4NativeSpinModel,
+)
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
@@ -37,9 +40,6 @@ from deepmd.pt_expt.model.polar_model import (
 )
 from deepmd.pt_expt.model.property_model import (
     PropertyModel,
-)
-from deepmd.pt_expt.model.dpa4_native_spin_model import (
-    DPA4NativeSpinModel,
 )
 from deepmd.pt_expt.model.spin_ener_model import (
     SpinEnergyModel,
@@ -146,8 +146,9 @@ def get_sezm_model(data: dict) -> EnergyModel:
     if "spin" in data:
         if str(data["spin"].get("scheme", "deepspin")) != "native":
             raise NotImplementedError(
-                "the virtual-atom (deepspin) scheme is not supported for "
-                "DPA4/SeZM in the pt_expt backend; use spin scheme 'native'"
+                "Spin DPA4/SeZM models with the virtual-atom (deepspin) "
+                "scheme are not supported in the pt_expt backend; use spin "
+                "scheme 'native' instead."
             )
         return _get_dpa4_native_spin_model(data)
     if str(data.get("bridging_method", "none")).lower() != "none":

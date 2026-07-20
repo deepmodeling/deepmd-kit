@@ -209,6 +209,22 @@ class TestGetModelDPA4(unittest.TestCase):
             with self.assertRaisesRegex(NotImplementedError, msg_regex):
                 get_model(raw)
 
+    def test_native_spin_non_dpa4_descriptor_raises(self) -> None:
+        """Native-scheme spin requires a DPA4/SeZM descriptor."""
+        raw = _make_raw_model_config()
+        raw["descriptor"] = {"type": "se_e2_a"}
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        with self.assertRaisesRegex(NotImplementedError, "DPA4/SeZM"):
+            get_model(raw)
+
+    def test_native_spin_add_chg_spin_ebd_raises(self) -> None:
+        """Native-scheme spin combined with charge-spin FiLM is unsupported."""
+        raw = _make_raw_model_config()
+        raw["descriptor"]["add_chg_spin_ebd"] = True
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        with self.assertRaisesRegex(NotImplementedError, "charge-spin"):
+            get_model(raw)
+
     def test_default_unsupported_values_pass(self) -> None:
         """Normalized defaults (bridging None, lora None, use_compile False) build."""
         model_params = _normalize_model(_make_raw_model_config())
