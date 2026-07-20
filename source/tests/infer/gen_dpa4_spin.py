@@ -2,26 +2,28 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate deeppot_dpa4_spin_graph.pt2 test model (native-spin DPA4, graph route).
 
-The canonical model weights are stored in ``deeppot_dpa4_spin_graph.yaml``
-(dpmodel serialization, committed to git).  This script converts the .yaml
-to the graph-kind ``.pt2`` (torch.export/AOTInductor) that
-``DPA4NativeSpinModel`` freezes to -- the native spin scheme has NO
-dense/nlist lower at all, spin rides the NeighborGraph lower exclusively
-(see ``deepmd/pt_expt/model/dpa4_native_spin_model.py``'s module docstring
-and ``source/tests/pt_expt/model/test_dpa4_export.py`` Task 6).
+Mirrors ``gen_dpa4.py``'s Section B pattern: the dpmodel is built in-process
+from the inline ``NATIVE_SPIN_CONFIG`` below with a fixed weight-init seed,
+its zero-initialized residual projections are jittered away from exact zero
+with a fixed RNG seed (``jitter_zero_arrays``, imported from
+``source/tests/dpa4_fixtures.py``), and the result is frozen directly to the
+graph-kind ``.pt2`` -- no intermediate ``.yaml`` is read or written. Both
+``get_model``/weight-init and ``np.random.default_rng(seed)`` are
+deterministic, so this reproduces byte-identical weights on every machine/CI
+run without committing a serialized-weights file to git.
 
-If the .yaml does not yet exist, it is created from a dpmodel built with a
-deterministic config+seed, with its zero-initialized residual projections
-jittered away from exact zero -- but this should only be done once (the
-.yaml is then committed).  Without the jitter, a freshly built DPA4
-collapses to a type-embedding-only descriptor (see
-``dpa4_fixtures.jitter_zero_arrays``'s docstring): every force AND
-force_mag would be identically zero regardless of geometry/spin, making
-this fixture vacuous for the C++/LAMMPS consumers (Tasks 9/10).
+The native spin scheme has NO dense/nlist lower at all, spin rides the
+NeighborGraph lower exclusively (see
+``deepmd/pt_expt/model/dpa4_native_spin_model.py``'s module docstring and
+``source/tests/pt_expt/model/test_dpa4_export.py`` Task 6). Without the
+jitter, a freshly built DPA4 collapses to a type-embedding-only descriptor
+(see ``jitter_zero_arrays``'s docstring): every force AND force_mag would be
+identically zero regardless of geometry/spin, making this fixture vacuous
+for the C++/LAMMPS consumers (Tasks 9/10).
 
-Also writes a sidecar ``.expected`` reference file (PBC and NoPbc
-per-atom energy/force/force_mag/virial) consumed by the C++ tests,
-mirroring ``gen_spin.py``'s field convention.
+Also writes a sidecar ``.expected`` reference file (PBC and NoPbc per-atom
+energy/force/force_mag/virial) consumed by the C++ tests, mirroring
+``gen_spin.py``'s field convention.
 """
 
 import copy
@@ -84,32 +86,23 @@ NATIVE_SPIN_CONFIG = {
     "spin": {"use_spin": [True, False], "scheme": "native"},
 }
 
+# Fixed seed for jittering the zero-initialized residual projections away
+# from exact zero (see ``jitter_zero_arrays``'s docstring and module
+# docstring above). Kept as the value the fixture was originally generated
+# with, for continuity of the fixed 6-atom reference numbers below.
+_JITTER_SEED = 20260720
 
-def _build_yaml(yaml_path: str) -> None:
-    """Build the dpmodel from config+seed, jitter, and save as .yaml."""
+
+def _build_model_dict() -> dict:
+    """Build the native-spin dpmodel from config+seed and jitter in place."""
     from deepmd.dpmodel.model.model import (
         get_model,
-    )
-    from deepmd.dpmodel.utils.serialization import (
-        save_dp_model,
     )
 
     model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
     model_dict = model.serialize()
-    jitter_zero_arrays(model_dict, np.random.default_rng(20260720))
-
-    data = {
-        "model": model_dict,
-        "model_def_script": NATIVE_SPIN_CONFIG,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
-
-    print(  # noqa: T201
-        f"Building native-spin DPA4 dpmodel and saving to {yaml_path} ..."
-    )
-    save_dp_model(yaml_path, data)
+    jitter_zero_arrays(model_dict, np.random.default_rng(_JITTER_SEED))
+    return model_dict
 
 
 # Fixed 6-atom system (3 Ni, spin-active; 3 O, non-magnetic). Coordinates
@@ -148,35 +141,39 @@ _SPINS = np.array(
 
 
 def main():
-    from deepmd.entrypoints.convert_backend import (
-        convert_backend,
-    )
     from deepmd.infer import (
         DeepPot,
     )
+    from deepmd.pt_expt.utils.serialization import (
+        deserialize_to_file as pt_expt_deserialize_to_file,
+    )
 
     ensure_inductor_compiler()
-
-    base_dir = os.path.dirname(__file__)
-    yaml_path = os.path.join(base_dir, "deeppot_dpa4_spin_graph.yaml")
-    pt2_path = os.path.join(base_dir, "deeppot_dpa4_spin_graph.pt2")
-
-    # ---- 1. Build .yaml if it doesn't exist ----
-    if not os.path.exists(yaml_path):
-        _build_yaml(yaml_path)
-    else:
-        print(f"Using existing {yaml_path}")  # noqa: T201
-
     load_custom_ops()
 
-    # ---- 2. Convert .yaml -> .pt2 ----
-    # Native-spin DPA4 has NO dense/nlist lower (spin rides the
-    # NeighborGraph lower exclusively -- see the module docstring above),
-    # so ``lower_kind="auto"`` (what ``convert_backend`` always passes)
-    # resolves to "graph" for this model (``_resolve_lower_kind``); the
-    # virtual-atom ``spin_ener`` scheme would instead hard-stop at "nlist".
-    print(f"Converting to {pt2_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
+    base_dir = os.path.dirname(__file__)
+    pt2_path = os.path.join(base_dir, "deeppot_dpa4_spin_graph.pt2")
+
+    # ---- 1. Build the jittered dpmodel dict from config+seed ----
+    model_dict = _build_model_dict()
+    data = {
+        "model": model_dict,
+        "model_def_script": NATIVE_SPIN_CONFIG,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    # ---- 2. Freeze directly to graph-kind .pt2 ----
+    # Native-spin DPA4 has NO dense/nlist lower at all (spin rides the
+    # NeighborGraph lower exclusively -- see the module docstring above), so
+    # ``lower_kind="auto"`` resolves to "graph" for this model
+    # (``_resolve_lower_kind``); the virtual-atom ``spin_ener`` scheme would
+    # instead hard-stop at "nlist". Pinned explicitly here for clarity.
+    print(f"Exporting to {pt2_path} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        pt2_path, data, do_atomic_virial=True, lower_kind="graph"
+    )
     print("Export done.")  # noqa: T201
 
     # ---- 3. Sanity-check the frozen archive's metadata ----
