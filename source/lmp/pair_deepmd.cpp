@@ -557,18 +557,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // Gather std_f and tags
           tagint* tag = atom->tag;
           int nprocs = comm->nprocs;
-          // Grow arrays if necessary
-          if (atom->natoms > stdf_comm_buff_size) {
-            stdf_comm_buff_size = atom->natoms;
-            memory->destroy(stdfsend);
-            memory->destroy(stdfrecv);
-            memory->destroy(tagsend);
-            memory->destroy(tagrecv);
-            memory->create(stdfsend, stdf_comm_buff_size, "deepmd:stdfsendall");
-            memory->create(stdfrecv, stdf_comm_buff_size, "deepmd:stdfrecvall");
-            memory->create(tagsend, stdf_comm_buff_size, "deepmd:tagsendall");
-            memory->create(tagrecv, stdf_comm_buff_size, "deepmd:tagrecvall");
-          }
+          ensure_model_deviation_buffers();
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
             stdfsend[ii] = std_f[ii];
