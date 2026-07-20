@@ -15,6 +15,9 @@ from .dp_linear_model import (
 from .dp_zbl_model import (
     DPZBLModel,
 )
+from .dpa4_native_spin_model import (
+    DPA4NativeSpinModel,
+)
 from .ener_model import (
     EnergyModel,
 )
@@ -40,6 +43,7 @@ from .spin_ener_model import (
 __all__ = [
     "BaseModel",
     "DOSModel",
+    "DPA4NativeSpinModel",
     "DPZBLModel",
     "DipoleModel",
     "EnergyModel",
