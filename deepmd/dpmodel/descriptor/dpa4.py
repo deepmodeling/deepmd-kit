@@ -1675,6 +1675,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
+        spin: Array | None = None,
     ) -> tuple[Array, None]:
         """Graph-native descriptor forward on the flat node axis.
 
@@ -1694,6 +1695,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             cross-rank exchange on any lower path: a block that actually
             needs it raises from the ``exchange_ghost_features`` leaf (see
             ``_call_graph_common``), not here.
+        spin
+            Per-node spin vectors with shape (N, 3) on the flat node axis, or
+            None. Consumed by ``spin_embedding`` (l=0 magnitude into the type
+            embedding, l=1 into the backbone and per-edge source features).
+            Ghost-free graphs need only per-local-atom spin.
 
         Returns
         -------
@@ -1708,7 +1714,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             exchange (raised by the per-block leaf).
         """
         n_nodes = atype.shape[0]
-        x_scalar, _ = self._call_graph_common(graph, atype, comm_dict=comm_dict)
+        x_scalar, _ = self._call_graph_common(
+            graph, atype, spin=spin, comm_dict=comm_dict
+        )
         # ``_call_graph_common`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
         # graph-seam contract shape (n_nodes, channels).
@@ -2325,14 +2333,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         -------
         bool
             False when the escape hatch has been pulled or when the model
-            uses conditioning inputs (charge/spin FiLM, native spin,
-            SFPG bridging) that ride only the dense ``call`` signature.
+            uses conditioning inputs (charge/spin FiLM, SFPG bridging) that
+            still ride only the dense ``call`` signature. Native spin
+            (``spin_embedding``) IS supported on the graph lower: it is
+            threaded through ``call_graph`` like any other per-node input.
         """
         if self._graph_lower_disabled:
             return False
         if self.charge_spin_embedding is not None:
-            return False
-        if self.spin_embedding is not None:
             return False
         if self.bridging_switch is not None:
             return False

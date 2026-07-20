@@ -8,6 +8,7 @@ import pytest
 
 from deepmd.dpmodel.descriptor.dpa4 import (
     DescrptDPA4,
+    _graph_from_padded_nlist,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
@@ -159,6 +160,68 @@ def make_message_sensitive_descriptor(seed: int = 99) -> DescrptDPA4:
     return DescrptDPA4.deserialize(data)
 
 
+def make_spin_descriptor(seed: int = 99) -> DescrptDPA4:
+    """A ``use_spin`` variant of ``make_message_sensitive_descriptor()``.
+
+    Native spin (``use_spin`` on type 0) is enabled on top of the same
+    zero-init-residual jitter used by ``make_message_sensitive_descriptor``,
+    so the descriptor is sensitive to both edges/messages AND spin -- a bare
+    ``make_descriptor()`` variant would be architecturally spin-independent
+    for the same reason it is edge-independent (see that helper's
+    docstring), which would make a spin-sensitivity check vacuous.
+    """
+    dd = DescrptDPA4(
+        ntypes=3,
+        sel=8,
+        rcut=4.0,
+        channels=16,
+        n_radial=8,
+        lmax=2,
+        mmax=1,
+        n_blocks=2,
+        precision="float64",
+        seed=7,
+        random_gamma=False,
+        use_spin=[True, False, False],
+    )
+    data = dd.serialize()
+    jitter_zero_arrays(data, np.random.default_rng(seed))
+    return DescrptDPA4.deserialize(data)
+
+
+def test_call_graph_spin_sensitivity() -> None:
+    """call_graph(spin=...) must change the output (teeth: spin reaches the trunk)."""
+    dd = make_spin_descriptor()
+    coord, atype, nlist = make_inputs()
+    graph = make_graph_from_nlist(coord, nlist)
+    atype_flat = atype.reshape(-1)
+    rng = np.random.default_rng(3)
+    spin = rng.normal(size=(atype_flat.shape[0], 3))
+    out0, _ = dd.call_graph(graph, atype_flat)
+    out1, _ = dd.call_graph(graph, atype_flat, spin=spin)
+    assert not np.allclose(np.asarray(out0), np.asarray(out1))
+
+
+def test_call_graph_spin_matches_dense_adapter() -> None:
+    """Graph-lower spin path == dense adapter spin path (shared trunk, 1e-12)."""
+    dd = make_spin_descriptor()
+    coord, atype, nlist = make_inputs()
+    nf, nloc = atype.shape
+    rng = np.random.default_rng(3)
+    spin = rng.normal(size=(nf * nloc, 3))
+    ref, *_ = dd.call(
+        coord.reshape(nf, -1), atype, nlist, spin=spin.reshape(nf, nloc, 3)
+    )
+    graph, atype_flat = _graph_from_padded_nlist(coord, atype, nlist, None)
+    out, _ = dd.call_graph(graph, atype_flat, spin=spin)
+    np.testing.assert_allclose(
+        np.asarray(out).reshape(nf, nloc, -1),
+        np.asarray(ref),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
 def test_call_graph_matches_dense() -> None:
     # Same physical edges (non-binding sel) => same descriptor within fp64
     # scatter-reassociation tolerance; output is flat (N, C).
@@ -268,14 +331,20 @@ def test_capability_flags() -> None:
 
 
 def test_uses_graph_lower_feature_gates() -> None:
-    # Conditioning inputs that ride only the dense call signature must gate
-    # the graph route off. Exercise each gate attribute directly (the
-    # constructor kwargs for spin/charge-spin/bridging are heavyweight).
-    for attr in ("charge_spin_embedding", "spin_embedding", "bridging_switch"):
+    # Conditioning inputs that still ride only the dense call signature must
+    # gate the graph route off. Exercise each gate attribute directly (the
+    # constructor kwargs for charge-spin/bridging are heavyweight).
+    for attr in ("charge_spin_embedding", "bridging_switch"):
         dd = make_descriptor()
         assert dd.uses_graph_lower() is True
         setattr(dd, attr, object())  # any non-None sentinel
         assert dd.uses_graph_lower() is False, attr
+    # native spin is now threaded through the graph lower (this task); a
+    # non-None spin_embedding must NOT disable it any more.
+    dd = make_descriptor()
+    assert dd.uses_graph_lower() is True
+    dd.spin_embedding = object()  # any non-None sentinel
+    assert dd.uses_graph_lower() is True
 
 
 def test_dpa4_ener_fitting_call_graph_matches_dense() -> None:

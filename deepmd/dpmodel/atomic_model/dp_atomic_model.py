@@ -123,6 +123,17 @@ class DPAtomicModel(BaseAtomicModel):
         self.add_chg_spin_ebd: bool = getattr(
             self.descriptor, "add_chg_spin_ebd", False
         )
+        # Structural capability: only descriptors with a native spin
+        # conditioning mechanism (currently DPA4's ``spin_embedding``) accept
+        # a ``spin`` kwarg on ``call_graph`` at all -- unlike ``charge_spin``,
+        # which every descriptor's dense ``call()`` accepts (and ignores) for
+        # interface stability, the graph-native ``call_graph`` signature is
+        # per-descriptor, so ``forward_atomic_graph`` must not pass the
+        # keyword to a descriptor whose ``call_graph`` does not declare it
+        # (that would be a ``TypeError``, not a no-op). Checked structurally
+        # (attribute presence, not truthiness) so it stays correct regardless
+        # of whether this particular instance enabled spin.
+        self.supports_native_spin: bool = hasattr(self.descriptor, "spin_embedding")
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:
@@ -301,6 +312,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
         comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
@@ -323,6 +335,9 @@ class DPAtomicModel(BaseAtomicModel):
         charge_spin
             charge/spin conditioning. Unused by the dpa1 graph path; accepted so
             the interface stays stable for charge/spin-conditioned descriptors.
+        spin
+            flat (N, 3) per-node spin, forwarded to the descriptor's
+            ``call_graph``; None for spin-less models.
         comm_dict
             MPI communication metadata forwarded to the descriptor's
             ``call_graph`` (the message-passing part). ``None`` for
@@ -345,8 +360,15 @@ class DPAtomicModel(BaseAtomicModel):
         # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
         # embeds types internally from ``atype`` and returns None.
         type_embedding = self.descriptor.graph_type_embedding_table()
+        # See ``self.supports_native_spin`` in ``__init__``: only forward the
+        # ``spin`` keyword to descriptors whose ``call_graph`` declares it.
+        spin_kwargs = {"spin": spin} if self.supports_native_spin else {}
         gg, rot_mat = self.descriptor.call_graph(
-            graph, atype, type_embedding=type_embedding, comm_dict=comm_dict
+            graph,
+            atype,
+            type_embedding=type_embedding,
+            comm_dict=comm_dict,
+            **spin_kwargs,
         )
         fparam_node = None
         if fparam is not None:

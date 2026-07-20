@@ -350,7 +350,7 @@ def make_model(
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, cs, input_prec = self._input_type_cast(
+            cc, bb, fp, ap, cs, _, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del coord, box, fparam, aparam, charge_spin
@@ -594,7 +594,7 @@ def make_model(
                 nlist,
                 extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             )
-            cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+            cc_ext, _, fp, ap, cs, _, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del extended_coord, fparam, aparam, charge_spin
@@ -656,6 +656,7 @@ def make_model(
             aparam: Array | None = None,
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Model-level graph forward (no type cast). Analogue of the dense
             :meth:`forward_common_atomic`.
@@ -694,6 +695,10 @@ def make_model(
                 Optional MPI communication metadata.
             charge_spin
                 Charge/spin conditioning.
+            spin
+                Per-node spin vectors, flat (N, 3), or ``None``. Forwarded
+                unchanged to the atomic model's ``forward_common_atomic_graph``
+                (and, from there, the descriptor's ``call_graph``).
 
             Returns
             -------
@@ -710,7 +715,12 @@ def make_model(
                 n_local=n_local,
             )
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
-                graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+                graph,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
             return fit_output_to_model_output_graph(
                 atomic_ret,
@@ -732,6 +742,7 @@ def make_model(
             aparam: Array | None = None,
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
@@ -769,14 +780,22 @@ def make_model(
                 Optional MPI communication metadata.
             charge_spin
                 Charge/spin conditioning.
+            spin
+                Per-node spin vectors, flat (N, 3), or ``None``. Cast to the
+                model precision alongside the other node inputs and forwarded
+                unchanged to :meth:`forward_common_atomic_graph`.
 
             Returns
             -------
             dict
                 The standard model dict in the INPUT precision.
             """
-            edge_vec, _, fparam, aparam, cs, input_prec = self._input_type_cast(
-                edge_vec, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            edge_vec, _, fparam, aparam, cs, sp, input_prec = self._input_type_cast(
+                edge_vec,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
             model_predict = self.forward_common_atomic_graph(
                 atype,
@@ -789,6 +808,7 @@ def make_model(
                 aparam=aparam,
                 comm_dict=comm_dict,
                 charge_spin=cs,
+                spin=sp,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -852,7 +872,16 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             charge_spin: Array | None = None,
-        ) -> tuple[Array, Array | None, Array | None, Array | None, Array | None, Any]:
+            spin: Array | None = None,
+        ) -> tuple[
+            Array,
+            Array | None,
+            Array | None,
+            Array | None,
+            Array | None,
+            Array | None,
+            Any,
+        ]:
             """Cast the input data to global float type."""
             xp = array_api_compat.array_namespace(coord)
             input_dtype = coord.dtype
@@ -864,11 +893,11 @@ def make_model(
             ###
             _lst: list[Array | None] = [
                 xp.astype(vv, input_dtype) if vv is not None else None
-                for vv in [box, fparam, aparam, charge_spin]
+                for vv in [box, fparam, aparam, charge_spin, spin]
             ]
-            box, fparam, aparam, charge_spin = _lst
+            box, fparam, aparam, charge_spin, spin = _lst
             if input_dtype == global_dtype:
-                return coord, box, fparam, aparam, charge_spin, input_dtype
+                return coord, box, fparam, aparam, charge_spin, spin, input_dtype
             else:
                 return (
                     xp.astype(coord, global_dtype),
@@ -878,6 +907,7 @@ def make_model(
                     xp.astype(charge_spin, global_dtype)
                     if charge_spin is not None
                     else None,
+                    xp.astype(spin, global_dtype) if spin is not None else None,
                     input_dtype,
                 )
 
