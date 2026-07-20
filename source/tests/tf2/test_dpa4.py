@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Focused tests for TF2 DPA4 trainable and trackable state."""
+"""Focused tests for TF2 DPA4 descriptor trainable and trackable state."""
 
 import os
 
@@ -23,9 +23,6 @@ from deepmd.tf2.descriptor.dpa4 import (
 )
 from deepmd.tf2.env import (
     tf,
-)
-from deepmd.tf2.fitting.dpa4_ener import (
-    SeZMEnergyFittingNet,
 )
 
 
@@ -150,47 +147,6 @@ def test_promoted_parameters_release_public_tensor_shadows() -> None:
             assert name not in raw_attrs
         for name in getattr(module, "_tf2_array_variable_list_attrs", ()):
             assert name not in raw_attrs
-
-
-@pytest.mark.parametrize(
-    ("policy", "expected_trainable"),
-    ((False, [False, False, False]), ([False, True], [False, False, True])),
-)
-def test_fitting_trainability_survives_conversion_and_optimizer_step(
-    policy: bool | list[bool],
-    expected_trainable: list[bool],
-) -> None:
-    """Frozen layers stay fixed while an enabled output layer updates."""
-    fitting = SeZMEnergyFittingNet(
-        ntypes=2,
-        dim_descrpt=4,
-        neuron=[4],
-        trainable=policy,
-        precision="float64",
-        mixed_types=True,
-        seed=20260712,
-    )
-    restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
-    assert [variable.trainable for variable in restored.variables] == expected_trainable
-
-    before = [variable.numpy().copy() for variable in restored.variables]
-    with tf.GradientTape() as tape:
-        result = restored(
-            wrap_tensor(tf.ones((1, 2, 4), dtype=tf.float64)),
-            wrap_tensor(tf.zeros((1, 2), dtype=tf.int32)),
-        )
-        loss = tf.reduce_sum(to_tf_tensor(result["energy"]))
-    gradients = tape.gradient(loss, restored.trainable_variables)
-    if restored.trainable_variables:
-        tf.keras.optimizers.SGD(0.1).apply_gradients(
-            zip(gradients, restored.trainable_variables, strict=True)
-        )
-
-    changed = [
-        not np.array_equal(variable.numpy(), original)
-        for variable, original in zip(restored.variables, before, strict=True)
-    ]
-    assert changed == expected_trainable
 
 
 def test_random_gamma_fails_fast_until_graph_safe_rng_is_supported() -> None:

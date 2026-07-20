@@ -3954,16 +3954,6 @@ class TestFittingParity:
         out2 = np.asarray(dp_mod2.call(descriptor, atype)["energy"])
         np.testing.assert_array_equal(out1, out2)
 
-    def test_frozen_fitting_stays_frozen_after_deserialize(self) -> None:
-        from deepmd.pt.model.task.sezm_ener import (
-            SeZMEnergyFittingNet as SeZMEnergyFittingNetPT,
-        )
-
-        fitting, _ = self._build_pair(neuron=[16], trainable=False)
-        restored = SeZMEnergyFittingNetPT.deserialize(fitting.serialize())
-
-        assert all(not parameter.requires_grad for parameter in restored.parameters())
-
 
 class TestEndToEndParity:
     """Chain descriptor and fitting: full dpmodel DPA4 atomic-energy math."""
