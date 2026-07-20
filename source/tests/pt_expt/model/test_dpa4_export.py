@@ -484,3 +484,127 @@ def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
         deserialize_to_file(
             str(tmp_path / "virtual_spin_graph.pt2"), data, lower_kind="graph"
         )
+
+
+# =============================================================================
+# Task 7: DeepEval graph fast path for the NATIVE-spin ``.pt2`` -- the frozen
+# artifact from Task 6 above must be evaluable through the public DeepPot API
+# (``deepmd.pt_expt.infer.deep_eval.DeepEval._eval_model_graph_spin``), NOT
+# just constructible.  Compares against the EAGER pt_expt
+# ``DPA4NativeSpinModel.forward`` on the SAME weights/system (rtol=atol=1e-10,
+# CPU fp64 -- project convention for same-math weight-copied parity).
+# =============================================================================
+
+_SPIN_EVAL_NATOMS = 6
+_SPIN_EVAL_ATYPES = np.array([0, 0, 0, 1, 1, 1], dtype=np.int32)  # Ni,Ni,Ni,O,O,O
+_SPIN_EVAL_COORDS = np.array(
+    [
+        [1.0, 1.0, 1.0],
+        [3.2, 1.4, 1.1],
+        [1.3, 1.8, 1.0],
+        [0.4, 1.2, 1.6],
+        [3.6, 2.0, 1.3],
+        [3.4, 0.7, 1.7],
+    ],
+    dtype=np.float64,
+).reshape(1, _SPIN_EVAL_NATOMS, 3)
+_SPIN_EVAL_CELL = (np.eye(3, dtype=np.float64) * 6.0).reshape(1, 9)
+# Deliberately NOT pre-masked by type (mirrors TestDPA4NativeSpinModelPtExpt):
+# the model's own descriptor gating must zero the non-spin (type 1) rows.
+_SPIN_EVAL_SPINS = np.array(
+    [
+        [0.11, 0.05, -0.02],
+        [-0.07, 0.09, 0.03],
+        [0.02, -0.06, 0.08],
+        [0.01, -0.01, 0.02],
+        [-0.02, 0.03, -0.01],
+        [0.015, 0.02, -0.03],
+    ],
+    dtype=np.float64,
+).reshape(1, _SPIN_EVAL_NATOMS, 3)
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+def test_deep_eval_graph_spin_parity(tmp_path) -> None:
+    """DeepEval on a graph-kind native-spin ``.pt2`` matches eager ``forward``.
+
+    Exercises ``DeepEval._eval_model_spin``'s ``lower_input_kind == "graph"``
+    branch end to end through the public ``DeepPot`` API: energy, force,
+    force_mag and (global) virial must reproduce the eager
+    ``DPA4NativeSpinModel.forward`` on the identical weights and system.
+    ``atomic=False`` is used deliberately -- the graph-spin ABI has no owner
+    site for ``mask_mag`` (see ``_graph_spin_output_key``'s docstring), so
+    only the four outputs that route through the exported forward are
+    compared here.
+    """
+    from deepmd.infer import (
+        DeepPot,
+    )
+
+    model = _build_native_spin_model_cpu()
+
+    coord_t = torch.tensor(_SPIN_EVAL_COORDS, dtype=torch.float64)
+    atype_t = torch.tensor(
+        _SPIN_EVAL_ATYPES.reshape(1, _SPIN_EVAL_NATOMS), dtype=torch.int64
+    )
+    spin_t = torch.tensor(_SPIN_EVAL_SPINS, dtype=torch.float64)
+    box_t = torch.tensor(_SPIN_EVAL_CELL, dtype=torch.float64)
+    ref = model.forward(coord_t, atype_t, spin_t, box=box_t)
+
+    # Anti-vacuity: a bare (non-jittered) DPA4 zero-initializes residual
+    # projections, which would make force_mag identically zero and the
+    # parity check below vacuous by construction (see
+    # ``_build_native_spin_model_cpu``'s docstring for why jitter fixes
+    # this).
+    fm_max = ref["force_mag"].abs().max().item()
+    assert fm_max > 1e-6, (
+        "expected the jittered model's force_mag to be non-trivial; got "
+        f"max |force_mag| = {fm_max:.3e} (jitter not effective -- the "
+        "parity check below would be vacuous)"
+    )
+
+    model_file = tmp_path / "dpa4_spin_graph_eval.pt2"
+    data = {"model": model.serialize()}
+    deserialize_to_file(str(model_file), data, lower_kind="graph")
+
+    dp = DeepPot(str(model_file))
+    assert dp.has_spin
+    e, f, v, fm, _mm = dp.eval(
+        _SPIN_EVAL_COORDS,
+        _SPIN_EVAL_CELL,
+        _SPIN_EVAL_ATYPES,
+        atomic=False,
+        spin=_SPIN_EVAL_SPINS,
+    )
+
+    np.testing.assert_allclose(
+        e.reshape(-1),
+        ref["energy"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="energy",
+    )
+    np.testing.assert_allclose(
+        f.reshape(-1),
+        ref["force"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force",
+    )
+    np.testing.assert_allclose(
+        fm.reshape(-1),
+        ref["force_mag"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force_mag",
+    )
+    np.testing.assert_allclose(
+        v.reshape(-1),
+        ref["virial"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="virial",
+    )

@@ -91,6 +91,31 @@ _GRAPH_CATEGORY_TO_KEY = {
 }
 
 
+def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
+    """Map a native-spin request def to its graph-spin public model key.
+
+    Twin of ``_GRAPH_CATEGORY_TO_KEY`` for
+    ``DPA4NativeSpinModel.forward_lower_graph_exportable``'s output dict
+    (``_translate_spin_energy_keys``: ``atom_energy``, ``energy``,
+    ``force``, ``force_mag``, ``virial``, ``atom_virial``).  Category alone
+    is NOT enough here: ``do_derivative`` (``deepmd.dpmodel.output_def``)
+    gives the magnetic derivative def (``energy_derv_r_mag``) the SAME
+    category as the physical one (``energy_derv_r``) -- only ``.magnetic``
+    tells them apart -- so this checks ``magnetic`` before falling back to
+    the category table.  Returns ``None`` for outputs the graph-spin ABI
+    does not produce (``mask``/``mask_mag`` -- the graph route has no owner
+    site for the boolean spin-active mask, unlike the dense/nlist spin path
+    which derives it via ``communicate_extended_output``); callers fall
+    back to a NaN-filled placeholder for those, same as any other
+    unavailable output.
+    """
+    if odef.name in ("mask", "mask_mag"):
+        return None
+    if odef.magnetic and odef.category == OutputVariableCategory.DERV_R:
+        return "force_mag"
+    return _GRAPH_CATEGORY_TO_KEY.get(odef.category)
+
+
 def _reshape_charge_spin(
     charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
 ) -> np.ndarray:
@@ -255,9 +280,17 @@ class DeepEval(DeepEvalBackend):
                 "expected 'auto', 'vesin', or 'native'."
             )
         is_spin = bool(getattr(self, "_is_spin", False))
+        # Native-spin (NeighborGraph route) graph-form artifacts never touch
+        # this NLIST builder at all -- graph-form eval uses
+        # ``neighbor_graph_method`` instead (see ``_eval_model_graph_spin``).
+        # Only the virtual-atom (dense/nlist) spin scheme actually needs the
+        # vesin restriction below.
+        is_native_spin_graph = is_spin and (
+            getattr(self, "metadata", {}).get("lower_input_kind") == "graph"
+        )
         ase_provided = self.neighbor_list is not None
         # reason vesin cannot be used (None means it can)
-        unsupported = "spin models" if is_spin else None
+        unsupported = "spin models" if is_spin and not is_native_spin_graph else None
         if nlist_backend == "native":
             self._use_vesin = False
         elif nlist_backend == "vesin":
@@ -297,12 +330,23 @@ class DeepEval(DeepEvalBackend):
         model_dict = _json_to_numpy(model_dict)
         model_data = model_dict["model"]
 
-        if model_data.get("type") == "spin_ener":
+        model_type = model_data.get("type")
+        if model_type == "spin_ener":
             from deepmd.pt_expt.model.spin_model import (
                 SpinModel,
             )
 
             self._dpmodel = SpinModel.deserialize(model_data)
+            self._is_spin = True
+        elif model_type in ("dpa4_native_spin", "sezm_native_spin"):
+            # Native-spin (NeighborGraph route) DPA4/SeZM: no virtual atoms,
+            # spin rides the graph lower directly (Task 6/7 of the DPA4
+            # native-spin plan). Mirrors the ``spin_ener`` branch above.
+            from deepmd.pt_expt.model.dpa4_native_spin_model import (
+                DPA4NativeSpinModel,
+            )
+
+            self._dpmodel = DPA4NativeSpinModel.deserialize(model_data)
             self._is_spin = True
         else:
             self._dpmodel = BaseModel.deserialize(model_data)
@@ -1613,6 +1657,15 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
+        if self.metadata.get("lower_input_kind") == "graph":
+            # Native-spin (NeighborGraph route): no virtual atoms and no
+            # extended/nlist ABI at all -- dispatch to the graph-native fast
+            # path (mirrors _eval_model's dispatch to _eval_model_graph for
+            # the non-spin case). charge_spin has no slot in this ABI (see
+            # DPA4NativeSpinModel.forward_lower_graph_exportable).
+            return self._eval_model_graph_spin(
+                coords, cells, atom_types, spins, fparam, aparam, request_defs
+            )
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
@@ -1775,6 +1828,132 @@ class DeepEval(DeepEvalBackend):
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
+    def _eval_model_graph_spin(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        """Evaluate a graph-form native-spin ``.pt2`` (``lower_input_kind ==
+        "graph"`` and ``is_spin``).
+
+        Mirrors :meth:`_eval_model_graph`'s carry-all
+        :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
+        construction (SAME builder, SAME positional ABI up through
+        ``source_row_ptr``), then inserts the owned-atom ``spin`` tensor
+        ``(N, 3)`` at positional index 10 of
+        ``DPA4NativeSpinModel.forward_lower_graph_exportable`` -- the node
+        axis IS the owned-local-atom axis for single-rank eval (no ghost
+        nodes), so ``spin`` needs no extension/mapping, unlike the dense
+        spin path's ``ext_spin_t``. There is no ``charge_spin`` slot in this
+        ABI. The forward returns LOCAL public keys directly (``atom_energy``,
+        ``energy``, ``force``, ``force_mag``, ``virial``, ``atom_virial``),
+        so results are reshaped without ``communicate_extended_output``,
+        same as the non-spin graph path.
+        """
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        box_input = cells.reshape(nframes, 9) if cells is not None else None
+        graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
+
+        atype_t = torch.tensor(
+            np.asarray(atom_types).reshape(-1), dtype=torch.int64, device=DEVICE
+        )
+        n_node_t = torch.as_tensor(graph.n_node, dtype=torch.int64, device=DEVICE)
+        edge_index_t = torch.as_tensor(
+            graph.edge_index, dtype=torch.int64, device=DEVICE
+        )
+        edge_dtype = (
+            torch.float32
+            if self.metadata.get("graph_edge_dtype") == "float32"
+            else torch.float64
+        )
+        edge_vec_t = torch.as_tensor(
+            graph.edge_vec,
+            dtype=edge_dtype,
+            device=DEVICE,
+        )
+        edge_mask_t = torch.as_tensor(graph.edge_mask, dtype=torch.bool, device=DEVICE)
+        destination_order_t = torch.as_tensor(
+            graph.destination_order,
+            device=DEVICE,
+        )
+        destination_row_ptr_t = torch.as_tensor(
+            graph.destination_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
+        )
+        source_order_t = torch.as_tensor(
+            graph.source_order,
+            device=DEVICE,
+        )
+        source_row_ptr_t = torch.as_tensor(
+            graph.source_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
+        )
+
+        spin_t = torch.tensor(
+            np.asarray(spins).reshape(nframes * natoms, 3),
+            dtype=torch.float64,
+            device=DEVICE,
+        )
+
+        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+            fparam, aparam, nframes, natoms, DEVICE
+        )
+        if aparam_t is not None:
+            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) --
+            # the same axis as ``atype``/``spin`` (mirrors _eval_model_graph).
+            aparam_t = aparam_t.reshape(nframes * natoms, -1)
+
+        model_inputs = (
+            atype_t,
+            n_node_t,
+            n_node_t,
+            edge_index_t,
+            edge_vec_t,
+            edge_mask_t,
+            destination_order_t,
+            destination_row_ptr_t,
+            source_order_t,
+            source_row_ptr_t,
+            spin_t,
+            fparam_t,
+            aparam_t,
+        )
+        if self._is_pt2:
+            model_ret = self._pt2_runner(*model_inputs)
+        else:
+            model_ret = self.exported_module(*model_inputs)
+
+        results = []
+        for odef in request_defs:
+            shape = self._get_output_shape(odef, nframes, natoms)
+            gkey = _graph_spin_output_key(odef)
+            val = model_ret.get(gkey) if gkey is not None else None
+            if val is not None:
+                results.append(val.detach().cpu().numpy().reshape(shape))
+            else:
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 )
