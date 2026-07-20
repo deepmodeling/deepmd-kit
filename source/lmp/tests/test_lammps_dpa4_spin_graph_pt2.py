@@ -159,9 +159,24 @@ def _compute_expected() -> None:
     cell = _cell_from_lammps_box(box)
     atype = (type_NiO - 1).tolist()  # LAMMPS 1-based -> deepmd 0-based (Ni=0, O=1)
 
+    # ``deeppot_dpa4_spin_graph.pt2`` lives in ``source/tests/infer`` next to
+    # ``gen_common.py``, whose ``load_custom_ops()`` loads the build-tree
+    # ``libdeepmd_op_pt.so`` (registering ``deepmd::edge_force_virial``, which
+    # the graph ``.pt2`` inference needs). ``import deepmd.pt`` alone only loads
+    # the op library from SHARED_LIB_DIR, which the build-test env does not
+    # populate -- so the subprocess reuses that fallback (after importing
+    # ``deepmd.pt``, per its docstring) before constructing ``DeepPot``.
+    infer_dir = str(pb_file.resolve().parent)
     script = textwrap.dedent(f"""\
         import json
+        import sys
         import numpy as np
+
+        sys.path.insert(0, {infer_dir!r})
+        import deepmd.pt  # noqa: F401  (triggers the base op-library load)
+        from gen_common import load_custom_ops
+
+        load_custom_ops()
         from deepmd.infer import DeepPot
 
         dp = DeepPot({str(pb_file.resolve())!r})
