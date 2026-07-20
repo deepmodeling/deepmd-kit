@@ -19,7 +19,6 @@ from deepmd.utils.argcheck import (
 
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
-    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
@@ -45,13 +44,6 @@ if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
 else:
     SeZMEnerFittingPTExpt = None
-if INSTALLED_JAX:
-    from deepmd.jax.env import (
-        jnp,
-    )
-    from deepmd.jax.fitting.dpa4_ener import SeZMEnergyFittingNet as SeZMEnerFittingJAX
-else:
-    SeZMEnerFittingJAX = None
 if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
@@ -94,7 +86,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
 
     skip_dp = False
     skip_tf = True
-    skip_jax = not INSTALLED_JAX or SeZMEnerFittingJAX is None
+    skip_jax = True
     skip_pd = True
     skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
@@ -103,7 +95,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     dp_class = SeZMEnerFittingDP
     pt_class = SeZMEnerFittingPT
     pt_expt_class = SeZMEnerFittingPTExpt
-    jax_class = SeZMEnerFittingJAX
+    jax_class = None
     pd_class = None
     array_api_strict_class = SeZMEnerFittingStrict
     args = fitting_sezm_ener()
@@ -156,14 +148,6 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
             .detach()
             .cpu()
             .numpy()
-        )
-
-    def eval_jax(self, jax_obj: Any) -> Any:
-        return np.asarray(
-            jax_obj(
-                jnp.asarray(self.inputs),
-                jnp.asarray(self.atype.reshape(1, -1)),
-            )["energy"]
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:

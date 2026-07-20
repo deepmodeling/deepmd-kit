@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.jax.fitting.dpa4_ener import (
-    SeZMEnergyFittingNet,
-)
 from deepmd.jax.fitting.fitting import (
     DipoleFittingNet,
     DOSFittingNet,
@@ -14,5 +11,4 @@ __all__ = [
     "DipoleFittingNet",
     "EnergyFittingNet",
     "PolarFittingNet",
-    "SeZMEnergyFittingNet",
 ]

@@ -24,22 +24,6 @@ from deepmd.jax.model.model import (
     get_model,
 )
 
-_DROP_ZERO_SIZE_LEAF = object()
-
-
-def _drop_zero_size_array_leaves(value: Any) -> Any:
-    """Remove array leaves Orbax cannot save while preserving tree containers."""
-    if isinstance(value, dict):
-        filtered = {}
-        for key, item in value.items():
-            new_item = _drop_zero_size_array_leaves(item)
-            if new_item is not _DROP_ZERO_SIZE_LEAF:
-                filtered[key] = new_item
-        return filtered
-    if getattr(value, "size", None) == 0:
-        return _DROP_ZERO_SIZE_LEAF
-    return value
-
 
 def _convert_str_to_int_key(item: dict) -> None:
     """Convert Orbax-restored numeric index keys from strings back to ints."""
@@ -64,40 +48,6 @@ def _normalize_restored_state_keys(
                 _convert_str_to_int_key(state_by_model[model_key])
         return
     _convert_str_to_int_key(state)
-
-
-_NO_ZERO_SIZE_LEAF = object()
-
-
-def _zero_size_subtree(value: Any) -> Any:
-    if isinstance(value, dict):
-        restored = {}
-        for key, item in value.items():
-            subtree = _zero_size_subtree(item)
-            if subtree is not _NO_ZERO_SIZE_LEAF:
-                restored[key] = subtree
-        return restored if restored else _NO_ZERO_SIZE_LEAF
-    if getattr(value, "size", None) == 0:
-        return value
-    return _NO_ZERO_SIZE_LEAF
-
-
-def _restore_missing_zero_size_leaves(template: Any, restored: Any) -> Any:
-    """Reinsert zero-size leaves dropped before Orbax checkpoint saving."""
-    if not isinstance(template, dict) or not isinstance(restored, dict):
-        return restored
-    restored = dict(restored)
-    for key, template_value in template.items():
-        if key in restored:
-            restored[key] = _restore_missing_zero_size_leaves(
-                template_value,
-                restored[key],
-            )
-            continue
-        subtree = _zero_size_subtree(template_value)
-        if subtree is not _NO_ZERO_SIZE_LEAF:
-            restored[key] = subtree
-    return restored
 
 
 def _state_sequence_to_numpy_list(state_value: Any) -> list[np.ndarray]:
@@ -269,7 +219,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             model = BaseModel.deserialize(data["model"])
             _, state = nnx.split(model)
             state = state.to_pure_dict()
-        state = _drop_zero_size_array_leaves(state)
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
@@ -433,10 +382,6 @@ def serialize_from_file(model_file: str) -> dict:
             abstract_model = get_model(model_params)
             _restore_compression_slots_from_state(abstract_model, model_state)
             graphdef, abstract_state = nnx.split(abstract_model)
-            model_state = _restore_missing_zero_size_leaves(
-                abstract_state.to_pure_dict(),
-                model_state,
-            )
             abstract_state.replace_by_pure_dict(model_state)
             return nnx.merge(graphdef, abstract_state)
 

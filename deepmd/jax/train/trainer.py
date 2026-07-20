@@ -86,7 +86,6 @@ from deepmd.jax.utils.multi_task import (
     preprocess_shared_params,
 )
 from deepmd.jax.utils.serialization import (
-    _drop_zero_size_array_leaves,
     serialize_from_file,
 )
 from deepmd.utils.argcheck import (
@@ -658,7 +657,6 @@ class DPTrainer(AbstractTrainer):
             model_dict = _evaluate_model_dict(
                 model, extended_coord, extended_atype, nlist, mapping, fp, ap
             )
-            model_dict = _match_label_shapes(model_dict, label_dict)
             loss, _ = loss_obj(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
@@ -682,7 +680,6 @@ class DPTrainer(AbstractTrainer):
             model_dict = _evaluate_model_dict(
                 model, extended_coord, extended_atype, nlist, mapping, fp, ap
             )
-            model_dict = _match_label_shapes(model_dict, label_dict)
             _, more_loss = loss_obj(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
@@ -869,7 +866,6 @@ class DPTrainer(AbstractTrainer):
             fparam=jax_data.get("fparam", None),
             aparam=jax_data.get("aparam", None),
             pair_excl=getattr(model.atomic_model, "pair_excl", None),
-            conservative_nlist=type(model.get_descriptor()).__name__ == "DescrptDPA4",
         )
         return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
 
@@ -934,7 +930,6 @@ class DPTrainer(AbstractTrainer):
         else:
             _, single_state = nnx.split(self.models[DEFAULT_TASK_KEY])
             state = single_state.to_pure_dict()
-        state = _drop_zero_size_array_leaves(state)
         if ckpt_path.is_dir():
             shutil.rmtree(ckpt_path)
         model_def_script_cpy = deepcopy(self.model_def_script)
@@ -992,29 +987,8 @@ def _evaluate_model_dict(
     )
     model_dict["atom_energy"] = model_dict["energy"]
     model_dict["energy"] = model_dict["energy_redu"]
-    force = model_dict["energy_derv_r"].squeeze(-2)
-    if force.ndim == 2 or (force.ndim == 3 and force.shape[-1] != 3):
-        force = jnp.reshape(force, (force.shape[0], -1, 3))
-    model_dict["force"] = force
+    model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
     model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
-    return model_dict
-
-
-def _match_label_shapes(
-    model_dict: dict[str, jnp.ndarray],
-    label_dict: dict[str, jnp.ndarray],
-) -> dict[str, jnp.ndarray]:
-    """Match equivalent flattened model outputs to label tensor shapes."""
-    force_hat = model_dict.get("force")
-    force = label_dict.get("force")
-    if (
-        force_hat is not None
-        and force is not None
-        and force_hat.shape != force.shape
-        and force_hat.size == force.size
-    ):
-        model_dict = dict(model_dict)
-        model_dict["force"] = jnp.reshape(force_hat, force.shape)
     return model_dict
 
 
@@ -1363,7 +1337,6 @@ def prepare_input(
     fparam: np.ndarray | None = None,
     aparam: np.ndarray | None = None,
     pair_excl: "PairExcludeMask | None" = None,
-    conservative_nlist: bool = False,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -1386,12 +1359,6 @@ def prepare_input(
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
         coord_normalized, atype, bb, rcut
     )
-    if conservative_nlist:
-        # DPA4 treats ``sel`` as an initial capacity rather than a truncation
-        # contract.  Use the full extended-atom capacity so every in-cutoff
-        # edge survives the dense JAX input boundary; padded entries remain
-        # masked by the lower descriptor path.
-        sel = [extended_coord.shape[1]] * len(sel)
     nlist = build_neighbor_list(
         extended_coord,
         extended_atype,

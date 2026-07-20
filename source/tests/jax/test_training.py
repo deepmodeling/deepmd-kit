@@ -49,9 +49,6 @@ from deepmd.jax.env import (
 from deepmd.jax.train.trainer import (
     DPTrainer,
     _copy_matching_state_tree,
-    _drop_zero_size_array_leaves,
-    _evaluate_model_dict,
-    _match_label_shapes,
     _merge_descriptor_stats,
     _merge_fitting_param_stats,
     _scale_by_global_learning_rate,
@@ -61,7 +58,6 @@ from deepmd.jax.utils.finetune import (
 )
 from deepmd.jax.utils.serialization import (
     _normalize_restored_state_keys,
-    _restore_missing_zero_size_leaves,
 )
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
@@ -933,96 +929,3 @@ def test_jax_multitask_state_key_normalization_preserves_numeric_task_names() ->
     assert 1 not in state["models"]
     assert 0 in state["models"]["1"]["layers"]
     assert 0 in state["models"]["task"]["layers"]
-
-
-def test_jax_zero_size_checkpoint_leaves_round_trip() -> None:
-    """Checkpoint filtering and restore must preserve every zero-size path."""
-    template = {
-        "model": {
-            "empty": jnp.zeros((0, 3)),
-            "nested": {
-                "empty": jnp.zeros((2, 0)),
-                "weight": jnp.ones((2,)),
-            },
-        }
-    }
-
-    filtered = _drop_zero_size_array_leaves(template)
-    restored = _restore_missing_zero_size_leaves(template, filtered)
-
-    assert "empty" not in filtered["model"]
-    assert "empty" not in filtered["model"]["nested"]
-    np.testing.assert_array_equal(
-        restored["model"]["empty"], template["model"]["empty"]
-    )
-    np.testing.assert_array_equal(
-        restored["model"]["nested"]["empty"],
-        template["model"]["nested"]["empty"],
-    )
-    np.testing.assert_array_equal(
-        restored["model"]["nested"]["weight"],
-        template["model"]["nested"]["weight"],
-    )
-
-
-def test_jax_match_label_shapes_reshapes_only_equivalent_force_layouts() -> None:
-    """Flattened force tensors reshape, while an existing layout is untouched."""
-    force = jnp.arange(6).reshape(1, 2, 3)
-    model_dict = {"force": force}
-
-    reshaped = _match_label_shapes(model_dict, {"force": jnp.zeros((1, 6))})
-    unchanged = _match_label_shapes(model_dict, {"force": jnp.zeros((1, 2, 3))})
-
-    assert reshaped is not model_dict
-    assert reshaped["force"].shape == (1, 6)
-    assert unchanged is model_dict
-
-
-def test_jax_evaluate_model_dict_normalizes_flattened_force_only() -> None:
-    """Model evaluation preserves canonical force tensors and expands flat ones."""
-
-    class FakeModel:
-        def __init__(self, force_derivative: jnp.ndarray) -> None:
-            self.force_derivative = force_derivative
-
-        def call_common_lower(self, *args, **kwargs):
-            del args, kwargs
-            return {
-                "energy": jnp.zeros((1, 2, 1)),
-                "energy_redu": jnp.zeros((1, 1)),
-                "energy_derv_r": self.force_derivative,
-                "energy_derv_c_redu": jnp.zeros((1, 1, 9)),
-            }
-
-        def model_output_def(self):
-            return {}
-
-    def passthrough(model_dict, *args, **kwargs):
-        del args, kwargs
-        return dict(model_dict)
-
-    with patch(
-        "deepmd.jax.train.trainer.communicate_extended_output",
-        side_effect=passthrough,
-    ):
-        flattened = _evaluate_model_dict(
-            FakeModel(jnp.arange(6).reshape(1, 1, 6)),
-            jnp.zeros((1, 6)),
-            jnp.zeros((1, 2), dtype=jnp.int32),
-            jnp.zeros((1, 2, 1), dtype=jnp.int32),
-            None,
-            None,
-            None,
-        )
-        canonical = _evaluate_model_dict(
-            FakeModel(jnp.arange(6).reshape(1, 2, 1, 3)),
-            jnp.zeros((1, 6)),
-            jnp.zeros((1, 2), dtype=jnp.int32),
-            jnp.zeros((1, 2, 1), dtype=jnp.int32),
-            None,
-            None,
-            None,
-        )
-
-    assert flattened["force"].shape == (1, 2, 3)
-    assert canonical["force"].shape == (1, 2, 3)

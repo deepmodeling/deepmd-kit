@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Focused tests for JAX DPA4 trainable-state conversion."""
+"""Focused tests for JAX DPA4 descriptor trainable-state conversion."""
 
 from deepmd.jax.descriptor.dpa4 import (
     DescrptDPA4,
@@ -7,9 +7,6 @@ from deepmd.jax.descriptor.dpa4 import (
 )
 from deepmd.jax.env import (
     nnx,
-)
-from deepmd.jax.fitting.dpa4_ener import (
-    SeZMEnergyFittingNet,
 )
 from deepmd.jax.utils.network import (
     ArrayAPIParam,
@@ -83,20 +80,3 @@ def test_frozen_descriptor_has_no_optimizer_visible_parameters() -> None:
     )
 
     assert len(nnx.to_flat_state(nnx.state(descriptor, nnx.Param))) == 0
-
-
-def test_frozen_fitting_stays_frozen_after_conversion_round_trip() -> None:
-    """Serialized GLU layers retain the all-false optimizer policy."""
-    fitting = SeZMEnergyFittingNet(
-        ntypes=2,
-        dim_descrpt=4,
-        neuron=[4],
-        trainable=False,
-        precision="float64",
-        mixed_types=True,
-        seed=20260712,
-    )
-    restored = SeZMEnergyFittingNet.deserialize(fitting.serialize())
-
-    assert restored.nets[0].trainable == [False, False]
-    assert len(nnx.to_flat_state(nnx.state(restored, nnx.Param))) == 0
