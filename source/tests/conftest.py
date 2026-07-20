@@ -118,8 +118,10 @@ def pytest_configure(config) -> None:
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     _current_item["item"] = item
-    yield
-    _current_item["item"] = None
+    try:
+        yield
+    finally:
+        _current_item["item"] = None
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:

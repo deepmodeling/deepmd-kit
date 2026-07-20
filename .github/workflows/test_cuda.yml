@@ -94,17 +94,20 @@ jobs:
           # Cap the compile lane's inductor compile threads to ~half the cores
           # so the GPU lane keeps CPU for its host-side dispatch; nice it too.
           nc=$(( $(nproc) / 2 )); [ "$nc" -lt 1 ] && nc=1
-          ( t0=$(date +%s)
+          # rc=0 + `|| rc=$?` so a lane's failure does not let the step's
+          # default `set -e` skip the wall-clock echo (the timing we want most
+          # when a lane fails).
+          ( t0=$(date +%s); rc=0
             TORCHINDUCTOR_COMPILE_THREADS=$nc nice -n 15 \
               python -m pytest source/tests -m "aoti_compile" \
-                -p no:cacheprovider --junit-xml=junit-aoti.xml
-            rc=$?; echo "[lane aoti_compile] wall=$(( $(date +%s) - t0 ))s exit=$rc"
+                -p no:cacheprovider --junit-xml=junit-aoti.xml || rc=$?
+            echo "[lane aoti_compile] wall=$(( $(date +%s) - t0 ))s exit=$rc"
             exit $rc ) &
           pid_a=$!
-          ( t0=$(date +%s)
+          ( t0=$(date +%s); rc=0
             python -m pytest source/tests -m "not aoti_compile" \
-              -p no:cacheprovider --junit-xml=junit-gpu.xml
-            rc=$?; echo "[lane gpu] wall=$(( $(date +%s) - t0 ))s exit=$rc"
+              -p no:cacheprovider --junit-xml=junit-gpu.xml || rc=$?
+            echo "[lane gpu] wall=$(( $(date +%s) - t0 ))s exit=$rc"
             exit $rc ) &
           pid_b=$!
           rc_a=0; wait $pid_a || rc_a=$?
