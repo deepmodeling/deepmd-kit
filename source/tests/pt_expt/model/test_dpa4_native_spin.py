@@ -24,9 +24,7 @@ import torch
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
 )
-from deepmd.pt.model.model import (
-    get_model as pt_get_model,
-)
+from deepmd.pt.model.model import get_model as pt_get_model
 from deepmd.pt_expt.descriptor.dpa4 import (
     DescrptDPA4,
 )
@@ -45,9 +43,7 @@ from deepmd.pt_expt.model.dpa4_native_spin_model import (
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
-from deepmd.pt_expt.utils import (
-    env as _env,
-)
+from deepmd.pt_expt.utils import env as _env
 from deepmd.utils.argcheck import (
     normalize,
 )

@@ -16,9 +16,7 @@ import zipfile
 
 import pytest
 
-from deepmd.pt_expt.model.get_model import (
-    get_model as _get_pt_expt_model,
-)
+from deepmd.pt_expt.model.get_model import get_model as _get_pt_expt_model
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )

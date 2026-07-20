@@ -42,14 +42,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 # not apply here).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from dpa4_fixtures import (
+    jitter_zero_arrays,
+)
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
     write_expected_ref,
-)
-
-from dpa4_fixtures import (
-    jitter_zero_arrays,
 )
 
 # Small fp64 DPA4/SeZM native-spin config. Mirrors ``NATIVE_SPIN_CONFIG`` in

@@ -246,19 +246,20 @@ class DeepSpinPTExpt : public DeepSpinBackend {
    * fparam/aparam tail. No charge_spin slot -- native spin has none.
    * Single-rank only (no with-comm sibling; see DeepSpinPTExpt.cc compute()).
    */
-  std::vector<torch::Tensor> run_model_graph(const torch::Tensor& atype,
-                                             const torch::Tensor& n_node,
-                                             const torch::Tensor& n_local,
-                                             const torch::Tensor& edge_index,
-                                             const torch::Tensor& edge_vec,
-                                             const torch::Tensor& edge_mask,
-                                             const torch::Tensor& destination_order,
-                                             const torch::Tensor& destination_row_ptr,
-                                             const torch::Tensor& source_order,
-                                             const torch::Tensor& source_row_ptr,
-                                             const torch::Tensor& spin,
-                                             const torch::Tensor& fparam,
-                                             const torch::Tensor& aparam);
+  std::vector<torch::Tensor> run_model_graph(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam);
 
   /**
    * @brief Run the native-spin parallel edge artifact: the energy edge

@@ -12,11 +12,11 @@ from deepmd.dpmodel import (
     get_deriv_name,
     get_reduce_name,
 )
-from deepmd.dpmodel.output_def import (
-    get_deriv_name_mag,
-)
 from deepmd.dpmodel.model.edge_transform_output import (
     node_ownership_mask,
+)
+from deepmd.dpmodel.output_def import (
+    get_deriv_name_mag,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,

@@ -16,7 +16,8 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-// Spin models need relaxed epsilon (same bound as test_deeppot_dpa_ptexpt_spin.cc).
+// Spin models need relaxed epsilon (same bound as
+// test_deeppot_dpa_ptexpt_spin.cc).
 #undef EPSILON
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
@@ -38,7 +39,7 @@ class TestInferDeepSpinDpa4GraphPtExpt : public ::testing::Test {
   // gen_dpa4_spin.py's _COORDS/_CELL/_SPINS/_ATYPES.
   std::vector<VALUETYPE> coord = {1.0, 1.0, 1.0, 3.2, 1.4, 1.1, 1.3, 1.8, 1.0,
                                   0.4, 1.2, 1.6, 3.6, 2.0, 1.3, 3.4, 0.7, 1.7};
-  std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09, 0.03,
+  std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09,  0.03,
                                  0.02,  -0.06, 0.08,  0.01,  -0.01, 0.02,
                                  -0.02, 0.03,  -0.01, 0.015, 0.02,  -0.03};
   std::vector<int> atype = {0, 0, 0, 1, 1, 1};
@@ -190,7 +191,7 @@ class TestInferDeepSpinDpa4GraphPtExptNopbc : public ::testing::Test {
  protected:
   std::vector<VALUETYPE> coord = {1.0, 1.0, 1.0, 3.2, 1.4, 1.1, 1.3, 1.8, 1.0,
                                   0.4, 1.2, 1.6, 3.6, 2.0, 1.3, 3.4, 0.7, 1.7};
-  std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09, 0.03,
+  std::vector<VALUETYPE> spin = {0.11,  0.05,  -0.02, -0.07, 0.09,  0.03,
                                  0.02,  -0.06, 0.08,  0.01,  -0.01, 0.02,
                                  -0.02, 0.03,  -0.01, 0.015, 0.02,  -0.03};
   std::vector<int> atype = {0, 0, 0, 1, 1, 1};

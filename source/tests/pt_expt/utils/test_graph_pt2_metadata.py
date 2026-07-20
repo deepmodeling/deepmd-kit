@@ -372,9 +372,7 @@ def _build_model(model_kind: str) -> torch.nn.Module:
     torch.nn.Module
         The constructed pt_expt model, on CPU, in eval mode.
     """
-    from deepmd.pt_expt.model.get_model import (
-        get_model as get_pt_expt_model,
-    )
+    from deepmd.pt_expt.model.get_model import get_model as get_pt_expt_model
 
     if model_kind == "dpa4":
         from ..model.test_dpa4_export import (

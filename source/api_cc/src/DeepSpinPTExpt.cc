@@ -340,10 +340,17 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph(
   // the energy graph ABI's optional charge_spin tail).
   deepmd::check_graph_aparam_flat(aparam, daparam,
                                   "DeepSpinPTExpt::run_model_graph");
-  std::vector<torch::Tensor> inputs = {
-      atype,        n_node,        n_local,           edge_index,
-      edge_vec,     edge_mask,     destination_order, destination_row_ptr,
-      source_order, source_row_ptr, spin};
+  std::vector<torch::Tensor> inputs = {atype,
+                                       n_node,
+                                       n_local,
+                                       edge_index,
+                                       edge_vec,
+                                       edge_mask,
+                                       destination_order,
+                                       destination_row_ptr,
+                                       source_order,
+                                       source_row_ptr,
+                                       spin};
   if (dfparam > 0) {
     inputs.push_back(fparam);
   }
@@ -892,8 +899,8 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         node_atype, n_node_tensor, n_node_tensor, graph_pack.edge_index,
         graph_pack.edge_vec, graph_pack.edge_mask, graph_pack.destination_order,
         graph_pack.destination_row_ptr, graph_pack.source_order,
-        graph_pack.source_row_ptr, spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}),
-        fparam_tensor,
+        graph_pack.source_row_ptr,
+        spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}), fparam_tensor,
         deepmd::extend_graph_aparam(aparam_tensor, nloc, nloc, daparam));
   } else if (lower_input_is_edge_) {
     // Native spin edge path (single-rank): recompute the model-cutoff edge
@@ -925,7 +932,7 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     // (N == nloc, ghosts folded onto owners), guaranteed by the multi-rank
     // fail-fast earlier in this function.
     deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall_real,
-                                                    atomic);
+                                                   atomic);
   }
 
   // Extract energy
@@ -1284,8 +1291,8 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         graph_tensors.edge_index, graph_tensors.edge_vec,
         graph_tensors.edge_mask, graph_tensors.destination_order,
         graph_tensors.destination_row_ptr, graph_tensors.source_order,
-        graph_tensors.source_row_ptr, spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}),
-        fparam_tensor,
+        graph_tensors.source_row_ptr,
+        spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}), fparam_tensor,
         deepmd::extend_graph_aparam(aparam_tensor, natoms, natoms, daparam));
   } else {
     flat_outputs =
@@ -1302,7 +1309,7 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     // internal-key layout used below.  nloc == N (graph node count); the
     // standalone (build_nlist) path is always single-rank.
     deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall,
-                                                    atomic);
+                                                   atomic);
   }
 
   // 7. Extract energy

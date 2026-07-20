@@ -54,9 +54,7 @@ from deepmd.pt_expt.model.get_model import (
 from deepmd.pt_expt.model.model import (
     BaseModel,
 )
-from deepmd.pt_expt.utils import (
-    env as _env,
-)
+from deepmd.pt_expt.utils import env as _env
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
     build_synthetic_graph_inputs,

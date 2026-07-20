@@ -883,8 +883,7 @@ inline void remap_graph_spin_outputs_to_dense_keys(
   remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
                                     /*single_rank=*/true);
   const auto& force_mag_pub = output_map.at("force_mag");  // (N, 3)
-  auto force_mag_full =
-      torch::zeros({nf, nall, 1, 3}, force_mag_pub.options());
+  auto force_mag_full = torch::zeros({nf, nall, 1, 3}, force_mag_pub.options());
   force_mag_full.index_put_({0, Slice(0, nloc), 0}, force_mag_pub);
   output_map["energy_derv_r_mag"] = force_mag_full;
 }
