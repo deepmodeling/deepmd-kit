@@ -2,21 +2,22 @@
 """Launch-configuration resolution for the DPA1 fused environment convolutions.
 
 Two memory-bound kernels are configured here, each reducing to a block width
-and a warp count keyed by the channel width ``ng`` and the resnet width ``H1``:
+and a warp count:
 
 - ``se_conv`` (strip / dense, node-parallel): one program owns a node and
   streams its neighbors, so the launch is ``(BLOCK_N, num_warps)`` -- neighbors
   per block. ``BLOCK_N`` bounds the live ``(BLOCK_N, channels)`` register
   footprint of the backward pass; oversized blocks spill and collapse
-  throughput, so the universal default is kept small.
+  throughput, so the universal default is kept small. Its key is
+  ``(ng, H1, basis_dim)`` because the 4/9/16/25-row moments have different
+  register pressure.
 - ``edge_conv`` (concat / graph, edge-parallel): one program owns a block of
   edges and scatters them into their center nodes, so the launch is
   ``(BLOCK_E, num_warps)`` -- edges per block. ``BLOCK_E`` bounds the live
   ``(BLOCK_E, channels)`` register footprint of both passes.
 
-The optimum depends on ``(ng, H1)`` (the register footprint) but is insensitive
-to the neighbor / edge count, which only sets the loop trip count or the grid
-size. Table keys are therefore ``(ng, H1)``.
+The optimum is insensitive to the neighbor / edge count, which only sets the
+loop trip count or grid size.
 
 Level policy (see :func:`deepmd.kernels.utils.triton_infer_level`):
 
@@ -46,17 +47,23 @@ DEFAULT_CONFIG: Config = (16, 4)
 # edge_conv (edge-parallel) universal default.
 EDGE_DEFAULT_CONFIG: Config = (8, 4)
 
-# Per-GPU built-in tables keyed by (ng, H1). Values are the fastest spill-free
-# forward+backward configuration produced by the fp32 sweep in
-# :mod:`.sweep_tile_configs` for that channel width.
-_CONV_BUILTIN: dict[str, dict[tuple[int, int], Config]] = {
+# Per-GPU built-in tables keyed by (ng, H1, basis_dim). Values are the fastest
+# spill-free forward+backward configuration produced by the fp32 sweep in
+# :mod:`.sweep_tile_configs` for that shape.
+_CONV_BUILTIN: dict[str, dict[tuple[int, int, int], Config]] = {
     "NVIDIA H20": {
-        (32, 16): (32, 2),
-        (64, 32): (16, 2),
-        (128, 64): (16, 2),
-        (256, 128): (16, 4),
-        (100, 50): (16, 2),
-        (200, 100): (16, 4),
+        (32, 16, 4): (32, 2),
+        (64, 32, 4): (16, 2),
+        (128, 64, 4): (16, 2),
+        (256, 128, 4): (16, 4),
+        (100, 50, 4): (16, 2),
+        (200, 100, 4): (16, 4),
+        (32, 16, 9): (64, 2),
+        (64, 32, 9): (32, 2),
+        (128, 64, 9): (16, 2),
+        (256, 128, 9): (16, 4),
+        (100, 50, 9): (16, 2),
+        (200, 100, 9): (16, 4),
     },
 }
 _EDGE_BUILTIN: dict[str, dict[tuple[int, int], Config]] = {
@@ -77,7 +84,7 @@ _EDGE_BUILTIN: dict[str, dict[tuple[int, int], Config]] = {
 # shape keys the built-in tables do not cover. Process-local: the freeze traces
 # on the target GPU, so these are baked into the exported ``.pt2``; they never
 # persist across processes. Same schema as the built-in tables.
-_CONV_RUNTIME: dict[str, dict[tuple[int, int], Config]] = {}
+_CONV_RUNTIME: dict[str, dict[tuple[int, int, int], Config]] = {}
 _EDGE_RUNTIME: dict[str, dict[tuple[int, int], Config]] = {}
 
 
@@ -123,27 +130,45 @@ def _resolve(
 
 
 # --- se_conv (node-parallel) ------------------------------------------------
-def register_conv_config(device_name: str, ng: int, h1: int, config: Config) -> None:
-    """Register a freshly swept ``se_conv`` launch for ``(ng, h1)``.
+def register_conv_config(
+    device_name: str,
+    ng: int,
+    h1: int,
+    basis_dim: int,
+    config: Config,
+) -> None:
+    """Register a freshly swept ``se_conv`` launch for ``(ng, h1, basis_dim)``.
 
     Used by the freeze-time autotuner so a subsequent :func:`resolve_conv_config`
     (made while tracing) bakes the tuned launch into the exported artifact.
     """
-    _register(_CONV_RUNTIME, device_name, ng, h1, config)
+    key = (int(ng), int(h1), int(basis_dim))
+    _CONV_RUNTIME.setdefault(device_name, {})[key] = config
 
 
-def has_conv_config(ng: int, h1: int) -> bool:
-    """Whether a tuned ``se_conv`` entry (built-in or freeze-time) covers ``(ng, h1)``."""
-    return _covered(_CONV_BUILTIN, _CONV_RUNTIME, ng, h1)
+def has_conv_config(ng: int, h1: int, basis_dim: int) -> bool:
+    """Whether a tuned ``se_conv`` entry covers ``(ng, h1, basis_dim)``."""
+    if not torch.cuda.is_available():
+        return False
+    name = torch.cuda.get_device_name()
+    key = (int(ng), int(h1), int(basis_dim))
+    return key in _CONV_RUNTIME.get(name, {}) or key in _CONV_BUILTIN.get(name, {})
 
 
-def resolve_conv_config(ng: int, h1: int, level: int) -> Config:
+def resolve_conv_config(ng: int, h1: int, basis_dim: int, level: int) -> Config:
     """Resolve the ``(BLOCK_N, num_warps)`` for a fused ``se_conv`` launch.
 
     Level 1 forces the universal default; level ``>= 2`` consults the
     freeze-time and per-GPU tables with fallback. ``BLOCK_N`` is a power of two.
     """
-    return _resolve(_CONV_BUILTIN, _CONV_RUNTIME, DEFAULT_CONFIG, ng, h1, level)
+    if level < 2 or not torch.cuda.is_available():
+        return DEFAULT_CONFIG
+    name = torch.cuda.get_device_name()
+    key = (int(ng), int(h1), int(basis_dim))
+    runtime_dev = _CONV_RUNTIME.get(name, {})
+    if key in runtime_dev:
+        return runtime_dev[key]
+    return _CONV_BUILTIN.get(name, {}).get(key, DEFAULT_CONFIG)
 
 
 # --- edge_conv (edge-parallel) ----------------------------------------------

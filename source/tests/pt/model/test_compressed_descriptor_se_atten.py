@@ -45,10 +45,42 @@ def eval_pt_descriptor(
     return result
 
 
-@parameterized(("float32", "float64"), (True, False))
+def eval_pt_descriptor_with_gradient(
+    pt_obj: Any,
+    natoms: np.ndarray,
+    coords: np.ndarray,
+    atype: np.ndarray,
+    box: np.ndarray,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    coord = (
+        torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3).requires_grad_(True)
+    )
+    ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
+        coord,
+        torch.from_numpy(atype).to(PT_DEVICE).reshape(1, -1),
+        torch.from_numpy(box).to(PT_DEVICE).reshape(1, 3, 3),
+        pt_obj.get_rcut(),
+    )
+    nlist = build_neighbor_list_pt(
+        ext_coords,
+        ext_atype,
+        natoms[0],
+        pt_obj.get_rcut(),
+        pt_obj.get_sel(),
+        distinguish_types=False,
+    )
+    result = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)[0]
+    (first_derivative,) = torch.autograd.grad(
+        result.sum(),
+        coord,
+    )
+    return result, first_derivative
+
+
+@parameterized(("float32", "float64"), (True, False), (1, 2, 3, 4))
 class TestDescriptorSeAtten(unittest.TestCase):
     def setUp(self) -> None:
-        (self.dtype, self.type_one_side) = self.param
+        (self.dtype, self.type_one_side, self.lmax) = self.param
         if self.dtype == "float32":
             self.atol = 1e-5
         elif self.dtype == "float64":
@@ -104,6 +136,7 @@ class TestDescriptorSeAtten(unittest.TestCase):
             precision=self.dtype,
             type_one_side=self.type_one_side,
             tebd_input_mode="strip",
+            lmax=self.lmax,
         )
 
     def test_compressed_forward(self) -> None:
@@ -131,6 +164,35 @@ class TestDescriptorSeAtten(unittest.TestCase):
             atol=self.atol,
             rtol=self.atol,
         )
+
+    def test_compressed_coordinate_gradient(self) -> None:
+        if self.lmax == 1:
+            self.skipTest("The lmax=1 derivative path is covered by operator tests.")
+
+        dense = eval_pt_descriptor_with_gradient(
+            self.se_atten,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+        self.se_atten.enable_compression(0.5)
+        compressed = eval_pt_descriptor_with_gradient(
+            self.se_atten,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+        derivative_atol = 1e-4 if self.dtype == "float32" else 1e-9
+        for dense_value, compressed_value in zip(dense, compressed, strict=True):
+            torch.testing.assert_close(
+                compressed_value,
+                dense_value,
+                atol=derivative_atol,
+                rtol=derivative_atol,
+            )
 
 
 if __name__ == "__main__":

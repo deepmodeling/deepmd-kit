@@ -110,8 +110,12 @@ inline void locate_xx_se_t(const FPTYPE& lower,
 }
 
 template <typename FPTYPE>
-inline FPTYPE dot(FPTYPE a[4], FPTYPE b[4]) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+inline FPTYPE dot(const FPTYPE* a, const FPTYPE* b, const int size) {
+  FPTYPE result = (FPTYPE)0.;
+  for (int ii = 0; ii < size; ++ii) {
+    result += a[ii] * b[ii];
+  }
+  return result;
 }
 
 template <typename FPTYPE>
@@ -162,26 +166,28 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
                                       const int nloc,
                                       const int nnei,
                                       const int last_layer_size,
-                                      const bool is_sorted) {
+                                      const bool is_sorted,
+                                      const int ndescrpt) {
+  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   bool enable_se_atten = two_embed != nullptr;
-  memset(out, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  memset(out, 0, sizeof(FPTYPE) * nloc * ndescrpt * last_layer_size);
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];
   const FPTYPE stride0 = table_info[3];
   const FPTYPE stride1 = table_info[4];
 // for every atom, execute a small manual gemm ~
-// FPTYPE * res = new FPTYPE[4 * last_layer_size];
+// FPTYPE * res = new FPTYPE[ndescrpt * last_layer_size];
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
-    FPTYPE ll[4] = {0};
+    FPTYPE ll[25] = {0};
     FPTYPE ago = em_x[ii * nnei + nnei - 1];
     bool unloop = false;
     for (int jj = 0; jj < nnei; jj++) {
-      ll[0] = em[ii * nnei * 4 + jj * 4 + 0];
-      ll[1] = em[ii * nnei * 4 + jj * 4 + 1];
-      ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
-      ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
+      const int em_base = ii * nnei * ndescrpt + jj * ndescrpt;
+      for (int mm = 0; mm < ndescrpt; ++mm) {
+        ll[mm] = em[em_base + mm];
+      }
       FPTYPE xx = em_x[ii * nnei + jj];
       if (ago == xx && ll[1] == 0. && ll[2] == 0. && ll[3] == 0. && is_sorted) {
         unloop = true;
@@ -205,24 +211,10 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
           var = var * t + var;
         }
 
-        if (unloop) {
-          out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              (nnei - jj) * var * ll[0];
-          out[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              (nnei - jj) * var * ll[1];
-          out[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              (nnei - jj) * var * ll[2];
-          out[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              (nnei - jj) * var * ll[3];
-        } else {
-          out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              var * ll[0];
-          out[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              var * ll[1];
-          out[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              var * ll[2];
-          out[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              var * ll[3];
+        const FPTYPE scale = unloop ? (nnei - jj) * var : var;
+        for (int mm = 0; mm < ndescrpt; ++mm) {
+          out[ii * last_layer_size * ndescrpt + mm * last_layer_size + kk] +=
+              scale * ll[mm];
         }
       }
       if (unloop) {
@@ -245,10 +237,12 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                            const int nloc,
                                            const int nnei,
                                            const int last_layer_size,
-                                           const bool is_sorted) {
+                                           const bool is_sorted,
+                                           const int ndescrpt) {
+  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   bool enable_se_atten = two_embed != nullptr;
   memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
-  memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4);
+  memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * ndescrpt);
   if (enable_se_atten) {
     memset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size);
   }
@@ -258,19 +252,19 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
   FPTYPE const stride0 = table_info[3];
   FPTYPE const stride1 = table_info[4];
 // for every atom, execute a small gemm~
-// FPTYPE * res = new FPTYPE[4 * last_layer_size];
+// FPTYPE * res = new FPTYPE[ndescrpt * last_layer_size];
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
-    FPTYPE ll[4];
-    FPTYPE rr[4];
+    FPTYPE ll[25] = {0};
+    FPTYPE rr[25] = {0};
     FPTYPE ago = em_x[ii * nnei + nnei - 1];
     bool unloop = false;
     for (int jj = 0; jj < nnei; jj++) {
       // construct the dy/dx
-      ll[0] = em[ii * nnei * 4 + jj * 4 + 0];
-      ll[1] = em[ii * nnei * 4 + jj * 4 + 1];
-      ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
-      ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
+      const int em_base = ii * nnei * ndescrpt + jj * ndescrpt;
+      for (int mm = 0; mm < ndescrpt; ++mm) {
+        ll[mm] = em[em_base + mm];
+      }
       FPTYPE xx = em_x[ii * nnei + jj];
       if (ago == xx && ll[1] == 0. && ll[2] == 0. && ll[3] == 0. && is_sorted) {
         unloop = true;
@@ -281,10 +275,10 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                 extrapolate_delta);
       FPTYPE grad = (FPTYPE)0.0;
       for (int kk = 0; kk < last_layer_size; kk++) {
-        rr[0] = dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk];
-        rr[1] = dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk];
-        rr[2] = dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk];
-        rr[3] = dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk];
+        for (int mm = 0; mm < ndescrpt; ++mm) {
+          rr[mm] =
+              dy[ii * last_layer_size * ndescrpt + mm * last_layer_size + kk];
+        }
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
         FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
         FPTYPE a2 = table[table_idx * last_layer_size * 6 + 6 * kk + 2];
@@ -302,13 +296,12 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
           g += t * g;
         }
 
-        FPTYPE dotllrr = dot(ll, rr);
+        FPTYPE dotllrr = dot(ll, rr, ndescrpt);
         if (unloop) {
           grad += g * dotllrr * (nnei - jj);
-          dy_dem[ii * nnei * 4 + jj * 4 + 0] += res * rr[0] * (nnei - jj);
-          dy_dem[ii * nnei * 4 + jj * 4 + 1] += res * rr[1] * (nnei - jj);
-          dy_dem[ii * nnei * 4 + jj * 4 + 2] += res * rr[2] * (nnei - jj);
-          dy_dem[ii * nnei * 4 + jj * 4 + 3] += res * rr[3] * (nnei - jj);
+          for (int mm = 0; mm < ndescrpt; ++mm) {
+            dy_dem[em_base + mm] += res * rr[mm] * (nnei - jj);
+          }
           if (enable_se_atten) {
             // fill from jj to nnei
             for (int jj2 = jj; jj2 < nnei; jj2++) {
@@ -318,10 +311,9 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
           }
         } else {
           grad += g * dotllrr;
-          dy_dem[ii * nnei * 4 + jj * 4 + 0] += res * rr[0];
-          dy_dem[ii * nnei * 4 + jj * 4 + 1] += res * rr[1];
-          dy_dem[ii * nnei * 4 + jj * 4 + 2] += res * rr[2];
-          dy_dem[ii * nnei * 4 + jj * 4 + 3] += res * rr[3];
+          for (int mm = 0; mm < ndescrpt; ++mm) {
+            dy_dem[em_base + mm] += res * rr[mm];
+          }
           if (enable_se_atten) {
             dy_dtwo[ii * nnei * last_layer_size + jj * last_layer_size + kk] +=
                 resold * dotllrr;
@@ -349,31 +341,30 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const int nloc,
                                                 const int nnei,
                                                 const int last_layer_size,
-                                                const bool is_sorted) {
+                                                const bool is_sorted,
+                                                const int ndescrpt) {
+  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   bool enable_se_atten = two_embed != nullptr;
-  memset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  memset(dz_dy, 0, sizeof(FPTYPE) * nloc * ndescrpt * last_layer_size);
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];
   const FPTYPE stride0 = table_info[3];
   const FPTYPE stride1 = table_info[4];
 // for every atom, execute a small manual gemm ~
-// FPTYPE * res = new FPTYPE[4 * last_layer_size];
+// FPTYPE * res = new FPTYPE[ndescrpt * last_layer_size];
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
-    FPTYPE ll[4];
-    FPTYPE hh[4];
+    FPTYPE ll[25] = {0};
+    FPTYPE hh[25] = {0};
     FPTYPE ago = em_x[ii * nnei + nnei - 1];
     bool unloop = false;
     for (int jj = 0; jj < nnei; jj++) {
-      ll[0] = em[ii * nnei * 4 + jj * 4 + 0];
-      ll[1] = em[ii * nnei * 4 + jj * 4 + 1];
-      ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
-      ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
-      hh[0] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 0];
-      hh[1] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 1];
-      hh[2] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 2];
-      hh[3] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 3];
+      const int em_base = ii * nnei * ndescrpt + jj * ndescrpt;
+      for (int mm = 0; mm < ndescrpt; ++mm) {
+        ll[mm] = em[em_base + mm];
+        hh[mm] = dz_dy_dem[em_base + mm];
+      }
       FPTYPE xx = em_x[ii * nnei + jj];
       FPTYPE dz_xx = dz_dy_dem_x[ii * nnei + jj];
       if (ago == xx && ll[1] == 0. && ll[2] == 0. && ll[3] == 0. && is_sorted) {
@@ -426,28 +417,10 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
          * If `enable_se_atten` is true, `var` will be `var * t + var`, and
          * `var'` will be `(var_grad * t + var_grad) * dz_xx`.
          */
-        if (unloop) {
-          dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              (nnei - jj) *
-              (var * hh[0] + (dz_xx * var_grad + two_grad) * ll[0]);
-          dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              (nnei - jj) *
-              (var * hh[1] + (dz_xx * var_grad + two_grad) * ll[1]);
-          dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              (nnei - jj) *
-              (var * hh[2] + (dz_xx * var_grad + two_grad) * ll[2]);
-          dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              (nnei - jj) *
-              (var * hh[3] + (dz_xx * var_grad + two_grad) * ll[3]);
-        } else {
-          dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              var * hh[0] + (dz_xx * var_grad + two_grad) * ll[0];
-          dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              var * hh[1] + (dz_xx * var_grad + two_grad) * ll[1];
-          dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              var * hh[2] + (dz_xx * var_grad + two_grad) * ll[2];
-          dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              var * hh[3] + (dz_xx * var_grad + two_grad) * ll[3];
+        const FPTYPE scale = unloop ? (FPTYPE)(nnei - jj) : (FPTYPE)1.;
+        for (int mm = 0; mm < ndescrpt; ++mm) {
+          dz_dy[ii * last_layer_size * ndescrpt + mm * last_layer_size + kk] +=
+              scale * (var * hh[mm] + (dz_xx * var_grad + two_grad) * ll[mm]);
         }
       }
       if (unloop) {
@@ -889,7 +862,8 @@ template void deepmd::tabulate_fusion_se_a_cpu<float>(float* out,
                                                       const int nloc,
                                                       const int nnei,
                                                       const int last_layer_size,
-                                                      const bool is_sorted);
+                                                      const bool is_sorted,
+                                                      const int ndescrpt);
 template void deepmd::tabulate_fusion_se_a_cpu<double>(
     double* out,
     const double* table,
@@ -900,7 +874,8 @@ template void deepmd::tabulate_fusion_se_a_cpu<double>(
     const int nloc,
     const int nnei,
     const int last_layer_size,
-    const bool is_sorted);
+    const bool is_sorted,
+    const int ndescrpt);
 template void deepmd::tabulate_fusion_se_a_grad_cpu<float>(
     float* dy_dem_x,
     float* dy_dem,
@@ -914,7 +889,8 @@ template void deepmd::tabulate_fusion_se_a_grad_cpu<float>(
     const int nloc,
     const int nnei,
     const int last_layer_size,
-    const bool is_sorted);
+    const bool is_sorted,
+    const int ndescrpt);
 template void deepmd::tabulate_fusion_se_a_grad_cpu<double>(
     double* dy_dem_x,
     double* dy_dem,
@@ -928,7 +904,8 @@ template void deepmd::tabulate_fusion_se_a_grad_cpu<double>(
     const int nloc,
     const int nnei,
     const int last_layer_size,
-    const bool is_sorted);
+    const bool is_sorted,
+    const int ndescrpt);
 template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     float* dz_dy,
     const float* table,
@@ -942,7 +919,8 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     const int nloc,
     const int nnei,
     const int last_layer_size,
-    const bool is_sorted);
+    const bool is_sorted,
+    const int ndescrpt);
 template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     double* dz_dy,
     const double* table,
@@ -956,7 +934,8 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     const int nloc,
     const int nnei,
     const int last_layer_size,
-    const bool is_sorted);
+    const bool is_sorted,
+    const int ndescrpt);
 
 template void deepmd::tabulate_fusion_se_t_cpu<float>(
     float* out,

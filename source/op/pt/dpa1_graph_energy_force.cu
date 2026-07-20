@@ -43,6 +43,7 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
                         torch::Tensor type_embedding,
                         torch::Tensor davg,
                         torch::Tensor dstd,
+                        torch::Tensor degree_gain,
                         torch::Tensor w1,
                         torch::Tensor b1,
                         torch::Tensor idt1,
@@ -64,6 +65,7 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
                         double rcut_smth,
                         double protection,
                         double nnei,
+                        int64_t basis_dim,
                         std::vector<torch::Tensor> fit_ws,
                         std::vector<torch::Tensor> fit_bs,
                         std::vector<torch::Tensor> fit_idts,
@@ -88,10 +90,10 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
 
   // === Step 1. Descriptor forward: edge stream -> (N, nd) descriptor. ===
   auto desc = dpa1_graph_descriptor(
-      edge_vec_f, edge_index, edge_mask, atype, type_embedding, davg, dstd, w1,
-      b1, idt1, w2, b2, idt2, w3, b3, idt3, gate_table, act, type_one_side,
-      concat_tebd, /*write_rotation=*/0, smooth, axis, resnet2, resnet3, rcut,
-      rcut_smth, protection, nnei);
+      edge_vec_f, edge_index, edge_mask, atype, type_embedding, davg, dstd,
+      degree_gain, w1, b1, idt1, w2, b2, idt2, w3, b3, idt3, gate_table, act,
+      type_one_side, concat_tebd, /*write_rotation=*/0, smooth, axis, resnet2,
+      resnet3, rcut, rcut_smth, protection, nnei, basis_dim);
   const torch::Tensor& grrg = std::get<0>(desc);
   const torch::Tensor& gr = std::get<2>(desc);
   const torch::Tensor& edge_order = std::get<3>(desc);
@@ -122,9 +124,9 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   std::get<1>(fit) = torch::Tensor();
   auto g_e = dpa1_graph_descriptor_backward(
       d_grrg, std::nullopt, gr, edge_order, pair_table, pre2_saved, g_saved,
-      edge_vec_f, edge_index, edge_mask, atype, davg, dstd, w1, b1, idt1, w2,
-      b2, idt2, w3, b3, idt3, gate_table, act, type_one_side, smooth, axis,
-      resnet2, resnet3, rcut, rcut_smth, protection, nnei);
+      edge_vec_f, edge_index, edge_mask, atype, davg, dstd, degree_gain, w1, b1,
+      idt1, w2, b2, idt2, w3, b3, idt3, gate_table, act, type_one_side, smooth,
+      axis, resnet2, resnet3, rcut, rcut_smth, protection, nnei);
 
   // === Step 5. Scatter dE/d(edge_vec) into force / virial / atom virial. ===
   // g_e and edge_vec_f are already in the compute precision; the per-node force
@@ -143,12 +145,14 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "edge_mask, Tensor destination_order, Tensor destination_row_ptr, "
       "Tensor source_order, Tensor source_row_ptr, Tensor atype, Tensor "
       "n_node, Tensor ownership, Tensor type_embedding, "
-      "Tensor davg, Tensor dstd, Tensor w1, Tensor b1, Tensor idt1, Tensor w2, "
+      "Tensor davg, Tensor dstd, Tensor degree_gain, Tensor w1, Tensor b1, "
+      "Tensor idt1, Tensor w2, "
       "Tensor "
       "b2, Tensor idt2, Tensor w3, Tensor b3, Tensor idt3, Tensor gate_table, "
       "int act, int type_one_side, int concat_tebd, int smooth, int axis, int "
       "resnet2, int resnet3, float rcut, float rcut_smth, float protection, "
-      "float nnei, Tensor[] fit_ws, Tensor[] fit_bs, Tensor[] fit_idts, int[] "
+      "float nnei, int basis_dim, Tensor[] fit_ws, Tensor[] fit_bs, Tensor[] "
+      "fit_idts, int[] "
       "fit_resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, int "
       "fit_act, SymInt node_capacity, bool do_atomic_virial) -> (Tensor, "
       "Tensor, Tensor, Tensor, Tensor)");

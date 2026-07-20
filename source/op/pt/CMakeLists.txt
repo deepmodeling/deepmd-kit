@@ -12,6 +12,9 @@ option(
 # only within its own subtree, which does not cover this target.
 if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  option(DEEPMD_ENABLE_DPA1_HIGH_LMAX
+         "Instantiate experimental DPA1 CUDA kernels for lmax greater than one"
+         OFF)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # CUDA 12.9 CCCL fails to compile CUB/Thrust with -arch=all.
     if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9" AND CUDAToolkit_VERSION
@@ -56,7 +59,11 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # libtorch headers require C++17; the CUDA sources must match.
   set_target_properties(deepmd_op_pt PROPERTIES CUDA_STANDARD 17
                                                 CUDA_STANDARD_REQUIRED ON)
-  set_source_files_properties(dpa1_graph_compress.cu
+  if(DEEPMD_ENABLE_DPA1_HIGH_LMAX)
+    target_compile_definitions(deepmd_op_pt
+                               PRIVATE DEEPMD_ENABLE_DPA1_HIGH_LMAX=1)
+  endif()
+  set_source_files_properties(dpa1_graph_compress.cu dpa4c_graph_compress.cu
                               PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})

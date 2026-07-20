@@ -1230,6 +1230,7 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
+    doc_lmax = "Maximum angular degree of the aggregated moment basis. The PyTorch backend supports integer values from 1 through 4."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
@@ -1259,6 +1260,12 @@ def descrpt_se_atten_common_args() -> list[Argument]:
             default=4,
             alias=["n_axis_neuron"],
             doc=doc_axis_neuron,
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            doc=doc_only_pt_supported + doc_lmax,
         ),
         Argument(
             "activation_function",

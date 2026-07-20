@@ -26,8 +26,19 @@
 #include <cmath>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 
 #include "dpa1_graph_compress_tuning.h"
+#include "dpa1_moment_basis.cuh"
+
+#ifndef DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#define DEEPMD_ENABLE_DPA1_HIGH_LMAX 0
+#endif
+
+// The lmax=2/3/4 compressed kernels are retained below as an experimental
+// implementation, but their template instances are disabled by default.
+// Current DPA1 production artifacts use lmax=1; the CMake option can restore
+// the higher-degree binary specializations without recovering deleted code.
 
 namespace {
 
@@ -175,12 +186,10 @@ __device__ __forceinline__ float2 evaluate_table_backward(
   return make_float2(value + derivative * location.extrapolation, derivative);
 }
 
+template <int BasisDim>
 struct EdgeEnvironment {
   float radial;
-  float r0;
-  float r1;
-  float r2;
-  float r3;
+  float basis[BasisDim];
   float switch_factor;
   float x;
   float y;
@@ -189,22 +198,22 @@ struct EdgeEnvironment {
   int pair_index;
 };
 
-template <typename index_t>
-__device__ __forceinline__ EdgeEnvironment
-load_environment(long edge,
-                 int center_type,
-                 int ntypes,
-                 bool one_side,
-                 float rcut,
-                 float rcut_smooth,
-                 float protection,
-                 float inverse_neighbors,
-                 const float* edge_vec,
-                 const index_t* edge_index,
-                 const long* atype,
-                 const float* average,
-                 const float* inverse_stddev) {
-  EdgeEnvironment environment;
+template <int BasisDim, typename index_t>
+__device__ __forceinline__ EdgeEnvironment<BasisDim> load_environment(
+    long edge,
+    int center_type,
+    int ntypes,
+    bool one_side,
+    float rcut,
+    float rcut_smooth,
+    float protection,
+    float inverse_neighbors,
+    const float* edge_vec,
+    const index_t* edge_index,
+    const long* atype,
+    const float* average,
+    const float* inverse_stddev) {
+  EdgeEnvironment<BasisDim> environment;
   const long source = static_cast<long>(edge_index[edge]);
   const int neighbor_type = static_cast<int>(atype[source]);
   environment.x = edge_vec[edge * 3 + 0];
@@ -227,25 +236,44 @@ load_environment(long edge,
   environment.radial =
       (environment.switch_factor * inverse_radius - center_average[0]) *
       center_inverse_stddev[0];
-  environment.r0 = environment.radial * inverse_neighbors;
-  environment.r1 = (environment.x * radial_scale - center_average[1]) *
-                   center_inverse_stddev[1] * inverse_neighbors;
-  environment.r2 = (environment.y * radial_scale - center_average[2]) *
-                   center_inverse_stddev[2] * inverse_neighbors;
-  environment.r3 = (environment.z * radial_scale - center_average[3]) *
-                   center_inverse_stddev[3] * inverse_neighbors;
+  environment.basis[0] = environment.radial * inverse_neighbors;
+  environment.basis[1] = (environment.x * radial_scale - center_average[1]) *
+                         center_inverse_stddev[1] * inverse_neighbors;
+  environment.basis[2] = (environment.y * radial_scale - center_average[2]) *
+                         center_inverse_stddev[2] * inverse_neighbors;
+  environment.basis[3] = (environment.z * radial_scale - center_average[3]) *
+                         center_inverse_stddev[3] * inverse_neighbors;
+  if constexpr (BasisDim > 4) {
+    const float inverse_length =
+        environment.radius > 0.0f ? __fdividef(1.0f, environment.radius) : 0.0f;
+    const float ux = environment.x * inverse_length;
+    const float uy = environment.y * inverse_length;
+    const float uz = environment.z * inverse_length;
+    const float radial = environment.radius > 0.0f
+                             ? environment.switch_factor * inverse_radius *
+                                   center_inverse_stddev[0] * inverse_neighbors
+                             : 0.0f;
+    if constexpr (BasisDim == 9) {
+      deepmd::dpa1::fill_degree_two_basis<BasisDim>(environment.basis, ux, uy,
+                                                    uz, radial);
+    } else {
+      deepmd::dpa1::fill_angular_basis<BasisDim>(environment.basis, ux, uy, uz,
+                                                 radial);
+    }
+  }
   environment.pair_index =
       one_side ? neighbor_type : center_type * ntypes + neighbor_type;
   return environment;
 }
 
-__device__ __forceinline__ EdgeEnvironment
-broadcast_environment(EdgeEnvironment value, int source_lane, unsigned mask) {
+template <int BasisDim>
+__device__ __forceinline__ EdgeEnvironment<BasisDim> broadcast_environment(
+    EdgeEnvironment<BasisDim> value, int source_lane, unsigned mask) {
   value.radial = __shfl_sync(mask, value.radial, source_lane);
-  value.r0 = __shfl_sync(mask, value.r0, source_lane);
-  value.r1 = __shfl_sync(mask, value.r1, source_lane);
-  value.r2 = __shfl_sync(mask, value.r2, source_lane);
-  value.r3 = __shfl_sync(mask, value.r3, source_lane);
+#pragma unroll
+  for (int k = 0; k < BasisDim; ++k) {
+    value.basis[k] = __shfl_sync(mask, value.basis[k], source_lane);
+  }
   value.switch_factor = __shfl_sync(mask, value.switch_factor, source_lane);
   value.x = __shfl_sync(mask, value.x, source_lane);
   value.y = __shfl_sync(mask, value.y, source_lane);
@@ -264,13 +292,11 @@ __device__ __forceinline__ TableLocation broadcast_location(TableLocation value,
   return value;
 }
 
+template <int BasisDim>
 __device__ __forceinline__ void store_edge_gradient(
     long edge,
-    const EdgeEnvironment& environment,
-    float partial0,
-    float partial1,
-    float partial2,
-    float partial3,
+    const EdgeEnvironment<BasisDim>& environment,
+    const float (&partial_basis)[BasisDim],
     float partial_radial,
     float partial_switch,
     float inverse_neighbors,
@@ -289,10 +315,13 @@ __device__ __forceinline__ void store_edge_gradient(
   const float switch_gradient =
       switch_derivative(environment.radius, rcut_smooth, rcut);
   const float gradient_radial =
-      (partial0 * inverse_neighbors + partial_radial) * inverse_stddev0;
-  const float gradient_x = partial1 * inverse_neighbors * inverse_stddev1;
-  const float gradient_y = partial2 * inverse_neighbors * inverse_stddev2;
-  const float gradient_z = partial3 * inverse_neighbors * inverse_stddev3;
+      (partial_basis[0] * inverse_neighbors + partial_radial) * inverse_stddev0;
+  const float gradient_x =
+      partial_basis[1] * inverse_neighbors * inverse_stddev1;
+  const float gradient_y =
+      partial_basis[2] * inverse_neighbors * inverse_stddev2;
+  const float gradient_z =
+      partial_basis[3] * inverse_neighbors * inverse_stddev3;
   const float directional = gradient_x * environment.x +
                             gradient_y * environment.y +
                             gradient_z * environment.z;
@@ -306,12 +335,25 @@ __device__ __forceinline__ void store_edge_gradient(
       inverse_length;
   const float vector_scale =
       environment.switch_factor * inverse_denominator * inverse_denominator;
-  edge_gradient[edge * 3 + 0] =
-      coefficient * environment.x + vector_scale * gradient_x;
-  edge_gradient[edge * 3 + 1] =
-      coefficient * environment.y + vector_scale * gradient_y;
-  edge_gradient[edge * 3 + 2] =
-      coefficient * environment.z + vector_scale * gradient_z;
+  float output_x = coefficient * environment.x + vector_scale * gradient_x;
+  float output_y = coefficient * environment.y + vector_scale * gradient_y;
+  float output_z = coefficient * environment.z + vector_scale * gradient_z;
+  if constexpr (BasisDim == 9) {
+    deepmd::dpa1::add_degree_two_edge_gradient<BasisDim>(
+        partial_basis, inverse_neighbors, environment.x, environment.y,
+        environment.z, environment.radius, inverse_denominator, inverse_stddev0,
+        environment.switch_factor, switch_gradient, output_x, output_y,
+        output_z);
+  } else if constexpr (BasisDim > 9) {
+    deepmd::dpa1::add_angular_edge_gradient<BasisDim>(
+        partial_basis, inverse_neighbors, environment.x, environment.y,
+        environment.z, environment.radius, inverse_denominator, inverse_stddev0,
+        environment.switch_factor, switch_gradient, output_x, output_y,
+        output_z);
+  }
+  edge_gradient[edge * 3 + 0] = output_x;
+  edge_gradient[edge * 3 + 1] = output_y;
+  edge_gradient[edge * 3 + 2] = output_z;
 }
 
 template <int Width>
@@ -341,6 +383,7 @@ __device__ __forceinline__ bool edge_is_active(long edge,
 }
 
 template <int Width,
+          int BasisDim,
           bool Canonical,
           bool Masked,
           typename index_t,
@@ -375,6 +418,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     const float* __restrict__ inverse_stddev,
     const float* __restrict__ table,
     const float* __restrict__ gate_table,
+    const float* __restrict__ degree_gain_raw,
     float* __restrict__ descriptor,
     float* __restrict__ rotation,
     float* __restrict__ moment) {
@@ -388,10 +432,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     return;
   }
 
-  float accumulator0[kGroups] = {};
-  float accumulator1[kGroups] = {};
-  float accumulator2[kGroups] = {};
-  float accumulator3[kGroups] = {};
+  float accumulator[BasisDim][kGroups] = {};
   int center_type = lane == 0 ? static_cast<int>(atype[node]) : 0;
   center_type = __shfl_sync(kWarpMask, center_type, 0);
   const long begin = destination_row_ptr[node];
@@ -408,17 +449,18 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
       if (!edge_is_active<Masked>(edge, edge_mask)) {
         continue;
       }
-      EdgeEnvironment environment{};
+      EdgeEnvironment<BasisDim> environment{};
       TableLocation location{};
       if (half_lane == 0) {
-        environment = load_environment(edge, center_type, ntypes, one_side,
-                                       rcut, rcut_smooth, protection,
-                                       inverse_neighbors, edge_vec, edge_index,
-                                       atype, average, inverse_stddev);
+        environment = load_environment<BasisDim>(
+            edge, center_type, ntypes, one_side, rcut, rcut_smooth, protection,
+            inverse_neighbors, edge_vec, edge_index, atype, average,
+            inverse_stddev);
         location = locate_table(environment.radial, lower, upper, table_max,
                                 stride0, stride1);
       }
-      environment = broadcast_environment(environment, leader, half_mask);
+      environment =
+          broadcast_environment<BasisDim>(environment, leader, half_mask);
       location = broadcast_location(location, leader, half_mask);
 #pragma unroll
       for (int group = 0; group < kGroups; ++group) {
@@ -431,26 +473,20 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
         const float effective_gate =
             smooth ? gate * environment.switch_factor : gate;
         const float embedding = table_value * (1.0f + effective_gate);
-        accumulator0[group] =
-            fmaf(environment.r0, embedding, accumulator0[group]);
-        accumulator1[group] =
-            fmaf(environment.r1, embedding, accumulator1[group]);
-        accumulator2[group] =
-            fmaf(environment.r2, embedding, accumulator2[group]);
-        accumulator3[group] =
-            fmaf(environment.r3, embedding, accumulator3[group]);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          accumulator[k][group] =
+              fmaf(environment.basis[k], embedding, accumulator[k][group]);
+        }
       }
     }
 #pragma unroll
     for (int group = 0; group < kGroups; ++group) {
-      accumulator0[group] +=
-          __shfl_xor_sync(kWarpMask, accumulator0[group], 16);
-      accumulator1[group] +=
-          __shfl_xor_sync(kWarpMask, accumulator1[group], 16);
-      accumulator2[group] +=
-          __shfl_xor_sync(kWarpMask, accumulator2[group], 16);
-      accumulator3[group] +=
-          __shfl_xor_sync(kWarpMask, accumulator3[group], 16);
+#pragma unroll
+      for (int k = 0; k < BasisDim; ++k) {
+        accumulator[k][group] +=
+            __shfl_xor_sync(kWarpMask, accumulator[k][group], 16);
+      }
     }
   } else {
     for (long position = begin; position < end; ++position) {
@@ -459,17 +495,17 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
       if (!edge_is_active<Masked>(edge, edge_mask)) {
         continue;
       }
-      EdgeEnvironment environment{};
+      EdgeEnvironment<BasisDim> environment{};
       TableLocation location{};
       if (lane == 0) {
-        environment = load_environment(edge, center_type, ntypes, one_side,
-                                       rcut, rcut_smooth, protection,
-                                       inverse_neighbors, edge_vec, edge_index,
-                                       atype, average, inverse_stddev);
+        environment = load_environment<BasisDim>(
+            edge, center_type, ntypes, one_side, rcut, rcut_smooth, protection,
+            inverse_neighbors, edge_vec, edge_index, atype, average,
+            inverse_stddev);
         location = locate_table(environment.radial, lower, upper, table_max,
                                 stride0, stride1);
       }
-      environment = broadcast_environment(environment, 0, kWarpMask);
+      environment = broadcast_environment<BasisDim>(environment, 0, kWarpMask);
       location = broadcast_location(location, 0, kWarpMask);
 #pragma unroll
       for (int group = 0; group < kGroups; ++group) {
@@ -483,29 +519,26 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
           const float effective_gate =
               smooth ? gate * environment.switch_factor : gate;
           const float embedding = table_value * (1.0f + effective_gate);
-          accumulator0[group] =
-              fmaf(environment.r0, embedding, accumulator0[group]);
-          accumulator1[group] =
-              fmaf(environment.r1, embedding, accumulator1[group]);
-          accumulator2[group] =
-              fmaf(environment.r2, embedding, accumulator2[group]);
-          accumulator3[group] =
-              fmaf(environment.r3, embedding, accumulator3[group]);
+#pragma unroll
+          for (int k = 0; k < BasisDim; ++k) {
+            accumulator[k][group] =
+                fmaf(environment.basis[k], embedding, accumulator[k][group]);
+          }
         }
       }
     }
   }
 
-  const long moment_base = node * 4 * Width;
+  const long moment_base = node * BasisDim * Width;
   if constexpr (ChannelPolicy<Width>::use_half_warp) {
     if (lane < 16) {
 #pragma unroll
       for (int group = 0; group < kGroups; ++group) {
         const int channel = group * 16 + lane;
-        moment[moment_base + 0 * Width + channel] = accumulator0[group];
-        moment[moment_base + 1 * Width + channel] = accumulator1[group];
-        moment[moment_base + 2 * Width + channel] = accumulator2[group];
-        moment[moment_base + 3 * Width + channel] = accumulator3[group];
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          moment[moment_base + k * Width + channel] = accumulator[k][group];
+        }
       }
     }
   } else {
@@ -513,10 +546,10 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     for (int group = 0; group < kGroups; ++group) {
       const int channel = group * 32 + lane;
       if (channel < Width) {
-        moment[moment_base + 0 * Width + channel] = accumulator0[group];
-        moment[moment_base + 1 * Width + channel] = accumulator1[group];
-        moment[moment_base + 2 * Width + channel] = accumulator2[group];
-        moment[moment_base + 3 * Width + channel] = accumulator3[group];
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          moment[moment_base + k * Width + channel] = accumulator[k][group];
+        }
       }
     }
   }
@@ -529,25 +562,25 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     for (int group = 0; group < kGroups; ++group) {
       const int channel = group * 16 + (lane & 15);
       for (int axis_channel = 0; axis_channel < axis; ++axis_channel) {
-        const float axis0 =
-            __shfl_sync(kWarpMask, accumulator0[0], axis_channel);
-        const float axis1 =
-            __shfl_sync(kWarpMask, accumulator1[0], axis_channel);
-        const float axis2 =
-            __shfl_sync(kWarpMask, accumulator2[0], axis_channel);
-        const float axis3 =
-            __shfl_sync(kWarpMask, accumulator3[0], axis_channel);
+        float value = 0.0f;
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          const float axis_value =
+              __shfl_sync(kWarpMask, accumulator[k][0], axis_channel);
+          const float weight =
+              BasisDim == 4 ? 1.0f
+                            : deepmd::dpa1::degree_weight(k, degree_gain_raw);
+          value = fmaf(accumulator[k][group] * weight, axis_value, value);
+        }
         if (lane < 16) {
-          output[channel * axis + axis_channel] =
-              accumulator0[group] * axis0 + accumulator1[group] * axis1 +
-              accumulator2[group] * axis2 + accumulator3[group] * axis3;
+          output[channel * axis + axis_channel] = value;
         }
       }
       if (write_rotation && lane < 16) {
         float* rotation_row = rotation + (node * Width + channel) * 3;
-        rotation_row[0] = accumulator1[group];
-        rotation_row[1] = accumulator2[group];
-        rotation_row[2] = accumulator3[group];
+        rotation_row[0] = accumulator[1][group];
+        rotation_row[1] = accumulator[2][group];
+        rotation_row[2] = accumulator[3][group];
       }
     }
   } else {
@@ -555,25 +588,25 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
     for (int group = 0; group < kGroups; ++group) {
       const int channel = group * 32 + lane;
       for (int axis_channel = 0; axis_channel < axis; ++axis_channel) {
-        const float axis0 =
-            __shfl_sync(kWarpMask, accumulator0[0], axis_channel);
-        const float axis1 =
-            __shfl_sync(kWarpMask, accumulator1[0], axis_channel);
-        const float axis2 =
-            __shfl_sync(kWarpMask, accumulator2[0], axis_channel);
-        const float axis3 =
-            __shfl_sync(kWarpMask, accumulator3[0], axis_channel);
+        float value = 0.0f;
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          const float axis_value =
+              __shfl_sync(kWarpMask, accumulator[k][0], axis_channel);
+          const float weight =
+              BasisDim == 4 ? 1.0f
+                            : deepmd::dpa1::degree_weight(k, degree_gain_raw);
+          value = fmaf(accumulator[k][group] * weight, axis_value, value);
+        }
         if (channel < Width) {
-          output[channel * axis + axis_channel] =
-              accumulator0[group] * axis0 + accumulator1[group] * axis1 +
-              accumulator2[group] * axis2 + accumulator3[group] * axis3;
+          output[channel * axis + axis_channel] = value;
         }
       }
       if (write_rotation && channel < Width) {
         float* rotation_row = rotation + (node * Width + channel) * 3;
-        rotation_row[0] = accumulator1[group];
-        rotation_row[1] = accumulator2[group];
-        rotation_row[2] = accumulator3[group];
+        rotation_row[0] = accumulator[1][group];
+        rotation_row[1] = accumulator[2][group];
+        rotation_row[2] = accumulator[3][group];
       }
     }
   }
@@ -587,6 +620,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_forward_kernel(
 }
 
 template <int Width,
+          int BasisDim,
           bool Canonical,
           bool Masked,
           typename index_t,
@@ -622,6 +656,7 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     const float* __restrict__ inverse_stddev,
     const float* __restrict__ table,
     const float* __restrict__ gate_table,
+    const float* __restrict__ degree_gain_raw,
     float* __restrict__ edge_gradient) {
   constexpr unsigned kWarpMask = 0xffffffffu;
   constexpr int kGradientGroups = ChannelPolicy<Width>::gradient_groups;
@@ -634,64 +669,59 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     return;
   }
 
-  float gradient0[kGradientGroups] = {};
-  float gradient1[kGradientGroups] = {};
-  float gradient2[kGradientGroups] = {};
-  float gradient3[kGradientGroups] = {};
-  float own_moment0[kGradientGroups] = {};
-  float own_moment1[kGradientGroups] = {};
-  float own_moment2[kGradientGroups] = {};
-  float own_moment3[kGradientGroups] = {};
-  const long moment_base = node * 4 * Width;
+  float gradient[BasisDim][kGradientGroups] = {};
+  const long moment_base = node * BasisDim * Width;
   const float* node_descriptor_gradient =
       descriptor_gradient + node * descriptor_stride;
+  float axis_moment[BasisDim] = {};
+  if (lane < Width) {
+#pragma unroll
+    for (int k = 0; k < BasisDim; ++k) {
+      axis_moment[k] = __ldg(moment + moment_base + k * Width + lane);
+    }
+  }
 
 #pragma unroll
   for (int group = 0; group < kGradientGroups; ++group) {
     const int channel = group * 32 + lane;
-    if (channel < Width) {
-      own_moment0[group] = __ldg(moment + moment_base + 0 * Width + channel);
-      own_moment1[group] = __ldg(moment + moment_base + 1 * Width + channel);
-      own_moment2[group] = __ldg(moment + moment_base + 2 * Width + channel);
-      own_moment3[group] = __ldg(moment + moment_base + 3 * Width + channel);
-    }
     for (int axis_channel = 0; axis_channel < axis; ++axis_channel) {
-      const float axis0 = __shfl_sync(kWarpMask, own_moment0[0], axis_channel);
-      const float axis1 = __shfl_sync(kWarpMask, own_moment1[0], axis_channel);
-      const float axis2 = __shfl_sync(kWarpMask, own_moment2[0], axis_channel);
-      const float axis3 = __shfl_sync(kWarpMask, own_moment3[0], axis_channel);
+      float axis_value[BasisDim];
+#pragma unroll
+      for (int k = 0; k < BasisDim; ++k) {
+        axis_value[k] = __shfl_sync(kWarpMask, axis_moment[k], axis_channel);
+      }
       if (channel < Width) {
         const float value =
             __ldg(node_descriptor_gradient + channel * axis + axis_channel);
-        gradient0[group] = fmaf(value, axis0, gradient0[group]);
-        gradient1[group] = fmaf(value, axis1, gradient1[group]);
-        gradient2[group] = fmaf(value, axis2, gradient2[group]);
-        gradient3[group] = fmaf(value, axis3, gradient3[group]);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          gradient[k][group] = fmaf(value, axis_value[k], gradient[k][group]);
+        }
       }
     }
     if (channel < axis) {
       for (int input = 0; input < Width; ++input) {
         const float value =
             __ldg(node_descriptor_gradient + input * axis + channel);
-        gradient0[group] =
-            fmaf(value, __ldg(moment + moment_base + 0 * Width + input),
-                 gradient0[group]);
-        gradient1[group] =
-            fmaf(value, __ldg(moment + moment_base + 1 * Width + input),
-                 gradient1[group]);
-        gradient2[group] =
-            fmaf(value, __ldg(moment + moment_base + 2 * Width + input),
-                 gradient2[group]);
-        gradient3[group] =
-            fmaf(value, __ldg(moment + moment_base + 3 * Width + input),
-                 gradient3[group]);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          gradient[k][group] =
+              fmaf(value, __ldg(moment + moment_base + k * Width + input),
+                   gradient[k][group]);
+        }
+      }
+    }
+    if constexpr (BasisDim > 4) {
+#pragma unroll
+      for (int k = 0; k < BasisDim; ++k) {
+        gradient[k][group] *= deepmd::dpa1::degree_weight(k, degree_gain_raw);
       }
     }
     if (rotation_gradient != nullptr && channel < Width) {
       const long rotation_offset = (node * Width + channel) * 3;
-      gradient1[group] += __ldg(rotation_gradient + rotation_offset + 0);
-      gradient2[group] += __ldg(rotation_gradient + rotation_offset + 1);
-      gradient3[group] += __ldg(rotation_gradient + rotation_offset + 2);
+      gradient[1][group] += __ldg(rotation_gradient + rotation_offset + 0);
+      gradient[2][group] += __ldg(rotation_gradient + rotation_offset + 1);
+      gradient[3][group] += __ldg(rotation_gradient + rotation_offset + 2);
     }
   }
 
@@ -713,23 +743,17 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
     const int half_lane = lane & 15;
     const int leader = half * 16;
     const unsigned half_mask = half == 0 ? 0x0000ffffu : 0xffff0000u;
-    float edge_gradient0[kEdgeGroups] = {};
-    float edge_gradient1[kEdgeGroups] = {};
-    float edge_gradient2[kEdgeGroups] = {};
-    float edge_gradient3[kEdgeGroups] = {};
+    float edge_moment_gradient[BasisDim][kEdgeGroups] = {};
 #pragma unroll
     for (int group = 0; group < kEdgeGroups; ++group) {
       const int channel = group * 16 + half_lane;
       const int owner_group = channel / 32;
       const int owner_lane = channel & 31;
-      edge_gradient0[group] =
-          __shfl_sync(kWarpMask, gradient0[owner_group], owner_lane);
-      edge_gradient1[group] =
-          __shfl_sync(kWarpMask, gradient1[owner_group], owner_lane);
-      edge_gradient2[group] =
-          __shfl_sync(kWarpMask, gradient2[owner_group], owner_lane);
-      edge_gradient3[group] =
-          __shfl_sync(kWarpMask, gradient3[owner_group], owner_lane);
+#pragma unroll
+      for (int k = 0; k < BasisDim; ++k) {
+        edge_moment_gradient[k][group] =
+            __shfl_sync(kWarpMask, gradient[k][owner_group], owner_lane);
+      }
     }
 
     for (long position = begin + half; position < end; position += 2) {
@@ -743,34 +767,32 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
         }
         continue;
       }
-      EdgeEnvironment environment{};
+      EdgeEnvironment<BasisDim> environment{};
       TableLocation location{};
       if (half_lane == 0) {
-        environment = load_environment(edge, center_type, ntypes, one_side,
-                                       rcut, rcut_smooth, protection,
-                                       inverse_neighbors, edge_vec, edge_index,
-                                       atype, average, inverse_stddev);
+        environment = load_environment<BasisDim>(
+            edge, center_type, ntypes, one_side, rcut, rcut_smooth, protection,
+            inverse_neighbors, edge_vec, edge_index, atype, average,
+            inverse_stddev);
         location = locate_table(environment.radial, lower, upper, table_max,
                                 stride0, stride1);
       }
-      environment = broadcast_environment(environment, leader, half_mask);
+      environment =
+          broadcast_environment<BasisDim>(environment, leader, half_mask);
       location = broadcast_location(location, leader, half_mask);
-      float partial0 = 0.0f;
-      float partial1 = 0.0f;
-      float partial2 = 0.0f;
-      float partial3 = 0.0f;
+      float partial_basis[BasisDim] = {};
       float partial_radial = 0.0f;
       float partial_switch = 0.0f;
 #pragma unroll
       for (int group = 0; group < kEdgeGroups; ++group) {
         const int channel = group * 16 + half_lane;
-        const float d0 = edge_gradient0[group];
-        const float d1 = edge_gradient1[group];
-        const float d2 = edge_gradient2[group];
-        const float d3 = edge_gradient3[group];
-        const float descriptor_product =
-            environment.r0 * d0 + environment.r1 * d1 + environment.r2 * d2 +
-            environment.r3 * d3;
+        float descriptor_product = 0.0f;
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          descriptor_product =
+              fmaf(environment.basis[k], edge_moment_gradient[k][group],
+                   descriptor_product);
+        }
         const float2 table_value =
             evaluate_table_backward(table, location, channel, Width);
         const float gate =
@@ -785,28 +807,30 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
         }
         partial_radial = fmaf(descriptor_product * (1.0f + effective_gate),
                               table_value.y, partial_radial);
-        partial0 = fmaf(embedding, d0, partial0);
-        partial1 = fmaf(embedding, d1, partial1);
-        partial2 = fmaf(embedding, d2, partial2);
-        partial3 = fmaf(embedding, d3, partial3);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          partial_basis[k] =
+              fmaf(embedding, edge_moment_gradient[k][group], partial_basis[k]);
+        }
       }
 #pragma unroll
       for (int offset = 8; offset > 0; offset >>= 1) {
-        partial0 += __shfl_down_sync(half_mask, partial0, offset, 16);
-        partial1 += __shfl_down_sync(half_mask, partial1, offset, 16);
-        partial2 += __shfl_down_sync(half_mask, partial2, offset, 16);
-        partial3 += __shfl_down_sync(half_mask, partial3, offset, 16);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          partial_basis[k] +=
+              __shfl_down_sync(half_mask, partial_basis[k], offset, 16);
+        }
         partial_radial +=
             __shfl_down_sync(half_mask, partial_radial, offset, 16);
         partial_switch +=
             __shfl_down_sync(half_mask, partial_switch, offset, 16);
       }
       if (half_lane == 0) {
-        store_edge_gradient(edge, environment, partial0, partial1, partial2,
-                            partial3, partial_radial, partial_switch,
-                            inverse_neighbors, inverse_stddev0, inverse_stddev1,
-                            inverse_stddev2, inverse_stddev3, rcut, rcut_smooth,
-                            protection, edge_gradient);
+        store_edge_gradient<BasisDim>(
+            edge, environment, partial_basis, partial_radial, partial_switch,
+            inverse_neighbors, inverse_stddev0, inverse_stddev1,
+            inverse_stddev2, inverse_stddev3, rcut, rcut_smooth, protection,
+            edge_gradient);
       }
     }
   } else {
@@ -821,35 +845,31 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
         }
         continue;
       }
-      EdgeEnvironment environment{};
+      EdgeEnvironment<BasisDim> environment{};
       TableLocation location{};
       if (lane == 0) {
-        environment = load_environment(edge, center_type, ntypes, one_side,
-                                       rcut, rcut_smooth, protection,
-                                       inverse_neighbors, edge_vec, edge_index,
-                                       atype, average, inverse_stddev);
+        environment = load_environment<BasisDim>(
+            edge, center_type, ntypes, one_side, rcut, rcut_smooth, protection,
+            inverse_neighbors, edge_vec, edge_index, atype, average,
+            inverse_stddev);
         location = locate_table(environment.radial, lower, upper, table_max,
                                 stride0, stride1);
       }
-      environment = broadcast_environment(environment, 0, kWarpMask);
+      environment = broadcast_environment<BasisDim>(environment, 0, kWarpMask);
       location = broadcast_location(location, 0, kWarpMask);
-      float partial0 = 0.0f;
-      float partial1 = 0.0f;
-      float partial2 = 0.0f;
-      float partial3 = 0.0f;
+      float partial_basis[BasisDim] = {};
       float partial_radial = 0.0f;
       float partial_switch = 0.0f;
 #pragma unroll
       for (int group = 0; group < kGradientGroups; ++group) {
         const int channel = group * 32 + lane;
         if (channel < Width) {
-          const float d0 = gradient0[group];
-          const float d1 = gradient1[group];
-          const float d2 = gradient2[group];
-          const float d3 = gradient3[group];
-          const float descriptor_product =
-              environment.r0 * d0 + environment.r1 * d1 + environment.r2 * d2 +
-              environment.r3 * d3;
+          float descriptor_product = 0.0f;
+#pragma unroll
+          for (int k = 0; k < BasisDim; ++k) {
+            descriptor_product = fmaf(environment.basis[k], gradient[k][group],
+                                      descriptor_product);
+          }
           const float2 table_value =
               evaluate_table_backward(table, location, channel, Width);
           const float gate = __ldg(
@@ -864,27 +884,29 @@ __launch_bounds__(kThreads, MinimumBlocks) void compressed_backward_kernel(
           }
           partial_radial = fmaf(descriptor_product * (1.0f + effective_gate),
                                 table_value.y, partial_radial);
-          partial0 = fmaf(embedding, d0, partial0);
-          partial1 = fmaf(embedding, d1, partial1);
-          partial2 = fmaf(embedding, d2, partial2);
-          partial3 = fmaf(embedding, d3, partial3);
+#pragma unroll
+          for (int k = 0; k < BasisDim; ++k) {
+            partial_basis[k] =
+                fmaf(embedding, gradient[k][group], partial_basis[k]);
+          }
         }
       }
 #pragma unroll
       for (int offset = 16; offset > 0; offset >>= 1) {
-        partial0 += __shfl_down_sync(kWarpMask, partial0, offset);
-        partial1 += __shfl_down_sync(kWarpMask, partial1, offset);
-        partial2 += __shfl_down_sync(kWarpMask, partial2, offset);
-        partial3 += __shfl_down_sync(kWarpMask, partial3, offset);
+#pragma unroll
+        for (int k = 0; k < BasisDim; ++k) {
+          partial_basis[k] +=
+              __shfl_down_sync(kWarpMask, partial_basis[k], offset);
+        }
         partial_radial += __shfl_down_sync(kWarpMask, partial_radial, offset);
         partial_switch += __shfl_down_sync(kWarpMask, partial_switch, offset);
       }
       if (lane == 0) {
-        store_edge_gradient(edge, environment, partial0, partial1, partial2,
-                            partial3, partial_radial, partial_switch,
-                            inverse_neighbors, inverse_stddev0, inverse_stddev1,
-                            inverse_stddev2, inverse_stddev3, rcut, rcut_smooth,
-                            protection, edge_gradient);
+        store_edge_gradient<BasisDim>(
+            edge, environment, partial_basis, partial_radial, partial_switch,
+            inverse_neighbors, inverse_stddev0, inverse_stddev1,
+            inverse_stddev2, inverse_stddev3, rcut, rcut_smooth, protection,
+            edge_gradient);
       }
     }
   }
@@ -910,6 +932,7 @@ __global__ void zero_padding_kernel(
 }
 
 template <int Width,
+          int BasisDim,
           typename index_t,
           bool Canonical,
           bool Masked,
@@ -943,6 +966,7 @@ void launch_forward_variant(long node_count,
                             const torch::Tensor& inverse_stddev,
                             const torch::Tensor& table,
                             const torch::Tensor& gate_table,
+                            const torch::Tensor& degree_gain,
                             torch::Tensor& descriptor,
                             torch::Tensor& rotation,
                             torch::Tensor& moment,
@@ -950,25 +974,30 @@ void launch_forward_variant(long node_count,
   const int warps_per_block = threads / kWarpSize;
   const int blocks =
       static_cast<int>((node_count + warps_per_block - 1) / warps_per_block);
-  compressed_forward_kernel<Width, Canonical, Masked, index_t, MinimumBlocks>
-      <<<blocks, threads, 0, stream>>>(
-          node_count, ntypes, one_side, smooth, axis,
-          concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
-          rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
-          stride0, stride1, edge_vec.data_ptr<float>(),
-          edge_index.data_ptr<index_t>(),
-          edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
-          destination_order.numel() ? destination_order.data_ptr<index_t>()
-                                    : nullptr,
-          destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
-          type_embedding.data_ptr<float>(), average.data_ptr<float>(),
-          inverse_stddev.data_ptr<float>(), table.data_ptr<float>(),
-          gate_table.data_ptr<float>(), descriptor.data_ptr<float>(),
-          write_rotation ? rotation.data_ptr<float>() : nullptr,
-          moment.data_ptr<float>());
+  compressed_forward_kernel<Width, BasisDim, Canonical, Masked, index_t,
+                            MinimumBlocks><<<blocks, threads, 0, stream>>>(
+      node_count, ntypes, one_side, smooth, axis, concatenate_type_embedding,
+      write_rotation, type_embedding_dim, rcut, rcut_smooth, protection,
+      inverse_neighbors, lower, upper, table_max, stride0, stride1,
+      edge_vec.data_ptr<float>(), edge_index.data_ptr<index_t>(),
+      edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
+      destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                : nullptr,
+      destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
+      type_embedding.data_ptr<float>(), average.data_ptr<float>(),
+      inverse_stddev.data_ptr<float>(), table.data_ptr<float>(),
+      gate_table.data_ptr<float>(),
+      degree_gain.numel() ? degree_gain.data_ptr<float>() : nullptr,
+      descriptor.data_ptr<float>(),
+      write_rotation ? rotation.data_ptr<float>() : nullptr,
+      moment.data_ptr<float>());
 }
 
-template <int Width, typename index_t, bool Canonical, bool Masked>
+template <int Width,
+          int BasisDim,
+          typename index_t,
+          bool Canonical,
+          bool Masked>
 void launch_forward(long node_count,
                     int ntypes,
                     bool one_side,
@@ -997,6 +1026,7 @@ void launch_forward(long node_count,
                     const torch::Tensor& inverse_stddev,
                     const torch::Tensor& table,
                     const torch::Tensor& gate_table,
+                    const torch::Tensor& degree_gain,
                     torch::Tensor& descriptor,
                     torch::Tensor& rotation,
                     torch::Tensor& moment,
@@ -1007,6 +1037,7 @@ void launch_forward(long node_count,
       device,
       static_cast<int>(KernelDirection::kForward),
       Width,
+      BasisDim,
       axis,
       Canonical ? 1 : 0,
       static_cast<int>(sizeof(index_t)),
@@ -1020,21 +1051,21 @@ void launch_forward(long node_count,
   };
   const auto launch = [&](const LaunchConfig& config, long count) {
     if (config.resource == ResourcePolicy::kOccupancy) {
-      launch_forward_variant<Width, index_t, Canonical, Masked, 4>(
+      launch_forward_variant<Width, BasisDim, index_t, Canonical, Masked, 4>(
           count, config.threads, ntypes, one_side, smooth, axis,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
           rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
           stride0, stride1, edge_vec, edge_index, edge_mask, destination_order,
           destination_row_ptr, atype, type_embedding, average, inverse_stddev,
-          table, gate_table, descriptor, rotation, moment, stream);
+          table, gate_table, degree_gain, descriptor, rotation, moment, stream);
     } else {
-      launch_forward_variant<Width, index_t, Canonical, Masked, 2>(
+      launch_forward_variant<Width, BasisDim, index_t, Canonical, Masked, 2>(
           count, config.threads, ntypes, one_side, smooth, axis,
           concatenate_type_embedding, write_rotation, type_embedding_dim, rcut,
           rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
           stride0, stride1, edge_vec, edge_index, edge_mask, destination_order,
           destination_row_ptr, atype, type_embedding, average, inverse_stddev,
-          table, gate_table, descriptor, rotation, moment, stream);
+          table, gate_table, degree_gain, descriptor, rotation, moment, stream);
     }
   };
   const LaunchConfig config =
@@ -1044,6 +1075,7 @@ void launch_forward(long node_count,
 }
 
 template <int Width,
+          int BasisDim,
           typename index_t,
           bool Canonical,
           bool Masked,
@@ -1078,29 +1110,34 @@ void launch_backward_variant(long node_count,
                              const torch::Tensor& inverse_stddev,
                              const torch::Tensor& table,
                              const torch::Tensor& gate_table,
+                             const torch::Tensor& degree_gain,
                              torch::Tensor& edge_gradient,
                              cudaStream_t stream) {
   const int warps_per_block = threads / kWarpSize;
   const int blocks =
       static_cast<int>((node_count + warps_per_block - 1) / warps_per_block);
-  compressed_backward_kernel<Width, Canonical, Masked, index_t, MinimumBlocks>
-      <<<blocks, threads, 0, stream>>>(
-          node_count, edge_count, ntypes, one_side, smooth, axis,
-          descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
-          lower, upper, table_max, stride0, stride1,
-          descriptor_gradient.data_ptr<float>(), rotation_gradient,
-          moment.data_ptr<float>(), edge_vec.data_ptr<float>(),
-          edge_index.data_ptr<index_t>(),
-          edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
-          destination_order.numel() ? destination_order.data_ptr<index_t>()
-                                    : nullptr,
-          destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
-          average.data_ptr<float>(), inverse_stddev.data_ptr<float>(),
-          table.data_ptr<float>(), gate_table.data_ptr<float>(),
-          edge_gradient.data_ptr<float>());
+  compressed_backward_kernel<Width, BasisDim, Canonical, Masked, index_t,
+                             MinimumBlocks><<<blocks, threads, 0, stream>>>(
+      node_count, edge_count, ntypes, one_side, smooth, axis, descriptor_stride,
+      rcut, rcut_smooth, protection, inverse_neighbors, lower, upper, table_max,
+      stride0, stride1, descriptor_gradient.data_ptr<float>(),
+      rotation_gradient, moment.data_ptr<float>(), edge_vec.data_ptr<float>(),
+      edge_index.data_ptr<index_t>(),
+      edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
+      destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                : nullptr,
+      destination_row_ptr.data_ptr<long>(), atype.data_ptr<long>(),
+      average.data_ptr<float>(), inverse_stddev.data_ptr<float>(),
+      table.data_ptr<float>(), gate_table.data_ptr<float>(),
+      degree_gain.numel() ? degree_gain.data_ptr<float>() : nullptr,
+      edge_gradient.data_ptr<float>());
 }
 
-template <int Width, typename index_t, bool Canonical, bool Masked>
+template <int Width,
+          int BasisDim,
+          typename index_t,
+          bool Canonical,
+          bool Masked>
 void launch_backward(long node_count,
                      long edge_count,
                      int ntypes,
@@ -1130,6 +1167,7 @@ void launch_backward(long node_count,
                      const torch::Tensor& inverse_stddev,
                      const torch::Tensor& table,
                      const torch::Tensor& gate_table,
+                     const torch::Tensor& degree_gain,
                      torch::Tensor& edge_gradient,
                      cudaStream_t stream) {
   const int device = edge_vec.get_device();
@@ -1138,6 +1176,7 @@ void launch_backward(long node_count,
       device,
       static_cast<int>(KernelDirection::kBackward),
       Width,
+      BasisDim,
       axis,
       Canonical ? 1 : 0,
       static_cast<int>(sizeof(index_t)),
@@ -1150,21 +1189,23 @@ void launch_backward(long node_count,
   };
   const auto launch = [&](const LaunchConfig& config, long count) {
     if (config.resource == ResourcePolicy::kOccupancy) {
-      launch_backward_variant<Width, index_t, Canonical, Masked, 4>(
+      launch_backward_variant<Width, BasisDim, index_t, Canonical, Masked, 4>(
           count, config.threads, edge_count, ntypes, one_side, smooth, axis,
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
           lower, upper, table_max, stride0, stride1, descriptor_gradient,
           rotation_gradient, moment, edge_vec, edge_index, edge_mask,
           destination_order, destination_row_ptr, atype, average,
-          inverse_stddev, table, gate_table, edge_gradient, stream);
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,
+          stream);
     } else {
-      launch_backward_variant<Width, index_t, Canonical, Masked, 2>(
+      launch_backward_variant<Width, BasisDim, index_t, Canonical, Masked, 2>(
           count, config.threads, edge_count, ntypes, one_side, smooth, axis,
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors,
           lower, upper, table_max, stride0, stride1, descriptor_gradient,
           rotation_gradient, moment, edge_vec, edge_index, edge_mask,
           destination_order, destination_row_ptr, atype, average,
-          inverse_stddev, table, gate_table, edge_gradient, stream);
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,
+          stream);
     }
   };
   const LaunchConfig config =
@@ -1179,7 +1220,7 @@ void launch_backward(long node_count,
   COMPRESS_CHECK_LAUNCH("dpa1_graph_compress padding");
 }
 
-template <typename index_t>
+template <int BasisDim, typename index_t>
 void dispatch_forward(int width,
                       long node_count,
                       int ntypes,
@@ -1211,53 +1252,58 @@ void dispatch_forward(int width,
                       const torch::Tensor& inverse_stddev,
                       const torch::Tensor& table,
                       const torch::Tensor& gate_table,
+                      const torch::Tensor& degree_gain,
                       torch::Tensor& descriptor,
                       torch::Tensor& rotation,
                       torch::Tensor& moment,
                       cudaStream_t stream) {
-#define DISPATCH_WIDTH(value)                                               \
-  if (width == value) {                                                     \
-    if (canonical && !masked) {                                             \
-      launch_forward<value, index_t, true, false>(                          \
-          node_count, ntypes, one_side, smooth, axis,                       \
-          concatenate_type_embedding, write_rotation, type_embedding_dim,   \
-          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
-          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,     \
-          destination_order, destination_row_ptr, atype, type_embedding,    \
-          average, inverse_stddev, table, gate_table, descriptor, rotation, \
-          moment, stream);                                                  \
-    } else if (canonical) {                                                 \
-      launch_forward<value, index_t, true, true>(                           \
-          node_count, ntypes, one_side, smooth, axis,                       \
-          concatenate_type_embedding, write_rotation, type_embedding_dim,   \
-          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
-          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,     \
-          destination_order, destination_row_ptr, atype, type_embedding,    \
-          average, inverse_stddev, table, gate_table, descriptor, rotation, \
-          moment, stream);                                                  \
-    } else {                                                                \
-      launch_forward<value, index_t, false, true>(                          \
-          node_count, ntypes, one_side, smooth, axis,                       \
-          concatenate_type_embedding, write_rotation, type_embedding_dim,   \
-          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,   \
-          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,     \
-          destination_order, destination_row_ptr, atype, type_embedding,    \
-          average, inverse_stddev, table, gate_table, descriptor, rotation, \
-          moment, stream);                                                  \
-    }                                                                       \
-    return;                                                                 \
+#define DISPATCH_WIDTH(value)                                                  \
+  if (width == value) {                                                        \
+    if (canonical && !masked) {                                                \
+      launch_forward<value, BasisDim, index_t, true, false>(                   \
+          node_count, ntypes, one_side, smooth, axis,                          \
+          concatenate_type_embedding, write_rotation, type_embedding_dim,      \
+          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,      \
+          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,        \
+          destination_order, destination_row_ptr, atype, type_embedding,       \
+          average, inverse_stddev, table, gate_table, degree_gain, descriptor, \
+          rotation, moment, stream);                                           \
+    } else if (canonical) {                                                    \
+      launch_forward<value, BasisDim, index_t, true, true>(                    \
+          node_count, ntypes, one_side, smooth, axis,                          \
+          concatenate_type_embedding, write_rotation, type_embedding_dim,      \
+          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,      \
+          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,        \
+          destination_order, destination_row_ptr, atype, type_embedding,       \
+          average, inverse_stddev, table, gate_table, degree_gain, descriptor, \
+          rotation, moment, stream);                                           \
+    } else {                                                                   \
+      launch_forward<value, BasisDim, index_t, false, true>(                   \
+          node_count, ntypes, one_side, smooth, axis,                          \
+          concatenate_type_embedding, write_rotation, type_embedding_dim,      \
+          rcut, rcut_smooth, protection, inverse_neighbors, lower, upper,      \
+          table_max, stride0, stride1, edge_vec, edge_index, edge_mask,        \
+          destination_order, destination_row_ptr, atype, type_embedding,       \
+          average, inverse_stddev, table, gate_table, degree_gain, descriptor, \
+          rotation, moment, stream);                                           \
+    }                                                                          \
+    return;                                                                    \
   }
-  DISPATCH_WIDTH(8)
+  if constexpr (BasisDim <= 9) {
+    DISPATCH_WIDTH(8)
+  }
   DISPATCH_WIDTH(16)
   DISPATCH_WIDTH(32)
   DISPATCH_WIDTH(64)
   DISPATCH_WIDTH(128)
-  DISPATCH_WIDTH(256)
+  if constexpr (BasisDim <= 9) {
+    DISPATCH_WIDTH(256)
+  }
 #undef DISPATCH_WIDTH
   TORCH_CHECK(false, "dpa1_graph_compress: unsupported width ", width);
 }
 
-template <typename index_t>
+template <int BasisDim, typename index_t>
 void dispatch_backward(int width,
                        long node_count,
                        long edge_count,
@@ -1290,43 +1336,51 @@ void dispatch_backward(int width,
                        const torch::Tensor& inverse_stddev,
                        const torch::Tensor& table,
                        const torch::Tensor& gate_table,
+                       const torch::Tensor& degree_gain,
                        torch::Tensor& edge_gradient,
                        cudaStream_t stream) {
 #define DISPATCH_WIDTH(value)                                                  \
   if (width == value) {                                                        \
     if (canonical && !masked) {                                                \
-      launch_backward<value, index_t, true, false>(                            \
+      launch_backward<value, BasisDim, index_t, true, false>(                  \
           node_count, edge_count, ntypes, one_side, smooth, axis,              \
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
           lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
           rotation_gradient, moment, edge_vec, edge_index, edge_mask,          \
           destination_order, destination_row_ptr, atype, average,              \
-          inverse_stddev, table, gate_table, edge_gradient, stream);           \
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,       \
+          stream);                                                             \
     } else if (canonical) {                                                    \
-      launch_backward<value, index_t, true, true>(                             \
+      launch_backward<value, BasisDim, index_t, true, true>(                   \
           node_count, edge_count, ntypes, one_side, smooth, axis,              \
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
           lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
           rotation_gradient, moment, edge_vec, edge_index, edge_mask,          \
           destination_order, destination_row_ptr, atype, average,              \
-          inverse_stddev, table, gate_table, edge_gradient, stream);           \
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,       \
+          stream);                                                             \
     } else {                                                                   \
-      launch_backward<value, index_t, false, true>(                            \
+      launch_backward<value, BasisDim, index_t, false, true>(                  \
           node_count, edge_count, ntypes, one_side, smooth, axis,              \
           descriptor_stride, rcut, rcut_smooth, protection, inverse_neighbors, \
           lower, upper, table_max, stride0, stride1, descriptor_gradient,      \
           rotation_gradient, moment, edge_vec, edge_index, edge_mask,          \
           destination_order, destination_row_ptr, atype, average,              \
-          inverse_stddev, table, gate_table, edge_gradient, stream);           \
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,       \
+          stream);                                                             \
     }                                                                          \
     return;                                                                    \
   }
-  DISPATCH_WIDTH(8)
+  if constexpr (BasisDim <= 9) {
+    DISPATCH_WIDTH(8)
+  }
   DISPATCH_WIDTH(16)
   DISPATCH_WIDTH(32)
   DISPATCH_WIDTH(64)
   DISPATCH_WIDTH(128)
-  DISPATCH_WIDTH(256)
+  if constexpr (BasisDim <= 9) {
+    DISPATCH_WIDTH(256)
+  }
 #undef DISPATCH_WIDTH
   TORCH_CHECK(false, "dpa1_graph_compress_backward: unsupported width ", width);
 }
@@ -1389,6 +1443,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
     torch::Tensor type_embedding,
     torch::Tensor average,
     torch::Tensor inverse_stddev,
+    torch::Tensor degree_gain,
     torch::Tensor table,
     torch::Tensor gate_table,
     int64_t type_one_side,
@@ -1405,7 +1460,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
     double rcut,
     double rcut_smooth,
     double protection,
-    double neighbors) {
+    double neighbors,
+    int64_t basis_dim) {
   const long node_count = atype.size(0);
   const int width = static_cast<int>(table.size(1) / 6);
   validate_inputs(edge_vec, edge_index, edge_mask, destination_order,
@@ -1415,6 +1471,22 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
                   type_embedding.scalar_type() == torch::kFloat32,
               "dpa1_graph_compress: type_embedding must be contiguous fp32 "
               "on CUDA");
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+  TORCH_CHECK(
+      basis_dim == 4 || basis_dim == 9 || basis_dim == 16 || basis_dim == 25,
+      "dpa1_graph_compress: basis_dim must be 4, 9, 16, or 25");
+#else
+  TORCH_CHECK(
+      basis_dim == 4,
+      "dpa1_graph_compress: this build instantiates only lmax=1; rebuild "
+      "with DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON for lmax=2/3/4");
+#endif
+  const int degree_gain_size =
+      basis_dim == 4 ? 0 : (basis_dim == 9 ? 1 : (basis_dim == 16 ? 2 : 3));
+  TORCH_CHECK(degree_gain.is_contiguous() &&
+                  degree_gain.scalar_type() == torch::kFloat32 &&
+                  degree_gain.numel() == degree_gain_size,
+              "dpa1_graph_compress: degree_gain has an invalid shape or dtype");
   const int ntypes = static_cast<int>(type_embedding.size(0));
   const int type_embedding_dim = static_cast<int>(type_embedding.size(1));
   const int output_dim = width * static_cast<int>(axis) +
@@ -1423,7 +1495,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
   auto descriptor = torch::empty({node_count, output_dim}, options);
   auto rotation =
       torch::empty({write_rotation ? node_count : 0, width, 3}, options);
-  auto moment = torch::empty({node_count, 4, width}, options);
+  auto moment = torch::empty({node_count, basis_dim, width}, options);
   if (node_count == 0) {
     return {descriptor, rotation, moment};
   }
@@ -1432,18 +1504,32 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_graph_compress(
 
   auto launch = [&](auto index_tag) {
     using index_t = decltype(index_tag);
-    dispatch_forward<index_t>(
-        width, node_count, ntypes, type_one_side != 0, smooth != 0,
-        static_cast<int>(axis), canonical, edge_mask.numel() != 0,
-        concatenate_type_embedding != 0, write_rotation != 0,
-        type_embedding_dim, static_cast<float>(rcut),
-        static_cast<float>(rcut_smooth), static_cast<float>(protection),
-        static_cast<float>(1.0 / neighbors), static_cast<float>(lower),
-        static_cast<float>(upper), static_cast<float>(table_max),
-        static_cast<float>(stride0), static_cast<float>(stride1),
-        edge_vec_float, edge_index, edge_mask, destination_order,
-        destination_row_ptr, atype, type_embedding, average, inverse_stddev,
-        table, gate_table, descriptor, rotation, moment, stream);
+    auto dispatch = [&](auto basis_tag) {
+      constexpr int BasisDim = decltype(basis_tag)::value;
+      dispatch_forward<BasisDim, index_t>(
+          width, node_count, ntypes, type_one_side != 0, smooth != 0,
+          static_cast<int>(axis), canonical, edge_mask.numel() != 0,
+          concatenate_type_embedding != 0, write_rotation != 0,
+          type_embedding_dim, static_cast<float>(rcut),
+          static_cast<float>(rcut_smooth), static_cast<float>(protection),
+          static_cast<float>(1.0 / neighbors), static_cast<float>(lower),
+          static_cast<float>(upper), static_cast<float>(table_max),
+          static_cast<float>(stride0), static_cast<float>(stride1),
+          edge_vec_float, edge_index, edge_mask, destination_order,
+          destination_row_ptr, atype, type_embedding, average, inverse_stddev,
+          table, gate_table, degree_gain, descriptor, rotation, moment, stream);
+    };
+    if (basis_dim == 4) {
+      dispatch(std::integral_constant<int, 4>{});
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else if (basis_dim == 9) {
+      dispatch(std::integral_constant<int, 9>{});
+    } else if (basis_dim == 16) {
+      dispatch(std::integral_constant<int, 16>{});
+    } else {
+      dispatch(std::integral_constant<int, 25>{});
+#endif
+    }
   };
   if (edge_index.scalar_type() == torch::kInt32) {
     launch(int{});
@@ -1465,6 +1551,7 @@ torch::Tensor dpa1_graph_compress_backward(
     torch::Tensor atype,
     torch::Tensor average,
     torch::Tensor inverse_stddev,
+    torch::Tensor degree_gain,
     torch::Tensor table,
     torch::Tensor gate_table,
     int64_t type_one_side,
@@ -1483,9 +1570,21 @@ torch::Tensor dpa1_graph_compress_backward(
   const long node_count = atype.size(0);
   const long edge_count = edge_vec.size(0);
   const int width = static_cast<int>(table.size(1) / 6);
+  const int basis_dim = static_cast<int>(moment.size(1));
   validate_inputs(edge_vec, edge_index, edge_mask, destination_order,
                   destination_row_ptr, atype, average, inverse_stddev, table,
                   gate_table, width, static_cast<int>(axis));
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+  TORCH_CHECK(
+      basis_dim == 4 || basis_dim == 9 || basis_dim == 16 || basis_dim == 25,
+      "dpa1_graph_compress_backward: basis dimension must be 4, 9, "
+      "16, or 25");
+#else
+  TORCH_CHECK(
+      basis_dim == 4,
+      "dpa1_graph_compress_backward: this build instantiates only lmax=1; "
+      "rebuild with DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON for lmax=2/3/4");
+#endif
   if (node_count == 0) {
     return torch::zeros_like(edge_vec);
   }
@@ -1509,18 +1608,34 @@ torch::Tensor dpa1_graph_compress_backward(
 
   auto launch = [&](auto index_tag) {
     using index_t = decltype(index_tag);
-    dispatch_backward<index_t>(
-        width, node_count, edge_count, ntypes, type_one_side != 0, smooth != 0,
-        static_cast<int>(axis), canonical, edge_mask.numel() != 0,
-        static_cast<int>(descriptor_gradient_float.size(1)),
-        static_cast<float>(rcut), static_cast<float>(rcut_smooth),
-        static_cast<float>(protection), static_cast<float>(1.0 / neighbors),
-        static_cast<float>(lower), static_cast<float>(upper),
-        static_cast<float>(table_max), static_cast<float>(stride0),
-        static_cast<float>(stride1), descriptor_gradient_float,
-        rotation_gradient_ptr, moment, edge_vec_float, edge_index, edge_mask,
-        destination_order, destination_row_ptr, atype, average, inverse_stddev,
-        table, gate_table, edge_gradient, stream);
+    auto dispatch = [&](auto basis_tag) {
+      constexpr int BasisDim = decltype(basis_tag)::value;
+      dispatch_backward<BasisDim, index_t>(
+          width, node_count, edge_count, ntypes, type_one_side != 0,
+          smooth != 0, static_cast<int>(axis), canonical,
+          edge_mask.numel() != 0,
+          static_cast<int>(descriptor_gradient_float.size(1)),
+          static_cast<float>(rcut), static_cast<float>(rcut_smooth),
+          static_cast<float>(protection), static_cast<float>(1.0 / neighbors),
+          static_cast<float>(lower), static_cast<float>(upper),
+          static_cast<float>(table_max), static_cast<float>(stride0),
+          static_cast<float>(stride1), descriptor_gradient_float,
+          rotation_gradient_ptr, moment, edge_vec_float, edge_index, edge_mask,
+          destination_order, destination_row_ptr, atype, average,
+          inverse_stddev, table, gate_table, degree_gain, edge_gradient,
+          stream);
+    };
+    if (basis_dim == 4) {
+      dispatch(std::integral_constant<int, 4>{});
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else if (basis_dim == 9) {
+      dispatch(std::integral_constant<int, 9>{});
+    } else if (basis_dim == 16) {
+      dispatch(std::integral_constant<int, 16>{});
+    } else {
+      dispatch(std::integral_constant<int, 25>{});
+#endif
+    }
   };
   if (edge_index.scalar_type() == torch::kInt32) {
     launch(int{});
@@ -1538,6 +1653,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_canonical_compress(
     torch::Tensor type_embedding,
     torch::Tensor average,
     torch::Tensor inverse_stddev,
+    torch::Tensor degree_gain,
     torch::Tensor table,
     torch::Tensor gate_table,
     int64_t type_one_side,
@@ -1553,7 +1669,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_canonical_compress(
     double rcut,
     double rcut_smooth,
     double protection,
-    double neighbors) {
+    double neighbors,
+    int64_t basis_dim) {
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa1_canonical_compress: source and edge_vec storage must "
               "share the edge axis");
@@ -1564,10 +1681,10 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dpa1_canonical_compress(
   auto destination_order = torch::empty({0}, source.options());
   return dpa1_graph_compress(
       edge_vec, source, edge_mask, destination_order, destination_row_ptr,
-      atype, type_embedding, average, inverse_stddev, table, gate_table,
-      type_one_side, concatenate_type_embedding, write_rotation, smooth, axis,
-      true, lower, upper, table_max, stride0, stride1, rcut, rcut_smooth,
-      protection, neighbors);
+      atype, type_embedding, average, inverse_stddev, degree_gain, table,
+      gate_table, type_one_side, concatenate_type_embedding, write_rotation,
+      smooth, axis, true, lower, upper, table_max, stride0, stride1, rcut,
+      rcut_smooth, protection, neighbors, basis_dim);
 }
 
 torch::Tensor dpa1_canonical_compress_backward(
@@ -1580,6 +1697,7 @@ torch::Tensor dpa1_canonical_compress_backward(
     torch::Tensor atype,
     torch::Tensor average,
     torch::Tensor inverse_stddev,
+    torch::Tensor degree_gain,
     torch::Tensor table,
     torch::Tensor gate_table,
     int64_t type_one_side,
@@ -1605,9 +1723,9 @@ torch::Tensor dpa1_canonical_compress_backward(
   return dpa1_graph_compress_backward(
       descriptor_gradient, rotation_gradient, moment, edge_vec, source,
       edge_mask, destination_order, destination_row_ptr, atype, average,
-      inverse_stddev, table, gate_table, type_one_side, smooth, axis, true,
-      lower, upper, table_max, stride0, stride1, rcut, rcut_smooth, protection,
-      neighbors);
+      inverse_stddev, degree_gain, table, gate_table, type_one_side, smooth,
+      axis, true, lower, upper, table_max, stride0, stride1, rcut, rcut_smooth,
+      protection, neighbors);
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
@@ -1616,11 +1734,12 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor edge_mask, Tensor destination_order, "
       "Tensor destination_row_ptr, Tensor atype, "
       "Tensor type_embedding, Tensor average, Tensor inverse_stddev, "
-      "Tensor table, Tensor gate_table, int type_one_side, "
+      "Tensor degree_gain, Tensor table, Tensor gate_table, int type_one_side, "
       "int concatenate_type_embedding, int write_rotation, int smooth, "
       "int axis, bool canonical, float lower, float upper, float table_max, "
       "float stride0, float stride1, "
-      "float rcut, float rcut_smooth, float protection, float neighbors) "
+      "float rcut, float rcut_smooth, float protection, float neighbors, "
+      "int basis_dim) "
       "-> (Tensor descriptor, Tensor rotation, Tensor moment)");
   library.impl("dpa1_graph_compress", torch::kCUDA, &dpa1_graph_compress);
   library.def(
@@ -1628,7 +1747,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor? rotation_gradient, Tensor moment, Tensor edge_vec, "
       "Tensor edge_index, Tensor edge_mask, Tensor destination_order, "
       "Tensor destination_row_ptr, Tensor atype, Tensor average, "
-      "Tensor inverse_stddev, Tensor table, "
+      "Tensor inverse_stddev, Tensor degree_gain, Tensor table, "
       "Tensor gate_table, int type_one_side, int smooth, int axis, "
       "bool canonical, float lower, float upper, float table_max, float "
       "stride0, "
@@ -1639,11 +1758,12 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
   library.def(
       "dpa1_canonical_compress(Tensor edge_vec, Tensor source, "
       "Tensor destination_row_ptr, Tensor atype, Tensor type_embedding, "
-      "Tensor average, Tensor inverse_stddev, Tensor table, "
+      "Tensor average, Tensor inverse_stddev, Tensor degree_gain, Tensor "
+      "table, "
       "Tensor gate_table, int type_one_side, int concatenate_type_embedding, "
       "int write_rotation, int smooth, int axis, float lower, float upper, "
       "float table_max, float stride0, float stride1, float rcut, "
-      "float rcut_smooth, float protection, float neighbors) -> "
+      "float rcut_smooth, float protection, float neighbors, int basis_dim) -> "
       "(Tensor descriptor, Tensor rotation, Tensor moment)");
   library.impl("dpa1_canonical_compress", torch::kCUDA,
                &dpa1_canonical_compress);
@@ -1651,7 +1771,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "dpa1_canonical_compress_backward(Tensor descriptor_gradient, "
       "Tensor? rotation_gradient, Tensor moment, Tensor edge_vec, "
       "Tensor source, Tensor destination_row_ptr, Tensor atype, "
-      "Tensor average, Tensor inverse_stddev, Tensor table, "
+      "Tensor average, Tensor inverse_stddev, Tensor degree_gain, Tensor "
+      "table, "
       "Tensor gate_table, int type_one_side, int smooth, int axis, "
       "float lower, float upper, float table_max, float stride0, "
       "float stride1, float rcut, float rcut_smooth, float protection, "

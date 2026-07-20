@@ -119,48 +119,75 @@ DEV_INLINE float4 weight4(const float* p) {
   return __ldg(reinterpret_cast<const float4*>(p));
 }
 
-// Generic N-row float4 fragment load / store (N a multiple of 4). These back
-// the edge-fragment loads of the backward kernels, whose per-thread edge count
-// (EPT) is a template parameter; the forwards keep the fixed load8 / store8.
+// Generic fragment load / store. Multiples of four use vector transactions;
+// the two-edge low-shared-memory backward fallback uses scalar transactions.
 template <int N>
 DEV_INLINE void loadN(const float* p, float (&a)[N]) {
+  if constexpr (N % 4 == 0) {
 #pragma unroll
-  for (int i = 0; i < N; i += 4) {
-    const float4 v = *reinterpret_cast<const float4*>(p + i);
-    a[i] = v.x;
-    a[i + 1] = v.y;
-    a[i + 2] = v.z;
-    a[i + 3] = v.w;
+    for (int i = 0; i < N; i += 4) {
+      const float4 v = *reinterpret_cast<const float4*>(p + i);
+      a[i] = v.x;
+      a[i + 1] = v.y;
+      a[i + 2] = v.z;
+      a[i + 3] = v.w;
+    }
+  } else {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      a[i] = p[i];
+    }
   }
 }
 
 template <int N>
 DEV_INLINE void storeN(float* p, const float (&a)[N]) {
+  if constexpr (N % 4 == 0) {
 #pragma unroll
-  for (int i = 0; i < N; i += 4) {
-    *reinterpret_cast<float4*>(p + i) =
-        make_float4(a[i], a[i + 1], a[i + 2], a[i + 3]);
+    for (int i = 0; i < N; i += 4) {
+      *reinterpret_cast<float4*>(p + i) =
+          make_float4(a[i], a[i + 1], a[i + 2], a[i + 3]);
+    }
+  } else {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      p[i] = a[i];
+    }
   }
 }
 
 template <int N>
 DEV_INLINE void loadN_streaming(const float* p, float (&a)[N]) {
+  if constexpr (N % 4 == 0) {
 #pragma unroll
-  for (int i = 0; i < N; i += 4) {
-    const float4 v = __ldcs(reinterpret_cast<const float4*>(p + i));
-    a[i] = v.x;
-    a[i + 1] = v.y;
-    a[i + 2] = v.z;
-    a[i + 3] = v.w;
+    for (int i = 0; i < N; i += 4) {
+      const float4 v = __ldcs(reinterpret_cast<const float4*>(p + i));
+      a[i] = v.x;
+      a[i + 1] = v.y;
+      a[i + 2] = v.z;
+      a[i + 3] = v.w;
+    }
+  } else {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      a[i] = __ldcs(p + i);
+    }
   }
 }
 
 template <int N>
 DEV_INLINE void storeN_streaming(float* p, const float (&a)[N]) {
+  if constexpr (N % 4 == 0) {
 #pragma unroll
-  for (int i = 0; i < N; i += 4) {
-    __stcs(reinterpret_cast<float4*>(p + i),
-           make_float4(a[i], a[i + 1], a[i + 2], a[i + 3]));
+    for (int i = 0; i < N; i += 4) {
+      __stcs(reinterpret_cast<float4*>(p + i),
+             make_float4(a[i], a[i + 1], a[i + 2], a[i + 3]));
+    }
+  } else {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      __stcs(p + i, a[i]);
+    }
   }
 }
 
@@ -216,28 +243,30 @@ __global__ void edge_order_scatter_kernel(long n_edge,
 // Per-edge staging: environment-matrix row, type-pair index, switch value
 // and center node.
 // ======================================================================
+template <int BASIS_DIM>
 struct EdgeStage {
-  float r0, r1, r2, r3;  // normalized environment-matrix row
-  float sw;              // raw smooth-switch value (type-pair gate factor)
+  float basis[BASIS_DIM];  // normalized angular moment basis
+  float sw;                // raw smooth-switch value (type-pair gate factor)
   int pair_idx;
   int dst;
   bool valid;
 };
 
-DEV_INLINE EdgeStage stage_edge(long e,
-                                long n_edge,
-                                int ntypes,
-                                int one_side,
-                                float rcut,
-                                float rcut_smth,
-                                float protection,
-                                const float* __restrict__ edge_vec,
-                                const long* __restrict__ edge_index,
-                                const bool* __restrict__ edge_mask,
-                                const long* __restrict__ atype,
-                                const float* __restrict__ davg,
-                                const float* __restrict__ inv_dstd) {
-  EdgeStage s;
+template <int BASIS_DIM>
+DEV_INLINE EdgeStage<BASIS_DIM> stage_edge(long e,
+                                           long n_edge,
+                                           int ntypes,
+                                           int one_side,
+                                           float rcut,
+                                           float rcut_smth,
+                                           float protection,
+                                           const float* __restrict__ edge_vec,
+                                           const long* __restrict__ edge_index,
+                                           const bool* __restrict__ edge_mask,
+                                           const long* __restrict__ atype,
+                                           const float* __restrict__ davg,
+                                           const float* __restrict__ inv_dstd) {
+  EdgeStage<BASIS_DIM> s;
   const long src = edge_index[e];
   const long dst = edge_index[n_edge + e];
   s.dst = (int)dst;
@@ -257,13 +286,99 @@ DEV_INLINE EdgeStage stage_edge(long e,
   const float t0 = sw * rq, iq2 = sw * rq * rq;
   const float* av = davg + (long)ct * 4;
   const float* isd = inv_dstd + (long)ct * 4;
-  s.r0 = (t0 - av[0]) * isd[0];
-  s.r1 = (x * iq2 - av[1]) * isd[1];
-  s.r2 = (y * iq2 - av[2]) * isd[2];
-  s.r3 = (z * iq2 - av[3]) * isd[3];
+  s.basis[0] = (t0 - av[0]) * isd[0];
+  s.basis[1] = (x * iq2 - av[1]) * isd[1];
+  s.basis[2] = (y * iq2 - av[2]) * isd[2];
+  s.basis[3] = (z * iq2 - av[3]) * isd[3];
+  if constexpr (BASIS_DIM > 4) {
+    const float inv_len = s.valid && len > 0.f ? 1.f / len : 0.f;
+    const float ux = x * inv_len;
+    const float uy = y * inv_len;
+    const float uz = z * inv_len;
+    const float radial = s.valid && len > 0.f ? t0 * isd[0] : 0.f;
+    constexpr float sqrt_three = 1.7320508075688772935f;
+    s.basis[4] = radial * sqrt_three * ux * uy;
+    s.basis[5] = radial * sqrt_three * uy * uz;
+    s.basis[6] = radial * 0.5f * (3.f * uz * uz - 1.f);
+    s.basis[7] = radial * sqrt_three * ux * uz;
+    s.basis[8] = radial * 0.5f * sqrt_three * (ux * ux - uy * uy);
+  }
   s.sw = sw;
   s.pair_idx = one_side ? nt : ct * ntypes + nt;
   return s;
+}
+
+template <int BASIS_DIM>
+DEV_INLINE void moment_basis_edge_gradient(const float (&d_basis)[BASIS_DIM],
+                                           float d_radial,
+                                           float d_switch,
+                                           float x,
+                                           float y,
+                                           float z,
+                                           float len,
+                                           float protection,
+                                           float sw,
+                                           float dsw,
+                                           float inv_nnei,
+                                           const float* __restrict__ inv_dstd,
+                                           float* __restrict__ output) {
+  const float inv_len = len > 0.f ? 1.f / len : 0.f;
+  const float inv_q = 1.f / (len + protection);
+  const float g0 = (d_basis[0] * inv_nnei + d_radial) * inv_dstd[0];
+  const float gx = d_basis[1] * inv_nnei * inv_dstd[1];
+  const float gy = d_basis[2] * inv_nnei * inv_dstd[2];
+  const float gz = d_basis[3] * inv_nnei * inv_dstd[3];
+  const float directional = gx * x + gy * y + gz * z;
+  const float coefficient =
+      (g0 * inv_q * (dsw - sw * inv_q) +
+       directional * inv_q * inv_q * (dsw - 2.f * sw * inv_q) +
+       d_switch * dsw) *
+      inv_len;
+  const float vector_scale = sw * inv_q * inv_q;
+  float grad_x = coefficient * x + vector_scale * gx;
+  float grad_y = coefficient * y + vector_scale * gy;
+  float grad_z = coefficient * z + vector_scale * gz;
+
+  if constexpr (BASIS_DIM == 9) {
+    const float ux = x * inv_len;
+    const float uy = y * inv_len;
+    const float uz = z * inv_len;
+    constexpr float sqrt_three = 1.7320508075688772935f;
+    const float y2[5] = {
+        sqrt_three * ux * uy,
+        sqrt_three * uy * uz,
+        0.5f * (3.f * uz * uz - 1.f),
+        sqrt_three * ux * uz,
+        0.5f * sqrt_three * (ux * ux - uy * uy),
+    };
+    float radial_partial = 0.f;
+#pragma unroll
+    for (int row = 0; row < 5; ++row) {
+      radial_partial =
+          fmaf(d_basis[4 + row] * inv_nnei, y2[row], radial_partial);
+    }
+    const float d4 = d_basis[4] * inv_nnei;
+    const float d5 = d_basis[5] * inv_nnei;
+    const float d6 = d_basis[6] * inv_nnei;
+    const float d7 = d_basis[7] * inv_nnei;
+    const float d8 = d_basis[8] * inv_nnei;
+    const float grad_ux = sqrt_three * (d4 * uy + d7 * uz + d8 * ux);
+    const float grad_uy = sqrt_three * (d4 * ux + d5 * uz - d8 * uy);
+    const float grad_uz = sqrt_three * (d5 * uy + d7 * ux) + 3.f * d6 * uz;
+    const float unit_dot = grad_ux * ux + grad_uy * uy + grad_uz * uz;
+    const float amplitude = sw * inv_q * inv_dstd[0];
+    const float amplitude_grad = inv_dstd[0] * inv_q * (dsw - sw * inv_q);
+    grad_x += radial_partial * amplitude_grad * ux +
+              amplitude * inv_len * (grad_ux - unit_dot * ux);
+    grad_y += radial_partial * amplitude_grad * uy +
+              amplitude * inv_len * (grad_uy - unit_dot * uy);
+    grad_z += radial_partial * amplitude_grad * uz +
+              amplitude * inv_len * (grad_uz - unit_dot * uz);
+  }
+
+  output[0] = grad_x;
+  output[1] = grad_y;
+  output[2] = grad_z;
 }
 
 // Parallel CSR run scan over one tile: row r is a run head iff
@@ -278,7 +393,7 @@ DEV_INLINE void scan_runs(int tid,
                           int* run_begin,
                           int* run_of,
                           int* n_runs) {
-  constexpr int TILE = NW * 32;  // edges per tile
+  constexpr int TILE = NW * 32;
   const int r = tid;
   bool head = false;
   if (r < TILE) {
@@ -329,11 +444,11 @@ DEV_INLINE void scan_runs(int tid,
 // width (edges per tile) is a template parameter so a forward can keep the
 // 128-edge tile while its backward uses a narrower tile (fewer edges per
 // thread, so the per-thread register footprint drops below the spill wall).
-template <int TILE>
+template <int TILE, int BASIS_DIM>
 struct EdgeTablesT {
-  float rr[TILE][4];   // env-mat row premultiplied by mask / nnei
-  float radial[TILE];  // rr0 (unmasked MLP / table input)
-  float sw[TILE];      // raw switch value (strip gate factor)
+  float basis[TILE][BASIS_DIM];  // moment basis premultiplied by mask / nnei
+  float radial[TILE];            // rr0 (unmasked MLP / table input)
+  float sw[TILE];                // raw switch value (strip gate factor)
   int pair_idx[TILE];
   int dst[TILE];
   int run_node[TILE];
@@ -343,7 +458,7 @@ struct EdgeTablesT {
   int n_runs;
 };
 
-template <int TILE>
+template <int TILE, int BASIS_DIM>
 DEV_INLINE void stage_tile(int tid,
                            long tile_base,
                            int rows,
@@ -361,19 +476,19 @@ DEV_INLINE void stage_tile(int tid,
                            const float* __restrict__ davg,
                            const float* __restrict__ inv_dstd,
                            const int* __restrict__ order,
-                           EdgeTablesT<TILE>& T) {
+                           EdgeTablesT<TILE, BASIS_DIM>& T) {
   if (tid < TILE) {
     if (tid < rows) {
       const int e = order[tile_base + tid];
-      const auto s =
-          stage_edge(e, n_edge, ntypes, one_side, rcut, rcut_smth, protection,
-                     edge_vec, edge_index, edge_mask, atype, davg, inv_dstd);
+      const auto s = stage_edge<BASIS_DIM>(
+          e, n_edge, ntypes, one_side, rcut, rcut_smth, protection, edge_vec,
+          edge_index, edge_mask, atype, davg, inv_dstd);
       const float mm = (s.valid ? 1.f : 0.f) * inv_nnei;
-      T.radial[tid] = s.r0;
-      T.rr[tid][0] = s.r0 * mm;
-      T.rr[tid][1] = s.r1 * mm;
-      T.rr[tid][2] = s.r2 * mm;
-      T.rr[tid][3] = s.r3 * mm;
+      T.radial[tid] = s.basis[0];
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        T.basis[tid][k] = s.basis[k] * mm;
+      }
       T.sw[tid] = s.sw;
       T.pair_idx[tid] = s.pair_idx;
       T.dst[tid] = s.dst;
@@ -381,10 +496,10 @@ DEV_INLINE void stage_tile(int tid,
       // Tail rows of a partial tile: finite MLP input, zero moment weight,
       // sentinel dst excluded from every run.
       T.radial[tid] = 0.f;
-      T.rr[tid][0] = 0.f;
-      T.rr[tid][1] = 0.f;
-      T.rr[tid][2] = 0.f;
-      T.rr[tid][3] = 0.f;
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        T.basis[tid][k] = 0.f;
+      }
       T.sw[tid] = 0.f;
       T.pair_idx[tid] = 0;
       T.dst[tid] = -1;
@@ -415,35 +530,50 @@ DEV_INLINE float gate_factor(const float* __restrict__ gate_table,
 //   rot_mat[n, i, :]      = gr[n, 1:4, i]
 // plus the appended center type embedding when concat_tebd is set.
 // ======================================================================
+DEV_INLINE float moment_row_weight(int row,
+                                   const float* __restrict__ degree_gain_raw) {
+  if (row < 4) {
+    return 1.0f;
+  }
+  const float gain = __ldg(degree_gain_raw);
+  return gain * gain;
+}
+
+template <int BASIS_DIM>
 __global__ void gram_kernel(int n_node,
                             int ng,
                             int axis,
                             int tebd_dim,
                             int concat_tebd,
                             const float* __restrict__ gr,
+                            const float* __restrict__ degree_gain_raw,
                             const float* __restrict__ type_embedding,
                             const long* __restrict__ atype,
                             float* __restrict__ grrg,
                             float* __restrict__ rot_mat) {
   const int n = blockIdx.x;
-  extern __shared__ float s_gr[];  // (4, ng)
-  for (int t = threadIdx.x; t < 4 * ng; t += blockDim.x) {
-    s_gr[t] = gr[(long)n * 4 * ng + t];
+  extern __shared__ float s_gr[];  // (BASIS_DIM, ng)
+  for (int t = threadIdx.x; t < BASIS_DIM * ng; t += blockDim.x) {
+    s_gr[t] = gr[(long)n * BASIS_DIM * ng + t];
   }
   __syncthreads();
   const int out_dim = ng * axis + (concat_tebd ? tebd_dim : 0);
   float* out = grrg + (long)n * out_dim;
   for (int i = threadIdx.x; i < ng; i += blockDim.x) {
-    const float g0 = s_gr[0 * ng + i], g1 = s_gr[1 * ng + i];
-    const float g2 = s_gr[2 * ng + i], g3 = s_gr[3 * ng + i];
     for (int j = 0; j < axis; ++j) {
-      out[i * axis + j] = g0 * s_gr[0 * ng + j] + g1 * s_gr[1 * ng + j] +
-                          g2 * s_gr[2 * ng + j] + g3 * s_gr[3 * ng + j];
+      float value = 0.f;
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        const float weight =
+            BASIS_DIM == 4 ? 1.0f : moment_row_weight(k, degree_gain_raw);
+        value = fmaf(s_gr[k * ng + i] * weight, s_gr[k * ng + j], value);
+      }
+      out[i * axis + j] = value;
     }
     if (rot_mat != nullptr) {
-      rot_mat[((long)n * ng + i) * 3 + 0] = g1;
-      rot_mat[((long)n * ng + i) * 3 + 1] = g2;
-      rot_mat[((long)n * ng + i) * 3 + 2] = g3;
+      rot_mat[((long)n * ng + i) * 3 + 0] = s_gr[1 * ng + i];
+      rot_mat[((long)n * ng + i) * 3 + 1] = s_gr[2 * ng + i];
+      rot_mat[((long)n * ng + i) * 3 + 2] = s_gr[3 * ng + i];
     }
   }
   if (concat_tebd) {
@@ -460,6 +590,7 @@ __global__ void gram_kernel(int n_node,
 //                + (k >= 1) R[c, k - 1].
 // The concat tebd tail of d(grrg) is a constant feature and carries no
 // gradient; grrg_stride skips it.
+template <int BASIS_DIM>
 __global__ void gram_backward_kernel(int n_node,
                                      int ng,
                                      int axis,
@@ -467,45 +598,52 @@ __global__ void gram_backward_kernel(int n_node,
                                      const float* __restrict__ d_grrg,
                                      const float* __restrict__ d_rot,
                                      const float* __restrict__ gr,
+                                     const float* __restrict__ degree_gain_raw,
                                      float* __restrict__ dgr) {
   const int n = blockIdx.x;
-  extern __shared__ float sm[];  // [0, 4*ng): gr; [4*ng, ...): d_grrg row
+  extern __shared__ float sm[];
   float* s_gr = sm;
-  float* s_dg = sm + 4 * ng;
-  for (int t = threadIdx.x; t < 4 * ng; t += blockDim.x) {
-    s_gr[t] = gr[(long)n * 4 * ng + t];
+  float* s_dg = sm + BASIS_DIM * ng;
+  for (int t = threadIdx.x; t < BASIS_DIM * ng; t += blockDim.x) {
+    s_gr[t] = gr[(long)n * BASIS_DIM * ng + t];
   }
   for (int t = threadIdx.x; t < ng * axis; t += blockDim.x) {
     s_dg[t] = d_grrg[(long)n * grrg_stride + t];
   }
   __syncthreads();
   for (int c = threadIdx.x; c < ng; c += blockDim.x) {
-    float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
+    float acc[BASIS_DIM] = {};
     for (int j = 0; j < axis; ++j) {
       const float d = s_dg[c * axis + j];
-      acc0 = fmaf(d, s_gr[0 * ng + j], acc0);
-      acc1 = fmaf(d, s_gr[1 * ng + j], acc1);
-      acc2 = fmaf(d, s_gr[2 * ng + j], acc2);
-      acc3 = fmaf(d, s_gr[3 * ng + j], acc3);
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        acc[k] = fmaf(d, s_gr[k * ng + j], acc[k]);
+      }
     }
     if (c < axis) {
       for (int i = 0; i < ng; ++i) {
         const float d = s_dg[i * axis + c];
-        acc0 = fmaf(d, s_gr[0 * ng + i], acc0);
-        acc1 = fmaf(d, s_gr[1 * ng + i], acc1);
-        acc2 = fmaf(d, s_gr[2 * ng + i], acc2);
-        acc3 = fmaf(d, s_gr[3 * ng + i], acc3);
+#pragma unroll
+        for (int k = 0; k < BASIS_DIM; ++k) {
+          acc[k] = fmaf(d, s_gr[k * ng + i], acc[k]);
+        }
+      }
+    }
+    if constexpr (BASIS_DIM > 4) {
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        acc[k] *= moment_row_weight(k, degree_gain_raw);
       }
     }
     if (d_rot) {
-      acc1 += d_rot[((long)n * ng + c) * 3 + 0];
-      acc2 += d_rot[((long)n * ng + c) * 3 + 1];
-      acc3 += d_rot[((long)n * ng + c) * 3 + 2];
+      acc[1] += d_rot[((long)n * ng + c) * 3 + 0];
+      acc[2] += d_rot[((long)n * ng + c) * 3 + 1];
+      acc[3] += d_rot[((long)n * ng + c) * 3 + 2];
     }
-    dgr[((long)n * 4 + 0) * ng + c] = acc0;
-    dgr[((long)n * 4 + 1) * ng + c] = acc1;
-    dgr[((long)n * 4 + 2) * ng + c] = acc2;
-    dgr[((long)n * 4 + 3) * ng + c] = acc3;
+#pragma unroll
+    for (int k = 0; k < BASIS_DIM; ++k) {
+      dgr[((long)n * BASIS_DIM + k) * ng + c] = acc[k];
+    }
   }
 }
 

@@ -13,7 +13,8 @@ void tabulate_fusion_se_a_cpu(FPTYPE* out,
                               const int nloc,
                               const int nnei,
                               const int last_layer_size,
-                              const bool is_sorted = true);
+                              const bool is_sorted = true,
+                              const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
@@ -28,7 +29,8 @@ void tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size,
-                                   const bool is_sorted = true);
+                                   const bool is_sorted = true,
+                                   const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
@@ -43,7 +45,8 @@ void tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size,
-                                        const bool is_sorted = true);
+                                        const bool is_sorted = true,
+                                        const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_cpu(FPTYPE* out,
@@ -157,7 +160,8 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
                               const int nloc,
                               const int nnei,
                               const int last_layer_size,
-                              const bool is_sorted = true);
+                              const bool is_sorted = true,
+                              const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
@@ -172,7 +176,8 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size,
-                                   const bool is_sorted = true);
+                                   const bool is_sorted = true,
+                                   const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
@@ -187,7 +192,8 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size,
-                                        const bool is_sorted = true);
+                                        const bool is_sorted = true,
+                                        const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_gpu(FPTYPE* out,

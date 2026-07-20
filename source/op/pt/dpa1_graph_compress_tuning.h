@@ -35,6 +35,7 @@ struct TuningKey {
   int device;
   int direction;
   int width;
+  int basis_dim;
   int axis;
   int canonical;
   int index_bytes;
@@ -46,8 +47,9 @@ struct TuningKey {
 
   bool operator==(const TuningKey& other) const {
     return device == other.device && direction == other.direction &&
-           width == other.width && axis == other.axis &&
-           canonical == other.canonical && index_bytes == other.index_bytes &&
+           width == other.width && basis_dim == other.basis_dim &&
+           axis == other.axis && canonical == other.canonical &&
+           index_bytes == other.index_bytes &&
            model_flags == other.model_flags &&
            model_stride == other.model_stride &&
            type_class == other.type_class && size_class == other.size_class &&
@@ -58,10 +60,10 @@ struct TuningKey {
 struct TuningKeyHash {
   std::size_t operator()(const TuningKey& key) const {
     std::size_t value = 0;
-    const std::array<int, 11> fields = {
-        key.device,     key.direction,   key.width,       key.axis,
-        key.canonical,  key.index_bytes, key.model_flags, key.model_stride,
-        key.type_class, key.size_class,  key.degree_class};
+    const std::array<int, 12> fields = {
+        key.device,       key.direction,  key.width,       key.basis_dim,
+        key.axis,         key.canonical,  key.index_bytes, key.model_flags,
+        key.model_stride, key.type_class, key.size_class,  key.degree_class};
     for (const int field : fields) {
       value ^=
           std::hash<int>{}(field) + 0x9e3779b9 + (value << 6) + (value >> 2);

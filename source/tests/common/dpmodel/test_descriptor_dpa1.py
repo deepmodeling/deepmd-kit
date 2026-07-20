@@ -44,6 +44,24 @@ class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
         em2 = DescrptDPA1(self.rcut, self.rcut_smth, self.sel, ntypes=2, attn_layer=2)
         self.assertEqual(em2.get_numb_attn_layer(), 2)
 
+    def test_lmax_two_serialization(self) -> None:
+        descriptor = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            ntypes=2,
+            attn_layer=0,
+            lmax=2,
+        )
+        restored = DescrptDPA1.deserialize(descriptor.serialize())
+
+        actual = descriptor.call(self.coord_ext, self.atype_ext, self.nlist)
+        expected = restored.call(self.coord_ext, self.atype_ext, self.nlist)
+
+        self.assertEqual(restored.se_atten.lmax, 2)
+        for index in (0, 1, 4):
+            np.testing.assert_allclose(actual[index], expected[index])
+
     def test_multiple_frames(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
