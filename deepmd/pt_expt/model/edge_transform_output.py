@@ -227,7 +227,7 @@ def fit_output_to_model_output_graph(
         SECOND ``torch.autograd.grad`` call on the SAME reduced scalar that
         the force grad differentiates (same energy, same backward family).
         This deliberately differs from the pt backend
-        (``deepmd/pt/model/model/transform_output.py:212``), which computes
+        (``deepmd/pt/model/model/transform_output.py:288``), which computes
         ``grad(E, [edge_vec, spin])`` jointly in one call; here the two grads
         are separate so :func:`edge_energy_deriv`'s signature stays
         untouched. ``None`` (default): unchanged, no mag output.

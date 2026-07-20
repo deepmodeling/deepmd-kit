@@ -626,7 +626,7 @@ def make_model(
                 # second autograd leaf: force_mag = -dE/dspin (native spin).
                 # Deliberately a SEPARATE leaf/backward from edge_vec rather
                 # than a joint grad([edge_vec, spin]) call (as pt does in
-                # deepmd/pt/model/model/transform_output.py:212) -- this keeps
+                # deepmd/pt/model/model/transform_output.py:288) -- this keeps
                 # edge_energy_deriv's signature untouched; see the second
                 # torch.autograd.grad call in fit_output_to_model_output_graph.
                 spin = spin.detach().requires_grad_(True)
