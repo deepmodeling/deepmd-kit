@@ -1085,7 +1085,70 @@ def make_model(
             )
             model = self
 
-            def fn(
+            # ``spin`` is a traced INPUT only when a real spin tensor is
+            # given (native-spin models). For every non-spin caller
+            # (``spin is None``) the traced ``fn`` must have the SAME arity as
+            # before native spin existed -- otherwise the outer energy trace,
+            # which threads ``charge_spin`` but no ``spin``, would call this
+            # traced module missing a ``spin`` argument. So the ``spin=None``
+            # branch traces the original 13-input closure (spin captured as a
+            # ``None`` constant), and the spin branch traces a 14-input
+            # closure with ``spin`` at the tail.
+            if spin is None:
+
+                def fn(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None,
+                ) -> dict[str, torch.Tensor]:
+                    # forward_common_lower_graph creates the autograd leaf from
+                    # edge_vec internally, so no outer detach/requires_grad_
+                    # here (it would only add spurious ops to the traced graph).
+                    return model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=destination_sorted,
+                        do_atomic_virial=do_atomic_virial,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                    )
+
+                return make_fx(fn, **make_fx_kwargs)(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                )
+
+            def fn_spin(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
                 n_local: torch.Tensor,
@@ -1102,7 +1165,7 @@ def make_model(
                 spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
                 # forward_common_lower_graph creates the autograd leaf(s) from
-                # edge_vec (and spin, when given) internally, so no outer
+                # edge_vec AND spin internally, so no outer
                 # detach/requires_grad_ here (it would only add spurious ops
                 # to the traced graph).
                 return model.forward_common_lower_graph(
@@ -1124,7 +1187,7 @@ def make_model(
                     spin=spin,
                 )
 
-            return make_fx(fn, **make_fx_kwargs)(
+            return make_fx(fn_spin, **make_fx_kwargs)(
                 atype,
                 n_node,
                 n_local,
