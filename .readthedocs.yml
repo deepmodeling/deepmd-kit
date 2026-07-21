@@ -4,13 +4,11 @@ build:
   tools:
     python: "3.11"
   jobs:
-    install:
-      # Install into the same uv environment used by the later build command.
-      - uv pip install --python "$READTHEDOCS_VIRTUALENV_PATH/bin/python" -r doc/requirements.txt
-python:
-  install:
-    - method: uv
-      command: pip
-      requirements: doc/requirements.txt
+    post_create_environment:
+      - pip install uv
+    post_install:
+      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
+  apt_packages:
+    - inkscape
 sphinx:
   configuration: doc/conf.py
