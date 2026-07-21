@@ -27,7 +27,13 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
+import github_linkcode
 import sphinx_contrib_exhale_multiproject  # noqa: F401
+from github_linkcode import (
+    collect_autoapi_source_locations,
+)
+
+linkcode_resolve = github_linkcode.linkcode_resolve
 
 # -- Project information -----------------------------------------------------
 
@@ -59,7 +65,7 @@ extensions = [
     "myst_nb",
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
-    "sphinx.ext.viewcode",
+    "sphinx.ext.linkcode",
     "sphinx.ext.imgconverter",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
@@ -276,5 +282,9 @@ def _cap_cli_secnumbers(app: Sphinx, doctree: nodes.document, docname: str) -> N
 
 
 def setup(app: Sphinx) -> dict[str, bool]:
+    # AutoAPI records exact source locations without importing backend modules.
+    # Reuse that metadata for commit-pinned GitHub links after AutoAPI's default
+    # priority-500 ``builder-inited`` callback has populated the environment.
+    app.connect("builder-inited", collect_autoapi_source_locations, priority=600)
     app.connect("doctree-resolved", _cap_cli_secnumbers)
     return {"parallel_read_safe": True, "parallel_write_safe": True}
