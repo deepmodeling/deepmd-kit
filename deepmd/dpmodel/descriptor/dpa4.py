@@ -1311,7 +1311,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # padded builder -- so the destination scatters reassociate identically
         # and existing parity tolerances hold. The dense body is no longer a
         # second copy of the edge math: ``call`` and ``call_graph`` share the
-        # one graph-native owner via ``_call_graph_common``.
+        # one graph-native owner via ``_run_graph``.
         nf, nloc, _ = nlist.shape
         # Geometry enters in compute precision, as the old dense Step 1 did:
         # edge vectors must be SUBTRACTED in compute precision (inside the
@@ -1342,7 +1342,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph, atype_flat = _graph_from_padded_nlist(
             coord_ext, atype_ext, nlist, mapping
         )
-        x_scalar, _ = self._call_graph_common(
+        x_scalar, _ = self._run_graph(
             graph,
             atype_flat,
             nf=nf,
@@ -1351,7 +1351,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             charge_spin=charge_spin,
             spin=spin,
         )
-        # ``_call_graph_common`` returns (nf*nloc, 1, 1, channels) already in
+        # ``_run_graph`` returns (nf*nloc, 1, 1, channels) already in
         # global precision; flatten the SO(3) singleton axes to (nf, nloc, C).
         descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))
         return (
@@ -1362,39 +1362,52 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None,
         )
 
-    def _call_graph_impl(
+    def _run_graph(
         self,
+        graph: NeighborGraph,
         atype_flat: Array,
-        edge_index: Array,
-        edge_vec: Array,
-        edge_mask: Array,
         *,
-        nf: int,
-        n_out_nodes: int,
+        nf: int = 1,
+        n_out_nodes: int | None = None,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict[str, Array] | None = None,
     ) -> tuple[Array, Array]:
-        """Edge-native descriptor core on the flat node axis.
+        """Graph-native descriptor forward shared by both descriptor entries.
+
+        Both public entries -- the dense-nlist ``call`` adapter and the
+        graph-native ``call_graph`` -- funnel through here, so the descriptor's
+        graph-level pre-math work (its own ``exclude_types`` masking and
+        ``comm_dict`` threading) lives in exactly one place instead of being
+        duplicated per entry, then runs the edge-native core.
+
+        The exclusion applied here is the DESCRIPTOR's own ``exclude_types``
+        (via ``self.emask``), masked once onto the graph's ``edge_mask``; the
+        edge-cache core below has no exclusion parameter and never re-applies
+        it. This is a DIFFERENT knob from the MODEL-level ``pair_exclude_types``,
+        which is a graph-BUILD transform already folded into the incoming
+        graph/nlist (``make_model._call_common_graph`` / the NeighborList
+        builders / C++ ``applyPairExclusion``) and is never re-applied here.
+
+        ``comm_dict`` is threaded unchanged to the interaction blocks; the
+        dpmodel backend implements no cross-rank exchange, so a block that
+        actually needs it raises from its per-block ``exchange_ghost_features``
+        leaf (pt_expt overrides that leaf with a real ``border_op``). The dense
+        ``call`` adapter rejects ``comm_dict`` before it ever reaches here.
 
         Parameters
         ----------
+        graph
+            Neighbor graph for the local atoms; ``edge_vec`` is the
+            geometry/autograd leaf, ``edge_mask`` flags valid edges.
         atype_flat
             Flat node types with shape (N,).
-        edge_index
-            Edge endpoints with shape (2, E), rows are (src, dst).
-        edge_vec
-            Neighbor-minus-center edge vectors with shape (E, 3).
-        edge_mask
-            Valid-edge mask with shape (E,).
         nf
             Frame count (only consumed by the charge/spin FiLM conditioning).
         n_out_nodes
-            Leading node count kept for the read-out (owned atoms). Pair
-            exclusion is not this core's responsibility: it is applied
-            exactly once, upstream, on the graph's ``edge_mask`` (see
-            ``_call_graph_common``).
+            Leading node count kept for the read-out (owned atoms). ``None``
+            keeps all nodes (``atype_flat.shape[0]``).
         force_embedding
             Optional per-node force conditioning, shape (N, D, 1, C).
         charge_spin
@@ -1402,16 +1415,35 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         spin
             Optional per-node spin vectors, shape (N, 3).
         comm_dict
-            MPI communication metadata forwarded to the interaction blocks.
+            MPI communication metadata forwarded to the interaction blocks;
+            ``None`` for single-rank inference.
 
         Returns
         -------
         tuple[Array, Array]
             Read-out with the SO(3) singleton axes still attached, shape
             ``(n_out_nodes, 1, 1, channels)``, in global precision, and the
-            full multipole feature tensor ``x``. Callers (``_call_graph_common``
-            and its callers in turn) flatten the singleton axes.
+            full multipole feature tensor ``x``. The public entries flatten
+            the singleton axes.
+
+        Raises
+        ------
+        NotImplementedError
+            When ``comm_dict`` is provided and a block actually needs the
+            cross-rank exchange (raised by the per-block leaf, not here).
         """
+        # Descriptor-owned exclusion: the descriptor's ``exclude_types`` masks
+        # the graph's ``edge_mask`` exactly once here; the edge-cache core has
+        # no exclusion parameter. (Model-level ``pair_exclude_types`` is a
+        # graph-BUILD transform already folded into the incoming graph.)
+        if self.exclude_types:
+            graph = apply_pair_exclusion(graph, atype_flat, self.emask)
+        if n_out_nodes is None:
+            n_out_nodes = atype_flat.shape[0]
+        edge_index = graph.edge_index
+        edge_vec = graph.edge_vec
+        edge_mask = graph.edge_mask
+
         xp = array_api_compat.array_namespace(edge_vec)
         device = array_api_compat.device(edge_vec)
 
@@ -1590,85 +1622,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
         return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
 
-    def _call_graph_common(
-        self,
-        graph: NeighborGraph,
-        atype_flat: Array,
-        *,
-        nf: int = 1,
-        n_out_nodes: int | None = None,
-        force_embedding: Array | None = None,
-        charge_spin: Array | None = None,
-        spin: Array | None = None,
-        comm_dict: dict[str, Array] | None = None,
-    ) -> tuple[Array, Array]:
-        """Shared graph-route trunk: pair exclusion + comm threading + core.
-
-        This is the ONE site applying pair exclusion (canonical
-        ``apply_pair_exclusion`` on the graph's ``edge_mask``); the edge-cache
-        core below never re-applies it. Both descriptor entries -- the
-        graph-native ``call_graph`` and the dense-nlist ``call`` adapter --
-        funnel through here so exclusion lives in exactly one place. The
-        dense ``call`` adapter rejects ``comm_dict`` itself before reaching
-        this trunk (it owns that rejection); the graph route has no comm
-        opinion at this layer and simply threads ``comm_dict`` down to the
-        interaction blocks, whose per-block ``exchange_ghost_features`` leaf
-        is the dpmodel backend's actual guard (mirrors dpa2's
-        ``_exchange_ghosts_graph`` base; pt_expt overrides the leaf with a
-        real ``border_op``).
-
-        Parameters
-        ----------
-        graph
-            Neighbor graph; ``edge_vec`` is the geometry leaf.
-        atype_flat
-            Flat node types with shape (N,).
-        nf
-            Frame count (charge/spin FiLM conditioning only).
-        n_out_nodes
-            Owned-node count kept for the read-out; ``None`` means all nodes.
-        force_embedding
-            Optional per-node force conditioning.
-        charge_spin
-            Optional charge/spin conditioning (already canonicalized).
-        spin
-            Optional per-node spin vectors.
-        comm_dict
-            Border-exchange tensors, forwarded unchanged to the interaction
-            blocks; ``None`` for single-rank inference.
-
-        Returns
-        -------
-        tuple[Array, Array]
-            Read-out with the SO(3) singleton axes still attached, shape
-            ``(n, 1, 1, channels)``, in global precision, and the multipole
-            tensor.
-
-        Raises
-        ------
-        NotImplementedError
-            When ``comm_dict`` is provided and a block actually needs the
-            cross-rank exchange (raised by the per-block leaf, not here).
-        """
-        if self.exclude_types:
-            # Canonical NeighborGraph transform: exclusion lands on the
-            # graph's edge_mask exactly once; the edge-cache core below has
-            # no exclusion parameter and never re-applies it.
-            graph = apply_pair_exclusion(graph, atype_flat, self.emask)
-        n = atype_flat.shape[0] if n_out_nodes is None else n_out_nodes
-        return self._call_graph_impl(
-            atype_flat,
-            graph.edge_index,
-            graph.edge_vec,
-            graph.edge_mask,
-            nf=nf,
-            n_out_nodes=n,
-            force_embedding=force_embedding,
-            charge_spin=charge_spin,
-            spin=spin,
-            comm_dict=comm_dict,
-        )
-
     def call_graph(
         self,
         graph: NeighborGraph,
@@ -1695,7 +1648,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             the interaction blocks. The dpmodel backend implements no
             cross-rank exchange on any lower path: a block that actually
             needs it raises from the ``exchange_ghost_features`` leaf (see
-            ``_call_graph_common``), not here.
+            ``_run_graph``), not here.
         spin
             Per-node spin vectors with shape (N, 3) on the flat node axis, or
             None. Consumed by ``spin_embedding`` (l=0 magnitude into the type
@@ -1734,10 +1687,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             dtype=graph.edge_vec.dtype,
             device=array_api_compat.device(graph.edge_vec),
         )
-        x_scalar, _ = self._call_graph_common(
+        x_scalar, _ = self._run_graph(
             graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
-        # ``_call_graph_common`` returns the read-out with its SO(3) singleton
+        # ``_run_graph`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
         # graph-seam contract shape (n_nodes, channels).
         xp = array_api_compat.array_namespace(x_scalar)
@@ -2359,7 +2312,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             and SFPG bridging (``bridging_switch``) -- rides the graph lower:
             spin and charge_spin are threaded through ``call_graph`` like any
             other per-node/per-frame input, and bridging is applied inside
-            the shared ``_call_graph_impl`` trunk with no extra threading (it
+            the shared ``_run_graph`` forward with no extra threading (it
             reads ``self.bridging_switch`` directly). Bridging models still
             fail multi-rank fast via ``has_message_passing_across_ranks``.
         """

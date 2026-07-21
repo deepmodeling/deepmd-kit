@@ -929,7 +929,7 @@ def test_call_dense_golden() -> None:
       ghost-source scatter is actually exercised.
 
     The reroute (dense ``call`` -> ``graph_from_dense_quartet`` ->
-    ``_call_graph_impl``) must preserve these values bit-for-bit within fp64
+    ``_run_graph``) must preserve these values bit-for-bit within fp64
     scatter-reassociation tolerance.
     """
     # Fixture A: mapping=None local indices

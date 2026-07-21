@@ -248,10 +248,11 @@ def _edge_cache_from_arrays(
     """
     Build the global edge cache from a sparse edge list.
 
-    Private core, invoked only from ``DescrptDPA4._call_graph_impl``. Pair
-    exclusion is not applied here: it is the canonical ``apply_pair_exclusion``
-    transform's responsibility, applied exactly once upstream on the
-    ``NeighborGraph``'s ``edge_mask`` (see ``DescrptDPA4._call_graph_common``).
+    Private core, invoked only from ``DescrptDPA4._run_graph``. The descriptor's
+    own ``exclude_types`` masking is not applied here: ``_run_graph`` applies it
+    exactly once, upstream, on the ``NeighborGraph``'s ``edge_mask`` via
+    ``apply_pair_exclusion``. (Model-level ``pair_exclude_types`` is a separate,
+    graph-BUILD transform, already folded into the incoming graph.)
 
     Parameters
     ----------
