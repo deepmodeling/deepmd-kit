@@ -45,6 +45,7 @@ from dpa_adapt.data.errors import (
 
 MN_KEY = "mn_log"
 SALT_PREFIX = "salt:"
+CATEGORY_PREFIX = "cat:"
 
 
 def _isnan(value: object) -> bool:
@@ -78,6 +79,7 @@ class _PolymerRow:
     ends: list[str]
     mol_weight: float | None
     scalars: dict[str, float]
+    categories: dict[str, str]
     salts: dict[str, float]
     target: float
     key: str
@@ -134,10 +136,16 @@ class PolymerBuilder:
         """
         conds = dict(fparam or {})
         salts_raw = conds.pop("salts", None) or {}
+        categories_raw = conds.pop("categories", None) or {}
         scalars = {
             str(k): float(v)
             for k, v in conds.items()
             if v is not None and not _isnan(v)
+        }
+        categories = {
+            f"{name}={value}": str(value)
+            for name, value in categories_raw.items()
+            if name is not None and value is not None and not _isnan(value)
         }
         salts = {
             str(name): float(conc)
@@ -152,6 +160,7 @@ class PolymerBuilder:
                 if mol_weight is None or _isnan(mol_weight)
                 else float(mol_weight),
                 scalars=scalars,
+                categories=categories,
                 salts=salts,
                 target=float(target),
                 key=str(key) if key is not None else f"polymer_{len(self._rows)}",
@@ -215,8 +224,31 @@ class PolymerBuilder:
             fparam: dict[str, Any] = {
                 "pH": 7.0 if _isnan(pH) else float(pH),
             }
+            mw = cell(row, "Mw")
+            if not _isnan(mw):
+                fparam["mw_log"] = math.log10(float(mw))
+            pdi = cell(row, "PDI")
+            if not _isnan(pdi):
+                fparam["pdi"] = float(pdi)
             if not _isnan(conc):
                 fparam["conc"] = float(conc)
+
+            categories: dict[str, str] = {}
+            for col in (
+                "polymer_type",
+                "polymer_type_style",
+                "polymer_architecture",
+                "polymerisation_type",
+                "mass_characterisation_method",
+                "mass_characterisation_standart",
+                "def_type",
+                "tacticity",
+            ):
+                value = cell(row, col)
+                if value is not None and not _isnan(value):
+                    categories[col] = str(value)
+            if categories:
+                fparam["categories"] = categories
 
             salts: dict[str, float] = {}
             for name_col, conc_col in (
@@ -276,6 +308,7 @@ class PolymerBuilder:
         stats = loaded_scaler["stats"] if loaded_scaler else self._fit_stats(schema)
 
         builder = Assembly(target=self.target, type_map=type_map)
+        builder.set_fparam_schema({"name": name, "default": 0.0} for name in schema)
         for row in self._rows:
             fparam_vec = self._standardized_fparam(row, schema, stats)
             group = builder.group(key=row.key, label=row.target, fparam=fparam_vec)
@@ -331,14 +364,17 @@ class PolymerBuilder:
         return list(seen)
 
     def _build_schema(self) -> list[str]:
-        """Ordered fparam column names: mn_log, scalar fparam fields, salt one-hots."""
+        """Ordered fparam column names: mass scalars, scalar fields, categories, salts."""
         columns: list[str] = [MN_KEY]
         scalar_keys: set[str] = set()
+        category_names: set[str] = set()
         salt_names: set[str] = set()
         for row in self._rows:
             scalar_keys.update(row.scalars)
+            category_names.update(row.categories)
             salt_names.update(row.salts)
-        columns.extend(sorted(scalar_keys))
+        columns.extend(sorted(key for key in scalar_keys if key != MN_KEY))
+        columns.extend(f"{CATEGORY_PREFIX}{name}" for name in sorted(category_names))
         columns.extend(f"{SALT_PREFIX}{name}" for name in sorted(salt_names))
         return columns
 
@@ -347,6 +383,8 @@ class PolymerBuilder:
         for i, col in enumerate(schema):
             if col == MN_KEY:
                 vec[i] = math.log10(row.mol_weight) if row.mol_weight else 0.0
+            elif col.startswith(CATEGORY_PREFIX):
+                vec[i] = 1.0 if col[len(CATEGORY_PREFIX) :] in row.categories else 0.0
             elif col.startswith(SALT_PREFIX):
                 vec[i] = row.salts.get(col[len(SALT_PREFIX) :], 0.0)
             else:

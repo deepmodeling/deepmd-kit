@@ -105,6 +105,45 @@ def test_valid_split_reuses_training_scaler(tmp_path):
     np.testing.assert_allclose(f_train, f_valid)
 
 
+def test_write_with_scaler_aligns_different_fparam_schema(tmp_path):
+    train = PolymerBuilder(target="cloud_point")
+    train.add(
+        units={"[CH2][CH](C(=O)NC(C)C)": 1.0},
+        mol_weight=12000,
+        fparam={"conc": 0.01, "pH": 7.0, "salts": {"NaCl": 0.1}},
+        target=32.0,
+    )
+    train.add(
+        units={"[CH2][CH](C(=O)NC(C)C)": 1.0},
+        mol_weight=24000,
+        fparam={"conc": 0.03, "pH": 8.0, "salts": {"NaCl": 0.2}},
+        target=40.0,
+    )
+    res_train = train.write(tmp_path / "train")
+
+    aux = PolymerBuilder(target="cloud_point")
+    aux.add(
+        units={"[CH2][CH](C(=O)NC(C)C)": 1.0},
+        mol_weight=18000,
+        # ``mw_log`` is extra and ``salt:NaCl`` is missing; the training scaler
+        # must still define the written fparam width and column order.
+        fparam={"mw_log": 4.4, "pH": 7.5},
+        target=50.0,
+    )
+    res_aux = aux.write(tmp_path / "aux", scaler=res_train["scaler"])
+
+    assert res_aux["fparam_dim"] == res_train["fparam_dim"]
+    assert res_aux["scaler"]["columns"] == res_train["scaler"]["columns"]
+    assert res_aux["scaler"]["columns"] == ["mn_log", "conc", "pH", "salt:NaCl"]
+
+    set_dir = tmp_path / "aux" / res_aux["systems"][0] / "set.000"
+    fparam = np.load(set_dir / "fparam.npy")
+    assert fparam.shape[1] == 4
+
+    manifest = (tmp_path / "aux" / "manifest.json").read_text(encoding="utf-8")
+    assert '"name": "salt:NaCl"' in manifest
+
+
 def test_add_api_direct(tmp_path):
     builder = PolymerBuilder(target="cloud_point")
     builder.add(
