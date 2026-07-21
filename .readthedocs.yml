@@ -3,6 +3,10 @@ build:
   os: ubuntu-26.04
   tools:
     python: "3.11"
+  jobs:
+    install:
+      # Install into the same uv environment used by the later build command.
+      - uv pip install --python "$READTHEDOCS_VIRTUALENV_PATH/bin/python" -r doc/requirements.txt
 python:
   install:
     - method: uv
