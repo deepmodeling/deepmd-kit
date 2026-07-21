@@ -13,6 +13,7 @@ from deepmd.dpmodel.loss.loss import (
 )
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
+    masked_pair_mean,
     per_frame_component_mean,
 )
 from deepmd.utils.data import (
@@ -754,17 +755,29 @@ class EnergyLoss(Loss):
         hessian = model_dict.get("hessian", model_dict.get("energy_derv_r_derv_r"))
         if self.has_h and hessian is not None and "hessian" in label_dict:
             find_hessian = label_dict.get("find_hessian", 0.0)
-            diff_h = xp.reshape(label_dict["hessian"], (-1,)) - xp.reshape(
-                hessian,
-                (-1,),
-            )
-            l2_hessian_loss = xp.mean(xp.square(diff_h))
+            if maskf is not None:
+                hessian_shape = (_nf, _nloc * 3, _nloc * 3)
+                diff_h = xp.reshape(label_dict["hessian"], hessian_shape) - xp.reshape(
+                    hessian, hessian_shape
+                )
+                # A Hessian element couples two Cartesian atom components, so
+                # it is valid only when both corresponding atoms are real.
+                l2_hessian_loss = masked_pair_mean(xp.square(diff_h), maskf, ncomp=3)
+            else:
+                diff_h = xp.reshape(label_dict["hessian"], (-1,)) - xp.reshape(
+                    hessian,
+                    (-1,),
+                )
+                l2_hessian_loss = xp.mean(xp.square(diff_h))
             loss += pref_h * find_hessian * l2_hessian_loss
             more_loss["rmse_h"] = self.display_if_exist(
                 xp.sqrt(l2_hessian_loss), find_hessian
             )
             if mae:
-                mae_h = xp.mean(xp.abs(diff_h))
+                if maskf is not None:
+                    mae_h = masked_pair_mean(xp.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = xp.mean(xp.abs(diff_h))
                 more_loss["mae_h"] = self.display_if_exist(mae_h, find_hessian)
 
         self.l2_l = loss

@@ -490,6 +490,13 @@ def _padded_force(f_A, f_B):
     return np.stack([f_A_pad, f_B], axis=0)  # [2, NP, 3]
 
 
+def _padded_hessian(h_A, h_B):
+    """Pad both Cartesian axes of frame A's Hessian to the batch width."""
+    h_A_pad = np.zeros((3 * NP, 3 * NP), dtype=np.float64)
+    h_A_pad[: 3 * NA, : 3 * NA] = h_A
+    return np.stack([h_A_pad, h_B], axis=0)
+
+
 def _padded_atom(arr_A, arr_B, ncomp):
     """Pad arr_A from [NA, ncomp] to [NP, ncomp] with zeros, stack with arr_B."""
     pad = np.zeros((NP, ncomp), dtype=np.float64)
@@ -747,6 +754,133 @@ class TestDPModelEnergyLossForceGradAccum:
         assert np.isclose(loss_m, loss_nm), (
             f"all-ones mask must be no-op: {loss_m} vs {loss_nm}"
         )
+
+
+class TestDPModelEnergyLossHessianGradAccum:
+    """Hessian reductions exclude placeholder rows and columns."""
+
+    def _make_loss(self):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+
+    @staticmethod
+    def _set_hessian(model_pred, label, pred_h, label_h):
+        model_pred["hessian"] = pred_h
+        label["hessian"] = label_h
+        label["find_hessian"] = 1.0
+        return model_pred, label
+
+    def _loss_fn(self, model_pred, label, natoms):
+        loss, _ = self._make_loss().call(1.0, natoms, model_pred, label)
+        return float(loss)
+
+    def test_mse_grad_accum(self):
+        """Padded Hessian MSE equals the mean of per-frame Hessian MSEs."""
+        h_A = _rnd(3 * NA, 3 * NA)
+        h_A_hat = _rnd(3 * NA, 3 * NA)
+        h_B = _rnd(3 * NB, 3 * NB)
+        h_B_hat = _rnd(3 * NB, 3 * NB)
+
+        def make_A():
+            pred, label = _full_ener_dicts(
+                1,
+                NA,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NA)),
+            )
+            pred, label = self._set_hessian(pred, label, h_A[None], h_A_hat[None])
+            return pred, label, NA
+
+        def make_B():
+            pred, label = _full_ener_dicts(
+                1,
+                NB,
+                np.zeros((1, 1)),
+                np.zeros((1, 1)),
+                mask=np.ones((1, NB)),
+            )
+            pred, label = self._set_hessian(pred, label, h_B[None], h_B_hat[None])
+            return pred, label, NB
+
+        def make_padded():
+            pred, label = _full_ener_dicts(
+                2, NP, np.zeros((2, 1)), np.zeros((2, 1)), mask=_MASK_PAD
+            )
+            pred, label = self._set_hessian(
+                pred,
+                label,
+                _padded_hessian(h_A, h_B),
+                _padded_hessian(h_A_hat, h_B_hat),
+            )
+            return pred, label, NP
+
+        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+
+    def test_placeholder_pairs_are_excluded_from_metrics(self):
+        """Ghost-touching matrix entries do not dilute or pollute MAE/RMSE."""
+        pred, label = _full_ener_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            mask=np.array([[1.0] * NA + [0.0] * (NP - NA)]),
+        )
+        pred_h = np.zeros((1, 3 * NP, 3 * NP), dtype=np.float64)
+        label_h = np.full_like(pred_h, 100.0)
+        label_h[:, : 3 * NA, : 3 * NA] = 2.0
+        pred, label = self._set_hessian(pred, label, pred_h, label_h)
+
+        loss, more_loss = self._make_loss().call(1.0, NP, pred, label, mae=True)
+
+        np.testing.assert_allclose(loss, 4.0)
+        np.testing.assert_allclose(more_loss["rmse_h"], 2.0)
+        np.testing.assert_allclose(more_loss["mae_h"], 2.0)
+
+    def test_no_op_for_non_mixed(self):
+        """An all-ones mask preserves the established Hessian reduction."""
+        pred_h = _rnd(1, 3 * NP, 3 * NP)
+        label_h = _rnd(1, 3 * NP, 3 * NP)
+        pred_mask, label_mask = _full_ener_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            mask=np.ones((1, NP)),
+        )
+        pred_plain, label_plain = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1))
+        )
+        pred_mask, label_mask = self._set_hessian(
+            pred_mask, label_mask, pred_h, label_h
+        )
+        pred_plain, label_plain = self._set_hessian(
+            pred_plain, label_plain, pred_h, label_h
+        )
+
+        loss_mask, metrics_mask = self._make_loss().call(
+            1.0, NP, pred_mask, label_mask, mae=True
+        )
+        loss_plain, metrics_plain = self._make_loss().call(
+            1.0, NP, pred_plain, label_plain, mae=True
+        )
+
+        np.testing.assert_allclose(loss_mask, loss_plain)
+        np.testing.assert_allclose(metrics_mask["rmse_h"], metrics_plain["rmse_h"])
+        np.testing.assert_allclose(metrics_mask["mae_h"], metrics_plain["mae_h"])
 
 
 class TestDPModelEnergyLossVirialGradAccum:

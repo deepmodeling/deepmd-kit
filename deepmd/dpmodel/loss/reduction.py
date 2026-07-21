@@ -67,6 +67,45 @@ def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
     return xp.mean(per_frame)
 
 
+def masked_pair_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
+    """Return a per-frame mean over valid atom-pair components.
+
+    Parameters
+    ----------
+    elem : Array
+        Non-negative pair contribution of shape
+        ``[nf, nloc * ncomp, nloc * ncomp]``. The contribution has already
+        been squared or converted to an absolute value, but is not masked.
+    maskf : Array
+        Per-atom real/placeholder mask of shape ``[nf, nloc]``.
+    ncomp : int
+        Number of components per atom on each pair axis. A Cartesian Hessian
+        uses three components on both axes.
+
+    Returns
+    -------
+    Array
+        ``mean_over_frames(sum(valid_pair_elem) / (real_natoms*ncomp)**2)``.
+        A pair is valid only when both atom indices are real. An all-padding
+        frame contributes a neutral zero.
+    """
+    xp = array_api_compat.array_namespace(elem, maskf)
+    nf, nloc = maskf.shape
+    component_mask = xp.reshape(
+        xp.broadcast_to(maskf[:, :, None], (nf, nloc, ncomp)),
+        (nf, nloc * ncomp),
+    )
+    masked = elem * component_mask[:, :, None] * component_mask[:, None, :]
+    per_frame_sum = xp.sum(xp.reshape(masked, (nf, -1)), axis=-1)
+    per_frame_dof = xp.square(xp.sum(component_mask, axis=-1))
+    has_dof = per_frame_dof > 0
+    safe_dof = xp.where(has_dof, per_frame_dof, xp.ones_like(per_frame_dof))
+    per_frame = xp.where(
+        has_dof, per_frame_sum / safe_dof, xp.zeros_like(per_frame_sum)
+    )
+    return xp.mean(per_frame)
+
+
 def per_frame_component_mean(err: Array) -> Array:
     """Idiom 2 primitive: per-frame mean over the flattened component axis.
 
