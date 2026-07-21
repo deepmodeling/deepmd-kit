@@ -14,6 +14,7 @@ from .ci_split import (
     _load_durations,
     _split_items,
     _TestGroup,
+    pytest_cmdline_main,
 )
 
 
@@ -43,6 +44,18 @@ class FakeItem:
         return None
 
 
+@dataclass(frozen=True)
+class FakeConfig:
+    ci_splits: int | None
+    ci_group: int | None
+
+    def getoption(self, name: str) -> int | None:
+        return {
+            "ci_splits": self.ci_splits,
+            "ci_group": self.ci_group,
+        }[name]
+
+
 def _item(
     nodeid: str,
     *,
@@ -58,6 +71,37 @@ def _item(
 
 def _owner(groups: list[_TestGroup], item: FakeItem) -> int:
     return next(index for index, group in enumerate(groups) if item in group.items)
+
+
+class TestCommandLineValidation:
+    def test_split_options_can_both_be_omitted(self) -> None:
+        assert pytest_cmdline_main(FakeConfig(None, None)) is None
+
+    @pytest.mark.parametrize(
+        ("splits", "group"),
+        [
+            (1, None),
+            (None, 1),
+        ],
+    )
+    def test_split_options_must_be_used_together(
+        self, splits: int | None, group: int | None
+    ) -> None:
+        with pytest.raises(pytest.UsageError, match="must be used together"):
+            pytest_cmdline_main(FakeConfig(splits, group))
+
+    def test_split_count_must_be_positive(self) -> None:
+        with pytest.raises(pytest.UsageError, match="must be at least 1"):
+            pytest_cmdline_main(FakeConfig(0, 1))
+
+    @pytest.mark.parametrize("group", [0, 3])
+    def test_group_must_be_within_split_count(self, group: int) -> None:
+        with pytest.raises(pytest.UsageError, match="must be between 1"):
+            pytest_cmdline_main(FakeConfig(2, group))
+
+    @pytest.mark.parametrize("group", [1, 2])
+    def test_valid_boundary_groups_are_accepted(self, group: int) -> None:
+        assert pytest_cmdline_main(FakeConfig(2, group)) is None
 
 
 class TestUnitConstruction:
@@ -119,6 +163,32 @@ class TestUnitConstruction:
             _split_items([item], {}, splits=1)
 
 
+class TestDurationLoading:
+    def test_valid_duration_cache_is_loaded(self, tmp_path: Path) -> None:
+        path = tmp_path / "durations.json"
+        path.write_text(
+            '{"tests/test_a.py::test_one": 1.25, "tests/test_b.py::test_two": 2}',
+            encoding="utf-8",
+        )
+
+        assert _load_durations(path) == {
+            "tests/test_a.py::test_one": 1.25,
+            "tests/test_b.py::test_two": 2.0,
+        }
+
+    def test_missing_duration_cache_is_empty(self, tmp_path: Path) -> None:
+        assert _load_durations(tmp_path / "missing.json") == {}
+
+    def test_malformed_legacy_duration_list_is_usage_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "durations.json"
+        path.write_text('[["valid", 1.0], ["broken"]]', encoding="utf-8")
+
+        with pytest.raises(pytest.UsageError, match="invalid legacy list"):
+            _load_durations(path)
+
+
 class TestUnitBalancing:
     def test_lpt_balances_recorded_unit_durations(self) -> None:
         items = [_item(f"tests/test_{index}.py::test_value") for index in range(4)]
@@ -162,12 +232,3 @@ class TestUnitBalancing:
         for group in first:
             indices = [items.index(item) for item in group.items]
             assert indices == sorted(indices)
-
-    def test_malformed_legacy_duration_list_is_usage_error(
-        self, tmp_path: Path
-    ) -> None:
-        path = tmp_path / "durations.json"
-        path.write_text('[["valid", 1.0], ["broken"]]', encoding="utf-8")
-
-        with pytest.raises(pytest.UsageError, match="invalid legacy list"):
-            _load_durations(path)
