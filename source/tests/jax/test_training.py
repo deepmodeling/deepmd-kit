@@ -71,6 +71,9 @@ from deepmd.jax.utils.serialization import (
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -198,6 +201,74 @@ def _minimal_jax_multitask_config(model_params: dict) -> dict:
             "task_b": {},
         },
     }
+
+
+class _RequirementModel:
+    """Minimal model double for trainer requirement-driven output tests."""
+
+    def __init__(self) -> None:
+        self.hessian_enable_calls = 0
+
+    def enable_hessian(self) -> None:
+        self.hessian_enable_calls += 1
+
+    def get_dim_fparam(self) -> int:
+        return 0
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.get_model")
+def test_jax_hessian_mode_follows_loss_data_requirement(
+    get_model,
+    build_losses,
+) -> None:
+    """The trainer consumes the loss requirement instead of its prefactors."""
+    model = _RequirementModel()
+    get_model.return_value = model
+    build_losses.return_value = {
+        "Default": SimpleNamespace(
+            label_requirement=[DataRequirementItem("hessian", ndof=1)]
+        )
+    }
+    model_params = {"type_map": ["O"], "descriptor": {}}
+
+    trainer = DPTrainer(_minimal_jax_config(model_params))
+
+    assert model.hessian_enable_calls == 1
+    assert trainer.model_def_script["hessian_mode"] is True
+
+
+@patch("deepmd.jax.train.trainer.DPTrainer._build_losses")
+@patch("deepmd.jax.train.trainer.get_model")
+def test_jax_multitask_hessian_only_enables_requesting_branch(
+    get_model,
+    build_losses,
+) -> None:
+    """Each multi-task branch follows its own loss data requirements."""
+    model_a = _RequirementModel()
+    model_b = _RequirementModel()
+    get_model.side_effect = [model_a, model_b]
+    build_losses.return_value = {
+        "task_a": SimpleNamespace(
+            label_requirement=[DataRequirementItem("hessian", ndof=1)]
+        ),
+        "task_b": SimpleNamespace(
+            label_requirement=[DataRequirementItem("energy", ndof=1)]
+        ),
+    }
+    model_params = {
+        "model_dict": {
+            "task_a": {"type_map": ["O"], "descriptor": {}},
+            "task_b": {"type_map": ["O"], "descriptor": {}},
+        }
+    }
+
+    trainer = DPTrainer(_minimal_jax_multitask_config(model_params))
+
+    assert model_a.hessian_enable_calls == 1
+    assert model_b.hessian_enable_calls == 0
+    assert trainer.model_def_script["model_dict"]["task_a"]["hessian_mode"] is True
+    assert "hessian_mode" not in trainer.model_def_script["model_dict"]["task_b"]
 
 
 def _shared_jax_model_config(*, share_fitting: bool = True) -> dict:

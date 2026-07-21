@@ -1005,7 +1005,7 @@ class TestSeZMModelCompile(unittest.TestCase):
                 "water_1": {"type": "ener"},
                 "water_2": {"type": "ener"},
             }
-            models = get_model_for_wrapper(mt_cfg, _loss_params=loss_params)
+            models = get_model_for_wrapper(mt_cfg)
             prepare_model_for_loss(models, loss_params)
             wrapper = ModelWrapper(models)
             wrapper.share_params(shared_links, {"water_1": 0.5, "water_2": 0.5})

@@ -5,6 +5,9 @@ import bisect
 import copy
 import functools
 import logging
+from collections.abc import (
+    Iterable,
+)
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -1214,3 +1217,12 @@ class DataRequirementItem:
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"
+
+
+def has_data_requirement(requirements: Iterable[DataRequirementItem], key: str) -> bool:
+    """Return whether a collection requests data identified by ``key``.
+
+    Consumers should use requirement items as the contract with losses instead
+    of reinterpreting loss-specific configuration such as prefactors.
+    """
+    return any(item.key == key for item in requirements)

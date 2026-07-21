@@ -94,6 +94,7 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+    has_data_requirement,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -195,17 +196,24 @@ class DPTrainer(AbstractTrainer):
         learning_rate_param = jdata["learning_rate"]
         self.lr = self._get_lr_and_coef(learning_rate_param)
         self.losses = self._build_losses(jdata, learning_rate_param)
-        for model_key, loss_obj in self.losses.items():
-            # Hessians are expensive and are only exposed by models whose task
-            # loss explicitly requests them. Enable each multi-task branch
-            # independently so unrelated branches keep their normal outputs.
-            if getattr(loss_obj, "has_h", False):
-                self.models[model_key].enable_hessian()
-        self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
         self.data_requirements_by_task = {
             model_key: list(self.losses[model_key].label_requirement)
             for model_key in self.model_keys
         }
+        for model_key, requirements in self.data_requirements_by_task.items():
+            # Hessians are expensive and are only exposed by models whose task
+            # loss requests the corresponding label. Enable each multi-task
+            # branch independently so unrelated branches keep normal outputs.
+            if has_data_requirement(requirements, "hessian"):
+                enable_hessian = getattr(self.models[model_key], "enable_hessian", None)
+                if not callable(enable_hessian):
+                    raise RuntimeError(
+                        f"Model {type(self.models[model_key]).__name__} does not "
+                        "support Hessian supervision."
+                    )
+                enable_hessian()
+                self.model_params_by_task[model_key]["hessian_mode"] = True
+        self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
 
         self.valid_numb_batch_by_task = self._valid_numb_batch_by_task()
         self.valid_numb_batch = (
