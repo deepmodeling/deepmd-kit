@@ -142,7 +142,6 @@ def make_graph_from_nlist(coord, nlist):
 
 
 def _run_graph(dd, coord, atype, nlist, permute_seed=None):
-    nf, nloc = atype.shape
     graph = make_graph_from_nlist(coord, nlist)
     if permute_seed is not None:
         perm = np.random.default_rng(permute_seed).permutation(

@@ -42,11 +42,24 @@ def jitter_zero_arrays(node, rng: np.random.Generator) -> None:
         Seeded RNG used to draw the replacement noise.
     """
     if isinstance(node, dict):
-        for value in node.values():
-            jitter_zero_arrays(value, rng)
+        items: object = node.items()
     elif isinstance(node, list):
-        for value in node:
+        items = enumerate(node)
+    else:
+        return
+    for key, value in items:
+        if (
+            isinstance(value, np.ndarray)
+            and value.dtype.kind == "f"
+            and value.size > 0
+            and np.all(value == 0.0)
+        ):
+            # Replace the zero array in its parent container rather than
+            # mutating it in place. Assigning a fresh array into the caller's
+            # (freshly serialized) dict avoids writing through an array that
+            # CodeQL's dataflow can trace back to a mutable default value
+            # (py/modification-of-default-value). The RNG draw order, shapes,
+            # and dtype are unchanged, so seeded calls stay bit-identical.
+            node[key] = rng.normal(0.0, 0.05, size=value.shape).astype(value.dtype)
+        else:
             jitter_zero_arrays(value, rng)
-    elif isinstance(node, np.ndarray):
-        if node.dtype.kind == "f" and node.size > 0 and np.all(node == 0.0):
-            node[...] = rng.normal(0.0, 0.05, size=node.shape)
