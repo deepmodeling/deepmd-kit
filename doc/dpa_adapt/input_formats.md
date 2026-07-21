@@ -151,16 +151,16 @@ Grouped data is still ordinary `deepmd/npy` data, with marker arrays under each
 `set.*` directory. `frozen_head` and `finetune` auto-detect grouped training when
 all training and validation `set.*` directories carry the complete marker set.
 
-| File | Shape | Dtype | Meaning |
-| ---- | ----- | ----- | ------- |
-| `group_id.npy` | `(nframes,)` | integer | Group index for each frame. Frames with the same id are pooled into one group-level prediction. |
-| `weight.npy` | `(nframes,)` | float | Frame/component weight used during group pooling. Use `1.0` for unweighted groups. |
-| `pool_mask.npy` | `(nframes, natoms)` | float or bool-like | Atom mask for descriptor pooling. Values > 0 are included; values 0 are excluded. |
+| File            | Shape               | Dtype              | Meaning                                                                                         |
+| --------------- | ------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `group_id.npy`  | `(nframes,)`        | integer            | Group index for each frame. Frames with the same id are pooled into one group-level prediction. |
+| `weight.npy`    | `(nframes,)`        | float              | Frame/component weight used during group pooling. Use `1.0` for unweighted groups.              |
+| `pool_mask.npy` | `(nframes, natoms)` | float or bool-like | Atom mask for descriptor pooling. Values > 0 are included; values 0 are excluded.               |
 
 Optional context features use the existing DeePMD frame-parameter convention:
 
-| File | Shape | Meaning |
-| ---- | ----- | ------- |
+| File         | Shape                | Meaning                                                                                             |
+| ------------ | -------------------- | --------------------------------------------------------------------------------------------------- |
 | `fparam.npy` | `(nframes, nfparam)` | Per-group side features copied to each frame in the group. Rows within one group must be identical. |
 
 Labels remain standard per-frame label arrays, for example

@@ -382,7 +382,9 @@ def test_evaluate_rejects_multi_frame_groups_before_touching_subprocess(tmp_path
     """The guard must fire before any dp --pt freeze/test subprocess call,
     so evaluate() fails fast without a spurious freeze/test invocation.
     """
-    from unittest.mock import patch
+    from unittest.mock import (
+        patch,
+    )
 
     ft = _make_group_property_finetuner(tmp_path)
     (Path(ft.output_dir) / "model.ckpt-100.pt").write_bytes(b"")
