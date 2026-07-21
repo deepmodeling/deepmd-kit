@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <sstream>
@@ -238,7 +239,8 @@ void DeepPotPTExpt::init(const std::string& model,
         metadata["lower_input_kind"].as_string();
     lower_input_is_edge_ = lower_input_kind == "edge_vec";
     lower_input_is_graph_ = lower_input_kind == "graph";
-    lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical";
+    lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical" ||
+                                lower_input_kind == "dpa4c_canonical";
   } else {
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
@@ -265,6 +267,12 @@ void DeepPotPTExpt::init(const std::string& model,
     if (!graph_edge_fp32_) {
       throw deepmd::deepmd_exception(
           "compact canonical graph artifacts require float32 edge vectors.");
+    }
+    if (!metadata.obj_val.count("canonical_index_dtype") ||
+        metadata["canonical_index_dtype"].as_string() != "uint32") {
+      throw deepmd::deepmd_exception(
+          "compact canonical graph artifacts require uint32 topology; "
+          "re-freeze the model with the current DeePMD-kit version.");
     }
   }
 
@@ -2472,11 +2480,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::int64_t* d_source,
+    const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::int64_t* d_source_order,
+    const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage) {
@@ -2488,7 +2496,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
   }
-  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2) {
+  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2 ||
+      static_cast<std::uint64_t>(edge_storage) >
+          std::numeric_limits<std::uint32_t>::max()) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
   }
@@ -2500,10 +2510,12 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         torch::TensorOptions().dtype(torch::kFloat32).device(device);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
+    const auto opt_u32 =
+        torch::TensorOptions().dtype(torch::kUInt32).device(device);
     auto atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
                                   {nall_nodes}, opt_i64);
-    auto source = torch::from_blob(const_cast<std::int64_t*>(d_source),
-                                   {edge_storage}, opt_i64);
+    auto source = torch::from_blob(const_cast<std::uint32_t*>(d_source),
+                                   {edge_storage}, opt_u32);
     auto edge_vec = torch::from_blob(const_cast<float*>(d_edge_vec),
                                      {edge_storage, 3}, opt_f32);
     auto destination_row_ptr =
@@ -2512,7 +2524,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     auto source_row_ptr = torch::from_blob(
         const_cast<std::int64_t*>(d_source_row_ptr), {nall_nodes + 1}, opt_i64);
     auto source_order = torch::from_blob(
-        const_cast<std::int64_t*>(d_source_order), {edge_storage}, opt_i64);
+        const_cast<std::uint32_t*>(d_source_order), {edge_storage}, opt_u32);
     auto n_node = torch::full({1}, nall_nodes, opt_i64);
     auto n_local = torch::full({1}, nloc, opt_i64);
 
@@ -2602,11 +2614,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::int64_t* d_source,
+    const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::int64_t* d_source_order,
+    const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage) {

@@ -29,13 +29,15 @@ namespace LAMMPS_NS {
 
 template <class DeviceType>
 struct CompactCanonicalGraphWorkspace {
-  Kokkos::View<std::int64_t*, DeviceType> source;
+  Kokkos::View<std::uint32_t*, DeviceType> source;
   Kokkos::View<float*, DeviceType> edge_vec;
   Kokkos::View<std::int64_t*, DeviceType> destination_row_ptr;
-  Kokkos::View<std::int64_t*, DeviceType> source_counts;
+  // Per-node counts are bounded by the LAMMPS neighbor limit. CSR offsets
+  // remain int64 so the compact graph retains its full global edge range.
+  Kokkos::View<std::uint32_t*, DeviceType> source_counts;
   Kokkos::View<std::int64_t*, DeviceType> source_row_ptr;
-  Kokkos::View<std::int64_t*, DeviceType> source_cursor;
-  Kokkos::View<std::int64_t*, DeviceType> source_order;
+  Kokkos::View<std::uint32_t*, DeviceType> source_cursor;
+  Kokkos::View<std::uint32_t*, DeviceType> source_order;
   std::size_t edge_capacity = 0;
 };
 
@@ -97,10 +99,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
       d_model_type;  // (nnode_model) type per model node
   Kokkos::View<std::int64_t*, DeviceType>
       d_model_type_i64;  // compact canonical artifact type per model node
-  // Ghost -> local owner fold, rebuilt on the host at each neighbor rebuild.
-  DAT::tdual_int_1d k_owner;
-  typename AT::t_int_1d d_owner;
-
   // Virtual-atom (NULL type) compaction, rebuilt with the neighbor list: the
   // model sees only the local atoms with a real model type, so ``model2loc``
   // lists those local indices and ``loc2model`` inverts it (-1 for virtual).
@@ -110,6 +108,11 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   int nloc_model;   // real local model nodes; the energy is summed over these
   int nnode_model;  // total model nodes (== nloc_model folded; + ghost
                     // extended)
+  // (nall) candidate atom -> model node index, or -1. Folding a ghost onto its
+  // owner and mapping that atom to a node is resolved once per neighbor
+  // rebuild so that the graph traversal needs a single gather per candidate.
+  DAT::tdual_int_1d k_candidate_to_model;
+  typename AT::t_int_1d d_candidate_to_model;
   DAT::tdual_int_1d k_loc2model;  // (nall) atom -> model node index, or -1
   DAT::tdual_int_1d k_model2loc;  // (nall) model node index -> atom index
   typename AT::t_int_1d d_loc2model;

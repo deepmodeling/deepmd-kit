@@ -154,12 +154,12 @@ TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
 
   const auto compact = compactCanonicalGraph(graph);
-  EXPECT_EQ(compact.source.scalar_type(), torch::kInt64);
+  EXPECT_EQ(compact.source.scalar_type(), torch::kUInt32);
   EXPECT_EQ(compact.source.numel(), 2);
   EXPECT_EQ(compact.edge_vec.scalar_type(), torch::kFloat32);
   EXPECT_EQ(compact.edge_vec.size(0), 2);
-  EXPECT_TRUE(
-      torch::equal(compact.source_order, torch::tensor({0, 1}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(compact.source_order,
+                           torch::tensor({0, 1}, torch::kUInt32)));
   EXPECT_EQ(compact.destination_row_ptr.select(0, 1).item<std::int64_t>(), 1);
   EXPECT_EQ(compact.source_row_ptr.select(0, 1).item<std::int64_t>(), 1);
 }

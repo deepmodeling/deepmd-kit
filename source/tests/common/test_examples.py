@@ -65,6 +65,7 @@ input_files = (
     p_examples / "water" / "dpa4" / "input.json",
     p_examples / "water" / "dpa4" / "input-zbl.json",
     p_examples / "water" / "dpa4" / "lmp" / "input.json",
+    p_examples / "water" / "dpa4c" / "input.json",
     p_examples / "property" / "train" / "input_torch.json",
     p_examples / "water" / "se_e3_tebd" / "input_torch.json",
     p_examples / "hessian" / "single_task" / "input.json",

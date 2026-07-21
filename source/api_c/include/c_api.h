@@ -442,7 +442,7 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
- * @since API version 28
+ * @since API version 29
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU(
     DP_DeepPot* dp,
@@ -450,11 +450,11 @@ extern void DP_DeepPotComputeCanonicalGraphGPU(
     double* d_force,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const int64_t* d_source,
+    const uint32_t* d_source,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const int64_t* d_source_order,
+    const uint32_t* d_source_order,
     int nloc,
     int nall_nodes,
     int64_t edge_storage);

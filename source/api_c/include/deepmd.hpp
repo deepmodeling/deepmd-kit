@@ -1351,11 +1351,11 @@ class DeepPot : public DeepBaseModel {
                                    double* d_force,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const int64_t* d_source,
+                                   const uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const int64_t* d_source_order,
+                                   const uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
                                    const int64_t edge_storage) {

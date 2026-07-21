@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -399,21 +400,28 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
       graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
           .item<std::int64_t>();
   const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  if (static_cast<std::uint64_t>(storage_count) >
+      std::numeric_limits<std::uint32_t>::max()) {
+    throw deepmd_exception(
+        "compact canonical graph exceeds the uint32 edge-index range");
+  }
   auto source = torch::zeros({storage_count},
-                             graph.edge_index.options().dtype(torch::kInt64));
+                             graph.edge_index.options().dtype(torch::kUInt32));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
-  auto source_order = torch::arange(
-      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  auto source_order =
+      torch::arange(storage_count,
+                    graph.edge_index.options().dtype(torch::kInt64))
+          .to(torch::kUInt32);
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
                    .slice(0, 0, edge_count)
-                   .to(torch::kInt64));
+                   .to(torch::kUInt32));
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kUInt32));
   }
   return {graph.atype,
           graph.n_node,

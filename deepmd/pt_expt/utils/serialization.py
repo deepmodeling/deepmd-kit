@@ -615,7 +615,7 @@ def build_synthetic_canonical_graph_inputs(
     *,
     device: torch.device,
 ) -> tuple[torch.Tensor, ...]:
-    """Build the compact canonical trace inputs for compressed DPA1."""
+    """Build compact canonical trace inputs for compressed CUDA descriptors."""
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -678,9 +678,17 @@ def _build_canonical_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic shapes for the eight-tensor compact deployment ABI."""
     del sample_inputs
+    from deepmd.pt_expt.utils.canonical_graph import (
+        UINT32_MAX,
+    )
+
     nframes_dim = torch.export.Dim("nframes", min=1)
     node_dim = torch.export.Dim("n_node_total", min=1)
-    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
+    edge_storage_dim = torch.export.Dim(
+        "nedge_storage",
+        min=2,
+        max=UINT32_MAX,
+    )
     return (
         {0: node_dim},
         {0: nframes_dim},
@@ -922,8 +930,13 @@ def _build_dynamic_shapes(
         Whether the inputs include the 8 comm tensors.
     model_nnei : int
         The model's sum(sel).  Used as the min for the dynamic nnei dim.
-    Returns a tuple (not dict) to match positional args of the make_fx
-    traced module, whose arg names may have suffixes like ``_1``.
+
+    Returns
+    -------
+    tuple
+        Dynamic-shape specifications in the positional order of the make_fx
+        traced module. A tuple is required because traced argument names may
+        carry generated suffixes such as ``_1``.
     """
     # When tracing the with-comm variant, nframes is static at 1.
     # Rationale: pt_expt's Repflow/Repformer parallel-mode override
@@ -1123,6 +1136,8 @@ def _collect_metadata(
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
+    if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
+        meta["canonical_index_dtype"] = "uint32"
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1250,7 +1265,8 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
 
     ``"auto"`` selects the graph lower for a graph-lower model whose graph
     implementation is exportable to ``.pt2`` and the dense nlist lower for
-    everything else. An explicit ``"nlist"`` / ``"graph"`` is returned
+    everything else. Eligible compressed DPA1 and DPA4C energy models select
+    their compact canonical graph schemas. Any explicit lower kind is returned
     unchanged.
     """
     if lower_kind != "auto":
@@ -1267,10 +1283,17 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     model = BaseModel.deserialize(data["model"])
     if model_uses_graph_lower(model) and _supports_graph_export(model):
         from deepmd.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible,
+            canonical_model_eligible as dpa1_canonical_eligible,
+        )
+        from deepmd.kernels.cuda.dpa4c.canonical import (
+            canonical_model_eligible as dpa4c_canonical_eligible,
         )
 
-        return "dpa1_canonical" if canonical_model_eligible(model) else "graph"
+        if dpa4c_canonical_eligible(model):
+            return "dpa4c_canonical"
+        if dpa1_canonical_eligible(model):
+            return "dpa1_canonical"
+        return "graph"
     return "nlist"
 
 
@@ -1336,7 +1359,7 @@ def deserialize_to_file(
     # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
     # operators, while the per-atom virial is mandatory for the LAMMPS Kokkos
     # consumer.
-    if lower_kind in ("graph", "dpa1_canonical"):
+    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         do_atomic_virial = True
         ctx: contextlib.AbstractContextManager = _cuda_infer_at_least_2()
     else:
@@ -1463,7 +1486,7 @@ def _trace_and_export(
     )
 
     # Graph-form exports use a dynamic edge axis and an energy-model contract.
-    if lower_kind in ("graph", "dpa1_canonical"):
+    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         import math
 
         check_graph_trace_torch_version(model)
@@ -1509,7 +1532,7 @@ def _trace_and_export(
                 "forward_lower_graph_exportable_with_comm; graph-form "
                 "with-comm .pt2 export requires an energy model"
             )
-        canonical = lower_kind == "dpa1_canonical"
+        canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
         required_method = (
             "forward_lower_canonical_graph_exportable"
             if canonical
@@ -1520,14 +1543,19 @@ def _trace_and_export(
                 f"model {type(model).__name__} has no {required_method}"
             )
         if canonical:
-            from deepmd.kernels.cuda.dpa1.canonical import (
-                canonical_model_eligible,
-            )
+            if lower_kind == "dpa4c_canonical":
+                from deepmd.kernels.cuda.dpa4c.canonical import (
+                    canonical_model_eligible,
+                )
+            else:
+                from deepmd.kernels.cuda.dpa1.canonical import (
+                    canonical_model_eligible,
+                )
 
             if not canonical_model_eligible(model):
                 raise NotImplementedError(
                     "compact canonical export requires an eligible compressed "
-                    "DPA1 energy model"
+                    "DPA1 or DPA4C energy model"
                 )
 
         # Trace-time sizes must be pairwise-distinct AND avoid every static

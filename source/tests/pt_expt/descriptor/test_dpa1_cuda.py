@@ -1126,8 +1126,37 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
     def test_parity_plain(self) -> None:
         self._assert_parity(self._build(resnet_dt=False))
 
-    def test_parity_resnet_dt_silu(self) -> None:
-        self._assert_parity(self._build(resnet_dt=True, act="silu"))
+    def test_parity_silu(self) -> None:
+        self._assert_parity(self._build(resnet_dt=False, act="silu"))
+
+    def test_parity_single_layer_residual(self) -> None:
+        self._assert_parity(
+            self._build(
+                resnet_dt=False,
+                act="silu",
+                neuron=[64],
+            )
+        )
+
+    def test_timestep_falls_back(self) -> None:
+        from deepmd.kernels.cuda.graph_fitting import (
+            fitting_eligible,
+        )
+
+        self.assertFalse(fitting_eligible(self._build(resnet_dt=True)))
+
+    def test_ineligible_network_is_refused_not_approximated(self) -> None:
+        """An unsupported network must raise where its arguments are built.
+
+        The operator has no representation for a layer timestep and would
+        evaluate the network without it, so the conversion refuses instead.
+        """
+        from deepmd.kernels.cuda.graph_fitting import (
+            fitting_operator_arguments,
+        )
+
+        with self.assertRaises(ValueError):
+            fitting_operator_arguments(self._build(resnet_dt=True))
 
     def test_fparam_falls_back(self) -> None:
         from deepmd.kernels.cuda.graph_fitting import (
@@ -1202,6 +1231,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             ntypes=2,
             dim_descrpt=dim_descrpt,
             neuron=[48, 48],
+            resnet_dt=False,
             activation_function="silu",
             precision="float32",
             mixed_types=True,
@@ -1504,7 +1534,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=[64, 64, 64],
-            resnet_dt=True,
+            resnet_dt=False,
             activation_function="silu",
             precision="float32",
             mixed_types=True,
@@ -1705,6 +1735,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
 
         self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
         self.assertEqual(metadata["graph_edge_dtype"], "float32")
+        self.assertEqual(metadata["canonical_index_dtype"], "uint32")
         self.assertNotIn("graph_index_dtype", metadata)
         self.assertEqual(
             output_keys,

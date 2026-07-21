@@ -81,6 +81,12 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
     see the ``TorchArrayParam`` docstring.
     """
 
+    # Restoring the dtype of the input after the affine map would undo an
+    # enclosing ``torch.autocast`` region and defeat mixed precision across a
+    # stack of these layers. An owner that autocasts sets this to ``True`` on
+    # the layers inside its region; every other layer keeps the default.
+    autocast_output: bool = False
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
         NativeLayerDP.__init__(self, *args, **kwargs)
@@ -144,7 +150,7 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
             if self.b is not None
             else torch.matmul(x, self.w)
         )
-        if y.dtype != x.dtype:
+        if not self.autocast_output and y.dtype != x.dtype:
             y = y.to(x.dtype)
         y = _torch_activation(y, self.activation_function)
         if self.idt is not None:

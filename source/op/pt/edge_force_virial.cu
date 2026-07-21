@@ -18,6 +18,7 @@
 #include <torch/torch.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <tuple>
 
 namespace {
@@ -146,27 +147,33 @@ __global__ void edge_force_virial_kernel(
   }
 }
 
-template <typename scalar_t>
-__global__ void reduce_node_virial_kernel(
+// Partial pass of a segment sum over the node axis. Each frame owns a
+// contiguous span of that axis, so a block can reduce a strided slice of one
+// (frame, component) pair without any atomic, and the reduction order follows
+// the launch geometry alone and is therefore reproducible. Accumulation is
+// fp64 whatever the stored type.
+template <typename scalar_t, int kComponents>
+__global__ void reduce_frame_segment_kernel(
     long frame_count,
     int partial_count,
     const long* __restrict__ frame_row_ptr,
-    const scalar_t* __restrict__ node_virial,
+    const scalar_t* __restrict__ node_values,
     double* __restrict__ partial) {
   __shared__ double values[kThreads];
-  const long task_count = static_cast<long>(frame_count) * 9 * partial_count;
+  const long task_count =
+      static_cast<long>(frame_count) * kComponents * partial_count;
   for (long task = blockIdx.x; task < task_count; task += gridDim.x) {
     const int partial_index = task % partial_count;
     const long output = task / partial_count;
-    const long frame = output / 9;
-    const int component = output % 9;
+    const long frame = output / kComponents;
+    const int component = output % kComponents;
     const long begin = frame_row_ptr[frame];
     const long end = frame_row_ptr[frame + 1];
     double sum = 0.0;
     for (long node = begin + partial_index * static_cast<long>(blockDim.x) +
                      threadIdx.x;
          node < end; node += static_cast<long>(partial_count) * blockDim.x) {
-      sum += static_cast<double>(node_virial[node * 9 + component]);
+      sum += static_cast<double>(node_values[node * kComponents + component]);
     }
     values[threadIdx.x] = sum;
     __syncthreads();
@@ -183,11 +190,13 @@ __global__ void reduce_node_virial_kernel(
   }
 }
 
+// Final pass of a segment sum: fold the per-block partials of each output.
 template <typename scalar_t>
-__global__ void finalize_virial_kernel(long output_count,
-                                       int partial_count,
-                                       const double* __restrict__ partial,
-                                       scalar_t* __restrict__ virial) {
+__global__ void finalize_frame_segment_kernel(
+    long output_count,
+    int partial_count,
+    const double* __restrict__ partial,
+    scalar_t* __restrict__ out) {
   __shared__ double values[kThreads];
   for (long output = blockIdx.x; output < output_count; output += gridDim.x) {
     double sum = 0.0;
@@ -203,16 +212,61 @@ __global__ void finalize_virial_kernel(long output_count,
       __syncthreads();
     }
     if (threadIdx.x == 0) {
-      virial[output] = static_cast<scalar_t>(values[0]);
+      out[output] = static_cast<scalar_t>(values[0]);
     }
     __syncthreads();
   }
 }
 
+// Exclusive prefix of the per-frame node counts, giving each frame's span of
+// the node axis as ``[row_ptr[f], row_ptr[f + 1])``.
+torch::Tensor frame_row_pointer(const torch::Tensor& n_node_per_frame) {
+  return torch::cat({torch::zeros({1}, n_node_per_frame.options()),
+                     torch::cumsum(n_node_per_frame, 0)})
+      .to(torch::kInt64)
+      .contiguous();
+}
+
+// Slices per frame that the partial pass reduces in parallel. Bounding it
+// keeps the partial buffer small for a single large frame, which is the
+// molecular dynamics case.
+int frame_segment_partials(long node_count, long frame_count) {
+  const long average_node_count = (node_count + frame_count - 1) / frame_count;
+  return static_cast<int>(
+      std::min((average_node_count + kThreads - 1) / kThreads,
+               static_cast<long>(kMaximumVirialPartials)));
+}
+
+// Sum ``node_values``, laid out as (node, component), over the node segment of
+// each frame. Returns a flat (frame * kComponents) buffer.
+template <typename scalar_t, int kComponents>
+void launch_frame_segment_sum(long node_count,
+                              long frame_count,
+                              const torch::Tensor& frame_row_ptr,
+                              const scalar_t* node_values,
+                              torch::Tensor& partial,
+                              scalar_t* out,
+                              cudaStream_t stream) {
+  const int partial_count = static_cast<int>(partial.size(1));
+  const long output_count = frame_count * kComponents;
+
+  const int partial_blocks = std::min(output_count * partial_count, 65535L);
+  reduce_frame_segment_kernel<scalar_t, kComponents>
+      <<<partial_blocks, kThreads, 0, stream>>>(
+          frame_count, partial_count, frame_row_ptr.data_ptr<long>(),
+          node_values, partial.data_ptr<double>());
+  FORCE_CHECK_LAUNCH("frame segment sum partial reduction");
+
+  const int final_blocks = std::min(output_count, 65535L);
+  finalize_frame_segment_kernel<scalar_t>
+      <<<final_blocks, kThreads, 0, stream>>>(output_count, partial_count,
+                                              partial.data_ptr<double>(), out);
+  FORCE_CHECK_LAUNCH("frame segment sum final reduction");
+}
+
 template <typename scalar_t, typename index_t>
 void launch_force_virial(long node_count,
                          long frame_count,
-                         int partial_count,
                          const torch::Tensor& edge_gradient,
                          const torch::Tensor& edge_vec,
                          const torch::Tensor& edge_mask,
@@ -240,18 +294,9 @@ void launch_force_virial(long node_count,
           force.data_ptr<scalar_t>(), node_virial.data_ptr<scalar_t>());
   FORCE_CHECK_LAUNCH("edge_force_virial node reduction");
 
-  const long output_count = static_cast<long>(frame_count) * 9;
-  const int partial_blocks = std::min(output_count * partial_count, 65535L);
-  reduce_node_virial_kernel<scalar_t><<<partial_blocks, kThreads, 0, stream>>>(
-      frame_count, partial_count, frame_row_ptr.data_ptr<long>(),
-      node_virial.data_ptr<scalar_t>(), virial_partial.data_ptr<double>());
-  FORCE_CHECK_LAUNCH("edge_force_virial partial frame reduction");
-
-  const int final_blocks = std::min(output_count, 65535L);
-  finalize_virial_kernel<scalar_t><<<final_blocks, kThreads, 0, stream>>>(
-      output_count, partial_count, virial_partial.data_ptr<double>(),
-      virial.data_ptr<scalar_t>());
-  FORCE_CHECK_LAUNCH("edge_force_virial final frame reduction");
+  launch_frame_segment_sum<scalar_t, 9>(
+      node_count, frame_count, frame_row_ptr, node_virial.data_ptr<scalar_t>(),
+      virial_partial, virial.data_ptr<scalar_t>(), stream);
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
@@ -278,15 +323,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
     return {force, atom_virial, virial};
   }
 
-  auto frame_row_ptr =
-      torch::cat({torch::zeros({1}, n_node_per_frame.options()),
-                  torch::cumsum(n_node_per_frame, 0)})
-          .to(torch::kInt64)
-          .contiguous();
-  const long average_node_count = (node_count + frame_count - 1) / frame_count;
-  const int partial_count =
-      static_cast<int>(std::min((average_node_count + kThreads - 1) / kThreads,
-                                static_cast<long>(kMaximumVirialPartials)));
+  auto frame_row_ptr = frame_row_pointer(n_node_per_frame);
+  const int partial_count = frame_segment_partials(node_count, frame_count);
   auto virial_partial = torch::empty({frame_count * 9, partial_count},
                                      options.dtype(torch::kFloat64));
   const auto stream = at::cuda::getCurrentCUDAStream();
@@ -295,14 +333,20 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
       edge_gradient.scalar_type(), "edge_force_virial", [&] {
         if (source_order.scalar_type() == torch::kInt32) {
           launch_force_virial<scalar_t, int>(
-              node_count, frame_count, partial_count, edge_gradient, edge_vec,
-              edge_mask, destination_order, destination_row_ptr, source_order,
+              node_count, frame_count, edge_gradient, edge_vec, edge_mask,
+              destination_order, destination_row_ptr, source_order,
+              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
+              virial, stream);
+        } else if (source_order.scalar_type() == torch::kUInt32) {
+          launch_force_virial<scalar_t, std::uint32_t>(
+              node_count, frame_count, edge_gradient, edge_vec, edge_mask,
+              destination_order, destination_row_ptr, source_order,
               source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
               virial, stream);
         } else {
           launch_force_virial<scalar_t, long>(
-              node_count, frame_count, partial_count, edge_gradient, edge_vec,
-              edge_mask, destination_order, destination_row_ptr, source_order,
+              node_count, frame_count, edge_gradient, edge_vec, edge_mask,
+              destination_order, destination_row_ptr, source_order,
               source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
               virial, stream);
         }
@@ -393,10 +437,11 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
               "edge_force_virial: CSR tensors must be contiguous");
   TORCH_CHECK(
       (source_order.scalar_type() == torch::kInt32 ||
+       source_order.scalar_type() == torch::kUInt32 ||
        source_order.scalar_type() == torch::kInt64) &&
           destination_order.scalar_type() == source_order.scalar_type(),
       "edge_force_virial: destination_order and source_order must have the "
-      "same int32 or int64 dtype");
+      "same int32, uint32, or int64 dtype");
   return assemble_force_virial(node_count, edge_gradient, edge_vec, edge_mask,
                                destination_order, destination_row_ptr,
                                source_order, source_row_ptr, n_node_per_frame,
@@ -430,9 +475,10 @@ canonical_edge_force_virial(torch::Tensor edge_gradient,
                   source_row_ptr.scalar_type() == torch::kInt64,
               "canonical_edge_force_virial: row pointers must be int64");
   TORCH_CHECK(source_order.scalar_type() == torch::kInt32 ||
+                  source_order.scalar_type() == torch::kUInt32 ||
                   source_order.scalar_type() == torch::kInt64,
-              "canonical_edge_force_virial: source_order must be int32 or "
-              "int64");
+              "canonical_edge_force_virial: source_order must be int32, "
+              "uint32, or int64");
   TORCH_CHECK(destination_row_ptr.numel() == node_count + 1 &&
                   source_row_ptr.numel() == node_count + 1,
               "canonical_edge_force_virial: row pointers must have N + 1 "
@@ -444,6 +490,49 @@ canonical_edge_force_virial(torch::Tensor edge_gradient,
                                destination_order, destination_row_ptr,
                                source_order, source_row_ptr, n_node_per_frame,
                                want_atom_virial);
+}
+
+// Per-frame total of a scalar carried on the node axis, the energy being the
+// only such quantity. Scattering it with an index add would serialize one
+// atomic per node on a single address whenever the batch holds one frame,
+// which is the molecular dynamics case; the segment reduction that already
+// serves the virial has no atomic and no node-length index to materialize.
+//
+// The frames cover ``[0, sum(n_node_per_frame))`` of the node axis; nodes past
+// that are padding and contribute to no frame. The caller owns that
+// invariant, since checking it would force a device synchronization.
+torch::Tensor frame_scalar_sum(torch::Tensor node_scalar,
+                               torch::Tensor n_node_per_frame) {
+  const long node_count = node_scalar.size(0);
+  const long frame_count = n_node_per_frame.size(0);
+  TORCH_CHECK(node_scalar.is_cuda() && n_node_per_frame.is_cuda(),
+              "frame_scalar_sum: inputs must be CUDA tensors");
+  TORCH_CHECK(node_scalar.device() == n_node_per_frame.device(),
+              "frame_scalar_sum: inputs must share one device");
+  TORCH_CHECK(node_scalar.is_contiguous(),
+              "frame_scalar_sum: node_scalar must be contiguous");
+  TORCH_CHECK(node_scalar.dim() == 2 && node_scalar.size(1) == 1,
+              "frame_scalar_sum: node_scalar must have shape (N, 1)");
+  TORCH_CHECK(n_node_per_frame.dim() == 1,
+              "frame_scalar_sum: n_node_per_frame must be one-dimensional");
+
+  auto out = torch::zeros({frame_count, 1}, node_scalar.options());
+  if (node_count == 0 || frame_count == 0) {
+    return out;
+  }
+  auto frame_row_ptr = frame_row_pointer(n_node_per_frame);
+  const int partial_count = frame_segment_partials(node_count, frame_count);
+  auto partial = torch::empty({frame_count, partial_count},
+                              node_scalar.options().dtype(torch::kFloat64));
+  const auto stream = at::cuda::getCurrentCUDAStream();
+  AT_DISPATCH_FLOATING_TYPES(node_scalar.scalar_type(), "frame_scalar_sum",
+                             [&] {
+                               launch_frame_segment_sum<scalar_t, 1>(
+                                   node_count, frame_count, frame_row_ptr,
+                                   node_scalar.data_ptr<scalar_t>(), partial,
+                                   out.data_ptr<scalar_t>(), stream);
+                             });
+  return out;
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
@@ -469,10 +558,15 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "(Tensor force, Tensor atom_virial, Tensor virial)");
   library.impl("canonical_edge_force_virial", torch::kCUDA,
                &canonical_edge_force_virial);
+  library.def(
+      "frame_scalar_sum(Tensor node_scalar, Tensor n_node_per_frame) "
+      "-> Tensor");
+  library.impl("frame_scalar_sum", torch::kCUDA, &frame_scalar_sum);
 }
 
 TORCH_LIBRARY_IMPL(deepmd, Autograd, library) {
   library.impl("edge_force_virial", torch::CppFunction::makeFallthrough());
   library.impl("canonical_edge_force_virial",
                torch::CppFunction::makeFallthrough());
+  library.impl("frame_scalar_sum", torch::CppFunction::makeFallthrough());
 }

@@ -452,6 +452,121 @@ def descrpt_se_a_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
+    "dpa4c",
+    alias=["DPA4C"],
+    doc=doc_only_pt_expt_supported
+    + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
+)
+def descrpt_dpa4c_args() -> list[Argument]:
+    """Return the DPA4C descriptor arguments."""
+    return [
+        Argument(
+            "rcut",
+            float,
+            optional=True,
+            default=6.0,
+            doc="The outer cutoff radius.",
+        ),
+        Argument(
+            "channels",
+            int,
+            optional=True,
+            default=32,
+            doc=(
+                "Scalar degree-zero and edge channel width. Supported values "
+                "are 8, 16, 32, 64, and 128. This is the primary scaling "
+                "knob: it widens the edge features, the per-atom angular "
+                "state, and the descriptor output together. The fitting "
+                "network is sized against it; the released grades pair "
+                "channels 8, 32, 64, and 128 with fitting hidden widths 96, "
+                "192, 256, and 384."
+            ),
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            default=2,
+            doc="Maximum angular degree. Supported values are 2, 3, and 4.",
+        ),
+        Argument(
+            "basis_type",
+            str,
+            optional=True,
+            default="bessel",
+            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+        ),
+        Argument(
+            "n_radial",
+            int,
+            optional=True,
+            default=16,
+            doc=(
+                "Number of DPA4 radial basis functions forming the fixed "
+                "analytic radial input."
+            ),
+        ),
+        Argument(
+            "radial_modes",
+            int,
+            optional=True,
+            default=0,
+            doc=(
+                "Number of shared radial mode profiles that every ordered "
+                "atom-type pair mixes with its own coefficients. Zero leaves "
+                "each pair with a rescaled copy of one shared radial "
+                "function; larger values let each pair select its own radial "
+                "shape."
+            ),
+        ),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "If True, run the per-edge stage under bfloat16 automatic "
+                "mixed precision on CUDA during training. This lowers the "
+                "dominant activation footprint, which scales with the edge "
+                "count. The destination reduction and the invariant readout "
+                "stay in the descriptor precision. Evaluation and inference "
+                "are governed independently by the `DP_AMP_INFER` environment "
+                "variable, so a model trained in full precision can still "
+                "infer under mixed precision, and the reverse."
+            ),
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc="Ordered atom-type pairs excluded from the descriptor.",
+        ),
+        Argument(
+            "precision",
+            str,
+            optional=True,
+            default="float32",
+            doc="Floating-point precision of descriptor parameters.",
+        ),
+        Argument(
+            "trainable",
+            bool,
+            optional=True,
+            default=True,
+            doc="Whether descriptor parameters are trainable.",
+        ),
+        Argument(
+            "seed",
+            [int, None],
+            optional=True,
+            default=None,
+            doc="Random seed for parameter initialization.",
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
     doc=supported_backends("pt", "jax", "pt_expt") + doc_se_zm,

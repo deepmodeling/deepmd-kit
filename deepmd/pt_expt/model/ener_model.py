@@ -67,7 +67,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         *,
         do_atomic_virial: bool,
     ) -> dict[str, torch.Tensor]:
-        """Evaluate an eligible compressed DPA1 deployment graph.
+        """Evaluate an eligible compressed canonical deployment graph.
 
         Parameters
         ----------
@@ -78,7 +78,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         n_local
             Per-frame owned node counts with shape ``(nf,)``, int64.
         source
-            Source-node indices with shape ``(S,)``, int32 or int64.
+            Source-node indices with shape ``(S,)``, uint32.
         edge_vec
             Destination-major edge vectors with shape ``(S, 3)``, float32.
         destination_row_ptr
@@ -97,17 +97,26 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Public energy-model outputs on the flat node axis.
         """
         from deepmd.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible,
+            canonical_model_eligible as dpa1_canonical_eligible,
+        )
+        from deepmd.kernels.cuda.dpa1.canonical import (
             dpa1_canonical_compress_energy_force,
         )
+        from deepmd.kernels.cuda.dpa4c.canonical import (
+            canonical_model_eligible as dpa4c_canonical_eligible,
+        )
+        from deepmd.kernels.cuda.dpa4c.canonical import (
+            dpa4c_canonical_compress_energy_force,
+        )
         from deepmd.pt_expt.utils.canonical_graph import (
-            DPA1CanonicalGraph,
+            CanonicalGraph,
             validate_canonical_graph_shapes,
         )
 
-        if not canonical_model_eligible(self):
+        use_dpa4c = dpa4c_canonical_eligible(self)
+        if not use_dpa4c and not dpa1_canonical_eligible(self):
             raise ValueError("model is not eligible for compact canonical deployment")
-        graph = DPA1CanonicalGraph(
+        graph = CanonicalGraph(
             n_node=n_node,
             n_local=n_local,
             source=source,
@@ -126,21 +135,33 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         descriptor = self.atomic_model.descriptor
         fitting = self.atomic_model.fitting_net
         atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
-        energy, atom_energy, force, virial, atom_virial = (
-            dpa1_canonical_compress_energy_force(
-                descriptor,
-                fitting,
-                graph,
-                atype,
-                # descriptor-owned hook (single owner for the graph-route tebd
-                # table); value-identical for dpa1, the only canonical-eligible
-                # descriptor.
-                descriptor.graph_type_embedding_table(),
-                output_mask,
-                atom_bias,
-                do_atomic_virial,
+        if use_dpa4c:
+            energy, atom_energy, force, virial, atom_virial = (
+                dpa4c_canonical_compress_energy_force(
+                    descriptor,
+                    fitting,
+                    graph,
+                    atype,
+                    output_mask,
+                    atom_bias,
+                    do_atomic_virial,
+                )
             )
-        )
+        else:
+            energy, atom_energy, force, virial, atom_virial = (
+                dpa1_canonical_compress_energy_force(
+                    descriptor,
+                    fitting,
+                    graph,
+                    atype,
+                    # Descriptor-owned hook: the single owner of the
+                    # graph-route type-embedding table.
+                    descriptor.graph_type_embedding_table(),
+                    output_mask,
+                    atom_bias,
+                    do_atomic_virial,
+                )
+            )
         result = {
             "atom_energy": atom_energy,
             "energy": energy,
@@ -236,6 +257,20 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
         Parameters
         ----------
+        coord
+            Atomic coordinates.
+        atype
+            Atomic type indices.
+        box
+            Simulation-cell vectors, or ``None`` for a non-periodic system.
+        fparam
+            Optional frame parameters.
+        aparam
+            Optional atomic parameters.
+        do_atomic_virial
+            Whether to return per-atom virials.
+        charge_spin
+            Optional frame-level charge and spin conditioning.
         neighbor_list
             The neighbor-list construction strategy forwarded to
             :meth:`call_common`.  ``None`` uses the default all-pairs builder
@@ -425,8 +460,22 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
         Parameters
         ----------
-        extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
-            Sample inputs with representative shapes (used for tracing).
+        extended_coord
+            Extended-coordinate sample used for tracing.
+        extended_atype
+            Extended atom-type sample used for tracing.
+        nlist
+            Neighbor-list sample used for tracing.
+        mapping
+            Extended-to-local mapping sample used for tracing.
+        fparam
+            Optional frame-parameter sample.
+        aparam
+            Optional atomic-parameter sample.
+        do_atomic_virial
+            Whether the traced module returns per-atom virials.
+        charge_spin
+            Optional charge/spin conditioning sample.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).
@@ -685,6 +734,18 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         ----------
         atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin, do_atomic_virial
             As in :meth:`forward_lower_graph_exportable`.
+
+        destination_order
+            Destination-major edge permutation used by fused graph operators.
+
+        destination_row_ptr
+            Destination CSR row pointers.
+
+        source_order
+            Source-major edge permutation used by force assembly.
+
+        source_row_ptr
+            Source CSR row pointers.
 
         send_list, send_proc, recv_proc, send_num, recv_num, communicator, nlocal, nghost
             The 8 comm tensors (see ``_make_comm_sample_inputs`` in

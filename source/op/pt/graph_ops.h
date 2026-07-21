@@ -96,25 +96,74 @@ torch::Tensor dpa1_graph_descriptor_backward(
     double nnei);
 
 // Energy fitting MLP on the flat node axis. Returns (atom_energy (N, 1) fp64,
-// saved activations/derivatives) for graph_fitting_backward.
+// saved layer pre-activations) for graph_fitting_backward.
 std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
     torch::Tensor x,
     torch::Tensor atype,
     std::vector<torch::Tensor> ws,
     std::vector<torch::Tensor> bs,
-    std::vector<torch::Tensor> idts,
     std::vector<int64_t> resnets,
     torch::Tensor w_head,
     torch::Tensor b_head,
     torch::Tensor bias_atom_e,
     int64_t act);
 
-// dE/d(x) from dE/d(atom_energy); consumes the saved activations.
+// dE/d(x) from dE/d(atom_energy); consumes the saved pre-activations.
 torch::Tensor graph_fitting_backward(torch::Tensor d_e,
                                      torch::Tensor saved,
                                      std::vector<torch::Tensor> ws,
+                                     std::vector<torch::Tensor> bs,
                                      std::vector<int64_t> resnets,
-                                     torch::Tensor w_head);
+                                     torch::Tensor w_head,
+                                     int64_t act);
+
+// Layer geometry of one fitting network, shared by the operators that
+// evaluate it over a run of nodes.
+struct FittingLayerPlan {
+  std::vector<long> offset;  //!< Prefix sum of the hidden widths.
+  long width_max;            //!< Widest hidden layer.
+  int n_layer;
+
+  long saved_width() const { return offset[n_layer]; }
+};
+
+FittingLayerPlan fitting_layer_plan(const std::vector<torch::Tensor>& ws);
+
+// Evaluate the fitting network over one contiguous run of nodes. Every
+// full-width pointer is already indexed from the run's first node, so the same
+// code serves the whole node axis and a single tile of it. ``saved`` and
+// ``activation`` are sized for the run rather than for the system.
+void fitting_forward_range(cudaStream_t stream,
+                           const FittingLayerPlan& plan,
+                           const float* x,
+                           long input_width,
+                           const long* atype,
+                           const std::vector<torch::Tensor>& ws,
+                           const std::vector<torch::Tensor>& bs,
+                           const std::vector<int64_t>& resnets,
+                           const torch::Tensor& w_head,
+                           const torch::Tensor& b_head,
+                           const torch::Tensor& bias_atom_e,
+                           int64_t act,
+                           long run_nodes,
+                           float* saved,
+                           float* const activation[2],
+                           double* e);
+
+// Propagate the head cotangent of one run of nodes back to the input.
+void fitting_backward_range(cudaStream_t stream,
+                            const FittingLayerPlan& plan,
+                            const double* d_e,
+                            const float* saved,
+                            const std::vector<torch::Tensor>& ws,
+                            const std::vector<torch::Tensor>& bs,
+                            const std::vector<int64_t>& resnets,
+                            const torch::Tensor& w_head,
+                            int64_t act,
+                            long run_nodes,
+                            float* dh,
+                            float* dh_next,
+                            float* d_x);
 
 // Scatter dE/d(edge_vec) into per-node force, per-frame virial and (optional)
 // per-node virial. Returns (force (N, 3), atom_virial (N, 3, 3) or empty,

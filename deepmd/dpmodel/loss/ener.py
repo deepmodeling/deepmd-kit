@@ -498,7 +498,10 @@ class EnergyLoss(Loss):
                             )  # [nf, nloc, 3]
                             huber_ncomp = 3
                         else:
-                            diff_3 = xp.reshape(force_hat - force, (*_node_shape, 3))
+                            diff_3 = xp.reshape(
+                                force_hat_reshape - force_reshape,
+                                (*_node_shape, 3),
+                            )
                             norm_2d = xp.reshape(
                                 xp.linalg.vector_norm(
                                     xp.reshape(diff_3, (-1, 3)), axis=1
@@ -535,7 +538,9 @@ class EnergyLoss(Loss):
                                 delta=self._huber_delta_force,
                             )
                         else:
-                            force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                            force_diff_3 = xp.reshape(
+                                force_hat_reshape - force_reshape, (-1, 3)
+                            )
                             force_diff_norm = xp.reshape(
                                 xp.linalg.vector_norm(force_diff_3, axis=1), (-1, 1)
                             )
@@ -554,7 +559,10 @@ class EnergyLoss(Loss):
                     if not self.f_use_norm:
                         l1_force_masked = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                     else:
-                        diff_3 = xp.reshape(force_hat - force, (*_node_shape, 3))
+                        diff_3 = xp.reshape(
+                            force_hat_reshape - force_reshape,
+                            (*_node_shape, 3),
+                        )
                         norm_2d = xp.reshape(
                             xp.linalg.vector_norm(xp.reshape(diff_3, (-1, 3)), axis=1),
                             _node_shape,
@@ -571,7 +579,9 @@ class EnergyLoss(Loss):
                     if not self.f_use_norm:
                         l1_force_loss = xp.mean(xp.abs(diff_f))
                     else:
-                        force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                        force_diff_3 = xp.reshape(
+                            force_hat_reshape - force_reshape, (-1, 3)
+                        )
                         l1_force_loss = xp.mean(
                             xp.linalg.vector_norm(force_diff_3, axis=1)
                         )

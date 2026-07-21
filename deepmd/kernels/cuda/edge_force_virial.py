@@ -34,6 +34,8 @@ __all__ = [
     "canonical_op_available",
     "edge_force_virial",
     "ensure_registered",
+    "frame_scalar_sum",
+    "frame_scalar_sum_available",
     "op_available",
 ]
 
@@ -48,6 +50,65 @@ def canonical_op_available() -> bool:
     """Whether the compact canonical force operator is loaded."""
     op = getattr(torch.ops.deepmd, "canonical_edge_force_virial", None)
     return isinstance(op, torch._ops.OpOverloadPacket)
+
+
+def frame_scalar_sum_available() -> bool:
+    """Whether the C++ ``deepmd::frame_scalar_sum`` op is loaded."""
+    op = getattr(torch.ops.deepmd, "frame_scalar_sum", None)
+    return isinstance(op, torch._ops.OpOverloadPacket)
+
+
+def _frame_scalar_sum_fake(
+    node_scalar: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+) -> torch.Tensor:
+    return node_scalar.new_empty(n_node_per_frame.shape[0], 1)
+
+
+def _frame_scalar_sum_cpu(
+    node_scalar: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+) -> torch.Tensor:
+    offsets = torch.cat(
+        [
+            torch.zeros(1, dtype=torch.int64, device=n_node_per_frame.device),
+            torch.cumsum(n_node_per_frame.to(torch.int64), 0),
+        ]
+    )
+    return torch.stack(
+        [
+            node_scalar[offsets[frame] : offsets[frame + 1]].sum(0)
+            for frame in range(n_node_per_frame.shape[0])
+        ]
+    )
+
+
+def frame_scalar_sum(
+    node_scalar: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+) -> torch.Tensor:
+    """Sum a node-major scalar over the node segment of each frame.
+
+    Parameters
+    ----------
+    node_scalar : torch.Tensor
+        Per-node scalar with shape ``(N, 1)``.
+    n_node_per_frame : torch.Tensor
+        Node count of each frame with shape ``(F,)``. The frames occupy
+        contiguous spans of the node axis in this order.
+
+    Returns
+    -------
+    torch.Tensor
+        Per-frame total with shape ``(F, 1)`` and the input dtype.
+
+    Notes
+    -----
+    Nodes past ``sum(n_node_per_frame)`` are padding of the flat node axis and
+    contribute to no frame.
+    """
+    ensure_registered()
+    return torch.ops.deepmd.frame_scalar_sum(node_scalar, n_node_per_frame)
 
 
 def _fake(
@@ -164,7 +225,7 @@ def _canonical_cpu(
         edge_mask,
         torch.arange(
             edge_vec.shape[0],
-            dtype=source_order.dtype,
+            dtype=torch.int64,
             device=edge_vec.device,
         ),
         destination_row_ptr,
@@ -192,8 +253,12 @@ def ensure_registered() -> None:
         torch.library.register_fake("deepmd::canonical_edge_force_virial")(
             _canonical_fake
         )
+    if frame_scalar_sum_available():
+        torch.library.register_fake("deepmd::frame_scalar_sum")(_frame_scalar_sum_fake)
     _cpu_library = torch.library.Library("deepmd", "IMPL")
     _cpu_library.impl("edge_force_virial", _cpu, "CPU")
+    if frame_scalar_sum_available():
+        _cpu_library.impl("frame_scalar_sum", _frame_scalar_sum_cpu, "CPU")
     if canonical_op_available():
         _cpu_library.impl(
             "canonical_edge_force_virial",
