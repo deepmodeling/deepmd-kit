@@ -850,6 +850,48 @@ class TestDPModelEnergyLossHessianGradAccum:
         np.testing.assert_allclose(more_loss["rmse_h"], 2.0)
         np.testing.assert_allclose(more_loss["mae_h"], 2.0)
 
+    def test_pt_placeholder_pairs_are_excluded_from_metrics(self):
+        """The PyTorch energy loss uses the same Hessian pair mask."""
+        import pytest
+
+        torch = pytest.importorskip("torch")
+        from deepmd.pt.loss.ener import EnergyStdLoss as PTEnergyStdLoss
+
+        pred, label = _full_ener_dicts(
+            1,
+            NP,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            mask=np.array([[1.0] * NA + [0.0] * (NP - NA)]),
+        )
+        pred_h = np.zeros((1, 3 * NP, 3 * NP), dtype=np.float64)
+        label_h = np.full_like(pred_h, 100.0)
+        label_h[:, : 3 * NA, : 3 * NA] = 2.0
+        pred, label = self._set_hessian(pred, label, pred_h, label_h)
+        pt_pred = {
+            key: torch.as_tensor(value, device="cpu")
+            if isinstance(value, np.ndarray)
+            else value
+            for key, value in pred.items()
+        }
+        pt_label = {
+            key: torch.as_tensor(value, device="cpu")
+            if isinstance(value, np.ndarray)
+            else value
+            for key, value in label.items()
+        }
+        loss_obj = PTEnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+
+        _, loss, more_loss = loss_obj({}, lambda: pt_pred, pt_label, NP, 1.0, mae=True)
+
+        torch.testing.assert_close(loss, loss.new_tensor(4.0))
+        torch.testing.assert_close(more_loss["rmse_h"], loss.new_tensor(2.0))
+        torch.testing.assert_close(more_loss["mae_h"], loss.new_tensor(2.0))
+
     def test_no_op_for_non_mixed(self):
         """An all-ones mask preserves the established Hessian reduction."""
         pred_h = _rnd(1, 3 * NP, 3 * NP)

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
+    masked_pair_mean,
     per_frame_component_mean,
 )
 from deepmd.pt.loss.loss import (
@@ -60,6 +61,8 @@ class EnergyStdLoss(TaskLoss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
         loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
@@ -107,6 +110,10 @@ class EnergyStdLoss(TaskLoss):
             The prefactor of generalized force loss at the end of the training.
         numb_generalized_coord : int
             The dimension of generalized coordinates.
+        start_pref_h : float
+            The prefactor of Hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of Hessian loss at the end of the training.
         loss_func : str
             Loss function type. Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
             MAE loss is less sensitive to outliers compared to MSE loss.
@@ -156,6 +163,7 @@ class EnergyStdLoss(TaskLoss):
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
         self.has_gf = start_pref_gf != 0.0 and limit_pref_gf != 0.0
+        self.has_h = (start_pref_h != 0.0 or limit_pref_h != 0.0) or inference
 
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -169,6 +177,8 @@ class EnergyStdLoss(TaskLoss):
         self.limit_pref_pf = limit_pref_pf
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
         self.use_default_pf = use_default_pf
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
@@ -237,6 +247,7 @@ class EnergyStdLoss(TaskLoss):
         pref_ae = self.limit_pref_ae + (self.start_pref_ae - self.limit_pref_ae) * coef
         pref_pf = self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * coef
         pref_gf = self.limit_pref_gf + (self.start_pref_gf - self.limit_pref_gf) * coef
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
@@ -775,6 +786,37 @@ class EnergyStdLoss(TaskLoss):
                     f"Loss type {self.loss_func} is not implemented for atomic energy loss."
                 )
 
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
+            find_hessian = label.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            if maskf is not None:
+                hessian_shape = (_nf, _nloc * 3, _nloc * 3)
+                diff_h = label["hessian"].reshape(hessian_shape) - model_pred[
+                    "hessian"
+                ].reshape(hessian_shape)
+                # Both Cartesian axes must refer to real atoms for a Hessian
+                # element to contribute to the loss or display denominator.
+                l2_hessian_loss = masked_pair_mean(torch.square(diff_h), maskf, ncomp=3)
+            else:
+                diff_h = label["hessian"].reshape(-1) - model_pred["hessian"].reshape(
+                    -1
+                )
+                l2_hessian_loss = torch.mean(torch.square(diff_h))
+            if not self.inference:
+                more_loss["l2_hessian_loss"] = self.display_if_exist(
+                    l2_hessian_loss.detach(), find_hessian
+                )
+            loss += pref_h * l2_hessian_loss
+            more_loss["rmse_h"] = self.display_if_exist(
+                l2_hessian_loss.sqrt().detach(), find_hessian
+            )
+            if mae:
+                if maskf is not None:
+                    mae_h = masked_pair_mean(torch.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = torch.mean(torch.abs(diff_h))
+                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
+
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return model_pred, loss, more_loss
@@ -856,6 +898,17 @@ class EnergyStdLoss(TaskLoss):
                     default=1.0,
                 )
             )
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                    special_shape="hessian",
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:
@@ -866,7 +919,7 @@ class EnergyStdLoss(TaskLoss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
             "@version": 4,
             "starter_learning_rate": self.starter_learning_rate,
@@ -892,6 +945,10 @@ class EnergyStdLoss(TaskLoss):
             "use_default_pf": self.use_default_pf,
             "intensive_ener_virial": self.intensive_ener_virial,
         }
+        if self.start_pref_h != 0.0 or self.limit_pref_h != 0.0:
+            data["start_pref_h"] = self.start_pref_h
+            data["limit_pref_h"] = self.limit_pref_h
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "TaskLoss":
@@ -918,80 +975,4 @@ class EnergyStdLoss(TaskLoss):
 
 
 class EnergyHessianStdLoss(EnergyStdLoss):
-    def __init__(
-        self,
-        start_pref_h: float = 0.0,
-        limit_pref_h: float = 0.0,
-        **kwargs: Any,
-    ) -> None:
-        r"""Enable the layer to compute loss on hessian.
-
-        Parameters
-        ----------
-        start_pref_h : float
-            The prefactor of hessian loss at the start of the training.
-        limit_pref_h : float
-            The prefactor of hessian loss at the end of the training.
-        **kwargs
-            Other keyword arguments.
-        """
-        super().__init__(**kwargs)
-        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
-
-        self.start_pref_h = start_pref_h
-        self.limit_pref_h = limit_pref_h
-
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
-        model_pred, loss, more_loss = super().forward(
-            input_dict, model, label, natoms, learning_rate, mae=mae
-        )
-        coef = learning_rate / self.starter_learning_rate
-        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
-
-        if self.has_h and "hessian" in model_pred and "hessian" in label:
-            find_hessian = label.get("find_hessian", 0.0)
-            pref_h = pref_h * find_hessian
-            diff_h = label["hessian"].reshape(
-                -1,
-            ) - model_pred["hessian"].reshape(
-                -1,
-            )
-            l2_hessian_loss = torch.mean(torch.square(diff_h))
-            if not self.inference:
-                more_loss["l2_hessian_loss"] = self.display_if_exist(
-                    l2_hessian_loss.detach(), find_hessian
-                )
-            loss += pref_h * l2_hessian_loss
-            rmse_h = l2_hessian_loss.sqrt()
-            more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
-            if mae:
-                mae_h = torch.mean(torch.abs(diff_h))
-                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
-
-        if not self.inference:
-            more_loss["rmse"] = torch.sqrt(loss.detach())
-        return model_pred, loss, more_loss
-
-    @property
-    def label_requirement(self) -> list[DataRequirementItem]:
-        """Add hessian label requirement needed for this loss calculation."""
-        label_requirement = super().label_requirement
-        if self.has_h:
-            label_requirement.append(
-                DataRequirementItem(
-                    "hessian",
-                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
-            )
-        return label_requirement
+    """Backward-compatible name for the unified energy loss."""

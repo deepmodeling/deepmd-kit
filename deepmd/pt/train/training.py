@@ -44,7 +44,6 @@ from deepmd.pt.loss import (
     DenoiseLoss,
     DeNSLoss,
     DOSLoss,
-    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PopulationLoss,
@@ -2484,7 +2483,10 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 
 def whether_hessian(loss_params: dict[str, Any]) -> bool:
     loss_type = loss_params.get("type", "ener")
-    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+    return loss_type in {"ener", "ener_hess"} and (
+        loss_params.get("start_pref_h", 0.0) != 0.0
+        or loss_params.get("limit_pref_h", 0.0) != 0.0
+    )
 
 
 def prepare_model_for_loss(
@@ -2501,17 +2503,17 @@ def prepare_model_for_loss(
                 prepare_model_for_loss(sub_model, sub_loss)
         return
     if hasattr(model, "set_active_mode_from_loss"):
-        model.set_active_mode_from_loss(loss_params.get("type", "ener"))
+        loss_type = loss_params.get("type", "ener")
+        model.set_active_mode_from_loss(
+            "ener" if loss_type == "ener_hess" else loss_type
+        )
 
 
 def get_loss(
     loss_params: dict[str, Any], start_lr: float, _ntypes: int, _model: Any
 ) -> TaskLoss:
     loss_type = loss_params.get("type", "ener")
-    if whether_hessian(loss_params):
-        loss_params["starter_learning_rate"] = start_lr
-        return EnergyHessianStdLoss(**loss_params)
-    elif loss_type == "ener":
+    if loss_type in {"ener", "ener_hess"}:
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dens":
