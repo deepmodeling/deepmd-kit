@@ -12,13 +12,14 @@ import numpy as np
 from deepmd.dpmodel.common import (
     NativeOP,
 )
-from deepmd.dpmodel.model.base_model import (
-    BaseModel,
-)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
 )
+
+# NOTE: ``BaseModel`` is imported lazily inside ``deserialize`` (its only use).
+# ``base_model`` dispatches to this module in its own ``deserialize``, so a
+# top-level import here would form a static import cycle (py/cyclic-import).
 from deepmd.utils.spin import (
     Spin,
 )
@@ -264,6 +265,12 @@ class DPA4NativeSpinModel(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DPA4NativeSpinModel":
+        # Lazy import to avoid a static import cycle with ``base_model`` (which
+        # dispatches to this module in its own ``deserialize``).
+        from deepmd.dpmodel.model.base_model import (
+            BaseModel,
+        )
+
         data = data.copy()
         data.pop("@class", None)
         data.pop("@version", None)

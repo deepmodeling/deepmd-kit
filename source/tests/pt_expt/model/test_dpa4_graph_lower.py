@@ -220,7 +220,6 @@ def test_dpa4_exchange_border_op_self_communication() -> None:
     torch.testing.assert_close(out[:nlocal], x_in[:nlocal])  # owned untouched
     for gi, owner in enumerate(owners):
         torch.testing.assert_close(out[nlocal + gi], x_in[int(owner)])
-    del keepalive
 
 
 def test_dpa4_exchange_schedule_counts() -> None:
@@ -242,7 +241,7 @@ def test_dpa4_exchange_schedule_counts() -> None:
     ``use_env_seed`` attributes below, not hardcoded (it would differ for a
     fixture with an SO2-free block, which this one does not have).
     """
-    import deepmd.pt_expt.descriptor.dpa4_nn.block as blk_mod
+    from deepmd.pt_expt.descriptor.dpa4_nn import block as blk_mod
 
     device = env.DEVICE
     dd = _make_message_sensitive_model(device).atomic_model.descriptor
