@@ -81,6 +81,27 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
+      - name: Build C++ and generate fixtures (overlaps the Python GPU lane)
+        # The C++ build + gen_*.py .pt2 fixtures are CPU-bound with the GPU idle
+        # (~1h of the job) and independent of the Python tests. Run them as a
+        # background step so they overlap the Python GPU lane's idle-CPU tail;
+        # the ctest step waits on this (- wait: cc-prep) before consuming the
+        # fixtures. Niced hard (19) so both Python lanes keep CPU priority --
+        # this only fills otherwise-idle cores. DP_CC_SKIP_CTEST builds + gens
+        # only; ctest runs later once this joins.
+        id: cc-prep
+        background: true
+        run: |
+          export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
+          source/tests/infer/convert-models.sh
+          DP_CC_SKIP_CTEST=1 nice -n 19 source/install/test_cc_local.sh
+        env:
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
+          CMAKE_GENERATOR: Ninja
+          DP_VARIANT: cuda
+          DP_USE_MPICH2: 1
       - name: Run Python tests (overlap AOTI compiles with GPU unit tests)
         # The tests that freeze a .pt2 (-m aoti_compile) are CPU-bound: the GPU
         # sits ~idle (measured ~98% idle, <250 MiB) while inductor/g++/ptxas
@@ -135,11 +156,15 @@ jobs:
             junit-aoti.xml
             junit-gpu.xml
           if-no-files-found: warn
-      - name: Convert models
-        run: source/tests/infer/convert-models.sh
-      - run: |
+      # Barrier: the background C++ build + fixture generation must be done
+      # before ctest consumes the fixtures. By now the Python step has run for
+      # ~2.5h, so the ~1h of C++ prep has almost always already finished during
+      # it -- this wait is usually instant.
+      - wait: cc-prep
+      - name: C++ tests (ctest; build + fixtures done in the background step)
+        run: |
           export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
-          source/install/test_cc_local.sh
+          DP_CC_SKIP_BUILD=1 source/install/test_cc_local.sh
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
