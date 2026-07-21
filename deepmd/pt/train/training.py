@@ -109,9 +109,8 @@ from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
-    _collate_lmdb_batch,
-    _SameNlocBatchSamplerTorch,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -288,15 +287,15 @@ class Trainer:
             _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
-            DataLoader,
+            DataLoader | LmdbBatchDataLoader,
             Generator[Any, None, None],
-            DataLoader | None,
+            DataLoader | LmdbBatchDataLoader | None,
             Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
-            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+            ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
                 if _data.mixed_batch:
                     # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
                     # RandomSampler(replacement=False) + padding collate_fn.
@@ -339,13 +338,10 @@ class Trainer:
                         block_targets=_block_targets,
                     )
 
-                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
-                _dataloader = DataLoader(
+                _dataloader = LmdbBatchDataLoader(
                     _data,
-                    batch_sampler=_batch_sampler,
-                    num_workers=0,
-                    collate_fn=_collate_lmdb_batch,
-                    pin_memory=(DEVICE != "cpu"),
+                    _inner_sampler,
+                    pin_memory=DEVICE.type != "cpu",
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
@@ -1407,6 +1403,14 @@ class Trainer:
             self.optimizer.load_state_dict(optimizer_state_dict)
 
     def run(self) -> None:
+        """Run training and release asynchronous data pipelines."""
+        try:
+            self._run()
+        finally:
+            self._close_lmdb_loaders()
+
+    def _run(self) -> None:
+        """Execute the PyTorch optimization loop."""
         fout = (
             open(
                 self.disp_file,
@@ -2035,6 +2039,24 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
+
+    def _close_lmdb_loaders(self) -> None:
+        """Release LMDB pipelines owned by training and validation loaders."""
+        closed: set[int] = set()
+        datasets: dict[int, LmdbDataset] = {}
+        for loaders in (self.training_dataloader, self.validation_dataloader):
+            values = loaders.values() if isinstance(loaders, dict) else (loaders,)
+            for loader in values:
+                if loader is None or id(loader) in closed:
+                    continue
+                closed.add(id(loader))
+                close = getattr(loader, "close", None)
+                if close is not None:
+                    close()
+                if isinstance(loader, LmdbBatchDataLoader):
+                    datasets[id(loader.dataset)] = loader.dataset
+        for dataset in datasets.values():
+            dataset.close()
 
     def _collect_checkpoint_states(
         self,

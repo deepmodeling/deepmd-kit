@@ -14,10 +14,13 @@ from typing import (
 )
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbBatchIterator,
     LmdbDataReader,
     SameNlocBatchSampler,
-    collate_lmdb_frames,
     compute_block_targets,
+)
+from deepmd.env import (
+    get_lmdb_num_workers,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -50,6 +53,9 @@ class LmdbDataSystem:
         per-system reweighting via :func:`compute_block_targets`.
     seed
         Optional seed for the shuffle in :class:`SameNlocBatchSampler`.
+    num_workers
+        Number of LMDB decoder worker processes. ``None`` selects the
+        hardware-aware default; zero or one disables multiprocessing.
     """
 
     def __init__(
@@ -59,6 +65,7 @@ class LmdbDataSystem:
         batch_size: int | str = "auto",
         auto_prob_style: str | None = None,
         seed: int | None = None,
+        num_workers: int | None = None,
     ) -> None:
         self._reader = LmdbDataReader(
             lmdb_path, type_map, batch_size, mixed_batch=False
@@ -78,9 +85,16 @@ class LmdbDataSystem:
             seed=seed,
             block_targets=block_targets,
         )
-        self._iter = iter(self._sampler)
         self._stat_nlocs = tuple(sorted(self._reader.nloc_groups))
         self._stat_offsets = [0] * len(self._stat_nlocs)
+        num_workers = (
+            get_lmdb_num_workers() if num_workers is None else int(num_workers)
+        )
+        self._batch_iterator = LmdbBatchIterator(
+            self._reader,
+            self._sampler,
+            num_workers,
+        )
 
     # ------------------------------------------------------------------
     # pt_expt trainer surface
@@ -93,12 +107,7 @@ class LmdbDataSystem:
         sampling is baked into ``block_targets`` at sampler construction.
         """
         del sys_idx
-        try:
-            indices = next(self._iter)
-        except StopIteration:
-            self._iter = iter(self._sampler)
-            indices = next(self._iter)
-        return self._collate_indices(indices)
+        return next(self._batch_iterator)
 
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
         """Return one batch from a fixed-``nloc`` statistical system.
@@ -132,7 +141,7 @@ class LmdbDataSystem:
             start = 0
         stop = min(start + batch_size, len(group_indices))
         self._stat_offsets[sys_idx] = stop
-        return self._collate_indices(group_indices[start:stop])
+        return self._reader.decode_batch(group_indices[start:stop])
 
     def get_stat_nsystems(self) -> int:
         """Return the number of fixed-``nloc`` statistical systems."""
@@ -150,15 +159,23 @@ class LmdbDataSystem:
         batch_size = self._reader.get_batch_size_for_nloc(nloc)
         return (nframes + batch_size - 1) // batch_size
 
-    def _collate_indices(self, indices: list[int]) -> dict[str, Any]:
-        """Load and collate the requested dataset indices."""
-        frames = [self._reader[int(i)] for i in indices]
-        return collate_lmdb_frames(frames)
-
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
         self._reader.add_data_requirement(data_requirement)
+
+    def close(self) -> None:
+        """Cancel prefetched work and release decoder processes."""
+        iterator = getattr(self, "_batch_iterator", None)
+        if iterator is not None:
+            iterator.close()
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
+
+    def __del__(self) -> None:
+        """Release worker processes during interpreter teardown."""
+        self.close()
 
     def get_nsystems(self) -> int:
         """Return one logical LMDB training dataset."""

@@ -13,12 +13,15 @@ import numpy as np
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
+    LmdbDecodeConfig,
     LmdbTestData,
     LmdbTestDataNlocView,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
+    _merge_lmdb_chunks,
     _remap_atom_types,
     compute_block_targets,
+    decode_lmdb_batch,
     is_lmdb,
     make_neighbor_stat_data,
 )
@@ -347,6 +350,121 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(len(reader.nloc_groups), 1)
         self.assertIn(6, reader.nloc_groups)
         self.assertEqual(len(reader.nloc_groups[6]), 10)
+
+    def test_close_preserves_other_reader(self):
+        """Closing one shared-path reader leaves the other transaction valid."""
+        first = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        second = LmdbDataReader(
+            f"{self._lmdb_path}/.",
+            self._type_map,
+            batch_size=2,
+        )
+        first.close()
+        self.assertTrue(first.closed)
+        self.assertEqual(second[0]["coord"].shape, (6, 3))
+        second.close()
+        self.assertTrue(second.closed)
+        with self.assertRaisesRegex(RuntimeError, "closed LMDB reader"):
+            second[0]
+
+    def test_batch_dtype_and_field_order_are_chunk_independent(self):
+        """Batch promotion and schema matching do not depend on chunking."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/mixed_dtype.lmdb",
+            nframes=2,
+            natoms=6,
+        )
+        frame0 = _make_frame(natoms=6, seed=0)
+        frame1 = _make_frame(natoms=6, seed=1)
+        frame0["custom"] = {
+            "type": "float32",
+            "shape": [1],
+            "data": np.array([1.25], dtype=np.float32).tobytes(),
+        }
+        frame1["custom"] = {
+            "type": "float64",
+            "shape": [1],
+            "data": np.array([2.5], dtype=np.float64).tobytes(),
+        }
+        frame1 = dict(reversed(tuple(frame1.items())))
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            transaction.put(
+                b"000000000000",
+                msgpack.packb(frame0, use_bin_type=True),
+            )
+            transaction.put(
+                b"000000000001",
+                msgpack.packb(frame1, use_bin_type=True),
+            )
+        environment.close()
+
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={},
+        )
+        environment = lmdb.open(path, readonly=True, lock=False)
+        with environment.begin() as transaction:
+            serial = decode_lmdb_batch(
+                transaction,
+                [0, 1],
+                "012d",
+                config,
+            )
+            chunked = _merge_lmdb_chunks(
+                [
+                    decode_lmdb_batch(transaction, [0], "012d", config),
+                    decode_lmdb_batch(transaction, [1], "012d", config),
+                ]
+            )
+        environment.close()
+
+        self.assertEqual(serial["custom"].dtype, np.float64)
+        np.testing.assert_array_equal(serial["custom"], chunked["custom"])
+
+    def test_batch_rejects_mixed_label_availability(self):
+        """A scalar find flag cannot represent mixed availability in one batch."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/mixed_availability.lmdb",
+            nframes=2,
+            natoms=6,
+        )
+        frame = _make_frame(natoms=6, seed=0)
+        frame["custom"] = {
+            "type": "float64",
+            "shape": [1],
+            "data": np.array([1.0], dtype=np.float64).tobytes(),
+        }
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            transaction.put(
+                b"000000000000",
+                msgpack.packb(frame, use_bin_type=True),
+            )
+        environment.close()
+
+        requirement = DataRequirementItem("custom", ndof=1, default=0.0)
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={"custom": requirement},
+        )
+        environment = lmdb.open(path, readonly=True, lock=False)
+        with environment.begin() as transaction:
+            with self.assertRaisesRegex(
+                ValueError,
+                "availability changes within one batch",
+            ):
+                decode_lmdb_batch(
+                    transaction,
+                    [0, 1],
+                    "012d",
+                    config,
+                )
+        environment.close()
 
     def test_is_lmdb(self):
         self.assertTrue(is_lmdb(self._lmdb_path))

@@ -13,6 +13,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import lmdb
 import msgpack
@@ -21,6 +24,9 @@ import numpy as np
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
+)
+from deepmd.dpmodel.utils.lmdb_data import (
+    collate_lmdb_frames,
 )
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
@@ -36,6 +42,9 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -156,6 +165,76 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         self.assertIn("force", labels)
         self.assertIn("natoms", labels)
 
+    def test_streaming_batch_matches_frame_collation(self) -> None:
+        """Preallocated decoding preserves the legacy per-frame contract."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=0,
+        )
+        indices = [1, 6]
+        expected = collate_lmdb_frames([ds._reader[index] for index in indices])
+        actual = ds._reader.decode_batch(indices)
+
+        self.assertEqual(tuple(actual), tuple(expected))
+        for key, expected_value in expected.items():
+            actual_value = actual[key]
+            if isinstance(expected_value, np.ndarray):
+                np.testing.assert_array_equal(actual_value, expected_value)
+            else:
+                self.assertEqual(actual_value, expected_value)
+
+    def test_parallel_prefetch_matches_serial_order(self) -> None:
+        """Worker processes preserve sampler order and numerical values."""
+        serial = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=7,
+            num_workers=0,
+        )
+        parallel = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=7,
+            num_workers=2,
+        )
+        try:
+            for _ in range(6):
+                expected = serial.get_batch()
+                actual = parallel.get_batch()
+                self.assertEqual(actual["fid"], expected["fid"])
+                for key, expected_value in expected.items():
+                    actual_value = actual[key]
+                    if isinstance(expected_value, np.ndarray):
+                        np.testing.assert_array_equal(actual_value, expected_value)
+                    else:
+                        self.assertEqual(actual_value, expected_value)
+                pending = parallel._batch_iterator._pending
+                self.assertIsNotNone(pending)
+                self.assertLessEqual(len(pending), 2)
+        finally:
+            parallel.close()
+
+    def test_data_requirements_freeze_after_first_read(self) -> None:
+        """Batch schemas cannot change after a prefetched read."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=2,
+        )
+        ds.get_batch()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "must be registered before reading",
+        ):
+            ds.add_data_requirements([DataRequirementItem("late_label", ndof=1)])
+
     def test_get_batch_iterates_past_end(self) -> None:
         """get_batch reseeds the sampler at the end of an epoch."""
         ds = LmdbDataSystem(
@@ -170,10 +249,6 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             self.assertEqual(batch["coord"].shape, (2, 6, 3))
 
     def test_add_data_requirements_passthrough(self) -> None:
-        from deepmd.utils.data import (
-            DataRequirementItem,
-        )
-
         ds = LmdbDataSystem(
             lmdb_path=self.lmdb_path,
             type_map=["O", "H"],
@@ -327,6 +402,25 @@ class TestLmdbTrainingLoop(unittest.TestCase):
             trainer = get_trainer(config)
             self.assertIsInstance(trainer.training_data, LmdbDataSystem)
             trainer.run()
+        finally:
+            os.chdir(cwd)
+
+    def test_training_closes_parallel_lmdb_pipeline(self) -> None:
+        """Trainer shutdown releases spawned decoder processes."""
+        config = self._make_lmdb_config(numb_steps=2)
+        config["training"]["training_data"]["batch_size"] = 2
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            with patch.dict(os.environ, {"DP_LMDB_NUM_WORKERS": "2"}):
+                trainer = get_trainer(config)
+                trainer.run()
+            self.assertTrue(trainer.training_data._batch_iterator.closed)
+            self.assertIsNone(trainer.training_data._batch_iterator._executor)
+            self.assertTrue(trainer.training_data._reader.closed)
         finally:
             os.chdir(cwd)
 

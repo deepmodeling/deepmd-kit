@@ -7,6 +7,28 @@ import torch
 import deepmd.env as common_env
 
 
+def test_lmdb_num_workers_override(monkeypatch) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "12")
+    assert common_env.get_lmdb_num_workers() == 12
+
+
+def test_lmdb_num_workers_rejects_invalid_override(monkeypatch) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "-1")
+    try:
+        common_env.get_lmdb_num_workers()
+    except ValueError as error:
+        assert "must be non-negative" in str(error)
+    else:
+        raise AssertionError("negative DP_LMDB_NUM_WORKERS was accepted")
+
+
+def test_lmdb_num_workers_partitions_node_budget(monkeypatch) -> None:
+    monkeypatch.delenv("DP_LMDB_NUM_WORKERS", raising=False)
+    monkeypatch.setenv("LOCAL_WORLD_SIZE", "4")
+    monkeypatch.setattr(common_env.os, "sched_getaffinity", lambda _pid: set(range(80)))
+    assert common_env.get_lmdb_num_workers() == 16
+
+
 def test_env_threads_guard_handles_runtimeerror(monkeypatch) -> None:
     def raise_err(*_args, **_kwargs) -> None:
         raise RuntimeError("boom")

@@ -17,12 +17,16 @@ from torch.utils.data import (
 )
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbBatchIterator,
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
     collate_lmdb_frames,
     compute_block_targets,
     is_lmdb,
+)
+from deepmd.env import (
+    get_lmdb_num_workers,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -32,6 +36,7 @@ log = logging.getLogger(__name__)
 
 # Re-export for backward compatibility
 __all__ = [
+    "LmdbBatchDataLoader",
     "LmdbDataset",
     "LmdbTestData",
     "_collate_lmdb_batch",
@@ -76,6 +81,25 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
         return collate_lmdb_frames(torch_frames)
 
 
+def _lmdb_batch_to_torch(
+    batch: dict[str, Any],
+    *,
+    pin_memory: bool,
+) -> dict[str, Any]:
+    """Convert a contiguous NumPy LMDB batch to CPU tensors."""
+    converted: dict[str, Any] = {}
+    with torch.device("cpu"):
+        for key, value in batch.items():
+            if key.startswith("find_") or key == "fid" or key == "type":
+                converted[key] = value
+            elif value is None:
+                converted[key] = None
+            else:
+                tensor = torch.as_tensor(value)
+                converted[key] = tensor.pin_memory() if pin_memory else tensor
+    return converted
+
+
 class _SameNlocBatchSamplerTorch(Sampler):
     """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
 
@@ -97,6 +121,56 @@ class _SameNlocBatchSamplerTorch(Sampler):
         """Forward set_epoch to inner sampler if it supports it."""
         if hasattr(self._inner, "set_epoch"):
             self._inner.set_epoch(epoch)
+
+
+class LmdbBatchDataLoader:
+    """DataLoader-compatible iterator backed by :class:`LmdbBatchIterator`.
+
+    The parent sampler determines batch order. The shared LMDB process pool
+    decodes one batch and prefetches its successor, then this adapter converts
+    the contiguous NumPy result to pinned CPU tensors.
+    """
+
+    def __init__(
+        self,
+        dataset: "LmdbDataset",
+        sampler: Any,
+        *,
+        pin_memory: bool,
+        num_workers: int | None = None,
+    ) -> None:
+        self.dataset = dataset
+        self.batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self.sampler = sampler
+        self._pin_memory = pin_memory
+        self._batch_iterator = LmdbBatchIterator(
+            dataset._reader,
+            sampler,
+            get_lmdb_num_workers() if num_workers is None else num_workers,
+        )
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        for _ in range(len(self)):
+            yield self.__next__()
+
+    def __next__(self) -> dict[str, Any]:
+        return _lmdb_batch_to_torch(
+            next(self._batch_iterator),
+            pin_memory=self._pin_memory,
+        )
+
+    def __len__(self) -> int:
+        return len(self.batch_sampler)
+
+    def close(self) -> None:
+        """Release this loader's prefetched batch and shared-pool reference."""
+        self._batch_iterator.close()
+
+    def __del__(self) -> None:
+        """Release the shared-pool reference during interpreter teardown."""
+        iterator = getattr(self, "_batch_iterator", None)
+        if iterator is not None:
+            iterator.close()
 
 
 class LmdbDataset(Dataset):
@@ -229,6 +303,16 @@ class LmdbDataset(Dataset):
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
+
+    def close(self) -> None:
+        """Release parent-process LMDB resources."""
+        self._reader.close()
+
+    def __del__(self) -> None:
+        """Release parent-process LMDB resources during teardown."""
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
 
     def preload_and_modify_all_data_torch(self) -> None:
         """No-op: LMDB reads on demand."""

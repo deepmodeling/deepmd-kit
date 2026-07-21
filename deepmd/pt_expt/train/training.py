@@ -2197,12 +2197,30 @@ class Trainer(AbstractTrainer):
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
-        super().run(self.training_tasks)
-        if self.change_bias_after_training and self.num_steps > self.start_step:
-            self._change_bias_after_training()
-            if self.rank_context.is_chief:
-                self.save_checkpoint(self.num_steps)
+        try:
+            super().run(self.training_tasks)
+            if self.change_bias_after_training and self.num_steps > self.start_step:
+                self._change_bias_after_training()
+                if self.rank_context.is_chief:
+                    self.save_checkpoint(self.num_steps)
+        finally:
+            self._close_data_systems()
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def _close_data_systems(self) -> None:
+        """Release asynchronous data pipelines owned by this trainer."""
+        closed: set[int] = set()
+        for data_by_task in (
+            self.training_data_by_task,
+            self.validation_data_by_task,
+        ):
+            for data_system in data_by_task.values():
+                if data_system is None or id(data_system) in closed:
+                    continue
+                closed.add(id(data_system))
+                close = getattr(data_system, "close", None)
+                if close is not None:
+                    close()
 
     def _change_bias_after_training(self) -> None:
         if self.rank == 0:
