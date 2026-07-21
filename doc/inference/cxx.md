@@ -1,8 +1,7 @@
 # C/C++ interface
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
 ## C++ interface
 

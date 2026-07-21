@@ -1,8 +1,7 @@
 # Fit other properties {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 
 Here we present an API to DeepProperty model, which can be used to fit other properties like band gap, bulk modulus, critical temperature, etc.
 

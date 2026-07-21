@@ -1,8 +1,7 @@
 # Fit atomic charge population {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}
 
 Here we present an API to DeepPopulation model, which can be used to fit the atomic charge population.
 

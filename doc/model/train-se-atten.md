@@ -1,8 +1,7 @@
 # Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
@@ -132,9 +131,8 @@ You can use descriptor `"se_atten_v2"` and is not allowed to set `tebd_input_mod
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
-:::{note}
-Model compression support differs across backends. See [Model compression](#model-compression) for backend-specific requirements.
-:::
+> [!NOTE]
+> Model compression support differs across backends. See [Model compression](#model-compression) for backend-specific requirements.
 
 ## Type embedding
 

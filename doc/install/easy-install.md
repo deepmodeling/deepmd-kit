@@ -4,14 +4,12 @@ There are various easy methods to install DeePMD-kit. Choose one that you prefer
 
 After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to train models or run LAMMPS in parallel.
 
-:::{note}
-Note: The off-line packages and conda packages require the [GNU C Library](https://www.gnu.org/software/libc/) 2.17 or above. The GPU version requires [compatible NVIDIA driver](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#minor-version-compatibility) to be installed in advance. It is possible to force conda to [override detection](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-virtual.html#overriding-detected-packages) when installation, but these requirements are still necessary during runtime.
-You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/conda.html) for more information.
-:::
+> [!NOTE]
+> Note: The off-line packages and conda packages require the [GNU C Library](https://www.gnu.org/software/libc/) 2.17 or above. The GPU version requires [compatible NVIDIA driver](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#minor-version-compatibility) to be installed in advance. It is possible to force conda to [override detection](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-virtual.html#overriding-detected-packages) when installation, but these requirements are still necessary during runtime.
+> You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/conda.html) for more information.
 
-:::{note}
-Python 3.10 or above is required for Python interface.
-:::
+> [!NOTE]
+> Python 3.10 or above is required for Python interface.
 
 ## Install DeePMD-kit in 1s
 
@@ -57,15 +55,14 @@ Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#inst
 
 ### Official channel (deprecated)
 
-::::{danger}
-
-:::{deprecated} 3.0.0
-The official channel has been deprecated since 3.0.0, due to the challenging work of building dependencies for [multiple backends](../backend.md).
-Old packages will still be available at https://conda.deepmodeling.com.
-Maintainers will build packages in the conda-forge organization together with other conda-forge members.
-:::
-
-::::
+> [!CAUTION]
+>
+> :::{deprecated} 3.0.0
+> The official channel has been deprecated since 3.0.0, due to the challenging work of building dependencies for [multiple backends](../backend.md).
+> Old packages will still be available at https://conda.deepmodeling.com.
+> Maintainers will build packages in the conda-forge organization together with other conda-forge members.
+> :::
+>
 
 ## Install with docker
 
@@ -195,9 +192,8 @@ pip install deepmd-kit
 
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 
-:::{Warning}
-If your platform is not supported, or you want to build against the installed backends, or you want to enable ROCM support, please [build from source](install-from-source.md).
-:::
+> [!WARNING]
+> If your platform is not supported, or you want to build against the installed backends, or you want to enable ROCM support, please [build from source](install-from-source.md).
 
 [The LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md) are provided on Linux and macOS for the TensorFlow, PyTorch, and JAX backend. The LAMMPS module loads the installed TensorFlow and/or PyTorch runtime libraries dynamically, so it does not require both backends to be installed. To install LAMMPS and/or i-PI, add `lmp` and/or `ipi` to extras:
 

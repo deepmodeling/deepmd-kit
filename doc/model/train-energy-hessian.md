@@ -1,8 +1,7 @@
 # Fit energy Hessian {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}
 
 To train a model that takes Hessian matrices, i.e., the second order derivatives of energies w.r.t coordinates as input, you only need to prepare full Hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
 
@@ -91,9 +90,8 @@ The detailed loss can be found in `lcurve.out`:
 
 ## Test the Model
 
-:::{warning}
-A model trained with Hessian cannot be frozen. If freezing is enforced, the model will be treated as a standard energy model, and the frozen one will no longer be able to output Hessian predictions.
-:::
+> [!WARNING]
+> A model trained with Hessian cannot be frozen. If freezing is enforced, the model will be treated as a standard energy model, and the frozen one will no longer be able to output Hessian predictions.
 
 If one do freeze and test a Hessian model using the commands:
 

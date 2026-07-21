@@ -94,6 +94,5 @@ plt.show()
 
 Checkpoints will be written to files with the prefix {ref}`save_ckpt <training/save_ckpt>` every {ref}`save_freq <training/save_freq>` training steps.
 
-:::{warning}
-It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purposes, and should not be used to train a production model.
-:::
+> [!WARNING]
+> It is warned that the example water data (in folder `examples/water/data`) is of very limited amount, is provided only for testing purposes, and should not be used to train a production model.

@@ -1,8 +1,7 @@
 # Descriptor DPA4 {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}
 
 DPA4 is the DeePMD-kit implementation of the SeZM (Smooth Equivariant
 Zone-bridging Model) architecture: an SO(3)-equivariant message-passing model
@@ -74,16 +73,15 @@ DPA4/SeZM defaults to `float32`
 ({ref}`precision <model[dpa4]/descriptor[dpa4]/precision>`); double precision is
 unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 
-:::{note}
-{ref}`sel <model[dpa4]/descriptor[dpa4]/sel>` behaves differently from classic
-descriptors. On the conservative **energy** path it is only an initial
-neighbor-search capacity that grows on demand, so it never truncates the
-neighbor list and you do not need to size it to the true maximum neighbor count.
-The native spin scheme shares this energy path, so it grows on demand too; only
-the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
-`sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
-the training data.
-:::
+> [!NOTE]
+> {ref}`sel <model[dpa4]/descriptor[dpa4]/sel>` behaves differently from classic
+> descriptors. On the conservative **energy** path it is only an initial
+> neighbor-search capacity that grows on demand, so it never truncates the
+> neighbor list and you do not need to size it to the true maximum neighbor count.
+> The native spin scheme shares this energy path, so it grows on demand too; only
+> the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
+> `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
+> the training data.
 
 ### Main options
 
@@ -390,14 +388,13 @@ level `3` perturbs forces at the 2^-22 rounding scale (three orders of
 magnitude finer than TF32) and is the recommended fast setting once validated
 for the target system.
 
-:::{important}
-Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
-matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
-captured into the graph at export time and are **not** re-evaluated when the
-`.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
-package, so training-time memory-saving switches do not apply to it.
-:::
+> [!IMPORTANT]
+> Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
+> an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
+> matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
+> captured into the graph at export time and are **not** re-evaluated when the
+> `.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+> package, so training-time memory-saving switches do not apply to it.
 
 ### Hardware selection
 

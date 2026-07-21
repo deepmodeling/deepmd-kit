@@ -1,8 +1,7 @@
 # Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
 
@@ -282,8 +281,7 @@ Then, run the script on the first node with:
 mpirun run_pp.sh
 ```
 
-:::{note}
-
-If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
-if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.
-:::
+> [!NOTE]
+>
+> If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
+> if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.
