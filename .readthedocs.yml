@@ -8,6 +8,11 @@ build:
       - pip install uv
     post_install:
       - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
+    build:
+      html:
+        # Limit Sphinx to two workers so generated API pages can be processed
+        # concurrently without multiplying backend import memory excessively.
+        - python -m sphinx -T -j 2 -b html -d doc/_build/doctrees -D language=en doc $READTHEDOCS_OUTPUT/html
   apt_packages:
     - inkscape
 sphinx:
