@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -76,11 +77,11 @@ if TYPE_CHECKING:
     )
 
 
-# Public output keys emitted by the graph-form AOTI forward
-# (``forward_lower_graph_exportable``) keyed by the output-variable category that
-# ``request_defs`` carries.  The graph path is LOCAL-only (``N == sum(n_node)``
-# nodes, no ghosts), so its outputs are already at local-atom resolution -- no
-# ``communicate_extended_output`` fold-back is needed.
+# Public output keys emitted by graph-lower forwards, keyed by the
+# output-variable category that ``request_defs`` carries. The graph path is
+# local-only (``N == sum(n_node)`` nodes, no ghosts), so its outputs are already
+# at local-atom resolution and require no ``communicate_extended_output``
+# fold-back.
 _GRAPH_CATEGORY_TO_KEY = {
     OutputVariableCategory.OUT: "atom_energy",
     OutputVariableCategory.REDU: "energy",
@@ -133,18 +134,21 @@ class DeepEval(DeepEvalBackend):
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
-        The ASE neighbor list class to produce the neighbor list. If None, the
-        neighbor list will be built natively in the model.
+        The ASE neighbor list class for nlist-routed artifacts. If None, the
+        neighbor list will be built natively. Explicit neighbor lists are
+        rejected for graph-routed artifacts.
     nlist_backend : str, default: "auto"
-        Neighbor-list builder for the NLIST/extended lower path (``.pte`` and
-        nlist-form ``.pt2``): ``"auto"`` / ``"vesin"`` / ``"native"``. Not
-        used by graph-form ``.pt2`` artifacts.
+        Neighbor-list builder for the NLIST/extended lower path (``.pte``,
+        nlist-form ``.pt2``, and dense-routed ``.pt`` checkpoints):
+        ``"auto"`` / ``"vesin"`` / ``"native"``. Explicit non-default values
+        are ignored with a warning for graph-routed artifacts.
     neighbor_graph_method : str, default: "dense"
-        Carry-all graph builder for GRAPH-FORM ``.pt2`` artifacts ONLY
+        Carry-all graph builder for graph-form ``.pt2`` artifacts and
+        graph-routed ``.pt`` checkpoints
         (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
         (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
-        non-default value on any other artifact raises at construction — the
-        knob would silently do nothing there; use ``nlist_backend`` for the
+        non-default value on any other artifact raises at construction because
+        the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
         choice is performance-only. Consolidating the two knobs into a single
         backend-selection API is deferred to the dense-nlist deprecation.
@@ -166,8 +170,8 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
-        # World-2 graph-form ``.pt2`` (lower_input_kind == "graph") builder select:
-        # "dense"/"ase" (backend-agnostic) or "vesin"/"nv" (on-device O(N)).
+        # Graph-lower builder selection: "dense"/"ase" (backend-agnostic) or
+        # "vesin"/"nv" (on-device O(N)).
         self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
 
@@ -184,15 +188,15 @@ class DeepEval(DeepEvalBackend):
                 "`.pt` (training checkpoint)."
             )
 
-        # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
-        # (_eval_model_graph); fail fast instead of silently ignoring it on
-        # nlist-form artifacts (there, the builder knob is nlist_backend).
+        # ``neighbor_graph_method`` is consumed only by graph-lower evaluation.
+        # Fail fast instead of silently ignoring it on nlist-form artifacts,
+        # where the corresponding builder knob is ``nlist_backend``.
         if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
             "lower_input_kind"
         ) not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
-                "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
+                "graph-routed artifacts (lower_input_kind == 'graph'); this "
                 f"model is not graph-form. Use nlist_backend to select the "
                 "neighbor-list builder for the nlist path."
             )
@@ -217,14 +221,33 @@ class DeepEval(DeepEvalBackend):
         ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
         O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
         model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
-        silently falls back to the native builder otherwise.  Results are
-        unchanged either way -- only the neighbor-search cost differs.
+        silently falls back to the native builder otherwise. Graph-routed
+        artifacts use ``neighbor_graph_method`` instead, reject an explicit ASE
+        neighbor list, and warn when an explicit nlist backend is ignored.
+        Results are unchanged either way; only the neighbor-search cost differs.
         """
         if nlist_backend not in ("auto", "vesin", "native"):
             raise ValueError(
                 f"Unknown nlist_backend '{nlist_backend}'; "
                 "expected 'auto', 'vesin', or 'native'."
             )
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
+            if self.neighbor_list is not None:
+                raise ValueError(
+                    "neighbor_list only applies to nlist-routed artifacts; use "
+                    "neighbor_graph_method for this graph-routed model."
+                )
+            if nlist_backend != "auto":
+                warnings.warn(
+                    f"nlist_backend={nlist_backend!r} is ignored for graph-routed "
+                    "artifacts; use neighbor_graph_method to select the graph "
+                    "builder.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            self._use_vesin = False
+            self._nlist_builder = None
+            return
         is_spin = bool(getattr(self, "_is_spin", False))
         ase_provided = self.neighbor_list is not None
         # reason vesin cannot be used (None means it can)
@@ -519,6 +542,11 @@ class DeepEval(DeepEvalBackend):
         wrapper.load_state_dict(state_dict)
         model = wrapper.model["Default"].eval()
 
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower,
+        )
+
+        use_graph_lower = model_uses_graph_lower(model)
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -578,19 +606,77 @@ class DeepEval(DeepEvalBackend):
                 else None
             ),
             "is_spin": self._is_spin,
-            "lower_input_kind": "nlist",
+            "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if use_graph_lower:
+            from deepmd.pt_expt.utils.serialization import (
+                _graph_edge_dtype,
+            )
+
+            self.metadata["graph_edge_dtype"] = _graph_edge_dtype(model, "graph")
         if self._is_spin:
             self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
             self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
 
-        # Eager runner with the same signature as the .pt2/.pte exported module.
-        # Use forward_common_lower (not forward_lower) to match the export-time
-        # output keys ("energy", "energy_redu", "energy_derv_r", ...) that
-        # communicate_extended_output downstream consumes.
+        # Eager runners use the same ABI as the corresponding exported lower.
+        # Graph-eligible checkpoints preserve the source model's default
+        # graph-forward semantics; all other checkpoints use the dense lower.
+        # The dense runner emits internal keys consumed by
+        # ``communicate_extended_output``, while the graph runner emits local
+        # public keys consumed directly by ``_eval_model_graph``.
+        #
         # Non-spin: (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Spin:     (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
-        if self._is_spin:
+        if use_graph_lower:
+            from deepmd.pt_expt.model.ener_model import (
+                _translate_energy_keys,
+            )
+
+            do_grad_r = model.do_grad_r("energy")
+            do_grad_c = model.do_grad_c("energy")
+
+            def _eager_runner_graph(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_mask: torch.Tensor,
+                destination_order: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
+            ) -> dict[str, torch.Tensor]:
+                model_ret = model.forward_common_lower_graph(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    destination_sorted=True,
+                    do_atomic_virial=True,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
+                return _translate_energy_keys(
+                    model_ret,
+                    do_grad_r=do_grad_r,
+                    do_grad_c=do_grad_c,
+                    do_atomic_virial=True,
+                    local=True,
+                )
+
+            self.exported_module = _eager_runner_graph
+        elif self._is_spin:
 
             def _eager_runner_spin(
                 ext_coord: torch.Tensor,
@@ -1761,18 +1847,18 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        """Evaluate a graph-form ``.pt2`` (``lower_input_kind == "graph"``).
+        """Evaluate a graph-lower model (``lower_input_kind == "graph"``).
 
         Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
         from the eval system at its exact (tight) edge count and feeds the
         positional schema
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order, source_row_ptr,
-        fparam, aparam, charge_spin)`` to the exported forward. The AOTI
-        artifact's edge axis is dynamic, so no ``edge_capacity`` padding is needed. The
-        ``graph_edge_dtype`` metadata selects float32 geometry for compressed
-        DPA1 and float64 for generic graph descriptors. The forward returns the
-        LOCAL public keys directly, so results are reshaped without
+        fparam, aparam, charge_spin)`` to the graph forward. Exported AOTI
+        artifacts use a dynamic edge axis, so no ``edge_capacity`` padding is
+        needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
+        compressed DPA1 and float64 for generic graph descriptors. The forward
+        returns local public keys directly, so results are reshaped without
         ``communicate_extended_output``.
         """
         from deepmd.pt_expt.utils.env import (
@@ -1928,7 +2014,7 @@ class DeepEval(DeepEvalBackend):
         box_input: np.ndarray | None,
         device: "torch.device",
     ) -> "NeighborGraph":
-        """Build the carry-all NeighborGraph for graph-form ``.pt2`` inference.
+        """Build the carry-all NeighborGraph for graph-lower inference.
 
         Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
         backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
