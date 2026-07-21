@@ -142,12 +142,14 @@ class DeepEval(DeepEvalBackend):
         nlist-form ``.pt2``, and dense-routed ``.pt`` checkpoints):
         ``"auto"`` / ``"vesin"`` / ``"native"``. Explicit non-default values
         are ignored with a warning for graph-routed artifacts.
-    neighbor_graph_method : str, default: "dense"
+    neighbor_graph_method : str, default: "auto"
         Carry-all graph builder for graph-form ``.pt2`` artifacts and
         graph-routed ``.pt`` checkpoints
-        (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
-        (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
-        non-default value on any other artifact raises at construction because
+        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects
+        ``"nv"`` on CUDA when nvalchemiops is available, then ``"vesin"`` when
+        available, and finally falls back to ``"dense"``. Explicit
+        ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
+        A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
         choice is performance-only. Consolidating the two knobs into a single
@@ -164,14 +166,14 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         nlist_backend: str = "auto",
-        neighbor_graph_method: str = "dense",
+        neighbor_graph_method: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
-        # Graph-lower builder selection: "dense"/"ase" (backend-agnostic) or
-        # "vesin"/"nv" (on-device O(N)).
+        # Graph-lower builder selection is resolved once after model metadata
+        # identifies the lower ABI.
         self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
 
@@ -191,9 +193,9 @@ class DeepEval(DeepEvalBackend):
         # ``neighbor_graph_method`` is consumed only by graph-lower evaluation.
         # Fail fast instead of silently ignoring it on nlist-form artifacts,
         # where the corresponding builder knob is ``nlist_backend``.
-        if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
-            "lower_input_kind"
-        ) not in ("graph", "dpa1_canonical"):
+        if neighbor_graph_method not in ("auto", "dense") and getattr(
+            self, "metadata", {}
+        ).get("lower_input_kind") not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-routed artifacts (lower_input_kind == 'graph'); this "
@@ -201,7 +203,7 @@ class DeepEval(DeepEvalBackend):
                 "neighbor-list builder for the nlist path."
             )
 
-        self._setup_nlist_backend(nlist_backend)
+        self._setup_neighbor_backend(nlist_backend)
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -215,8 +217,32 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
-    def _setup_nlist_backend(self, nlist_backend: str) -> None:
-        """Resolve the neighbor-list construction strategy from a user choice.
+    @staticmethod
+    def _resolve_neighbor_graph_method(method: str) -> str:
+        """Resolve the graph builder once for the active device."""
+        if method not in ("auto", "dense", "ase", "vesin", "nv"):
+            raise ValueError(
+                f"Unknown neighbor_graph_method {method!r}; "
+                "expected 'auto', 'dense', 'ase', 'vesin', or 'nv'."
+            )
+        if method != "auto":
+            return method
+
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        if DEVICE.type == "cuda" and is_nv_available():
+            return "nv"
+        if is_vesin_torch_available():
+            return "vesin"
+        return "dense"
+
+    def _setup_neighbor_backend(self, nlist_backend: str) -> None:
+        """Resolve the graph or neighbor-list construction strategy.
 
         ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
         O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
@@ -245,6 +271,9 @@ class DeepEval(DeepEvalBackend):
                     UserWarning,
                     stacklevel=2,
                 )
+            self._neighbor_graph_method = self._resolve_neighbor_graph_method(
+                self._neighbor_graph_method
+            )
             self._use_vesin = False
             self._nlist_builder = None
             return

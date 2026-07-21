@@ -31,6 +31,9 @@ from deepmd.dpmodel.output_def import (
 from deepmd.infer import (
     DeepPot,
 )
+from deepmd.pt.utils.nv_nlist import (
+    is_nv_available,
+)
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -50,6 +53,9 @@ from deepmd.pt_expt.train.wrapper import (
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    is_vesin_torch_available,
 )
 
 from ...seed import (
@@ -339,6 +345,12 @@ class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.model, cls.model_params = _build_graph_dpa1_model_and_params()
+        if DEVICE.type == "cuda" and is_nv_available():
+            cls.expected_graph_method = "nv"
+        elif is_vesin_torch_available():
+            cls.expected_graph_method = "vesin"
+        else:
+            cls.expected_graph_method = "dense"
         cls.pt_paths = {
             "plain": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
             "compiled": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
@@ -388,6 +400,10 @@ class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
             with self.subTest(layout=layout):
                 dp = DeepPot(path, auto_batch_size=False)
                 self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "graph")
+                self.assertEqual(
+                    dp.deep_eval._neighbor_graph_method,
+                    self.expected_graph_method,
+                )
                 actual = dict(
                     zip(
                         output_names,
