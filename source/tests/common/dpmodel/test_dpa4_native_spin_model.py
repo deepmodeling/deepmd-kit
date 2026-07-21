@@ -47,7 +47,7 @@ def _jittered_model(seed: int):
     """
     model = get_model(NATIVE_SPIN_CONFIG)
     data = model.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return BaseModel.deserialize(data)
 
 

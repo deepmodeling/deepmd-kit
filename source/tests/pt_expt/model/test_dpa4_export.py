@@ -145,7 +145,7 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
     # either lower kind, so the jitter is applied uniformly to both
     # parametrizations.
     data = {"model": model.serialize()}
-    jitter_zero_arrays(data["model"], np.random.default_rng(99))
+    data["model"] = jitter_zero_arrays(data["model"], np.random.default_rng(99))
     # Rebuild the eager reference model from the SAME jittered dict that
     # gets frozen below, so the AOTI artifact and the eager reference
     # compared against it are the same (edge-sensitive) model.

@@ -153,7 +153,7 @@ def _make_message_sensitive_model(device, seed: int = 99) -> EnergyModel:
     model = _make_model(device)
     ds = model.atomic_model.descriptor
     data = ds.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     jittered = DescrptDPA4.deserialize(data).to(device)
     # Standard torch.nn.Module submodule replacement: "descriptor" is
     # already a registered submodule of atomic_model, so this rebinds the

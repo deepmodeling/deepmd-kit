@@ -101,7 +101,7 @@ def _build_jittered_backbone(seed: int = 99) -> EnergyModel:
     model = get_model(_DPA4_SPIN_CONFIG)
     ds = model.atomic_model.descriptor
     data = ds.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     jittered = DescrptDPA4.deserialize(data).to(_env.DEVICE)
     model.atomic_model.descriptor = jittered
     return model.to(_env.DEVICE).eval()
@@ -274,7 +274,7 @@ def _jittered_wrapper(seed: int = 11) -> DPA4NativeSpinModel:
     model = get_model(NATIVE_SPIN_CONFIG)
     ds = model.backbone_model.atomic_model.descriptor
     data = ds.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     model.backbone_model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(
         _env.DEVICE
     )
@@ -350,7 +350,7 @@ def _pt_native_spin_model(seed: int = 3):
     model = pt_get_model(copy.deepcopy(NATIVE_SPIN_CONFIG)).to(torch.float64)
     ds = model.atomic_model.descriptor
     data = ds.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     from deepmd.pt.model.descriptor.sezm import (
         DescrptSeZM,
     )
@@ -460,7 +460,7 @@ def _build_native_spin_model_cpu(seed: int = 21) -> DPA4NativeSpinModel:
     model = get_model(NATIVE_SPIN_CONFIG)
     ds = model.backbone_model.atomic_model.descriptor
     data = ds.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     model.backbone_model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(cpu)
     return model.to(cpu).eval()
 

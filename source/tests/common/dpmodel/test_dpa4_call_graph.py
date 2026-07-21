@@ -167,7 +167,7 @@ def make_message_sensitive_descriptor(seed: int = 99) -> DescrptDPA4:
     ``exclude_types`` still share every other weight.
     """
     data = make_descriptor().serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
@@ -196,7 +196,7 @@ def make_spin_descriptor(seed: int = 99) -> DescrptDPA4:
         use_spin=[True, False, False],
     )
     data = dd.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
@@ -260,7 +260,7 @@ def make_charge_spin_descriptor(seed: int = 99) -> DescrptDPA4:
         add_chg_spin_ebd=True,
     )
     data = dd.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
@@ -516,7 +516,7 @@ def make_bridging_descriptor(seed: int = 99) -> DescrptDPA4:
         inner_clamp_r_outer=1.2,
     )
     data = dd.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(seed))
+    data = jitter_zero_arrays(data, np.random.default_rng(seed))
     return DescrptDPA4.deserialize(data)
 
 
@@ -613,7 +613,7 @@ def test_charge_spin_model_routes_through_graph_lower() -> None:
     }
     model = get_model(config)
     data = model.serialize()
-    jitter_zero_arrays(data, np.random.default_rng(17))
+    data = jitter_zero_arrays(data, np.random.default_rng(17))
     model = type(model).deserialize(data)
 
     rng = np.random.default_rng(23)

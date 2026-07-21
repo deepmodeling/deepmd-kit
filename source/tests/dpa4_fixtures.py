@@ -11,8 +11,8 @@ outside pytest's package machinery.
 import numpy as np
 
 
-def jitter_zero_arrays(node, rng: np.random.Generator) -> None:
-    """Recursively replace every exactly-zero float array with small noise.
+def jitter_zero_arrays(node, rng: np.random.Generator):
+    """Return a copy of a serialized tree with every zero float array jittered.
 
     DPA4 deliberately zero-initializes several residual output projections
     (``SO2Convolution.post_focus_mix``, ``EquivariantFFN.so3_linear_2`` --
@@ -25,41 +25,41 @@ def jitter_zero_arrays(node, rng: np.random.Generator) -> None:
     vacuous for an exclusion anti-vacuity check -- excluding pairs cannot
     change an output that never depended on edges.
 
-    This function jitters *every* float array in the serialized weight
-    tree that is exactly all-zero, wherever it occurs (not only the named
-    residual projections above) -- it has no notion of which key it is
-    perturbing, it only inspects array values. Non-zero arrays (e.g. the
-    learned type embedding) are left untouched, and traversal order is a
-    fixed depth-first walk, so two calls seeded identically produce
-    bit-identical trees.
+    This function replaces *every* float array in the serialized weight tree
+    that is exactly all-zero, wherever it occurs (not only the named residual
+    projections above) -- it has no notion of which key it is perturbing, it
+    only inspects array values. Non-zero arrays (e.g. the learned type
+    embedding) are carried through untouched, and traversal order is a fixed
+    depth-first walk, so two calls seeded identically produce bit-identical
+    trees.
+
+    This is a PURE rebuild -- it does not mutate ``node`` (nor anything it
+    references), so callers must use the return value:
+    ``data = jitter_zero_arrays(data, rng)``. (Mutating ``node`` in place
+    tripped CodeQL's ``py/modification-of-default-value`` dataflow.)
 
     Parameters
     ----------
     node : dict, list, np.ndarray, or other
-        Root (or sub-tree) of a serialized parameter tree, mutated in
-        place. Non-container, non-array leaves are ignored.
+        Root (or sub-tree) of a serialized parameter tree. Not mutated.
     rng : np.random.Generator
         Seeded RNG used to draw the replacement noise.
+
+    Returns
+    -------
+    dict, list, np.ndarray, or other
+        A new tree of the same shape with zero float arrays replaced; leaves
+        that are not zero float arrays are returned as-is.
     """
     if isinstance(node, dict):
-        items: object = node.items()
-    elif isinstance(node, list):
-        items = enumerate(node)
-    else:
-        return
-    for key, value in items:
-        if (
-            isinstance(value, np.ndarray)
-            and value.dtype.kind == "f"
-            and value.size > 0
-            and np.all(value == 0.0)
-        ):
-            # Replace the zero array in its parent container rather than
-            # mutating it in place. Assigning a fresh array into the caller's
-            # (freshly serialized) dict avoids writing through an array that
-            # CodeQL's dataflow can trace back to a mutable default value
-            # (py/modification-of-default-value). The RNG draw order, shapes,
-            # and dtype are unchanged, so seeded calls stay bit-identical.
-            node[key] = rng.normal(0.0, 0.05, size=value.shape).astype(value.dtype)
-        else:
-            jitter_zero_arrays(value, rng)
+        return {key: jitter_zero_arrays(value, rng) for key, value in node.items()}
+    if isinstance(node, list):
+        return [jitter_zero_arrays(value, rng) for value in node]
+    if (
+        isinstance(node, np.ndarray)
+        and node.dtype.kind == "f"
+        and node.size > 0
+        and np.all(node == 0.0)
+    ):
+        return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
+    return node

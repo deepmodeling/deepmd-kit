@@ -308,33 +308,29 @@ def main():
     # a source/tests/... module from it would need ad hoc sys.path /
     # package surgery for no real benefit.
     # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in sync.
-    def _jitter_zero_arrays(node, rng: np.random.Generator) -> None:
+    def _jitter_zero_arrays(node, rng: np.random.Generator):
         # Mirror of source/tests/dpa4_fixtures.py:jitter_zero_arrays -- keep in
-        # sync. Replaces zero arrays in their parent container (not in place)
-        # to avoid a py/modification-of-default-value dataflow; behavior
+        # sync. PURE rebuild (returns a new tree, does not mutate ``node``) to
+        # avoid CodeQL's py/modification-of-default-value dataflow; behavior
         # (RNG draws, shapes, dtype) is bit-identical.
         if isinstance(node, dict):
-            items: object = node.items()
-        elif isinstance(node, list):
-            items = enumerate(node)
-        else:
-            return
-        for key, value in items:
-            if (
-                isinstance(value, np.ndarray)
-                and value.dtype.kind == "f"
-                and value.size > 0
-                and np.all(value == 0.0)
-            ):
-                node[key] = rng.normal(0.0, 0.05, size=value.shape).astype(value.dtype)
-            else:
-                _jitter_zero_arrays(value, rng)
+            return {k: _jitter_zero_arrays(v, rng) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_jitter_zero_arrays(v, rng) for v in node]
+        if (
+            isinstance(node, np.ndarray)
+            and node.dtype.kind == "f"
+            and node.size > 0
+            and np.all(node == 0.0)
+        ):
+            return rng.normal(0.0, 0.05, size=node.shape).astype(node.dtype)
+        return node
 
     model_g = get_model(copy.deepcopy(config))
     model_g.to("cpu")
     model_g.eval()
     model_dict_g = model_g.serialize()
-    _jitter_zero_arrays(model_dict_g, np.random.default_rng(20240615))
+    model_dict_g = _jitter_zero_arrays(model_dict_g, np.random.default_rng(20240615))
 
     data_g = {
         "model": copy.deepcopy(model_dict_g),

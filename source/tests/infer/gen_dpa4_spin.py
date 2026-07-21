@@ -100,7 +100,7 @@ def _build_model_dict() -> dict:
 
     model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
     model_dict = model.serialize()
-    jitter_zero_arrays(model_dict, np.random.default_rng(_JITTER_SEED))
+    model_dict = jitter_zero_arrays(model_dict, np.random.default_rng(_JITTER_SEED))
     return model_dict
 
 
