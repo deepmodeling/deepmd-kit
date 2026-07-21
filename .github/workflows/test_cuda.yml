@@ -81,62 +81,56 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
-      - name: Build C++ and generate fixtures (overlaps the Python GPU lane)
-        # The C++ build + gen_*.py .pt2 fixtures are CPU-bound with the GPU idle
-        # (~1h of the job) and independent of the Python tests. Run them as a
-        # background step so they overlap the Python GPU lane's idle-CPU tail;
-        # the ctest step waits on this (- wait: cc-prep) before consuming the
-        # fixtures. Niced hard (19) so both Python lanes keep CPU priority --
-        # this only fills otherwise-idle cores. DP_CC_SKIP_CTEST builds + gens
-        # only; ctest runs later once this joins.
-        id: cc-prep
-        background: true
+      - name: Run Python tests + C++ build (overlap CPU compile work with the GPU lane)
+        # Two lanes on one GPU box, sized so only TWO heavy workstreams ever run
+        # at once -- the shape that was green before the C++ prep was (wrongly)
+        # added as a THIRD concurrent stream (that 3-way overlap SIGFAULTed both
+        # Python lanes via TORCHINDUCTOR_CACHE_DIR contention; see #5882):
+        #   Lane 1 (CPU compile stream): the .pt2-freezing tests (-m aoti_compile)
+        #     -- CPU-bound, GPU ~98% idle while inductor/g++/ptxas run -- THEN the
+        #     C++ build + gen_*.py .pt2 fixtures (also CPU-bound, GPU idle). They
+        #     run SEQUENTIALLY in one lane, so the compile work never races the
+        #     shared inductor cache and cc-prep reuses the kernels the aoti tests
+        #     just built.
+        #   Lane 2 (GPU stream): the GPU-bound tests (-m "not aoti_compile") -- the
+        #     ~19k-test bulk and the wall-clock bottleneck. It does not freeze
+        #     .pt2, so it only reads the inductor cache, never competing to write.
+        # The whole CPU stream is hidden under lane 2; ctest + LAMMPS run after
+        # BOTH lanes join.
         run: |
-          export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
-          source/tests/infer/convert-models.sh
-          DP_CC_SKIP_CTEST=1 nice -n 19 source/install/test_cc_local.sh
-        env:
-          OMP_NUM_THREADS: 1
-          TF_INTRA_OP_PARALLELISM_THREADS: 1
-          TF_INTER_OP_PARALLELISM_THREADS: 1
-          CMAKE_GENERATOR: Ninja
-          DP_VARIANT: cuda
-          DP_USE_MPICH2: 1
-      - name: Run Python tests (overlap AOTI compiles with GPU unit tests)
-        # The tests that freeze a .pt2 (-m aoti_compile) are CPU-bound: the GPU
-        # sits ~idle (measured ~98% idle, <250 MiB) while inductor/g++/ptxas
-        # generate code. Run them concurrently with the GPU-bound tests that do
-        # NOT compile a .pt2 so the compile CPU-time overlaps the GPU unit tests
-        # instead of serializing in front of them. The compile group is niced so
-        # the latency-sensitive GPU dispatch of the GPU group keeps CPU priority.
-        # Peak GPU memory of the compile group is negligible, so the two groups
-        # coexist on one device without contention.
-        run: |
-          # Cap the compile lane's inductor compile threads to ~half the cores
-          # so the GPU lane keeps CPU for its host-side dispatch; nice it too.
+          # Cap the compile lane's inductor threads to ~half the cores so lane 2
+          # keeps CPU for its host-side GPU dispatch; nice the compile work too.
           nc=$(( $(nproc) / 2 )); [ "$nc" -lt 1 ] && nc=1
-          # rc=0 + `|| rc=$?` so a lane's failure does not let the step's
-          # default `set -e` skip the wall-clock echo (the timing we want most
-          # when a lane fails).
-          ( t0=$(date +%s); rc=0
+          # rc=0 + `|| rc=$?` so a lane's failure does not let the step's default
+          # `set -e` skip the wall-clock echo (the timing we most want on failure).
+          # Lane 1: aoti_compile pytest, THEN the C++ build + fixture generation.
+          ( ta=$(date +%s); rc=0
             TORCHINDUCTOR_COMPILE_THREADS=$nc nice -n 15 \
               python -m pytest source/tests -m "aoti_compile" \
                 -p no:cacheprovider --junit-xml=junit-aoti.xml || rc=$?
-            echo "[lane aoti_compile] wall=$(( $(date +%s) - t0 ))s exit=$rc"
-            exit $rc ) &
+            # pytest exit 5 == "no tests collected"; harmless for the compile lane.
+            [ "$rc" = 5 ] && rc=0
+            echo "[lane aoti_compile] wall=$(( $(date +%s) - ta ))s exit=$rc"
+            tc=$(date +%s); rc_cc=0
+            ( export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
+              export OMP_NUM_THREADS=1 TF_INTRA_OP_PARALLELISM_THREADS=1 \
+                     TF_INTER_OP_PARALLELISM_THREADS=1 \
+                     CMAKE_GENERATOR=Ninja DP_VARIANT=cuda DP_USE_MPICH2=1
+              source/tests/infer/convert-models.sh
+              DP_CC_SKIP_CTEST=1 nice -n 19 source/install/test_cc_local.sh ) || rc_cc=$?
+            echo "[lane cc-prep] wall=$(( $(date +%s) - tc ))s exit=$rc_cc"
+            exit $(( rc != 0 || rc_cc != 0 )) ) &
           pid_a=$!
-          ( t0=$(date +%s); rc=0
+          # Lane 2: the GPU-bound unit tests (the bulk).
+          ( tb=$(date +%s); rc=0
             python -m pytest source/tests -m "not aoti_compile" \
               -p no:cacheprovider --junit-xml=junit-gpu.xml || rc=$?
-            echo "[lane gpu] wall=$(( $(date +%s) - t0 ))s exit=$rc"
+            echo "[lane gpu] wall=$(( $(date +%s) - tb ))s exit=$rc"
             exit $rc ) &
           pid_b=$!
           rc_a=0; wait $pid_a || rc_a=$?
           rc_b=0; wait $pid_b || rc_b=$?
-          # pytest exit 5 == "no tests collected"; harmless for the compile group
-          # (e.g. if a branch has no .pt2-freezing tests), a real error otherwise.
-          [ "$rc_a" = 5 ] && rc_a=0
-          echo "lane exit codes: aoti_compile=$rc_a gpu=$rc_b"
+          echo "lane exit codes: aoti_compile+cc-prep=$rc_a gpu=$rc_b"
           exit $(( rc_a != 0 || rc_b != 0 ))
         env:
           NUM_WORKERS: 0
@@ -156,12 +150,7 @@ jobs:
             junit-aoti.xml
             junit-gpu.xml
           if-no-files-found: warn
-      # Barrier: the background C++ build + fixture generation must be done
-      # before ctest consumes the fixtures. By now the Python step has run for
-      # ~2.5h, so the ~1h of C++ prep has almost always already finished during
-      # it -- this wait is usually instant.
-      - wait: cc-prep
-      - name: C++ tests (ctest; build + fixtures done in the background step)
+      - name: C++ tests (ctest; build + fixtures done in lane 1 above)
         run: |
           export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
           DP_CC_SKIP_BUILD=1 source/install/test_cc_local.sh
