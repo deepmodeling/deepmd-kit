@@ -625,12 +625,16 @@ def test_charge_spin_model_routes_through_graph_lower() -> None:
     cs0 = np.array([[0.0, 1.0]])
     cs1 = np.array([[1.0, 1.0]])
 
-    descriptor_cls = type(model.atomic_model.descriptor)
+    # Spy on the INSTANCE's bound method (wrapping the bound method), not the
+    # class with autospec: ``autospec=True`` + ``wraps=<unbound>`` mis-binds
+    # ``self`` across Python/mock versions (green on 3.13, "not enough values
+    # to unpack" on 3.10 CI). Patching the instance and wrapping its bound
+    # method is version-stable.
+    descriptor = model.atomic_model.descriptor
     with patch.object(
-        descriptor_cls,
+        descriptor,
         "call_graph",
-        autospec=True,
-        wraps=descriptor_cls.call_graph,
+        wraps=descriptor.call_graph,
     ) as spy:
         out0 = model.call_common(
             coord, atype, box, charge_spin=cs0, neighbor_graph_method="dense"
