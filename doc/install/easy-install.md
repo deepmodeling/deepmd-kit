@@ -62,7 +62,6 @@ Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#inst
 > Old packages will still be available at https://conda.deepmodeling.com.
 > Maintainers will build packages in the conda-forge organization together with other conda-forge members.
 > :::
->
 
 ## Install with docker
 
