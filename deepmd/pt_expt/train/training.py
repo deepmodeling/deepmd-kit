@@ -1146,8 +1146,8 @@ class _CompiledModel(torch.nn.Module):
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
         """
-        from deepmd.dpmodel.utils.neighbor_graph import (
-            build_neighbor_graph,
+        from deepmd.pt_expt.utils.graph_builder import (
+            build_neighbor_graph_for_method,
         )
 
         _model = self.original_model
@@ -1198,7 +1198,14 @@ class _CompiledModel(torch.nn.Module):
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
         pair_excl = getattr(_model.atomic_model, "pair_excl", None)
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
+        ng = build_neighbor_graph_for_method(
+            getattr(_model, "neighbor_graph_method", "dense"),
+            coord_3d,
+            atype,
+            box_flat,
+            rcut,
+            pair_excl,
+        )
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).
@@ -1793,6 +1800,10 @@ class Trainer(AbstractTrainer):
                     last_epoch=self.start_step - 1,
                 )
 
+        self._configure_neighbor_graph_method(
+            training_params.get("neighbor_graph_method", "auto")
+        )
+
         # torch.compile -------------------------------------------------------
         self.enable_compile = training_params.get("enable_compile", False)
         if self.enable_compile:
@@ -1890,6 +1901,29 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
     # torch.compile helpers
     # ------------------------------------------------------------------
+
+    def _configure_neighbor_graph_method(self, requested: str) -> None:
+        """Resolve and install the training graph builder on eligible models."""
+        graph_models = [
+            self.models[model_key]
+            for model_key in self.model_keys
+            if model_uses_graph_lower(self.models[model_key])
+        ]
+        if not graph_models:
+            if requested != "auto":
+                raise ValueError(
+                    "training.neighbor_graph_method applies only to "
+                    "graph-eligible energy models"
+                )
+            return
+
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_neighbor_graph_method,
+        )
+
+        resolved = resolve_neighbor_graph_method(requested, DEVICE)
+        for model in graph_models:
+            model.neighbor_graph_method = resolved
 
     def _compile_model(self, compile_opts: dict[str, Any]) -> None:
         """Replace ``self.model`` with a compiled version.

@@ -279,6 +279,34 @@ class TestTraining(unittest.TestCase):
         nparams = sum(p.numel() for p in model.parameters())
         self.assertGreater(nparams, 0)
 
+    def test_neighbor_graph_method_defaults_to_auto(self) -> None:
+        """Training selects the graph builder automatically unless overridden."""
+        config = _make_config(self.data_dir)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self.assertEqual(config["training"]["neighbor_graph_method"], "auto")
+
+    def test_trainer_installs_resolved_graph_method(self) -> None:
+        """The trainer installs the concrete graph backend on graph models."""
+        config = _make_config(self.data_dir)
+        config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        with patch(
+            "deepmd.pt.utils.nv_nlist.is_nv_available",
+            return_value=False,
+        ):
+            trainer = get_trainer(config)
+        self.assertEqual(trainer.model.neighbor_graph_method, "dense")
+
+    def test_explicit_graph_method_rejects_ineligible_model(self) -> None:
+        config = _make_config(self.data_dir)
+        config["training"]["neighbor_graph_method"] = "nv"
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        with self.assertRaisesRegex(ValueError, "graph-eligible"):
+            get_trainer(config)
+
     def _run_training(self, config: dict) -> None:
         """Run training and verify lcurve + checkpoint creation."""
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_train_")
