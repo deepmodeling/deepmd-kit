@@ -2,11 +2,9 @@
 """Backend-gated consistency tests for the default neighbor-list builder."""
 
 import unittest
+import unittest.mock as mock
 from typing import (
     Any,
-)
-from unittest import (
-    mock,
 )
 
 import array_api_compat
@@ -122,6 +120,8 @@ class TestJAXDefaultNeighborList(unittest.TestCase):
     """Validate eager JAX construction and the traced dense fallback."""
 
     def test_jax_eager_cell_list_matches_dense(self) -> None:
+        previous_x64 = jax.config.read("jax_enable_x64")
+        self.addCleanup(jax.config.update, "jax_enable_x64", previous_x64)
         jax.config.update("jax_enable_x64", True)
         coord, atype, _ = _random_system(nloc=256)
         pair_excl = PairExcludeMask(2, [(0, 1)])
