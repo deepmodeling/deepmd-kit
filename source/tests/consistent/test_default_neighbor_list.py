@@ -154,12 +154,17 @@ class TestJAXDefaultNeighborList(unittest.TestCase):
         self.assertTrue(
             default_nlist._supports_cell_list(coord_jax, 256, periodic=False)
         )
+        self.assertTrue(default_nlist._supports_padded_selection(coord_jax))
         traced_support = jax.jit(
             lambda cc: jnp.asarray(
                 default_nlist._supports_cell_list(cc, 256, periodic=False)
             )
         )(coord_jax)
         self.assertFalse(bool(np.asarray(traced_support)))
+        traced_padded_support = jax.jit(
+            lambda cc: jnp.asarray(default_nlist._supports_padded_selection(cc))
+        )(coord_jax)
+        self.assertFalse(bool(np.asarray(traced_padded_support)))
 
 
 @unittest.skipUnless(INSTALLED_TF2, "TF2 backend is not installed")

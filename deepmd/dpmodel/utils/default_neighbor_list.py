@@ -12,6 +12,7 @@ from deepmd.dpmodel.array_api import (
     Array,
     xp_hint_dynamic_size,
     xp_scatter_sum,
+    xp_take_along_axis,
 )
 from deepmd.dpmodel.utils.neighbor_list import (
     EdgeNeighborList,
@@ -60,6 +61,10 @@ _TF_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD = 8192
 _NEIGHBOR_CELL_OFFSETS = tuple(
     (ii, jj, kk) for ii in (-1, 0, 1) for jj in (-1, 0, 1) for kk in (-1, 0, 1)
 )
+
+# Bound row padding to four times the compact edge count; more skewed candidate
+# distributions keep the compact representation to avoid excessive memory use.
+_PADDED_CANDIDATE_OVERHEAD_LIMIT = 4
 
 
 def _supports_cell_list(coord: Array, nloc: Any, *, periodic: bool) -> bool:
@@ -140,6 +145,115 @@ def _supports_cell_list(coord: Array, nloc: Any, *, periodic: bool) -> bool:
     return nloc >= threshold
 
 
+def _select_nearest_padded(
+    center: Array,
+    neighbor_ext: Array,
+    distance: Array,
+    ncenters: int,
+    nsel: int,
+) -> Array | None:
+    """Select neighbors by sorting independent, padded center rows.
+
+    The compact candidate stream is already grouped by center.  Padding those
+    groups into rows makes the center key implicit, so two row-wise stable sorts
+    implement ``(distance, ext_index)`` ordering instead of three global sorts
+    plus a final scatter.  Highly imbalanced rows can waste substantial memory;
+    return ``None`` in that case so the compact global-sort path remains usable.
+
+    This helper requires eager, concrete candidate counts because the maximum
+    row width controls an allocation.  Callers must retain the compact path for
+    traced namespaces with symbolic data-dependent dimensions.
+    """
+    xp = array_api_compat.array_namespace(center, neighbor_ext, distance)
+    device = array_api_compat.device(center)
+    ones = xp.ones_like(center)
+    count_per_center = xp_scatter_sum(
+        xp.zeros((ncenters,), dtype=xp.int64, device=device), 0, center, ones
+    )
+    max_candidates = int(xp.max(count_per_center))
+    if max_candidates == 0:
+        return xp.full((ncenters, nsel), -1, dtype=xp.int64, device=device)
+
+    edge_count = center.shape[0]
+    padded_size = ncenters * max_candidates
+    if padded_size > _PADDED_CANDIDATE_OVERHEAD_LIMIT * max(edge_count, 1):
+        return None
+
+    center_start = xp.cumulative_sum(count_per_center) - count_per_center
+    edge_iota = xp.cumulative_sum(ones) - 1
+    rank = edge_iota - xp.take(center_start, center, axis=0)
+    slot = center * max_candidates + rank
+
+    neighbor_rows = xp_scatter_sum(
+        xp.zeros((padded_size,), dtype=xp.int64, device=device),
+        0,
+        slot,
+        neighbor_ext + 1,
+    )
+    neighbor_rows = xp.reshape(neighbor_rows - 1, (ncenters, max_candidates))
+    distance_rows = xp_scatter_sum(
+        xp.zeros((padded_size,), dtype=distance.dtype, device=device),
+        0,
+        slot,
+        distance,
+    )
+    distance_rows = xp.reshape(distance_rows, (ncenters, max_candidates))
+    distance_rows = xp.where(
+        neighbor_rows >= 0,
+        distance_rows,
+        xp.full_like(distance_rows, float("inf")),
+    )
+
+    # Stable sorting the secondary key first preserves the dense builder's
+    # extended-index tie break for equal distances.
+    order = xp.argsort(neighbor_rows, axis=1, stable=True)
+    neighbor_rows = xp_take_along_axis(neighbor_rows, order, axis=1)
+    distance_rows = xp_take_along_axis(distance_rows, order, axis=1)
+    order = xp.argsort(distance_rows, axis=1, stable=True)
+    neighbor_rows = xp_take_along_axis(neighbor_rows, order, axis=1)
+
+    selected_width = min(nsel, max_candidates)
+    nlist = neighbor_rows[:, :selected_width]
+    if selected_width < nsel:
+        nlist = xp.concat(
+            (
+                nlist,
+                xp.full(
+                    (ncenters, nsel - selected_width),
+                    -1,
+                    dtype=xp.int64,
+                    device=device,
+                ),
+            ),
+            axis=1,
+        )
+    return nlist
+
+
+def _supports_padded_selection(coord: Array) -> bool:
+    """Whether row padding can use eager, data-dependent Python dimensions."""
+    if array_api_compat.is_numpy_array(coord):
+        return True
+    if array_api_compat.is_torch_array(coord):
+        import torch
+
+        # torch.export/compile must keep the compact path: converting the maximum
+        # candidate count to ``int`` would specialize an unbacked symbolic value.
+        # Keep unmeasured accelerator implementations on the compact path too.
+        device = array_api_compat.device(coord)
+        return device.type in ("cpu", "cuda") and not torch.compiler.is_compiling()
+    if array_api_compat.is_jax_array(coord):
+        import jax
+
+        # Neighbor-list construction normally runs eagerly before the compiled
+        # model step; a tracer still needs the static compact fallback.  On JAX
+        # accelerators, materializing the row width on the host costs more than
+        # the saved sort work, so retain compact device sorting.
+        device = array_api_compat.device(coord)
+        return not isinstance(coord, jax.core.Tracer) and device.platform == "cpu"
+    return False
+
+
 def _build_neighbor_list_cell(
     coord: Array,
     atype: Array,
@@ -156,7 +270,9 @@ def _build_neighbor_list_cell(
     Cell members are represented by sorted integer keys; ``searchsorted`` finds
     the member ranges and an array-valued ``repeat`` expands only real candidate
     pairs.  At constant density this uses O(N) candidate memory and O(N log N)
-    work from the two stable sorts, instead of the dense O(N**2) distance matrix.
+    work, instead of the dense O(N**2) distance matrix.  Eager CPU namespaces
+    select neighbors with two bounded row-wise sorts, while traced namespaces
+    and JAX GPU retain compact global sorting to avoid a host-dependent shape.
 
     The final stable lexicographic ordering is ``(center, distance, ext_index)``.
     It matches the dense builder's nearest-neighbor contract, including selecting
@@ -249,6 +365,13 @@ def _build_neighbor_list_cell(
     neighbor_ext = xp.take(neighbor_ext, keep, axis=0)
     distance = xp.take(distance, keep, axis=0)
 
+    ncenters = nframes * nloc
+    if _supports_padded_selection(coord):
+        nlist = _select_nearest_padded(center, neighbor_ext, distance, ncenters, nsel)
+        if nlist is not None:
+            nlist = xp.reshape(nlist, (nframes, nloc, nsel))
+            return apply_pair_exclusion_nlist(nlist, atype, pair_excl)
+
     # Stable sorts from the least- to most-significant key produce the desired
     # lexicographic order while using only standard Array API operations.
     order = xp.argsort(neighbor_ext, stable=True)
@@ -265,7 +388,6 @@ def _build_neighbor_list_cell(
     center = xp.take(center, order, axis=0)
     neighbor_ext = xp.take(neighbor_ext, order, axis=0)
 
-    ncenters = nframes * nloc
     ones = xp.ones_like(center)
     count_per_center = xp_scatter_sum(
         xp.zeros((ncenters,), dtype=xp.int64, device=device), 0, center, ones

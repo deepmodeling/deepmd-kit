@@ -153,6 +153,36 @@ def test_cell_list_preserves_equal_distance_image_order(
         np.testing.assert_array_equal(dense_value, cell_value)
 
 
+def test_padded_selection_orders_rows_and_pads() -> None:
+    """Row-wise selection preserves distance/index order and empty slots."""
+    center = np.asarray([0, 0, 0, 1, 1], dtype=np.int64)
+    neighbor = np.asarray([3, 2, 1, 4, 0], dtype=np.int64)
+    distance = np.asarray([1.0, 1.0, 0.5, 2.0, 1.0], dtype=np.float64)
+    result = default_nlist._select_nearest_padded(
+        center, neighbor, distance, ncenters=3, nsel=4
+    )
+    np.testing.assert_array_equal(
+        result,
+        np.asarray(
+            [[1, 2, 3, -1], [0, 4, -1, -1], [-1, -1, -1, -1]],
+            dtype=np.int64,
+        ),
+    )
+
+
+def test_padded_selection_rejects_excessive_imbalance() -> None:
+    """A single wide row falls back before allocating a mostly empty matrix."""
+    center = np.asarray([0] * 9 + [1], dtype=np.int64)
+    neighbor = np.arange(10, dtype=np.int64)
+    distance = np.arange(10, dtype=np.float64)
+    assert (
+        default_nlist._select_nearest_padded(
+            center, neighbor, distance, ncenters=10, nsel=4
+        )
+        is None
+    )
+
+
 def test_automatic_cpu_thresholds() -> None:
     """Measured CPU crossovers keep small systems on the dense fast path."""
     assert not default_nlist._supports_cell_list(

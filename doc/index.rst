@@ -71,7 +71,6 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    development/create-a-model-tf
    development/create-a-model-pt
    development/type-embedding
-   development/default-neighbor-list-benchmark
    development/coding-conventions
    development/cicd
    Python API <autoapi/deepmd/index>

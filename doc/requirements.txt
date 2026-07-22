@@ -1,6 +1,4 @@
 .[docs,cpu,torch]
-matplotlib>=3.7
-pandas
 # https://github.com/mcmtroffaes/sphinxcontrib-bibtex/issues/309
 docutils!=0.18.*,!=0.19.*
 sphinx>=7
