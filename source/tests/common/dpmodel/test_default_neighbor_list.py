@@ -95,7 +95,14 @@ def test_cell_list_exact_cutoff_virtual_and_exclusion(
 ) -> None:
     """Boundary neighbors, virtual atoms, and exclusion holes match dense search."""
     coord = np.asarray(
-        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 0.0, 0.0]]],
+        [
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0e12, -1.0e12, 1.0e12],
+            ]
+        ],
         dtype=np.float64,
     )
     atype = np.asarray([[0, 1, 0, -1]], dtype=np.int64)

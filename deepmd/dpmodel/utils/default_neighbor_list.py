@@ -329,11 +329,24 @@ def _build_neighbor_list_cell(
     if nloc == 0:
         return xp.full((nframes, 0, nsel), -1, dtype=xp.int64, device=device)
 
-    # Bin in Cartesian space.  Subtracting a per-frame origin keeps every cell
-    # coordinate non-negative, which lets a single collision-free row-major key
-    # encode the 3-D cell tuple.
-    origin = xp.min(coord, axis=1, keepdims=True)
-    cell = xp.astype(xp.floor((coord - origin) / rcut), xp.int64)
+    # Bin only real atoms in Cartesian space.  Virtual atoms can carry arbitrary
+    # placeholder coordinates; letting those values set the origin or grid extent
+    # can produce enormous keys (or overflow them) even though virtual atoms are
+    # never queried or returned.  Pin them to the per-frame real-atom origin before
+    # computing cells.  An all-virtual frame uses the zero origin and a 1x1x1 grid.
+    real_mask = atype >= 0
+    real_coord = xp.where(
+        real_mask[..., None],
+        coord,
+        xp.full_like(coord, float("inf")),
+    )
+    origin = xp.min(real_coord, axis=1, keepdims=True)
+    has_real = xp.any(real_mask, axis=1, keepdims=True)
+    origin = xp.where(has_real[..., None], origin, xp.zeros_like(origin))
+    coord_for_binning = xp.where(real_mask[..., None], coord, origin)
+    # Subtracting a per-frame origin keeps every cell coordinate non-negative,
+    # which lets a single collision-free row-major key encode the 3-D cell tuple.
+    cell = xp.astype(xp.floor((coord_for_binning - origin) / rcut), xp.int64)
     dims = xp.max(xp.reshape(cell, (-1, 3)), axis=0) + 1
     cells_per_frame = dims[0] * dims[1] * dims[2]
     frame_base = xp.arange(nframes, dtype=xp.int64, device=device) * cells_per_frame

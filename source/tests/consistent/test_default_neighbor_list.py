@@ -112,6 +112,48 @@ class _CellListBackendMixin:
                     assert array_api_compat.is_array_api_obj(result)
                     np.testing.assert_array_equal(self._to_numpy(result), reference)
 
+    def test_backend_virtual_outlier_does_not_expand_grid(self) -> None:
+        """Virtual placeholder coordinates do not affect real-atom cells."""
+        coord = np.asarray(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [2.0, 0.0, 0.0],
+                    [1.0e12, -1.0e12, 1.0e12],
+                ],
+                [
+                    [1.0e12, 0.0, 0.0],
+                    [0.0, -1.0e12, 0.0],
+                    [0.0, 0.0, 1.0e12],
+                    [-1.0e12, 0.0, 0.0],
+                ],
+            ],
+            dtype=np.float32,
+        )
+        atype = np.asarray([[0, 1, 0, -1], [-1, -1, -1, -1]], dtype=np.int64)
+        reference = default_nlist.build_neighbor_list(
+            coord,
+            atype,
+            nloc=4,
+            rcut=1.0,
+            sel=[8],
+            distinguish_types=False,
+        )
+        for device in self._backend_devices():
+            with self.subTest(device=str(device)):
+                coord_backend, atype_backend = self._backend_arrays(
+                    coord, atype, device
+                )
+                result = default_nlist._build_neighbor_list_cell(
+                    coord_backend,
+                    atype_backend,
+                    nloc=4,
+                    rcut=1.0,
+                    nsel=8,
+                )
+                np.testing.assert_array_equal(self._to_numpy(result), reference)
+
 
 @unittest.skipUnless(INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed")
 class TestArrayAPIStrictDefaultNeighborList(_CellListBackendMixin, unittest.TestCase):
