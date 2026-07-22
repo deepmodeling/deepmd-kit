@@ -70,36 +70,47 @@ class _CellListBackendMixin:
         return np.asarray(value)
 
     def test_backend_cell_list_matches_dense(self) -> None:
-        """All backends preserve one common dense neighbor-list reference."""
+        """All backends preserve common periodic and nonperiodic references."""
         nloc = 24
         rcut = 3.2
         nsel = 32
-        coord, atype, _ = _random_system(nloc=nloc, dtype=np.float32)
+        coord, atype, box = _random_system(nloc=nloc, dtype=np.float32)
         pair_excl = PairExcludeMask(2, [(0, 1)])
-        reference = default_nlist.build_neighbor_list(
-            coord.reshape(1, -1),
-            atype,
-            nloc,
-            rcut,
-            [nsel],
-            distinguish_types=False,
-            pair_excl=pair_excl,
-        )
-        for device in self._backend_devices():
-            with self.subTest(device=str(device)):
-                coord_backend, atype_backend = self._backend_arrays(
-                    coord.reshape(1, -1), atype, device
-                )
-                result = default_nlist._build_neighbor_list_cell(
-                    coord_backend,
-                    atype_backend,
-                    nloc,
+        for periodic in (False, True):
+            if periodic:
+                search_coord, search_atype, _ = default_nlist.extend_coord_with_ghosts(
+                    coord,
+                    atype,
+                    box,
                     rcut,
-                    nsel,
-                    pair_excl=pair_excl,
                 )
-                assert array_api_compat.is_array_api_obj(result)
-                np.testing.assert_array_equal(self._to_numpy(result), reference)
+            else:
+                search_coord = coord.reshape(1, -1)
+                search_atype = atype
+            reference = default_nlist.build_neighbor_list(
+                search_coord,
+                search_atype,
+                nloc,
+                rcut,
+                [nsel],
+                distinguish_types=False,
+                pair_excl=pair_excl,
+            )
+            for device in self._backend_devices():
+                with self.subTest(periodic=periodic, device=str(device)):
+                    coord_backend, atype_backend = self._backend_arrays(
+                        search_coord, search_atype, device
+                    )
+                    result = default_nlist._build_neighbor_list_cell(
+                        coord_backend,
+                        atype_backend,
+                        nloc,
+                        rcut,
+                        nsel,
+                        pair_excl=pair_excl,
+                    )
+                    assert array_api_compat.is_array_api_obj(result)
+                    np.testing.assert_array_equal(self._to_numpy(result), reference)
 
 
 @unittest.skipUnless(INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed")
