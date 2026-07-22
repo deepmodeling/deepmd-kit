@@ -94,10 +94,32 @@ def _supports_cell_list(coord: Array, nloc: Any, *, periodic: bool) -> bool:
     if not (is_numpy or is_jax or is_torch or is_ndtensorflow):
         return False
     device = array_api_compat.device(coord)
+    if is_torch and getattr(device, "type", None) not in ("cpu", "cuda"):
+        # Cell-list primitives are only validated on PyTorch CPU/CUDA.  Treat
+        # MPS, XPU, and future device types conservatively instead of assuming
+        # that searchsorted/repeat/nonzero have complete backend coverage.
+        return False
+    if is_jax and getattr(device, "platform", None) not in ("cpu", "gpu"):
+        # TPU and future JAX platforms need their own measurements and operation
+        # coverage before inheriting either the CPU or CUDA crossover.
+        return False
+    device_name = str(device).upper()
+    tf_cpu = is_ndtensorflow and (
+        device_name.startswith("CPU") or "/DEVICE:CPU:" in device_name
+    )
+    tf_gpu = is_ndtensorflow and (
+        device_name.startswith("GPU") or "/DEVICE:GPU:" in device_name
+    )
+    tf_unplaced = is_ndtensorflow and not device_name
+    if is_ndtensorflow and not (tf_cpu or tf_gpu or tf_unplaced):
+        # TensorFlow eager arrays identify CPU/GPU placement directly, while
+        # symbolic tensors may remain unplaced until graph execution.  Reject
+        # named accelerators that have not been validated by this path.
+        return False
     is_cuda = (
         getattr(device, "type", None) == "cuda"
         or getattr(device, "platform", None) == "gpu"
-        or str(device).upper().startswith("GPU")
+        or tf_gpu
     )
     if is_cuda:
         if is_jax:
@@ -123,6 +145,18 @@ def _supports_cell_list(coord: Array, nloc: Any, *, periodic: bool) -> bool:
             _JAX_CPU_PERIODIC_CELL_LIST_THRESHOLD
             if periodic
             else _JAX_CPU_NONPERIODIC_CELL_LIST_THRESHOLD
+        )
+    elif tf_unplaced:
+        # An unplaced TensorFlow graph may execute on either CPU or GPU.  The
+        # later measured crossover avoids selecting the cell list too early on
+        # whichever validated device the runtime eventually chooses.
+        threshold = max(
+            _TF_CPU_PERIODIC_CELL_LIST_THRESHOLD
+            if periodic
+            else _TF_CPU_NONPERIODIC_CELL_LIST_THRESHOLD,
+            _TF_CUDA_PERIODIC_CELL_LIST_THRESHOLD
+            if periodic
+            else _TF_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD,
         )
     elif is_ndtensorflow:
         threshold = (
