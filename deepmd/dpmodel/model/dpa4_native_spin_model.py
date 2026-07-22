@@ -157,7 +157,7 @@ class DPA4NativeSpinModel(NativeOP):
         ``energy`` -> ``atom_energy``, ``energy_redu`` -> ``energy``,
         ``energy_derv_r`` -> ``force``, ``energy_derv_r_mag`` ->
         ``force_mag``. Built from this wrapper's OWN
-        :meth:`model_output_def` (which sets ``energy.magnetic = True`),
+        :meth:`model_output_def` (which sets ``energy.magnetic = True``),
         not the (non-spin) backbone's -- mirrors
         :meth:`~deepmd.dpmodel.model.spin_model.SpinModel.translated_output_def`.
         """
