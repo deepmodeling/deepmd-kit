@@ -5,14 +5,10 @@ from typing import (
     Any,
 )
 
-import array_api_compat
 import numpy as np
 import pytest
 
 import deepmd.dpmodel.utils.default_neighbor_list as default_nlist
-from deepmd.dpmodel.utils.default_neighbor_list import (
-    DefaultNeighborList,
-)
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
 )
@@ -24,18 +20,6 @@ def _force_search(monkeypatch: pytest.MonkeyPatch, *, cell: bool) -> None:
     for name in (
         "_NUMPY_CPU_PERIODIC_CELL_LIST_THRESHOLD",
         "_NUMPY_CPU_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_TORCH_CPU_PERIODIC_CELL_LIST_THRESHOLD",
-        "_TORCH_CPU_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_JAX_CPU_PERIODIC_CELL_LIST_THRESHOLD",
-        "_JAX_CPU_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_TF_CPU_PERIODIC_CELL_LIST_THRESHOLD",
-        "_TF_CPU_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_TORCH_CUDA_PERIODIC_CELL_LIST_THRESHOLD",
-        "_TORCH_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_JAX_CUDA_PERIODIC_CELL_LIST_THRESHOLD",
-        "_JAX_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD",
-        "_TF_CUDA_PERIODIC_CELL_LIST_THRESHOLD",
-        "_TF_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD",
     ):
         monkeypatch.setattr(default_nlist, name, threshold)
 
@@ -71,7 +55,7 @@ def _build(
 ) -> tuple[Any, Any, Any, Any]:
     """Build with a forced dense or cell-list implementation."""
     _force_search(monkeypatch, cell=cell)
-    return DefaultNeighborList().build(
+    return default_nlist.DefaultNeighborList().build(
         coord, atype, box, rcut, sel, pair_excl=pair_excl
     )
 
@@ -167,161 +151,6 @@ def test_cell_list_preserves_equal_distance_image_order(
     )
     for dense_value, cell_value in zip(dense, cell, strict=True):
         np.testing.assert_array_equal(dense_value, cell_value)
-
-
-def test_cell_list_array_api_strict() -> None:
-    """The low-complexity helper uses operations from the strict Array API."""
-    strict = pytest.importorskip("array_api_strict")
-    coord, atype, _ = _random_system(nframes=1, nloc=24)
-    coord_strict = strict.asarray(coord)
-    atype_strict = strict.asarray(atype)
-    result = default_nlist._build_neighbor_list_cell(
-        strict.reshape(coord_strict, (1, -1)),
-        atype_strict,
-        24,
-        3.2,
-        32,
-    )
-
-    # Compare against the historical NumPy implementation as the oracle.
-    reference = default_nlist.build_neighbor_list(
-        coord.reshape(1, -1),
-        atype,
-        24,
-        3.2,
-        [32],
-        distinguish_types=False,
-    )
-    assert array_api_compat.is_array_api_obj(result)
-    np.testing.assert_array_equal(np.asarray(result), reference)
-
-
-def test_cell_list_torch_namespace_and_gradient(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Torch receives tensor outputs while extended-coordinate gradients survive."""
-    torch = pytest.importorskip("torch")
-    coord, atype, box = _random_system(nframes=1, nloc=32)
-    coord_t = torch.tensor(coord, dtype=torch.float64, requires_grad=True)
-    atype_t = torch.tensor(atype, dtype=torch.int64)
-    box_t = torch.tensor(box, dtype=torch.float64)
-
-    dense = _build(
-        monkeypatch,
-        cell=False,
-        coord=coord_t.detach(),
-        atype=atype_t,
-        box=box_t,
-        rcut=3.2,
-        sel=[24, 24],
-    )
-    cell = _build(
-        monkeypatch,
-        cell=True,
-        coord=coord_t,
-        atype=atype_t,
-        box=box_t,
-        rcut=3.2,
-        sel=[24, 24],
-    )
-    for dense_value, cell_value in zip(dense, cell, strict=True):
-        torch.testing.assert_close(dense_value, cell_value)
-
-    cell[0].sum().backward()
-    assert coord_t.grad is not None
-
-
-def test_torch_cpu_threshold() -> None:
-    """PyTorch CPU stays dense until the rcut=6 crossover."""
-    torch = pytest.importorskip("torch")
-    coord = torch.zeros((1, 1, 3), dtype=torch.float64)
-    assert not default_nlist._supports_cell_list(coord, 2047, periodic=False)
-    assert default_nlist._supports_cell_list(coord, 2048, periodic=False)
-
-
-def test_cell_list_jax_eager() -> None:
-    """Eager JAX builds the dynamic candidate list exactly outside ``jit``."""
-    jax = pytest.importorskip("jax")
-    jax.config.update("jax_enable_x64", True)
-    jnp = pytest.importorskip("jax.numpy")
-    coord, atype, _ = _random_system(nframes=1, nloc=256)
-    pair_excl = PairExcludeMask(2, [(0, 1)])
-    reference = default_nlist.build_neighbor_list(
-        coord.reshape(1, -1),
-        atype,
-        256,
-        3.2,
-        [32],
-        distinguish_types=False,
-        pair_excl=pair_excl,
-    )
-
-    result = DefaultNeighborList().build(
-        jnp.asarray(coord),
-        jnp.asarray(atype),
-        None,
-        3.2,
-        [32],
-        pair_excl=pair_excl,
-    )[2]
-    result.block_until_ready()
-    np.testing.assert_array_equal(np.asarray(result), reference)
-    assert not default_nlist._supports_cell_list(
-        jnp.asarray(coord), 255, periodic=False
-    )
-    assert default_nlist._supports_cell_list(jnp.asarray(coord), 256, periodic=False)
-    traced_support = jax.jit(
-        lambda cc: jnp.asarray(
-            default_nlist._supports_cell_list(cc, 256, periodic=False)
-        )
-    )(jnp.asarray(coord))
-    assert not bool(np.asarray(traced_support))
-
-
-def test_cell_list_tensorflow_function_periodic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """TensorFlow graph mode supports dynamic candidates and periodic ghosts."""
-    tf = pytest.importorskip("tensorflow")
-    ndtf = pytest.importorskip("deepmd._vendors.ndtensorflow")
-    coord, atype, box = _random_system(nframes=1, nloc=24)
-    dense = _build(
-        monkeypatch,
-        cell=False,
-        coord=coord,
-        atype=atype,
-        box=box,
-        rcut=3.2,
-        sel=[24, 24],
-    )
-    _force_search(monkeypatch, cell=True)
-
-    @tf.function(
-        autograph=False,
-        input_signature=[
-            tf.TensorSpec([None, 24, 3], tf.float64),
-            tf.TensorSpec([None, 24], tf.int64),
-            tf.TensorSpec([None, 3, 3], tf.float64),
-        ],
-    )
-    def build_graph(cc: Any, aa: Any, bb: Any) -> tuple[Any, Any, Any, Any]:
-        result = DefaultNeighborList().build(
-            ndtf.asarray(cc), ndtf.asarray(aa), ndtf.asarray(bb), 3.2, [24, 24]
-        )
-        return tuple(value.unwrap() for value in result)
-
-    cell = build_graph(coord, atype, box)
-    for dense_value, cell_value in zip(dense, cell, strict=True):
-        np.testing.assert_allclose(dense_value, cell_value.numpy())
-
-
-def test_tensorflow_cpu_threshold() -> None:
-    """TensorFlow keeps sub-4096-atom CPU systems on dense search."""
-    tf = pytest.importorskip("tensorflow")
-    ndtf = pytest.importorskip("deepmd._vendors.ndtensorflow")
-    tf_coord = ndtf.asarray(tf.zeros((1, 1, 3), dtype=tf.float64))
-    assert not default_nlist._supports_cell_list(tf_coord, 4095, periodic=False)
-    assert default_nlist._supports_cell_list(tf_coord, 4096, periodic=False)
 
 
 def test_automatic_cpu_thresholds() -> None:

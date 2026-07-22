@@ -99,3 +99,10 @@ srun --gres=gpu:1 python \
     --backend jax --device gpu --scenario nonperiodic \
     --output result_jax_gpu_nonperiodic.csv
 ```
+
+Generate both plots from a directory containing the resulting `result_*.csv`
+files:
+
+```bash
+python doc/development/plot_default_neighbor_list_benchmark.py <results-dir>
+```

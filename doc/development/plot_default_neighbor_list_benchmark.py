@@ -10,6 +10,9 @@ import argparse
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 
 import matplotlib
 
@@ -64,6 +67,18 @@ def setup_axes() -> tuple[plt.Figure, dict[tuple[str, str], plt.Axes]]:
     return fig, axes
 
 
+def collect_legend(
+    axes: dict[tuple[str, str], plt.Axes],
+) -> tuple[list[Any], list[str]]:
+    """Collect each plotted series once across all benchmark panels."""
+    handles_by_label: dict[str, Any] = {}
+    for axis in axes.values():
+        handles, labels = axis.get_legend_handles_labels()
+        for handle, label in zip(handles, labels, strict=True):
+            handles_by_label.setdefault(label, handle)
+    return list(handles_by_label.values()), list(handles_by_label)
+
+
 def plot_runtime(data: pd.DataFrame, directory: Path) -> None:
     fig, axes = setup_axes()
     for (device, scenario), axis in axes.items():
@@ -92,7 +107,7 @@ def plot_runtime(data: pd.DataFrame, directory: Path) -> None:
         axis.set_title(f"{device.upper()} — {scenario}")
         axis.set_xlabel("Local atoms N")
         axis.set_ylabel("Neighbor-search time (ms)")
-    handles, labels = axes[("cpu", "nonperiodic")].get_legend_handles_labels()
+    handles, labels = collect_legend(axes)
     fig.legend(handles, labels, loc="outside lower center", ncol=4, fontsize=9)
     fig.suptitle(
         "DeePMD dense vs Cartesian cell-list neighbor search\n"
@@ -136,7 +151,7 @@ def plot_speedup(data: pd.DataFrame, directory: Path) -> None:
         axis.set_title(f"{device.upper()} — {scenario}")
         axis.set_xlabel("Local atoms N")
         axis.set_ylabel("Speedup: dense time / cell time")
-    handles, labels = axes[("cpu", "nonperiodic")].get_legend_handles_labels()
+    handles, labels = collect_legend(axes)
     fig.legend(handles, labels, loc="outside lower center", ncol=4, fontsize=9)
     fig.suptitle(
         "Cartesian cell-list speedup over dense neighbor search\n"
