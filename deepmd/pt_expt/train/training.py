@@ -42,12 +42,19 @@ from deepmd.dpmodel.utils.batch import (
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
+from deepmd.pt.optimizer import (
+    HybridMuonOptimizer,
+)
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
 )
 from deepmd.pt.train.validation import (
     FullValidator,
     resolve_full_validation_start_step,
+)
+from deepmd.pt.utils.compile_compat import (
+    apply_global_compile_patches,
+    build_inductor_compile_options,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
@@ -92,6 +99,10 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+# Apply the shared process-global compiler workarounds before any pt_expt
+# training graph reaches Dynamo or Inductor.
+apply_global_compile_patches()
 
 # Buffer names in atomic_model that are per-task (energy/output statistics).
 # These live one level above the fitting net and are not reached by
@@ -572,19 +583,8 @@ def _finalize_compiled_lower(
     if not was_training:
         model.eval()
 
-    # Inductor defaults tuned for second-order-gradient training graphs.
-    # User-supplied compile_opts override these on a per-key basis.
-    inductor_options: dict[str, Any] = {
-        "max_autotune": False,
-        "shape_padding": True,
-        "epilogue_fusion": False,
-        "triton.cudagraphs": False,
-        "max_fusion_size": 8,
-        # NOTE: On GPU with PyTorch <=2.11, consider adding
-        # "triton.mix_order_reduction": False to work around
-        # pytorch/pytorch#174379, #178080, #179494 under
-        # data-dependent symbolic shapes.
-    }
+    # Keep pt_expt training on the same compiler contract as the PT SeZM path.
+    inductor_options = build_inductor_compile_options(inference=False)
     if extra_options:
         inductor_options.update(extra_options)
     if compile_opts:
@@ -1359,6 +1359,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
 
         # Task normalization --------------------------------------------------
@@ -1583,21 +1584,47 @@ class Trainer(AbstractTrainer):
                 )
 
         # Optimiser -----------------------------------------------------------
-        opt_type = training_params.get("opt_type", "Adam")
+        opt_type = optimizer_params.get("type", "Adam")
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
         # lambda initialize the optimizer to the requested warmup value.
         initial_lr = float(self.lr_schedule.start_lr)
+        adam_betas = (
+            float(optimizer_params["adam_beta1"]),
+            float(optimizer_params["adam_beta2"]),
+        )
+        weight_decay = float(optimizer_params["weight_decay"])
 
         if opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
+            self.optimizer = torch.optim.Adam(
+                self.wrapper.parameters(),
+                lr=initial_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+            )
         elif opt_type == "AdamW":
-            weight_decay = training_params.get("weight_decay", 0.001)
             self.optimizer = torch.optim.AdamW(
                 self.wrapper.parameters(),
                 lr=initial_lr,
+                betas=adam_betas,
                 weight_decay=weight_decay,
+            )
+        elif opt_type == "HybridMuon":
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
+            self.optimizer = HybridMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=initial_lr,
+                momentum=float(optimizer_params["momentum"]),
+                weight_decay=weight_decay,
+                adam_betas=adam_betas,
+                lr_adjust=float(optimizer_params["lr_adjust"]),
+                lr_adjust_coeff=float(optimizer_params["lr_adjust_coeff"]),
+                muon_mode=str(optimizer_params["muon_mode"]),
+                named_parameters=runtime_named_parameters,
+                enable_gram=bool(optimizer_params["enable_gram"]),
+                flash_muon=bool(optimizer_params["flash_muon"]),
+                magma_muon=bool(optimizer_params["magma_muon"]),
             )
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
