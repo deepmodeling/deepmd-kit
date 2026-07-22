@@ -275,7 +275,15 @@ def _supports_padded_selection(coord: Array) -> bool:
         # candidate count to ``int`` would specialize an unbacked symbolic value.
         # Keep unmeasured accelerator implementations on the compact path too.
         device = array_api_compat.device(coord)
-        return device.type in ("cpu", "cuda") and not torch.compiler.is_compiling()
+        is_compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+        # Older or reduced PyTorch builds may not expose torch.compiler.  Without
+        # a reliable tracing-state query, keep the dynamic compact path instead
+        # of risking a data-dependent Python allocation during compilation.
+        return (
+            device.type in ("cpu", "cuda")
+            and is_compiling is not None
+            and not is_compiling()
+        )
     if array_api_compat.is_jax_array(coord):
         import jax
 

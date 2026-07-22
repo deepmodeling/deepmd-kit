@@ -184,6 +184,12 @@ class TestTorchDefaultNeighborList(_CellListBackendMixin, unittest.TestCase):
                 default_nlist._supports_cell_list(coord, 10**6, periodic=False)
             )
 
+    def test_torch_without_compiler_api_uses_compact_selection(self) -> None:
+        """PyTorch variants without compiler state avoid dynamic row padding."""
+        coord = torch.zeros((1, 1, 3), dtype=torch.float64)
+        with mock.patch.object(torch, "compiler", None):
+            self.assertFalse(default_nlist._supports_padded_selection(coord))
+
 
 @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
 class TestJAXDefaultNeighborList(_CellListBackendMixin, unittest.TestCase):
