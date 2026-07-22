@@ -58,8 +58,17 @@ if [ "${DP_CC_SKIP_BUILD}" != "1" ]; then
 	if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
 		# Install the custom op .so to SHARED_LIB_DIR so that `import deepmd.pt`
 		# loads it via cxx_op.py.
+		#
+		# The install MUST be atomic (copy to a temp file in the same dir, then
+		# os.replace). shutil.copy2 overwrites the destination inode IN PLACE,
+		# which corrupts the mmap'd code pages of any process that already
+		# dlopen'd this .so -- e.g. the concurrent Python test lane in the CUDA
+		# CI overlap -- and SIGSEGVs it (see #5882). os.replace swaps the
+		# directory entry to a NEW inode instead: live mappings keep the old
+		# (refcounted) inode intact, and new dlopens (the gen_*.py scripts) pick
+		# up the new file.
 		python -c '
-import shutil, sys
+import os, shutil, sys
 from pathlib import Path
 from deepmd.env import SHARED_LIB_DIR
 so = Path("'"${BUILD_TMP_DIR}"'") / "op" / "pt" / "libdeepmd_op_pt.so"
@@ -70,7 +79,9 @@ elif dst.exists() and dst.resolve() == so.resolve():
     print(f"Already linked: {dst} -> {so}")
 else:
     SHARED_LIB_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(so), str(dst))
+    tmp = dst.with_name(dst.name + f".tmp{os.getpid()}")
+    shutil.copy2(str(so), str(tmp))
+    os.replace(str(tmp), str(dst))
     print(f"Installed {so} -> {dst}")
 '
 		# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
