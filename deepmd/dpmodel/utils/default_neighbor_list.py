@@ -55,6 +55,18 @@ _JAX_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD = 12288
 _TF_CUDA_PERIODIC_CELL_LIST_THRESHOLD = 1024
 _TF_CUDA_NONPERIODIC_CELL_LIST_THRESHOLD = 8192
 
+# Conservative measured points where compacting the extended periodic shell
+# becomes cheaper than sorting every image on each CPU backend.
+_NUMPY_CPU_PERIODIC_COMPACTION_THRESHOLD = 64
+_TORCH_CPU_PERIODIC_COMPACTION_THRESHOLD = 256
+_JAX_CPU_PERIODIC_COMPACTION_THRESHOLD = 1024
+_TF_CPU_PERIODIC_COMPACTION_THRESHOLD = 512
+
+# At rcut=6 and density 0.05 on RTX 5090, periodic compaction crosses over
+# between 131072 and 262144 atoms.  Use the later point conservatively: below it
+# the added mask/nonzero/gather kernels cost more than the smaller key sort saves.
+_TORCH_CUDA_PERIODIC_COMPACTION_THRESHOLD = 262144
+
 # A Cartesian cell width of ``rcut`` guarantees that two atoms within the cutoff
 # can differ by at most one cell in each direction.  Keeping the offsets as Python
 # data avoids recreating the Cartesian product with backend-specific meshgrid APIs.
@@ -65,6 +77,27 @@ _NEIGHBOR_CELL_OFFSETS = tuple(
 # Bound row padding to four times the compact edge count; more skewed candidate
 # distributions keep the compact representation to avoid excessive memory use.
 _PADDED_CANDIDATE_OVERHEAD_LIMIT = 4
+_INT32_MAX = 2**31 - 1
+
+
+def _index_iota(value: Array) -> Array:
+    """Return ``[0, ..., value.shape[0] - 1]`` without an avoidable scan.
+
+    Eager backends expose the data-dependent length as a concrete Python
+    integer, so ``arange`` avoids allocating an all-ones temporary and running a
+    cumulative sum over the full candidate stream.  Traced backends can carry a
+    symbolic length that ``arange`` can not consume portably; retain the scan
+    construction there to preserve TensorFlow and torch.export compatibility.
+    """
+    xp = array_api_compat.array_namespace(value)
+    length = value.shape[0]
+    if isinstance(length, int):
+        return xp.arange(
+            length,
+            dtype=xp.int64,
+            device=array_api_compat.device(value),
+        )
+    return xp.cumulative_sum(xp.ones_like(value)) - 1
 
 
 def _supports_cell_list(coord: Array, nloc: Any, *, periodic: bool) -> bool:
@@ -214,7 +247,7 @@ def _select_nearest_padded(
         return None
 
     center_start = xp.cumulative_sum(count_per_center) - count_per_center
-    edge_iota = xp.cumulative_sum(ones) - 1
+    edge_iota = _index_iota(center)
     rank = edge_iota - xp.take(center_start, center, axis=0)
     slot = center * max_candidates + rank
 
@@ -329,48 +362,165 @@ def _build_neighbor_list_cell(
     if nloc == 0:
         return xp.full((nframes, 0, nsel), -1, dtype=xp.int64, device=device)
 
-    # Bin only real atoms in Cartesian space.  Virtual atoms can carry arbitrary
-    # placeholder coordinates; letting those values set the origin or grid extent
-    # can produce enormous keys (or overflow them) even though virtual atoms are
-    # never queried or returned.  Pin them to the per-frame real-atom origin before
-    # computing cells.  An all-virtual frame uses the zero origin and a 1x1x1 grid.
     real_mask = atype >= 0
-    real_coord = xp.where(
-        real_mask[..., None],
-        coord,
-        xp.full_like(coord, float("inf")),
+    coord_flat = xp.reshape(coord, (nframes * nall, 3))
+    # NumPy and eager PyTorch gain from halving the candidate-index traffic.
+    # JAX and TensorFlow retain int64 internals because their measured compact
+    # selection/graph paths did not recover the added conversion cost.
+    use_int32_internal_indices = (
+        (
+            array_api_compat.is_numpy_array(coord)
+            or array_api_compat.is_torch_array(coord)
+        )
+        and isinstance(nframes, int)
+        and isinstance(nall, int)
+        and nframes * nall <= _INT32_MAX
     )
-    origin = xp.min(real_coord, axis=1, keepdims=True)
-    has_real = xp.any(real_mask, axis=1, keepdims=True)
-    origin = xp.where(has_real[..., None], origin, xp.zeros_like(origin))
-    coord_for_binning = xp.where(real_mask[..., None], coord, origin)
-    # Subtracting a per-frame origin keeps every cell coordinate non-negative,
-    # which lets a single collision-free row-major key encode the 3-D cell tuple.
-    cell = xp.astype(xp.floor((coord_for_binning - origin) / rcut), xp.int64)
-    dims = xp.max(xp.reshape(cell, (-1, 3)), axis=0) + 1
-    cells_per_frame = dims[0] * dims[1] * dims[2]
-    frame_base = xp.arange(nframes, dtype=xp.int64, device=device) * cells_per_frame
-    cell_key = cell[..., 0] + dims[0] * (cell[..., 1] + dims[1] * cell[..., 2])
-    cell_key = cell_key + frame_base[:, None]
+    internal_index_dtype = xp.int32 if use_int32_internal_indices else xp.int64
+    is_unplaced_tensorflow = getattr(
+        xp, "__name__", ""
+    ) == "deepmd._vendors.ndtensorflow" and not str(device)
+    is_accelerator = (
+        getattr(device, "type", None) == "cuda"
+        or getattr(device, "platform", None) == "gpu"
+        or "GPU" in str(device).upper()
+        # A traced TensorFlow tensor is commonly unplaced even when the graph
+        # later executes on GPU, where small/medium compaction regresses.
+        or is_unplaced_tensorflow
+    )
+    compact_large_torch_cuda = (
+        array_api_compat.is_torch_array(coord)
+        and getattr(device, "type", None) == "cuda"
+        and rcut <= 6.0
+        and nloc >= _TORCH_CUDA_PERIODIC_COMPACTION_THRESHOLD
+    )
+    compact_cpu = False
+    if not is_accelerator:
+        if array_api_compat.is_numpy_array(coord):
+            compact_cpu = nloc >= _NUMPY_CPU_PERIODIC_COMPACTION_THRESHOLD
+        elif array_api_compat.is_torch_array(coord):
+            compact_cpu = nloc >= _TORCH_CPU_PERIODIC_COMPACTION_THRESHOLD
+        elif array_api_compat.is_jax_array(coord):
+            compact_cpu = nloc >= _JAX_CPU_PERIODIC_COMPACTION_THRESHOLD
+        elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+            compact_cpu = nloc >= _TF_CPU_PERIODIC_COMPACTION_THRESHOLD
+    # The extra mask/nonzero/gather launches outweigh the smaller key sort on
+    # JAX/TF accelerators and smaller PyTorch CUDA systems.  CPU backends benefit
+    # immediately; eager PyTorch CUDA crosses over only at much larger sizes.
+    compact_periodic_images = (
+        isinstance(nall, int)
+        and nall > 2 * nloc
+        and (compact_cpu or compact_large_torch_cuda)
+    )
 
-    # Virtual atoms share a sentinel key outside the searchable cell range.  They
-    # remain in the sorted array (preserving a static nall axis) but no valid query
-    # ever searches the sentinel cell.
-    sentinel = cells_per_frame * nframes
-    cell_key = xp.where(atype >= 0, cell_key, sentinel)
-    flat_key = xp.reshape(cell_key, (-1,))
-    local_ext_index = xp.broadcast_to(
-        xp.arange(nall, dtype=xp.int64, device=device)[None, :],
-        (nframes, nall),
-    )
-    order = xp.argsort(flat_key, stable=True)
-    sorted_key = xp.take(flat_key, order, axis=0)
-    sorted_ext_index = xp.take(xp.reshape(local_ext_index, (-1,)), order, axis=0)
+    if compact_periodic_images:
+        # Periodic extension normally contains every atom in every adjacent box.
+        # An image outside the local Cartesian bounds expanded by ``rcut`` can
+        # not neighbor any local center, so omit it from cell construction while
+        # retaining its original extended index.  This reduces the usual 27*N
+        # periodic sort to the central atoms plus a thin boundary shell.
+        local_real_mask = real_mask[:, :nloc]
+        local_coord = coord[:, :nloc, :]
+        local_min = xp.min(
+            xp.where(
+                local_real_mask[..., None],
+                local_coord,
+                xp.full_like(local_coord, float("inf")),
+            ),
+            axis=1,
+            keepdims=True,
+        )
+        local_max = xp.max(
+            xp.where(
+                local_real_mask[..., None],
+                local_coord,
+                xp.full_like(local_coord, float("-inf")),
+            ),
+            axis=1,
+            keepdims=True,
+        )
+        has_local_real = xp.any(local_real_mask, axis=1, keepdims=True)
+        zero_origin = xp.zeros_like(local_min)
+        origin = xp.where(has_local_real[..., None], local_min - rcut, zero_origin)
+        upper = xp.where(has_local_real[..., None], local_max + rcut, zero_origin)
+        in_search_bounds = xp.all((coord >= origin) & (coord <= upper), axis=-1)
+        search_mask = real_mask & in_search_bounds
+
+        # Keep one pinned placeholder for an all-virtual frame so reductions over
+        # the compact stream remain defined without a data-dependent Python branch.
+        first_in_frame = (
+            xp.arange(nall, dtype=internal_index_dtype, device=device)[None, :] == 0
+        )
+        search_mask = search_mask | (first_in_frame & ~has_local_real)
+        (flat_selected,) = xp.nonzero(xp.reshape(search_mask, (-1,)))
+        flat_selected = xp.reshape(flat_selected, (-1,))
+        if not isinstance(flat_selected.shape[0], int):
+            xp_hint_dynamic_size(flat_selected)
+        selected_frame = flat_selected // nall
+        selected_ext_index = flat_selected - selected_frame * nall
+        if use_int32_internal_indices:
+            selected_ext_index = xp.astype(selected_ext_index, xp.int32)
+        selected_coord = xp.take(coord_flat, flat_selected, axis=0)
+        selected_atype = xp.take(xp.reshape(atype, (-1,)), flat_selected, axis=0)
+        selected_origin = xp.take(
+            xp.reshape(origin, (nframes, 3)), selected_frame, axis=0
+        )
+        coord_for_binning = xp.where(
+            selected_atype[:, None] >= 0, selected_coord, selected_origin
+        )
+        cell = xp.astype(
+            xp.floor((coord_for_binning - selected_origin) / rcut), xp.int64
+        )
+        center_coord_for_binning = xp.where(
+            local_real_mask[..., None], local_coord, origin
+        )
+        center_cell = xp.astype(
+            xp.floor((center_coord_for_binning - origin) / rcut), xp.int64
+        )
+        dims = xp.max(cell, axis=0) + 1
+        cells_per_frame = dims[0] * dims[1] * dims[2]
+        frame_base = xp.arange(nframes, dtype=xp.int64, device=device) * cells_per_frame
+        flat_key = cell[:, 0] + dims[0] * (cell[:, 1] + dims[1] * cell[:, 2])
+        flat_key = flat_key + xp.take(frame_base, selected_frame, axis=0)
+        sentinel = cells_per_frame * nframes
+        flat_key = xp.where(selected_atype >= 0, flat_key, sentinel)
+        order = xp.argsort(flat_key, stable=True)
+        sorted_key = xp.take(flat_key, order, axis=0)
+        sorted_ext_index = xp.take(selected_ext_index, order, axis=0)
+    else:
+        # Virtual atoms can carry arbitrary placeholder coordinates.  Pin them to
+        # the per-frame real-atom origin so they do not expand or overflow the grid.
+        real_coord = xp.where(
+            real_mask[..., None],
+            coord,
+            xp.full_like(coord, float("inf")),
+        )
+        origin = xp.min(real_coord, axis=1, keepdims=True)
+        has_real = xp.any(real_mask, axis=1, keepdims=True)
+        origin = xp.where(has_real[..., None], origin, xp.zeros_like(origin))
+        coord_for_binning = xp.where(real_mask[..., None], coord, origin)
+        cell = xp.astype(xp.floor((coord_for_binning - origin) / rcut), xp.int64)
+        center_cell = cell[:, :nloc, :]
+        dims = xp.max(xp.reshape(cell, (-1, 3)), axis=0) + 1
+        cells_per_frame = dims[0] * dims[1] * dims[2]
+        frame_base = xp.arange(nframes, dtype=xp.int64, device=device) * cells_per_frame
+        cell_key = cell[..., 0] + dims[0] * (cell[..., 1] + dims[1] * cell[..., 2])
+        cell_key = cell_key + frame_base[:, None]
+        sentinel = cells_per_frame * nframes
+        cell_key = xp.where(atype >= 0, cell_key, sentinel)
+        flat_key = xp.reshape(cell_key, (-1,))
+        local_ext_index = xp.broadcast_to(
+            xp.arange(nall, dtype=internal_index_dtype, device=device)[None, :],
+            (nframes, nall),
+        )
+        order = xp.argsort(flat_key, stable=True)
+        sorted_key = xp.take(flat_key, order, axis=0)
+        sorted_ext_index = xp.take(xp.reshape(local_ext_index, (-1,)), order, axis=0)
 
     # Query the 27 cells surrounding every local center.  Out-of-grid queries and
     # virtual centers get key -1; searchsorted then returns an empty interval.
     offsets = xp.asarray(_NEIGHBOR_CELL_OFFSETS, dtype=xp.int64, device=device)
-    query_cell = cell[:, :nloc, None, :] + offsets[None, None, :, :]
+    query_cell = center_cell[:, :, None, :] + offsets[None, None, :, :]
     in_bounds = xp.all(
         (query_cell >= 0) & (query_cell < dims[None, None, None, :]), axis=-1
     )
@@ -387,23 +537,48 @@ def _build_neighbor_list_cell(
     counts = ends - starts
 
     # Expand each cell query into its actual members.  The candidate length is
-    # data-dependent; cumulative sums provide iotas without calling arange on an
-    # unbacked symbolic size (important for torch.export-compatible namespaces).
+    # data-dependent; traced namespaces retain the cumulative-sum iota fallback
+    # because ``arange`` can not consume an unbacked symbolic size portably.
+    # Query IDs only range over ``27 * ncenters``.  Use 32-bit values when that
+    # static range permits, then widen the much smaller filtered center stream
+    # before selection; this cuts several full-candidate index temporaries in half.
+    query_count = query_key.shape[0]
+    use_int32_query_ids = use_int32_internal_indices
+    query_index_dtype = (
+        xp.int32
+        if use_int32_query_ids
+        and isinstance(query_count, int)
+        and query_count <= _INT32_MAX
+        else xp.int64
+    )
     query_ids = xp.repeat(
-        xp.arange(query_key.shape[0], dtype=xp.int64, device=device), counts
+        xp.arange(query_count, dtype=query_index_dtype, device=device), counts
     )
     if not isinstance(query_ids.shape[0], int):
         xp_hint_dynamic_size(query_ids)
     query_output_start = xp.cumulative_sum(counts) - counts
-    candidate_iota = xp.cumulative_sum(xp.ones_like(query_ids)) - 1
+    candidate_count = query_ids.shape[0]
+    use_int32_candidate_positions = (
+        use_int32_query_ids
+        and isinstance(candidate_count, int)
+        and candidate_count <= _INT32_MAX
+        and isinstance(nall, int)
+        and nframes * nall <= _INT32_MAX
+    )
+    if use_int32_candidate_positions:
+        query_output_start = xp.astype(query_output_start, xp.int32)
+        candidate_iota = xp.arange(candidate_count, dtype=xp.int32, device=device)
+        candidate_starts = xp.astype(starts, xp.int32)
+    else:
+        candidate_iota = _index_iota(query_ids)
+        candidate_starts = starts
     member_offset = candidate_iota - xp.take(query_output_start, query_ids, axis=0)
-    sorted_position = xp.take(starts, query_ids, axis=0) + member_offset
+    sorted_position = xp.take(candidate_starts, query_ids, axis=0) + member_offset
     neighbor_ext = xp.take(sorted_ext_index, sorted_position, axis=0)
 
     center = query_ids // len(_NEIGHBOR_CELL_OFFSETS)
     frame = center // nloc
     center_local = center - frame * nloc
-    coord_flat = xp.reshape(coord, (nframes * nall, 3))
     center_coord = xp.take(coord_flat, frame * nall + center_local, axis=0)
     neighbor_coord = xp.take(coord_flat, frame * nall + neighbor_ext, axis=0)
     diff = neighbor_coord - center_coord
@@ -418,6 +593,9 @@ def _build_neighbor_list_cell(
         xp_hint_dynamic_size(keep)
     center = xp.take(center, keep, axis=0)
     neighbor_ext = xp.take(neighbor_ext, keep, axis=0)
+    if use_int32_internal_indices:
+        center = xp.astype(center, xp.int64)
+        neighbor_ext = xp.astype(neighbor_ext, xp.int64)
     distance = xp.take(distance, keep, axis=0)
 
     ncenters = nframes * nloc
@@ -448,7 +626,7 @@ def _build_neighbor_list_cell(
         xp.zeros((ncenters,), dtype=xp.int64, device=device), 0, center, ones
     )
     center_start = xp.cumulative_sum(count_per_center) - count_per_center
-    edge_iota = xp.cumulative_sum(ones) - 1
+    edge_iota = _index_iota(center)
     rank = edge_iota - xp.take(center_start, center, axis=0)
     (selected,) = xp.nonzero(rank < nsel)
     selected = xp.reshape(selected, (-1,))

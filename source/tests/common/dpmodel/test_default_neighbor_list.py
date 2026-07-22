@@ -25,7 +25,7 @@ def _force_search(monkeypatch: pytest.MonkeyPatch, *, cell: bool) -> None:
 
 
 def _random_system(
-    *, nframes: int = 2, nloc: int = 48, dtype: Any = np.float64
+    *, nframes: int = 2, nloc: int = 64, dtype: Any = np.float64
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Create reproducible triclinic frames without distance degeneracies."""
     rng = np.random.default_rng(20260721)
