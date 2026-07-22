@@ -347,6 +347,21 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
+def test_pair_deepmd_model_devi_atomic_reinit_clear_smoke(lammps) -> None:
+    """Smoke-test repeated pair initialization followed by pair destruction."""
+    lammps.pair_style(
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} "
+        f"out_file {md_file.resolve()} out_freq 1 atomic"
+    )
+    lammps.pair_coeff("* *")
+
+    # Re-enter init_style() on one pair, then destroy it.  This guards against
+    # future double-free or use-after-free mistakes in the buffer lifecycle.
+    lammps.run(0)
+    lammps.run(0)
+    lammps.clear()
+
+
 def test_pair_deepmd_model_devi_virial(lammps) -> None:
     lammps.pair_style(
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"

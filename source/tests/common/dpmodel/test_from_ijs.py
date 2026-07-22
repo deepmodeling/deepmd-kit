@@ -85,10 +85,6 @@ class TestAseCarryAll(unittest.TestCase):
         ng_ref = build_neighbor_graph(coord, atype, None, rcut=4.0)
         self.assertEqual(self._sets(ng_ase, 6), self._sets(ng_ref, 6))
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_ase_excludes_virtual_atoms_like_dense(self) -> None:
         """Virtual atoms (atype < 0) excluded as center AND neighbor.
 
@@ -113,3 +109,7 @@ if __name__ == "__main__":
         ei = ng_ase.edge_index[:, ng_ase.edge_mask]
         flat_atype = atype.reshape(-1)
         assert np.all(flat_atype[ei[0]] >= 0) and np.all(flat_atype[ei[1]] >= 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
