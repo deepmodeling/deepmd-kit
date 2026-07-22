@@ -36,7 +36,7 @@ def _random_system(
         ][:nframes],
         dtype=dtype,
     )
-    fractional = rng.random((nframes, nloc, 3))
+    fractional = rng.random((nframes, nloc, 3), dtype=dtype)
     coord = np.matmul(fractional, box)
     atype = rng.integers(0, 2, size=(nframes, nloc), dtype=np.int64)
     return coord, atype, box

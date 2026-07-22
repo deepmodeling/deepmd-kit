@@ -47,7 +47,7 @@ def _random_system(
         [[[9.0, 0.0, 0.0], [0.8, 8.5, 0.0], [0.3, 0.6, 9.5]]],
         dtype=dtype,
     )
-    coord = np.matmul(rng.random((1, nloc, 3)), box)
+    coord = np.matmul(rng.random((1, nloc, 3), dtype=dtype), box)
     atype = rng.integers(0, 2, size=(1, nloc), dtype=np.int64)
     return coord, atype, box
 
