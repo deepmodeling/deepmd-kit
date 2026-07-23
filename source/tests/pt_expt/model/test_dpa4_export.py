@@ -652,3 +652,58 @@ def test_native_spin_chg_spin_graph_freeze(tmp_path) -> None:
     assert md["has_chg_spin_ebd"] is True
     assert md["dim_chg_spin"] == 2
     assert "force_mag" in md["output_keys"]
+
+    # DeepEval through the compiled artifact: the slot-13 charge_spin is
+    # LIVE (an integer-valued change moves the energy) and matches the eager
+    # forward with the same conditioning at the cross-artifact tolerance.
+    from deepmd.infer import (
+        DeepPot,
+    )
+
+    dp = DeepPot(str(model_file))
+    assert dp.has_spin
+    cs1 = np.array([[1.0, 2.0]])
+    e1, f1, _v1, fm1, _mm1 = dp.eval(
+        _SPIN_EVAL_COORDS,
+        _SPIN_EVAL_CELL,
+        _SPIN_EVAL_ATYPES,
+        atomic=False,
+        spin=_SPIN_EVAL_SPINS,
+        charge_spin=cs1,
+    )
+    e0, _f0, _v0, _fm0, _mm0 = dp.eval(
+        _SPIN_EVAL_COORDS,
+        _SPIN_EVAL_CELL,
+        _SPIN_EVAL_ATYPES,
+        atomic=False,
+        spin=_SPIN_EVAL_SPINS,
+        charge_spin=np.array([[0.0, 0.0]]),
+    )
+    de = float(np.abs(np.asarray(e1) - np.asarray(e0)).max())
+    assert de > 1e-10, f"charge_spin slot dead through the artifact: {de:.3e}"
+
+    coord_t = torch.tensor(_SPIN_EVAL_COORDS, dtype=torch.float64).reshape(1, -1, 3)
+    atype_t = torch.tensor(_SPIN_EVAL_ATYPES, dtype=torch.int64).reshape(1, -1)
+    box_t = torch.tensor(_SPIN_EVAL_CELL, dtype=torch.float64).reshape(1, 9)
+    spin_t = torch.tensor(_SPIN_EVAL_SPINS, dtype=torch.float64).reshape(1, -1, 3)
+    ref = model.forward(
+        coord_t,
+        atype_t,
+        spin_t,
+        box=box_t,
+        charge_spin=torch.tensor(cs1, dtype=torch.float64),
+    )
+    np.testing.assert_allclose(
+        np.asarray(e1).reshape(-1),
+        ref["energy"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="combined energy vs eager",
+    )
+    np.testing.assert_allclose(
+        np.asarray(fm1).reshape(-1),
+        ref["force_mag"].detach().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="combined force_mag vs eager",
+    )

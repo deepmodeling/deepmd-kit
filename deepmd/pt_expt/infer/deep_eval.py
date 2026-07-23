@@ -1655,10 +1655,17 @@ class DeepEval(DeepEvalBackend):
             # Native-spin (NeighborGraph route): no virtual atoms and no
             # extended/nlist ABI at all -- dispatch to the graph-native fast
             # path (mirrors _eval_model's dispatch to _eval_model_graph for
-            # the non-spin case). charge_spin has no slot in this ABI (see
-            # NativeSpinEnergyModel.forward_lower_graph_exportable).
+            # the non-spin case). charge_spin rides the conditional slot-13
+            # tail (see NativeSpinEnergyModel.forward_lower_graph_exportable).
             return self._eval_model_graph_spin(
-                coords, cells, atom_types, spins, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                spins,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin=charge_spin,
             )
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -1836,6 +1843,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
         """Evaluate a graph-form native-spin ``.pt2`` (``lower_input_kind ==
         "graph"`` and ``is_spin``).
@@ -1848,8 +1856,10 @@ class DeepEval(DeepEvalBackend):
         ``NativeSpinEnergyModel.forward_lower_graph_exportable`` -- the node
         axis IS the owned-local-atom axis for single-rank eval (no ghost
         nodes), so ``spin`` needs no extension/mapping, unlike the dense
-        spin path's ``ext_spin_t``. There is no ``charge_spin`` slot in this
-        ABI. The forward returns LOCAL public keys directly (``atom_energy``,
+        spin path's ``ext_spin_t``. ``charge_spin`` rides the conditional
+        slot-13 tail (combined native-spin + charge-spin FiLM models; the
+        slot is dropped from the exported signature otherwise). The forward
+        returns LOCAL public keys directly (``atom_energy``,
         ``energy``, ``force``, ``force_mag``, ``virial``, ``atom_virial``),
         so results are reshaped without ``communicate_extended_output``,
         same as the non-spin graph path.
@@ -1934,6 +1944,7 @@ class DeepEval(DeepEvalBackend):
             spin_t,
             fparam_t,
             aparam_t,
+            self._make_charge_spin_input(nframes, charge_spin),
         )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)

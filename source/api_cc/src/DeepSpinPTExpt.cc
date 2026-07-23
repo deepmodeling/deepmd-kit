@@ -336,8 +336,9 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph(
     const torch::Tensor& aparam) {
   // Native-spin graph ABI: the 10 base NeighborGraph tensors, the per-node
   // spin leaf (ALWAYS present, positional index 10), then the conditional
-  // fparam / aparam tail. No charge_spin slot (native spin has none; unlike
-  // the energy graph ABI's optional charge_spin tail).
+  // fparam / aparam / charge_spin tail (charge_spin at slot 13 for combined
+  // native-spin + charge-spin FiLM models, mirroring the energy graph ABI's
+  // optional charge_spin tail).
   deepmd::check_graph_aparam_flat(aparam, daparam,
                                   "DeepSpinPTExpt::run_model_graph");
   std::vector<torch::Tensor> inputs = {atype,
@@ -356,6 +357,16 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph(
   }
   if (daparam > 0) {
     inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    // Frame-level default charge/spin conditions from metadata (the C++
+    // interface has no explicit charge_spin input; the default is the
+    // production contract, as on the nlist/edge routes above).
+    auto charge_spin = torch::tensor(default_chg_spin_, spin.options())
+                           .view({1, dim_chg_spin})
+                           .expand({n_node.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
   }
   return loader->run(inputs);
 }
