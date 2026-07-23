@@ -9,15 +9,9 @@ import pytest
 from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
 )
-from deepmd.dpmodel.descriptor import (
-    DescrptSeA,
-)
 from deepmd.dpmodel.descriptor.dpa4 import (
     DescrptDPA4,
     _graph_from_padded_nlist,
-)
-from deepmd.dpmodel.fitting import (
-    InvarFitting,
 )
 from deepmd.dpmodel.fitting.dpa4_ener import (
     SeZMEnergyFittingNet,
@@ -410,16 +404,15 @@ def test_capability_flags() -> None:
 
 
 def test_supports_native_spin_capability_gate() -> None:
-    """Pin the ``supports_native_spin``/``supports_charge_spin`` capability contract.
+    """Pin DPA4's ``True`` branch of the spin-capability contract.
 
-    Both are declared on ``BaseDescriptor`` (``make_base_descriptor``) with a
-    concrete default of ``False``; DPA4 overrides both to ``True``.
-    ``DPAtomicModel`` caches the answers via direct method calls in
-    ``__init__`` (no ``getattr`` fallback -- the base-class declaration is
-    the pinned contract, so a typo'd or missing method raises instead of
-    silently degrading to unsupported).
+    ``supports_native_spin``/``supports_charge_spin`` are declared on
+    ``BaseDescriptor`` (``make_base_descriptor``) with a concrete default of
+    ``False``; DPA4 overrides both to ``True`` and ``DPAtomicModel`` caches
+    the answers via direct method calls in ``__init__``. The
+    inherited-default (``False``) branch is pinned in
+    ``test_base_descriptor_capabilities.py``.
     """
-    # DPA4 explicitly declares native spin + charge_spin support.
     dd = make_descriptor()
     assert dd.supports_native_spin() is True
     assert dd.supports_charge_spin() is True
@@ -433,23 +426,6 @@ def test_supports_native_spin_capability_gate() -> None:
     dpa4_model = DPAtomicModel(dd, ft, type_map=["A", "B", "C"])
     assert dpa4_model.supports_native_spin is True
     assert dpa4_model.supports_charge_spin is True
-
-    # A non-DPA4 descriptor inherits the base-class concrete default: the
-    # methods EXIST (declared on BaseDescriptor, not duck-typed) and answer
-    # False.
-    se_a = DescrptSeA(4.0, 3.5, [8, 8, 8])
-    assert se_a.supports_native_spin() is False
-    assert se_a.supports_charge_spin() is False
-    ft_se_a = InvarFitting(
-        "energy",
-        3,
-        se_a.get_dim_out(),
-        1,
-        mixed_types=se_a.mixed_types(),
-    )
-    se_a_model = DPAtomicModel(se_a, ft_se_a, type_map=["A", "B", "C"])
-    assert se_a_model.supports_native_spin is False
-    assert se_a_model.supports_charge_spin is False
 
 
 def test_uses_graph_lower_feature_gates() -> None:

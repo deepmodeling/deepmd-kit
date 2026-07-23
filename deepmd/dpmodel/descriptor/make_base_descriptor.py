@@ -165,6 +165,63 @@ def make_base_descriptor(
             """
             return False
 
+        def uses_graph_lower(self) -> bool:
+            """Returns whether the descriptor supports the graph-native (NeighborGraph) lower.
+
+            Declaring ``True`` obliges the descriptor to implement
+            ``call_graph``; the model layer routes ``forward_lower`` through
+            the NeighborGraph path only for descriptors that declare the
+            capability, and falls back to the legacy dense (nlist) lower
+            otherwise.
+
+            Concrete default ``False`` so descriptors across all backends
+            (which subclass this same base) stay on the dense lower until
+            they implement a graph-native forward; such descriptors override
+            this method (typically conditioning on their configuration and
+            on :meth:`disable_graph_lower`).
+            """
+            return False
+
+        def disable_graph_lower(self) -> None:
+            """Force the legacy dense (nlist) lower for this descriptor.
+
+            An explicit opt-out knob used by contexts where the graph-native
+            lower is unsupported or undesirable. After calling this,
+            :meth:`uses_graph_lower` must return ``False`` regardless of the
+            descriptor configuration.
+
+            Concrete default: a no-op, since a descriptor without a graph
+            lower is already dense-only. Descriptors overriding
+            :meth:`uses_graph_lower` must also override this to set their
+            escape hatch.
+            """
+            return None
+
+        def uses_compact_edge_pairs(self) -> bool:
+            """Returns whether the descriptor's graph lower traces compact edge pairs.
+
+            The compact ``center_edge_pairs`` realization uses
+            unbacked-SymInt ``nonzero``/``repeat`` sizes when traced for
+            export; ``check_graph_trace_torch_version`` keys its
+            torch >= 2.6 requirement on this capability. Concrete default
+            ``False``; only meaningful for descriptors whose
+            :meth:`uses_graph_lower` can return ``True``.
+            """
+            return False
+
+        def graph_type_embedding_table(self) -> Any | None:
+            """Full type-embedding table consumed by the graph-route forward.
+
+            Returns
+            -------
+            Any | None
+                The ``(ntypes + 1, tebd_dim)`` type-embedding table for
+                descriptors whose graph lower consumes an external table, or
+                ``None`` (the concrete default) for descriptors that embed
+                types internally or have no graph lower.
+            """
+            return None
+
         @abstractmethod
         def need_sorted_nlist_for_lower(self) -> bool:
             """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""

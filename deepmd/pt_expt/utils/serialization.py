@@ -181,13 +181,7 @@ def _needs_with_comm_artifact(
         return False
 
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    if desc is None or not hasattr(desc, "has_message_passing_across_ranks"):
-        return False
-    try:
-        across = bool(desc.has_message_passing_across_ranks())
-    except (AttributeError, NotImplementedError):
-        return False
-    if not across:
+    if desc is None or not desc.has_message_passing_across_ranks():
         return False
     if lower_kind == "graph":
         return True
@@ -235,8 +229,7 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
         running torch is older than 2.6.
     """
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_pairs = getattr(desc, "uses_compact_edge_pairs", None)
-    if uses_pairs is None or not uses_pairs():
+    if desc is None or not desc.uses_compact_edge_pairs():
         return
     version = torch.__version__.split("+")[0]
     major_minor = tuple(int(p) for p in version.split(".")[:2] if p.isdigit())

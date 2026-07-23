@@ -40,11 +40,8 @@ def model_uses_graph_lower(model: Any) -> bool:
     except (AttributeError, NotImplementedError):
         return False
 
+    # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
     descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph_lower = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph_lower is None:
+    if descriptor is None:
         return False
-    try:
-        return bool(uses_graph_lower())
-    except (AttributeError, NotImplementedError):
-        return False
+    return bool(descriptor.uses_graph_lower())

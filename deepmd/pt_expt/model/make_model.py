@@ -726,8 +726,11 @@ def make_model(
                 return None
             # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
             descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if self.mixed_types() and uses_graph_lower():
+            if (
+                self.mixed_types()
+                and descriptor is not None
+                and descriptor.uses_graph_lower()
+            ):
                 return "dense"
             return None
 
@@ -789,8 +792,11 @@ def make_model(
             # neighbor_graph_method would otherwise reach the builders for
             # descriptors without a graph lower.
             descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if not (self.mixed_types() and uses_graph_lower()):
+            if not (
+                self.mixed_types()
+                and descriptor is not None
+                and descriptor.uses_graph_lower()
+            ):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"

@@ -55,6 +55,11 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(md0.get_dim_aparam(), 0)
         self.assertEqual(md0.mixed_types(), ds.mixed_types())
         self.assertEqual(md0.get_sel_type(), [0, 1])
+        # Base-default (False) branch of the descriptor spin capabilities,
+        # cached at construction via direct method calls (the True branch is
+        # pinned in test_dpa4_call_graph.py).
+        self.assertFalse(md0.supports_native_spin)
+        self.assertFalse(md0.supports_charge_spin)
 
     def test_self_consistency(
         self,
