@@ -31,6 +31,31 @@ def _array_device_or_none(array: Array) -> Any:
         return None
 
 
+def remap_atype_to_padding(atype: Array, ntypes_with_padding: int) -> Array:
+    """Map negative placeholder types to a table's final padding row."""
+    xp = array_api_compat.array_namespace(atype)
+    return xp.where(
+        atype >= 0,
+        atype,
+        xp.full_like(atype, ntypes_with_padding - 1),
+    )
+
+
+def take_type_embedding(type_embedding: Array, atype: Array) -> Array:
+    """Gather type embeddings, mapping virtual atom types to the padding row.
+
+    Descriptor type-embedding tables append an all-zero final row for virtual
+    atoms. Negative placeholder types must select that row explicitly because
+    negative gather indices either wrap or fail depending on the array backend.
+    """
+    # The caller's atom-type array determines the active backend. Model
+    # conversion keeps the embedding table in that same namespace while
+    # preserving trainable tensors and their gradients.
+    xp = array_api_compat.array_namespace(atype)
+    safe_atype = remap_atype_to_padding(atype, type_embedding.shape[0])
+    return xp.take(type_embedding, xp.astype(safe_atype, xp.int64), axis=0)
+
+
 class TypeEmbedNet(NativeOP):
     r"""Type embedding network.
 

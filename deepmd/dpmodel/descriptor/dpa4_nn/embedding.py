@@ -146,6 +146,8 @@ class SeZMTypeEmbedding(NativeOP):
         # torch.embedding gather: flatten the indices to int64, take the rows,
         # then restore the original index shape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
+        if self.padding:
+            index = xp.where(index >= 0, index, xp.full_like(index, self.ntypes))
         out = xp.take(weight, index, axis=0)
         return xp.reshape(out, (*atype.shape, self.embed_dim))
 

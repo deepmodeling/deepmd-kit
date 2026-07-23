@@ -52,6 +52,8 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    remap_atype_to_padding,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -772,7 +774,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -874,7 +876,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             # gradient so the tebd net never trains; type_embedding already lives
             # on the model device, so the device cast was redundant anyway.
             atype_local = xp.asarray(atype, device=dev)
-            atype_embd = xp.take(type_embedding, atype_local, axis=0)  # (N, tebd_dim)
+            atype_embd = take_type_embedding(type_embedding, atype_local)
             grrg = xp.concat([grrg, atype_embd], axis=-1)
         if in_dtype != prec:
             grrg = xp.astype(grrg, in_dtype)
@@ -1670,6 +1672,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # Gather neighbor types: (nf, nall) -> (nf, nloc*nnei)
             nei_type = xp_take_along_axis(atype_ext, nlist_2d, axis=1)
             nei_type = xp.reshape(nei_type, (-1,))  # (nf * nloc * nnei,)
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
@@ -1684,9 +1687,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, nei_type_index, axis=0)
             else:
+                center_type = remap_atype_to_padding(atype, ntypes_with_padding)
                 idx_i = xp.reshape(
                     xp.tile(
-                        (xp.reshape(atype, (-1, 1)) * ntypes_with_padding), (1, nnei)
+                        (xp.reshape(center_type, (-1, 1)) * ntypes_with_padding),
+                        (1, nnei),
                     ),
                     (-1,),
                 )
@@ -1874,9 +1879,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # under torch and severs the type-embedding weight gradient (the tebd
             # net would never train); type_embedding already lives on the device.
             tebd = type_embedding
-            atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+            atype_embd_nlist = take_type_embedding(tebd, nei_type)
             if not self.type_one_side:
-                atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+                atype_embd_nnei = take_type_embedding(tebd, center_type)
                 ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
             else:
                 ss = xp.concat([ss, atype_embd_nlist], axis=-1)
@@ -1953,6 +1958,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         xp = array_api_compat.array_namespace(ss)
         nt = self.tebd_dim
         ntypes_with_padding = type_embedding.shape[0]
+        center_type = remap_atype_to_padding(center_type, ntypes_with_padding)
+        nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
         # geometric net on the radial channel only (dense: gg_s = cal_g(ss_scalar))
         gg_s = self.embeddings[0].call(ss)  # (E, ng)
         if self.type_one_side:

@@ -36,6 +36,8 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    remap_atype_to_padding,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -398,7 +400,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -933,6 +935,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
             # nfnl x nnei
             nei_type = xp.reshape(nei_type, (nf * nloc, nnei))
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
 
             # nfnl x nnei x nnei
             nei_type_i = xp.tile(nei_type[:, :, np.newaxis], (1, 1, nnei))
