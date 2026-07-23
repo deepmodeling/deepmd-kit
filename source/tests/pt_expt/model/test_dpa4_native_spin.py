@@ -957,3 +957,49 @@ class TestNativeSpinConfigFormsPtExpt:
         spin_req = next(rr for rr in reqs if rr.key == "spin")
         assert spin_req.must is expected_must
         assert spin_req.default == 0.0
+
+
+class TestPublicBaseModelRoundTrip:
+    """Review 3638137290: pt_expt must round-trip its own native-spin
+    serialization through the PUBLIC BaseModel entry point, returning the
+    pt_expt class (a torch.nn.Module with .to() and the graph-export
+    machinery), with forward parity.
+
+    Before the registry dispatch, ``BaseModel.deserialize`` entered a
+    hard-coded dpmodel branch and returned the numpy class here -- no
+    ``.to()`` (the concrete finetune failure: ``training.py`` calls
+    ``BaseModel.deserialize(...).to(DEVICE)``), no torch export machinery.
+    """
+
+    def test_roundtrip_returns_pt_expt_module(self) -> None:
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+
+        model = _jittered_wrapper(seed=11)
+        m2 = BaseModel.deserialize(model.serialize())
+        assert type(m2) is NativeSpinEnergyModel
+        assert isinstance(m2, torch.nn.Module)
+        m2 = m2.to(_env.DEVICE)  # the concrete finetune failure: .to(DEVICE)
+        assert hasattr(m2, "forward_common_lower_graph_exportable")
+        m2 = m2.eval()
+        generator = torch.Generator(device=_env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.rand(
+            [3, 3], dtype=torch.float64, device=_env.DEVICE, generator=generator
+        )
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=_env.DEVICE)
+        coord = torch.matmul(
+            torch.rand(
+                [6, 3], dtype=torch.float64, device=_env.DEVICE, generator=generator
+            ),
+            cell,
+        ).unsqueeze(0)
+        atype = torch.tensor([[0, 0, 1, 0, 1, 1]], device=_env.DEVICE)
+        spin = torch.rand(
+            [1, 6, 3], dtype=torch.float64, device=_env.DEVICE, generator=generator
+        )
+        box = cell.unsqueeze(0)
+        r1 = model(coord, atype, spin, box=box)
+        r2 = m2(coord, atype, spin, box=box)
+        for key in ("energy", "force", "force_mag"):
+            torch.testing.assert_close(r1[key], r2[key], rtol=1e-12, atol=1e-12)
