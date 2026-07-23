@@ -1051,9 +1051,7 @@ class TestCombinedChargeSpinNativeSpin:
         atomic.descriptor = DescrptDPA4.deserialize(
             self.pt_model.atomic_model.descriptor.serialize()
         )
-        from deepmd.pt_expt.fitting.dpa4_ener import (
-            SeZMEnergyFittingNet as _FT,
-        )
+        from deepmd.pt_expt.fitting.dpa4_ener import SeZMEnergyFittingNet as _FT
 
         atomic.fitting_net = _FT.deserialize(
             self.pt_model.atomic_model.fitting_net.serialize()

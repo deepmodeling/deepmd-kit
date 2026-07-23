@@ -619,12 +619,12 @@ def test_native_spin_chg_spin_graph_freeze(tmp_path) -> None:
     charge_spin slot rides the ABI tail (slot 13); metadata carries the
     chg-spin fields the C++/DeepEval loaders key on.
     """
+    import copy
+
     from deepmd.pt_expt.descriptor.dpa4 import (
         DescrptDPA4,
     )
-    from deepmd.pt_expt.model.get_model import (
-        get_model as pt_expt_get_model,
-    )
+    from deepmd.pt_expt.model.get_model import get_model as pt_expt_get_model
 
     from ...dpa4_fixtures import (
         jitter_zero_arrays,
@@ -632,8 +632,6 @@ def test_native_spin_chg_spin_graph_freeze(tmp_path) -> None:
     from .test_dpa4_native_spin import (
         COMBINED_CHG_SPIN_CONFIG,
     )
-
-    import copy
 
     cpu = torch.device("cpu")
     model = pt_expt_get_model(copy.deepcopy(COMBINED_CHG_SPIN_CONFIG))
