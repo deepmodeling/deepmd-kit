@@ -32,12 +32,15 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.stat_file import (
+    load_paired_items,
+    replace_paired_items,
+)
 
 log = logging.getLogger(__name__)
 
 # Re-export from dpmodel (backend-agnostic implementations)
 from deepmd.dpmodel.utils.stat import (
-    _require_stat_file_items,
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
@@ -109,50 +112,32 @@ def make_stat_input(
 
 
 def _restore_from_file(
-    stat_file_path: DPPath,
+    stat_file_path: DPPath | None,
     keys: list[str] = ["energy"],
-) -> dict | None:
-    if stat_file_path is None:
+) -> tuple[dict | None, dict | None]:
+    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
+    items = load_paired_items(stat_file_path, pairs)
+    if items is None:
         return None, None
-    _require_stat_file_items(
-        stat_file_path,
-        [item for key in keys for item in (f"bias_atom_{key}", f"std_atom_{key}")],
-    )
-    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-
-    ret_bias = {}
-    ret_std = {}
-    for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_bias[kk] = fp.load_numpy()
-    for kk in keys:
-        fp = stat_file_path / f"std_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_std[kk] = fp.load_numpy()
+    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
+    ret_bias = {key: items[f"bias_atom_{key}"] for key in cached_keys}
+    ret_std = {key: items[f"std_atom_{key}"] for key in cached_keys}
     return ret_bias, ret_std
 
 
 def _save_to_file(
     stat_file_path: DPPath,
+    requested_keys: list[str],
     bias_out: dict,
     std_out: dict,
 ) -> None:
     assert stat_file_path is not None
-    stat_file_path.mkdir(exist_ok=True, parents=True)
-    for kk, vv in bias_out.items():
-        fp = stat_file_path / f"bias_atom_{kk}"
-        fp.save_numpy(vv)
-    for kk, vv in std_out.items():
-        fp = stat_file_path / f"std_atom_{kk}"
-        fp.save_numpy(vv)
+    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in requested_keys]
+    items = {
+        **{f"bias_atom_{key}": value for key, value in bias_out.items()},
+        **{f"std_atom_{key}": value for key, value in std_out.items()},
+    }
+    replace_paired_items(stat_file_path, pairs, items)
 
 
 def _post_process_stat(
@@ -312,6 +297,10 @@ def compute_output_stats(
     intensive : bool, optional
         Whether the fitting target is intensive.
     """
+    keys = [keys] if isinstance(keys, str) else keys
+    assert isinstance(keys, list)
+    requested_keys = list(keys)
+
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
 
@@ -325,14 +314,11 @@ def compute_output_stats(
             model_pred = None
 
         # remove the keys that are not in the sample
-        keys = [keys] if isinstance(keys, str) else keys
-        assert isinstance(keys, list)
         new_keys = [
             ii
             for ii in keys
             if (ii in sampled[0].keys()) or ("atom_" + ii in sampled[0].keys())
         ]
-        del keys
         keys = new_keys
         # split system based on label
         atomic_sampled_idx = defaultdict(list)
@@ -428,7 +414,12 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
-            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+            _save_to_file(
+                stat_file_path,
+                requested_keys,
+                bias_atom_e,
+                std_atom_e,
+            )
 
     bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
     std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}

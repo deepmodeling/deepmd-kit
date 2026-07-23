@@ -110,6 +110,37 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: Array,
+        stddev: Array,
+    ) -> None:
+        """Update the normalization arrays of the descriptor block.
+
+        Parameters
+        ----------
+        mean
+            Mean of the environment matrix.
+        stddev
+            Standard deviation of the environment matrix.
+
+        Returns
+        -------
+        None
+        """
+        self["davg"] = mean
+        self["dstd"] = stddev
+
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
+        """Return the normalization arrays of the descriptor block.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            Mean and standard deviation of the environment matrix.
+        """
+        return self["davg"], self["dstd"]
+
     def share_params(
         self, base_class: Any, shared_level: Any, resume: bool = False
     ) -> None:

@@ -8,6 +8,7 @@ from collections.abc import (
     Callable,
     Generator,
     Iterable,
+    Mapping,
 )
 from contextlib import (
     nullcontext,
@@ -151,8 +152,11 @@ from torch.utils.data import (
     DataLoader,
 )
 
-from deepmd.utils.path import (
-    DPH5Path,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -163,7 +167,7 @@ class Trainer:
         self,
         config: dict[str, Any],
         training_data: DpLoaderSet,
-        stat_file_path: str | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DpLoaderSet | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -187,6 +191,7 @@ class Trainer:
         else:
             resume_model = None
         resuming = resume_model is not None
+        has_initial_state = resuming or init_frz_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
@@ -202,7 +207,9 @@ class Trainer:
             infer_env_defaults["DP_AMP_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
-        self.finetune_update_stat = False
+        finetune_updates_statistics = finetune_links is not None and any(
+            rule.get_has_new_type() for rule in finetune_links.values()
+        )
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
@@ -211,6 +218,10 @@ class Trainer:
         self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
         self.model_prob = None
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
+        )
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
@@ -413,7 +424,7 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
-            _stat_file_path: str | None,
+            _stat_file_spec: StatFileSpec,
             finetune_has_new_type: bool = False,
             preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
@@ -426,14 +437,20 @@ class Trainer:
                 )
                 return sampled
 
-            if (not resuming or finetune_has_new_type) and self.rank == 0:
-                _model.compute_or_load_stat(
-                    sampled_func=get_sample,
-                    stat_file_path=_stat_file_path,
-                    preset_observed_type=preset_observed_type,
+            if not has_initial_state or finetune_has_new_type:
+
+                def initialize_statistics() -> None:
+                    with open_stat_file(_stat_file_spec) as stat_file_path:
+                        _model.compute_or_load_stat(
+                            sampled_func=get_sample,
+                            stat_file_path=stat_file_path,
+                            preset_observed_type=preset_observed_type,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation="statistics initialization",
                 )
-                if isinstance(_stat_file_path, DPH5Path):
-                    _stat_file_path.root.close()
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
@@ -523,7 +540,7 @@ class Trainer:
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
-                stat_file_path,
+                self.stat_file_specs["Default"],
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -603,7 +620,7 @@ class Trainer:
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
-                    stat_file_path[model_key],
+                    self.stat_file_specs[model_key],
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
@@ -845,7 +862,6 @@ class Trainer:
                         ):
                             model_with_new_type_stat = None
                             if finetune_rule_single.get_has_new_type():
-                                self.finetune_update_stat = True
                                 model_with_new_type_stat = self.wrapper.model[model_key]
                             pretrained_model_wrapper.model[
                                 _model_key_from
@@ -939,44 +955,45 @@ class Trainer:
                 state_dict["_extra_state"] = self.wrapper.state_dict()["_extra_state"]
                 self.wrapper.load_state_dict(state_dict)
 
-                # change bias for fine-tuning
-                if finetune_model is not None:
+            if finetune_model is not None:
+                for model_key in self.model_keys:
+                    finetune_rule = self.finetune_links[model_key]
+                    if self.multi_task and finetune_rule.get_resuming():
+                        if self.rank == 0:
+                            log.info("Model branch %s will resume training.", model_key)
+                        continue
+                    if self.multi_task and self.rank == 0:
+                        log.info(
+                            "Model branch %s will be fine-tuned. "
+                            "This may take a long time...",
+                            model_key,
+                        )
 
-                    def single_model_finetune(
-                        _model: Any,
-                        _finetune_rule_single: Any,
-                        _sample_func: Callable,
-                    ) -> Any:
-                        _model = model_change_out_bias(
-                            _model,
-                            _sample_func,
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _finetune_rule: Any = finetune_rule,
+                    ) -> None:
+                        model = (
+                            self.model[_model_key] if self.multi_task else self.model
+                        )
+                        model = model_change_out_bias(
+                            model,
+                            self.get_sample_func[_model_key]
+                            if self.multi_task
+                            else self.get_sample_func,
                             _bias_adjust_mode="change-by-statistic"
-                            if not _finetune_rule_single.get_random_fitting()
+                            if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
                         )
-                        return _model
+                        if self.multi_task:
+                            self.model[_model_key] = model
+                        else:
+                            self.model = model
 
-                    if not self.multi_task:
-                        finetune_rule_single = self.finetune_links["Default"]
-                        self.model = single_model_finetune(
-                            self.model, finetune_rule_single, self.get_sample_func
-                        )
-                    else:
-                        for model_key in self.model_keys:
-                            finetune_rule_single = self.finetune_links[model_key]
-                            if not finetune_rule_single.get_resuming():
-                                log.info(
-                                    f"Model branch {model_key} will be fine-tuned. This may take a long time..."
-                                )
-                                self.model[model_key] = single_model_finetune(
-                                    self.model[model_key],
-                                    finetune_rule_single,
-                                    self.get_sample_func[model_key],
-                                )
-                            else:
-                                log.info(
-                                    f"Model branch {model_key} will resume training."
-                                )
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
@@ -998,11 +1015,23 @@ class Trainer:
             assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
                 "Model key 'data_stat_protect' must be the same in each branch when multitask!"
             )
+            share_kwargs = {
+                "model_key_prob_map": dict(zip(self.model_keys, self.model_prob)),
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if not has_initial_state or finetune_updates_statistics:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
             self.wrapper.share_params(
                 shared_links,
-                resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
-                data_stat_protect=_data_stat_protect[0],
+                resume=True,
+                **share_kwargs,
             )
 
         # LoRA injection (single-task only; argcheck rejects multi-task).
@@ -1168,6 +1197,30 @@ class Trainer:
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
 
     def _broadcast_value_from_rank0(self, value: Any) -> Any:
         """Return rank 0's copy of ``value`` on every rank.

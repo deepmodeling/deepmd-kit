@@ -89,28 +89,18 @@ def merge_env_stat(
     # Update base_obj stats for chaining
     base_obj.stats = merged_stats
 
-    # Update buffers in-place: davg/dstd (simple) or mean/stddev (blocks)
-    # mean/stddev are numpy arrays; convert to match the buffer's backend
-    if hasattr(base_obj, "davg"):
-        xp = array_api_compat.array_namespace(base_obj.dstd)
-        device = array_api_compat.device(base_obj.dstd)
-        if not getattr(base_obj, "set_davg_zero", False):
-            base_obj.davg[...] = xp.asarray(
-                mean, dtype=base_obj.davg.dtype, device=device
-            )
-        base_obj.dstd[...] = xp.asarray(
-            stddev, dtype=base_obj.dstd.dtype, device=device
-        )
-    elif hasattr(base_obj, "mean"):
-        xp = array_api_compat.array_namespace(base_obj.stddev)
-        device = array_api_compat.device(base_obj.stddev)
-        if not getattr(base_obj, "set_davg_zero", False):
-            base_obj.mean[...] = xp.asarray(
-                mean, dtype=base_obj.mean.dtype, device=device
-            )
-        base_obj.stddev[...] = xp.asarray(
-            stddev, dtype=base_obj.stddev.dtype, device=device
-        )
+    current_mean, current_stddev = base_obj.get_stat_mean_and_stddev()
+    xp = array_api_compat.array_namespace(current_stddev)
+    device = array_api_compat.device(current_stddev)
+    merged_mean = current_mean
+    if not getattr(base_obj, "set_davg_zero", False):
+        merged_mean = xp.asarray(mean, dtype=current_mean.dtype, device=device)
+    merged_stddev = xp.asarray(
+        stddev,
+        dtype=current_stddev.dtype,
+        device=device,
+    )
+    base_obj.set_stat_mean_and_stddev(merged_mean, merged_stddev)
 
 
 class EnvMatStat(BaseEnvMatStat):

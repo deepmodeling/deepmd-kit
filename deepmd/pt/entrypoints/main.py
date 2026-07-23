@@ -11,7 +11,6 @@ from typing import (
     Any,
 )
 
-import h5py
 import torch
 import torch.distributed as dist
 import torch.version
@@ -92,66 +91,12 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
-
-
-def _prepare_stat_file_path(
-    stat_file: str | None,
-    stat_file_mode: str = "update",
-) -> DPPath | None:
-    """Prepare a statistics cache with the requested access mode.
-
-    Parameters
-    ----------
-    stat_file
-        Path to an HDF5 statistics file or a directory-based statistics cache.
-    stat_file_mode
-        ``"update"`` creates the cache when needed and permits missing
-        statistics to be written. ``"read"`` requires an existing cache and
-        prevents all writes.
-
-    Returns
-    -------
-    DPPath or None
-        The prepared statistics path, or ``None`` when no cache is configured.
-
-    Raises
-    ------
-    FileNotFoundError
-        If ``stat_file_mode`` is ``"read"`` and the cache does not exist.
-    ValueError
-        If the access mode is invalid or read mode has no cache path.
-    """
-    if stat_file_mode not in {"read", "update"}:
-        raise ValueError(
-            "`stat_file_mode` must be either 'read' or 'update', "
-            f"but received {stat_file_mode!r}."
-        )
-    if stat_file is None:
-        if stat_file_mode == "read":
-            raise ValueError("`stat_file_mode='read'` requires `stat_file`.")
-        return None
-
-    path = Path(stat_file)
-    if stat_file_mode == "read":
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Statistics cache {stat_file!r} does not exist in read mode."
-            )
-        return DPPath(stat_file, "r")
-
-    if not path.exists():
-        if stat_file.endswith((".h5", ".hdf5")):
-            with h5py.File(stat_file, "w"):
-                pass
-        else:
-            path.mkdir()
-    return DPPath(stat_file, "a")
 
 
 def _update_changed_model_tensors(
@@ -204,7 +149,9 @@ def get_trainer(
         rank: int = 0,
         seed: int | None = None,
     ) -> tuple[
-        DpLoaderSet | LmdbDataset, DpLoaderSet | LmdbDataset | None, DPPath | None
+        DpLoaderSet | LmdbDataset,
+        DpLoaderSet | LmdbDataset | None,
+        StatFileSpec,
     ]:
         # get data modifier
         modifier = None
@@ -219,14 +166,10 @@ def get_trainer(
         )
         training_systems = training_dataset_params["systems"]
 
-        # stat files
-        if rank != 0:
-            stat_file_path_single = None
-        else:
-            stat_file_path_single = _prepare_stat_file_path(
-                data_dict_single.get("stat_file"),
-                data_dict_single.get("stat_file_mode", "update"),
-            )
+        stat_file_spec = StatFileSpec(
+            data_dict_single.get("stat_file"),
+            data_dict_single.get("stat_file_mode", "update"),
+        )
 
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
 
@@ -283,7 +226,7 @@ def get_trainer(
         return (
             train_data_single,
             validation_data_single,
-            stat_file_path_single,
+            stat_file_spec,
         )
 
     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
@@ -292,7 +235,7 @@ def get_trainer(
         (
             train_data,
             validation_data,
-            stat_file_path,
+            stat_file_spec,
         ) = prepare_trainer_input_single(
             config["model"],
             config["training"],
@@ -300,12 +243,12 @@ def get_trainer(
             seed=data_seed,
         )
     else:
-        train_data, validation_data, stat_file_path = {}, {}, {}
+        train_data, validation_data, stat_file_spec = {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
-                stat_file_path[model_key],
+                stat_file_spec[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
@@ -316,7 +259,7 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        stat_file_path=stat_file_path,
+        stat_file_spec=stat_file_spec,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,

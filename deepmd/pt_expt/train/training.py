@@ -10,6 +10,10 @@ import functools
 import logging
 import os
 import time
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from copy import (
     deepcopy,
 )
@@ -87,8 +91,11 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -1300,8 +1307,8 @@ class Trainer(AbstractTrainer):
         Full training configuration.
     training_data : DeepmdDataSystem or dict
         Training data.  Dict of ``{model_key: DeepmdDataSystem}`` for multi-task.
-    stat_file_path : DPPath or dict or None
-        Path for saving / loading statistics.
+    stat_file_spec : StatFileSpec or dict or None
+        Unopened statistics-cache configuration.
     validation_data : DeepmdDataSystem or dict or None
         Validation data.
     init_model : str or None
@@ -1316,7 +1323,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | dict,
-        stat_file_path: DPPath | dict | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem | dict | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -1362,10 +1369,9 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         # Distributed training detection
@@ -1460,7 +1466,6 @@ class Trainer(AbstractTrainer):
         for model_key in self.model_keys:
             _nbatch = self.model_params_by_task[model_key].get("data_stat_nbatch", 10)
             _data = self.training_data_by_task[model_key]
-            _stat_path = self.stat_file_path_by_task[model_key]
 
             @functools.lru_cache
             def _make_sample(
@@ -1478,14 +1483,26 @@ class Trainer(AbstractTrainer):
             )
             if _finetune_has_new_type:
                 self._finetune_update_stat = True
-            if (not resuming or _finetune_has_new_type) and self.rank == 0:
-                self.models[model_key].compute_or_load_stat(
-                    sampled_func=_make_sample,
-                    stat_file_path=_stat_path,
+            if not resuming or _finetune_has_new_type:
+
+                def initialize_statistics(
+                    _model_key: str = model_key,
+                    _sample_func: Callable[[], list[dict[str, np.ndarray]]] = (
+                        _make_sample
+                    ),
+                ) -> None:
+                    with open_stat_file(
+                        self.stat_file_specs[_model_key]
+                    ) as stat_file_path:
+                        self.models[_model_key].compute_or_load_stat(
+                            sampled_func=_sample_func,
+                            stat_file_path=stat_file_path,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation=f"statistics initialization for task {model_key!r}",
                 )
-        if self.is_distributed:
-            for model_key in self.model_keys:
-                self._broadcast_model_stat(self.models[model_key])
 
         # Model probability (multi-task) --------------------------------------
         if self.multi_task:
@@ -1515,6 +1532,7 @@ class Trainer(AbstractTrainer):
 
         # Shared params (multi-task) ------------------------------------------
         self._shared_links = shared_links
+        synchronize_model_state = not resuming or self._finetune_update_stat
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -1526,13 +1544,31 @@ class Trainer(AbstractTrainer):
                 raise ValueError(
                     "Model key 'data_stat_protect' must be the same in each branch when multitask!"
                 )
-            self.wrapper.share_params(
-                shared_links,
-                resume=(resuming and not self._finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(
+            share_kwargs = {
+                "model_key_prob_map": dict(
                     zip(self.model_keys, self.model_prob, strict=True)
                 ),
-                data_stat_protect=_data_stat_protect[0],
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if synchronize_model_state:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
+
+        if synchronize_model_state and self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+
+        if shared_links is not None:
+            self.wrapper.share_params(
+                shared_links,
+                resume=True,
+                **share_kwargs,
             )
 
         # DDP wrapping --------------------------------------------------------
@@ -1739,12 +1775,21 @@ class Trainer(AbstractTrainer):
                         if not finetune_rule.get_random_fitting()
                         else "set-by-statistic"
                     )
-                    if self.rank == 0:
-                        self.models[model_key] = model_change_out_bias(
-                            self.models[model_key],
-                            self._sample_funcs[model_key],
-                            _bias_adjust_mode=bias_mode,
+
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _bias_mode: str = bias_mode,
+                    ) -> None:
+                        self.models[_model_key] = model_change_out_bias(
+                            self.models[_model_key],
+                            self._sample_funcs[_model_key],
+                            _bias_adjust_mode=_bias_mode,
                         )
+
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
                     if self.is_distributed:
                         self._broadcast_model_stat(self.models[model_key])
                 self.model = (
@@ -2075,6 +2120,30 @@ class Trainer(AbstractTrainer):
         if hasattr(self.wrapper, "module"):
             return self.wrapper.module
         return self.wrapper
+
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
 
     @staticmethod
     def _broadcast_model_stat(model: torch.nn.Module) -> None:

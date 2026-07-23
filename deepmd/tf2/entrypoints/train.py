@@ -7,14 +7,10 @@ from __future__ import (
 
 import logging
 import time
-from pathlib import (
-    Path,
-)
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
-
-import h5py
 
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -40,10 +36,12 @@ from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import (
     get_data,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
+
+if TYPE_CHECKING:
+    from deepmd.utils.stat_file import (
+        StatFileSpec,
+    )
 
 __all__ = ["train", "update_sel"]
 
@@ -157,7 +155,7 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
 
         def factory(
             task_config: TrainingTaskConfig,
-        ) -> tuple[Any, Any | None, DPPath | None]:
+        ) -> tuple[Any, Any | None, StatFileSpec]:
             type_map = list(task_config.model_params.get("type_map", []))
             ipt_type_map = type_map if type_map else None
             train_data = get_data(
@@ -174,9 +172,9 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
                     train_data.type_map,
                     None,
                 )
-            return train_data, valid_data, _make_stat_file_path(task_config.stat_file)
+            return train_data, valid_data, task_config.stat_file_spec
 
-        train_data_map, valid_data_map, stat_file_map = make_task_maps(
+        train_data_map, valid_data_map, stat_file_spec_map = make_task_maps(
             config,
             factory,
         )
@@ -185,7 +183,7 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
         trainer = DPTrainer(
             config,
             train_data_map,
-            stat_file_path=stat_file_map,
+            stat_file_spec=stat_file_spec_map,
             validation_data=valid_data_map,
             init_model=options.init_model,
             restart_model=options.restart,
@@ -263,17 +261,3 @@ def update_sel(
             jdata_cpy["model"] = updated_model
             return jdata_cpy, task_min_nbor_dist
     return jdata_cpy, min_nbor_dist
-
-
-def _make_stat_file_path(stat_file_raw: str | None) -> DPPath | None:
-    if stat_file_raw is None:
-        return None
-    stat_file_target = Path(stat_file_raw)
-    stat_file_target.parent.mkdir(parents=True, exist_ok=True)
-    if not stat_file_target.exists():
-        if stat_file_raw.endswith((".h5", ".hdf5")):
-            with h5py.File(stat_file_raw, "w"):
-                pass
-        else:
-            stat_file_target.mkdir(parents=True, exist_ok=True)
-    return DPPath(stat_file_raw, "a")
