@@ -72,7 +72,8 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
     Returns
     -------
     list[str]
-        Sorted list of observed element symbols.
+        Sorted list of observed element symbols. Negative virtual atom types
+        and indices outside ``type_map`` are ignored.
     """
     from deepmd.utils.econf_embd import (
         sort_element_type,
@@ -83,7 +84,7 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
         atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
         observed_indices.update(np.unique(atype).tolist())
     observed_types = [
-        type_map[i] for i in sorted(observed_indices) if i < len(type_map)
+        type_map[i] for i in sorted(observed_indices) if 0 <= i < len(type_map)
     ]
     return sort_element_type(observed_types)
 
