@@ -421,5 +421,70 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
         tf.reset_default_graph()
 
 
+class TestOpMapFltNvnmd(tf.test.TestCase):
+    """Verify the mapping op's four-input contract and range behavior."""
+
+    def test_out_of_range_values_map_to_zero(self) -> None:
+        sample_count = 4096
+        x = tf.placeholder(tf.float64, [sample_count, 1])
+        table = tf.constant(
+            [
+                [0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 11.0],
+                [0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 21.0],
+            ],
+            dtype=tf.float64,
+        )
+        table_grad = tf.constant(
+            [
+                [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0],
+                [0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0],
+            ],
+            dtype=tf.float64,
+        )
+        table_info = tf.constant([0.0, 2.0, 1.0, 0.0, 2.0], dtype=tf.float64)
+
+        mapped = op_module.map_flt_nvnmd(x, table, table_grad, table_info)
+        gradient = tf.gradients(tf.reduce_sum(mapped), x)[0]
+
+        warm_x = np.tile([[0.25], [1.25]], (sample_count // 2, 1))
+        test_x = np.full((sample_count, 1), -1.0)
+        test_x[:5, 0] = [-1.0, 0.25, 1.25, 2.0, 3.0]
+        with self.cached_session() as sess:
+            # Reuse a nonzero, same-sized allocation so the old skipped-write
+            # behavior cannot pass merely because fresh pages happen to be zero.
+            sess.run(mapped, feed_dict={x: warm_x})
+            actual, actual_gradient = sess.run(
+                [mapped, gradient], feed_dict={x: test_x}
+            )
+
+        expected = np.zeros((sample_count, 1, 2))
+        expected[:5, 0] = [
+            [0.0, 0.0],
+            [10.0, 11.0],
+            [20.0, 21.0],
+            [20.0, 21.0],
+            [0.0, 0.0],
+        ]
+        expected_gradient = np.zeros((sample_count, 1))
+        expected_gradient[:5, 0] = [0.0, 3.0, 7.0, 7.0, 0.0]
+
+        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+    def test_rejects_mismatched_table_gradient(self) -> None:
+        mapped = op_module.map_flt_nvnmd(
+            tf.zeros([1, 1], dtype=tf.float64),
+            tf.zeros([1, 4], dtype=tf.float64),
+            tf.zeros([2, 4], dtype=tf.float64),
+            tf.constant([0.0, 1.0, 1.0, 0.0, 1.0], dtype=tf.float64),
+        )
+        with self.cached_session() as sess:
+            with self.assertRaisesRegex(
+                tf.errors.InvalidArgumentError,
+                "table_grad shape should match table",
+            ):
+                sess.run(mapped)
+
+
 if __name__ == "__main__":
     unittest.main()
