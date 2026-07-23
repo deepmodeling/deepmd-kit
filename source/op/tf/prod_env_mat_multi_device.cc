@@ -2737,6 +2737,24 @@ static tensorflow::Status _round_built_gpu_nbor_size(int& max_nbor_size) {
   return tensorflow::Status();
 }
 
+static tensorflow::Status _update_external_nlist_gpu(
+    deepmd::InputNlist& host_inlist,
+    deepmd::InputNlist& gpu_inlist,
+    int& max_nbor_size,
+    int*& nbor_list_dev,
+    const int* mesh,
+    const int mesh_size) {
+  try {
+    deepmd::env_mat_nbor_update(host_inlist, gpu_inlist, max_nbor_size,
+                                nbor_list_dev, mesh, mesh_size);
+  } catch (const deepmd::deepmd_exception& error) {
+    // Preserve input-validation failures as InvalidArgument instead of letting
+    // safe_compute rewrite them as an opaque Internal exception.
+    return deepmd::tf_compat::InvalidArgument(error.what());
+  }
+  return tensorflow::Status();
+}
+
 template <typename FPTYPE>
 tensorflow::Status _prepare_coord_nlist_gpu(OpKernelContext* context,
                                             Tensor* tensor_list,
@@ -2823,28 +2841,21 @@ tensorflow::Status _prepare_coord_nlist_gpu(OpKernelContext* context,
     deepmd::InputNlist inlist_temp;
     inlist_temp.inum = nloc;
     // everything should be copied to GPU...
-    deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
-                                nbor_list_dev, fake_mesh_guard.ptr, 16);
-    if (max_numneigh(inlist_temp) > max_nbor_size) {
-      return deepmd::tf_compat::InvalidArgument(
-          "Assert failed, max neighbor size of atom(lammps) " +
-          std::to_string(max_numneigh(inlist_temp)) + " is larger than " +
-          std::to_string(max_nbor_size) +
-          ", which currently is not supported by deepmd-kit.");
+    tensorflow::Status status = _update_external_nlist_gpu(
+        inlist_temp, inlist, max_nbor_size, nbor_list_dev, fake_mesh_guard.ptr,
+        16);
+    if (!status.ok()) {
+      return status;
     }
   } else {
     // update nbor list
     deepmd::InputNlist inlist_temp;
     inlist_temp.inum = nloc;
-    deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
-                                nbor_list_dev, mesh_tensor_data,
-                                mesh_tensor_size);
-    if (max_numneigh(inlist_temp) > max_nbor_size) {
-      return deepmd::tf_compat::InvalidArgument(
-          "Assert failed, max neighbor size of atom(lammps) " +
-          std::to_string(max_numneigh(inlist_temp)) + " is larger than " +
-          std::to_string(max_nbor_size) +
-          ", which currently is not supported by deepmd-kit.");
+    tensorflow::Status status = _update_external_nlist_gpu(
+        inlist_temp, inlist, max_nbor_size, nbor_list_dev, mesh_tensor_data,
+        mesh_tensor_size);
+    if (!status.ok()) {
+      return status;
     }
   }
   return tensorflow::Status();
