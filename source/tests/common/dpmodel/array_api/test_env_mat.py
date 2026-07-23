@@ -42,3 +42,32 @@ class TestEnvMat(unittest.TestCase, ArrayAPITest):
             self.assert_namespace_equal(output, coord)
             self.assert_device_equal(output, coord)
             self.assert_dtype_equal(output, coord)
+
+    def test_mixed_centers_mask_all_virtual_outputs(self) -> None:
+        """The shared JAX/pt_expt EnvMat keeps real rows and masks bad virtual rows."""
+        coord = xp.asarray([[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]], dtype=xp.float64)
+        atype = xp.asarray([[1, -1]], dtype=xp.int64)
+        # Deliberately violate the normal virtual-center contract to verify that
+        # em, diff, and switch all provide the documented defense in depth.
+        nlist = xp.asarray([[[1], [0]]], dtype=xp.int64)
+        davg = xp.asarray(
+            [[[11.0, 13.0, 17.0, 19.0]], [[0.0, 0.0, 0.0, 0.0]]],
+            dtype=xp.float64,
+        )
+        dstd = xp.asarray(
+            [[[0.0, 0.0, 0.0, 0.0]], [[1.0, 1.0, 1.0, 1.0]]],
+            dtype=xp.float64,
+        )
+
+        env_mat, diff, switch = EnvMat(2.0, 0.5).call(coord, atype, nlist, davg, dstd)
+
+        for output in (env_mat, diff, switch):
+            real_output = output[:, :1, ...]
+            virtual_output = output[:, 1:, ...]
+            self.assertTrue(bool(xp.any(real_output != xp.zeros_like(real_output))))
+            self.assertTrue(
+                bool(xp.all(virtual_output == xp.zeros_like(virtual_output)))
+            )
+            self.assert_namespace_equal(output, coord)
+            self.assert_device_equal(output, coord)
+            self.assert_dtype_equal(output, coord)

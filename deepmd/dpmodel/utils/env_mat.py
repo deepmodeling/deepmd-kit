@@ -181,9 +181,11 @@ class EnvMat(NativeOP):
             center_std = xp.where(center_mask, center_std, xp.ones_like(center_std))
             em /= center_std
         # The neighbor-list contract leaves every slot empty for a virtual center,
-        # but mask the final descriptor explicitly so malformed or externally built
-        # lists cannot leak a fake center into downstream descriptor computations.
+        # but mask all center-indexed outputs explicitly so malformed or externally
+        # built lists cannot leak a fake center into downstream descriptor paths.
         em = xp.where(center_mask, em, xp.zeros_like(em))
+        diff = xp.where(center_mask, diff, xp.zeros_like(diff))
+        sw = xp.where(center_mask, sw, xp.zeros_like(sw))
         return em, diff, sw
 
     def _call(
