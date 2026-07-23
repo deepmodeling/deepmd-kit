@@ -141,28 +141,27 @@ def make_base_descriptor(
             """Returns whether the descriptor natively conditions on per-atom spin.
 
             Declaring ``True`` obliges the descriptor's ``call_graph`` to
-            accept a per-node ``spin`` keyword (see
-            ``DescrptDPA4.call_graph``); the atomic model only forwards the
-            keyword to descriptors that declare the capability, since an
-            unconditional ``spin=`` kwarg would be a ``TypeError`` on a
-            ``call_graph`` signature that does not declare it.
+            accept a per-node ``spin`` keyword; the atomic model only
+            forwards the keyword to descriptors that declare the capability,
+            since an unconditional ``spin=`` kwarg would be a ``TypeError``
+            on a ``call_graph`` signature that does not declare it.
 
             Concrete default ``False`` so descriptors across all backends
             (pt/pd/tf subclass this same base) need no change until they grow
-            a native spin mechanism of their own. Currently only DPA4
-            overrides to return ``True``.
+            a native spin mechanism of their own; such descriptors override
+            this method to return ``True``.
             """
             return False
 
         def supports_charge_spin(self) -> bool:
-            """Returns whether the descriptor accepts frame-level ``charge_spin`` FiLM conditioning.
+            """Returns whether the descriptor conditions on a frame-level ``charge_spin`` input.
 
             Declaring ``True`` obliges the descriptor's ``call_graph`` to
-            accept a frame-level ``charge_spin`` keyword (see
-            ``DescrptDPA4.call_graph``); the atomic model only forwards the
-            keyword to descriptors that declare the capability. Concrete
-            default ``False`` (see ``supports_native_spin``); currently only
-            DPA4 overrides to return ``True``.
+            accept a frame-level ``charge_spin`` keyword; the atomic model
+            only forwards the keyword to descriptors that declare the
+            capability. Concrete default ``False`` (see
+            ``supports_native_spin``); descriptors that condition on this
+            input override this method to return ``True``.
             """
             return False
 
