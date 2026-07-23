@@ -14,7 +14,7 @@ run without committing a serialized-weights file to git.
 
 The native spin scheme has NO dense/nlist lower at all, spin rides the
 NeighborGraph lower exclusively (see
-``deepmd/pt_expt/model/dpa4_native_spin_model.py``'s module docstring and
+``deepmd/pt_expt/model/native_spin_model.py``'s module docstring and
 ``source/tests/pt_expt/model/test_dpa4_export.py`` Task 6). Without the
 jitter, a freshly built DPA4 collapses to a type-embedding-only descriptor
 (see ``jitter_zero_arrays``'s docstring): every force AND force_mag would be

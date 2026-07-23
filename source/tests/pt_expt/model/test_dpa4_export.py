@@ -378,7 +378,7 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
 
 # =============================================================================
 # Task 6: graph-kind ``.pt2`` freeze for the NATIVE-spin DPA4 wrapper
-# (``DPA4NativeSpinModel``, type ``dpa4_native_spin``) -- spin rides the
+# (``NativeSpinEnergyModel``, type ``native_spin``) -- spin rides the
 # NeighborGraph lower ONLY (no dense/nlist lower, no with-comm sidecar: see
 # ``_needs_with_comm_artifact``'s native-spin first rule). The VIRTUAL-atom
 # spin scheme (``SpinModel``, type ``spin_ener``) has no graph-lower
@@ -420,7 +420,7 @@ def _freeze_native_spin(model_file) -> None:
 
     Mirrors ``test_dpa4_freeze_to_pt2``'s serialize -> ``deserialize_to_file``
     sequence, but native spin has ONLY a graph lower (no dense/nlist lower --
-    see ``DPA4NativeSpinModel``'s module docstring), so ``lower_kind="graph"``
+    see ``NativeSpinEnergyModel``'s module docstring), so ``lower_kind="graph"``
     is explicit rather than parametrized. ``_build_native_spin_model_cpu``
     already jitters DPA4's zero-initialized residual projections (else the
     model is architecturally spin-independent -- see that helper's
@@ -469,7 +469,7 @@ def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
 
     The virtual-atom scheme doubles the atom count (real + virtual) and has
     no graph-lower implementation; only the native scheme
-    (``dpa4_native_spin``) is graph-eligible (see the module docstring
+    (``native_spin``) is graph-eligible (see the module docstring
     above).
     """
     model = get_model(_VIRTUAL_SPIN_CONFIG)
@@ -489,7 +489,7 @@ def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
 # artifact from Task 6 above must be evaluable through the public DeepPot API
 # (``deepmd.pt_expt.infer.deep_eval.DeepEval._eval_model_graph_spin``), NOT
 # just constructible.  Compares against the EAGER pt_expt
-# ``DPA4NativeSpinModel.forward`` on the SAME weights/system (rtol=atol=1e-10,
+# ``NativeSpinEnergyModel.forward`` on the SAME weights/system (rtol=atol=1e-10,
 # CPU fp64 -- project convention for same-math weight-copied parity).
 # =============================================================================
 
@@ -507,7 +507,7 @@ _SPIN_EVAL_COORDS = np.array(
     dtype=np.float64,
 ).reshape(1, _SPIN_EVAL_NATOMS, 3)
 _SPIN_EVAL_CELL = (np.eye(3, dtype=np.float64) * 6.0).reshape(1, 9)
-# Deliberately NOT pre-masked by type (mirrors TestDPA4NativeSpinModelPtExpt):
+# Deliberately NOT pre-masked by type (mirrors TestNativeSpinEnergyModelPtExpt):
 # the model's own descriptor gating must zero the non-spin (type 1) rows.
 _SPIN_EVAL_SPINS = np.array(
     [
@@ -532,7 +532,7 @@ def test_deep_eval_graph_spin_parity(tmp_path) -> None:
     Exercises ``DeepEval._eval_model_spin``'s ``lower_input_kind == "graph"``
     branch end to end through the public ``DeepPot`` API: energy, force,
     force_mag and (global) virial must reproduce the eager
-    ``DPA4NativeSpinModel.forward`` on the identical weights and system.
+    ``NativeSpinEnergyModel.forward`` on the identical weights and system.
     ``atomic=False`` is used deliberately -- the graph-spin ABI has no owner
     site for ``mask_mag`` (see ``_graph_spin_output_key``'s docstring), so
     only the four outputs that route through the exported forward are

@@ -149,7 +149,7 @@ def _needs_with_comm_artifact(
     supports comm — treated as ``True``).
 
     FIRST rule (checked before any descriptor-based logic): the native-spin
-    DPA4/SeZM wrapper (``DPA4NativeSpinModel``, type ``dpa4_native_spin`` /
+    native-spin model (``NativeSpinEnergyModel``, type ``native_spin`` /
     ``sezm_native_spin``) always returns ``False``, regardless of
     ``lower_kind`` or the wrapped backbone descriptor's own
     ``has_message_passing_across_ranks()``. Ghost-atom SPIN exchange across
@@ -173,11 +173,14 @@ def _needs_with_comm_artifact(
     bool
         Whether a with-comm artifact should be built for this lower kind.
     """
-    from deepmd.dpmodel.model.dpa4_native_spin_model import (
-        DPA4NativeSpinModel as _DPA4NativeSpinModelDP,
+    from deepmd.dpmodel.model.native_spin_model import (
+        NativeSpinModelKind,
     )
 
-    if isinstance(model, _DPA4NativeSpinModelDP):
+    # Cross-backend family test: the dpmodel and pt_expt concrete classes
+    # are parallel factory products with no subclass relation, so the shared
+    # marker base -- not a concrete class -- is the membership check.
+    if isinstance(model, NativeSpinModelKind):
         return False
 
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
@@ -448,7 +451,7 @@ def build_synthetic_graph_inputs(
     ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
     destination_row_ptr, source_order, source_row_ptr, fparam, aparam,
     charge_spin)`` -- or, when ``want_spin=True``, the native-spin ABI
-    (:meth:`~deepmd.pt_expt.model.dpa4_native_spin_model.DPA4NativeSpinModel.forward_lower_graph_exportable`):
+    (:meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_graph_exportable`):
     ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
     destination_row_ptr, source_order, source_row_ptr, spin, fparam, aparam)``
     -- ``spin`` replaces ``charge_spin`` at the tail AND moves to slot 10
@@ -757,7 +760,7 @@ def _build_graph_dynamic_shapes(
         (``is_native_spin=True``): same shared CSR block (slots 0-9), but
         slot 10 is ``spin`` (mandatory, node-axis-shaped), slot 11
         ``fparam``, slot 12 ``aparam`` — no ``charge_spin`` slot (see
-        ``DPA4NativeSpinModel.forward_lower_graph_exportable``).
+        ``NativeSpinEnergyModel.forward_lower_graph_exportable``).
     is_native_spin : bool
         Whether ``sample_inputs`` follows the native-spin positional ABI
         (spin at slot 10) instead of the regular energy ABI (charge_spin at
@@ -1405,16 +1408,13 @@ def _trace_and_export(
     # Detect spin model. Two flavors share the ``is_spin`` gate below (both
     # need the spin-only metadata fields — ``ntypes_spin``/``use_spin`` —
     # and the nlist-lower spin ABI probes), but only the NATIVE flavor
-    # (``dpa4_native_spin``/``sezm_native_spin``, ``DPA4NativeSpinModel``)
+    # (``native_spin``, ``NativeSpinEnergyModel``)
     # rides the graph lower: the virtual-atom flavor (``spin_ener``,
     # ``SpinModel``) doubles the atom count and has no graph-lower
     # implementation. ``is_native_spin`` distinguishes them at every seam
     # below (model rebuild, graph rejection, graph sample-input/dynamic-shape
     # ABI, trace call site).
-    is_native_spin = data["model"].get("type") in (
-        "dpa4_native_spin",
-        "sezm_native_spin",
-    )
+    is_native_spin = data["model"].get("type") == "native_spin"
     is_spin = is_native_spin or data["model"].get("type") == "spin_ener"
 
     # 1. Deserialize model on CPU for make_fx tracing.
@@ -1422,19 +1422,15 @@ def _trace_and_export(
     # on CUDA the autograd engine requires CUDA streams for those real
     # tensors during torch.autograd.grad, but proxy-tensor dispatch doesn't
     # set streams up → assertion failure.  Tracing on CPU avoids this.
-    if is_native_spin:
-        from deepmd.pt_expt.model.dpa4_native_spin_model import (
-            DPA4NativeSpinModel,
-        )
-
-        model = DPA4NativeSpinModel.deserialize(data["model"])
-    elif is_spin:
+    if is_spin and not is_native_spin:
         from deepmd.pt_expt.model.spin_model import (
             SpinModel,
         )
 
         model = SpinModel.deserialize(data["model"])
     else:
+        # Registry-dispatched (incl. native spin, type "native_spin"): the
+        # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.to("cpu")
     model.eval()
@@ -1465,7 +1461,7 @@ def _trace_and_export(
 
         check_graph_trace_torch_version(model)
         if is_spin:
-            # Only the native spin scheme (DPA4NativeSpinModel: per-local-atom
+            # Only the native spin scheme (NativeSpinEnergyModel: per-local-atom
             # spin, no virtual atoms) has a graph-lower export
             # (forward_lower_graph_exportable, Task 5) -- and only for the
             # regular "graph" kind: "dpa1_canonical" is the compressed-DPA1
@@ -1475,7 +1471,7 @@ def _trace_and_export(
             if not is_native_spin or lower_kind == "dpa1_canonical":
                 raise NotImplementedError(
                     "graph-form .pt2 export supports only the native spin "
-                    "scheme (dpa4_native_spin); virtual-atom spin models "
+                    "scheme (native_spin); virtual-atom spin models "
                     "export with the dense lower"
                 )
         # Defense-in-depth: every production caller (freeze entrypoint,
@@ -1671,7 +1667,7 @@ def _trace_and_export(
                 want_spin=is_native_spin,
             )
             if is_native_spin:
-                # Native-spin ABI (DPA4NativeSpinModel.forward_lower_graph_exportable,
+                # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable,
                 # Task 5): slot 10 is ``spin`` (mandatory), slots 11/12 are
                 # fparam/aparam -- there is NO ``charge_spin`` slot (native
                 # spin rejects ``add_chg_spin_ebd`` at build).

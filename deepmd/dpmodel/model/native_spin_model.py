@@ -26,6 +26,19 @@ from deepmd.utils.spin import (
 )
 
 
+class NativeSpinModelKind:
+    """Marker base identifying classes produced by ``make_native_spin_model``.
+
+    Each backend instantiates the factory on its OWN standard model class,
+    so the concrete classes (e.g. dpmodel's and pt_expt's
+    ``NativeSpinEnergyModel``) are parallel products with NO subclass
+    relation between them -- an ``isinstance`` against one backend's
+    concrete class is silently dead in the other. Backend seams that need a
+    cross-backend family test (e.g. the with-comm freeze gate: native-spin
+    lowers are single-rank only) test against this shared marker instead.
+    """
+
+
 def make_native_spin_model(T_Model: type) -> type:
     """Make a native-spin model class from a standard model class.
 
@@ -56,7 +69,7 @@ def make_native_spin_model(T_Model: type) -> type:
         The derived native-spin model class.
     """
 
-    class NSM(T_Model):
+    class NSM(T_Model, NativeSpinModelKind):
         """Native-spin variant of ``T_Model`` (see ``make_native_spin_model``)."""
 
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:

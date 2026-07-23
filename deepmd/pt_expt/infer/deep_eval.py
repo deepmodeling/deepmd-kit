@@ -95,7 +95,7 @@ def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
     """Map a native-spin request def to its graph-spin public model key.
 
     Twin of ``_GRAPH_CATEGORY_TO_KEY`` for
-    ``DPA4NativeSpinModel.forward_lower_graph_exportable``'s output dict
+    ``NativeSpinEnergyModel.forward_lower_graph_exportable``'s output dict
     (``_translate_spin_energy_keys``: ``atom_energy``, ``energy``,
     ``force``, ``force_mag``, ``virial``, ``atom_virial``).  Category alone
     is NOT enough here: ``do_derivative`` (``deepmd.dpmodel.output_def``)
@@ -338,19 +338,13 @@ class DeepEval(DeepEvalBackend):
 
             self._dpmodel = SpinModel.deserialize(model_data)
             self._is_spin = True
-        elif model_type in ("dpa4_native_spin", "sezm_native_spin"):
-            # Native-spin (NeighborGraph route) DPA4/SeZM: no virtual atoms,
-            # spin rides the graph lower directly (Task 6/7 of the DPA4
-            # native-spin plan). Mirrors the ``spin_ener`` branch above.
-            from deepmd.pt_expt.model.dpa4_native_spin_model import (
-                DPA4NativeSpinModel,
-            )
-
-            self._dpmodel = DPA4NativeSpinModel.deserialize(model_data)
-            self._is_spin = True
         else:
+            # Registry-dispatched: wrapper classes registered in the pt_expt
+            # BaseModel registry (e.g. the native-spin models, type
+            # "native_spin") come back as their pt_expt torch classes and
+            # declare spin via the base-model capability method.
             self._dpmodel = BaseModel.deserialize(model_data)
-            self._is_spin = False
+            self._is_spin = self._dpmodel.has_spin()
 
         self._rcut = self._dpmodel.get_rcut()
         self._type_map = self._dpmodel.get_type_map()
@@ -1662,7 +1656,7 @@ class DeepEval(DeepEvalBackend):
             # extended/nlist ABI at all -- dispatch to the graph-native fast
             # path (mirrors _eval_model's dispatch to _eval_model_graph for
             # the non-spin case). charge_spin has no slot in this ABI (see
-            # DPA4NativeSpinModel.forward_lower_graph_exportable).
+            # NativeSpinEnergyModel.forward_lower_graph_exportable).
             return self._eval_model_graph_spin(
                 coords, cells, atom_types, spins, fparam, aparam, request_defs
             )
@@ -1851,7 +1845,7 @@ class DeepEval(DeepEvalBackend):
         construction (SAME builder, SAME positional ABI up through
         ``source_row_ptr``), then inserts the owned-atom ``spin`` tensor
         ``(N, 3)`` at positional index 10 of
-        ``DPA4NativeSpinModel.forward_lower_graph_exportable`` -- the node
+        ``NativeSpinEnergyModel.forward_lower_graph_exportable`` -- the node
         axis IS the owned-local-atom axis for single-rank eval (no ghost
         nodes), so ``spin`` needs no extension/mapping, unlike the dense
         spin path's ``ext_spin_t``. There is no ``charge_spin`` slot in this
@@ -2353,8 +2347,14 @@ class DeepEval(DeepEvalBackend):
 
         from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
 
+        from deepmd.pt_expt.model.spin_model import (
+            SpinModel,
+        )
+
         model = self._dpmodel
-        if self._is_spin_model():
+        if isinstance(model, SpinModel):
+            # Virtual-atom wrapper: type-embed nets live on the backbone.
+            # Native-spin models ARE the model (is-a); no unwrap.
             model = model.backbone_model
         out = []
         for mm in model.modules():

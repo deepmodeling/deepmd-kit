@@ -7,7 +7,7 @@ SECOND autograd leaf (``spin``) alongside the existing ``edge_vec`` leaf in
 ``r_differentiable`` reducible output additionally emits
 ``<var>_derv_r_mag = -d<var>_redu/dspin``. This exercises the pt_expt
 BACKBONE energy model directly (a plain "dpa4" model config with
-``use_spin`` set on the descriptor) -- NOT the ``DPA4NativeSpinModel``
+``use_spin`` set on the descriptor) -- NOT the ``NativeSpinEnergyModel``
 wrapper (that is Task 4); ``get_sezm_model`` only rejects a top-level
 ``"spin"`` key, so setting ``use_spin`` on the descriptor of an otherwise
 plain ``"dpa4"`` model config reaches this trunk directly via
@@ -37,8 +37,8 @@ from deepmd.pt_expt.fitting.dpa4_ener import (
 from deepmd.pt_expt.model import (
     EnergyModel,
 )
-from deepmd.pt_expt.model.dpa4_native_spin_model import (
-    DPA4NativeSpinModel,
+from deepmd.pt_expt.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
@@ -61,7 +61,7 @@ from ...seed import (
 # Small fp64 DPA4/SeZM config with native spin enabled on the descriptor
 # (``use_spin=[True, False]``: type 0 ("foo") carries spin, type 1 ("bar")
 # does not). No top-level "spin" key -> ``get_sezm_model`` builds the plain
-# backbone ``EnergyModel``, not the ``DPA4NativeSpinModel`` wrapper.
+# backbone ``EnergyModel``, not the ``NativeSpinEnergyModel`` wrapper.
 _DPA4_SPIN_CONFIG = {
     "type": "dpa4",
     "type_map": ["foo", "bar"],
@@ -147,7 +147,7 @@ class TestGraphForceMag:
             [1, natoms, 3], dtype=torch.float64, device=self.device, generator=generator
         )
         # only type 0 ("foo", use_spin=True) carries a magnetic moment; the
-        # non-magnetic type's spin input is inert (mirrors DPA4NativeSpinModel's
+        # non-magnetic type's spin input is inert (mirrors NativeSpinEnergyModel's
         # mask_mag convention, dpmodel test_dpa4_native_spin_model.py).
         self.spin = spin * (self.atype == 0)[..., None].to(spin.dtype)
 
@@ -227,7 +227,7 @@ class TestGraphForceMag:
 
 
 # =============================================================================
-# Task 4: the ``DPA4NativeSpinModel`` wrapper (top-level "spin" key, scheme
+# Task 4: the ``NativeSpinEnergyModel`` wrapper (top-level "spin" key, scheme
 # "native") -- public forward() keys/shapes and weight-copied parity vs the
 # pt ``SeZMNativeSpinModel`` reference.
 # =============================================================================
@@ -263,8 +263,8 @@ NATIVE_SPIN_CONFIG = {
 }
 
 
-def _jittered_wrapper(seed: int = 11) -> DPA4NativeSpinModel:
-    """Build the pt_expt ``DPA4NativeSpinModel`` wrapper, jittered.
+def _jittered_wrapper(seed: int = 11) -> NativeSpinEnergyModel:
+    """Build the pt_expt ``NativeSpinEnergyModel`` wrapper, jittered.
 
     Mirrors ``_build_jittered_backbone`` above and
     ``test_dpa4_native_spin_model.py::_jittered_model``: DPA4 zero-initializes
@@ -272,17 +272,15 @@ def _jittered_wrapper(seed: int = 11) -> DPA4NativeSpinModel:
     tree is needed to make the wrapper's ``force_mag`` genuinely non-trivial.
     """
     model = get_model(NATIVE_SPIN_CONFIG)
-    ds = model.backbone_model.atomic_model.descriptor
+    ds = model.atomic_model.descriptor
     data = ds.serialize()
     data = jitter_zero_arrays(data, np.random.default_rng(seed))
-    model.backbone_model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(
-        _env.DEVICE
-    )
+    model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(_env.DEVICE)
     return model.to(_env.DEVICE).eval()
 
 
-class TestDPA4NativeSpinModelPtExpt:
-    """Public ``forward()`` contract of the pt_expt ``DPA4NativeSpinModel``."""
+class TestNativeSpinEnergyModelPtExpt:
+    """Public ``forward()`` contract of the pt_expt ``NativeSpinEnergyModel``."""
 
     def setup_method(self) -> None:
         self.device = _env.DEVICE
@@ -328,7 +326,7 @@ class TestDPA4NativeSpinModelPtExpt:
         """Non-spin-type (``atype==1``) rows of ``force_mag`` are exactly
         zero, even though ``self.spin`` feeds nonzero noise there -- the
         descriptor gates the spin embedding by type (docstring in
-        ``dpa4_native_spin_model.py``), so no re-masking is applied.
+        ``native_spin_model.py``), so no re-masking is applied.
         """
         out = self.model.forward(self.coord, self.atype, self.spin, box=self.box)
         non_spin = self.atype == 1
@@ -359,7 +357,7 @@ def _pt_native_spin_model(seed: int = 3):
     return model.eval()
 
 
-class TestDPA4NativeSpinModelParity:
+class TestNativeSpinEnergyModelParity:
     """Weight-copied fp64 parity vs ``deepmd.pt``'s ``SeZMNativeSpinModel``.
 
     Mirrors the component-weight-copy mechanism used throughout
@@ -385,7 +383,7 @@ class TestDPA4NativeSpinModelParity:
 
         # --- pt_expt model: same architecture, weights copied from pt ---
         pt_expt_model = get_model(NATIVE_SPIN_CONFIG)
-        atomic = pt_expt_model.backbone_model.atomic_model
+        atomic = pt_expt_model.atomic_model
         atomic.descriptor = DescrptDPA4.deserialize(
             self.pt_model.atomic_model.descriptor.serialize()
         )
@@ -446,8 +444,8 @@ class TestDPA4NativeSpinModelParity:
 # =============================================================================
 
 
-def _build_native_spin_model_cpu(seed: int = 21) -> DPA4NativeSpinModel:
-    """Build the jittered pt_expt ``DPA4NativeSpinModel`` wrapper on CPU.
+def _build_native_spin_model_cpu(seed: int = 21) -> NativeSpinEnergyModel:
+    """Build the jittered pt_expt ``NativeSpinEnergyModel`` wrapper on CPU.
 
     Mirrors ``_jittered_wrapper`` above but pinned to CPU from construction
     (export tracing is CPU-only; the dpa1 CUDA lesson is that traced inputs
@@ -458,15 +456,15 @@ def _build_native_spin_model_cpu(seed: int = 21) -> DPA4NativeSpinModel:
     """
     cpu = torch.device("cpu")
     model = get_model(NATIVE_SPIN_CONFIG)
-    ds = model.backbone_model.atomic_model.descriptor
+    ds = model.atomic_model.descriptor
     data = ds.serialize()
     data = jitter_zero_arrays(data, np.random.default_rng(seed))
-    model.backbone_model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(cpu)
+    model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(cpu)
     return model.to(cpu).eval()
 
 
 def _build_spin_graph_sample(
-    model: DPA4NativeSpinModel,
+    model: NativeSpinEnergyModel,
     *,
     nframes: int = 2,
     nloc: int = 7,
@@ -487,14 +485,14 @@ def _build_spin_graph_sample(
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order,
         source_row_ptr, spin, fparam, aparam)`` -- the exact positional
-        order of ``DPA4NativeSpinModel.forward_lower_graph_exportable``.
+        order of ``NativeSpinEnergyModel.forward_lower_graph_exportable``.
     """
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
     )
 
     sample = build_synthetic_graph_inputs(
-        model.backbone_model,
+        model,
         e_max=e_max,
         nframes=nframes,
         nloc=nloc,
@@ -560,7 +558,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
         # at zero.
         assert out["force_mag"].abs().max().item() > 1e-6
 
-        ref = model.backbone_model.forward_common_lower_graph(
+        ref = model.forward_common_lower_graph(
             atype,
             n_node,
             n_local,
@@ -687,7 +685,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
             s_fp,
             s_ap,
         )
-        ref = model.backbone_model.forward_common_lower_graph(
+        ref = model.forward_common_lower_graph(
             s_atype,
             s_n_node,
             s_n_local,
@@ -836,7 +834,7 @@ class TestDPA4NativeSpinTrainingSmoke:
        ``spin.npy`` in the first place. Fixed by mirroring
        ``deepmd.pt.train.training.get_additional_data_requirement``'s
        ``has_spin`` branch.
-    3. ``DPA4NativeSpinModel.forward`` (``deepmd/pt_expt/model/
+    3. ``NativeSpinEnergyModel.forward`` (``deepmd/pt_expt/model/
        dpa4_native_spin_model.py``) accepted no ``charge_spin`` keyword, but
        ``ModelWrapper`` always forwards one -- fixed by accepting (and
        passing through) ``charge_spin``, mirroring pt's
@@ -867,7 +865,7 @@ class TestDPA4NativeSpinTrainingSmoke:
         try:
             trainer = get_trainer(config)
             assert isinstance(
-                trainer.wrapper.model[DEFAULT_TASK_KEY], DPA4NativeSpinModel
+                trainer.wrapper.model[DEFAULT_TASK_KEY], NativeSpinEnergyModel
             )
 
             tasks = trainer._make_training_tasks()
@@ -927,7 +925,7 @@ class TestNativeSpinConfigFormsPtExpt:
         config["spin"] = {"use_spin": use_spin_form, "scheme": "native"}
         model = get_model(config)
         assert model.spin.use_spin.tolist() == expected
-        descriptor = model.backbone_model.atomic_model.descriptor
+        descriptor = model.atomic_model.descriptor
         assert [bool(flag) for flag in descriptor.use_spin] == expected
 
     def test_use_spin_unknown_symbol_raises(self) -> None:

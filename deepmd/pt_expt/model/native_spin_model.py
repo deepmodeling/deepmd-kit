@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""pt_expt DPA4/SeZM native-spin model (NeighborGraph route, autograd force_mag)."""
+"""pt_expt native-spin energy model (NeighborGraph route, autograd force_mag)."""
 
 from typing import (
     Any,
@@ -10,11 +10,14 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.dpmodel.model.dpa4_native_spin_model import (
-    DPA4NativeSpinModel as DPA4NativeSpinModelDP,
+from deepmd.dpmodel.model.native_spin_model import (
+    make_native_spin_model,
 )
-from deepmd.pt_expt.common import (
-    torch_module,
+from deepmd.pt_expt.model.ener_model import (
+    EnergyModel,
+)
+from deepmd.pt_expt.model.model import (
+    BaseModel,
 )
 
 
@@ -59,85 +62,26 @@ def _translate_spin_energy_keys(
     return out
 
 
-@torch_module
-class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
-    """pt_expt native-spin DPA4/SeZM model.
+@BaseModel.register("native_spin")
+class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
+    """pt_expt native-spin energy model.
 
-    Mirrors :class:`deepmd.dpmodel.model.dpa4_native_spin_model.DPA4NativeSpinModel`
-    (construction, delegation, output defs are all inherited unchanged), but
-    overrides two methods:
+    ``make_native_spin_model`` applied to THIS backend's
+    :class:`~deepmd.pt_expt.model.ener_model.EnergyModel` (construction,
+    output defs, serialization all come from the factory; the deserialize
+    closure rebuilds through the pt_expt model class, so a registry round
+    trip yields a real ``torch.nn.Module``), plus two torch-specific
+    overrides:
 
-    - :meth:`forward`: the pt_expt backbone's ``call_common`` (Task 3 of the
-      "DPA4 native spin on the NeighborGraph route" plan) produces REAL
-      autograd ``energy_derv_r``/``energy_derv_r_mag``/``energy_derv_c_redu``
-      tensors, unlike the dpmodel parent's energy-only ``call`` (which is
+    - :meth:`forward`: the pt_expt ``call_common`` produces REAL autograd
+      ``energy_derv_r``/``energy_derv_r_mag``/``energy_derv_c_redu``
+      tensors, unlike the dpmodel factory's energy-only ``call`` (which is
       restricted to ``force``/``force_mag``/``virial`` as ``None``
       placeholders because dpmodel has no autograd).
-    - :meth:`deserialize`: the dpmodel parent's version hardcodes the
-      DPMODEL (numpy) ``BaseModel`` to rebuild ``backbone_model``, which
-      would produce a backbone missing the pt_expt/torch export machinery
-      (see the override's docstring); this class rebuilds it through the
-      pt_expt registry instead.
+    - :meth:`forward_lower_graph_exportable`: the graph-spin ``.pt2``
+      positional ABI (``spin`` at index 10) over the inherited
+      ``forward_common_lower_graph_exportable``.
     """
-
-    def __getattr__(self, name: str) -> Any:
-        """Get attribute from the wrapped model.
-
-        In torch.nn.Module, submodules (e.g. ``backbone_model``) are stored
-        in ``_modules``, not ``__dict__``. The dpmodel parent's
-        ``__getattr__`` guards its ``backbone_model`` delegation with
-        ``"backbone_model" not in self.__dict__``, which is always true here
-        and would incorrectly raise ``AttributeError`` for every submodule
-        access (including ``self.backbone_model`` itself). Mirrors
-        :class:`deepmd.pt_expt.model.spin_model.SpinModel`'s override: try
-        ``torch.nn.Module``'s own ``__getattr__`` (checks ``_parameters``,
-        ``_buffers``, ``_modules``) first, then fall back to
-        ``backbone_model`` delegation for arbitrary attributes.
-        """
-        try:
-            return torch.nn.Module.__getattr__(self, name)
-        except AttributeError:
-            pass
-        # backbone_model is in _modules, access via _modules directly to
-        # avoid re-entering __getattr__.
-        modules = self.__dict__.get("_modules", {})
-        backbone = modules.get("backbone_model")
-        if backbone is not None:
-            return getattr(backbone, name)
-        raise AttributeError(name)
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "DPA4NativeSpinModel":
-        """Rebuild ``backbone_model`` through the pt_expt registry.
-
-        The dpmodel parent's ``deserialize`` (inherited otherwise) imports
-        ``deepmd.dpmodel.model.base_model.BaseModel`` at ITS OWN module
-        level, hardcoded regardless of which subclass's ``deserialize`` is
-        actually invoked -- so calling it on this pt_expt subclass would
-        still rebuild a plain numpy dpmodel ``backbone_model`` (missing
-        every pt_expt/torch export method, e.g.
-        ``forward_common_lower_graph_exportable``) and then let the
-        ``@torch_module`` auto-wrap machinery paper over it with a
-        dynamically-generated wrapper that only covers the dpmodel object's
-        OWN methods -- which never included the pt_expt-only export
-        machinery to begin with. Mirrors
-        :meth:`~deepmd.pt_expt.model.spin_model.SpinModel.deserialize`'s
-        override for exactly the same reason.
-        """
-        from deepmd.pt_expt.model.model import (
-            BaseModel,
-        )
-        from deepmd.utils.spin import (
-            Spin,
-        )
-
-        data = data.copy()
-        data.pop("@class", None)
-        data.pop("@version", None)
-        data.pop("type", None)
-        spin = Spin.deserialize(data.pop("spin"))
-        backbone_model = BaseModel.deserialize(data.pop("backbone_model"))
-        return cls(backbone_model=backbone_model, spin=spin)
 
     def forward(
         self,
@@ -188,7 +132,7 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
         # ``spin=`` rides the NeighborGraph lower only; ``neighbor_graph_method``
         # is left at its default (None) so pt_expt's own default-flip resolves
         # it to the carry-all graph builder for this (DPA4) descriptor.
-        model_ret = self.backbone_model.call_common(
+        model_ret = self.call_common(
             coord,
             atype,
             box=box,
@@ -253,8 +197,9 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
         Two-layer make_fx trace, mirroring
         :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`:
         the inner layer
-        (:meth:`~deepmd.pt_expt.model.make_model.make_model.forward_common_lower_graph_exportable`
-        on ``self.backbone_model``) traces ``forward_common_lower_graph``
+        (the inherited
+        :meth:`~deepmd.pt_expt.model.make_model.make_model.forward_common_lower_graph_exportable`)
+        traces ``forward_common_lower_graph``
         with ``spin`` as a SECOND autograd leaf next to ``edge_vec`` (fixing
         ``charge_spin=None`` -- this wrapper's ABI never exposes that slot);
         this outer layer re-traces with the PUBLIC positional ABI above and
@@ -312,7 +257,7 @@ class DPA4NativeSpinModel(DPA4NativeSpinModelDP):
             ``atom_energy``, ``energy``, ``force``, ``force_mag``,
             ``virial``, and (when ``do_atomic_virial``) ``atom_virial``.
         """
-        traced = self.backbone_model.forward_common_lower_graph_exportable(
+        traced = self.forward_common_lower_graph_exportable(
             atype,
             n_node,
             n_local,
