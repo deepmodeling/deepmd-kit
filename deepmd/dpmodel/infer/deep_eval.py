@@ -240,9 +240,32 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
+        model_kwargs = dict(kwargs)
+        if self.get_has_spin():
+            spin = model_kwargs.get("spin")
+            if spin is None:
+                raise ValueError("spin must be provided when evaluating a spin model")
+            spin = np.asarray(spin)
+            expected_spin_size = numb_test * natoms * 3
+            if spin.size != expected_spin_size:
+                raise ValueError(
+                    "spin must contain exactly "
+                    f"{expected_spin_size} values for {numb_test} frame(s) and "
+                    f"{natoms} atom(s), but received {spin.size}"
+                )
+            # AutoBatchSize slices only arrays with a frame axis. Normalize a
+            # flattened public-API input before batching so each model call
+            # receives the spins belonging to its coordinate frames.
+            model_kwargs["spin"] = spin.reshape(numb_test, natoms, 3)
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, request_defs
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            request_defs,
+            **model_kwargs,
         )
         # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
         # its tuple, which would make ``zip`` iterate over the array's frame
@@ -287,6 +310,9 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
                 )
+                # DeepPot always returns the magnetic-atom mask for spin
+                # models, even when per-atom energy was not requested.
+                or x.name == "mask_mag"
             ]
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
@@ -342,6 +368,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Array | None,
         aparam: Array | None,
         request_defs: list[OutputVariableDef],
+        **model_kwargs: Any,
     ) -> dict[str, Array]:
         model = self.dp
 
@@ -370,14 +397,15 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
         )
-        batch_output = model(
-            coord_input,
-            type_input,
+        # Evaluator-owned arguments take precedence over extra model inputs so
+        # callers cannot accidentally bypass normalization performed above.
+        model_kwargs.update(
             box=box_input,
             fparam=fparam_input,
             aparam=aparam_input,
             do_atomic_virial=do_atomic_virial,
         )
+        batch_output = model(coord_input, type_input, **model_kwargs)
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
 
