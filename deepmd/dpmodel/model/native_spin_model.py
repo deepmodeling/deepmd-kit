@@ -132,6 +132,7 @@ def make_native_spin_model(T_Model: type) -> type:
             fparam: np.ndarray | None = None,
             aparam: np.ndarray | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: np.ndarray | None = None,
         ) -> dict[str, np.ndarray]:
             """Return native-spin model predictions with translated public keys.
 
@@ -152,6 +153,10 @@ def make_native_spin_model(T_Model: type) -> type:
             do_atomic_virial
                 If calculate the atomic virial (unused: dpmodel is
                 energy-only for this class).
+            charge_spin
+                Frame-level charge/spin FiLM conditioning, shape
+                nf x dim_chg_spin (only consumed when the descriptor
+                declares ``add_chg_spin_ebd``).
 
             Returns
             -------
@@ -170,6 +175,7 @@ def make_native_spin_model(T_Model: type) -> type:
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
                 spin=spin,
+                charge_spin=charge_spin,
                 # dpmodel: opt into the carry-all NeighborGraph builder (the
                 # only lower that consumes model-level spin).
                 neighbor_graph_method="dense",

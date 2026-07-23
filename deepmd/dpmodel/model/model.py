@@ -217,11 +217,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
         The data to construct the model.
     """
     data = copy.deepcopy(data)
-    if data["descriptor"].get("add_chg_spin_ebd", False):
-        raise NotImplementedError(
-            "charge-spin FiLM combined with native spin on the graph route "
-            "is a follow-up; use one or the other"
-        )
     spin_cfg = data.pop("spin")
     # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
     # per-type boolean list (pure; validates symbols).

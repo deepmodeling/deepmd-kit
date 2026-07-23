@@ -131,11 +131,38 @@ class TestDPA4NativeSpinModel:
         with pytest.raises(NotImplementedError, match="native spin"):
             get_model(cfg)
 
-    def test_add_chg_spin_ebd_raises(self):
+    def test_add_chg_spin_ebd_combined_builds_and_conditions(self):
+        # Combined public configuration (review 3638047227): charge-spin
+        # FiLM together with native spin, as in pt's SeZMNativeSpinModel.
         cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
         cfg["descriptor"]["add_chg_spin_ebd"] = True
-        with pytest.raises(NotImplementedError, match="charge-spin"):
-            get_model(cfg)
+        model = get_model(cfg)
+        assert model.has_chg_spin_ebd()
+        assert model.has_spin()
+        # Jitter: fresh DPA4 zero-init is architecturally input-independent.
+        data = model.serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(13))
+        model = BaseModel.deserialize(data)
+        dim_cs = model.get_dim_chg_spin()
+        assert dim_cs > 0
+        # charge_spin is CATEGORICAL: ChargeSpinEmbedding casts the frame
+        # (charge, spin) pair to int64 lookup indices, so only integer-valued
+        # changes condition the model (0.5 would truncate to 0 == baseline).
+        cs0 = np.zeros((self.nf, dim_cs), dtype=np.float64)
+        cs1 = np.array([[1.0, 2.0]], dtype=np.float64)
+        out_base = model.call(
+            self.coord, self.atype, self.spin, box=self.box, charge_spin=cs0
+        )
+        out_cs = model.call(
+            self.coord, self.atype, self.spin, box=self.box, charge_spin=cs1
+        )
+        # charge_spin conditions the energy...
+        assert not np.allclose(out_base["energy"], out_cs["energy"])
+        # ...and spin still conditions it in the SAME combined model.
+        out_spin = model.call(
+            self.coord, self.atype, 2.0 * self.spin, box=self.box, charge_spin=cs0
+        )
+        assert not np.allclose(out_base["energy"], out_spin["energy"])
 
     def test_translated_output_def_has_spin_keys(self):
         out_def = self.model.translated_output_def()
