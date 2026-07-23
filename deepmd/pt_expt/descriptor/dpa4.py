@@ -187,6 +187,17 @@ class DescrptDPA4(DescrptDPA4DP):
         obj = super().deserialize(data)
         return _promote_trainable_tree(obj)
 
+    def _in_training_mode(self) -> bool:
+        """Torch runtime hook for the training-only random local-Z roll.
+
+        Overrides the dpmodel default (``False``) with the torch module's
+        ``training`` flag, restoring pt's ``random_gamma=self.random_gamma
+        and self.training`` semantics: train-mode forwards draw a fresh
+        gamma per call, eval/export forwards fix gamma (the export path
+        calls ``model.eval()`` before tracing).
+        """
+        return bool(self.training)
+
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
 

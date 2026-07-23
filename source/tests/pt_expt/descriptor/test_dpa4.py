@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from unittest import (
+    mock,
+)
+
 import numpy as np
 import pytest
 import torch
@@ -98,6 +102,55 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
+
+    def test_random_gamma_train_eval_gate(self) -> None:
+        """``random_gamma`` mirrors pt: rolled in train mode, fixed otherwise.
+
+        The ``_in_training_mode`` runtime hook must forward
+        ``random_gamma=True`` to the edge-cache builder only for a
+        train-mode pt_expt forward; eval-mode forwards and the dpmodel
+        reference (no training mode) always forward ``False``. Spy-based:
+        the model is roll-equivariant, so an output-difference check would
+        have no deterministic teeth.
+        """
+        import deepmd.dpmodel.descriptor.dpa4 as dpa4_mod
+
+        dtype = PRECISION_DICT["float64"]
+        dd0 = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            random_gamma=True,  # the default in production configs
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        captured: list[bool] = []
+        orig = dpa4_mod._edge_cache_from_arrays
+
+        def spy(*args, **kwargs):
+            captured.append(kwargs["random_gamma"])
+            return orig(*args, **kwargs)
+
+        with mock.patch.object(dpa4_mod, "_edge_cache_from_arrays", spy):
+            # Train mode: the augmentation is on (and the numpy gamma draw
+            # runs against torch tensors -- eager smoke).
+            dd0.train()
+            dd0(coord_ext, atype_ext, nlist)
+            assert captured[-1] is True
+            # Eval mode: fixed gamma, deterministic forwards.
+            dd0.eval()
+            r1 = dd0(coord_ext, atype_ext, nlist)[0]
+            r2 = dd0(coord_ext, atype_ext, nlist)[0]
+            assert captured[-1] is False
+            assert torch.equal(r1, r2)
+            # dpmodel reference: no training mode, never rolls even with
+            # random_gamma=True.
+            dd2 = DPDescrptDPA4.deserialize(dd0.serialize())
+            assert dd2._in_training_mode() is False
+            dd2.call(self.coord_ext, self.atype_ext, self.nlist)
+            assert captured[-1] is False
 
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_exportable(self, prec) -> None:

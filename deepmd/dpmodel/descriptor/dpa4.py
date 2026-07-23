@@ -1481,9 +1481,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
-            # Random local-Z roll is a training-only augmentation;
-            # the model is roll-equivariant, so inference fixes gamma.
-            random_gamma=False,
+            # Random local-Z roll is a training-only augmentation; the model
+            # is roll-equivariant, so inference fixes gamma. Mirrors pt's
+            # ``random_gamma=self.random_gamma and self.training`` via the
+            # ``_in_training_mode`` runtime hook (False here; the pt_expt
+            # wrapper overrides it with the torch module's training flag).
+            random_gamma=self.random_gamma and self._in_training_mode(),
             wigner_calc=self.wigner_calc,
             build_wigner=self._need_full_wigner,
         )
@@ -2320,6 +2323,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""
+        return False
+
+    def _in_training_mode(self) -> bool:
+        """Whether the descriptor is currently in training mode.
+
+        Gates the training-only random local-Z roll
+        (``random_gamma``): the roll is applied only when the descriptor is
+        training, mirroring pt's ``self.random_gamma and self.training``.
+        dpmodel is an inference/reference backend with no training mode, so
+        this returns ``False`` (deterministic, fixed gamma); the pt_expt
+        wrapper overrides it with the torch module's ``training`` flag.
+        """
         return False
 
     def supports_native_spin(self) -> bool:

@@ -123,6 +123,24 @@ class TestDescrptDPA4:
         out2 = np.asarray(dd2.call(coord.reshape(nf, -1), atype, nlist)[0])
         np.testing.assert_array_equal(out1, out2)
 
+    def test_random_gamma_inference_deterministic(self) -> None:
+        """The dpmodel backend never applies the random local-Z roll, even when configured.
+
+        ``random_gamma`` is a training-only augmentation gated by the
+        ``_in_training_mode`` runtime hook; dpmodel has no training mode, so
+        the hook is ``False`` and two calls of a ``random_gamma=True``
+        descriptor are bit-identical (the pt_expt twin's train-mode
+        behavior is pinned in
+        ``source/tests/pt_expt/descriptor/test_dpa4.py::test_random_gamma_train_eval_gate``).
+        """
+        dd = make_descriptor(random_gamma=True)
+        assert dd._in_training_mode() is False
+        coord, atype, nlist = make_inputs()
+        nf = atype.shape[0]
+        out1 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        out2 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        np.testing.assert_array_equal(out1, out2)
+
     def test_permutation_equivariance(self) -> None:
         dd = make_descriptor()
         coord, atype, nlist = make_inputs()
