@@ -22,7 +22,7 @@ class AutoapiObject:
 def test_linkcode_uses_original_object_and_rtd_commit(
     monkeypatch, tmp_path: Path
 ) -> None:
-    repository_root = tmp_path
+    repository_root = tmp_path.resolve()
     module_path = repository_root / "deepmd" / "implementation.py"
     module_path.parent.mkdir()
     module_path.touch()
