@@ -2323,11 +2323,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return False
 
     def supports_native_spin(self) -> bool:
-        """DPA4 accepts a per-node ``spin`` on ``call_graph`` (native magnetic conditioning); other descriptors do not."""
+        """DPA4 accepts a per-node ``spin`` on ``call_graph`` (native magnetic conditioning); overrides the ``BaseDescriptor`` default of ``False``."""
         return True
 
     def supports_charge_spin(self) -> bool:
-        """DPA4 accepts a frame-level ``charge_spin`` on ``call_graph`` (FiLM conditioning); other descriptors do not."""
+        """DPA4 accepts a frame-level ``charge_spin`` on ``call_graph`` (FiLM conditioning); overrides the ``BaseDescriptor`` default of ``False``."""
         return True
 
     def disable_graph_lower(self) -> None:

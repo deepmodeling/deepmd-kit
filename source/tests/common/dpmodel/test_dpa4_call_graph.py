@@ -410,18 +410,19 @@ def test_capability_flags() -> None:
 
 
 def test_supports_native_spin_capability_gate() -> None:
-    """Pin the explicit ``supports_native_spin`` capability method (not duck-typed).
+    """Pin the ``supports_native_spin``/``supports_charge_spin`` capability contract.
 
-    ``DPAtomicModel.supports_native_spin`` is cached from the descriptor's
-    ``supports_native_spin()`` method (see ``DPAtomicModel.__init__``), not
-    from a `hasattr` probe on an internal descriptor attribute. A DPA4
-    descriptor reports the capability explicitly; a descriptor lacking the
-    method (or lacking native spin support altogether) must default to
-    ``False`` via the defensive ``getattr(..., lambda: False)()`` call.
+    Both are declared on ``BaseDescriptor`` (``make_base_descriptor``) with a
+    concrete default of ``False``; DPA4 overrides both to ``True``.
+    ``DPAtomicModel`` caches the answers via direct method calls in
+    ``__init__`` (no ``getattr`` fallback -- the base-class declaration is
+    the pinned contract, so a typo'd or missing method raises instead of
+    silently degrading to unsupported).
     """
-    # DPA4 explicitly declares native spin support.
+    # DPA4 explicitly declares native spin + charge_spin support.
     dd = make_descriptor()
     assert dd.supports_native_spin() is True
+    assert dd.supports_charge_spin() is True
     ft = SeZMEnergyFittingNet(
         ntypes=3,
         dim_descrpt=dd.get_dim_out(),
@@ -431,15 +432,14 @@ def test_supports_native_spin_capability_gate() -> None:
     )
     dpa4_model = DPAtomicModel(dd, ft, type_map=["A", "B", "C"])
     assert dpa4_model.supports_native_spin is True
+    assert dpa4_model.supports_charge_spin is True
 
-    # A non-DPA4 descriptor has no supports_native_spin method at all; the
-    # defensive getattr must fall back to False rather than raising.
-    assert (
-        getattr(dd, "not_a_real_method", lambda: False)() is False
-    )  # sanity: getattr fallback semantics
+    # A non-DPA4 descriptor inherits the base-class concrete default: the
+    # methods EXIST (declared on BaseDescriptor, not duck-typed) and answer
+    # False.
     se_a = DescrptSeA(4.0, 3.5, [8, 8, 8])
-    assert not hasattr(se_a, "supports_native_spin")
-    assert getattr(se_a, "supports_native_spin", lambda: False)() is False
+    assert se_a.supports_native_spin() is False
+    assert se_a.supports_charge_spin() is False
     ft_se_a = InvarFitting(
         "energy",
         3,
@@ -449,6 +449,7 @@ def test_supports_native_spin_capability_gate() -> None:
     )
     se_a_model = DPAtomicModel(se_a, ft_se_a, type_map=["A", "B", "C"])
     assert se_a_model.supports_native_spin is False
+    assert se_a_model.supports_charge_spin is False
 
 
 def test_uses_graph_lower_feature_gates() -> None:

@@ -131,20 +131,14 @@ class DPAtomicModel(BaseAtomicModel):
         # per-descriptor, so ``forward_atomic_graph`` must not pass the
         # keyword to a descriptor whose ``call_graph`` does not declare it
         # (that would be a ``TypeError``, not a no-op). Queried via the
-        # explicit ``supports_native_spin`` capability method (see
-        # ``DescrptDPA4.supports_native_spin``), defensively via ``getattr``
-        # so descriptors without the method default to unsupported.
-        self.supports_native_spin: bool = getattr(
-            self.descriptor, "supports_native_spin", lambda: False
-        )()
-        # Same capability-guard pattern as ``supports_native_spin`` above, for
-        # the frame-level ``charge_spin`` FiLM kwarg: only DPA4's
-        # ``call_graph`` declares it (see ``DescrptDPA4.supports_charge_spin``);
-        # other descriptors' ``call_graph`` would ``TypeError`` on an
-        # unconditional ``charge_spin=`` kwarg.
-        self.supports_charge_spin: bool = getattr(
-            self.descriptor, "supports_charge_spin", lambda: False
-        )()
+        # ``supports_native_spin`` capability method declared on
+        # ``BaseDescriptor`` (concrete default ``False``; DPA4 overrides).
+        self.supports_native_spin: bool = self.descriptor.supports_native_spin()
+        # Same capability method as ``supports_native_spin`` above, for the
+        # frame-level ``charge_spin`` FiLM kwarg: only DPA4's ``call_graph``
+        # declares it; other descriptors' ``call_graph`` would ``TypeError``
+        # on an unconditional ``charge_spin=`` kwarg.
+        self.supports_charge_spin: bool = self.descriptor.supports_charge_spin()
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:
