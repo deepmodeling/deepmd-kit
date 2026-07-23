@@ -478,9 +478,10 @@ class LmdbDataReader:
     def _compute_natoms_vec(self, atype: np.ndarray) -> np.ndarray:
         """Compute natoms_vec from a frame's atype array.
 
-        Negative virtual types and positive indices outside the configured type
-        map are excluded from the per-type counts. The leading nloc entries
-        still include every atom slot, matching mixed-type NPY data handling.
+        Negative virtual types are excluded from the per-type counts, matching
+        mixed-type NPY data handling. This function also excludes positive
+        indices outside the configured type map. The leading nloc entries still
+        include every atom slot.
 
         Returns [nloc, nloc, count_type0, count_type1, ...] with length ntypes+2.
         """
