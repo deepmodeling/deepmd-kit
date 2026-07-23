@@ -902,3 +902,60 @@ class TestDPA4NativeSpinTrainingSmoke:
             )
         finally:
             os.chdir(old_cwd)
+
+
+class TestNativeSpinConfigFormsPtExpt:
+    """pt_expt twin of ``test_dpa4_native_spin_model.py::TestNativeSpinConfigForms``.
+
+    ``spin.use_spin`` index/symbol forms are expanded against ``type_map``
+    (``normalize_spin_use_spin``), and ``allow_missing_label`` is forwarded
+    into the constructed :class:`Spin` -- observable through the trainer's
+    spin data requirement.
+    """
+
+    @pytest.mark.parametrize(
+        ("use_spin_form", "expected"),
+        [
+            (["Ni"], [True, False]),  # element-symbol form
+            ([0], [True, False]),  # type-index form
+            ([0, 1], [True, True]),  # multiple type indices
+            ([True, False], [True, False]),  # canonical boolean passthrough
+        ],
+    )
+    def test_use_spin_forms(self, use_spin_form, expected) -> None:
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"] = {"use_spin": use_spin_form, "scheme": "native"}
+        model = get_model(config)
+        assert model.spin.use_spin.tolist() == expected
+        descriptor = model.backbone_model.atomic_model.descriptor
+        assert [bool(flag) for flag in descriptor.use_spin] == expected
+
+    def test_use_spin_unknown_symbol_raises(self) -> None:
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"] = {"use_spin": ["Fe"], "scheme": "native"}
+        with pytest.raises(ValueError, match="absent from type_map"):
+            get_model(config)
+
+    @pytest.mark.parametrize(
+        ("allow_missing", "expected_must"),
+        [
+            (True, False),  # relaxed: spin file optional, zero default
+            (False, True),  # default: spin file mandatory
+        ],
+    )
+    def test_allow_missing_label_data_requirement(
+        self, allow_missing, expected_must
+    ) -> None:
+        from deepmd.pt_expt.train.training import (
+            get_additional_data_requirement,
+        )
+
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        if allow_missing:
+            config["spin"]["allow_missing_label"] = True
+        model = get_model(config)
+        assert model.spin.allow_missing_label is allow_missing
+        reqs = get_additional_data_requirement(model)
+        spin_req = next(rr for rr in reqs if rr.key == "spin")
+        assert spin_req.must is expected_must
+        assert spin_req.default == 0.0

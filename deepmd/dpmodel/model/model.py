@@ -48,6 +48,7 @@ from deepmd.dpmodel.model.spin_model import (
 )
 from deepmd.utils.spin import (
     Spin,
+    normalize_spin_use_spin,
 )
 
 _DPA4_SEZM_DESCRIPTOR_TYPES = ("dpa4", "DPA4", "sezm", "SeZM")
@@ -223,10 +224,13 @@ def get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
             "is a follow-up; use one or the other"
         )
     spin_cfg = data.pop("spin")
-    use_spin = [bool(flag) for flag in spin_cfg["use_spin"]]
+    # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
+    # per-type boolean list (pure; validates symbols).
+    use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
     spin = Spin(
         use_spin=use_spin,
         virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+        allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin
     backbone_model = get_standard_model(data)

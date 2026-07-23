@@ -46,6 +46,7 @@ from deepmd.pt_expt.model.spin_ener_model import (
 )
 from deepmd.utils.spin import (
     Spin,
+    normalize_spin_use_spin,
 )
 
 log = logging.getLogger(__name__)
@@ -242,10 +243,13 @@ def _get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
             "charge-spin FiLM combined with native spin on the graph route "
             "is a follow-up; use one or the other"
         )
-    use_spin = [bool(flag) for flag in spin_cfg["use_spin"]]
+    # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
+    # per-type boolean list (pure; validates symbols).
+    use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
     spin = Spin(
         use_spin=use_spin,
         virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+        allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin
     backbone_model = get_sezm_model(data)

@@ -261,17 +261,13 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
             )
         )
-    has_spin = getattr(_model, "has_spin", False)
-    if callable(has_spin):
-        has_spin = has_spin()
-    if has_spin:
+    if _model.has_spin():
         # ``model.spin.allow_missing_label`` relaxes the spin label from
         # mandatory to optional with a zero default, so a system without a
         # ``spin`` file is filled with zeros rather than rejected. Mirrors
         # ``deepmd.pt.train.training.get_additional_data_requirement``.
-        allow_missing_spin = getattr(
-            getattr(_model, "spin", None), "allow_missing_label", False
-        )
+        # Every spin model wrapper carries a ``spin`` attribute.
+        allow_missing_spin = _model.spin.allow_missing_label
         additional_data_requirement.append(
             DataRequirementItem(
                 "spin",

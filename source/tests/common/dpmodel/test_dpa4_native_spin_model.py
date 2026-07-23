@@ -126,3 +126,47 @@ class TestDPA4NativeSpinModel:
         assert "force_mag" in out_def
         assert "energy" in out_def
         assert "force" in out_def
+
+
+class TestNativeSpinConfigForms:
+    """``spin.use_spin`` index/symbol forms and ``allow_missing_label``.
+
+    The public schema accepts a per-type boolean list, a list of magnetic
+    type indices, or a list of element symbols (expanded against
+    ``type_map`` by ``normalize_spin_use_spin``); ``allow_missing_label``
+    must be forwarded into the constructed :class:`Spin`.
+    """
+
+    @pytest.mark.parametrize(
+        ("use_spin_form", "expected"),
+        [
+            (["Ni"], [True, False]),  # element-symbol form
+            ([0], [True, False]),  # type-index form
+            ([0, 1], [True, True]),  # multiple type indices
+            ([True, False], [True, False]),  # canonical boolean passthrough
+        ],
+    )
+    def test_use_spin_forms(self, use_spin_form, expected):
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"] = {"use_spin": use_spin_form, "scheme": "native"}
+        model = get_model(config)
+        assert model.spin.use_spin.tolist() == expected
+        # The descriptor consumes the SAME normalized boolean list.
+        descriptor = model.backbone_model.atomic_model.descriptor
+        assert [bool(flag) for flag in descriptor.use_spin] == expected
+
+    def test_use_spin_unknown_symbol_raises(self):
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"] = {"use_spin": ["Fe"], "scheme": "native"}
+        with pytest.raises(ValueError, match="absent from type_map"):
+            get_model(config)
+
+    def test_allow_missing_label_forwarded(self):
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"]["allow_missing_label"] = True
+        model = get_model(config)
+        assert model.spin.allow_missing_label is True
+
+    def test_allow_missing_label_default_false(self):
+        model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
+        assert model.spin.allow_missing_label is False
