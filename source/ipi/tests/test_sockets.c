@@ -57,9 +57,7 @@ static ssize_t error_writer(int sockfd, const void* data, size_t len) {
   return -1;
 }
 
-static ssize_t overreporting_writer(int sockfd,
-                                    const void* data,
-                                    size_t len) {
+static ssize_t overreporting_writer(int sockfd, const void* data, size_t len) {
   (void)sockfd;
   (void)data;
   return (ssize_t)(len + 1);
