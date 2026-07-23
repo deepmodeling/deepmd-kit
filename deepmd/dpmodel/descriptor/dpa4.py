@@ -1323,6 +1323,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             nf=nf,
             dtype=coord_ext.dtype,
             device=device,
+            xp=xp,
         )
         # The dense (nlist) lower has no comm implementation of its own and
         # never will: it is the one owner of that rejection, so it raises
@@ -1689,6 +1690,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             nf=nf,
             dtype=graph.edge_vec.dtype,
             device=array_api_compat.device(graph.edge_vec),
+            xp=array_api_compat.array_namespace(graph.edge_vec),
         )
         x_scalar, _ = self._run_graph(
             graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
@@ -2148,6 +2150,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         nf: int,
         dtype: Any,
         device: Any,
+        xp: Any,
     ) -> Array | None:
         """
         Canonicalize charge/spin conditions for the public descriptor path.
@@ -2162,6 +2165,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Target floating-point dtype.
         device
             Target device.
+        xp
+            The CALLER's array namespace. The default-``charge_spin`` branch
+            converts the numpy ``default_chg_spin`` attribute into this
+            namespace/device -- deriving the namespace from the numpy
+            attribute itself breaks the torch path, whose device object
+            numpy's ``asarray`` rejects (array-API pitfall: convert numpy
+            attribute arrays into the caller's namespace at call time).
 
         Returns
         -------
@@ -2173,14 +2183,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if charge_spin is None:
             if self.default_chg_spin is None:
                 raise ValueError("`charge_spin` is required for this SeZM descriptor.")
-            default_chg_spin = np.asarray(self.default_chg_spin)
-            xp = array_api_compat.array_namespace(default_chg_spin)
             charge_spin = xp.reshape(
-                xp_asarray_nodetach(xp, default_chg_spin, dtype=dtype, device=device),
+                xp_asarray_nodetach(
+                    xp, np.asarray(self.default_chg_spin), dtype=dtype, device=device
+                ),
                 (1, 2),
             )
         else:
-            xp = array_api_compat.array_namespace(charge_spin)
             charge_spin = xp.astype(charge_spin, dtype)
 
         if charge_spin.ndim == 1:

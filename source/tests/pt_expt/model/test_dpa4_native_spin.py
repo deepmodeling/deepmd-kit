@@ -1003,3 +1003,140 @@ class TestPublicBaseModelRoundTrip:
         r2 = m2(coord, atype, spin, box=box)
         for key in ("energy", "force", "force_mag"):
             torch.testing.assert_close(r1[key], r2[key], rtol=1e-12, atol=1e-12)
+
+
+# =============================================================================
+# Combined native spin + charge-spin FiLM (review 3638047227): pt does not
+# reject this public configuration -- SeZMNativeSpinModel.forward accepts
+# ``charge_spin`` alongside the native ``spin`` input.
+# =============================================================================
+
+COMBINED_CHG_SPIN_CONFIG = copy.deepcopy(NATIVE_SPIN_CONFIG)
+COMBINED_CHG_SPIN_CONFIG["descriptor"]["add_chg_spin_ebd"] = True
+
+
+class TestCombinedChargeSpinNativeSpin:
+    """Combined config builds, conditions on BOTH inputs, and matches pt.
+
+    Weight-copied fp64 parity mechanics identical to
+    :class:`TestNativeSpinEnergyModelParity`. ``charge_spin`` is CATEGORICAL
+    (``ChargeSpinEmbedding`` casts the frame ``(charge, spin)`` pair to
+    int64 lookup indices), so the probe uses integer-valued changes.
+    """
+
+    def setup_method(self) -> None:
+        cpu = torch.device("cpu")
+        pt_model = pt_get_model(copy.deepcopy(COMBINED_CHG_SPIN_CONFIG)).to(
+            torch.float64
+        )
+        ds = pt_model.atomic_model.descriptor
+        data = jitter_zero_arrays(ds.serialize(), np.random.default_rng(3))
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        pt_model.atomic_model.descriptor = DescrptSeZM.deserialize(data).to(
+            torch.float64
+        )
+        self.pt_model = pt_model.eval().to(cpu)
+
+        pt_expt_model = get_model(COMBINED_CHG_SPIN_CONFIG)
+        atomic = pt_expt_model.atomic_model
+        atomic.descriptor = DescrptDPA4.deserialize(
+            self.pt_model.atomic_model.descriptor.serialize()
+        )
+        from deepmd.pt_expt.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet as _FT,
+        )
+
+        atomic.fitting_net = _FT.deserialize(
+            self.pt_model.atomic_model.fitting_net.serialize()
+        )
+        self.pt_expt_model = pt_expt_model.to(cpu).eval()
+        assert self.pt_expt_model.has_chg_spin_ebd()
+        assert self.pt_expt_model.has_spin()
+
+        generator = torch.Generator(device=cpu).manual_seed(GLOBAL_SEED + 1)
+        self.nf, self.nloc = 1, 6
+        cell = torch.rand([3, 3], dtype=torch.float64, generator=generator)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3)
+        coord = torch.rand([self.nloc, 3], dtype=torch.float64, generator=generator)
+        self.coord = torch.matmul(coord, cell).unsqueeze(0)
+        self.atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64)
+        self.box = cell.reshape(1, 9)
+        self.spin = torch.rand(
+            [self.nf, self.nloc, 3], dtype=torch.float64, generator=generator
+        )
+        self.cs0 = torch.zeros([self.nf, 2], dtype=torch.float64)
+        self.cs1 = torch.tensor([[1.0, 2.0]], dtype=torch.float64)
+
+    def test_combined_parity_and_sensitivity(self) -> None:
+        outs = {}
+        for tag, cs in (("cs0", self.cs0), ("cs1", self.cs1)):
+            out_pt = self.pt_model.forward(
+                self.coord, self.atype, self.spin, box=self.box, charge_spin=cs
+            )
+            out_pte = self.pt_expt_model.forward(
+                self.coord, self.atype, self.spin, box=self.box, charge_spin=cs
+            )
+            for key in ("energy", "force", "force_mag"):
+                torch.testing.assert_close(
+                    out_pt[key],
+                    out_pte[key],
+                    rtol=1e-12,
+                    atol=1e-12,
+                    msg=f"{key}@{tag}",
+                )
+            outs[tag] = out_pte
+        # charge_spin conditions the energy (reviewer's probe: nonzero
+        # response), and BOTH backends agree on the conditioned values above.
+        de = (outs["cs1"]["energy"] - outs["cs0"]["energy"]).abs().max().item()
+        assert de > 1e-10, f"charge_spin response vanished: {de:.3e}"
+        # native spin still conditions the same combined model
+        out_spin = self.pt_expt_model.forward(
+            self.coord, self.atype, 2.0 * self.spin, box=self.box, charge_spin=self.cs0
+        )
+        ds_ = (out_spin["energy"] - outs["cs0"]["energy"]).abs().max().item()
+        assert ds_ > 1e-10, f"spin response vanished in combined model: {ds_:.3e}"
+
+
+class TestCombinedChargeSpinTrainingSmoke:
+    """Trainer smoke for the COMBINED native-spin + charge-spin FiLM model.
+
+    NiO spin data carries no ``charge_spin`` file, so the run exercises the
+    ``default_chg_spin`` metadata path: ``get_additional_data_requirement``
+    marks the ``charge_spin`` requirement optional with the descriptor's
+    default, and the FiLM conditions every batch on it.
+    """
+
+    def setup_method(self) -> None:
+        self.data_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "pt", "NiO", "data", "single"
+        )
+        if not os.path.isdir(self.data_dir):
+            pytest.skip(f"NiO spin data not found: {self.data_dir}")
+
+    def test_training_smoke_combined(self, tmp_path) -> None:
+        config = _make_train_config(self.data_dir, numb_steps=2)
+        config["model"]["descriptor"]["add_chg_spin_ebd"] = True
+        config["model"]["descriptor"]["default_chg_spin"] = [0.0, 2.0]
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            trainer = get_trainer(config)
+            model = trainer.wrapper.model[DEFAULT_TASK_KEY]
+            assert isinstance(model, NativeSpinEnergyModel)
+            assert model.has_chg_spin_ebd()
+            assert model.has_default_chg_spin()
+
+            tasks = trainer._make_training_tasks()
+            task = trainer.select_task(tasks)
+            for step in range(2):
+                result = trainer.train_step(task, step)
+                loss = result.payload["loss"]
+                assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
+        finally:
+            os.chdir(old_cwd)
