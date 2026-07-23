@@ -165,10 +165,7 @@ class ModelWrapper(paddle.nn.Layer):
             "aparam": aparam,
             "charge_spin": charge_spin,
         }
-        has_spin = getattr(self.model[task_key], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin:
+        if self.model[task_key].has_spin():
             input_dict["spin"] = spin
 
         if self.inference_only or inference_only:
