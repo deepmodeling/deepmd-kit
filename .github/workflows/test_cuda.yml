@@ -125,7 +125,7 @@ jobs:
         # junit-aoti.xml = compile lane (T_A), junit-gpu.xml = GPU lane (T_B);
         # used to compare the two lanes against the pre-split serial baseline.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cuda-pytest-junit
           path: |
