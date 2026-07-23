@@ -857,7 +857,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
   deepmd::delete_device_memory(two_embed_dev);
 }
 
-TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_padding_modes) {
   constexpr int test_nloc = 1;
   constexpr int test_nnei = 12;
   constexpr int padding_begin = 4;
@@ -882,7 +882,8 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
     test_two_embed[ii] = 0.001 * (ii + 1);
   }
 
-  auto compare_cpu_gpu = [&](const std::vector<double>* two_embed_host) {
+  auto compare_cpu_gpu = [&](const std::vector<double>* two_embed_host,
+                             const bool is_sorted) {
     std::vector<double> expected_dy_dem_x(test_nnei);
     std::vector<double> expected_dy_dem(test_nnei * 4);
     std::vector<double> expected_dy_dtwo(test_nnei * last_layer_size);
@@ -891,7 +892,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
         two_embed_host == nullptr ? nullptr : expected_dy_dtwo.data(),
         table.data(), info.data(), test_em_x.data(), test_em.data(),
         two_embed_host == nullptr ? nullptr : two_embed_host->data(),
-        test_dy.data(), test_nloc, test_nnei, last_layer_size, true);
+        test_dy.data(), test_nloc, test_nnei, last_layer_size, is_sorted);
 
     std::vector<double> actual_dy_dem_x(test_nnei);
     std::vector<double> actual_dy_dem(test_nnei * 4);
@@ -913,7 +914,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
     deepmd::tabulate_fusion_se_a_grad_gpu<double>(
         dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(), em_x_dev,
         em_dev, two_embed_dev, dy_dev, test_nloc, test_nnei, last_layer_size,
-        true);
+        is_sorted);
     deepmd::memcpy_device_to_host(dy_dem_x_dev, actual_dy_dem_x);
     deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
     if (two_embed_host != nullptr) {
@@ -932,20 +933,24 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
       }
       // The CPU contract copies the first sentinel's two-embedding gradient
       // across the complete sorted-padding tail.
-      for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
-        for (int jj = 0; jj < last_layer_size; ++jj) {
-          EXPECT_NEAR(actual_dy_dtwo[ii * last_layer_size + jj],
-                      actual_dy_dtwo[padding_begin * last_layer_size + jj],
-                      1e-10);
+      if (is_sorted) {
+        for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+          for (int jj = 0; jj < last_layer_size; ++jj) {
+            EXPECT_NEAR(actual_dy_dtwo[ii * last_layer_size + jj],
+                        actual_dy_dtwo[padding_begin * last_layer_size + jj],
+                        1e-10);
+          }
         }
       }
     }
     // Later sentinels are padding, not independent neighbors owned by other
     // warps, and therefore must retain zero descriptor gradients.
-    for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
-      EXPECT_DOUBLE_EQ(actual_dy_dem_x[ii], 0.0);
-      for (int jj = 0; jj < 4; ++jj) {
-        EXPECT_DOUBLE_EQ(actual_dy_dem[ii * 4 + jj], 0.0);
+    if (is_sorted) {
+      for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+        EXPECT_DOUBLE_EQ(actual_dy_dem_x[ii], 0.0);
+        for (int jj = 0; jj < 4; ++jj) {
+          EXPECT_DOUBLE_EQ(actual_dy_dem[ii * 4 + jj], 0.0);
+        }
       }
     }
 
@@ -959,7 +964,9 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_sorted_padding) {
     deepmd::delete_device_memory(dy_dev);
   };
 
-  compare_cpu_gpu(nullptr);
-  compare_cpu_gpu(&test_two_embed);
+  for (const bool is_sorted : {false, true}) {
+    compare_cpu_gpu(nullptr, is_sorted);
+    compare_cpu_gpu(&test_two_embed, is_sorted);
+  }
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
