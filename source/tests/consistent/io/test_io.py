@@ -39,6 +39,15 @@ class IOTest:
     # property model), skipped by the cross-backend round trips below.
     skip_backends: ClassVar[set[str]] = set()
 
+    def _has_fparam_aparam(self) -> bool:
+        """Whether the serialized fitting requires both parameter families."""
+        fitting = self.data.get("model_def_script", {}).get("fitting_net", {})
+        return (
+            isinstance(fitting, dict)
+            and fitting.get("numb_fparam", 0) > 0
+            and fitting.get("numb_aparam", 0) > 0
+        )
+
     def get_data_from_model(self, model_file: str) -> dict:
         """Get data from a model file.
 
@@ -156,6 +165,7 @@ class IOTest:
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
             ("tf2", 0) if DP_TEST_TF2_ONLY else (None, None),
             ("pytorch", 0),
+            ("paddle", 1) if self._has_fparam_aparam() else (None, None),
             ("dpmodel", 0),
             ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
         ):
@@ -181,6 +191,10 @@ class IOTest:
                 aparam = np.ones((nframes, natoms, deep_eval.get_dim_aparam()))
             else:
                 aparam = None
+            if backend_name in {"pytorch", "jax", "tf2", "paddle"} and (
+                deep_eval.get_dim_fparam() > 0 and deep_eval.get_dim_aparam() > 0
+            ):
+                self._assert_backend_parameter_shorthand(model_file, deep_eval)
             ret = deep_eval.eval(
                 self.coords,
                 self.box,
@@ -237,6 +251,60 @@ class IOTest:
                         atol=1e-12,
                         err_msg=f"backend {idx + 1} for rets_idx {rets_idx}",
                     )
+
+    def _assert_backend_parameter_shorthand(
+        self, model_file: str, deep_eval: DeepEval
+    ) -> None:
+        """Compare backend-direct shorthand with explicit frame-major inputs.
+
+        Calling ``deep_eval.deep_eval`` deliberately bypasses the public
+        ``_standard_input`` normalization. A one-frame auto-batch size also
+        proves that shared per-atom parameters are expanded before the batcher
+        can mistake their atom axis for a frame axis.
+        """
+        natoms = self.atype.shape[1]
+        nframes = 2
+        coords = np.repeat(self.coords, nframes, axis=0)
+        boxes = np.repeat(self.box, nframes, axis=0)
+        atom_types = self.atype.reshape(-1)
+        fparam_shared = np.ones(deep_eval.get_dim_fparam())
+        aparam_per_atom = np.ones((natoms, deep_eval.get_dim_aparam()))
+        fparam_full = np.tile(fparam_shared, (nframes, 1))
+        aparam_full = np.tile(aparam_per_atom, (nframes, 1, 1))
+        backend = DeepEval(model_file, auto_batch_size=natoms).deep_eval
+
+        expected = backend.eval(
+            coords,
+            boxes,
+            atom_types,
+            fparam=fparam_full,
+            aparam=aparam_full,
+        )
+        shorthand_cases = (
+            (fparam_shared.tolist(), aparam_per_atom),
+            (
+                fparam_shared,
+                np.ones(deep_eval.get_dim_aparam()),
+            ),
+        )
+        for fparam, aparam in shorthand_cases:
+            actual = backend.eval(
+                coords,
+                boxes,
+                atom_types,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            self.assertEqual(actual.keys(), expected.keys())
+            for name in actual:
+                np.testing.assert_allclose(
+                    actual[name],
+                    expected[name],
+                    rtol=1e-12,
+                    atol=1e-12,
+                    equal_nan=True,
+                    err_msg=f"backend-direct shorthand output {name}",
+                )
 
 
 class TestDeepPot(unittest.TestCase, IOTest):

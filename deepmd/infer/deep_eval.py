@@ -30,6 +30,48 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
+def _standardize_fparam_aparam(
+    fparam: np.ndarray | list | None,
+    aparam: np.ndarray | list | None,
+    nframes: int,
+    natoms: int,
+    dim_fparam: int,
+    dim_aparam: int,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Normalize documented parameter shorthand to frame-major arrays.
+
+    This normalization must happen before automatic batching. In particular,
+    an ``(natoms, dim_aparam)`` shared atomic parameter has an atom axis first;
+    a batcher would otherwise mistake that axis for frames and slice it.
+    """
+    if fparam is not None:
+        fparam = np.asarray(fparam)
+        if fparam.size == nframes * dim_fparam:
+            fparam = fparam.reshape(nframes, dim_fparam)
+        elif fparam.size == dim_fparam:
+            fparam = np.tile(fparam.reshape(1, dim_fparam), (nframes, 1))
+        else:
+            raise RuntimeError(
+                "got wrong size of frame param, should be either "
+                f"{nframes} x {dim_fparam} or {dim_fparam}"
+            )
+    if aparam is not None:
+        aparam = np.asarray(aparam)
+        if aparam.size == nframes * natoms * dim_aparam:
+            aparam = aparam.reshape(nframes, natoms, dim_aparam)
+        elif aparam.size == natoms * dim_aparam:
+            aparam = np.tile(aparam.reshape(1, natoms, dim_aparam), (nframes, 1, 1))
+        elif aparam.size == dim_aparam:
+            aparam = np.tile(aparam.reshape(1, 1, dim_aparam), (nframes, natoms, 1))
+        else:
+            raise RuntimeError(
+                "got wrong size of atomic param, should be either "
+                f"{nframes} x {natoms} x {dim_aparam} or "
+                f"{natoms} x {dim_aparam} or {dim_aparam}"
+            )
+    return fparam, aparam
+
+
 class DeepEvalBackend(ABC):
     """Low-level Deep Evaluator interface.
 
@@ -947,28 +989,18 @@ class DeepEval(ABC):
         coords = coords.reshape(nframes, natoms, 3)
         if cells is not None:
             cells = cells.reshape(nframes, 3, 3)
-        if fparam is not None:
-            fdim = self.get_dim_fparam()
-            if fparam.size == nframes * fdim:
-                fparam = np.reshape(fparam, [nframes, fdim])
-            elif fparam.size == fdim:
-                fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
-            else:
-                raise RuntimeError(
-                    f"got wrong size of frame param, should be either {nframes} x {fdim} or {fdim}"
-                )
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         if aparam is not None:
-            fdim = self.get_dim_aparam()
-            if aparam.size == nframes * natoms * fdim:
-                aparam = np.reshape(aparam, [nframes, natoms * fdim])
-            elif aparam.size == natoms * fdim:
-                aparam = np.tile(aparam.reshape([-1]), [nframes, 1])
-            elif aparam.size == fdim:
-                aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
-            else:
-                raise RuntimeError(
-                    f"got wrong size of frame param, should be either {nframes} x {natoms} x {fdim} or {natoms} x {fdim} or {fdim}"
-                )
+            # Preserve the historical flattened backend ABI used by the public
+            # wrapper; backend adapters normalize it back to frame-major 3-D.
+            aparam = aparam.reshape(nframes, natoms * self.get_dim_aparam())
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
     def get_sel_type(self) -> list[int]:
