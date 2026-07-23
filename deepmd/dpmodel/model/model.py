@@ -31,8 +31,8 @@ from deepmd.dpmodel.model.dos_model import (
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
-from deepmd.dpmodel.model.dpa4_native_spin_model import (
-    DPA4NativeSpinModel,
+from deepmd.dpmodel.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
@@ -201,12 +201,15 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
-def get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
-    """Get a DPA4/SeZM native (virtual-atom-free) spin model from a dictionary.
+def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
+    """Get a native (virtual-atom-free) spin model from a dictionary.
 
     Unlike :func:`get_spin_model`, no virtual atoms or doubled type map are
     introduced: ``spin`` is injected into the descriptor config as
-    ``use_spin`` and consumed by the descriptor's equivariant spin embedding.
+    ``use_spin`` and consumed by the descriptor's equivariant spin
+    embedding. Any descriptor declaring ``supports_native_spin()`` is
+    eligible; the gate is the capability method, not a descriptor-type
+    list.
 
     Parameters
     ----------
@@ -214,10 +217,6 @@ def get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
         The data to construct the model.
     """
     data = copy.deepcopy(data)
-    if data["descriptor"]["type"] not in _DPA4_SEZM_DESCRIPTOR_TYPES:
-        raise NotImplementedError(
-            "spin scheme 'native' requires the DPA4/SeZM descriptor"
-        )
     if data["descriptor"].get("add_chg_spin_ebd", False):
         raise NotImplementedError(
             "charge-spin FiLM combined with native spin on the graph route "
@@ -233,8 +232,31 @@ def get_dpa4_native_spin_model(data: dict) -> DPA4NativeSpinModel:
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin
-    backbone_model = get_standard_model(data)
-    return DPA4NativeSpinModel(backbone_model=backbone_model, spin=spin)
+    ntypes = len(data["type_map"])
+    try:
+        descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
+    except TypeError as err:
+        # A descriptor without native spin support rejects the injected
+        # ``use_spin`` keyword at construction; translate to the
+        # capability-gate error.
+        raise NotImplementedError(
+            "spin scheme 'native' requires a descriptor with native spin "
+            "support (supports_native_spin()); descriptor type "
+            f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
+        ) from err
+    if not descriptor.supports_native_spin():
+        raise NotImplementedError(
+            "spin scheme 'native' requires a descriptor declaring "
+            "supports_native_spin()"
+        )
+    return NativeSpinEnergyModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=data["type_map"],
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=data.get("pair_exclude_types", []),
+        spin=spin,
+    )
 
 
 def get_model(data: dict) -> BaseModel:
@@ -249,7 +271,7 @@ def get_model(data: dict) -> BaseModel:
     if model_type == "standard":
         if "spin" in data:
             if data["spin"].get("scheme", "deepspin") == "native":
-                return get_dpa4_native_spin_model(data)
+                return get_native_spin_model(data)
             return get_spin_model(data)
         elif "use_srtab" in data:
             return get_zbl_model(data)

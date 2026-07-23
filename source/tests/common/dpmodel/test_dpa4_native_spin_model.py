@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""dpmodel tests for :class:`DPA4NativeSpinModel` (model-level native spin)."""
+"""dpmodel tests for :class:`NativeSpinEnergyModel` (model-level native spin)."""
 
 import copy
 
@@ -11,6 +11,9 @@ from deepmd.dpmodel.model.base_model import (
 )
 from deepmd.dpmodel.model.model import (
     get_model,
+)
+from deepmd.dpmodel.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 
 from ...dpa4_fixtures import (
@@ -76,26 +79,33 @@ class TestDPA4NativeSpinModel:
 
     def test_serialize_roundtrip(self):
         data = self.model.serialize()
-        assert data["type"] == "dpa4_native_spin"
+        assert data["type"] == "native_spin"
         model2 = BaseModel.deserialize(data)
         out0 = self.model.call(self.coord, self.atype, self.spin, box=self.box)
         out1 = model2.call(self.coord, self.atype, self.spin, box=self.box)
         np.testing.assert_allclose(out0["energy"], out1["energy"], rtol=1e-12)
 
-    def test_sezm_native_spin_alias_deserializes(self):
+    @pytest.mark.parametrize(
+        "legacy_type",
+        [
+            "dpa4_native_spin",  # descriptor-specific pre-rename wire type
+            "sezm_native_spin",  # pt backend's own wire type (pt payload layout differs)
+        ],
+    )
+    def test_legacy_wire_types_fail_fast(self, legacy_type):
+        # NativeSpinEnergyModel is descriptor-agnostic; mapping it to a
+        # descriptor-specific wire string would be confusing, so the ONLY
+        # registered type is "native_spin". Legacy strings raise the
+        # registry's unknown-type error instead of silently dispatching.
         data = self.model.serialize()
-        data["type"] = "sezm_native_spin"  # pt wire string
-        model2 = BaseModel.deserialize(data)
-        out1 = model2.call(self.coord, self.atype, self.spin, box=self.box)
-        np.testing.assert_allclose(
-            self.model.call(self.coord, self.atype, self.spin, box=self.box)["energy"],
-            out1["energy"],
-            rtol=1e-12,
-        )
+        data["type"] = legacy_type
+        with pytest.raises(RuntimeError, match=legacy_type):
+            BaseModel.deserialize(data)
 
     def test_dense_route_spin_raises(self):
+        # The model IS the standard model (is-a): call_common is its own.
         with pytest.raises(NotImplementedError, match="NeighborGraph"):
-            self.model.backbone_model.call_common(
+            self.model.call_common(
                 self.coord,
                 self.atype,
                 self.box,
@@ -108,10 +118,17 @@ class TestDPA4NativeSpinModel:
         with pytest.raises(NotImplementedError):
             get_model(cfg)
 
-    def test_non_dpa4_descriptor_raises(self):
+    def test_non_native_spin_descriptor_raises(self):
+        # The gate is the ``supports_native_spin()`` capability, not a
+        # descriptor-type list.
         cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
-        cfg["descriptor"] = {"type": "se_e2_a"}
-        with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
+        cfg["descriptor"] = {
+            "type": "se_e2_a",
+            "rcut": 4.0,
+            "rcut_smth": 3.5,
+            "sel": [8, 8],
+        }
+        with pytest.raises(NotImplementedError, match="native spin"):
             get_model(cfg)
 
     def test_add_chg_spin_ebd_raises(self):
@@ -152,7 +169,7 @@ class TestNativeSpinConfigForms:
         model = get_model(config)
         assert model.spin.use_spin.tolist() == expected
         # The descriptor consumes the SAME normalized boolean list.
-        descriptor = model.backbone_model.atomic_model.descriptor
+        descriptor = model.atomic_model.descriptor
         assert [bool(flag) for flag in descriptor.use_spin] == expected
 
     def test_use_spin_unknown_symbol_raises(self):
@@ -170,3 +187,38 @@ class TestNativeSpinConfigForms:
     def test_allow_missing_label_default_false(self):
         model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
         assert model.spin.allow_missing_label is False
+
+
+class TestNativeSpinModelRegistryDispatch:
+    """Wire-type + registry contract of ``make_native_spin_model`` classes.
+
+    Review 3638137290 (PR #5884): dispatch goes through each backend's
+    plugin registry (backend-aware), not a hard-coded branch in
+    ``BaseBaseModel.deserialize``; the serialized shape is the make_model
+    FLAT dict + ``spin`` field, not the legacy nested wrapper shape.
+    """
+
+    def _inputs(self):
+        rng = np.random.default_rng(5)
+        coord = rng.uniform(0.5, 5.5, size=(1, 6, 3))
+        atype = np.array([[0, 0, 1, 0, 1, 1]], dtype=np.int64)
+        spin = rng.normal(size=(1, 6, 3))
+        box = 8.0 * np.eye(3, dtype=np.float64)[None]
+        return coord, atype, spin, box
+
+    def test_serialize_emits_native_spin_flat_shape(self):
+        model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
+        assert type(model) is NativeSpinEnergyModel
+        data = model.serialize()
+        assert data["type"] == "native_spin"
+        assert "spin" in data
+        assert "backbone_model" not in data  # make_model flat shape, not nested
+
+    def test_basemodel_deserialize_dispatches_via_registry(self):
+        model = get_model(copy.deepcopy(NATIVE_SPIN_CONFIG))
+        m2 = BaseModel.deserialize(model.serialize())
+        assert type(m2) is NativeSpinEnergyModel
+        coord, atype, spin, box = self._inputs()
+        e1 = model.call(coord, atype, spin, box=box)["energy"]
+        e2 = m2.call(coord, atype, spin, box=box)["energy"]
+        np.testing.assert_allclose(e1, e2, rtol=1e-12)
