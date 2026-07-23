@@ -35,67 +35,27 @@
 using namespace LAMMPS_NS;
 using namespace std;
 
-static int stringCmp(const void* a, const void* b) {
-  char* m = (char*)a;
-  char* n = (char*)b;
-  int i, sum = 0;
-
-  for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++) {
-    if (m[i] == n[i]) {
-      continue;
-    } else {
-      sum = m[i] - n[i];
-      break;
-    }
-  }
-  return sum;
-}
-
 int PairDeepBaseModel::get_node_rank() {
-  char host_name[MPI_MAX_PROCESSOR_NAME];
-  memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-  char (*host_names)[MPI_MAX_PROCESSOR_NAME];
-  int n, namelen, color, rank, nprocs, myrank;
-  size_t bytes;
-  MPI_Comm nodeComm;
+  int rank = 0;
+  MPI_Comm_rank(world, &rank);
 
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-  MPI_Get_processor_name(host_name, &namelen);
-
-  bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
-  host_names = (char (*)[MPI_MAX_PROCESSOR_NAME])malloc(bytes);
-  for (int ii = 0; ii < nprocs; ii++) {
-    memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-  }
-
-  strcpy(host_names[rank], host_name);
-
-  for (n = 0; n < nprocs; n++) {
-    MPI_Bcast(&(host_names[n]), MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n,
-              MPI_COMM_WORLD);
-  }
-  qsort(host_names, nprocs, sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
-
-  color = 0;
-  for (n = 0; n < nprocs - 1; n++) {
-    if (strcmp(host_name, host_names[n]) == 0) {
-      break;
-    }
-    if (strcmp(host_names[n], host_names[n + 1])) {
-      color++;
-    }
-  }
-
-  MPI_Comm_split(MPI_COMM_WORLD, color, 0, &nodeComm);
-  MPI_Comm_rank(nodeComm, &myrank);
-
-  MPI_Barrier(MPI_COMM_WORLD);
-  int looprank = myrank;
-  // printf (" Assigning device %d  to process on node %s rank %d,
-  // OK\n",looprank,  host_name, rank );
-  free(host_names);
-  return looprank;
+#ifdef MPI_COMM_TYPE_SHARED
+  // LAMMPS may run on a partition or an embedding-provided subcommunicator.
+  // Split that communicator by shared-memory domain so independent LAMMPS
+  // instances never enter collectives on MPI_COMM_WORLD.
+  MPI_Comm node_comm;
+  MPI_Comm_split_type(world, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL,
+                      &node_comm);
+  int node_rank = 0;
+  MPI_Comm_rank(node_comm, &node_rank);
+  MPI_Comm_free(&node_comm);
+  return node_rank;
+#else
+  // LAMMPS's serial MPI stubs predate MPI-3 and do not provide
+  // MPI_Comm_split_type.  Their only communicator contains one rank, so its
+  // communicator rank is also the correct node-local rank.
+  return rank;
+#endif
 }
 
 std::string PairDeepBaseModel::get_file_content(const std::string& model) {
@@ -105,19 +65,19 @@ std::string PairDeepBaseModel::get_file_content(const std::string& model) {
     return std::string();
   }
   int myrank = 0, root = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  MPI_Comm_rank(world, &myrank);
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
     deepmd_compat::read_file_to_string(model, file_content);
     nchar = file_content.size();
   }
-  MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);
+  MPI_Bcast(&nchar, 1, MPI_INT, root, world);
   char* buff = (char*)malloc(sizeof(char) * nchar);
   if (myrank == root) {
     memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
   }
-  MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+  MPI_Bcast(buff, nchar, MPI_CHAR, root, world);
   file_content.resize(nchar);
   for (unsigned ii = 0; ii < nchar; ++ii) {
     file_content[ii] = buff[ii];
@@ -139,25 +99,48 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
   assert(do_compute_fparam);
 
   int icompute = modify->find_compute(compute_fparam_id);
-  Compute* compute = modify->compute[icompute];
+  if (icompute < 0) {
+    error->all(FLERR,
+               "compute " + compute_fparam_id + " for fparam is not found");
+  }
 
+  Compute* compute = modify->compute[icompute];
   if (!compute) {
-    error->all(FLERR, "compute id is not found: " + compute_fparam_id);
+    error->all(FLERR,
+               "compute " + compute_fparam_id + " for fparam is invalid");
   }
   fparam.resize(dim_fparam);
 
   if (dim_fparam == 1) {
+    if (!compute->scalar_flag) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " does not provide a scalar for fparam");
+    }
     if (!(compute->invoked_flag & Compute::INVOKED_SCALAR)) {
       compute->compute_scalar();
       compute->invoked_flag |= Compute::INVOKED_SCALAR;
     }
     fparam[0] = compute->scalar;
   } else if (dim_fparam > 1) {
+    if (!compute->vector_flag) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " does not provide a vector for fparam");
+    }
     if (!(compute->invoked_flag & Compute::INVOKED_VECTOR)) {
       compute->compute_vector();
       compute->invoked_flag |= Compute::INVOKED_VECTOR;
     }
+    // Variable-length computes update size_vector when they are invoked, so
+    // validate the realized length rather than their initial zero capacity.
+    if (compute->size_vector < dim_fparam) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " vector is shorter than fparam dimension");
+    }
     double* cvector = compute->vector;
+    if (!cvector) {
+      error->all(FLERR, "compute " + compute_fparam_id +
+                            " returned a null vector for fparam");
+    }
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
     }
@@ -214,10 +197,30 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   assert(do_compute_aparam);
 
   int icompute = modify->find_compute(compute_aparam_id);
-  Compute* compute = modify->compute[icompute];
+  if (icompute < 0) {
+    error->all(FLERR,
+               "compute " + compute_aparam_id + " for aparam is not found");
+  }
 
+  Compute* compute = modify->compute[icompute];
   if (!compute) {
-    error->all(FLERR, "compute id is not found: " + compute_aparam_id);
+    error->all(FLERR,
+               "compute " + compute_aparam_id + " for aparam is invalid");
+  }
+  if (!compute->peratom_flag) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " does not provide per-atom data for aparam");
+  }
+  // LAMMPS represents per-atom vectors with zero columns and per-atom
+  // arrays with a positive column count. Validate that layout before
+  // invoking the compute so the corresponding result pointer is safe to use.
+  if (dim_aparam == 1 && compute->size_peratom_cols != 0) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " does not provide a per-atom vector for aparam");
+  }
+  if (dim_aparam > 1 && compute->size_peratom_cols < dim_aparam) {
+    error->all(FLERR, "compute " + compute_aparam_id +
+                          " array has fewer columns than aparam dimension");
   }
   int nlocal = atom->nlocal;
   aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
@@ -226,12 +229,29 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
     compute->compute_peratom();
     compute->invoked_flag |= Compute::INVOKED_PERATOM;
   }
+  // Empty MPI subdomains legitimately have no per-atom storage. The result is
+  // already an empty vector, so do not require output pointers in that case.
+  if (nlocal == 0) {
+    return;
+  }
   if (dim_aparam == 1) {
     double* cvector = compute->vector_atom;
+    if (!cvector) {
+      error->one(FLERR, "compute " + compute_aparam_id +
+                            " returned a null per-atom vector for aparam");
+    }
     aparam.assign(cvector, cvector + nlocal);
   } else if (dim_aparam > 1) {
     double** carray = compute->array_atom;
+    if (!carray) {
+      error->one(FLERR, "compute " + compute_aparam_id +
+                            " returned a null per-atom array for aparam");
+    }
     for (int ii = 0; ii < nlocal; ++ii) {
+      if (!carray[ii]) {
+        error->one(FLERR, "compute " + compute_aparam_id +
+                              " returned a null per-atom array row for aparam");
+      }
       for (int jj = 0; jj < dim_aparam; ++jj) {
         aparam[ii * dim_aparam + jj] = carray[ii][jj];
       }
@@ -358,13 +378,11 @@ PairDeepBaseModel::PairDeepBaseModel(
   force_unit_cvt_factor = ener_unit_cvt_factor / dist_unit_cvt_factor;
 
   restartinfo = 1;
+  // Enable the compute centroid/stress/atom interface for the atomic virial.
 #if LAMMPS_VERSION_NUMBER >= 20201130
-  centroidstressflag =
-      CENTROID_AVAIL;  // set centroidstressflag = CENTROID_AVAIL to allow the
-                       // use of the centroid/stress/atom. Added by Davide Tisi
+  centroidstressflag = CENTROID_AVAIL;
 #else
-  centroidstressflag = 2;  // set centroidstressflag = 2 to allow the use of the
-                           // centroid/stress/atom. Added by Davide Tisi
+  centroidstressflag = 2;
 #endif
   pppmflag = 1;
   respa_enable = 0;
@@ -379,6 +397,12 @@ PairDeepBaseModel::PairDeepBaseModel(
   out_rel = 0;
   out_rel_v = 0;
   stdf_comm_buff_size = 0;
+  counts = nullptr;
+  displacements = nullptr;
+  tagsend = nullptr;
+  tagrecv = nullptr;
+  stdfsend = nullptr;
+  stdfrecv = nullptr;
   eps = 0.;
   eps_v = 0.;
   scale = NULL;
@@ -397,7 +421,8 @@ PairDeepBaseModel::PairDeepBaseModel(
   // set comm size needed by this Pair
   comm_reverse = 1;
 
-  print_summary("  ");
+  // The model summary is emitted by the derived constructor: the referenced
+  // model members are not yet constructed during base construction.
 }
 
 void PairDeepBaseModel::print_summary(const string pre) const {
@@ -426,11 +451,38 @@ void PairDeepBaseModel::print_summary(const string pre) const {
 }
 
 PairDeepBaseModel::~PairDeepBaseModel() {
+  destroy_model_deviation_buffers();
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
     memory->destroy(scale);
   }
+}
+
+void PairDeepBaseModel::ensure_model_deviation_buffers() {
+  if (counts == nullptr) {
+    memory->create(counts, comm->nprocs, "deepmd:counts");
+    memory->create(displacements, comm->nprocs, "deepmd:displacements");
+  }
+
+  const int ntotal = atom->natoms;
+  if (ntotal > stdf_comm_buff_size) {
+    memory->grow(stdfsend, ntotal, "deepmd:stdfsendall");
+    memory->grow(stdfrecv, ntotal, "deepmd:stdfrecvall");
+    memory->grow(tagsend, ntotal, "deepmd:tagsendall");
+    memory->grow(tagrecv, ntotal, "deepmd:tagrecvall");
+    stdf_comm_buff_size = ntotal;
+  }
+}
+
+void PairDeepBaseModel::destroy_model_deviation_buffers() {
+  memory->destroy(counts);
+  memory->destroy(displacements);
+  memory->destroy(stdfsend);
+  memory->destroy(stdfrecv);
+  memory->destroy(tagsend);
+  memory->destroy(tagrecv);
+  stdf_comm_buff_size = 0;
 }
 
 void PairDeepBaseModel::allocate() {
@@ -464,7 +516,8 @@ void PairDeepBaseModel::allocate() {
 void PairDeepBaseModel::read_restart(FILE*) { is_restart = true; }
 
 void PairDeepBaseModel::write_restart(FILE*) {
-  // pass
+  // No pair state is stored in the restart; the model is reloaded from its
+  // path.
 }
 
 void PairDeepBaseModel::init_style() {
@@ -477,17 +530,7 @@ void PairDeepBaseModel::init_style() {
   // neighbor->requests[irequest]->newton = 2;
 #endif
   if (out_each == 1) {
-    int ntotal = atom->natoms;
-    int nprocs = comm->nprocs;
-    if (ntotal > stdf_comm_buff_size) {
-      stdf_comm_buff_size = ntotal;
-    }
-    memory->create(counts, nprocs, "deepmd:counts");
-    memory->create(displacements, nprocs, "deepmd:displacements");
-    memory->create(stdfsend, ntotal, "deepmd:stdfsendall");
-    memory->create(stdfrecv, ntotal, "deepmd:stdfrecvall");
-    memory->create(tagsend, ntotal, "deepmd:tagsendall");
-    memory->create(tagrecv, ntotal, "deepmd:tagrecvall");
+    ensure_model_deviation_buffers();
   }
 }
 

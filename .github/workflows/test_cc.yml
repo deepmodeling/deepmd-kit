@@ -14,9 +14,11 @@ name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' && 'cpu' || 'ubuntu-22.04' }}
     strategy:
       matrix:
+        # Only regular jobs run the LAMMPS tests. Use self-hosted CPU runners
+        # for those jobs in deepmodeling, with a hosted fallback for forks.
         include:
           - check_memleak: true
             enable_tensorflow: true
@@ -36,6 +38,11 @@ jobs:
             enable_paddle: true
     steps:
       - uses: actions/checkout@v7
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential
+        if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -76,7 +83,7 @@ jobs:
         if: matrix.enable_paddle
       - run: |
           export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-          pytest --cov=deepmd source/lmp/tests
+          source/install/retry_on_sigterm.sh 3 pytest --cov=deepmd source/lmp/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1

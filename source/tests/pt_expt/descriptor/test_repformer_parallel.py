@@ -162,6 +162,14 @@ class TestRepformerParallel(TestCaseSingleFrameWithNlist):
             type_map=None,
             seed=GLOBAL_SEED,
         ).to(self.device)
+        # Pin the dense route: this test compares the dense comm_dict/border_op
+        # exchange against the dense mapping-gather default. Since the graph
+        # adapter became the default route for graph-eligible configs, the
+        # nonzero-davg fixture would hit the documented dense padding-residual
+        # divergence (see DescrptDPA2.call_graph Notes) instead of testing
+        # the parallel exchange.
+        dd.disable_graph_lower()
+
         dd.repinit.mean = torch.tensor(davg, dtype=dtype, device=self.device)
         dd.repinit.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
         dd.repformers.mean = torch.tensor(davg_2, dtype=dtype, device=self.device)

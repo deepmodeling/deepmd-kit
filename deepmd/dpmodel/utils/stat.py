@@ -29,6 +29,35 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _require_stat_file_items(
+    stat_file_path: DPPath | None,
+    items: list[str],
+) -> None:
+    """Require named statistics items when a cache is opened read-only.
+
+    Parameters
+    ----------
+    stat_file_path : DPPath | None
+        Statistics cache path.
+    items : list[str]
+        Relative item names required by the current statistics consumer.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a read-only cache does not contain one or more required items.
+    """
+    if stat_file_path is None or getattr(stat_file_path, "mode", None) != "r":
+        return
+    missing = [item for item in items if not (stat_file_path / item).is_file()]
+    if missing:
+        missing_items = ", ".join(repr(item) for item in missing)
+        raise FileNotFoundError(
+            f"Read-only statistics cache {stat_file_path} is missing "
+            f"required item(s): {missing_items}."
+        )
+
+
 def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str]:
     """Collect observed element types from sampled training data.
 
@@ -65,6 +94,7 @@ def _restore_observed_type_from_file(
     """Try to load observed_type from stat file."""
     if stat_file_path is None:
         return None
+    _require_stat_file_items(stat_file_path, ["observed_type"])
     fp = stat_file_path / "observed_type"
     if fp.is_file():
         arr = fp.load_numpy()
@@ -92,6 +122,10 @@ def _restore_from_file(
     """Restore bias and std from stat file."""
     if stat_file_path is None:
         return None, None
+    _require_stat_file_items(
+        stat_file_path,
+        [item for key in keys for item in (f"bias_atom_{key}", f"std_atom_{key}")],
+    )
     stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
     if all(not (ii.is_file()) for ii in stat_files):
         return None, None

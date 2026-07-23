@@ -114,6 +114,8 @@ def merge_env_stat(
 
 
 class EnvMatStat(BaseEnvMatStat):
+    r"""Environment statistics estimating :math:`\mu=\langle R\rangle` and scale."""
+
     def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
@@ -274,11 +276,9 @@ class EnvMatStatSe(EnvMatStat):
             device=array_api_compat.device(data[0]["coord"]),
         )
         for system in data:
-            coord, atype, box = (
-                system["coord"],
-                system["atype"],
-                system["box"],
-            )
+            coord = system["coord"]
+            atype = system["atype"]
+            box = system.get("box")
             nframes, nloc = atype.shape[:2]
             pair_excl = None
             if "pair_exclude_types" in system:
@@ -369,6 +369,15 @@ class EnvMatStatSe(EnvMatStat):
                 if self.last_dim == 4:
                     env_mats[f"a_{type_i}"] = dd[:, 1:]
                 yield self.compute_stat(env_mats)
+
+    def get_stat_keys(self) -> list[str]:
+        """Get the dataset names required for a complete statistics cache."""
+        components = ("r", "a") if self.last_dim == 4 else ("r",)
+        return [
+            f"{component}_{type_i}"
+            for type_i in range(self.descriptor.get_ntypes())
+            for component in components
+        ]
 
     def get_hash(self) -> str:
         """Get the hash of the environment matrix.

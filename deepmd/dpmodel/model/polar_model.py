@@ -28,6 +28,10 @@ DPPolarModel_ = make_model(DPPolarAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("polar")
 class PolarModel(DPModelCommon, DPPolarModel_):
+    r"""Polarizability model reducing tensors as
+    :math:`\boldsymbol\alpha=\sum_i\boldsymbol\alpha_i`.
+    """
+
     def __init__(
         self,
         *args: Any,

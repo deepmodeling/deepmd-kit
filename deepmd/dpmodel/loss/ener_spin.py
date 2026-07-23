@@ -11,6 +11,10 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.loss.loss import (
     Loss,
 )
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    per_frame_component_mean,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -21,6 +25,32 @@ from deepmd.utils.version import (
 
 class EnergySpinLoss(Loss):
     r"""Loss on energy, real force, magnetic force and virial for spin models.
+
+    For mean-squared error, the objective is a weighted sum
+
+    .. math::
+
+        L = p_E\left\langle\frac{(\Delta E)^2}{N^q}\right\rangle
+        +p_{F_r}\left\langle(\Delta F^r_{i\alpha})^2
+        \right\rangle_{i,\alpha}
+        +p_{F_m}\left\langle(\Delta F^m_{i\alpha})^2
+        \right\rangle_{i\in\mathcal M,\alpha}
+        +p_\Xi\left\langle\frac{(\Delta\Xi_{\alpha\beta})^2}{N^q}
+        \right\rangle_{\alpha,\beta}
+        +p_{E_i}\langle(\Delta E_i)^2\rangle,
+
+    where :math:`q=2` for intensive energy/virial normalization and :math:`q=1`
+    for the legacy normalization, and :math:`\mathcal M` is the set selected by
+    ``mask_mag``.  Thus force and virial errors are componentwise means rather
+    than means of squared vector or tensor norms.  In MAE mode the squared
+    component differences are replaced by absolute differences and extensive
+    terms use :math:`1/N`.  Every prefactor is interpolated using the current
+    learning rate,
+
+    .. math::
+        p_X(\eta)=p_X^{\mathrm{limit}}+
+        \left(p_X^{\mathrm{start}}-p_X^{\mathrm{limit}}\right)
+        \frac{\eta}{\eta_0}.
 
     Parameters
     ----------
@@ -159,7 +189,7 @@ class EnergySpinLoss(Loss):
                 se_e = xp.square(energy_pred - energy_label)  # [nf, k]
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization by real-atom count.
-                    per_frame_e = xp.mean(xp.reshape(se_e, (_nf, -1)), axis=-1)  # [nf]
+                    per_frame_e = per_frame_component_mean(se_e)  # [nf]
                     loss += pref_e * xp.mean(per_frame_e * inv**norm_exp)
                     more_loss["rmse_e"] = self.display_if_exist(
                         xp.sqrt(xp.mean(per_frame_e * inv**2)), find_energy
@@ -174,9 +204,8 @@ class EnergySpinLoss(Loss):
                 l1_ener_loss = xp.mean(xp.abs(energy_pred - energy_label))
                 if maskf is not None:
                     # Idiom 2 (extensive) with abs: per-frame normalization by real-atom count.
-                    abs_e = xp.abs(energy_pred - energy_label)  # [nf, k]
-                    per_frame_ae = xp.mean(
-                        xp.reshape(abs_e, (_nf, -1)), axis=-1
+                    per_frame_ae = per_frame_component_mean(
+                        xp.abs(energy_pred - energy_label)
                     )  # [nf]
                     l1_ener_masked = xp.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
@@ -190,8 +219,9 @@ class EnergySpinLoss(Loss):
                     )
             if mae:
                 if maskf is not None:
-                    abs_e = xp.abs(energy_pred - energy_label)
-                    per_frame_ae = xp.mean(xp.reshape(abs_e, (_nf, -1)), axis=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        xp.abs(energy_pred - energy_label)
+                    )
                     mae_e = xp.mean(per_frame_ae * inv)
                 else:
                     mae_e = xp.mean(xp.abs(energy_pred - energy_label)) * atom_norm
@@ -208,23 +238,15 @@ class EnergySpinLoss(Loss):
                 diff_fr = force_label - force_pred  # [nf, nloc, 3]
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=3).
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
-                    sq_fr = xp.square(diff_fr) * maskf_col  # [nf, nloc, 3]
-                    per_frame_fr_sum = xp.sum(
-                        xp.reshape(sq_fr, (_nf, -1)), axis=-1
-                    )  # [nf]
-                    per_frame_fr_dof = xp.sum(maskf, axis=-1) * 3  # [nf]
-                    l2_force_real_loss = xp.mean(per_frame_fr_sum / per_frame_fr_dof)
+                    l2_force_real_loss = masked_atom_mean(xp.square(diff_fr), maskf, 3)
                     loss += pref_fr * l2_force_real_loss
                     more_loss["rmse_fr"] = self.display_if_exist(
                         xp.sqrt(l2_force_real_loss), find_force
                     )
                     if mae:
-                        abs_fr = xp.abs(force_label - force_pred) * maskf_col
-                        per_frame_mae_sum = xp.sum(
-                            xp.reshape(abs_fr, (_nf, -1)), axis=-1
+                        mae_fr = masked_atom_mean(
+                            xp.abs(force_label - force_pred), maskf, 3
                         )
-                        mae_fr = xp.mean(per_frame_mae_sum / per_frame_fr_dof)
                         more_loss["mae_fr"] = self.display_if_exist(mae_fr, find_force)
                 else:
                     l2_force_real_loss = xp.mean(xp.square(diff_fr))
@@ -239,13 +261,7 @@ class EnergySpinLoss(Loss):
                 abs_diff_fr = xp.abs(force_label - force_pred)  # [nf, nloc, 3]
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=3) with abs.
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))
-                    abs_fr = abs_diff_fr * maskf_col  # [nf, nloc, 3]
-                    per_frame_sum = xp.sum(
-                        xp.reshape(abs_fr, (_nf, -1)), axis=-1
-                    )  # [nf]
-                    per_frame_dof = xp.sum(maskf, axis=-1) * 3  # [nf]
-                    l1_force_real_masked = xp.mean(per_frame_sum / per_frame_dof)
+                    l1_force_real_masked = masked_atom_mean(abs_diff_fr, maskf, 3)
                     loss += pref_fr * l1_force_real_masked
                     more_loss["mae_fr"] = self.display_if_exist(
                         l1_force_real_masked, find_force
@@ -268,14 +284,18 @@ class EnergySpinLoss(Loss):
             # zero out non-magnetic atoms
             diff_fm = (force_mag_label - force_mag_pred) * mask_float
             n_valid = xp.sum(mask_float)
+            # Guard the denominator itself because array backends may evaluate
+            # both branches of ``where``. This is safe under JAX tracing and
+            # makes an all-empty magnetic mask contribute exactly zero.
+            safe_n_valid = xp.where(n_valid > 0, n_valid, xp.ones_like(n_valid))
             if self.loss_func == "mse":
-                l2_force_mag_loss = xp.sum(xp.square(diff_fm)) / (n_valid * 3)
+                l2_force_mag_loss = xp.sum(xp.square(diff_fm)) / (safe_n_valid * 3)
                 loss += pref_fm * l2_force_mag_loss
                 more_loss["rmse_fm"] = self.display_if_exist(
                     xp.sqrt(l2_force_mag_loss), find_force_mag
                 )
                 if mae:
-                    mae_fm = xp.sum(xp.abs(diff_fm)) / (n_valid * 3)
+                    mae_fm = xp.sum(xp.abs(diff_fm)) / (safe_n_valid * 3)
                     more_loss["mae_fm"] = self.display_if_exist(mae_fm, find_force_mag)
             elif self.loss_func == "mae":
                 abs_diff_fm = xp.abs(diff_fm)  # [nf, na, 3], zeros for non-magnetic
@@ -283,7 +303,7 @@ class EnergySpinLoss(Loss):
                 # force_mag MSE, force_real MAE and the displayed mae_fm) so the
                 # loss is batch-size independent: a 2-frame batch equals the mean
                 # of the two single-frame losses.
-                l1_force_mag_loss = xp.sum(abs_diff_fm) / (n_valid * 3)
+                l1_force_mag_loss = xp.sum(abs_diff_fm) / (safe_n_valid * 3)
                 loss += pref_fm * l1_force_mag_loss
                 more_loss["mae_fm"] = self.display_if_exist(
                     l1_force_mag_loss, find_force_mag
@@ -298,23 +318,18 @@ class EnergySpinLoss(Loss):
                 # Idiom 1 (per-atom masked mean, ncomp=1).
                 ae = xp.reshape(atom_ener, (_nf, _nloc, 1))
                 ae_label = xp.reshape(atom_ener_label, (_nf, _nloc, 1))
-                maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
                 if self.loss_func == "mse":
-                    sq = xp.square(ae_label - ae) * maskf_col  # [nf, nloc, 1]
-                    per_frame_sum = xp.sum(xp.reshape(sq, (_nf, -1)), axis=-1)  # [nf]
-                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf] (ncomp=1)
-                    l2_atom_ener_loss = xp.mean(per_frame_sum / per_frame_dof)
+                    l2_atom_ener_loss = masked_atom_mean(
+                        xp.square(ae_label - ae), maskf, 1
+                    )
                     loss += pref_ae * l2_atom_ener_loss
                     more_loss["rmse_ae"] = self.display_if_exist(
                         xp.sqrt(l2_atom_ener_loss), find_atom_ener
                     )
                 elif self.loss_func == "mae":
-                    abs_diff = xp.abs(ae_label - ae) * maskf_col  # [nf, nloc, 1]
-                    per_frame_sum = xp.sum(
-                        xp.reshape(abs_diff, (_nf, -1)), axis=-1
-                    )  # [nf]
-                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf] (ncomp=1)
-                    l1_atom_ener_loss = xp.mean(per_frame_sum / per_frame_dof)
+                    l1_atom_ener_loss = masked_atom_mean(
+                        xp.abs(ae_label - ae), maskf, 1
+                    )
                     loss += pref_ae * l1_atom_ener_loss
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_atom_ener_loss, find_atom_ener
@@ -348,15 +363,15 @@ class EnergySpinLoss(Loss):
             if self.loss_func == "mse":
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization by real-atom count.
-                    se_v = xp.square(diff_v)  # [nf, 9]
-                    per_frame_v = xp.mean(se_v, axis=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(xp.square(diff_v))  # [nf]
                     loss += pref_v * xp.mean(per_frame_v * inv**norm_exp)
                     more_loss["rmse_v"] = self.display_if_exist(
                         xp.sqrt(xp.mean(per_frame_v * inv**2)), find_virial
                     )
                     if mae:
-                        abs_v = xp.abs(diff_v)  # [nf, 9]
-                        per_frame_mae_v = xp.mean(abs_v, axis=-1)  # [nf]
+                        per_frame_mae_v = per_frame_component_mean(
+                            xp.abs(diff_v)
+                        )  # [nf]
                         mae_v = xp.mean(per_frame_mae_v * inv)
                         more_loss["mae_v"] = self.display_if_exist(mae_v, find_virial)
                 else:
@@ -372,8 +387,7 @@ class EnergySpinLoss(Loss):
                 l1_virial_loss = xp.mean(xp.abs(diff_v))
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9) with abs: per-frame normalization by real-atom count.
-                    abs_v = xp.abs(diff_v)  # [nf, 9]
-                    per_frame_v = xp.mean(abs_v, axis=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(xp.abs(diff_v))  # [nf]
                     l1_virial_masked = xp.mean(per_frame_v * inv)
                     loss += pref_v * l1_virial_masked
                     more_loss["mae_v"] = self.display_if_exist(

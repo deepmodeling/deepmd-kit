@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 #include "deepmd.hpp"
@@ -38,6 +39,7 @@ class TestInferDeepSpinModeDevi : public ::testing::Test {
     dp_md.init(
         std::vector<std::string>({"../../tests/infer/deeppot_dpa_spin.pth",
                                   "../../tests/infer/deeppot_dpa_spin.pth"}));
+    natoms = atype.size();
   };
 
   void TearDown() override {};
@@ -89,11 +91,11 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist) {
   EXPECT_EQ(edir.size(), emd.size());
   EXPECT_EQ(fdir.size(), fmd.size());
   EXPECT_EQ(fmagdir.size(), fmmagd.size());
-  // EXPECT_EQ(vdir.size(), vmd.size());
+  EXPECT_EQ(vdir.size(), vmd.size());
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_EQ(fdir[kk].size(), fmd[kk].size());
     EXPECT_EQ(fmagdir[kk].size(), fmmagd[kk].size());
-    // EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
+    EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
   }
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
@@ -103,9 +105,9 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist) {
     for (int ii = 0; ii < fmagdir[0].size(); ++ii) {
       EXPECT_LT(fabs(fmagdir[kk][ii] - fmmagd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < vdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < vdir[0].size(); ++ii) {
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
+    }
   }
 }
 
@@ -121,10 +123,11 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist_atomic) {
   deepmd::hpp::DeepSpinModelDevi& dp_md = this->dp_md;
 
   int nmodel = 2;
+  const VALUETYPE sentinel = std::numeric_limits<VALUETYPE>::quiet_NaN();
   std::vector<double> edir(nmodel), emd;
   std::vector<std::vector<VALUETYPE> > fdir(nmodel), fmagdir(nmodel),
       vdir(nmodel), fmd(nmodel), fmmagd(nmodel), vmd, aedir(nmodel), aemd,
-      avdir(nmodel), avmd(nmodel);
+      avdir(nmodel), avmd(nmodel, std::vector<VALUETYPE>(natoms * 9, sentinel));
   dp0.compute(edir[0], fdir[0], fmagdir[0], vdir[0], aedir[0], avdir[0], coord,
               spin, atype, box);
   dp1.compute(edir[1], fdir[1], fmagdir[1], vdir[1], aedir[1], avdir[1], coord,
@@ -134,15 +137,15 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist_atomic) {
   EXPECT_EQ(edir.size(), emd.size());
   EXPECT_EQ(fdir.size(), fmd.size());
   EXPECT_EQ(fmagdir.size(), fmmagd.size());
-  // EXPECT_EQ(vdir.size(), vmd.size());
+  EXPECT_EQ(vdir.size(), vmd.size());
   EXPECT_EQ(aedir.size(), aemd.size());
-  // EXPECT_EQ(avdir.size(), avmd.size());
+  ASSERT_EQ(avdir.size(), avmd.size());
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_EQ(fdir[kk].size(), fmd[kk].size());
     EXPECT_EQ(fmagdir[kk].size(), fmmagd[kk].size());
-    // EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
+    EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
     EXPECT_EQ(aedir[kk].size(), aemd[kk].size());
-    // EXPECT_EQ(avdir[kk].size(), avmd[kk].size());
+    ASSERT_EQ(avdir[kk].size(), avmd[kk].size());
   }
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
@@ -152,14 +155,16 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist_atomic) {
     for (int ii = 0; ii < fmagdir[0].size(); ++ii) {
       EXPECT_LT(fabs(fmagdir[kk][ii] - fmmagd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < vdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < vdir[0].size(); ++ii) {
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
+    }
     for (int ii = 0; ii < aedir[0].size(); ++ii) {
       EXPECT_LT(fabs(aedir[kk][ii] - aemd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < avdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < avdir[0].size(); ++ii) {
+      EXPECT_FALSE(std::isnan(avmd[kk][ii]))
+          << "hpp wrapper did not reshape model " << kk << ", element " << ii;
+      EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), EPSILON);
+    }
   }
 }

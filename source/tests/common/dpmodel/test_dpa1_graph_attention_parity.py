@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Graph-native se_atten attention (attn_layer > 0) vs the dense reference.
 
-Regime-1 parity (NeighborGraph PR-D): the graph is built FROM the same dense
+The graph is built from the same dense
 nlist (``from_dense_quartet``), so the neighbor sets are identical and the
 graph attention must reproduce ``GatedAttentionLayer``/``NeighborGatedAttention``
-bit-exactly (CPU rtol 1e-12) for ANY sel — binding or not.
+bit-exactly (CPU rtol 1e-12) for any sel.
 
 The smooth branch needs the SHAPE-STATIC graph (``compact=False`` +
 ``static_nnei``): dense smooth keeps padding slots in the softmax DENOMINATOR
@@ -137,7 +137,6 @@ class TestGraphAttentionParity:
             graph_g.reshape(dense_g.shape), dense_g, rtol=1e-12, atol=1e-12
         )
 
-    # ── smooth on the compact (carry-all) form: CLEAN DIVERGENCE by design ────
     def test_block_compact_graph_smooth_clean_divergence(self) -> None:
         """Carry-all smooth attention deliberately DIVERGES from dense.
 
@@ -145,8 +144,7 @@ class TestGraphAttentionParity:
         softmax DENOMINATOR at weight ``exp(-attnw_shift)``, which makes the
         dense output depend on ``sel`` itself (same physical neighbors,
         different sel => different output, up to ~1e-4). The carry-all graph
-        drops those phantom terms — the sel-independent math (user decision
-        2026-07-03, PR-D). Bit-parity (1e-12) is proven on the shape-static
+        drops those phantom terms. Bit-parity (1e-12) is proven on the shape-static
         adapter (same padded pairs on both sides, ``test_dotr_smooth``); here
         we pin only that the compact form stays CLOSE to dense (the artifact
         is a bounded denominator perturbation) while NOT bit-equal.
@@ -178,8 +176,7 @@ class TestGraphAttentionParity:
         # ... but NOT bit-equal: the phantom-padding terms are really gone
         assert np.max(np.abs(graph_g - dense_g)) > 1e-9
 
-    # ── torch namespace smoke (CLAUDE.md: catches numpy-weight leaks) ────────
-    # NB: the smoke runs the BLOCK kernel with a torch type_embedding table;
+    # The smoke test runs the block kernel with a torch type_embedding table;
     # the raw dpmodel adapter is numpy-weighted by design (pt_expt wraps it).
     def test_torch_block_matches_numpy(self) -> None:
         import torch
@@ -229,9 +226,11 @@ class TestGraphEligibility:
         assert dd.uses_graph_lower() is True
 
     def test_se_atten_v2_graph_equals_dense(self) -> None:
-        """The graph-routed se_atten_v2 ``call`` is bit-exact with ``_call_dense``
+        """The se_atten_v2 graph adapter is bit-exact with ``_call_dense``
         (the ``static_nnei`` adapter reproduces the dense phantom terms despite
-        smooth=True) at a non-binding sel.
+        smooth=True) at a non-binding sel, for a fresh model (trivial
+        statistics -- the adapter's bit-exact regime; the public ``call``
+        itself is always dense).
         """
         from deepmd.dpmodel.descriptor.se_atten_v2 import (
             DescrptSeAttenV2,
@@ -246,10 +245,10 @@ class TestGraphEligibility:
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
             coord, atype, dd.get_rcut(), dd.get_sel(), mixed_types=True, box=None
         )
-        routed = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        adapter = dd._call_graph_adapter(ext_coord, ext_atype, nlist, mapping)
         dense = dd._call_dense(ext_coord, ext_atype, nlist)
-        assert len(routed) == len(dense)
-        for r, d in zip(routed, dense, strict=True):
+        assert len(adapter) == len(dense)
+        for r, d in zip(adapter, dense, strict=True):
             if r is None:
                 assert d is None
                 continue

@@ -152,6 +152,57 @@ def is_prime(n: int) -> bool:
     return True
 
 
+def forbidden_dims_from_model(
+    model: torch.nn.Module,
+    task_buf_vals: tuple[torch.Tensor, ...] = (),
+) -> set[int]:
+    """Prime-collision set for trace-dim selection.
+
+    Collects every ``> 1`` dim of the model's parameters/buffers (so
+    :func:`next_safe_prime` never aliases an internal dim like ``g2_dim`` /
+    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
+    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the
+    compiled-training traces (``_trace_and_compile`` /
+    ``_trace_and_compile_graph``) and the graph ``.pt2`` export trace
+    (``_trace_and_export``); each caller adds its path-specific dims
+    (nall/nloc/nsel for dense, charge_spin for both) on top of this base set.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model whose parameter/buffer/conditioning dims to collect.
+    task_buf_vals : tuple of torch.Tensor
+        Per-task buffers promoted to FX placeholders (multi-task compiled
+        training); their dims join the forbidden set.
+
+    Returns
+    -------
+    set of int
+        Every ``> 1`` dimension a trace-time size must not collide with.
+    """
+    forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    for _getter_name in ("get_dim_fparam", "get_dim_aparam"):
+        try:
+            # resolve inside the try: a model without the accessor must fall
+            # through the best-effort path, not raise during tuple building
+            _dim = getattr(model, _getter_name)()
+            if _dim > 1:
+                forbidden.add(int(_dim))
+        except Exception:
+            pass  # best-effort: dim unavailable -> nothing to forbid
+    for _tbv in task_buf_vals:
+        for _d in _tbv.shape:
+            if _d > 1:
+                forbidden.add(int(_d))
+    return forbidden
+
+
 def next_safe_prime(start: int, forbidden: set[int]) -> int:
     """Return the smallest prime ``>= max(start, 5)`` not in ``forbidden``.
 

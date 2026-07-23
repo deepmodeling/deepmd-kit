@@ -11,6 +11,10 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.loss.loss import (
     Loss,
 )
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    masked_atom_num,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -21,6 +25,25 @@ from deepmd.utils.version import (
 
 class DOSLoss(Loss):
     r"""Loss on DOS (density of states) for both local and global predictions.
+
+    For DOS bin :math:`k`, define its discrete cumulative distribution by
+
+    .. math::
+
+       C_k=\sum_{q=0}^{k}D_q.
+
+    The optimized objective combines global and atomic DOS and CDF errors,
+
+    .. math::
+
+       L=p_D\langle(D-\hat D)^2\rangle
+       +p_C\langle(C-\hat C)^2\rangle
+       +p_{D_i}\langle(D_i-\hat D_i)^2\rangle
+       +p_{C_i}\langle(C_i-\hat C_i)^2\rangle.
+
+    Padded atoms are excluded from the atomic averages.  Each prefactor uses
+    :math:`p=p_{\mathrm{limit}}+(p_{\mathrm{start}}-p_{\mathrm{limit}})
+    \eta/\eta_0`.
 
     Parameters
     ----------
@@ -101,7 +124,11 @@ class DOSLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Evaluate the weighted DOS and cumulative-DOS objective.
+
+        The cumulative terms use :math:`C_k=\sum_{q\le k}D_q`; local terms
+        are averaged only over real atoms when a mask is present.
+        """
         # Get array namespace from any available tensor
         first_key = next(iter(model_dict))
         xp = array_api_compat.array_namespace(model_dict[first_key])
@@ -134,11 +161,9 @@ class DOSLoss(Loss):
             if "mask" in model_dict:
                 # idiom 1: per-frame masked mean, then average over frames
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
-                nf = diff3d.shape[0]
-                sq = xp.square(diff3d) * xp.reshape(maskf, (nf, natoms, 1))
-                per_frame_sum = xp.sum(xp.reshape(sq, (nf, -1)), axis=-1)  # [nf]
-                per_frame_dof = xp.sum(maskf, axis=-1) * self.numb_dos  # [nf]
-                l2_local_loss_dos = xp.mean(per_frame_sum / per_frame_dof)
+                l2_local_loss_dos = masked_atom_mean(
+                    xp.square(diff3d), maskf, self.numb_dos
+                )
             else:
                 l2_local_loss_dos = xp.mean(xp.square(diff3d))
             loss += pref_ados * l2_local_loss_dos
@@ -161,11 +186,9 @@ class DOSLoss(Loss):
             if "mask" in model_dict:
                 # idiom 1: per-frame masked mean, then average over frames
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
-                nf = diff3d.shape[0]
-                sq = xp.square(diff3d) * xp.reshape(maskf, (nf, natoms, 1))
-                per_frame_sum = xp.sum(xp.reshape(sq, (nf, -1)), axis=-1)  # [nf]
-                per_frame_dof = xp.sum(maskf, axis=-1) * self.numb_dos  # [nf]
-                l2_local_loss_cdf = xp.mean(per_frame_sum / per_frame_dof)
+                l2_local_loss_cdf = masked_atom_mean(
+                    xp.square(diff3d), maskf, self.numb_dos
+                )
             else:
                 l2_local_loss_cdf = xp.mean(xp.square(diff3d))
             loss += pref_acdf * l2_local_loss_cdf
@@ -181,12 +204,7 @@ class DOSLoss(Loss):
             diff = global_pred - global_label
             # idiom 3: global dos is already padding-invariant; plain mean suffices
             l2_global_loss_dos = xp.mean(xp.square(diff))
-            if "mask" in model_dict:
-                atom_num = xp.mean(
-                    xp.astype(xp.sum(model_dict["mask"], axis=-1), diff.dtype)
-                )
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += pref_dos * l2_global_loss_dos
             more_loss["rmse_global_dos"] = self.display_if_exist(
                 xp.sqrt(l2_global_loss_dos) / atom_num, find_global
@@ -204,12 +222,7 @@ class DOSLoss(Loss):
             diff = global_pred_cdf - global_label_cdf
             # idiom 3: global cdf is already padding-invariant; plain mean suffices
             l2_global_loss_cdf = xp.mean(xp.square(diff))
-            if "mask" in model_dict:
-                atom_num = xp.mean(
-                    xp.astype(xp.sum(model_dict["mask"], axis=-1), diff.dtype)
-                )
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_dict.get("mask"), natoms, diff.dtype)
             loss += pref_cdf * l2_global_loss_cdf
             more_loss["rmse_global_cdf"] = self.display_if_exist(
                 xp.sqrt(l2_global_loss_cdf) / atom_num, find_global

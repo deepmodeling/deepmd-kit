@@ -53,6 +53,15 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
+    """Base interface mapping local atomic environments to per-atom outputs.
+
+    The local environment includes the selected neighbor indices and the
+    corresponding coordinates and atom types, together with optional frame,
+    atomic, or descriptor-specific conditioning inputs.  Concrete subclasses
+    may learn a descriptor-plus-fitting map, interpolate a fixed pair table, or
+    combine outputs from existing atomic models.
+    """
+
     def __init__(
         self,
         type_map: list[str],
@@ -320,6 +329,51 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
         return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
 
+    def _prepare_graph_nodes(
+        self,
+        n_node: Array,
+        n_local: Array | None,
+        atype: Array,
+        reference: Array,
+    ) -> tuple[Array, Array]:
+        """Apply node masks shared by generic and compact graph forwards."""
+        xp = array_api_compat.array_namespace(reference)
+        atype = xp.asarray(atype, device=array_api_compat.device(reference))
+        atom_mask = self.make_atom_mask(atype)
+        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
+        output_mask = atom_mask
+        if n_local is not None:
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                node_ownership_mask,
+            )
+
+            output_mask = output_mask & node_ownership_mask(
+                n_node,
+                n_local,
+                atype.shape[0],
+            )
+        if self.atom_excl is not None:
+            output_mask = xp.logical_and(
+                output_mask,
+                self.atom_excl.build_type_exclude_mask(atype_clamped),
+            )
+        return atype_clamped, output_mask
+
+    def _prepare_graph_inputs(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+    ) -> tuple["NeighborGraph", Array, Array]:
+        """Apply graph masks shared by standard and fused atomic forwards."""
+        atype_clamped, output_mask = self._prepare_graph_nodes(
+            graph.n_node,
+            graph.n_local,
+            atype,
+            graph.edge_vec,
+        )
+        self._assert_graph_pair_excluded(graph, atype_clamped)
+        return graph, atype_clamped, output_mask
+
     def forward_common_atomic_graph(
         self,
         graph: "NeighborGraph",
@@ -327,6 +381,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
@@ -352,6 +407,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         charge_spin
             charge/spin conditioning. Unused by the dpa1 graph path; accepted so
             the interface stays stable for charge/spin-conditioned descriptors.
+        comm_dict
+            MPI communication metadata forwarded to :meth:`forward_atomic_graph`
+            (and, from there, the descriptor's ``call_graph``). ``None`` for
+            non-parallel inference (default). Mirrors :meth:`forward_common_atomic`'s
+            ``comm_dict`` on the dense route.
 
         Returns
         -------
@@ -359,25 +419,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
-        xp = array_api_compat.array_namespace(graph.edge_vec)
-        atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
-        atom_mask = self.make_atom_mask(atype)  # (N,) bool
-        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
-        # NOTE: model-level ``pair_exclude_types`` is NOT applied here. It is a
-        # graph-BUILD transform (decision #18) already folded into
-        # ``graph.edge_mask`` by the NeighborGraph builder (Python) or
-        # ``applyPairExclusion`` (C++); this method consumes a pre-excluded graph.
-        # Fail-safe (eager only): guard against a caller that skipped the build
-        # seam, which would silently INCLUDE excluded pairs (fail-open).
-        self._assert_graph_pair_excluded(graph, atype_clamped)
+        graph, atype_clamped, output_mask = self._prepare_graph_inputs(graph, atype)
         ret_dict = self.forward_atomic_graph(
             graph,
             atype_clamped,
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            comm_dict=comm_dict,
         )
-        return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+        return self._finalize_atomic_ret(ret_dict, output_mask, atype)
 
     def _assert_nlist_pair_excluded(self, nlist: Array, extended_atype: Array) -> None:
         """Fail-safe: assert the nlist reaching the dense seam is pre-excluded.
@@ -491,10 +542,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
         """
         xp = array_api_compat.array_namespace(atype)
-        ret_dict = self.apply_out_stat(ret_dict, atype)
+        safe_atype = xp.where(
+            self.make_atom_mask(atype),
+            atype,
+            xp.zeros_like(atype),
+        )
+        ret_dict = self.apply_out_stat(ret_dict, safe_atype)
         if self.atom_excl is not None:
             atom_mask = xp.logical_and(
-                atom_mask, self.atom_excl.build_type_exclude_mask(atype)
+                atom_mask,
+                self.atom_excl.build_type_exclude_mask(safe_atype),
             )
         lead = atom_mask.shape  # (nf, nloc) dense | (N,) graph
         for kk in ret_dict.keys():

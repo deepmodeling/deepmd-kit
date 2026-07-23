@@ -35,6 +35,9 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.stat import (
+    _require_stat_file_items,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -261,6 +264,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             return
         # stat fparam
         if self.numb_fparam > 0:
+            _require_stat_file_items(stat_file_path, ["fparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()
@@ -319,6 +323,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         # stat aparam
         if self.numb_aparam > 0:
+            _require_stat_file_items(stat_file_path, ["aparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()
@@ -839,6 +844,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         d1 = xp.reshape(descriptor, (n, 1, nd))
         a1 = xp.reshape(atype, (n, 1))
         g1 = None if gr is None else xp.reshape(gr, (n, 1, gr.shape[-2], 3))
+        if aparam is not None and len(aparam.shape) != 2:
+            # enforce the flat contract loudly: a rectangular (nf, nloc, nda)
+            # aparam with nf*nloc == N would silently reshape into the right
+            # element order here but hand torch.export an unprovable
+            # N == nf*nloc relation (and misalign rows for any other layout).
+            raise ValueError(
+                "graph-route aparam must be flat (N, nda) on the node axis; "
+                f"got a rank-{len(aparam.shape)} array of shape {aparam.shape}"
+            )
         ap1 = None if aparam is None else xp.reshape(aparam, (n, 1, aparam.shape[-1]))
         # fparam: dense API expects (nf, nfp); here nf'=N single-atom frames, so the
         # node-level (N, nfp) IS the per-(pseudo)frame param -- tiled over nloc'=1.

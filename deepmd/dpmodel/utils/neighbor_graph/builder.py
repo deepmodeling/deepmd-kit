@@ -43,6 +43,10 @@ from deepmd.dpmodel.array_api import (
     xp_take_first_n,
 )
 
+from .csr import (
+    attach_edge_csr,
+    build_edge_csr,
+)
 from .graph import (
     GraphLayout,
     NeighborGraph,
@@ -66,6 +70,9 @@ def from_dense_quartet(
     mapping: Array,
     layout: GraphLayout | None = None,
     compact: bool = True,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
 ) -> NeighborGraph:
     """Convert a legacy extended quartet into a ghost-free NeighborGraph (CONVERTER).
 
@@ -107,6 +114,12 @@ def from_dense_quartet(
         ``src`` pointing at the center (in-range, masked) -- so no ``nonzero`` is
         used and the converter is jit/export-traceable. The masked edges contribute
         zero in a downstream ``segment_sum``, so the descriptor output is unchanged.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
 
     Returns
     -------
@@ -117,6 +130,7 @@ def from_dense_quartet(
     """
     if layout is None:
         layout = GraphLayout()
+    with_csr = with_csr or canonicalize
     xp = array_api_compat.array_namespace(extended_coord, nlist, mapping)
     dev = array_api_compat.device(extended_coord)
     nf, nloc, nsel = nlist.shape
@@ -157,11 +171,38 @@ def from_dense_quartet(
         edge_index = xp.astype(xp.stack([src, dst], axis=0), xp.int64)
         edge_mask = valid
         n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        if not with_csr:
+            return NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+        (
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+        ) = build_edge_csr(
+            edge_index,
+            edge_vec,
+            edge_mask,
+            nf * nloc,
+            canonicalize=canonicalize,
+        )
         return NeighborGraph(
             n_node=n_node,
             edge_index=edge_index,
             edge_vec=edge_vec,
             edge_mask=edge_mask,
+            destination_order=destination_order,
+            destination_row_ptr=destination_row_ptr,
+            source_order=source_order,
+            source_row_ptr=source_row_ptr,
+            destination_sorted=canonicalize,
         )
     else:
         # COMPACT: drop invalid slots via nonzero (dynamic shape -> eager only,
@@ -198,11 +239,38 @@ def from_dense_quartet(
             edge_index, edge_vec, layout.edge_capacity, layout.min_edges
         )
         n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        if not with_csr:
+            return NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+        (
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+        ) = build_edge_csr(
+            edge_index,
+            edge_vec,
+            edge_mask,
+            nf * nloc,
+            canonicalize=canonicalize,
+        )
         return NeighborGraph(
             n_node=n_node,
             edge_index=edge_index,
             edge_vec=edge_vec,
             edge_mask=edge_mask,
+            destination_order=destination_order,
+            destination_row_ptr=destination_row_ptr,
+            source_order=source_order,
+            source_row_ptr=source_row_ptr,
+            destination_sorted=canonicalize,
         )
 
 
@@ -265,6 +333,8 @@ def build_neighbor_graph(
     rcut: float,
     layout: GraphLayout | None = None,
     *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
     pair_excl: PairExcludeMask | None = None,
     compact: bool = False,
 ) -> NeighborGraph:
@@ -305,6 +375,12 @@ def build_neighbor_graph(
         at non-binding ``sel``).
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
     pair_excl
         Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
         for model-level ``pair_exclude_types``. When given,
@@ -323,6 +399,7 @@ def build_neighbor_graph(
 
     if layout is None:
         layout = GraphLayout()
+    with_csr = with_csr or canonicalize
     xp = array_api_compat.array_namespace(coord, atype)
     dev = array_api_compat.device(coord)
     nf, nloc = atype.shape[:2]
@@ -384,4 +461,6 @@ def build_neighbor_graph(
     if pair_excl is not None:
         atype_flat = xp.reshape(atype, (-1,))
         graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    if with_csr:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
     return graph
