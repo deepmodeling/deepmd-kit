@@ -106,7 +106,7 @@ dpa-adapt = [
 docs = [
     "sphinx>=8",
     "sphinx-book-theme",
-    "myst-nb>=1.0.0",
+    "myst-nb>=1.4.0",
     "myst-parser>=5.1.0",
     "sphinx-design",
     "breathe",
