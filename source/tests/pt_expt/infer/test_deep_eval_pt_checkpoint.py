@@ -31,6 +31,9 @@ from deepmd.dpmodel.output_def import (
 from deepmd.infer import (
     DeepPot,
 )
+from deepmd.pt.utils.nv_nlist import (
+    is_nv_available,
+)
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -40,12 +43,19 @@ from deepmd.pt_expt.fitting import (
 from deepmd.pt_expt.infer.deep_eval import DeepEval as PtExptDeepEval
 from deepmd.pt_expt.model import (
     EnergyModel,
+    get_model,
+)
+from deepmd.pt_expt.model.graph_lower import (
+    model_uses_graph_lower,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    is_vesin_torch_available,
 )
 
 from ...seed import (
@@ -107,6 +117,39 @@ def _build_model_and_params(
         "descriptor": descriptor_args,
         "fitting_net": fitting_args,
     }
+    return model, model_params
+
+
+def _build_graph_dpa1_model_and_params() -> tuple[EnergyModel, dict]:
+    """Build a graph-routed DPA1 model with nonzero descriptor statistics."""
+    model_params = {
+        "type_map": ["H", "O"],
+        "descriptor": {
+            "type": "dpa1",
+            "sel": 20,
+            "rcut_smth": 0.5,
+            "rcut": 4.0,
+            "neuron": [3, 6],
+            "axis_neuron": 2,
+            "attn": 4,
+            "attn_layer": 0,
+            "smooth_type_embedding": True,
+            "set_davg_zero": False,
+            "type_one_side": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [8, 8],
+            "precision": "float64",
+            "seed": 1,
+        },
+    }
+    model = get_model(copy.deepcopy(model_params)).to(torch.float64).to(DEVICE).eval()
+    with torch.no_grad():
+        model.atomic_model.descriptor.se_atten.mean.fill_(0.01)
+        model.atomic_model.descriptor.se_atten.stddev.fill_(0.1)
     return model, model_params
 
 
@@ -294,6 +337,88 @@ class TestPtExptLoadPt(unittest.TestCase):
                 PtExptDeepEval(bogus, ModelOutputDef(self.model.atomic_output_def()))
         finally:
             os.unlink(bogus)
+
+
+class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
+    """Raw DPA1 checkpoints retain the source model's graph-forward semantics."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.model, cls.model_params = _build_graph_dpa1_model_and_params()
+        if DEVICE.type == "cuda" and is_nv_available():
+            cls.expected_graph_method = "nv"
+        elif is_vesin_torch_available():
+            cls.expected_graph_method = "vesin"
+        else:
+            cls.expected_graph_method = "dense"
+        cls.pt_paths = {
+            "plain": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
+            "compiled": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
+        }
+        _save_pt_checkpoint(cls.model, cls.model_params, cls.pt_paths["plain"])
+        _save_pt_checkpoint_compiled(
+            cls.model,
+            cls.model_params,
+            cls.pt_paths["compiled"],
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for path in cls.pt_paths.values():
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_eval_matches_public_forward(self) -> None:
+        self.assertTrue(model_uses_graph_lower(self.model))
+
+        coords = np.array([[[1.0, 1.0, 1.0], [2.0, 1.0, 1.0], [1.0, 2.0, 1.0]]])
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0], dtype=np.int32)
+
+        output_names = (
+            "energy",
+            "force",
+            "virial",
+            "atom_energy",
+            "atom_virial",
+        )
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+        expected = self.model.forward(
+            coord_t,
+            atype_t,
+            cell_t,
+            do_atomic_virial=True,
+        )
+
+        for layout, path in self.pt_paths.items():
+            with self.subTest(layout=layout):
+                dp = DeepPot(path, auto_batch_size=False)
+                self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "graph")
+                self.assertEqual(
+                    dp.deep_eval._neighbor_graph_method,
+                    self.expected_graph_method,
+                )
+                actual = dict(
+                    zip(
+                        output_names,
+                        dp.eval(coords, cells, atom_types, atomic=True),
+                        strict=True,
+                    )
+                )
+                for name in output_names:
+                    np.testing.assert_allclose(
+                        actual[name],
+                        expected[name].detach().cpu().numpy(),
+                        rtol=1e-10,
+                        atol=1e-10,
+                        err_msg=name,
+                    )
 
 
 class TestPtExptLoadPtCompiledLayout(unittest.TestCase):
