@@ -2841,9 +2841,9 @@ tensorflow::Status _prepare_coord_nlist_gpu(OpKernelContext* context,
     deepmd::InputNlist inlist_temp;
     inlist_temp.inum = nloc;
     // everything should be copied to GPU...
-    tensorflow::Status status = _update_external_nlist_gpu(
-        inlist_temp, inlist, max_nbor_size, nbor_list_dev, fake_mesh_guard.ptr,
-        16);
+    tensorflow::Status status =
+        _update_external_nlist_gpu(inlist_temp, inlist, max_nbor_size,
+                                   nbor_list_dev, fake_mesh_guard.ptr, 16);
     if (!status.ok()) {
       return status;
     }
