@@ -121,7 +121,7 @@ class _CellListBackendMixin:
                             nsel,
                             pair_excl=pair_excl,
                         )
-                    assert array_api_compat.is_array_api_obj(result)
+                    self.assertTrue(array_api_compat.is_array_api_obj(result))
                     np.testing.assert_array_equal(self._to_numpy(result), reference)
 
     def test_backend_virtual_outlier_does_not_expand_grid(self) -> None:
