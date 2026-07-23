@@ -756,16 +756,23 @@ class TestMergeLmdbSystemIds:
         np.testing.assert_array_equal(reader[0]["atype"], expected_atype)
         np.testing.assert_array_equal(reader[5]["atype"], expected_atype)
 
+    @pytest.mark.parametrize(
+        "second_type_map",
+        [["H", "O"], ["O", "H", "N"]],
+        ids=["reordered", "prefix-compatible-superset"],
+    )
     def test_merge_rejects_incompatible_type_maps_before_creating_output(
-        self, tmp_path
+        self, tmp_path, second_type_map
     ):
         """Raw frames cannot be shared under two different type index maps."""
         src1, src2 = str(tmp_path / "tm1.lmdb"), str(tmp_path / "tm2.lmdb")
         _create_lmdb_with_system_ids(
             src1, system_frames=[1], natoms=6, type_map=["O", "H"]
         )
+        # Even a prefix-compatible superset is rejected: merge_lmdb deliberately
+        # requires identical metadata instead of proving frame-by-frame safety.
         _create_lmdb_with_system_ids(
-            src2, system_frames=[1], natoms=6, type_map=["H", "O"]
+            src2, system_frames=[1], natoms=6, type_map=second_type_map
         )
         dst = tmp_path / "incompatible.lmdb"
         dst.mkdir()
