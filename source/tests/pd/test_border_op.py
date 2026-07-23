@@ -43,6 +43,9 @@ def test_border_op_accepts_no_swaps() -> None:
 
 def test_border_op_self_copy_uses_cpu_place() -> None:
     """A CUDA-enabled operator must not use a GPU copy for CPU tensors."""
+    # CUDA Paddle builds otherwise create tensors on the default GPU, which
+    # would leave the operator's CPU copy branch untested.
+    paddle.set_device("cpu")
     sendproc, recvproc, sendnum, recvnum, communicator = _control_tensors(1)
     sendnum = paddle.ones_like(sendnum)
     recvnum = paddle.ones_like(recvnum)
