@@ -101,14 +101,26 @@ class _CellListBackendMixin:
                     coord_backend, atype_backend = self._backend_arrays(
                         search_coord, search_atype, device
                     )
-                    result = default_nlist._build_neighbor_list_cell(
-                        coord_backend,
-                        atype_backend,
-                        nloc,
-                        rcut,
-                        nsel,
-                        pair_excl=pair_excl,
-                    )
+                    # Exercise the periodic boundary-shell compaction route on
+                    # every backend/device where it is supported.  Production
+                    # thresholds are benchmark-derived and otherwise exceed the
+                    # deliberately small cross-backend fixture.
+                    with mock.patch.multiple(
+                        default_nlist,
+                        _NUMPY_CPU_PERIODIC_COMPACTION_THRESHOLD=0,
+                        _TORCH_CPU_PERIODIC_COMPACTION_THRESHOLD=0,
+                        _JAX_CPU_PERIODIC_COMPACTION_THRESHOLD=0,
+                        _TF_CPU_PERIODIC_COMPACTION_THRESHOLD=0,
+                        _TORCH_CUDA_PERIODIC_COMPACTION_THRESHOLD=0,
+                    ):
+                        result = default_nlist._build_neighbor_list_cell(
+                            coord_backend,
+                            atype_backend,
+                            nloc,
+                            rcut,
+                            nsel,
+                            pair_excl=pair_excl,
+                        )
                     assert array_api_compat.is_array_api_obj(result)
                     np.testing.assert_array_equal(self._to_numpy(result), reference)
 

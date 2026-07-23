@@ -345,9 +345,10 @@ def _build_neighbor_list_cell(
     Cell members are represented by sorted integer keys; ``searchsorted`` finds
     the member ranges and an array-valued ``repeat`` expands only real candidate
     pairs.  At constant density this uses O(N) candidate memory and O(N log N)
-    work, instead of the dense O(N**2) distance matrix.  Eager CPU namespaces
-    select neighbors with two bounded row-wise sorts, while traced namespaces
-    and JAX GPU retain compact global sorting to avoid a host-dependent shape.
+    work, instead of the dense O(N**2) distance matrix.  Eager NumPy, eager
+    PyTorch on validated CPU/CUDA devices, and eager JAX on CPU select neighbors
+    with two bounded row-wise sorts.  TensorFlow, traced PyTorch/JAX, and JAX on
+    accelerators retain compact global sorting to avoid a host-dependent shape.
 
     The final stable lexicographic ordering is ``(center, distance, ext_index)``.
     It matches the dense builder's nearest-neighbor contract, including selecting
@@ -690,8 +691,9 @@ class DefaultNeighborList(NeighborList):
             Must be ``"extended"`` (the only mode this builder supports).
         pair_excl : PairExcludeMask or None, optional
             When provided, excluded type pairs are erased from the returned
-            neighbor list immediately after the geometric search by
-            :func:`~deepmd.dpmodel.utils.nlist.build_neighbor_list`.
+            neighbor list after the dense or cell-list geometric search selects
+            neighbors.  Excluded entries leave holes without backfilling farther
+            atoms.
 
         Returns
         -------
