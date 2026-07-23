@@ -37,11 +37,11 @@ from deepmd.pt_expt.fitting.dpa4_ener import (
 from deepmd.pt_expt.model import (
     EnergyModel,
 )
-from deepmd.pt_expt.model.native_spin_model import (
-    NativeSpinEnergyModel,
-)
 from deepmd.pt_expt.model.get_model import (
     get_model,
+)
+from deepmd.pt_expt.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.pt_expt.utils import env as _env
 from deepmd.utils.argcheck import (

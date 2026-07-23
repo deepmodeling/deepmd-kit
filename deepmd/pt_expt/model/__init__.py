@@ -15,9 +15,6 @@ from .dp_linear_model import (
 from .dp_zbl_model import (
     DPZBLModel,
 )
-from .native_spin_model import (
-    NativeSpinEnergyModel,
-)
 from .ener_model import (
     EnergyModel,
 )
@@ -29,6 +26,9 @@ from .get_model import (
 )
 from .model import (
     BaseModel,
+)
+from .native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from .polar_model import (
     PolarModel,

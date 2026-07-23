@@ -2346,7 +2346,6 @@ class DeepEval(DeepEvalBackend):
         self._require_dpmodel("eval_typeebd")
 
         from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
-
         from deepmd.pt_expt.model.spin_model import (
             SpinModel,
         )

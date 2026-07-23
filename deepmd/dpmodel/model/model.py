@@ -31,11 +31,11 @@ from deepmd.dpmodel.model.dos_model import (
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
-from deepmd.dpmodel.model.native_spin_model import (
-    NativeSpinEnergyModel,
-)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
+)
+from deepmd.dpmodel.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.dpmodel.model.polar_model import (
     PolarModel,

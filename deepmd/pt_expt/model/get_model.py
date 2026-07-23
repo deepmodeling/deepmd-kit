@@ -26,14 +26,14 @@ from deepmd.pt_expt.model.dipole_model import (
 from deepmd.pt_expt.model.dos_model import (
     DOSModel,
 )
-from deepmd.pt_expt.model.native_spin_model import (
-    NativeSpinEnergyModel,
-)
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
 from deepmd.pt_expt.model.model import (
     BaseModel,
+)
+from deepmd.pt_expt.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.pt_expt.model.polar_model import (
     PolarModel,
