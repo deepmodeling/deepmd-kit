@@ -76,36 +76,120 @@ def make_stat_input(
                 except StopIteration:
                     iterator = iter(dataloaders[i])
                     stat_data = next(iterator)
-                if (
-                    "find_fparam" in stat_data
-                    and "fparam" in stat_data
-                    and stat_data["find_fparam"] == 0.0
-                ):
-                    # for model using default fparam
-                    stat_data.pop("fparam")
-                    stat_data.pop("find_fparam")
-                for dd in stat_data:
-                    if stat_data[dd] is None:
-                        sys_stat[dd] = None
-                    elif isinstance(stat_data[dd], torch.Tensor):
-                        if dd not in sys_stat:
-                            sys_stat[dd] = []
-                        sys_stat[dd].append(stat_data[dd])
-                    elif isinstance(stat_data[dd], np.float32):
-                        sys_stat[dd] = stat_data[dd]
-                    else:
-                        pass
+                _append_stat_data(sys_stat, stat_data)
+            _append_missing_type_frames(sys_stat, datasets[i])
 
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
                 pass
             elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            elif isinstance(stat_data[dd], torch.Tensor):
+            elif isinstance(sys_stat[key][0], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
+
+
+def _append_stat_data(sys_stat: dict[str, Any], stat_data: dict[str, Any]) -> None:
+    """Append one statistics batch to the per-system accumulator."""
+    if (
+        "find_fparam" in stat_data
+        and "fparam" in stat_data
+        and stat_data["find_fparam"] == 0.0
+    ):
+        # for model using default fparam
+        stat_data.pop("fparam")
+        stat_data.pop("find_fparam")
+    for dd, value in stat_data.items():
+        if value is None:
+            sys_stat[dd] = None
+        elif isinstance(value, torch.Tensor):
+            if dd not in sys_stat:
+                sys_stat[dd] = []
+            sys_stat[dd].append(value)
+        elif isinstance(value, np.float32):
+            sys_stat[dd] = value
+
+
+def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
+    """Add representative mixed-type frames for atom types missed by sampling.
+
+    Global output statistics solve a per-type linear regression from the sampled
+    frame compositions.  In mixed-type datasets a random small sample can miss a
+    type that exists elsewhere in the dataset, making that type's bias
+    unconstrained.  We therefore append a minimal set of real frames, one by one,
+    until every type present in the full system is also present in the statistics
+    sample.  Non-mixed systems have a fixed composition, so the initially sampled
+    frames already cover the system-level types.
+    """
+    if "real_natoms_vec" not in sys_stat or sys_stat["real_natoms_vec"] is None:
+        return
+    if not hasattr(dataset, "data_system"):
+        return
+    sampled_natoms_vec = sys_stat["real_natoms_vec"]
+    if len(sampled_natoms_vec) == 0:
+        return
+    sampled_counts = torch.cat(sampled_natoms_vec, dim=0)[:, 2:].sum(dim=0)
+    dataset_counts, first_frame_for_type = _mixed_type_coverage(dataset)
+    if dataset_counts is None or first_frame_for_type is None:
+        return
+
+    missing_types = np.flatnonzero((dataset_counts > 0) & (sampled_counts.numpy() == 0))
+    if len(missing_types) == 0:
+        return
+
+    # Import lazily to keep this utility independent from dataloader import time.
+    from deepmd.pt.utils.dataloader import (
+        collate_batch,
+    )
+
+    used_frames: set[int] = set()
+    while len(missing_types) > 0:
+        frame_idx: int | None = None
+        for type_i in missing_types:
+            candidate = int(first_frame_for_type[int(type_i)])
+            if candidate >= 0 and candidate not in used_frames:
+                frame_idx = candidate
+                break
+        if frame_idx is None:
+            break
+        used_frames.add(frame_idx)
+        # Reuse the dataset and collate path so that augmented frames have
+        # exactly the same tensor layout as ordinary DataLoader batches.
+        with torch.device("cpu"):
+            extra_batch = collate_batch([dataset[frame_idx]])
+        _append_stat_data(sys_stat, extra_batch)
+        sampled_counts += extra_batch["real_natoms_vec"][:, 2:].sum(dim=0)
+        missing_types = np.flatnonzero(
+            (dataset_counts > 0) & (sampled_counts.numpy() == 0)
+        )
+
+
+def _mixed_type_coverage(dataset: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Return full-dataset type counts and one representative frame per type."""
+    data_system = dataset.data_system
+    if not getattr(data_system, "mixed_type", False):
+        return None, None
+    ntypes = data_system.get_ntypes()
+    counts = np.zeros(ntypes, dtype=np.int64)
+    first_frame_for_type = np.full(ntypes, -1, dtype=np.int64)
+    frame_offset = 0
+    for set_dir, frame_end in zip(
+        data_system.dirs, data_system.prefix_sum, strict=True
+    ):
+        type_path = set_dir / "real_atom_types.npy"
+        real_type = type_path.load_numpy()
+        if getattr(data_system, "enforce_type_map", False):
+            real_type = data_system.type_idx_map[real_type].astype(np.int32)
+        real_type = real_type.reshape(frame_end - frame_offset, data_system.natoms)
+        for type_i in range(ntypes):
+            frame_hits = np.flatnonzero((real_type == type_i).any(axis=1))
+            counts[type_i] += int((real_type == type_i).sum())
+            if first_frame_for_type[type_i] < 0 and len(frame_hits) > 0:
+                first_frame_for_type[type_i] = frame_offset + int(frame_hits[0])
+        frame_offset = frame_end
+    return counts, first_frame_for_type
 
 
 def _restore_from_file(
