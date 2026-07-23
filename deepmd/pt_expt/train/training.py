@@ -1872,10 +1872,9 @@ class Trainer(AbstractTrainer):
                 "training; multi-task training is not supported."
             )
 
-        has_spin = getattr(self.models[DEFAULT_TASK_KEY], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin or isinstance(self.loss, EnergySpinLoss):
+        if self.models[DEFAULT_TASK_KEY].has_spin() or isinstance(
+            self.loss, EnergySpinLoss
+        ):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training; spin-energy training is not supported."

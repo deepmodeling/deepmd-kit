@@ -267,7 +267,7 @@ def _normalize_fparam(
     if dim_fparam == 0:
         return None
     if fparam is None:
-        if getattr(model, "has_default_fparam", lambda: False)():
+        if model.has_default_fparam():
             default_fparam = model.get_default_fparam()
             if default_fparam is not None:
                 return jnp.asarray(default_fparam, dtype=dtype).reshape(1, dim_fparam)

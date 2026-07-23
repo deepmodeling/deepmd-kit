@@ -98,6 +98,15 @@ def make_base_model() -> type[object]:
         def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
 
+        def has_spin(self) -> bool:
+            """Returns whether the model has spin input and output.
+
+            Concrete default ``False`` so non-spin models across all backends
+            (which subclass this same base) need no change; spin-capable
+            model classes override this method to return ``True``.
+            """
+            return False
+
         @abstractmethod
         def serialize(self) -> dict:
             """Serialize the model.
