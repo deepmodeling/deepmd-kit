@@ -2747,9 +2747,11 @@ static tensorflow::Status _update_external_nlist_gpu(
   try {
     deepmd::env_mat_nbor_update(host_inlist, gpu_inlist, max_nbor_size,
                                 nbor_list_dev, mesh, mesh_size);
-  } catch (const deepmd::deepmd_exception& error) {
+  } catch (const deepmd::deepmd_exception_nlist_capacity& error) {
     // Preserve input-validation failures as InvalidArgument instead of letting
-    // safe_compute rewrite them as an opaque Internal exception.
+    // safe_compute rewrite them as an opaque Internal exception.  OOM and
+    // other GPU runtime failures keep propagating to safe_compute's existing
+    // ResourceExhausted/Internal mappings.
     return deepmd::tf_compat::InvalidArgument(error.what());
   }
   return tensorflow::Status();

@@ -203,7 +203,7 @@ TEST(TestNeighborListGpuConversion, rejects_row_larger_than_capacity) {
     deepmd::convert_nlist_gpu_device(gpu_nlist, cpu_nlist, gpu_memory,
                                      GPU_MAX_NBOR_SIZE);
     FAIL() << "Expected an oversized neighbor-list row to be rejected";
-  } catch (const deepmd::deepmd_exception& error) {
+  } catch (const deepmd::deepmd_exception_nlist_capacity& error) {
     const std::string message = error.what();
     EXPECT_NE(message.find("4097 neighbors"), std::string::npos);
     EXPECT_NE(message.find("capacity 4096"), std::string::npos);

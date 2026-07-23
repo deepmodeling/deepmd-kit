@@ -996,7 +996,7 @@ int deepmd::validate_nlist_gpu_capacity(const InputNlist& nlist,
   for (int ii = 0; ii < nlist.inum; ++ii) {
     const int row_size = nlist.numneigh[ii];
     if (row_size > row_capacity) {
-      throw deepmd::deepmd_exception(
+      throw deepmd::deepmd_exception_nlist_capacity(
           "Neighbor list row " + std::to_string(ii) + " contains " +
           std::to_string(row_size) +
           " neighbors, exceeding the allocated GPU row capacity " +
