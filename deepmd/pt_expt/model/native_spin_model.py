@@ -176,6 +176,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         spin: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         destination_sorted: bool = False,
         **make_fx_kwargs: Any,
@@ -183,16 +184,13 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         """Trace the graph-spin lower into an exportable module.
 
         THIS METHOD OWNS the positional ``.pt2`` ABI for graph-spin models
-        (mirrored verbatim by the with-comm / C++ / serialization follow-up
-        tasks): ``spin`` sits at index 10, right after the shared
-        ``NeighborGraph`` CSR block and before the conditional
-        ``fparam``/``aparam`` tail -- unlike the (non-spin) energy model's
-        :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`,
-        there is NO ``charge_spin`` slot (native spin rejects
-        ``add_chg_spin_ebd`` at build, see
-        ``deepmd/dpmodel/model/get_model.py:get_sezm_spin_model``) and NO
-        with-comm variant (single-rank only; multi-rank graph-spin is a
-        later task in this plan).
+        (mirrored verbatim by the C++ / serialization seams): ``spin`` sits
+        at index 10, right after the shared ``NeighborGraph`` CSR block and
+        before the conditional ``fparam``/``aparam`` tail; the conditional
+        ``charge_spin`` tail follows at index 13 (combined native-spin +
+        charge-spin FiLM models, review 3638047227; ``None`` otherwise).
+        There is NO with-comm variant (single-rank only; multi-rank
+        graph-spin is a follow-up).
 
         Two-layer make_fx trace, mirroring
         :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`:
@@ -200,8 +198,8 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         (the inherited
         :meth:`~deepmd.pt_expt.model.make_model.make_model.forward_common_lower_graph_exportable`)
         traces ``forward_common_lower_graph``
-        with ``spin`` as a SECOND autograd leaf next to ``edge_vec`` (fixing
-        ``charge_spin=None`` -- this wrapper's ABI never exposes that slot);
+        with ``spin`` as a SECOND autograd leaf next to ``edge_vec``
+        (``charge_spin`` is a frame-level conditioning input, not a leaf);
         this outer layer re-traces with the PUBLIC positional ABI above and
         translates the internal fitting keys to the public output keys via
         :func:`_translate_spin_energy_keys` (``force_mag`` mandatory, unlike
@@ -238,6 +236,10 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         aparam
             Atomic parameter, ``(N, nda)``, or ``None`` when
             ``dim_aparam == 0``.
+        charge_spin
+            Frame-level charge/spin FiLM conditioning, ``(nf,
+            dim_chg_spin)``, or ``None`` when the descriptor has no
+            ``add_chg_spin_ebd`` (conditional tail, slot 13).
         do_atomic_virial
             Whether to also return ``atom_virial``.
         destination_sorted
@@ -253,9 +255,10 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             A traced module whose ``forward`` accepts ``(atype, n_node,
             n_local, edge_index, edge_vec, edge_mask, destination_order,
             destination_row_ptr, source_order, source_row_ptr, spin,
-            fparam, aparam)`` and returns a dict with the public keys
-            ``atom_energy``, ``energy``, ``force``, ``force_mag``,
-            ``virial``, and (when ``do_atomic_virial``) ``atom_virial``.
+            fparam, aparam, charge_spin)`` and returns a dict with the
+            public keys ``atom_energy``, ``energy``, ``force``,
+            ``force_mag``, ``virial``, and (when ``do_atomic_virial``)
+            ``atom_virial``.
         """
         traced = self.forward_common_lower_graph_exportable(
             atype,
@@ -271,7 +274,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-            charge_spin=None,
+            charge_spin=charge_spin,
             spin=spin,
             destination_sorted=destination_sorted,
             **make_fx_kwargs,
@@ -291,6 +294,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             spin: torch.Tensor,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             model_ret = traced(
                 atype,
@@ -305,7 +309,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
                 source_row_ptr,
                 fparam,
                 aparam,
-                None,
+                charge_spin,
                 spin,
             )
             return _translate_spin_energy_keys(
@@ -327,4 +331,5 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             spin,
             fparam,
             aparam,
+            charge_spin,
         )

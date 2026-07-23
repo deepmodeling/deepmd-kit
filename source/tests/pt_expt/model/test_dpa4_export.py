@@ -606,3 +606,49 @@ def test_deep_eval_graph_spin_parity(tmp_path) -> None:
         atol=1e-10,
         err_msg="virial",
     )
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+def test_native_spin_chg_spin_graph_freeze(tmp_path) -> None:
+    """COMBINED native-spin + charge-spin FiLM freezes to a graph .pt2.
+
+    Review 3638047227: the combined public configuration must export. The
+    charge_spin slot rides the ABI tail (slot 13); metadata carries the
+    chg-spin fields the C++/DeepEval loaders key on.
+    """
+    from deepmd.pt_expt.descriptor.dpa4 import (
+        DescrptDPA4,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model as pt_expt_get_model,
+    )
+
+    from ...dpa4_fixtures import (
+        jitter_zero_arrays,
+    )
+    from .test_dpa4_native_spin import (
+        COMBINED_CHG_SPIN_CONFIG,
+    )
+
+    import copy
+
+    cpu = torch.device("cpu")
+    model = pt_expt_get_model(copy.deepcopy(COMBINED_CHG_SPIN_CONFIG))
+    ds = model.atomic_model.descriptor
+    jittered = jitter_zero_arrays(ds.serialize(), np.random.default_rng(21))
+    model.atomic_model.descriptor = DescrptDPA4.deserialize(jittered).to(cpu)
+    model = model.to(cpu).eval()
+    data = {"model": model.serialize()}
+    model_file = tmp_path / "dpa4_spin_chg_graph.pt2"
+    deserialize_to_file(str(model_file), data, lower_kind="graph")
+
+    with zipfile.ZipFile(model_file) as z:
+        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+    assert md["is_spin"] is True
+    assert md["lower_input_kind"] == "graph"
+    assert md["has_chg_spin_ebd"] is True
+    assert md["dim_chg_spin"] == 2
+    assert "force_mag" in md["output_keys"]

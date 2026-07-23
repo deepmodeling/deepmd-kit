@@ -503,13 +503,14 @@ def _build_spin_graph_sample(
     (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, _cs) = sample
     generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
     spin = 0.1 + torch.rand(atype.shape[0], 3, dtype=torch.float64, generator=generator)
-    return atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap
+    return atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, _cs
 
 
 class TestDPA4NativeSpinGraphLowerExportable:
     """``forward_lower_graph_exportable`` establishes the positional ``.pt2``
-    ABI for graph-spin models (spin at index 10, no ``charge_spin`` slot, no
-    with-comm variant) -- Tasks 6/7/9 mirror this ABI.
+    ABI for graph-spin models (spin at index 10, conditional ``charge_spin``
+    tail at slot 13, no with-comm variant) -- the C++/serialization seams
+    mirror this ABI.
     """
 
     def test_graph_lower_exportable_symbolic_trace(self) -> None:
@@ -520,7 +521,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
         """
         model = _build_native_spin_model_cpu()
         sample = _build_spin_graph_sample(model)
-        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap = sample
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs = sample
 
         traced = model.forward_lower_graph_exportable(
             atype,
@@ -541,7 +542,9 @@ class TestDPA4NativeSpinGraphLowerExportable:
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
-        out = traced(atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap)
+        out = traced(
+            atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs
+        )
         for key in (
             "atom_energy",
             "energy",
@@ -603,7 +606,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
         """
         model = _build_native_spin_model_cpu()
         sample = _build_spin_graph_sample(model)
-        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap = sample
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs = sample
 
         traced = model.forward_lower_graph_exportable(
             atype,
@@ -642,10 +645,11 @@ class TestDPA4NativeSpinGraphLowerExportable:
             {0: n_node_total_dim},  # spin -- shares atype's N axis
             {0: nframes_dim} if fp is not None else None,  # fparam
             {0: n_node_total_dim} if ap is not None else None,  # aparam
+            {0: nframes_dim} if cs is not None else None,  # charge_spin
         )
         exported = torch.export.export(
             traced,
-            (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap),
+            (atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs),
             dynamic_shapes=dynamic_shapes,
             strict=False,
             prefer_deferred_runtime_asserts_over_guards=True,
@@ -669,6 +673,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
             s_spin,
             s_fp,
             s_ap,
+            s_cs,
         ) = small
         out = loaded(
             s_atype,
@@ -684,6 +689,7 @@ class TestDPA4NativeSpinGraphLowerExportable:
             s_spin,
             s_fp,
             s_ap,
+            s_cs,
         )
         ref = model.forward_common_lower_graph(
             s_atype,
@@ -1140,3 +1146,82 @@ class TestCombinedChargeSpinTrainingSmoke:
                 assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
         finally:
             os.chdir(old_cwd)
+
+
+class TestCombinedChargeSpinGraphExportable:
+    """Combined native-spin + charge-spin FiLM through the graph exportable.
+
+    ``charge_spin`` occupies the conditional slot-13 tail of the graph-spin
+    ``.pt2`` ABI; the traced module must (a) match the eager
+    ``forward_common_lower_graph`` with the SAME charge_spin, and (b)
+    respond to an integer-valued charge_spin change (the FiLM lookup is
+    categorical).
+    """
+
+    def test_combined_symbolic_trace_parity_and_sensitivity(self) -> None:
+        cpu = torch.device("cpu")
+        model = get_model(COMBINED_CHG_SPIN_CONFIG)
+        ds = model.atomic_model.descriptor
+        data = jitter_zero_arrays(ds.serialize(), np.random.default_rng(21))
+        model.atomic_model.descriptor = DescrptDPA4.deserialize(data).to(cpu)
+        model = model.to(cpu).eval()
+        assert model.has_chg_spin_ebd()
+
+        sample = _build_spin_graph_sample(model)
+        atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, _ = sample
+        cs = torch.tensor([[1.0, 2.0]] * int(n_node.shape[0]), dtype=torch.float64)
+
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            spin,
+            fparam=fp,
+            aparam=ap,
+            charge_spin=cs,
+            destination_sorted=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        out = traced(
+            atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs
+        )
+        ref = model.forward_common_lower_graph(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            spin=spin,
+            charge_spin=cs,
+            destination_sorted=True,
+        )
+        torch.testing.assert_close(
+            out["energy"], ref["energy_redu"], rtol=1e-12, atol=1e-12
+        )
+        torch.testing.assert_close(
+            out["force_mag"],
+            ref["energy_derv_r_mag"].squeeze(-2),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        # charge_spin conditions the TRACED module (slot 13 is live, not a
+        # baked constant): an integer-valued change moves the energy.
+        cs0 = torch.zeros_like(cs)
+        out0 = traced(
+            atype, n_node, n_local, ei, ev, em, do, drp, so, srp, spin, fp, ap, cs0
+        )
+        de = (out["energy"] - out0["energy"]).abs().max().item()
+        assert de > 1e-10, f"charge_spin slot appears baked/dead: {de:.3e}"

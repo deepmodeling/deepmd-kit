@@ -557,13 +557,19 @@ def build_synthetic_graph_inputs(
     n_local = torch.clamp(graph.n_node - 1, min=1)
 
     if want_spin:
-        # Native-spin ABI: spin at slot 10 (before fparam/aparam), no
-        # charge_spin slot at all. A small NON-ZERO deterministic sample --
-        # NOT torch.zeros (see the docstring's want_spin entry).
+        # Native-spin ABI: spin at slot 10 (before fparam/aparam), then the
+        # conditional charge_spin tail at slot 13 (combined native-spin +
+        # charge-spin FiLM models). A small NON-ZERO deterministic spin
+        # sample -- NOT torch.zeros (see the docstring's want_spin entry).
         n_node_total = nframes * nloc
         spin = (
             0.1 + 0.05 * torch.arange(n_node_total * 3, dtype=dtype, device=device)
         ).reshape(n_node_total, 3)
+        charge_spin = (
+            torch.zeros(nframes, dim_chg_spin, dtype=dtype, device=device)
+            if (want_charge_spin and dim_chg_spin > 0)
+            else None
+        )
         return (
             atype_t.reshape(-1),
             graph.n_node,
@@ -578,6 +584,7 @@ def build_synthetic_graph_inputs(
             spin,
             fparam,
             aparam,
+            charge_spin,
         )
 
     charge_spin = (
@@ -759,7 +766,8 @@ def _build_graph_dynamic_shapes(
         entries matching ``forward_lower_graph_exportable``. Native-spin ABI
         (``is_native_spin=True``): same shared CSR block (slots 0-9), but
         slot 10 is ``spin`` (mandatory, node-axis-shaped), slot 11
-        ``fparam``, slot 12 ``aparam`` — no ``charge_spin`` slot (see
+        ``fparam``, slot 12 ``aparam``, slot 13 the conditional
+        ``charge_spin`` tail (see
         ``NativeSpinEnergyModel.forward_lower_graph_exportable``).
     is_native_spin : bool
         Whether ``sample_inputs`` follows the native-spin positional ABI
@@ -785,6 +793,7 @@ def _build_graph_dynamic_shapes(
         spin = sample_inputs[10]
         fparam = sample_inputs[11]
         aparam = sample_inputs[12]
+        charge_spin = sample_inputs[13]
         return (
             *base,
             # spin: (N, 3) — shares atype's node-axis symbol, same pattern
@@ -792,6 +801,7 @@ def _build_graph_dynamic_shapes(
             {0: n_node_total_dim} if spin is not None else None,  # spin
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: n_node_total_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
         )
     fparam = sample_inputs[10]
     aparam = sample_inputs[11]
@@ -1667,15 +1677,17 @@ def _trace_and_export(
                 want_spin=is_native_spin,
             )
             if is_native_spin:
-                # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable,
-                # Task 5): slot 10 is ``spin`` (mandatory), slots 11/12 are
-                # fparam/aparam -- there is NO ``charge_spin`` slot (native
-                # spin rejects ``add_chg_spin_ebd`` at build).
+                # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable):
+                # slot 10 is ``spin`` (mandatory), slots 11/12 are
+                # fparam/aparam, slot 13 the conditional ``charge_spin`` tail
+                # (combined native-spin + charge-spin FiLM models; None
+                # otherwise).
                 traced = model.forward_lower_graph_exportable(
                     *sample_inputs[:10],
                     spin=sample_inputs[10],
                     fparam=sample_inputs[11],
                     aparam=sample_inputs[12],
+                    charge_spin=sample_inputs[13],
                     do_atomic_virial=do_atomic_virial,
                     destination_sorted=True,
                     tracing_mode="symbolic",
