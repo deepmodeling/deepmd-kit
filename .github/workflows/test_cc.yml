@@ -43,7 +43,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes build-essential
         if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"
