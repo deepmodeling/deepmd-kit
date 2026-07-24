@@ -285,6 +285,13 @@ def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
     # test ordering (other get_sezm_model calls may have already warned)
     monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
 
+    # caplog captures via a ROOT-logger handler and relies on propagation,
+    # but any earlier test that ran main() (e.g. test_dp_freeze's dispatcher
+    # tests) leaves set_log_handles' global ``deepmd``-logger
+    # propagate=False behind (deepmd/loggers/loggers.py), silently emptying
+    # caplog.records. monkeypatch restores the attribute afterwards.
+    monkeypatch.setattr(logging.getLogger("deepmd"), "propagate", True)
+
     raw = _make_raw_model_config(enable_tf32=enable_tf32)
 
     with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
@@ -301,10 +308,6 @@ def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
         assert not matches, caplog.text
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestNativeSpinErrorTranslation(unittest.TestCase):
     """Only the unexpected-``use_spin`` TypeError becomes the capability error."""
 
@@ -316,3 +319,7 @@ class TestNativeSpinErrorTranslation(unittest.TestCase):
         raw["fitting_net"]["bogus_option"] = 1
         with self.assertRaisesRegex(TypeError, "bogus_option"):
             get_model(raw)
+
+
+if __name__ == "__main__":
+    unittest.main()
