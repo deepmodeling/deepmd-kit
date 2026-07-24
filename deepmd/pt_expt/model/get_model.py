@@ -8,23 +8,27 @@ constructed objects are ``torch.nn.Module`` subclasses.
 
 import copy
 import logging
-from typing import (
-    Any,
-)
 
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel,
+)
+from deepmd.dpmodel.model.model_factory import (
+    BackendModelFactory,
+)
+from deepmd.dpmodel.model.model_factory import (
+    get_spin_model as get_spin_model_from_factory,
+)
 from deepmd.pt_expt.descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt_expt.fitting import (
     BaseFitting,
 )
-
-# Import from submodules directly to avoid circular import via __init__.py
-from deepmd.pt_expt.model.dipole_model import (
-    DipoleModel,
-)
-from deepmd.pt_expt.model.dos_model import (
-    DOSModel,
+from deepmd.pt_expt.model.dp_zbl_model import (
+    DPZBLModel,
 )
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
@@ -32,17 +36,8 @@ from deepmd.pt_expt.model.ener_model import (
 from deepmd.pt_expt.model.model import (
     BaseModel,
 )
-from deepmd.pt_expt.model.polar_model import (
-    PolarModel,
-)
-from deepmd.pt_expt.model.property_model import (
-    PropertyModel,
-)
 from deepmd.pt_expt.model.spin_ener_model import (
     SpinEnergyModel,
-)
-from deepmd.utils.spin import (
-    Spin,
 )
 
 log = logging.getLogger(__name__)
@@ -51,69 +46,17 @@ log = logging.getLogger(__name__)
 _WARNED_ONCE: set[str] = set()
 
 
-def _get_standard_model_components(
-    data: dict[str, Any],
-    ntypes: int,
-) -> tuple:
-    """Build descriptor and fitting from config dict."""
-    # descriptor
-    data["descriptor"]["ntypes"] = ntypes
-    data["descriptor"]["type_map"] = copy.deepcopy(data["type_map"])
-    descriptor = BaseDescriptor(**data["descriptor"])
-
-    # fitting
-    fitting_net = data.get("fitting_net", {})
-    fitting_net["type"] = fitting_net.get("type", "ener")
-    fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["type_map"] = copy.deepcopy(data["type_map"])
-    fitting_net["mixed_types"] = descriptor.mixed_types()
-    if fitting_net["type"] in ["dipole", "polar"]:
-        fitting_net["embedding_width"] = descriptor.get_dim_emb()
-    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    grad_force = "direct" not in fitting_net["type"]
-    if not grad_force:
-        fitting_net["out_dim"] = descriptor.get_dim_emb()
-        if "ener" in fitting_net["type"]:
-            fitting_net["return_energy"] = True
-    fitting = BaseFitting(**fitting_net)
-    return descriptor, fitting, fitting_net["type"]
-
-
-def get_standard_model(data: dict) -> EnergyModel:
-    """Get a standard model from a config dictionary.
-
-    Parameters
-    ----------
-    data : dict
-        The data to construct the model.
-    """
-    data = copy.deepcopy(data)
-    ntypes = len(data["type_map"])
-    descriptor, fitting, fitting_net_type = _get_standard_model_components(data, ntypes)
-    atom_exclude_types = data.get("atom_exclude_types", [])
-    pair_exclude_types = data.get("pair_exclude_types", [])
-
-    if fitting_net_type == "dipole":
-        modelcls = DipoleModel
-    elif fitting_net_type == "polar":
-        modelcls = PolarModel
-    elif fitting_net_type == "dos":
-        modelcls = DOSModel
-    elif fitting_net_type in ["ener", "direct_force_ener"]:
-        modelcls = EnergyModel
-    elif fitting_net_type == "property":
-        modelcls = PropertyModel
-    else:
-        raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
-
-    model = modelcls(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=data["type_map"],
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-    )
-    return model
+_model_factory = BackendModelFactory(
+    descriptor_base=BaseDescriptor,
+    fitting_base=BaseFitting,
+    model_base=BaseModel,
+    backend_name="pt_expt",
+    atomic_model=DPAtomicModel,
+    pairtab_model=PairTabAtomicModel,
+    zbl_model=DPZBLModel,
+)
+get_standard_model = _model_factory.get_standard_model
+get_zbl_model = _model_factory.get_zbl_model
 
 
 def get_sezm_model(data: dict) -> EnergyModel:
@@ -194,8 +137,7 @@ def get_sezm_model(data: dict) -> EnergyModel:
     data["pair_exclude_types"] = pair_exclude_types
     data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
-    ntypes = len(data["type_map"])
-    descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
+    descriptor, fitting, _ = _model_factory.get_model_components(data)
     return EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
@@ -213,13 +155,6 @@ def get_linear_model(model_params: dict) -> BaseModel:
     model_params : dict
         The model parameters.
     """
-    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-        DPAtomicModel,
-    )
-    from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
-        PairTabAtomicModel,
-    )
-
     from .dp_linear_model import (
         LinearEnergyModel,
     )
@@ -233,8 +168,8 @@ def get_linear_model(model_params: dict) -> BaseModel:
             sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
             sub_model_params["descriptor"]["ntypes"] = ntypes
-            descriptor, fitting, _ = _get_standard_model_components(
-                sub_model_params, ntypes
+            descriptor, fitting, _ = _model_factory.get_model_components(
+                sub_model_params
             )
             list_of_models.append(
                 DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
@@ -270,27 +205,11 @@ def get_spin_model(data: dict) -> SpinEnergyModel:
     type map and descriptor sel for virtual spin atoms, then wraps the
     backbone EnergyModel as a :class:`SpinEnergyModel`.
     """
-    data = copy.deepcopy(data)
-    data["type_map"] += [item + "_spin" for item in data["type_map"]]
-    spin = Spin(
-        use_spin=data["spin"]["use_spin"],
-        virtual_scale=data["spin"]["virtual_scale"],
+    return get_spin_model_from_factory(
+        data,
+        standard_model_factory=get_standard_model,
+        spin_model=SpinEnergyModel,
     )
-    pair_exclude_types = spin.get_pair_exclude_types(
-        exclude_types=data.get("pair_exclude_types", None)
-    )
-    data["pair_exclude_types"] = pair_exclude_types
-    data["descriptor"]["exclude_types"] = pair_exclude_types
-    atom_exclude_types = spin.get_atom_exclude_types(
-        exclude_types=data.get("atom_exclude_types", None)
-    )
-    data["atom_exclude_types"] = atom_exclude_types
-    if "env_protection" not in data["descriptor"]:
-        data["descriptor"]["env_protection"] = 1e-6
-    if data["descriptor"]["type"] in ["se_e2_a"]:
-        data["descriptor"]["sel"] += data["descriptor"]["sel"]
-    backbone_model = get_standard_model(data)
-    return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
 
 def get_model(data: dict) -> BaseModel:
@@ -301,14 +220,14 @@ def get_model(data: dict) -> BaseModel:
     data : dict
         The data to construct the model.
     """
-    model_type = data.get("type", "standard")
-    if model_type == "standard":
-        if "spin" in data:
-            return get_spin_model(data)
-        return get_standard_model(data)
-    elif model_type == "linear_ener":
-        return get_linear_model(data)
-    elif model_type in ("dpa4", "DPA4", "sezm", "SeZM"):
-        return get_sezm_model(data)
-    else:
-        return BaseModel.get_class_by_type(model_type).get_model(data)
+    return _model_factory.get_model(
+        data,
+        spin_model_factory=get_spin_model,
+        model_factories={
+            "linear_ener": get_linear_model,
+            "dpa4": get_sezm_model,
+            "DPA4": get_sezm_model,
+            "sezm": get_sezm_model,
+            "SeZM": get_sezm_model,
+        },
+    )
