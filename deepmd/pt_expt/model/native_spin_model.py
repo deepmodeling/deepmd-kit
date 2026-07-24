@@ -21,47 +21,6 @@ from deepmd.pt_expt.model.model import (
 )
 
 
-def _translate_spin_energy_keys(
-    model_ret: dict[str, torch.Tensor],
-    *,
-    do_atomic_virial: bool,
-) -> dict[str, torch.Tensor]:
-    """Map internal fitting keys -> public native-spin model keys.
-
-    The graph-spin twin of
-    :func:`deepmd.pt_expt.model.ener_model._translate_energy_keys`, kept
-    LOCAL to this module (not merged into the energy translate) because
-    ``force_mag`` is MANDATORY here -- there is no ``do_grad_r``-style
-    filter, unlike the energy path's optional ``force``/``virial`` keys.
-
-    Parameters
-    ----------
-    model_ret
-        The internal-key dict returned by ``forward_common_lower_graph``
-        (``energy``, ``energy_redu``, ``energy_derv_r``,
-        ``energy_derv_r_mag``, ``energy_derv_c_redu``, and
-        ``energy_derv_c`` when ``do_atomic_virial``).
-    do_atomic_virial
-        Whether to also emit ``atom_virial``.
-
-    Returns
-    -------
-    dict
-        Public-key dict: ``atom_energy``, ``energy``, ``force``,
-        ``force_mag``, ``virial``, and (when ``do_atomic_virial``)
-        ``atom_virial``.
-    """
-    out: dict[str, torch.Tensor] = {}
-    out["atom_energy"] = model_ret["energy"]
-    out["energy"] = model_ret["energy_redu"]
-    out["force"] = model_ret["energy_derv_r"].squeeze(-2)
-    out["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
-    out["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-    if do_atomic_virial:
-        out["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
-    return out
-
-
 @BaseModel.register("native_spin")
 class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
     """pt_expt native-spin energy model.
@@ -129,11 +88,8 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             ``force_mag`` are real autograd tensors (``-dE/dcoord`` and
             ``-dE/dspin``), NOT placeholders.
         """
-        # ``spin=`` rides the NeighborGraph lower only; ``neighbor_graph_method``
-        # is left at its default (None) so pt_expt's own default-flip resolves
-        # it to the efficient carry-all graph builder for this (DPA4)
-        # descriptor (the energy-only dpmodel ``call`` forces the O(N^2)
-        # "dense" builder; pt_expt trades that for the fast path in training).
+        # Default neighbor_graph_method: pt_expt's default-flip picks the fast
+        # graph builder (dpmodel's call forces the O(N^2) dense one).
         model_ret = self.call_common(
             coord,
             atype,
@@ -144,17 +100,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             charge_spin=charge_spin,
             spin=spin,
         )
-        # Reuse the dpmodel factory's backend-agnostic translation for ALL
-        # public keys (atom_energy/energy/mask_mag/force/force_mag/virial and,
-        # when requested, atom_virial) -- it operates on this backend's real
-        # autograd tensors, so ``force``/``force_mag`` are true derivatives
-        # (``-dE/dcoord`` / ``-dE/dspin``) and ``atom_virial`` is the real
-        # per-atom virial (the energy-only dpmodel yields ``None`` for the
-        # same key). Non-magnetic atoms already carry an exactly-zero magnetic
-        # force -- the descriptor gates the spin embedding by type, so the
-        # autograd gradient w.r.t. their inert spin is zero by construction
-        # (mirrors pt's ``SeZMNativeSpinModel.forward``, which does NOT
-        # re-mask; a backstop re-mask is forbidden by the design principles).
+        # Same shared translation as dpmodel's call, on real autograd tensors.
         return self._translate_eager_call(
             model_ret, atype, do_atomic_virial=do_atomic_virial
         )
@@ -200,8 +146,8 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         (``charge_spin`` is a frame-level conditioning input, not a leaf);
         this outer layer re-traces with the PUBLIC positional ABI above and
         translates the internal fitting keys to the public output keys via
-        :func:`_translate_spin_energy_keys` (``force_mag`` mandatory, unlike
-        the energy path's ``do_grad_r``-gated ``force``).
+        the shared :meth:`_translate_eager_call` (the same single owner as
+        the eager :meth:`forward`, so ``mask_mag`` is emitted here too).
 
         Parameters
         ----------
@@ -310,15 +256,11 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
                 charge_spin,
                 spin,
             )
-            out = _translate_spin_energy_keys(
-                model_ret,
-                do_atomic_virial=do_atomic_virial,
+            # Same single-owner translation as the eager forward, so the
+            # exported .pt2 emits mask_mag too and consumers read it.
+            return self._translate_eager_call(
+                model_ret, atype, do_atomic_virial=do_atomic_virial
             )
-            # The model owns ``mask_mag`` (same single-owner derivation as the
-            # eager forward), so the exported ``.pt2`` emits it directly and
-            # every consumer (DeepEval, C++) reads it rather than re-deriving.
-            out["mask_mag"] = self._spin_active_mask(atype)
-            return out
 
         return make_fx(fn, **make_fx_kwargs)(
             atype,

@@ -124,27 +124,9 @@ def make_native_spin_model(T_Model: type) -> type:
             return output_def
 
         def _spin_active_mask(self, atype: np.ndarray) -> np.ndarray:
-            """Per-atom boolean spin-active mask (``mask_mag``).
-
-            The SINGLE owner of the ``mask_mag`` derivation, shared across
-            backends and forward paths: dpmodel/pt_expt ``call``/``forward``
-            and the pt_expt graph-lower export all emit it through this
-            method, so the model owns the output and no consumer (DeepEval,
-            C++) re-derives it. A pure function of atom type via the spin
-            mask; array-api compatible (``[..., None]`` and integer gather
-            work for numpy and torch alike).
-
-            Parameters
-            ----------
-            atype
-                Atom types, ``(nf, nloc)`` (eager) or ``(N,)`` (graph node
-                axis).
-
-            Returns
-            -------
-            np.ndarray
-                Boolean mask with a trailing singleton dimension, shape
-                ``(*atype.shape, 1)``; ``True`` where the type carries spin.
+            """Single owner of ``mask_mag``: ``(N|nf,nloc, 1)`` bool, True
+            where the atom type carries spin. Array-api compatible; reused by
+            the eager and graph-export translations.
             """
             return (self.spin_mask[atype] > 0)[..., None]
 
@@ -154,18 +136,11 @@ def make_native_spin_model(T_Model: type) -> type:
             atype: np.ndarray,
             do_atomic_virial: bool = False,
         ) -> dict[str, np.ndarray | None]:
-            """Assemble the public native-spin dict from ``call_common``'s output.
-
-            The SINGLE owner of the eager output translation
-            (``atom_energy``/``energy``/``mask_mag``/``force``/``force_mag``/
-            ``virial`` and, when ``do_atomic_virial``, ``atom_virial``),
-            reused verbatim by the pt_expt ``forward`` -- it is array-api
-            compatible and works on pt_expt's real autograd tensors. Every
-            derivative key follows the same rule: the backend supplies the
-            value (pt_expt autograd) or ``None`` (the energy-only dpmodel
-            backend, which produces no derivatives), so ``atom_virial`` is
-            handled here exactly like ``virial`` rather than being
-            special-cased per backend.
+            """Single owner of the native-spin output translation, shared by
+            dpmodel/pt_expt ``call``/``forward`` and the graph export. Each
+            derivative key is the backend's value (pt_expt autograd) or
+            ``None`` (energy-only dpmodel); ``atom_virial`` is treated like
+            ``virial``, gated on ``do_atomic_virial``.
             """
             out: dict[str, np.ndarray | None] = {
                 "atom_energy": model_ret["energy"],

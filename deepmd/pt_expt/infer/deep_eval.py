@@ -96,8 +96,8 @@ def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
 
     Twin of ``_GRAPH_CATEGORY_TO_KEY`` for
     ``NativeSpinEnergyModel.forward_lower_graph_exportable``'s output dict
-    (``_translate_spin_energy_keys``: ``atom_energy``, ``energy``,
-    ``force``, ``force_mag``, ``virial``, ``atom_virial``).  Category alone
+    (``atom_energy``, ``energy``, ``force``, ``force_mag``, ``virial``,
+    ``mask_mag``, ``atom_virial``).  Category alone
     is NOT enough here: ``do_derivative`` (``deepmd.dpmodel.output_def``)
     gives the magnetic derivative def (``energy_derv_r_mag``) the SAME
     category as the physical one (``energy_derv_r``) -- only ``.magnetic``
