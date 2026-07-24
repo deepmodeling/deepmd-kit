@@ -8,15 +8,11 @@ import torch
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-    BridgingSwitch as BridgingSwitchDP,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingSwitch as BridgingSwitchDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-    InnerClamp as InnerClampDP,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
 from deepmd.kernels.utils import (
     use_amp_infer,
 )
