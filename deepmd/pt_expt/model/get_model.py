@@ -152,10 +152,11 @@ def get_sezm_model(data: dict) -> EnergyModel:
                 "scheme 'native' instead."
             )
         return get_native_spin_model(data)
-    if str(data.get("bridging_method", "none")).lower() != "none":
-        raise NotImplementedError(
-            "`bridging_method` is not supported for DPA4/SeZM in the pt_expt backend."
-        )
+    # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
+    # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
+    # atomic model's InterPotential at construction below.
+    bridging_method = str(data.get("bridging_method", "none"))
+    bridging_enabled = bridging_method.lower() not in ("none", "")
     if data.get("lora") is not None:
         raise NotImplementedError(
             "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
@@ -171,6 +172,9 @@ def get_sezm_model(data: dict) -> EnergyModel:
     data.pop("type", None)
     data.setdefault("descriptor", {})
     data.setdefault("fitting_net", {})
+    if bridging_enabled:
+        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
+        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
     # the DPA4/SeZM model type is a fixed descriptor/fitting contract; reject
@@ -210,6 +214,7 @@ def get_sezm_model(data: dict) -> EnergyModel:
         type_map=data["type_map"],
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
+        **({"bridging_method": bridging_method} if bridging_enabled else {}),
     )
 
 

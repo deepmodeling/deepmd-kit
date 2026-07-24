@@ -9,7 +9,13 @@ from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    BridgingSwitch as BridgingSwitchDP,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
+)
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    InnerClamp as InnerClampDP,
 )
 from deepmd.kernels.utils import (
     use_amp_infer,
@@ -40,6 +46,32 @@ register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
 class C3CutoffEnvelope(C3CutoffEnvelopeDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
+
+
+@torch_module
+class InnerClamp(InnerClampDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+# InnerClamp/BridgingSwitch are parameter-free (scalar bridging radii only,
+# no serialize()); rebuild fresh from the stored constructor arguments.
+register_dpmodel_mapping(
+    InnerClampDP,
+    lambda v: InnerClamp(v.r_inner, v.r_outer),
+)
+
+
+@torch_module
+class BridgingSwitch(BridgingSwitchDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+register_dpmodel_mapping(
+    BridgingSwitchDP,
+    lambda v: BridgingSwitch(v.r_inner, v.r_outer),
+)
 
 
 # C3CutoffEnvelope carries only scalar configuration (cutoff radius and

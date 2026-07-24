@@ -183,6 +183,14 @@ def _needs_with_comm_artifact(
     if isinstance(model, NativeSpinModelKind):
         return False
 
+    # Analytical bridging models are single-rank only (pt's
+    # ``supports_edge_parallel() == False`` contract: ZBL + SFPG fold each
+    # node's full outgoing-edge set, which a single rank cannot observe for
+    # ghost owners) -- never compile a with-comm artifact for them.
+    atomic_model = getattr(model, "atomic_model", None)
+    if atomic_model is not None and atomic_model.has_analytical_bridging():
+        return False
+
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
     if desc is None or not desc.has_message_passing_across_ranks():
         return False

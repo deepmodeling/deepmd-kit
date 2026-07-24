@@ -70,7 +70,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         rcond: float | None = None,
         preset_out_bias: dict[str, Array] | None = None,
         data_stat_protect: float = 1e-2,
-        bridging_method: str = "none",
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -80,23 +79,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
         self._observed_type: list[str] | None = None
-        # Analytical bridging pair potential (e.g. ZBL), injected into the
-        # per-atom energy on the NeighborGraph route (the atomic layer owns
-        # per-atom energy assembly). "none"/"" disables it; the descriptor's
-        # InnerClamp/BridgingSwitch own the [r_inner, r_outer] crossover.
-        self.bridging_method = (
-            str(bridging_method).upper() if bridging_method else "NONE"
-        )
-        if self.bridging_method != "NONE":
-            from deepmd.dpmodel.atomic_model.inter_potential import (
-                InterPotential,
-            )
-
-            self.inter_potential: InterPotential | None = InterPotential(
-                type_map=list(type_map), mode=self.bridging_method
-            )
-        else:
-            self.inter_potential = None
 
     @property
     def observed_type(self) -> list[str] | None:
@@ -183,6 +165,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
+        return False
+
+    def has_analytical_bridging(self) -> bool:
+        """Returns whether an analytical bridging pair potential is active.
+
+        Concrete default ``False``; atomic models that support an
+        analytical bridging term override this method. Consumers (e.g. the
+        with-comm export gate) call it directly instead of probing
+        attributes.
+        """
         return False
 
     def get_default_fparam(self) -> list[float] | None:
@@ -285,11 +277,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     ) -> dict[str, Array]:
         """Common interface for atomic inference.
 
-        Analytical bridging potentials (``bridging_method``) ride the
-        NeighborGraph route only (:meth:`forward_common_atomic_graph`),
-        mirroring pt's edge-form-only injection -- this dense (nlist) route
-        raises for bridging models rather than silently dropping the term.
-
         This method accept extended coordinates, extended atom typs, neighbor list,
         and predict the atomic contribution of the fit property.
 
@@ -326,12 +313,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             ret_dict["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
 
         """
-        if self.inter_potential is not None:
-            raise NotImplementedError(
-                "analytical bridging potentials (bridging_method="
-                f"{self.bridging_method!r}) ride the NeighborGraph route only; "
-                "the dense (nlist) route has no injection site for the term"
-            )
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
@@ -465,31 +446,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             spin=spin,
             comm_dict=comm_dict,
         )
-        ret_dict = self._finalize_atomic_ret(ret_dict, output_mask, atype)
-        if self.inter_potential is not None and "energy" in ret_dict:
-            # Analytical bridging term (e.g. ZBL), injected AFTER fitting and
-            # masking, BEFORE the model layer's edge autograd -- mirrors pt's
-            # sezm_model Step 5. ``graph.edge_vec`` here IS the autograd leaf
-            # created by pt_expt's ``forward_common_lower_graph``, so the
-            # term's force/virial flow through the shared edge backward with
-            # no extra autograd code (dpmodel gets the energy contribution).
-            import array_api_compat
-
-            xp = array_api_compat.array_namespace(graph.edge_vec)
-            n_node = atype.shape[0]
-            zbl = self.inter_potential.call(
-                graph.edge_vec,
-                graph.edge_index,
-                atype_clamped,
-                graph.edge_mask,
-                n_node=n_node,
-                real_type_count=len(self.type_map),
-            )
-            energy = ret_dict["energy"]
-            ret_dict["energy"] = energy + xp.reshape(
-                xp.astype(zbl, energy.dtype), energy.shape
-            )
-        return ret_dict
+        return self._finalize_atomic_ret(ret_dict, output_mask, atype)
 
     def _assert_nlist_pair_excluded(self, nlist: Array, extended_atype: Array) -> None:
         """Fail-safe: assert the nlist reaching the dense seam is pre-excluded.
@@ -902,7 +859,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         return model_forward
 
     def serialize(self) -> dict:
-        data = {
+        return {
             "type_map": self.type_map,
             "atom_exclude_types": self.atom_exclude_types,
             "pair_exclude_types": self.pair_exclude_types,
@@ -913,13 +870,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 "out_std": to_numpy_array(self.out_std),
             },
         }
-        if self.bridging_method != "NONE":
-            # Emitted only when active: the InterPotential carries no
-            # trainable state and is rebuilt from (type_map, mode) on
-            # deserialize, mirroring pt; an absent key means disabled, so
-            # pre-existing serialized dicts stay byte-stable.
-            data["bridging_method"] = self.bridging_method
-        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":

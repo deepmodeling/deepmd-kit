@@ -58,12 +58,6 @@ class BaseModel(make_base_model()):
         # bridging/lora extras below, so the accepted range is narrow).
         check_version_compatibility(int(data.get("@version", 1)), 1, 1)
         bridging_method = str(data.get("bridging_method", "none")).lower()
-        if bridging_method not in ("none", ""):
-            raise NotImplementedError(
-                "Deserializing a pt SeZM/DPA4 checkpoint with "
-                f"`bridging_method`={data.get('bridging_method')!r} is not "
-                "supported in pt_expt."
-            )
         if data.get("lora") is not None:
             raise NotImplementedError(
                 "Deserializing a pt SeZM/DPA4 checkpoint with `lora` is "
@@ -74,6 +68,14 @@ class BaseModel(make_base_model()):
             raise ValueError(
                 "SeZM/DPA4 model data is missing the 'atomic_model' entry."
             )
+        if bridging_method not in ("none", ""):
+            # Map pt's model-level wrapper key onto OUR atomic-dict key: the
+            # atomic layer owns the InterPotential here. The wrapper's
+            # ``bridging_r_inner``/``bridging_r_outer`` are dropped -- pt's
+            # descriptor serialization already carries the InnerClamp radii,
+            # so the wrapper copies are redundant for reconstruction.
+            atomic_model = dict(atomic_model)
+            atomic_model["bridging_method"] = str(data["bridging_method"]).upper()
         return atomic_model
 
     @staticmethod
