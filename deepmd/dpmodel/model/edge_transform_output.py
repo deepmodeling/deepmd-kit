@@ -21,6 +21,8 @@ import array_api_compat
 
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
+    RESERVED_PRECISION_DICT,
+    get_xp_precision,
 )
 from deepmd.dpmodel.output_def import (
     get_deriv_name,
@@ -121,6 +123,11 @@ def fit_output_to_model_output_graph(
 
     n_node = graph.n_node
     xp = array_api_compat.get_namespace(n_node)
+    # The configured energy precision is represented by a NumPy dtype class,
+    # which is not accepted as a dtype by every array namespace (notably Torch).
+    energy_dtype = get_xp_precision(
+        xp, RESERVED_PRECISION_DICT[GLOBAL_ENER_FLOAT_PRECISION]
+    )
     nf = n_node.shape[0]
     frame_id = frame_id_from_n_node(n_node)
     n_total = next(iter(fit_ret.values())).shape[0]
@@ -133,21 +140,21 @@ def fit_output_to_model_output_graph(
         if not vdef.reducible:
             continue
         kk_redu = get_reduce_name(kk)
-        vv_e = xp.astype(vv, GLOBAL_ENER_FLOAT_PRECISION)
+        vv_e = xp.astype(vv, energy_dtype)
         if owned is not None:
-            owned_e = xp.astype(owned, GLOBAL_ENER_FLOAT_PRECISION)
+            owned_e = xp.astype(owned, energy_dtype)
             vv_e = vv_e * xp.reshape(owned_e, (n_total, *([1] * (vv_e.ndim - 1))))
         redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
         if vdef.intensive:
             if mask is not None:
-                cnt_mask = xp.astype(mask, GLOBAL_ENER_FLOAT_PRECISION)
+                cnt_mask = xp.astype(mask, energy_dtype)
                 if owned is not None:
                     cnt_mask = cnt_mask * owned_e
                 cnt = segment_sum(cnt_mask, frame_id, nf)
             elif owned is not None:
                 cnt = segment_sum(owned_e, frame_id, nf)
             else:
-                cnt = xp.astype(n_node, GLOBAL_ENER_FLOAT_PRECISION)
+                cnt = xp.astype(n_node, energy_dtype)
             redu = redu / xp.reshape(cnt, (nf, *([1] * (redu.ndim - 1))))
         model_ret[kk_redu] = redu
         if vdef.r_differentiable:

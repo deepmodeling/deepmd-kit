@@ -14,12 +14,16 @@ concurrency:
   cancel-in-progress: true
 name: Test CUDA
 jobs:
-  test_cuda:
-    name: Test Python and C++ on CUDA
+  test_python:
+    name: Test Python on CUDA
     runs-on: gpu
-    # The full CUDA suite (serial pytest ~3h43m + C++ + LAMMPS) exceeds the
-    # default 360-min job limit; the self-hosted GPU runner has no hard cap.
+    # The serial Python test suite can take several hours on the GPU runner.
     timeout-minutes: 480
+    # Share ONE AOTInductor on-disk compile cache across the two pytest lanes;
+    # actions/cache (below) persists it across runs so unchanged models never
+    # recompile.
+    env:
+      TORCHINDUCTOR_CACHE_DIR: ${{ github.workspace }}/.inductor-cache
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     # container:
     #   image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
@@ -27,7 +31,18 @@ jobs:
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - name: Cache AOTInductor compile artifacts
+        # Restored AFTER checkout so checkout's git-clean can't wipe it. The repo
+        # Actions cache is capped at 10 GB; if the inductor cache outgrows it the
+        # oldest entries are evicted -- correctness is unaffected (inductor
+        # re-validates each graph; a miss just recompiles).
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.inductor-cache
+          key: inductor-cuda-${{ github.sha }}
+          restore-keys: |
+            inductor-cuda-
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           # cache: 'pip'
@@ -63,7 +78,42 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
-      - run: python -m pytest source/tests
+      - name: Run Python tests (overlap CPU-bound aoti compiles with the GPU lane)
+        # Two pytest lanes on one GPU box:
+        #   Lane 1 (CPU stream): the .pt2-freezing tests (-m aoti_compile) --
+        #     CPU-bound, GPU ~98% idle while inductor/g++/ptxas run.
+        #   Lane 2 (GPU stream): the GPU-bound remainder (-m "not aoti_compile")
+        #     -- the bulk of the suite and the wall-clock bottleneck. It does not
+        #     freeze .pt2, so it only reads the inductor cache, never competing
+        #     to write.
+        # Wall-clock becomes max(lane 1, lane 2) instead of their sum; the whole
+        # compile stream is hidden behind the GPU lane. (The C++ build + fixture
+        # generation runs in the separate test_cc job.)
+        run: |
+          # Cap the compile lane's inductor threads to ~half the cores so lane 2
+          # keeps CPU for its host-side GPU dispatch; nice the compile work too.
+          nc=$(( $(nproc) / 2 )); [ "$nc" -lt 1 ] && nc=1
+          # rc=0 + `|| rc=$?` so a lane's failure does not let the step's default
+          # `set -e` skip the wall-clock echo (the timing we most want on failure).
+          ( ta=$(date +%s); rc=0
+            TORCHINDUCTOR_COMPILE_THREADS=$nc nice -n 15 \
+              python -m pytest source/tests -m "aoti_compile" \
+                -p no:cacheprovider --junit-xml=junit-aoti.xml || rc=$?
+            # pytest exit 5 == "no tests collected"; harmless for the compile lane.
+            [ "$rc" = 5 ] && rc=0
+            echo "[lane aoti_compile] wall=$(( $(date +%s) - ta ))s exit=$rc"
+            exit $rc ) &
+          pid_a=$!
+          ( tb=$(date +%s); rc=0
+            python -m pytest source/tests -m "not aoti_compile" \
+              -p no:cacheprovider --junit-xml=junit-gpu.xml || rc=$?
+            echo "[lane gpu] wall=$(( $(date +%s) - tb ))s exit=$rc"
+            exit $rc ) &
+          pid_b=$!
+          rc_a=0; wait $pid_a || rc_a=$?
+          rc_b=0; wait $pid_b || rc_b=$?
+          echo "lane exit codes: aoti_compile=$rc_a gpu=$rc_b"
+          exit $(( rc_a != 0 || rc_b != 0 ))
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -71,6 +121,77 @@ jobs:
           XLA_PYTHON_CLIENT_PREALLOCATE: false
           XLA_PYTHON_CLIENT_ALLOCATOR: platform
           FLAGS_use_stride_compute_kernel: 0
+      - name: Upload per-lane JUnit reports
+        # junit-aoti.xml = compile lane (T_A), junit-gpu.xml = GPU lane (T_B);
+        # used to compare the two lanes against the pre-split serial baseline.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-pytest-junit
+          path: |
+            junit-aoti.xml
+            junit-gpu.xml
+          if-no-files-found: warn
+
+  test_cc:
+    name: Test C++ on CUDA
+    runs-on: gpu
+    # The gen_*.py fixture builds drive the same AOTInductor backend on the same
+    # architectures as the Python lanes, so they reuse the kernels cached by
+    # test_python / previous runs.
+    env:
+      TORCHINDUCTOR_CACHE_DIR: ${{ github.workspace }}/.inductor-cache
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
+    steps:
+      # Jobs run on separate runners, so the C++ job needs its own complete
+      # CUDA toolchain and Python dependency installation.
+      - uses: actions/checkout@v7
+      - name: Cache AOTInductor compile artifacts
+        # Restored AFTER checkout so checkout's git-clean can't wipe it. Both
+        # CUDA jobs share the same key; if both try to save it, the second save
+        # is skipped with a warning (caches are immutable), which is harmless.
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.inductor-cache
+          key: inductor-cuda-${{ github.sha }}
+          restore-keys: |
+            inductor-cuda-
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          # cache: 'pip'
+      - name: Install wget and unzip
+        run: sudo apt-get update && sudo apt-get install -y wget unzip
+      - uses: lukka/get-cmake@latest
+        with:
+          useLocalCache: true
+          useCloudCache: false
+      - run: |
+          UBUNTU_VERSION=$(lsb_release -rs | tr -d '.')
+          OS_NAME="ubuntu${UBUNTU_VERSION}"
+          echo "Current OS: ${OS_NAME}"
+
+          wget https://developer.download.nvidia.com/compute/cuda/repos/${OS_NAME}/x86_64/cuda-keyring_1.1-1_all.deb \
+          && sudo dpkg -i cuda-keyring_1.1-1_all.deb \
+          && sudo apt-get update \
+          && sudo apt-get -y install cuda-toolkit-12-9 cudnn9-cuda-12
+          echo "CUDA_PATH=/usr/local/cuda-12.9" >> $GITHUB_ENV
+          echo "/usr/local/cuda-12.9/bin" >> $GITHUB_PATH
+        # if: false # skip as we use nvidia image
+      - run: python -m pip install -U uv
+      - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_gpu --group pin_pytorch_gpu --group pin_jax_gpu
+      - run: |
+          export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
+          export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+          pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn "paddlepaddle-gpu==3.4.0.dev20260310"
+          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
+          # See https://github.com/jax-ml/jax/issues/29042
+          source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
+        env:
+          DP_VARIANT: cuda
+          DP_ENABLE_NATIVE_OPTIMIZATION: 1
+          DP_ENABLE_PYTORCH: 1
+      - run: dp --version
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       - run: |
@@ -99,7 +220,7 @@ jobs:
           CUDA_VISIBLE_DEVICES: 0
   pass:
     name: Pass testing on CUDA
-    needs: [test_cuda]
+    needs: [test_python, test_cc]
     runs-on: ubuntu-slim
     if: always()
     steps:
@@ -107,4 +228,4 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: test_cuda
+          allowed-skips: test_python, test_cc
