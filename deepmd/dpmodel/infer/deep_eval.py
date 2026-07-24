@@ -240,6 +240,40 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
+        # Canonicalize documented shorthand before AutoBatchSize sees it.
+        # Otherwise a shared per-atom aparam array is sliced on its atom axis,
+        # while one-dimensional shared inputs cannot be sliced by frame.
+        if fparam is not None:
+            fparam = np.asarray(fparam)
+            dim_fparam = self.get_dim_fparam()
+            if fparam.size == numb_test * dim_fparam:
+                fparam = fparam.reshape(numb_test, dim_fparam)
+            elif fparam.size == dim_fparam:
+                fparam = np.tile(fparam.reshape(1, dim_fparam), (numb_test, 1))
+            else:
+                raise RuntimeError(
+                    "got wrong size of frame param, should be either "
+                    f"{numb_test} x {dim_fparam} or {dim_fparam}"
+                )
+        if aparam is not None:
+            aparam = np.asarray(aparam)
+            dim_aparam = self.get_dim_aparam()
+            if aparam.size == numb_test * natoms * dim_aparam:
+                aparam = aparam.reshape(numb_test, natoms, dim_aparam)
+            elif aparam.size == natoms * dim_aparam:
+                aparam = np.tile(
+                    aparam.reshape(1, natoms, dim_aparam), (numb_test, 1, 1)
+                )
+            elif aparam.size == dim_aparam:
+                aparam = np.tile(
+                    aparam.reshape(1, 1, dim_aparam), (numb_test, natoms, 1)
+                )
+            else:
+                raise RuntimeError(
+                    "got wrong size of atomic param, should be either "
+                    f"{numb_test} x {natoms} x {dim_aparam} or "
+                    f"{natoms} x {dim_aparam} or {dim_aparam}"
+                )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, request_defs
