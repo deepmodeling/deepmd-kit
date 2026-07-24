@@ -131,6 +131,14 @@ class TestDPA4NativeSpinModel:
         with pytest.raises(NotImplementedError, match="native spin"):
             get_model(cfg)
 
+    def test_unrelated_construction_error_propagates(self):
+        # A bogus fitting kwarg must surface as the REAL TypeError, not be
+        # masked as a native-spin capability failure (review 3644847676).
+        cfg = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        cfg["fitting_net"] = {**cfg["fitting_net"], "bogus_option": 1}
+        with pytest.raises(TypeError, match="bogus_option"):
+            get_model(cfg)
+
     def test_add_chg_spin_ebd_combined_builds_and_conditions(self):
         # Combined public configuration (review 3638047227): charge-spin
         # FiLM together with native spin, as in pt's SeZMNativeSpinModel.

@@ -276,6 +276,11 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     try:
         descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
     except TypeError as err:
+        if "use_spin" not in str(err):
+            # Unrelated construction error (e.g. a bogus fitting kwarg):
+            # propagate with its real context instead of masking it as a
+            # capability failure.
+            raise
         # A descriptor without native spin support rejects the injected
         # ``use_spin`` keyword at construction; translate to the
         # capability-gate error.
