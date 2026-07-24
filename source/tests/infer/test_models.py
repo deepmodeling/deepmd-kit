@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
-import ase
+import ase.neighborlist
 import dpdata
 import numpy as np
 
@@ -421,3 +421,36 @@ class TestDeepPotNeighborList(TestDeepPot):
     @unittest.skip("Zero atoms not supported")
     def test_zero_input(self) -> None:
         pass
+
+
+def test_deep_pot_neighbor_list_nopbc() -> None:
+    """The ASE path must preserve a testcase's open-boundary semantics."""
+    # This is intentionally standalone: the parameterized TestDeepPot symbol is
+    # replaced by ``object``, so its neighbor-list subclass inherits no tests.
+    case = get_cases()["se_e2_a"]
+    result = next(result for result in case.results if result.box is None)
+    with DeepEval(
+        case.get_model(".pb"),
+        neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+            cutoffs=case.rcut,
+            bothways=True,
+        ),
+    ) as dp:
+        ee, ff, vv, ae, av = dp.eval(
+            result.coord,
+            None,
+            result.atype,
+            atomic=True,
+            fparam=result.fparam,
+            aparam=result.aparam,
+        )[:5]
+
+    np.testing.assert_almost_equal(ff.ravel(), result.force.ravel(), STRICT_PLACES)
+    np.testing.assert_almost_equal(
+        ae.ravel(), result.atomic_energy.ravel(), STRICT_PLACES
+    )
+    np.testing.assert_almost_equal(
+        av.ravel(), result.atomic_virial.ravel(), STRICT_PLACES
+    )
+    np.testing.assert_almost_equal(ee.ravel(), result.energy, STRICT_PLACES)
+    np.testing.assert_almost_equal(vv.ravel(), result.virial, STRICT_PLACES)

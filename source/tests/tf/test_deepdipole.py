@@ -1162,3 +1162,29 @@ class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
     @unittest.skip("multiple frames not supported")
     def test_2frame_old_atm(self) -> None:
         pass
+
+    def test_nopbc_matches_native_neighbor_building(self) -> None:
+        """ASE and native tensor inference must agree for an open system."""
+        with DeepDipole("deepdipole_new.pb") as native:
+            actual_tensor = self.dp.eval(self.coords, None, self.atype, atomic=True)
+            expected_tensor = native.eval(self.coords, None, self.atype, atomic=True)
+            np.testing.assert_almost_equal(
+                actual_tensor,
+                expected_tensor,
+                default_places,
+            )
+
+            actual_full = self.dp.eval_full(
+                self.coords,
+                None,
+                self.atype,
+                atomic=True,
+            )
+            expected_full = native.eval_full(
+                self.coords,
+                None,
+                self.atype,
+                atomic=True,
+            )
+            for actual, expected in zip(actual_full, expected_full, strict=True):
+                np.testing.assert_almost_equal(actual, expected, default_places)
