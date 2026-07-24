@@ -174,8 +174,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         consults it for graph-route eligibility without assuming anything
         about the atomic model's internal architecture. Implementations
         answer from their own structure (e.g. a descriptor+fitting model
-        delegates to its descriptor; a composition requires a single
-        graph-capable child).
+        delegates to its descriptor; a composition supports it iff ALL its
+        children do).
         """
         return False
 

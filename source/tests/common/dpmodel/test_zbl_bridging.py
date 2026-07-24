@@ -150,6 +150,47 @@ def test_zbl_atomic_dense_route_raises():
         zbl.forward_atomic(None, None, None)
 
 
+def test_inter_potential_supports_graph_lower():
+    """The analytical ZBL term is graph-capable (rides the NeighborGraph)."""
+    zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    assert zbl.uses_graph_lower() is True
+
+
+def test_linear_graph_lower_requires_all_children():
+    """A composition is graph-capable iff EVERY child supports the graph lower.
+
+    Regression: a dense-only child (a bare-minimum stand-in for
+    ``PairTabAtomicModel``, standard DP+ZBL) forces the whole linear model
+    onto the dense route, even alongside a graph-capable child -- otherwise
+    the graph route would call ``forward_atomic_graph`` on the dense-only
+    child, which does not implement it.
+    """
+
+    class _GraphChild(InterPotentialAtomicModel):
+        pass  # inherits uses_graph_lower() -> True
+
+    class _DenseOnlyChild(InterPotentialAtomicModel):
+        def uses_graph_lower(self) -> bool:
+            return False
+
+    graph_child = _GraphChild(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    dense_child = _DenseOnlyChild(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+
+    all_graph = LinearEnergyAtomicModel(
+        [graph_child, _GraphChild(type_map=["Ni", "O"], rcut=4.0, sel=[8])],
+        type_map=["Ni", "O"],
+        weights="sum",
+    )
+    assert all_graph.uses_graph_lower() is True
+
+    mixed = LinearEnergyAtomicModel(
+        [graph_child, dense_child],
+        type_map=["Ni", "O"],
+        weights="sum",
+    )
+    assert mixed.uses_graph_lower() is False
+
+
 def test_zbl_atomic_graph_values():
     """Atomic-model wrapper reproduces the kernel's known values."""
     import math

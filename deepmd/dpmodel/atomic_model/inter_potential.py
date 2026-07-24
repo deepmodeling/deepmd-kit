@@ -313,6 +313,13 @@ class InterPotentialAtomicModel(BaseAtomicModel):
         """No atomic parameters."""
         return False
 
+    def uses_graph_lower(self) -> bool:
+        """Graph-only term: the NeighborGraph lower is its sole evaluation
+        route, so it supports the graph route like any graph-capable atomic
+        model.
+        """
+        return True
+
     def forward_atomic(
         self,
         *args: Any,

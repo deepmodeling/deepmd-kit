@@ -251,15 +251,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
 
     def uses_graph_lower(self) -> bool:
-        """Graph-capable when exactly ONE child drives the graph.
+        """Graph-capable iff EVERY child supports the graph lower.
 
-        The other children must be graph-consumers without their own
-        driver (e.g. analytical pair terms): they evaluate on whatever
-        graph the single driver defines. Two drivers have no single graph
-        owner, so the composition stays dense.
+        All children evaluate on the one shared graph, so a single
+        dense-only child (e.g. ``PairTabAtomicModel`` in standard DP+ZBL)
+        forces the whole composition onto the dense route; a graph
+        descriptor plus an analytical graph term (ZBL bridging) stays on the
+        graph route.
         """
-        drivers = [m for m in self.models if m.uses_graph_lower()]
-        return len(drivers) == 1
+        return all(m.uses_graph_lower() for m in self.models)
 
     def forward_atomic_graph(
         self,
