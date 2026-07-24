@@ -212,12 +212,34 @@ class TestGetModelDPA4(unittest.TestCase):
             with self.assertRaisesRegex(NotImplementedError, msg_regex):
                 get_model(raw)
 
+    def test_native_spin_capability_gate_standard_config(self) -> None:
+        """The generic ``supports_native_spin()`` gate rejects a dense descriptor.
+
+        Uses a complete ``type="standard"`` se_e2_a energy config so the
+        DESCRIPTOR-AGNOSTIC capability gate is what fires -- not the
+        dpa4-typed builder's descriptor contract (pinned separately below).
+        """
+        raw = {
+            "type": "standard",
+            "type_map": ["Ni", "O"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "rcut": 4.0,
+                "rcut_smth": 3.5,
+                "sel": [8, 8],
+            },
+            "fitting_net": {"type": "ener", "neuron": [8, 8]},
+            "spin": {"use_spin": [True, False], "scheme": "native"},
+        }
+        with self.assertRaisesRegex(NotImplementedError, "native spin"):
+            get_model(raw)
+
     def test_native_spin_non_dpa4_descriptor_raises(self) -> None:
-        """Native-scheme spin on a dpa4-typed config rejects a foreign descriptor.
+        """A dpa4-typed config rejects a foreign descriptor (family contract).
 
         The dpa4-typed builder pins its descriptor/fitting contract before
-        the generic ``supports_native_spin()`` capability gate is reached,
-        so the mismatch surfaces as the family builder's ``ValueError``.
+        the generic capability gate is reached, so the mismatch surfaces as
+        the family builder's ``ValueError``.
         """
         raw = _make_raw_model_config()
         raw["descriptor"] = {"type": "se_e2_a"}
@@ -281,3 +303,16 @@ def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNativeSpinErrorTranslation(unittest.TestCase):
+    """Only the unexpected-``use_spin`` TypeError becomes the capability error."""
+
+    def test_unrelated_construction_error_propagates(self) -> None:
+        # A bogus fitting kwarg must surface as the REAL TypeError, not be
+        # masked as a native-spin capability failure (review 3644847676).
+        raw = _make_raw_model_config()
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        raw["fitting_net"]["bogus_option"] = 1
+        with self.assertRaisesRegex(TypeError, "bogus_option"):
+            get_model(raw)
