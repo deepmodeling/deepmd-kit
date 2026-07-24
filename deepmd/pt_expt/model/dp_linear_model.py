@@ -19,16 +19,15 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from .ener_model import (
+    EnergyModel,
+)
 from .make_model import (
     _pad_nlist_for_export,
     make_model,
 )
 from .model import (
     BaseModel,
-)
-
-from .ener_model import (
-    EnergyModel,
 )
 
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(BaseModel,))
