@@ -23,6 +23,7 @@
 #include "neighbor.h"
 #include "output.h"
 #include "update.h"
+#include "utils.h"
 #if LAMMPS_VERSION_NUMBER >= 20210831
 // in lammps #2902, fix_ttm members turns from private to protected
 #define USE_TTM 1
@@ -93,6 +94,26 @@ std::vector<std::string> PairDeepBaseModel::get_file_content(
     file_contents[ii] = get_file_content(models[ii]);
   }
   return file_contents;
+}
+
+void PairDeepBaseModel::parse_spin_vector_option(
+    vector<double>& values,
+    const string& option,
+    int& iarg,
+    int narg,
+    char** arg,
+    bool (*is_key)(const string&)) {
+  // PairDeepMD and PairDeepSpin intentionally share this parser so their
+  // bounds checks, keyword rejection, and numeric validation cannot drift.
+  values.resize(numb_types_spin);
+  for (int ii = 0; ii < numb_types_spin; ++ii) {
+    if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
+      error->all(FLERR, "Illegal " + option + ", the dimension should be " +
+                            to_string(numb_types_spin));
+    }
+    values[ii] = utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
+  }
+  iarg += numb_types_spin + 1;
 }
 
 void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
