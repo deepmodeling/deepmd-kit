@@ -6,6 +6,9 @@ from deepmd.dpmodel.model.make_hessian_model import (
 from .dipole_model import (
     DipoleModel,
 )
+from .dpa4_model import (
+    DPA4EnergyModel,
+)
 from .dos_model import (
     DOSModel,
 )
@@ -43,6 +46,7 @@ from .spin_ener_model import (
 __all__ = [
     "BaseModel",
     "DOSModel",
+    "DPA4EnergyModel",
     "DPZBLModel",
     "DipoleModel",
     "EnergyModel",

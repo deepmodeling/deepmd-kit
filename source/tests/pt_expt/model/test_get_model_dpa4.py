@@ -192,10 +192,13 @@ class TestGetModelDPA4(unittest.TestCase):
             get_model(raw)
 
     def test_unsupported_keys_raise(self) -> None:
-        """pt-only SeZM model-level features fail fast with NotImplementedError."""
+        """pt-only SeZM model-level features fail fast with NotImplementedError.
+
+        ``bridging_method`` is no longer in this list: it is supported as an
+        atomic-model composition (see ``test_zbl_bridging.py``).
+        """
         cases = {
             "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
-            "bridging_method": ("ZBL", "`bridging_method` is not supported"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
             "use_compile": (True, "`use_compile` is not supported"),
             "preset_out_bias": (
@@ -210,20 +213,30 @@ class TestGetModelDPA4(unittest.TestCase):
                 get_model(raw)
 
     def test_native_spin_non_dpa4_descriptor_raises(self) -> None:
-        """Native-scheme spin requires a DPA4/SeZM descriptor."""
+        """Native-scheme spin on a dpa4-typed config rejects a foreign descriptor.
+
+        The dpa4-typed builder pins its descriptor/fitting contract before
+        the generic ``supports_native_spin()`` capability gate is reached,
+        so the mismatch surfaces as the family builder's ``ValueError``.
+        """
         raw = _make_raw_model_config()
         raw["descriptor"] = {"type": "se_e2_a"}
         raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
-        with self.assertRaisesRegex(NotImplementedError, "DPA4/SeZM"):
+        with self.assertRaisesRegex(ValueError, "DPA4/SeZM descriptor"):
             get_model(raw)
 
-    def test_native_spin_add_chg_spin_ebd_raises(self) -> None:
-        """Native-scheme spin combined with charge-spin FiLM is unsupported."""
+    def test_native_spin_add_chg_spin_ebd_combined_builds(self) -> None:
+        """Native-scheme spin combined with charge-spin FiLM is SUPPORTED.
+
+        (Review 3638047227 lifted the old rejection; the combined model's
+        behavior is pinned in ``test_dpa4_native_spin.py``.)
+        """
         raw = _make_raw_model_config()
         raw["descriptor"]["add_chg_spin_ebd"] = True
         raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
-        with self.assertRaisesRegex(NotImplementedError, "charge-spin"):
-            get_model(raw)
+        model = get_model(raw)
+        self.assertTrue(model.has_chg_spin_ebd())
+        self.assertTrue(model.has_spin())
 
     def test_default_unsupported_values_pass(self) -> None:
         """Normalized defaults (bridging None, lora None, use_compile False) build."""

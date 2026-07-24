@@ -31,6 +31,9 @@ from deepmd.dpmodel.model.dos_model import (
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
+from deepmd.dpmodel.model.dpa4_model import (
+    DPA4EnergyModel,
+)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
@@ -111,8 +114,10 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
-    elif fitting_net_type in ["ener", "direct_force_ener", "dpa4_ener", "sezm_ener"]:
+    elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net_type in ["dpa4_ener", "sezm_ener"]:
+        modelcls = DPA4EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
     else:

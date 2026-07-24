@@ -68,8 +68,6 @@ def _translate_energy_keys(
 
 
 @BaseModel.register("ener")
-@BaseModel.register("sezm_ener")
-@BaseModel.register("dpa4_ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     def __init__(
         self,

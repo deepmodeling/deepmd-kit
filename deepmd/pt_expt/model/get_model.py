@@ -26,6 +26,9 @@ from deepmd.pt_expt.model.dipole_model import (
 from deepmd.pt_expt.model.dos_model import (
     DOSModel,
 )
+from deepmd.pt_expt.model.dpa4_model import (
+    DPA4EnergyModel,
+)
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
@@ -208,7 +211,7 @@ def get_sezm_model(data: dict) -> EnergyModel:
 
     ntypes = len(data["type_map"])
     descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
-    model = EnergyModel(
+    model = DPA4EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
         type_map=data["type_map"],
