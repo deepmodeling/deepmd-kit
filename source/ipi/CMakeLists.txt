@@ -56,6 +56,14 @@ endif()
 if(CMAKE_TESTING_ENABLED)
   target_link_libraries(${ipiname} PRIVATE coverage_config)
   target_link_libraries(${libipiname} PRIVATE coverage_config)
+
+  # These protocol primitives need deterministic short-write injection, which an
+  # end-to-end socket test cannot reliably request from the operating system.
+  # Keep the small C regression beside the i-PI library it exercises.
+  add_executable(test_ipi_sockets tests/test_sockets.c)
+  target_include_directories(test_ipi_sockets PRIVATE src)
+  target_link_libraries(test_ipi_sockets PRIVATE ${libipiname} coverage_config)
+  add_test(NAME test_ipi_sockets COMMAND test_ipi_sockets)
 endif()
 
 if(BUILD_PY_IF)
