@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""neighbor_graph_method dispatch: 'vesin' routes to the vesin builder and is a
-perf-only equivalent of 'dense' (same energy + force); dpmodel/jax fail-fast.
+"""neighbor_graph_method dispatch: builders are perf-only equivalents (same
+energy + force); dpmodel/jax fail-fast on vesin/nv.
+
+Builders run eagerly outside traced/compiled regions. Export and training
+compile use synthetic dense graph inputs, so flipping the default to
+``"auto"`` does not change ``.pt2`` artifacts — only the eager / DeepEval
+builder selection. Dense is typically not the bottleneck at small sizes; the
+O(N) win appears for large systems (time builders manually at N ≳ a few
+thousand to document the crossover).
 """
 
 import numpy as np
@@ -21,6 +28,9 @@ from deepmd.pt_expt.fitting.invar_fitting import (
 )
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
+)
+from deepmd.pt_expt.utils.neighbor_graph_method import (
+    resolve_auto_graph_builder,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
@@ -73,6 +83,22 @@ def _eval(model, method):
     return ret["energy_redu"], ret["energy_derv_r"]
 
 
+def _available_builders() -> list[str]:
+    """Concrete builders available in this environment (always includes dense)."""
+    methods = ["dense"]
+    try:
+        import ase  # noqa: F401
+
+        methods.append("ase")
+    except ImportError:
+        pass
+    if is_vesin_torch_available():
+        methods.append("vesin")
+    if env.DEVICE.type == "cuda" and is_nv_available():
+        methods.append("nv")
+    return methods
+
+
 @pytest.mark.skipif(not is_vesin_torch_available(), reason="vesin[torch] not installed")
 def test_vesin_matches_dense_energy_force():
     torch.manual_seed(0)
@@ -96,6 +122,40 @@ def test_nv_matches_dense_energy_force():
     tol = 1e-10  # CUDA fp64: absorbs scatter-atomic / index_add nondeterminism
     torch.testing.assert_close(e_n, e_d, rtol=tol, atol=tol)
     torch.testing.assert_close(f_n, f_d, rtol=tol, atol=tol)
+
+
+def test_all_available_builders_energy_force_parity():
+    """Every available builder is value-transparent vs dense on the same system.
+
+    Builders differ only in edge enumeration order; segment reductions are
+    order-independent up to fp addition order (device-conditional tol).
+    """
+    torch.manual_seed(0)
+    model = _make_model()
+    methods = _available_builders()
+    e_ref, f_ref = _eval(model, "dense")
+    tol = 1e-12 if env.DEVICE.type == "cpu" else 1e-10
+    for method in methods:
+        if method == "dense":
+            continue
+        e_m, f_m = _eval(model, method)
+        torch.testing.assert_close(e_m, e_ref, rtol=tol, atol=tol, msg=method)
+        torch.testing.assert_close(f_m, f_ref, rtol=tol, atol=tol, msg=method)
+
+
+def test_none_and_auto_match_resolved_builder():
+    """Model-level None / 'auto' resolve to the same concrete builder policy."""
+    torch.manual_seed(0)
+    model = _make_model()
+    resolved = resolve_auto_graph_builder(env.DEVICE)
+    e_auto, f_auto = _eval(model, "auto")
+    e_none, f_none = _eval(model, None)
+    e_res, f_res = _eval(model, resolved)
+    tol = 1e-12 if env.DEVICE.type == "cpu" else 1e-10
+    torch.testing.assert_close(e_auto, e_res, rtol=tol, atol=tol)
+    torch.testing.assert_close(f_auto, f_res, rtol=tol, atol=tol)
+    torch.testing.assert_close(e_none, e_res, rtol=tol, atol=tol)
+    torch.testing.assert_close(f_none, f_res, rtol=tol, atol=tol)
 
 
 def test_dpmodel_backend_rejects_vesin():

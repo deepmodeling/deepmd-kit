@@ -11,6 +11,10 @@ recomputes ``edge_vec`` differentiably from the (normalized) coordinates.
 Unlike the vesin builder, nvalchemiops batches natively over frames via
 ``batch_idx``/``batch_ptr`` -- a single GPU kernel handles all ``nf`` frames,
 so there is NO per-frame Python loop. CUDA-only ⇒ this module lives in pt_expt.
+On CUDA it is the first choice of
+:func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`
+when ``nvalchemiops`` is importable. Export / training compile still use
+synthetic dense graph inputs — the builder choice does not affect ``.pt2``.
 
 The matrix decode mirrors :func:`deepmd.pt.utils.nv_nlist._matrix_to_extended_inputs`
 (the authoritative, tested extraction) but stops at the sparse ``(i, j, S)``

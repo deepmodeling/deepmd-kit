@@ -139,15 +139,18 @@ class DeepEval(DeepEvalBackend):
         Neighbor-list builder for the NLIST/extended lower path (``.pte`` and
         nlist-form ``.pt2``): ``"auto"`` / ``"vesin"`` / ``"native"``. Not
         used by graph-form ``.pt2`` artifacts.
-    neighbor_graph_method : str, default: "dense"
+    neighbor_graph_method : str, default: "auto"
         Carry-all graph builder for GRAPH-FORM ``.pt2`` artifacts ONLY
-        (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
-        (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
-        non-default value on any other artifact raises at construction — the
-        knob would silently do nothing there; use ``nlist_backend`` for the
-        nlist path instead. All builders emit the same neighbor set, so the
-        choice is performance-only. Consolidating the two knobs into a single
-        backend-selection API is deferred to the dense-nlist deprecation.
+        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` (availability-
+        probed O(N) default; see
+        :func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`),
+        ``"dense"`` / ``"ase"`` (backend-agnostic), or ``"vesin"`` / ``"nv"``
+        (on-device O(N)). A non-default explicit value on any other artifact
+        raises at construction — the knob would silently do nothing there; use
+        ``nlist_backend`` for the nlist path instead. All builders emit the
+        same neighbor set, so the choice is performance-only. Consolidating
+        the two knobs into a single backend-selection API is deferred to the
+        dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
     """
@@ -160,14 +163,14 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         nlist_backend: str = "auto",
-        neighbor_graph_method: str = "dense",
+        neighbor_graph_method: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
         # World-2 graph-form ``.pt2`` (lower_input_kind == "graph") builder select:
-        # "dense"/"ase" (backend-agnostic) or "vesin"/"nv" (on-device O(N)).
+        # "auto" (probed) / "dense"/"ase" (backend-agnostic) / "vesin"/"nv" (O(N)).
         self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
 
@@ -185,11 +188,13 @@ class DeepEval(DeepEvalBackend):
             )
 
         # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
-        # (_eval_model_graph); fail fast instead of silently ignoring it on
-        # nlist-form artifacts (there, the builder knob is nlist_backend).
-        if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
-            "lower_input_kind"
-        ) not in ("graph", "dpa1_canonical"):
+        # (_eval_model_graph); fail fast instead of silently ignoring an
+        # EXPLICIT builder on nlist-form artifacts (there, the builder knob
+        # is nlist_backend). "auto" / "dense" are allowed as no-ops so the
+        # default constructor works for every artifact kind.
+        if neighbor_graph_method not in ("auto", "dense") and getattr(
+            self, "metadata", {}
+        ).get("lower_input_kind") not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
@@ -1930,14 +1935,21 @@ class DeepEval(DeepEvalBackend):
     ) -> "NeighborGraph":
         """Build the carry-all NeighborGraph for graph-form ``.pt2`` inference.
 
-        Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
-        backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
-        All backends emit the SAME neighbor set (carry-all, sel-free), so the
-        selection is a pure performance choice and results are unchanged. The
-        result is canonicalized to the destination-major graph-form ``.pt2``
-        ABI after construction.
+        Dispatches on ``self._neighbor_graph_method``: ``auto`` resolves via
+        :func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`;
+        ``dense``/``ase`` run backend-agnostic (numpy); ``vesin``/``nv`` run
+        on-device (torch, O(N)). All backends emit the SAME neighbor set
+        (carry-all, sel-free), so the selection is a pure performance choice
+        and results are unchanged. The result is canonicalized to the
+        destination-major graph-form ``.pt2`` ABI after construction.
         """
+        from deepmd.pt_expt.utils.neighbor_graph_method import (
+            resolve_auto_graph_builder,
+        )
+
         method = self._neighbor_graph_method
+        if method == "auto":
+            method = resolve_auto_graph_builder(device)
         # Model-level ``pair_exclude_types`` is a graph-BUILD transform
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
@@ -2006,7 +2018,7 @@ class DeepEval(DeepEvalBackend):
             )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
-            "use 'dense', 'ase', 'vesin', or 'nv'"
+            "use 'auto', 'dense', 'ase', 'vesin', or 'nv'"
         )
 
     def _model_pair_excl(self) -> "PairExcludeMask | None":

@@ -8,10 +8,13 @@ the ORIGINAL grad-carrying coords). torch-only => lives in pt_expt.
 
 Scope note: ``vesin.torch``'s API is single-system, so this builder LOOPS over
 frames in Python (~1 ms/frame call overhead measured on GPU). It is intended
-for ``nf == 1`` inference and CPU use. It is never on a default hot path:
-``neighbor_graph_method=None`` resolves to the ``"dense"`` converter, and
-vesin is explicit opt-in only. For batched multi-frame GPU work prefer
-``nv`` (:mod:`.nv_graph_builder`), which batches all frames in one kernel.
+for ``nf == 1`` inference and CPU use. On CPU (and on CUDA when ``nv`` is
+unavailable) it is selected by the shared
+:func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`
+default ladder; otherwise prefer ``nv`` (:mod:`.nv_graph_builder`) for batched
+multi-frame GPU work, which batches all frames in one kernel. Export and
+training compile still use synthetic dense graph inputs — the builder choice
+does not affect ``.pt2`` artifacts.
 """
 
 from __future__ import (

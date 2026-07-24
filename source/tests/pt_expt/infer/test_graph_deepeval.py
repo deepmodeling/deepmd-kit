@@ -252,7 +252,7 @@ def test_graph_pt2_deepeval_parity(graph_pt2, pbc, system) -> None:
 @pytest.mark.parametrize("pbc", [True, False])  # periodic vs non-periodic
 def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
     """Selecting neighbor_graph_method='vesin' at DeepEval yields identical
-    energy/force/virial to the default 'dense' builder on the SAME graph ``.pt2``
+    energy/force/virial to the default 'auto' builder on the SAME graph ``.pt2``
     (the builder is a pure perf choice; neighbor sets are equal).
     """
     pt2_path, _ = graph_pt2
@@ -261,7 +261,7 @@ def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
     max_nn = _max_neighbors(coords, box, atype)
     assert max_nn < SEL, "test system must be non-binding for carry-all parity"
 
-    dp_dense = DeepPot(pt2_path)  # default neighbor_graph_method == "dense"
+    dp_dense = DeepPot(pt2_path, neighbor_graph_method="dense")
     dp_vesin = DeepPot(pt2_path, neighbor_graph_method="vesin")
     assert dp_vesin.deep_eval._neighbor_graph_method == "vesin"
 
@@ -270,6 +270,37 @@ def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
     np.testing.assert_allclose(e_v, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
     np.testing.assert_allclose(f_v, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
     np.testing.assert_allclose(v_v, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")
+
+
+@pytest.mark.parametrize("pbc", [True, False])
+def test_graph_pt2_deepeval_auto_matches_dense(graph_pt2, pbc) -> None:
+    """Default / ``neighbor_graph_method='auto'`` match explicit ``'dense'``.
+
+    Builders are value-transparent; auto only changes which O(N) backend is
+    used when available. Export still uses synthetic dense inputs, so the
+    ``.pt2`` itself is unaffected by the auto default.
+    """
+    pt2_path, _ = graph_pt2
+    coords, cells, atype = _build_system(**_SYSTEMS["small_8"])
+    box = cells if pbc else None
+    max_nn = _max_neighbors(coords, box, atype)
+    assert max_nn < SEL, "test system must be non-binding for carry-all parity"
+
+    dp_default = DeepPot(pt2_path)
+    dp_auto = DeepPot(pt2_path, neighbor_graph_method="auto")
+    dp_dense = DeepPot(pt2_path, neighbor_graph_method="dense")
+    assert dp_default.deep_eval._neighbor_graph_method == "auto"
+    assert dp_auto.deep_eval._neighbor_graph_method == "auto"
+
+    e_def, f_def, v_def = dp_default.eval(coords, box, atype)
+    e_auto, f_auto, v_auto = dp_auto.eval(coords, box, atype)
+    e_d, f_d, v_d = dp_dense.eval(coords, box, atype)
+    np.testing.assert_allclose(e_def, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
+    np.testing.assert_allclose(f_def, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
+    np.testing.assert_allclose(v_def, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")
+    np.testing.assert_allclose(e_auto, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
+    np.testing.assert_allclose(f_auto, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
+    np.testing.assert_allclose(v_auto, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")
 
 
 def test_graph_pt2_single_atom_no_edges(graph_pt2) -> None:

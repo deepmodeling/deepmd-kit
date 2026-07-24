@@ -266,11 +266,19 @@ def _build_graph_for_method(
     Single owning site for the graph-builder dispatch shared by
     :meth:`_call_common_graph` and the graph Hessian wrapper
     (:class:`_WrapperForwardEnergyGraph`), so both build the graph identically.
+    ``"auto"`` is resolved device-aware via
+    :func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         build_neighbor_graph,
         build_neighbor_graph_ase,
     )
+    from deepmd.pt_expt.utils.neighbor_graph_method import (
+        resolve_auto_graph_builder,
+    )
+
+    if method == "auto":
+        method = resolve_auto_graph_builder(coord.device)
 
     if method == "dense":
         return build_neighbor_graph(
@@ -297,7 +305,7 @@ def _build_graph_for_method(
             coord, atype, box, rcut, with_csr=with_csr, pair_excl=pair_excl
         )
     raise ValueError(
-        f"unknown neighbor_graph_method {method!r}; use 'dense', 'ase', "
+        f"unknown neighbor_graph_method {method!r}; use 'auto', 'dense', 'ase', "
         "'vesin', or 'nv'"
     )
 
@@ -665,27 +673,35 @@ def make_model(
         def _resolve_graph_method(
             self, neighbor_graph_method: str | None
         ) -> str | None:
-            """pt_expt default-flip (decision #17): ``None`` => carry-all graph for
-            graph-eligible mixed_types descriptors, else dense. Unlike dpmodel/jax,
-            pt_expt has the autograd ``forward_common_lower_graph`` that produces
-            force/virial on the graph, so the graph can be the DEFAULT here.
-            ``"legacy"`` forces dense; explicit ``"dense"``/``"ase"`` force the graph.
+            """pt_expt default-flip (decision #17): ``None`` / ``"auto"`` =>
+            carry-all graph for graph-eligible mixed_types descriptors, with
+            the concrete builder chosen by
+            :func:`~deepmd.pt_expt.utils.neighbor_graph_method.resolve_auto_graph_builder`
+            at build time. Unlike dpmodel/jax, pt_expt has the autograd
+            ``forward_common_lower_graph`` that produces force/virial on the
+            graph, so the graph can be the DEFAULT here. ``"legacy"`` forces
+            the dense-nlist path; explicit ``"dense"``/``"ase"``/``"vesin"``/
+            ``"nv"`` force that graph builder.
 
             Parameters
             ----------
             neighbor_graph_method
-                The user-requested method: ``None`` (default-flip), ``"legacy"``
-                (force dense), or ``"dense"``/``"ase"`` (force the graph builder).
+                The user-requested method: ``None`` / ``"auto"`` (default-flip
+                to the availability-probed O(N) builder), ``"legacy"`` (force
+                dense nlist), or an explicit graph builder name.
 
             Returns
             -------
             method
                 The resolved method passed to :meth:`_call_common_graph`, or
-                ``None`` to take the dense path.
+                ``None`` to take the dense-nlist path. Eligible defaults return
+                ``"auto"`` (resolved device-aware in :func:`_build_graph_for_method`).
             """
             if neighbor_graph_method == "legacy":
                 return None
-            if neighbor_graph_method is not None:
+            # ``"auto"`` is synonymous with ``None`` for the eligibility gate;
+            # both become the concrete builder only at graph-build time.
+            if neighbor_graph_method not in (None, "auto"):
                 return neighbor_graph_method
             # The DEFAULT-flip is gated to ENERGY-output models: the graph
             # lower itself is output-agnostic, but the compiled-training
@@ -703,7 +719,7 @@ def make_model(
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
             if self.mixed_types() and uses_graph_lower():
-                return "dense"
+                return "auto"
             return None
 
         def _call_common_graph(
@@ -736,7 +752,8 @@ def make_model(
             ap
                 the atomic parameter. nf x nloc x nda
             method
-                the carry-all builder, ``"dense"`` or ``"ase"``.
+                the carry-all builder: ``"auto"``, ``"dense"``, ``"ase"``,
+                ``"vesin"``, or ``"nv"``.
             do_atomic_virial
                 whether to calculate the atomic virial.
 
