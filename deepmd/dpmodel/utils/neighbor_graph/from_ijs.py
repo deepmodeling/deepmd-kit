@@ -24,6 +24,9 @@ from typing import (
 
 import array_api_compat
 
+from .csr import (
+    build_edge_csr,
+)
 from .graph import (
     GraphLayout,
     NeighborGraph,
@@ -45,6 +48,9 @@ def neighbor_graph_from_ijs(
     nframe_id: Array,
     nloc: int,
     layout: GraphLayout | None = None,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
 ) -> NeighborGraph:
     """Convert a sparse ``(i, j, S)`` edge list into a :class:`NeighborGraph`.
 
@@ -70,6 +76,12 @@ def neighbor_graph_from_ijs(
         number of local atoms per frame (used for the frame-major node offset).
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
 
     Returns
     -------
@@ -80,6 +92,7 @@ def neighbor_graph_from_ijs(
     """
     if layout is None:
         layout = GraphLayout()
+    with_csr = with_csr or canonicalize
     xp = array_api_compat.array_namespace(coord)
     dev = array_api_compat.device(coord)
     nf = coord.shape[0]
@@ -108,9 +121,36 @@ def neighbor_graph_from_ijs(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
     n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+    if not with_csr:
+        return NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+        )
+    (
+        edge_index,
+        edge_vec,
+        edge_mask,
+        destination_order,
+        destination_row_ptr,
+        source_order,
+        source_row_ptr,
+    ) = build_edge_csr(
+        edge_index,
+        edge_vec,
+        edge_mask,
+        nf * nloc,
+        canonicalize=canonicalize,
+    )
     return NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
         edge_vec=edge_vec,
         edge_mask=edge_mask,
+        destination_order=destination_order,
+        destination_row_ptr=destination_row_ptr,
+        source_order=source_order,
+        source_row_ptr=source_row_ptr,
+        destination_sorted=canonicalize,
     )

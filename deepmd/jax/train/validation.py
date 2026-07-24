@@ -13,7 +13,6 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.train.validation import (
-    LOG_COLUMN_ORDER,
     FullValidatorBase,
 )
 from deepmd.jax.env import (
@@ -74,7 +73,7 @@ class JAXFullValidator(FullValidatorBase):
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
             metric_key: float(aggregated[metric_key])
-            for _, metric_key in LOG_COLUMN_ORDER
+            for _, metric_key in self.profile.column_order
             if metric_key in aggregated
         }
 

@@ -88,7 +88,6 @@ def normalized_input(fn: str, PATH_CNN: str, CONFIG_CNN: str) -> str:
     jdata_train["save_ckpt"] = os.path.join(
         PATH_CNN, os.path.split(jdata_train["save_ckpt"])[1]
     )
-    #
     jdata["model"] = nvnmd_cfg.get_model_jdata()
     jdata["nvnmd"] = nvnmd_cfg.get_nvnmd_jdata()
     return jdata
@@ -98,7 +97,6 @@ def normalized_input_qnn(
     jdata: dict, PATH_QNN: str, CONFIG_CNN: str, WEIGHT_CNN: str, MAP_CNN: str
 ) -> str:
     r"""Normalize a input script file for quantize neural network."""
-    #
     jdata_nvnmd = jdata_deepmd_input_v0["nvnmd"]
     jdata_nvnmd["enable"] = True
     jdata_nvnmd["version"] = nvnmd_cfg.version

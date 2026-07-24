@@ -94,10 +94,10 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
             if val is None:
                 if name in self._parameters:
                     self._parameters[name] = None
-                    return
+                    return None
                 if name in self._buffers:
                     self._buffers[name] = None
-                    return
+                    return None
                 return super().__setattr__(name, None)
             if getattr(self, "trainable", False):
                 param = (
@@ -107,14 +107,14 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
                 )
                 if name in self._parameters:
                     self._parameters[name] = param
-                    return
+                    return None
                 return super().__setattr__(name, param)
             if name in self._buffers:
                 self._buffers[name] = val
-                return
+                return None
             # Register on first assignment so tensors are in state_dict and moved by .to().
             self.register_buffer(name, val)
-            return
+            return None
         return super().__setattr__(name, value)
 
     def call(self, x: torch.Tensor) -> torch.Tensor:

@@ -29,6 +29,12 @@ from deepmd.common import (
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
+from deepmd.utils.eval_metrics import (
+    ENERGY_FULL_VALIDATION_PROFILE,
+    FULL_VALIDATION_PROFILES,
+    SPIN_FULL_VALIDATION_PROFILE,
+    FullValidationMetricProfile,
+)
 from deepmd.utils.plugin import (
     Plugin,
 )
@@ -145,8 +151,9 @@ def spin_args() -> list[Argument]:
     doc_use_spin = (
         "Whether to use atomic spin model for each atom type. "
         "List of boolean values with the shape of [ntypes] to specify which types use spin, "
-        f"or a list of integer values {doc_only_pt_supported} "
-        "to indicate the index of the type that uses spin."
+        f"or, {doc_only_pt_supported}, a list of the magnetic types given either as type "
+        'indices or as element symbols (e.g. `["Fe"]`), which is expanded against '
+        "`type_map` so that a large type map only needs its magnetic species named."
     )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
@@ -156,11 +163,25 @@ def spin_args() -> list[Argument]:
         "This factor is defined as the virtual distance divided by the magnitude of atomic spin "
         "for each atom type with spin. The virtual coordinate is defined as the real coordinate "
         "plus spin * virtual_scale. List of float values with shape of [ntypes] or [ntypes_spin] "
-        "or one single float value for all types, only used when use_spin is True for each atom type."
+        "or one single float value for all types, only used when use_spin is True for each atom type. "
+        "Required for the `deepspin` scheme; ignored by the `native` scheme."
+    )
+    doc_scheme = (
+        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "`native` injects the per-atom spin vector as an equivariant feature "
+        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "derives the magnetic force as the negative spin gradient of the energy, "
+        "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
+        "representation and is the default. Other models always use the `deepspin` scheme."
+    )
+    doc_allow_missing_label = (
+        "Whether to admit training systems that lack a `spin` data file, filling their "
+        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
+        "spin model; defaults to false."
     )
 
     return [
-        Argument("use_spin", [list[bool], list[int]], doc=doc_use_spin),
+        Argument("use_spin", [list[bool], list[int], list[str]], doc=doc_use_spin),
         Argument(
             "spin_norm",
             list[float],
@@ -178,6 +199,20 @@ def spin_args() -> list[Argument]:
             [list[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
+        ),
+        Argument(
+            "scheme",
+            str,
+            optional=True,
+            default="deepspin",
+            doc=doc_only_pt_supported + doc_scheme,
+        ),
+        Argument(
+            "allow_missing_label",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_allow_missing_label,
         ),
     ]
 
@@ -381,6 +416,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_edge_norm = "Whether to apply standard channel RMSNorm on cutoff-vanishing feature branches. Setting to `false` removes RMSNorm from the radial network, environment-seed FiLM, and cross-focus competition, and uses unit-floor residual scaling for post-SO(2) messages. Setting to `false` is recommended."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
@@ -431,7 +467,15 @@ def descrpt_se_zm_args() -> list[Argument]:
         "block `i` uses node degree `l_schedule[i] + extra_node_l`, while SO(2) "
         "message passing still uses `l_schedule[i]`."
     )
-    doc_n_blocks = "Number of blocks (only used when `l_schedule` is None)."
+    doc_n_blocks = (
+        "Number of interaction blocks (only used when `l_schedule` is None). "
+        "`0` disables the interaction blocks and builds the zero-block "
+        "descriptor: type embedding, optional env FiLM and geometric initial "
+        "embedding, then the final SO(3) read-out. The backbone degree is taken "
+        "from `lmax` (plus `extra_node_l`); geometry then enters only through "
+        "the geometric initial embedding, so `use_env_seed=True` with "
+        "`lmax + extra_node_l > 0` is required for a non-trivial descriptor."
+    )
     doc_block_attn_res = (
         "Descriptor-level block attention residual mode over block history "
         "`[x0, b1, b2, ...]`, where each block summary is the sum of the SO(2) "
@@ -589,6 +633,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "read-out degree equals the node degree of the last interaction block; "
         "the Wigner-D frame order follows `kmax`."
     )
+    doc_readout_layers = (
+        "Number of stacked equivariant residual read-out FFNs (default 1). Each "
+        "layer is an `x + FFN(x)` residual block sharing the read-out degree; "
+        "intermediate layers keep the full SO(3) tensor so high-degree geometry "
+        "keeps folding into l=0, and only the final layer slices the l=0 channel."
+    )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
         "`[so2_enabled, ffn_enabled]` aligned with `s2_activation`. If a branch "
@@ -684,6 +734,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             optional=True,
             default=[0],
             doc=doc_radial_mlp,
+        ),
+        Argument(
+            "edge_norm",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_edge_norm,
         ),
         Argument(
             "use_env_seed",
@@ -946,6 +1003,15 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: x in ("none", "glu", "mlp"),
             extra_check_errmsg="must be one of 'none', 'glu', or 'mlp'",
             doc=doc_only_pt_supported + doc_so3_readout,
+        ),
+        Argument(
+            "readout_layers",
+            int,
+            optional=True,
+            default=1,
+            extra_check=lambda x: x >= 1,
+            extra_check_errmsg="must be >= 1",
+            doc=doc_only_pt_supported + doc_readout_layers,
         ),
         Argument(
             "lebedev_quadrature",
@@ -5313,6 +5379,13 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
+    doc_stat_file_mode = (
+        doc_only_pt_supported + "The access mode for `stat_file`. "
+        "`update` creates the cache when needed and writes any missing statistics; "
+        "this is the behavior used when the option is omitted. "
+        "`read` requires a complete existing cache and opens it read-only, allowing "
+        "multiple training processes to share an HDF5 statistics file safely."
+    )
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
@@ -5348,6 +5421,15 @@ def training_args(
         arg_training_data,
         arg_validation_data,
         Argument("stat_file", str, optional=True, doc=doc_stat_file),
+        Argument(
+            "stat_file_mode",
+            str,
+            optional=True,
+            default="update",
+            extra_check=lambda x: x in {"read", "update"},
+            extra_check_errmsg="must be either 'read' or 'update'",
+            doc=doc_stat_file_mode,
+        ),
     ]
     args = (
         data_args
@@ -5516,17 +5598,33 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_expt_supported
-            + "Enable torch.compile to accelerate training. "
-            "Uses make_fx to decompose autograd into primitive ops, "
-            "then compiles with torch.compile/Inductor for kernel fusion. "
+            doc="(Supported Backend: PyTorch Experimental, TensorFlow2) "
+            "Enable backend compiler acceleration during training. "
+            "PyTorch Experimental uses make_fx to decompose autograd into "
+            "primitive ops, then compiles with torch.compile/Inductor for "
+            "kernel fusion. TensorFlow2 enables XLA jit_compile for the "
+            "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
         ),
     ]
 
+    def _validate_stat_file_mode(data: dict[str, Any], scope: str) -> None:
+        if data.get("stat_file_mode") == "read" and not data.get("stat_file"):
+            raise ValueError(
+                f"{scope}.stat_file_mode='read' requires {scope}.stat_file."
+            )
+
     def training_extra_check(data: dict | None) -> bool:
         if data is None:
             return True
+        if multi_task:
+            for model_key, data_dict in data.get("data_dict", {}).items():
+                _validate_stat_file_mode(
+                    data_dict,
+                    f"training.data_dict[{model_key!r}]",
+                )
+        else:
+            _validate_stat_file_mode(data, "training")
         num_steps = data.get("numb_steps")
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})
@@ -5577,14 +5675,11 @@ def training_args(
     )
 
 
-FULL_VALIDATION_METRIC_PREFS = {
-    "e:mae": ("start_pref_e", "limit_pref_e"),
-    "e:rmse": ("start_pref_e", "limit_pref_e"),
-    "f:mae": ("start_pref_f", "limit_pref_f"),
-    "f:rmse": ("start_pref_f", "limit_pref_f"),
-    "v:mae": ("start_pref_v", "limit_pref_v"),
-    "v:rmse": ("start_pref_v", "limit_pref_v"),
-}
+def _full_validation_profile_for_loss(loss_type: str) -> FullValidationMetricProfile:
+    """Return the full validation metric profile for a loss type."""
+    if loss_type == "ener_spin":
+        return SPIN_FULL_VALIDATION_PROFILE
+    return ENERGY_FULL_VALIDATION_PROFILE
 
 
 def normalize_full_validation_metric(metric: str) -> str:
@@ -5593,19 +5688,26 @@ def normalize_full_validation_metric(metric: str) -> str:
 
 
 def is_valid_full_validation_metric(metric: str) -> bool:
-    """Check whether a full validation metric is supported."""
-    return normalize_full_validation_metric(metric) in FULL_VALIDATION_METRIC_PREFS
-
-
-def get_full_validation_metric_prefactors(metric: str) -> tuple[str, str]:
-    """Get the prefactor keys required by a full validation metric."""
+    """Check whether a metric is supported by any full validation profile."""
     normalized_metric = normalize_full_validation_metric(metric)
-    if normalized_metric not in FULL_VALIDATION_METRIC_PREFS:
-        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    return any(
+        normalized_metric in profile.metric_key_map
+        for profile in FULL_VALIDATION_PROFILES.values()
+    )
+
+
+def get_full_validation_metric_prefactors(
+    metric: str, profile: FullValidationMetricProfile
+) -> tuple[str, str]:
+    """Get the loss prefactor keys required by a full validation metric."""
+    normalized_metric = normalize_full_validation_metric(metric)
+    if normalized_metric not in profile.prefactor_by_metric:
+        valid_metrics = ", ".join(item.upper() for item in profile.prefactor_by_metric)
         raise ValueError(
-            f"validating.validation_metric must be one of {valid_metrics}, got {metric!r}."
+            "validating.validation_metric must be one of "
+            f"{valid_metrics} for {profile.name} training, got {metric!r}."
         )
-    return FULL_VALIDATION_METRIC_PREFS[normalized_metric]
+    return profile.prefactor_by_metric[normalized_metric]
 
 
 def resolve_full_validation_start_step(
@@ -5622,15 +5724,29 @@ def resolve_full_validation_start_step(
 
 def validating_args() -> Argument:
     """Generate full validation arguments."""
-    valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    energy_metrics = ", ".join(
+        item.upper() for item in ENERGY_FULL_VALIDATION_PROFILE.metric_key_map
+    )
+    spin_metrics = ", ".join(
+        item.upper() for item in SPIN_FULL_VALIDATION_PROFILE.metric_key_map
+    )
+    valid_metrics = ", ".join(
+        sorted(
+            {
+                metric.upper()
+                for profile in FULL_VALIDATION_PROFILES.values()
+                for metric in profile.metric_key_map
+            }
+        )
+    )
     doc_full_validation_supported = (
-        "(Supported Backend: PyTorch, PyTorch Experimental, JAX) "
+        "(Supported Backend: PyTorch, PyTorch Experimental, JAX, TensorFlow2) "
     )
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
         "validation dataset during training. This flow is independent from the "
         "display-time validation controlled by `training.disp_freq`. Only "
-        "single-task energy training is supported. Multi-task, spin-energy, "
+        "single-task energy or spin-energy training is supported. Multi-task "
         "and `training.zero_stage >= 2` are not supported."
     )
     doc_validation_freq = (
@@ -5646,12 +5762,12 @@ def validating_args() -> Argument:
         "`training.save_ckpt`."
     )
     doc_ema_full_validation = (
-        "Whether to additionally run the same full validation flow on the "
-        "EMA-smoothed model when `validating.full_validation=true`. This reuses "
-        "the existing full validation schedule, metric, start step, and "
-        "best-checkpoint settings, writes results to an EMA-specific validation "
-        "log such as `val_ema.log`, and saves EMA best checkpoints with a "
-        "`best_ema.ckpt` prefix. Requires "
+        "Whether to run the full validation flow on the EMA-smoothed model. "
+        "This is independent from `validating.full_validation` and may be "
+        "enabled on its own to validate only the EMA model. It reuses the full "
+        "validation schedule, metric, and start step, writes results to an "
+        "EMA-specific validation log such as `val_ema.log`, and saves EMA best "
+        "checkpoints with a `best_ema.ckpt` prefix. Requires "
         "`training.enable_ema=true`."
     )
     doc_max_best_ckpt = (
@@ -5661,9 +5777,12 @@ def validating_args() -> Argument:
     )
     doc_validation_metric = (
         "Metric used to determine the best checkpoint during full validation. "
-        f"Supported values are {valid_metrics}. The string is case-insensitive. "
-        "`E` and `V` are per-atom metrics; `F` uses component-wise force errors, "
-        "matching `dp test`. The corresponding loss prefactors must not both be 0."
+        "The string is case-insensitive. For energy training the supported "
+        f"values are {energy_metrics}; for spin-energy training they are "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        "component-wise force errors, and `FM` uses magnetic-force errors, "
+        "matching `dp test`. The corresponding loss prefactors must not both "
+        "be 0."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (
@@ -5690,6 +5809,15 @@ def validating_args() -> Argument:
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
         "which are controlled by `model.enable_tf32`."
+    )
+    doc_amp_infer = (
+        "Whether to enable bf16 automatic mixed precision for eval-time forwards "
+        "(including regular validation and full validation). When `true`, this "
+        "flag is translated into `DP_AMP_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_AMP_INFER` takes "
+        "precedence over this option. This only affects SeZM/DPA4 descriptors "
+        "with `descriptor.use_amp=true`; training AMP remains controlled by "
+        "`descriptor.use_amp`."
     )
     args = [
         Argument(
@@ -5745,10 +5873,7 @@ def validating_args() -> Argument:
             default="E:MAE",
             doc=doc_full_validation_supported + doc_validation_metric,
             extra_check=is_valid_full_validation_metric,
-            extra_check_errmsg=(
-                "must be one of "
-                + ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
-            ),
+            extra_check_errmsg="must be one of " + valid_metrics,
         ),
         Argument(
             "full_val_file",
@@ -5780,6 +5905,13 @@ def validating_args() -> Argument:
             default=False,
             doc=doc_only_pt_supported + doc_tf32_infer,
         ),
+        Argument(
+            "amp_infer",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_amp_infer,
+        ),
     ]
     return Argument(
         "validating",
@@ -5789,7 +5921,8 @@ def validating_args() -> Argument:
         optional=True,
         default={},
         doc=doc_full_validation_supported
-        + "Independent full validation options for single-task energy training.",
+        + "Independent full validation options for single-task energy or "
+        + "spin-energy training.",
     )
 
 
@@ -5800,22 +5933,15 @@ def validate_full_validation_config(
     validating = data.get("validating") or {}
     training_params = data.get("training", {}) or {}
     full_validation_enabled = bool(validating.get("full_validation", False))
-    ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
-    if not full_validation_enabled:
+    # EMA full validation only takes effect when EMA itself is enabled; when
+    # `enable_ema` is off the option is silently ignored rather than rejected.
+    ema_full_validation_enabled = bool(
+        validating.get("ema_full_validation", False)
+    ) and bool(training_params.get("enable_ema", False))
+    if not full_validation_enabled and not ema_full_validation_enabled:
         return
-    if ema_full_validation_enabled and not training_params.get("enable_ema", False):
-        raise ValueError(
-            "validating.ema_full_validation requires `training.enable_ema=true`."
-        )
     if float(validating.get("full_val_start", 0.0)) == 1.0:
         return
-
-    metric = str(validating.get("validation_metric", "E:MAE"))
-    if not is_valid_full_validation_metric(metric):
-        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
-        raise ValueError(
-            f"validating.validation_metric must be one of {valid_metrics}, got {metric!r}."
-        )
 
     if multi_task:
         raise ValueError(
@@ -5824,20 +5950,24 @@ def validate_full_validation_config(
 
     loss_params = data.get("loss", {})
     loss_type = loss_params.get("type", "ener")
-    if loss_type == "ener_spin":
+    if loss_type not in ("ener", "ener_spin"):
         raise ValueError(
-            "validating.full_validation only supports single-task energy "
-            "training; spin-energy training is not supported."
+            "validating.full_validation only supports single-task energy or "
+            f"spin-energy training; got loss.type={loss_type!r}."
         )
-    if loss_type != "ener":
+    profile = _full_validation_profile_for_loss(loss_type)
+
+    metric = str(validating.get("validation_metric", "E:MAE"))
+    if normalize_full_validation_metric(metric) not in profile.metric_key_map:
+        valid_metrics = ", ".join(item.upper() for item in profile.metric_key_map)
         raise ValueError(
-            "validating.full_validation only supports single-task energy "
-            f"training with loss.type='ener'; got loss.type={loss_type!r}."
+            "validating.validation_metric must be one of "
+            f"{valid_metrics} for {profile.name} training, got {metric!r}."
         )
 
     if not training_params.get("validation_data"):
         raise ValueError(
-            "full validation requires `training.validation_data`. It is only supported for single-task energy training."
+            "full validation requires `training.validation_data`. It is only supported for single-task energy or spin-energy training."
         )
 
     zero_stage = int(training_params.get("zero_stage", 0))
@@ -5847,7 +5977,9 @@ def validate_full_validation_config(
             "training with training.zero_stage < 2."
         )
 
-    pref_start_key, pref_limit_key = get_full_validation_metric_prefactors(metric)
+    pref_start_key, pref_limit_key = get_full_validation_metric_prefactors(
+        metric, profile
+    )
     pref_start = float(loss_params.get(pref_start_key, 0.0))
     pref_limit = float(loss_params.get(pref_limit_key, 0.0))
     if pref_start == 0.0 or pref_limit == 0.0:

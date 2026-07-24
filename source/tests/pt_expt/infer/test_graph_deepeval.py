@@ -75,8 +75,8 @@ def _build_system(
 
     The blob keeps every atom within ``rcut`` of at most ``natoms - 1`` others
     (<< ``sel``), so the carry-all graph neighbor set equals the sel-capped
-    dense one.  Varying ``natoms`` yields a different edge count, exercising the
-    DYNAMIC edge axis of the exported ``.pt2`` (B2.0).
+    dense one. Varying ``natoms`` yields a different edge count and exercises
+    the dynamic edge axis of the exported ``.pt2``.
     """
     rng = np.random.default_rng(seed)
     box_size = 18.0
@@ -88,10 +88,7 @@ def _build_system(
     return coords, cells, atype
 
 
-# Two DIFFERENT-size systems evaluated through the SAME exported ``.pt2``.
-# Both are sparse, non-binding clusters but with different edge counts, so the
-# second size FAILS against a static-``E`` artifact (B1) and PASSES only once
-# the edge axis is dynamic (B2.0).
+# Two system sizes with different edge counts use the same exported artifact.
 _SYSTEMS = {
     "small_8": {"natoms": 8, "seed": 20240626},
     "large_20": {"natoms": 20, "seed": 20240701},
@@ -153,11 +150,18 @@ def _eager_dense_reference(
     return {k: v.detach().cpu().numpy() for k, v in out.items()}
 
 
-@pytest.fixture(scope="module")
-def graph_pt2():
-    """Build a dpa1(attn_layer=0) model and export it to a graph-form ``.pt2``.
+@pytest.fixture(scope="module", params=[0, 2], ids=["attn0", "attn2"])
+def graph_pt2(request):
+    """Build a dpa1 model and export it to a graph-form ``.pt2``.
 
-    The AOTI compile is slow (~90 s), so it is done once per module.  The eager
+    Parametrized over ``attn_layer``: 0 exercises the factorizable graph lower;
+    2 exercises the carry-all ATTENTION graph lower, whose compact pair
+    enumeration exports via unbacked SymInts (``xp_hint_dynamic_size``).
+    ``smooth_type_embedding`` stays False: the smooth dense reference keeps
+    sel-padding in its softmax denominator, so dense==carry-all parity holds
+    only for the non-smooth branch.
+
+    The AOTI compile is slow (~90 s), so it is done once per param.  The eager
     pt_expt model is returned alongside the archive path to serve as the dense
     parity reference.
     """
@@ -165,7 +169,10 @@ def graph_pt2():
         get_model,
     )
 
-    model = get_model(copy.deepcopy(DPA1_CONFIG)).to(torch.float64)
+    config = copy.deepcopy(DPA1_CONFIG)
+    config["descriptor"]["attn_layer"] = request.param
+    config["descriptor"]["smooth_type_embedding"] = False
+    model = get_model(config).to(torch.float64)
     model.eval()
     data = {"model": model.serialize()}
 
@@ -187,9 +194,8 @@ def graph_pt2():
 def test_graph_pt2_deepeval_parity(graph_pt2, pbc, system) -> None:
     """Graph ``.pt2`` DeepEval == eager dense dpa1 (energy/force/virial), 1e-10.
 
-    Both ``_SYSTEMS`` are fed through the SAME module-scoped ``.pt2``; the
-    differing edge counts prove the exported artifact's edge axis is dynamic
-    (a static-``E`` B1 artifact would reject / mis-shape the larger system).
+    Both systems use the same module-scoped artifact; their different edge
+    counts exercise its dynamic edge axis.
     """
     pt2_path, model = graph_pt2
     coords, cells, atype = _build_system(**_SYSTEMS[system])
@@ -264,3 +270,87 @@ def test_graph_pt2_deepeval_vesin_matches_dense(graph_pt2, pbc) -> None:
     np.testing.assert_allclose(e_v, e_d, rtol=1e-10, atol=1e-10, err_msg="energy")
     np.testing.assert_allclose(f_v, f_d, rtol=1e-10, atol=1e-10, err_msg="force")
     np.testing.assert_allclose(v_v, v_d, rtol=1e-10, atol=1e-10, err_msg="virial")
+
+
+def test_graph_pt2_single_atom_no_edges(graph_pt2) -> None:
+    """A single isolated atom (zero real edges) evaluates through the ``.pt2``.
+
+    The graph builder emits only masked guard edges here, so at runtime the
+    compact pair enumeration sees ``R == 0`` real edges — the empty extreme of
+    the unbacked-SymInt sizes the attention export carries.  Energy must match
+    the eager dense reference and the force must be (numerically) zero.
+    """
+    pt2_path, model = graph_pt2
+    coords = np.array([[[9.0, 9.0, 9.0]]])
+    atype = np.array([0], dtype=np.int32)
+
+    dp = DeepPot(pt2_path)
+    e, f, v = dp.eval(coords, None, atype)[:3]
+    ref = _eager_dense_reference(model, coords, None, atype)
+    np.testing.assert_allclose(
+        e.reshape(-1), ref["energy"].reshape(-1), rtol=1e-10, atol=1e-10
+    )
+    np.testing.assert_allclose(f.reshape(-1), 0.0, atol=1e-12)
+
+
+def test_graph_pt2_deepeval_aparam(tmp_path) -> None:
+    """Graph ``.pt2`` DeepEval with ``numb_aparam > 0``.
+
+    DeepEval receives the user-facing rectangular ``(nf, natoms, nda)``
+    aparam and must flatten it to the graph ABI's flat ``(N, nda)`` node
+    axis before feeding the artifact (regression for the aparam
+    graph-freeze review round). Checks parity vs the eager dense reference
+    with the same aparam, and that aparam genuinely reaches the fitting.
+    """
+    from deepmd.pt_expt.model import (
+        get_model,
+    )
+
+    config = copy.deepcopy(DPA1_CONFIG)
+    config["descriptor"]["smooth_type_embedding"] = False
+    config["fitting_net"] = {**config["fitting_net"], "numb_aparam": 1}
+    model = get_model(config).to(torch.float64)
+    model.eval()
+    pt2_path = str(tmp_path / "deeppot_dpa1_graph_aparam.pt2")
+    deserialize_to_file(
+        pt2_path,
+        {"model": model.serialize()},
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+
+    coords, cells, atype = _build_system(**_SYSTEMS["small_8"])
+    natoms = atype.shape[0]
+    aparam = np.linspace(0.1, 0.9, natoms).reshape(1, natoms, 1)
+
+    dp = DeepPot(pt2_path)
+    assert dp.deep_eval.metadata["lower_input_kind"] == "graph"
+    e, f, v = dp.eval(coords, cells, atype, atomic=False, aparam=aparam)[:3]
+
+    # aparam must genuinely reach the fitting through the flat node axis
+    e_bump = dp.eval(coords, cells, atype, atomic=False, aparam=aparam + 1.0)[0]
+    assert not np.allclose(e_bump, e), "aparam bump must change the energy"
+
+    # parity vs the eager dense (sel-capped, non-binding) reference
+    coord_t = torch.tensor(
+        coords.reshape(1, natoms, 3), dtype=torch.float64, device=DEVICE
+    ).requires_grad_(True)
+    atype_t = torch.tensor(atype.reshape(1, natoms), dtype=torch.int64, device=DEVICE)
+    box_t = torch.tensor(cells.reshape(1, 9), dtype=torch.float64, device=DEVICE)
+    ap_t = torch.tensor(
+        aparam.reshape(1, natoms, 1), dtype=torch.float64, device=DEVICE
+    )
+    ret = model.call_common(
+        coord_t,
+        atype_t,
+        box_t,
+        aparam=ap_t,
+        neighbor_graph_method="legacy",
+    )
+    np.testing.assert_allclose(
+        e.reshape(-1),
+        ret["energy_redu"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="energy (graph .pt2 + aparam vs eager dense)",
+    )

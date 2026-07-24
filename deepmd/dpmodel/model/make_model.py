@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.atomic_model.dp_atomic_model import (
         DPAtomicModel,
     )
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import array_api_compat
 import numpy as np
@@ -85,6 +88,7 @@ def model_call_from_call_lower(
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
     neighbor_list: NeighborList | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -109,6 +113,11 @@ def model_call_from_call_lower(
         historical behavior.  An alternative strategy (e.g. an O(N) cell list)
         may be injected to speed up neighbor-list construction; it returns the
         same extended representation, so model outputs are unchanged.
+    pair_excl
+        Model-level pair-type exclusion mask. Exclusion is a nlist-BUILD
+        transform (decision #18/A4): it is folded into the nlist here, at the
+        build seam, and ``call_lower`` consumes a pre-excluded nlist without
+        re-applying it.
 
     Returns
     -------
@@ -121,8 +130,13 @@ def model_call_from_call_lower(
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
+    # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
+    # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
+    # the lower always consumes a pre-excluded nlist. ``pair_excl`` is part of
+    # the NeighborList.build() contract; a custom strategy predating it fails
+    # loudly (TypeError) instead of silently including excluded pairs.
     extended_coord, extended_atype, nlist, mapping = builder.build(
-        cc, atype, bb, rcut, sel
+        cc, atype, bb, rcut, sel, pair_excl=pair_excl
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
@@ -275,19 +289,26 @@ def make_model(
             coord
                 The coordinates of the atoms.
                 shape: nf x (nloc x 3)
+
             atype
                 The type of atoms. shape: nf x nloc
+
             box
                 The simulation box. shape: nf x 9
+
             fparam
                 frame parameter. nf x ndf
+
             aparam
                 atomic parameter. nf x nloc x nda
+
             do_atomic_virial
                 If calculate the atomic virial.
+
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+
             neighbor_list
                 Neighbor-list construction strategy for the DENSE-nlist path
                 only.  ``None`` uses the default all-pairs builder; an
@@ -296,6 +317,7 @@ def make_model(
                 is consumed by the dense lower; supplying it forces the dense
                 route (see below) and it is rejected together with an explicit
                 ``neighbor_graph_method``.
+
             neighbor_graph_method
                 Selects the lower the model routes through.  The option strings
                 refer to the neighbor-GRAPH builder, NOT the legacy dense nlist:
@@ -313,10 +335,13 @@ def make_model(
 
                 The graph routes (``"dense"``/``"ase"``, and the pt_expt
                 default-flip) require a ``mixed_types`` descriptor with a graph
-                lower (dpa1 ``attn_layer == 0``).  At non-binding ``sel`` the
-                graph matches the dense path exactly; at binding ``sel`` the
-                carry-all graph keeps neighbors the dense path truncates, so the
-                energy intentionally differs.
+                lower (dpa1/se_atten with concat type embedding; attention layers included).
+                At non-binding ``sel`` the graph matches the dense path exactly for the
+                non-smooth branch; at binding ``sel`` the carry-all graph keeps
+                neighbors the dense path truncates, and for
+                ``smooth_type_embedding=True`` the graph drops the dense
+                layout's sel-padding softmax terms, so the energy intentionally
+                differs (sel-independent graph semantics).
 
             Returns
             -------
@@ -374,6 +399,8 @@ def make_model(
                     coord_corr_for_virial=coord_corr_for_virial,
                     charge_spin=cs,
                     neighbor_list=neighbor_list,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4)
+                    pair_excl=getattr(self.atomic_model, "pair_excl", None),
                 )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -457,10 +484,20 @@ def make_model(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
+            # Model-level ``pair_exclude_types`` is a graph-BUILD transform
+            # (decision #18): apply it here, at the seam where the NeighborGraph
+            # is constructed, so the graph lower / exported ``.pt2`` consumes an
+            # already-excluded ``edge_mask`` and never re-applies it. Mirrors the
+            # pt_expt eager path and the C++ ``applyPairExclusion`` at build.
+            pair_excl = getattr(self.atomic_model, "pair_excl", None)
             if method == "dense":
-                ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             elif method == "ase":
-                ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
+                ng = build_neighbor_graph_ase(
+                    cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
+                )
             else:
                 raise ValueError(
                     f"unknown neighbor_graph_method {method!r}; the dpmodel/jax backend "
@@ -479,7 +516,12 @@ def make_model(
                 edge_vec=ng.edge_vec,
                 edge_mask=ng.edge_mask,
                 fparam=fp,
-                aparam=ap,
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+                aparam=(
+                    xp.reshape(ap, (nf * nloc, ap.shape[-1]))
+                    if ap is not None
+                    else None
+                ),
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
@@ -629,9 +671,9 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
@@ -639,18 +681,19 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu`` (see
+                :func:`fit_output_to_model_output_graph`); ``None`` (default)
+                is the single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
                 Atomic parameter, ``(N, nda)``.
             comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for ABI
-                stability.
+                Optional MPI communication metadata.
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Charge/spin conditioning.
 
             Returns
             -------
@@ -664,6 +707,7 @@ def make_model(
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                n_local=n_local,
             )
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
                 graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
@@ -673,6 +717,7 @@ def make_model(
                 self.atomic_output_def(),
                 graph,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                n_local=n_local,
             )
 
         def call_common_lower_graph(
@@ -688,7 +733,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
         ) -> dict[str, Array]:
-            """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
+            """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
             The PRIMARY directly-callable graph interface (spec decision #14).
             Casts inputs/outputs to/from the model precision exactly like the
@@ -702,9 +747,9 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
@@ -712,18 +757,18 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu``; ``None`` (default) is the
+                single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
                 Atomic parameter, ``(N, nda)``.
             comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for ABI
-                stability.
+                Optional MPI communication metadata.
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Charge/spin conditioning.
 
             Returns
             -------
@@ -995,6 +1040,10 @@ def make_model(
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
+
+        def get_numb_dos(self) -> int:
+            """Get the number of DOS. Zero for models without a DOS output."""
+            return 0
 
         def has_default_fparam(self) -> bool:
             """Check if the model has default frame parameters."""

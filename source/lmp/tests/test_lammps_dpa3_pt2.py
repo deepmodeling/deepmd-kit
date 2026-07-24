@@ -8,9 +8,6 @@ Reference values from source/tests/infer/gen_dpa3.py / C++ test.
 import importlib.util
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -24,6 +21,10 @@ from expected_ref import (
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+    run_mpi_pair_runner,
+)
 from write_lmp_data import (
     write_lmp_data,
 )
@@ -34,6 +35,16 @@ pb_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa
 # deeppot_dpa3.pt2 by source/tests/infer/gen_dpa3.py.
 pb_file_mpi = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3_mpi.pt2"
+)
+# Same as deeppot_dpa3_mpi.pt2 but with model-level pair_exclude_types=[[0,1]]
+# (identical weights). Used to check that model-level exclusion survives the
+# dense multi-rank (run_model_with_comm) path; deeppot_dpa3_mpi.pt2 is its
+# no-exclusion baseline. Produced by source/tests/infer/gen_dpa3.py.
+pb_file_pairexcl_mpi = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "deeppot_dpa3_pairexcl_mpi.pt2"
 )
 ref_file = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3.expected"
@@ -181,41 +192,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    # LAMMPS rejects ``atom_modify map no``; the supported way to leave
-    # the atom-map disabled is to simply omit the command (default for
-    # ``atom_style atomic``).
-    if atom_map != "no":
-        lammps.atom_modify(f"map {atom_map}")
-    if units == "metal" or units == "real":
-        lammps.neighbor("2.0 bin")
-    elif units == "si":
-        lammps.neighbor("2.0e-10 bin")
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal" or units == "real":
-        lammps.mass("1 16")
-        lammps.mass("2 2")
-    elif units == "si":
-        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
-        lammps.mass("2 %.10e" % (2 * constants.mass_metal2si))
-    else:
-        raise ValueError("units should be metal, real, or si")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    elif units == "si":
-        lammps.timestep(5e-16)
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, atom_map=atom_map)
 
 
 @pytest.fixture
@@ -439,55 +416,16 @@ def _run_mpi_subprocess(
     (``"2 1 1"``); used by the ``test_*_decomposition`` variants to
     exercise 2D / 3D processor grids (Px*Py*Pz must equal nprocs).
     """
-    if data_path is None:
-        data_path = data_file
-    if pb_path is None:
-        pb_path = pb_file_mpi
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        argv = [
-            "mpirun",
-            "-n",
-            str(nprocs),
-            sys.executable,
-            str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
-            str(data_path.resolve()),
-            str(pb_path.resolve()),
-            out_path,
-        ]
-        if processors is not None:
-            argv.extend(["--processors", processors])
-        elif nprocs == 1:
-            argv.extend(["--processors", "1 1 1"])
-        if extra_args:
-            argv.extend(extra_args)
-        if runner_args:
-            argv.extend(runner_args)
-        if capture:
-            # Return raw process info instead of parsing output — used by
-            # tests that expect the subprocess to fail (the fail-fast cases).
-            proc = sp.run(argv, capture_output=True, text=True)
-            return {
-                "returncode": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-            }
-        sp.check_call(argv)
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe = float(lines[0])
-        rows = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        # Each row is (3 force) + (9 virial); see runner script.
-        forces = rows[:, :3]
-        virials = rows[:, 3:]
-        return {"pe": pe, "forces": forces, "virials": virials}
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
+    return run_mpi_pair_runner(
+        Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py",
+        data_path or data_file,
+        pb_path or pb_file_mpi,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=extra_args,
+        runner_args=runner_args,
+        capture=capture,
+    )
 
 
 @pytest.mark.skipif(
@@ -537,6 +475,50 @@ def test_pair_deepmd_mpi_dpa3() -> None:
         expected_v,
         atol=1e-8,
         rtol=0,
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.skipif(
+    not pb_file_pairexcl_mpi.exists(),
+    reason="gen_dpa3.py pair-exclude .pt2 fixture not generated",
+)
+def test_pair_deepmd_mpi_dpa3_pairexcl_matches_single_rank() -> None:
+    """Model-level ``pair_exclude_types`` must survive the dense multi-rank
+    (with-comm) path (cell 3).
+
+    DPA3 is message-passing, so ``use_loc_mapping=False`` routes multi-rank
+    through ``run_model_with_comm`` (the dense with-comm lower).  Decision
+    #18/A4 removed exclusion from the exported lower, so it must be applied at
+    the C++ ingestion seam (``applyPairExclusionNlist``) on THIS path too --
+    otherwise a message-passing model with ``pair_exclude_types`` silently
+    includes excluded pairs multi-rank (multi-rank != single-rank).
+
+    Two checks:
+      1. MP (``-n 2``) ≡ SP (``-n 1``) on the excluded archive.
+      2. The excluded run differs from the SAME-weights no-exclusion baseline
+         (``deeppot_dpa3_mpi.pt2``), so a silently-dropped exclusion on BOTH
+         ranks cannot pass check 1 trivially.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_pairexcl_mpi)
+    out_ref = _run_mpi_subprocess(nprocs=1, pb_path=pb_file_pairexcl_mpi)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+
+    # Exclusion must be ACTIVE on the with-comm path: energy must differ from
+    # the same-weights no-exclusion baseline (O-H pairs dropped).
+    out_none = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_mpi)
+    assert abs(out_mpi["pe"] - out_none["pe"]) > 1e-6, (
+        "pair_exclude_types had no effect on the dense multi-rank path "
+        f"(|E_excl - E_none| = {abs(out_mpi['pe'] - out_none['pe']):.2e})"
     )
 
 

@@ -7,6 +7,7 @@ import logging
 import os
 import platform
 import shutil
+import time
 from collections.abc import (
     Mapping,
 )
@@ -17,8 +18,14 @@ from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 import numpy as np
 import optax
@@ -41,12 +48,18 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    change_model_out_bias_by_task,
 )
 from deepmd.dpmodel.train.validation import (
     resolve_best_checkpoint_dir,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    BaseLR,
+    make_learning_rate_schedule,
+)
+from deepmd.dpmodel.utils.multi_task import (
+    apply_shared_links,
+    set_descriptor_component,
 )
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
@@ -69,6 +82,9 @@ from deepmd.jax.model.base_model import (
 )
 from deepmd.jax.model.model import (
     get_model,
+)
+from deepmd.jax.utils.multi_task import (
+    preprocess_shared_params,
 )
 from deepmd.jax.utils.serialization import (
     serialize_from_file,
@@ -102,6 +118,7 @@ class DPTrainer(AbstractTrainer):
         restart: str | None = None,
         finetune_model: str | None = None,
         finetune_links: dict[str, Any] | None = None,
+        shared_links: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the trainer from input data and optional checkpoints."""
         if finetune_model is not None and (
@@ -114,6 +131,7 @@ class DPTrainer(AbstractTrainer):
         self.restart = restart
         self.finetune_model = finetune_model
         self.finetune_links = finetune_links
+        self.shared_links = shared_links
         self.restart_training = restart is not None
         self.training_param = jdata["training"]
         self.validating_param = jdata.get("validating", {}) or {}
@@ -122,6 +140,14 @@ class DPTrainer(AbstractTrainer):
 
         self.model_def_script = jdata["model"]
         self.multi_task = "model_dict" in self.model_def_script
+        if (
+            self.multi_task
+            and self.shared_links is None
+            and self.model_def_script.get("shared_dict")
+        ):
+            self.model_def_script, self.shared_links = preprocess_shared_params(
+                self.model_def_script
+            )
         self.model_keys = (
             list(self.model_def_script["model_dict"])
             if self.multi_task
@@ -197,8 +223,8 @@ class DPTrainer(AbstractTrainer):
         self.tensorboard_log_dir = tr_data.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = tr_data.get("tensorboard_freq", 1)
         self.mixed_prec = tr_data.get("mixed_precision", None)
-        self.change_bias_after_training = tr_data.get(
-            "change_bias_after_training", False
+        self.change_bias_after_training = bool(
+            tr_data.get("change_bias_after_training", False)
         )
         self.numb_fparam = (
             {key: model.get_dim_fparam() for key, model in self.models.items()}
@@ -252,11 +278,9 @@ class DPTrainer(AbstractTrainer):
             }
         return {DEFAULT_TASK_KEY: BaseModel.deserialize(model_data["model"])}
 
-    def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> LearningRateExp:
-        lr_type = lr_param.get("type", "exp")
-        if lr_type == "exp":
-            return LearningRateExp(**lr_param, num_steps=self.num_steps)
-        raise RuntimeError("unknown learning_rate type " + lr_type)
+    def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> BaseLR:
+        """Construct the schema-selected shared learning-rate schedule."""
+        return make_learning_rate_schedule(lr_param, self.num_steps)
 
     def _build_losses(
         self,
@@ -460,6 +484,12 @@ class DPTrainer(AbstractTrainer):
         if self.finetune_model is not None:
             self._apply_finetune()
 
+        self._share_model_params(
+            resume=self.init_model is not None
+            or self.restart is not None
+            or self.finetune_model is not None
+        )
+
         for model_key in self.model_keys:
             tx = optax.chain(
                 optax.scale_by_adam(),
@@ -543,6 +573,34 @@ class DPTrainer(AbstractTrainer):
                 self._sample_funcs[model_key],
                 bias_adjust_mode=bias_mode,
             )
+
+    def _share_model_params(self, *, resume: bool = False) -> None:
+        """Apply multi-task shared_dict links to JAX model branches."""
+        if not self.multi_task or not self.shared_links:
+            return
+        data_stat_protect = np.array(
+            [
+                self.model_params_by_task[model_key].get("data_stat_protect", 1e-2)
+                for model_key in self.model_keys
+            ]
+        )
+        if not np.allclose(data_stat_protect, data_stat_protect[0]):
+            raise ValueError(
+                "Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            )
+        if self.model_prob is None:
+            model_prob = np.ones(len(self.model_keys), dtype=float) / len(
+                self.model_keys
+            )
+        else:
+            model_prob = self.model_prob
+        share_jax_model_params(
+            self.models,
+            self.shared_links,
+            model_key_prob_map=dict(zip(self.model_keys, model_prob, strict=True)),
+            data_stat_protect=float(data_stat_protect[0]),
+            resume=resume,
+        )
 
     def _warn_finetune_config_mismatch(
         self,
@@ -731,6 +789,39 @@ class DPTrainer(AbstractTrainer):
         """Persist a JAX checkpoint for a one-based step."""
         self._save_checkpoint(step)
 
+    def run(self, tasks: TrainingTaskCollection) -> None:
+        """Run JAX training through the backend-independent trainer loop."""
+        log.info("Start to train %d steps.", self.num_steps)
+        wall_start = time.time()
+        super().run(tasks)
+        if self.change_bias_after_training and self.num_steps > self.start_step:
+            self._change_bias_after_training()
+            if self.rank_context.is_chief:
+                self.save_checkpoint(self.num_steps)
+        log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def _change_bias_after_training(self) -> None:
+        if self.rank_context.is_chief:
+            change_model_out_bias_by_task(
+                self.models,
+                self._sample_funcs,
+                self.model_keys,
+                bias_adjust_mode="change-by-statistic",
+            )
+        if self.rank_context.world_size <= 1:
+            return
+        from jax.experimental import (
+            multihost_utils,
+        )
+
+        for model_key in self.model_keys:
+            _, state = nnx.split(self.models[model_key])
+            state = multihost_utils.broadcast_one_to_all(
+                state.to_pure_dict(),
+                is_source=self.rank_context.is_chief,
+            )
+            nnx.update(self.models[model_key], state)
+
     def run_full_validation(
         self,
         *,
@@ -773,6 +864,7 @@ class DPTrainer(AbstractTrainer):
             box=jax_data["box"] if jax_data["find_box"] else None,
             fparam=jax_data.get("fparam", None),
             aparam=jax_data.get("aparam", None),
+            pair_excl=getattr(model.atomic_model, "pair_excl", None),
         )
         return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
 
@@ -806,8 +898,14 @@ class DPTrainer(AbstractTrainer):
         log.info(f"Trained model has been saved to: {ckpt_path!s}")
         _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
         self._cleanup_old_checkpoints()
-        with open("checkpoint", "w") as fp:
-            fp.write(f"{self.save_ckpt}.jax")
+        # Write the pointer next to the checkpoint prefix, with a value relative
+        # to that directory (basename only). The freeze entrypoint looks for the
+        # pointer inside the folder it is given and resolves the value relative
+        # to it, so a directory-valued save_ckpt would otherwise be unresolvable.
+        ckpt_dir = Path(self.save_ckpt).parent
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        with open(ckpt_dir / "checkpoint", "w") as fp:
+            fp.write(f"{Path(self.save_ckpt).name}.jax")
 
     def _save_full_validation_checkpoint(
         self,
@@ -891,6 +989,236 @@ def _evaluate_model_dict(
     model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
     model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
     return model_dict
+
+
+def share_jax_model_params(
+    models: dict[str, BaseModel],
+    shared_links: dict[str, Any],
+    *,
+    model_key_prob_map: dict[str, float],
+    data_stat_protect: float = 1e-2,
+    resume: bool = False,
+) -> None:
+    """Share JAX model parameters following ``preprocess_shared_params`` links."""
+    apply_shared_links(
+        models,
+        shared_links,
+        share_descriptor=_share_jax_descriptor,
+        share_fitting=_share_jax_fitting,
+        model_key_prob_map=model_key_prob_map,
+        data_stat_protect=data_stat_protect,
+        resume=resume,
+        logger=log,
+    )
+
+
+def _share_jax_descriptor(
+    link_model: BaseModel,
+    link_type: str,
+    link_class: Any,
+    base_class: Any,
+    shared_level: int,
+    model_prob: float,
+    *,
+    resume: bool,
+) -> None:
+    _share_descriptor_component(
+        base_class,
+        link_class,
+        shared_level,
+        model_prob=model_prob,
+        resume=resume,
+    )
+    if shared_level == 0:
+        set_descriptor_component(link_model, link_type, base_class)
+
+
+def _share_jax_fitting(
+    link_class: Any,
+    base_class: Any,
+    shared_level: int,
+    model_prob: float,
+    *,
+    protection: float,
+    resume: bool,
+) -> None:
+    _share_fitting_component(
+        base_class,
+        link_class,
+        shared_level,
+        model_prob=model_prob,
+        protection=protection,
+        resume=resume,
+    )
+
+
+def _share_descriptor_component(
+    base_class: Any,
+    link_class: Any,
+    shared_level: int,
+    *,
+    model_prob: float,
+    resume: bool,
+) -> None:
+    if type(link_class) is not type(base_class):
+        raise AssertionError("Only descriptors of the same type can share params!")
+    if shared_level == 0:
+        if not resume:
+            _merge_descriptor_stats(base_class, link_class, model_prob)
+        return
+    if shared_level == 1 and hasattr(base_class, "type_embedding"):
+        link_class.type_embedding = base_class.type_embedding
+        return
+    raise NotImplementedError(
+        f"JAX shared_dict does not support descriptor shared_level={shared_level} "
+        f"for {type(base_class).__name__}."
+    )
+
+
+def _merge_descriptor_stats(
+    base_class: Any,
+    link_class: Any,
+    model_prob: float,
+) -> None:
+    from deepmd.dpmodel.utils.env_mat_stat import (
+        merge_env_stat,
+    )
+
+    merge_env_stat(base_class, link_class, model_prob)
+    for attr in (
+        "se_atten",
+        "seat",
+        "se_ttebd",
+        "repinit",
+        "repinit_three_body",
+        "repformers",
+        "repflows",
+    ):
+        if hasattr(base_class, attr) and hasattr(link_class, attr):
+            _merge_descriptor_stats(
+                getattr(base_class, attr),
+                getattr(link_class, attr),
+                model_prob,
+            )
+    if hasattr(base_class, "descrpt_list") and hasattr(link_class, "descrpt_list"):
+        for base_item, link_item in zip(
+            base_class.descrpt_list,
+            link_class.descrpt_list,
+            strict=True,
+        ):
+            _merge_descriptor_stats(base_item, link_item, model_prob)
+
+
+def _share_fitting_component(
+    base_class: Any,
+    link_class: Any,
+    shared_level: int,
+    *,
+    model_prob: float,
+    protection: float,
+    resume: bool,
+) -> None:
+    if type(link_class) is not type(base_class):
+        raise AssertionError("Only fitting nets of the same type can share params!")
+    if shared_level != 0:
+        raise NotImplementedError(
+            f"JAX shared_dict does not support fitting_net shared_level={shared_level}."
+        )
+    if not resume:
+        _merge_fitting_param_stats(
+            base_class,
+            link_class,
+            model_prob=model_prob,
+            protection=protection,
+        )
+    link_class.nets = base_class.nets
+    for attr in (
+        "fparam_avg",
+        "fparam_inv_std",
+        "aparam_avg",
+        "aparam_inv_std",
+        "default_fparam_tensor",
+    ):
+        if getattr(base_class, attr, None) is not None:
+            setattr(link_class, attr, getattr(base_class, attr))
+
+
+def _merge_fitting_param_stats(
+    base_class: Any,
+    link_class: Any,
+    *,
+    model_prob: float,
+    protection: float,
+) -> None:
+    _merge_one_fitting_stat(
+        base_class,
+        link_class,
+        name="fparam",
+        avg_attr="fparam_avg",
+        inv_std_attr="fparam_inv_std",
+        numb_attr="numb_fparam",
+        model_prob=model_prob,
+        protection=protection,
+    )
+    _merge_one_fitting_stat(
+        base_class,
+        link_class,
+        name="aparam",
+        avg_attr="aparam_avg",
+        inv_std_attr="aparam_inv_std",
+        numb_attr="numb_aparam",
+        model_prob=model_prob,
+        protection=protection,
+    )
+
+
+def _merge_one_fitting_stat(
+    base_class: Any,
+    link_class: Any,
+    *,
+    name: str,
+    avg_attr: str,
+    inv_std_attr: str,
+    numb_attr: str,
+    model_prob: float,
+    protection: float,
+) -> None:
+    if getattr(base_class, numb_attr, 0) <= 0:
+        return
+    base_stats = base_class.get_param_stats().get(name, [])
+    link_stats = link_class.get_param_stats().get(name, [])
+    if not base_stats or not link_stats:
+        return
+    if len(base_stats) != getattr(base_class, numb_attr):
+        raise AssertionError(f"{name} statistics length mismatch!")
+    merged = [
+        base_stats[ii] + link_stats[ii] * model_prob
+        for ii in range(getattr(base_class, numb_attr))
+    ]
+    avg = np.array([stat.compute_avg() for stat in merged], dtype=np.float64)
+    inv_std = 1.0 / np.array(
+        [stat.compute_std(protection=protection) for stat in merged],
+        dtype=np.float64,
+    )
+    setattr(base_class, avg_attr, _as_backend_array(getattr(base_class, avg_attr), avg))
+    setattr(
+        base_class,
+        inv_std_attr,
+        _as_backend_array(getattr(base_class, inv_std_attr), inv_std),
+    )
+    base_class._param_stats[name] = merged
+
+
+def _as_backend_array(reference: Any, value: np.ndarray) -> Any:
+    import array_api_compat
+
+    ref_value = getattr(reference, "value", reference)
+    xp = array_api_compat.array_namespace(ref_value)
+    return xp.asarray(
+        value,
+        dtype=ref_value.dtype,
+        device=array_api_compat.device(ref_value),
+    )
 
 
 def _init_empty_state(params: Any) -> optax.EmptyState:
@@ -1007,6 +1335,7 @@ def prepare_input(
     box: np.ndarray | None = None,
     fparam: np.ndarray | None = None,
     aparam: np.ndarray | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -1038,6 +1367,9 @@ def prepare_input(
         # types will be distinguished in the lower interface,
         # so it doesn't need to be distinguished here
         distinguish_types=False,
+        # model-level pair exclusion is a nlist-BUILD transform (decision
+        # #18/A4); the lower consumes a pre-excluded nlist.
+        pair_excl=pair_excl,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     return extended_coord, extended_atype, nlist, mapping, fp, ap

@@ -151,7 +151,7 @@ def _build_data_system(
         )
     systems = process_systems(
         systems_raw,
-        patterns=dataset_params.get("rglob_patterns", None),
+        patterns=dataset_params.get("rglob_patterns"),
     )
     return DeepmdDataSystem(
         systems=systems,
@@ -159,7 +159,7 @@ def _build_data_system(
         test_size=1,
         type_map=type_map,
         trn_all_set=True,
-        sys_probs=dataset_params.get("sys_probs", None),
+        sys_probs=dataset_params.get("sys_probs"),
         auto_prob_style=dataset_params.get("auto_prob", "prob_sys_size"),
     )
 
@@ -498,10 +498,15 @@ def freeze(
     lower_kind : str
         Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
         or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
-        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``,
-        currently dpa1 with ``attn_layer == 0``) and selects the C++ graph
-        inference path; the per-atom virial is enabled for it (near-free in the
-        graph path: one extra scatter off the shared single backward).
+        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``:
+        dpa1/se_atten with concat type embedding) and selects the C++ graph inference path;
+        the per-atom virial is enabled for it (near-free in the graph path:
+        one extra scatter off the shared single backward). NOTE: for
+        ``smooth_type_embedding=True`` the carry-all graph attention
+        intentionally drops the dense layout's sel-padding terms from the
+        softmax denominator, so graph-form results are sel-independent and
+        differ from the legacy dense lower by up to ~1e-4 (see
+        ``DescrptDPA1.call_graph``).
     """
     import torch
 
@@ -563,22 +568,23 @@ def freeze(
 
     m.eval()
 
-    # The graph lower is opt-in and only valid for graph-eligible models (dpa1
-    # attn_layer==0 today). Fail fast with a clear message rather than emitting a
-    # broken .pt2. Enable the per-atom virial for the graph form -- it is
-    # near-free there (one extra scatter off the single shared backward).
+    # The graph lower is opt-in and only valid for graph-eligible models
+    # (dpa1 with concat tebd, incl. attention layers and exclude_types
+    # -- the carry-all pair enumeration exports via unbacked SymInts). Fail
+    # fast with a clear message rather than emitting a broken .pt2. Enable the
+    # per-atom virial for the graph form -- it is near-free there (one extra
+    # scatter off the single shared backward).
     do_atomic_virial = False
     if lower_kind == "graph":
-        from deepmd.pt_expt.train.training import (
-            _model_uses_graph_lower,
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower,
         )
 
-        if not _model_uses_graph_lower(m):
+        if not model_uses_graph_lower(m):
             raise ValueError(
                 "lower_kind='graph' requires a graph-eligible model "
                 "(mixed_types and a descriptor exposing uses_graph_lower()==True, "
-                "currently dpa1 with attn_layer==0). Use lower_kind='nlist' for "
-                "this model."
+                "currently dpa1 with tebd_input_mode='concat'). Use lower_kind='nlist' for this model."
             )
         do_atomic_virial = True
 

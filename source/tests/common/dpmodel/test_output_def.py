@@ -17,6 +17,9 @@ from deepmd.dpmodel.output_def import (
     apply_operation,
     check_var,
 )
+from deepmd.infer.deep_eval import (
+    DeepEvalBackend,
+)
 
 
 class VariableDef:
@@ -32,6 +35,34 @@ class VariableDef:
 
 
 class TestDef(unittest.TestCase):
+    def test_magnetic_cell_derivative_uses_cell_bucket(self) -> None:
+        """Magnetic cell derivatives must participate in virial reduction."""
+        model_def = ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reducible=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                        magnetic=True,
+                    )
+                ]
+            )
+        )
+
+        self.assertIn("energy_derv_c_mag", model_def.keys_derv_c())
+        self.assertNotIn("energy_derv_c_mag", model_def.keys_derv_r())
+        self.assertIn("energy_derv_c_mag_redu", model_def.keys_derv_c_redu())
+        self.assertEqual(
+            DeepEvalBackend._OUTDEF_DP2BACKEND["energy_derv_c_mag_redu"],
+            "virial_mag",
+        )
+        reduced_def = model_def["energy_derv_c_mag_redu"]
+        self.assertEqual(reduced_def.shape, [1, 9])
+        self.assertFalse(reduced_def.atomic)
+
     def test_model_output_def(self) -> None:
         defs = [
             OutputVariableDef(
@@ -161,6 +192,7 @@ class TestDef(unittest.TestCase):
             "energy3_derv_c_redu",
             "energy3_derv_r_mag",
             "energy3_derv_c_mag",
+            "energy3_derv_c_mag_redu",
             "dos_redu",
             "mask",
             "mask_mag",
@@ -218,6 +250,7 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3_derv_c_redu"].shape, [1, 9])
         self.assertEqual(md["energy3_derv_r_mag"].shape, [1, 3])
         self.assertEqual(md["energy3_derv_c_mag"].shape, [1, 9])
+        self.assertEqual(md["energy3_derv_c_mag_redu"].shape, [1, 9])
         self.assertEqual(md["gap"].shape, [13])
         self.assertEqual(md["gap_redu"].shape, [13])
         # atomic
@@ -240,6 +273,7 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3_derv_r_mag"].atomic, True)
         self.assertEqual(md["energy3_derv_c_mag"].atomic, True)
         self.assertEqual(md["energy3_derv_c_redu"].atomic, False)
+        self.assertEqual(md["energy3_derv_c_mag_redu"].atomic, False)
         self.assertEqual(md["gap"].atomic, True)
         self.assertEqual(md["gap_redu"].atomic, False)
         # category
@@ -276,6 +310,10 @@ class TestDef(unittest.TestCase):
         )
         self.assertEqual(
             md["energy3_derv_c_mag"].category, OutputVariableCategory.DERV_C
+        )
+        self.assertEqual(
+            md["energy3_derv_c_mag_redu"].category,
+            OutputVariableCategory.DERV_C_REDU,
         )
         self.assertEqual(md["gap"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["gap_redu"].category, OutputVariableCategory.REDU)
@@ -393,6 +431,15 @@ class TestDef(unittest.TestCase):
             md["energy3_derv_c_mag"].category & OVO.DERV_C,
             OVO.DERV_C,
         )
+        self.assertEqual(
+            md["energy3_derv_c_mag_redu"].category & OVO.REDU,
+            OVO.REDU,
+        )
+        self.assertEqual(md["energy3_derv_c_mag_redu"].category & OVO.DERV_R, 0)
+        self.assertEqual(
+            md["energy3_derv_c_mag_redu"].category & OVO.DERV_C,
+            OVO.DERV_C,
+        )
         # apply_operation: energy
         self.assertEqual(
             apply_operation(md["energy"], OVO.REDU),
@@ -456,6 +503,10 @@ class TestDef(unittest.TestCase):
             apply_operation(md["energy3"], OVO.DERV_C),
             md["energy3_derv_c_mag"].category,
         )
+        self.assertEqual(
+            apply_operation(md["energy3_derv_c_mag"], OVO.REDU),
+            md["energy3_derv_c_mag_redu"].category,
+        )
         # raise ValueError
         with self.assertRaises(ValueError):
             apply_operation(md["energy_redu"], OVO.REDU)
@@ -481,6 +532,8 @@ class TestDef(unittest.TestCase):
             apply_operation(md["energy3_derv_c_redu"], OVO.REDU)
         with self.assertRaises(ValueError):
             apply_operation(md["energy3_derv_c_mag"], OVO.DERV_C)
+        with self.assertRaises(ValueError):
+            apply_operation(md["energy3_derv_c_mag_redu"], OVO.REDU)
         # hession
         hession_cat = apply_operation(md["energy_derv_r"], OVO.DERV_R)
         self.assertEqual(hession_cat & OVO.DERV_R, OVO.DERV_R)

@@ -11,6 +11,7 @@ from deepmd.tf2.descriptor.base_descriptor import (
 )
 from deepmd.tf2.env import (
     stop_gradient,
+    tf,
     xp,
 )
 from deepmd.tf2.fitting.base_fitting import (
@@ -40,6 +41,13 @@ def make_tf2_dp_atomic_model_from_dpmodel(
         """The base descriptor class."""
         base_fitting_cls = BaseFitting
         """The base fitting class."""
+
+        @tf.autograph.experimental.do_not_convert
+        def make_atom_mask(
+            self,
+            atype: xp.ndarray,
+        ) -> xp.ndarray:
+            return atype >= 0
 
         def forward_common_atomic(
             self,

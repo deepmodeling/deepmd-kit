@@ -347,7 +347,6 @@ class TestTrainingParadigms:
 
 def _mock_load_descriptor_model_cache_test(self):
     self._checkpoint_type_map = ["H", "O"]
-    return None
 
 
 class TestFitDescriptorCache:

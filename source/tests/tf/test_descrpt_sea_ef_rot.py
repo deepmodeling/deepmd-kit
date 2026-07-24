@@ -205,7 +205,7 @@ class TestEfRot(tf.test.TestCase):
         # print(v_ae0)
         # print(ae0)
 
-        for kk in range(0, self.natoms[0]):
+        for kk in range(self.natoms[0]):
             # print(f0)
             theta = 45.0 / 180.0 * np.pi
             rr0 = self.rotate_mat(defield[0][kk * 3 : kk * 3 + 3], theta)
@@ -256,8 +256,8 @@ class TestEfRot(tf.test.TestCase):
                     self.tnatoms: self.natoms,
                 },
             )
-            for ii in range(0, self.natoms[0]):
-                for jj in range(0, self.natoms[0]):
+            for ii in range(self.natoms[0]):
+                for jj in range(self.natoms[0]):
                     diff = (
                         dcoord[0][3 * jj : 3 * jj + 3] - dcoord[0][3 * ii : 3 * ii + 3]
                     )
@@ -394,7 +394,7 @@ class TestEfRot(tf.test.TestCase):
             },
         )
 
-        for ii in range(0, self.natoms[0]):
+        for ii in range(self.natoms[0]):
             self.assertNotAlmostEqual(p_ae0[ii], p_ae1[ii])
             self.assertNotAlmostEqual(v_ae0[ii], v_ae1[ii])
 

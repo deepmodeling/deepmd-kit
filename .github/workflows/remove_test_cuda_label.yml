@@ -9,7 +9,7 @@ jobs:
       contents: read
       pull-requests: write
     # so one can re-trigger the workflow without manually removing the label
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA'
     steps:
       - uses: actions-ecosystem/action-remove-labels@v1

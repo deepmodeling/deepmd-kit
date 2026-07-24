@@ -119,7 +119,7 @@ def _smth_descriptor(jdata: dict[str, Any]) -> dict[str, Any]:
         dict with descriptor parameters
     """
     descriptor = {}
-    seed = jdata.get("seed", None)
+    seed = jdata.get("seed")
     if seed is not None:
         descriptor["seed"] = seed
     descriptor["type"] = "se_a"
@@ -150,7 +150,7 @@ def _fitting_net(jdata: dict[str, Any]) -> dict[str, Any]:
     """
     fitting_net = {}
 
-    seed = jdata.get("seed", None)
+    seed = jdata.get("seed")
     if seed is not None:
         fitting_net["seed"] = seed
     fitting_net["neuron"] = j_deprecated(jdata, "fitting_neuron", ["n_neuron"])
@@ -228,7 +228,7 @@ def _training(jdata: dict[str, Any]) -> dict[str, Any]:
         dict with training parameters
     """
     training = {}
-    seed = jdata.get("seed", None)
+    seed = jdata.get("seed")
     if seed is not None:
         training["seed"] = seed
 

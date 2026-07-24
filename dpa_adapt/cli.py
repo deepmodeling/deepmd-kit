@@ -274,7 +274,6 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_convert(args: argparse.Namespace) -> int:
-
     type_map = _maybe_split_list(args.type_map)
 
     from dpa_adapt import (

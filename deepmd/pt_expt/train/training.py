@@ -24,9 +24,6 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from deepmd.dpmodel.common import (
-    to_numpy_array,
-)
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
@@ -35,13 +32,15 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    change_model_out_bias,
+    change_model_out_bias_by_task,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -65,6 +64,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.model import (
     get_model,
+)
+from deepmd.pt_expt.model.graph_lower import (
+    model_uses_graph_lower,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
@@ -580,43 +582,6 @@ def _finalize_compiled_lower(
     )
 
 
-def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
-    """Whether ``model``'s eager default-flip routes through the GRAPH lower.
-
-    Mirrors the predicate in
-    :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
-    for ``neighbor_graph_method is None`` (the training default): a model is
-    graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
-    ``uses_graph_lower() == True`` (currently only dpa1 ``attn_layer == 0``).
-
-    When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
-    so the compiled path matches eager training (which already default-flips to
-    the carry-all graph forward); when False the dense ``forward_lower`` is
-    compiled (se_e2_a / dpa2 / dpa3 / linear / zbl).
-
-    ASSUMPTION: training uses the default ``neighbor_graph_method`` (None). If a
-    user-facing ``"legacy"`` opt-out is ever plumbed into the trainer, this gate
-    must also honor it (else eager would run dense while the compiled path runs
-    the graph lower, re-introducing the eager!=compiled divergence this fixes).
-    """
-    if not hasattr(model, "mixed_types"):
-        return False
-    try:
-        if not model.mixed_types():
-            return False
-    except (AttributeError, NotImplementedError):
-        return False
-    # Linear / ZBL atomic models have no single ``descriptor`` -> dense.
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph is None:
-        return False
-    try:
-        return bool(uses_graph())
-    except (AttributeError, NotImplementedError):
-        return False
-
-
 def _trace_and_compile_graph(
     model: torch.nn.Module,
     fparam: torch.Tensor | None,
@@ -650,8 +615,6 @@ def _trace_and_compile_graph(
         Per-task buffers promoted to FX placeholders (see
         :func:`_detect_task_buffers`).
     """
-    import math
-
     from torch._decomp import (
         get_decompositions,
     )
@@ -711,25 +674,46 @@ def _trace_and_compile_graph(
     while (trace_nf * nloc_trace) in (_forbidden | {trace_nf}):
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
-    # Static edge capacity, prime-padded to stay distinct from nf and N.
-    nnei = sum(model.get_sel())
-    e_max_base = max(math.ceil(1.25 * nloc_trace * nnei), 7)
-    e_max = _next_safe_prime(e_max_base, _forbidden | {trace_nf, trace_N})
 
     # Shared with the .pt2 export trace (serialization.py) so the two graph
     # traces can never desync on the input schema.  Training uses the run-time
     # float precision and device; optional tensors match the actual call.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
+        check_graph_trace_torch_version,
+        count_synthetic_graph_edges,
     )
 
+    check_graph_trace_torch_version(model)
+
+    # Static edge capacity: derived from the ACTUAL edge count of the
+    # synthetic trace system (the carry-all builder is sel-free; a
+    # sel-derived estimate overflows whenever the real degree exceeds sel),
+    # then prime-padded to stay distinct from nf and N.  ``+ 2`` keeps at
+    # least two masked padding rows so the padded-tail branch is traced.
+    # Trace on the MODEL's device, not the global ``DEVICE``: make_fx keeps the
+    # real model parameters (``_allow_non_fake_inputs``), so the synthetic trace
+    # inputs must live where the model does. A CUDA training run keeps the model
+    # on ``DEVICE`` (these match), but callers that trace a CPU-placed model
+    # (e.g. the graph .pt2/export path, which moves the model to CPU to dodge a
+    # CUDA autograd-stream limitation) would otherwise mix a CPU model with
+    # CUDA inputs and fail only on a GPU host.
+    _trace_device = next(model.parameters()).device
+    e_real = count_synthetic_graph_edges(
+        model,
+        nframes=trace_nf,
+        nloc=nloc_trace,
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=_trace_device,
+    )
+    e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
         model,
         e_max=e_max,
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -737,9 +721,14 @@ def _trace_and_compile_graph(
     (
         s_atype,
         s_n_node,
+        s_n_local,
         s_edge_index,
         s_edge_vec,
         s_edge_mask,
+        s_destination_order,
+        s_destination_row_ptr,
+        s_source_order,
+        s_source_row_ptr,
         s_fparam,
         s_aparam,
         s_charge_spin,
@@ -748,9 +737,14 @@ def _trace_and_compile_graph(
     def fn(
         atype: torch.Tensor,
         n_node: torch.Tensor,
+        n_local: torch.Tensor,
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
@@ -776,9 +770,14 @@ def _trace_and_compile_graph(
             model_ret = model.forward_common_lower_graph(
                 atype,
                 n_node,
+                n_local,
                 edge_index,
                 edge_vec,
                 edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
                 do_atomic_virial=False,
                 fparam=fparam,
                 aparam=aparam,
@@ -811,9 +810,14 @@ def _trace_and_compile_graph(
     )(
         s_atype,
         s_n_node,
+        s_n_local,
         s_edge_index,
         s_edge_vec,
         s_edge_mask,
+        s_destination_order,
+        s_destination_row_ptr,
+        s_source_order,
+        s_source_row_ptr,
         s_fparam,
         s_aparam,
         s_charge_spin,
@@ -906,12 +910,12 @@ class _CompiledModel(torch.nn.Module):
         nframes, nloc = atype.shape[:2]
         rcut = self.original_model.get_rcut()
 
-        # Graph-eligible models (dpa1 attn_layer==0) default-flip to the carry-all
+        # Graph-eligible models (dpa1 concat-tebd, incl. attention) default-flip to the carry-all
         # GRAPH forward in eager training; the compiled lower must be the GRAPH
         # lower too, otherwise the eager (graph) and compiled (dense) backward
         # gradients diverge at fp64 accumulation and the optimizer amplifies it.
         if self._graph_eligible is None:
-            self._graph_eligible = _model_uses_graph_lower(self.original_model)
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
         if self._graph_eligible:
             return self._forward_graph(
                 coord, atype, box, fparam, aparam, charge_spin, nframes, nloc, rcut
@@ -938,6 +942,9 @@ class _CompiledModel(torch.nn.Module):
             rcut,
             sel,
             distinguish_types=False,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
+            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1063,14 +1070,20 @@ class _CompiledModel(torch.nn.Module):
             *task_buf_vals,
         )
 
-        # Translate forward_lower keys -> forward keys.
-        # ``extended_force`` lives on all extended atoms (nf, nall, 3).
-        # Ghost-atom forces must be scatter-summed back to local atoms
-        # via ``mapping`` — the same operation ``communicate_extended_output``
-        # performs in the uncompiled path.
+        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
+        # every key passes through unchanged (energy models emit
+        # atom_energy/energy/virial/..., property/dos/... models their own
+        # keys -- the hardcoded energy-key copy here used to KeyError on any
+        # non-energy fitting), EXCEPT the extended-region keys
+        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
+        # (nf, nall, 9): their ghost rows are scatter-summed back onto
+        # local owners via ``mapping`` -- the same fold
+        # ``communicate_extended_output`` performs in the uncompiled path
+        # (which exposes them as ``force`` / ``atom_virial``).  Folding
+        # both keeps the compiled and uncompiled outputs key-for-key
+        # consistent, including for a future atom-virial training
+        # objective.
         out: dict[str, torch.Tensor] = {}
-        out["atom_energy"] = result["atom_energy"]
-        out["energy"] = result["energy"]
         if "extended_force" in result:
             ext_force = result["extended_force"]  # (nf, nall, 3)
             idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
@@ -1079,14 +1092,21 @@ class _CompiledModel(torch.nn.Module):
             )
             force.scatter_add_(1, idx, ext_force)
             out["force"] = force
-        if "virial" in result:
-            out["virial"] = result["virial"]
         if "extended_virial" in result:
-            out["extended_virial"] = result["extended_virial"]
-        if "atom_virial" in result:
-            out["atom_virial"] = result["atom_virial"]
-        if "mask" in result:
-            out["mask"] = result["mask"]
+            ext_virial = result["extended_virial"]  # (nf, nall, 9)
+            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
+            atom_virial = torch.zeros(
+                nframes,
+                nloc,
+                ext_virial.shape[-1],
+                dtype=ext_virial.dtype,
+                device=ext_virial.device,
+            )
+            atom_virial.scatter_add_(1, idx, ext_virial)
+            out["atom_virial"] = atom_virial
+        for key, val in result.items():
+            if key not in ("extended_force", "extended_virial"):
+                out[key] = val
         return out
 
     def _forward_graph(
@@ -1118,6 +1138,12 @@ class _CompiledModel(torch.nn.Module):
 
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
+        # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
+        # every per-node tensor of the graph schema (the trace sample from
+        # build_synthetic_graph_inputs is flat too, so the compiled lower's
+        # input spec expects it).
+        if aparam is not None:
+            aparam = aparam.reshape(nframes * nloc, -1)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
@@ -1151,8 +1177,12 @@ class _CompiledModel(torch.nn.Module):
                 )
 
         # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
-        # uncompiled ``_call_common_graph`` builder so the two paths match.
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        # uncompiled ``_call_common_graph`` builder so the two paths match. Model-
+        # level pair_exclude is a graph-BUILD transform (decision #18): fold it
+        # into edge_mask here so the compiled lower consumes a pre-excluded graph
+        # (the lower no longer re-applies it), matching the eager path exactly.
+        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).
@@ -1213,9 +1243,14 @@ class _CompiledModel(torch.nn.Module):
         result = self.compiled_forward_lower(
             atype_flat,
             ng.n_node,
+            ng.n_node,
             ng.edge_index,
             edge_vec,
             ng.edge_mask,
+            ng.destination_order,
+            ng.destination_row_ptr,
+            ng.source_order,
+            ng.source_row_ptr,
             fparam,
             aparam,
             charge_spin,
@@ -1347,6 +1382,9 @@ class Trainer(AbstractTrainer):
         self.max_ckpt_keep = int(training_params.get("max_ckpt_keep", 5))
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
+        self.change_bias_after_training = bool(
+            training_params.get("change_bias_after_training", False)
+        )
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
@@ -1464,9 +1502,9 @@ class Trainer(AbstractTrainer):
             self.model_prob = None
 
         # Learning rate -------------------------------------------------------
-        lr_params = config["learning_rate"].copy()
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
@@ -1523,7 +1561,11 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = training_params.get("opt_type", "Adam")
-        initial_lr = float(self.lr_schedule.value(self.start_step))
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
 
         if opt_type == "Adam":
             self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
@@ -1536,6 +1578,9 @@ class Trainer(AbstractTrainer):
             )
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
@@ -1721,6 +1766,8 @@ class Trainer(AbstractTrainer):
 
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
+                for param_group in self.optimizer.param_groups:
+                    param_group["initial_lr"] = initial_lr
                 # rebuild scheduler from the resumed step.
                 # last_epoch handles the step offset; the lambda must NOT
                 # add self.start_step again (that would double-count).
@@ -2136,7 +2183,24 @@ class Trainer(AbstractTrainer):
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
         super().run(self.training_tasks)
+        if self.change_bias_after_training and self.num_steps > self.start_step:
+            self._change_bias_after_training()
+            if self.rank_context.is_chief:
+                self.save_checkpoint(self.num_steps)
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def _change_bias_after_training(self) -> None:
+        if self.rank == 0:
+            change_model_out_bias_by_task(
+                self.models,
+                self._sample_funcs,
+                self.model_keys,
+                bias_adjust_mode="change-by-statistic",
+            )
+        if self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+        self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
     def run_full_validation(
         self,
@@ -2323,27 +2387,16 @@ def model_change_out_bias(
     -------
     The model with updated bias.
     """
-    old_bias = deepcopy(_model.get_out_bias())
-    _model.change_out_bias(
-        _sample_func,
-        bias_adjust_mode=_bias_adjust_mode,
-    )
-    new_bias = deepcopy(_model.get_out_bias())
-
     from deepmd.dpmodel.model.dp_model import (
         DPModelCommon,
     )
 
-    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
-        _model.get_fitting_net().compute_input_stats(_sample_func)
-
-    model_type_map = _model.get_type_map()
-    log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    return change_model_out_bias(
+        _model,
+        _sample_func,
+        bias_adjust_mode=_bias_adjust_mode,
+        recompute_input_stats=isinstance(_model, DPModelCommon),
     )
-    return _model
 
 
 def _get_case_embd_config(

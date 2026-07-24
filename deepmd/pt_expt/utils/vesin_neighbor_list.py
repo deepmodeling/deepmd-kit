@@ -19,6 +19,7 @@ coordinates so autograd for forces/virials flows through unchanged.
 """
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -28,6 +29,9 @@ from deepmd.dpmodel.utils.neighbor_list import (
     EdgeNeighborList,
     NeighborList,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_ij_shifts,
     merge_frame_edge_schemas,
@@ -60,6 +64,7 @@ class VesinNeighborList(NeighborList):
         rcut: float,
         sel: list[int],
         return_mode: str = "extended",
+        pair_excl: "PairExcludeMask | None" = None,
     ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         """Build the extended system + candidate neighbor list with vesin.
 
@@ -67,7 +72,24 @@ class VesinNeighborList(NeighborList):
         returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``
         (matching the default builder); the lower interface still re-formats /
         type-splits it.
+
+        Parameters
+        ----------
+        pair_excl : PairExcludeMask or None, optional
+            When provided, excluded type pairs are erased from the returned
+            neighbor list (entries set to ``-1``) by
+            :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
+            This is the OWNING application site (decision #18/A4): the exported
+            lower (``forward_common_atomic``) no longer re-applies model-level
+            ``pair_exclude_types`` -- it is applied once here at nlist BUILD
+            time. ``return_mode='edges'`` does not support ``pair_excl``; a
+            :class:`NotImplementedError` is raised in that combination.
         """
+        if return_mode == "edges" and pair_excl is not None:
+            raise NotImplementedError(
+                "pair_excl is not supported with return_mode='edges'; "
+                "use apply_pair_exclusion (graph variant) on the returned EdgeNeighborList."
+            )
         is_numpy = not isinstance(coord, torch.Tensor)
         # vesin runs on the device of the inputs: numpy (the dpmodel backend) is
         # bridged through CPU torch; torch tensors stay on their own device.  Pin
@@ -146,6 +168,13 @@ class VesinNeighborList(NeighborList):
         nlist = torch.stack(nlists, dim=0)
         mapping = torch.stack(mappings, dim=0)
 
+        if pair_excl is not None:
+            from deepmd.dpmodel.utils.nlist import (
+                apply_pair_exclusion_nlist,
+            )
+
+            nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
+
         if is_numpy:
             return (
                 extended_coord.detach().cpu().numpy(),
@@ -200,15 +229,20 @@ def _build_single(
     ii, jj, ss = vesin_search_ijs(
         positions.detach(), cell if periodic else None, periodic, rcut, device
     )
-    # ss is int64 from the helper; cast to float here for later ``ss @ box`` math.
+    # ss is int64 from the helper; cast to the coordinate dtype for the image sum.
     ss = ss.to(positions.dtype)
 
     # ghost atoms: neighbors reached through a non-zero periodic shift.  Rebuild
     # their coordinates from the grad-carrying `positions`/`box` so autograd for
-    # forces/virials flows through the extended coordinates unchanged.
+    # forces/virials flows through the extended coordinates unchanged.  The image
+    # offset ``S @ box`` is a broadcast multiply-reduce, not a matmul: the
+    # (n_ghost, 3) @ (3, 3) product otherwise dispatches to a full fp64 GEMM
+    # kernel whose length-3 contraction is catastrophically inefficient
+    # (measured ~2 ms vs ~30 us for the reduce on a 4k-atom cell), while
+    # remaining bit-identical.
     out_mask = torch.any(ss != 0, dim=1)
     out_idx = jj[out_mask]
-    out_coords = positions[out_idx] + ss[out_mask] @ box
+    out_coords = positions[out_idx] + (ss[out_mask][:, :, None] * box).sum(1)
     nghost = int(out_idx.shape[0])
 
     extended_coord = torch.cat([positions, out_coords], dim=0)

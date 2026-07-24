@@ -307,6 +307,67 @@ class DeepPotBackend : public DeepBaseModelBackend {
     computew_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
                         coord, atype, box, fparam, aparam, atomic);
   }
+  /**
+   * @brief GPU-resident edge inference backend hook.
+   *
+   * Given device-resident edge tensors, write the per-atom energy, force, and
+   * virial back to the device output pointers. The PyTorch Exportable backend
+   * overrides this; every other backend inherits the throwing default. The
+   * signature is torch-free so the dispatcher stays backend-agnostic and
+   * ``libdeepmd_cc`` need not link PyTorch. See DeepPot::compute_edges_gpu for
+   * the device pointer, graph, and communication contracts.
+   */
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const double* d_edge_vec,
+                                 const int nloc,
+                                 const int nedge);
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const double* d_edge_vec,
+                                 const int nloc,
+                                 const int nedge,
+                                 const std::vector<double>& fparam,
+                                 const std::vector<double>& aparam,
+                                 const int nall_nodes,
+                                 const InputNlist* comm_nlist);
+  virtual void compute_edges_gpu(double* d_atom_energy,
+                                 double* d_force,
+                                 double* d_atom_virial,
+                                 const double* d_coord,
+                                 const int* d_atype,
+                                 const int* d_edge_index,
+                                 const float* d_edge_vec,
+                                 const int nloc,
+                                 const int nedge,
+                                 const std::vector<double>& fparam,
+                                 const std::vector<double>& aparam,
+                                 const int nall_nodes,
+                                 const InputNlist* comm_nlist);
+  virtual void compute_canonical_graph_gpu(
+      double* d_atom_energy,
+      double* d_force,
+      double* d_atom_virial,
+      const std::int64_t* d_atype,
+      const std::int64_t* d_source,
+      const float* d_edge_vec,
+      const std::int64_t* d_destination_row_ptr,
+      const std::int64_t* d_source_row_ptr,
+      const std::int64_t* d_source_order,
+      const int nloc,
+      const int nall_nodes,
+      const std::int64_t edge_storage);
+  virtual bool supports_device_edge_inference() const;
+  virtual bool uses_fp32_edge_vectors() const;
+  virtual bool uses_canonical_graph_inference() const;
 };
 
 /**
@@ -663,6 +724,119 @@ class DeepPot : public DeepBaseModel {
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
       const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
+
+  /**
+   * @brief Fully device-resident inference for exported edge-input or
+   * graph-input .pt2 models.
+   *
+   * Forwards to the PyTorch Exportable (.pt2) backend's GPU edge path; raising
+   * if the active backend is not ``DeepPotPTExpt``.  All pointers reference GPU
+   * memory on the model's device.  See
+   * ``DeepPotPTExpt::compute_edges_gpu`` for the edge contract.  This signature
+   * is intentionally torch-free so MD-engine call sites need no PyTorch
+   * headers.
+   *
+   * @param[out] d_atom_energy Per-atom energy, GPU [nloc].
+   * @param[out] d_force Per-atom force, GPU [nloc * 3] row-major.
+   * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
+   * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
+   * @param[in] d_atype Local atom types, GPU [nloc].
+   * @param[in] d_edge_index Destination-major local edge graph, GPU
+   *   [2 * nedge].
+   * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
+   * @param[in] nloc Number of local atoms.
+   * @param[in] nedge Number of physical edges.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge);
+
+  /**
+   * @brief GPU-resident edge inference with runtime frame / atomic parameters.
+   *
+   * As the parameter-free overload, but ``fparam`` (global, ``dfparam`` values)
+   * and ``aparam`` (per-atom, ``nloc * daparam`` values) override the model's
+   * stored defaults. Empty vectors fall back to the stored default fparam and
+   * to no aparam, so the two overloads coincide.
+   *
+   * @param[in] fparam Host-resident runtime frame parameters, or empty for the
+   *   model default.
+   * @param[in] aparam Host-resident runtime per-atom parameters (row-major
+   *   [nloc, daparam]), or empty for none.
+   * @param[in] nall_nodes Total graph node count; 0 (or nloc) folds ghosts onto
+   *   local owners (single domain), while nall_nodes > nloc keeps the extended
+   *   (local + ghost) node set for a domain-decomposed run.
+   * @param[in] comm_nlist Communication neighbor list (send/recv swaps) for the
+   *   extended node set. Required for a message-passing model under domain
+   *   decomposition, where ghost features are exchanged across ranks inside the
+   *   forward pass; nullptr otherwise.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr);
+
+  /**
+   * @brief Device-edge inference with FP32 edge vectors.
+   *
+   * Call this overload only when ``uses_fp32_edge_vectors()`` is true.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const float* d_edge_vec,
+                         const int nloc,
+                         const int nedge,
+                         const std::vector<double>& fparam,
+                         const std::vector<double>& aparam,
+                         const int nall_nodes = 0,
+                         const InputNlist* comm_nlist = nullptr);
+
+  /**
+   * @brief Whether the loaded artifact supports device-edge inference.
+   */
+  bool supports_device_edge_inference() const;
+
+  /**
+   * @brief Whether the loaded artifact expects FP32 device edge vectors.
+   */
+  bool uses_fp32_edge_vectors() const;
+
+  /**
+   * @brief Whether the loaded artifact uses the compact canonical graph ABI.
+   */
+  bool uses_canonical_graph_inference() const;
+
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const std::int64_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::int64_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage);
 
   int dim_chg_spin() const;
 

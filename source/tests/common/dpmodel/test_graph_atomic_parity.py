@@ -14,7 +14,12 @@ from deepmd.dpmodel.fitting import (
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
+    apply_pair_exclusion,
+    build_neighbor_graph,
     from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -121,10 +126,10 @@ def test_graph_matches_dense_over_flags(virtual, type_one_side, nf):
         assert int(np.asarray(g["mask"])[0, -1]) == 0  # virtual atom masked
 
 
-def test_pair_exclude_types_falls_back_to_dense():
-    """Pair exclude_types is unsupported on the graph -> uses_graph_lower False."""
+def test_descriptor_exclude_types_is_graph_eligible():
+    """Descriptor-level exclude_types (Task 3): uses_graph_lower() is True."""
     m = _ener_model([30], exclude_types=[(0, 1)])
-    assert m.atomic_model.descriptor.uses_graph_lower() is False
+    assert m.atomic_model.descriptor.uses_graph_lower() is True
 
 
 def test_model_pair_exclude_types_graph_matches_dense():
@@ -160,6 +165,119 @@ def test_model_pair_exclude_types_graph_matches_dense():
         rtol=1e-9,
         atol=1e-9,
     ), "pair exclusion must change the graph energy (same weights)"
+
+
+def test_model_pair_exclude_applied_at_build_not_in_lower():
+    """Seam contract + fail-safe (decision #18): model-level pair_exclude is a
+    graph-BUILD transform; the graph lower does NOT re-apply it. Because the
+    consume-time backstop was removed, the lower would otherwise be fail-OPEN
+    (a non-excluded input silently INCLUDES excluded pairs). To keep that from
+    being silent, the lower guards its input (eager): feeding a NON-excluded
+    graph to a model that HAS ``pair_exclude_types`` RAISES. Applying exclusion
+    at BUILD is the correct path and changes the lower's output.
+    """
+    rng = np.random.default_rng(4)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
+    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
+    model = EnergyModel(ds, ft, type_map=["a", "b"], pair_exclude_types=[(0, 1)])
+    assert model.atomic_model.pair_excl is not None
+
+    # RAW graph: built WITHOUT pair_excl (no exclusion baked into edge_mask).
+    ng_raw = build_neighbor_graph(coord, atype, box, model.get_rcut())
+    kw = {
+        "atype": atype.reshape(-1),
+        "n_node": ng_raw.n_node,
+        "edge_index": ng_raw.edge_index,
+        "edge_vec": ng_raw.edge_vec,
+        "edge_mask": ng_raw.edge_mask,
+    }
+    # Fail-safe: the lower refuses a non-excluded graph (contract boundary) —
+    # the excluded (0, 1) pairs are within rcut here, so at least one leaks.
+    with pytest.raises(AssertionError, match="NOT pair-excluded"):
+        model.call_lower_graph(**kw)
+
+    # Positive control: applying exclusion at BUILD (excluded edge_mask) passes
+    # the guard AND changes the output vs the same lower with no exclusion.
+    ng_excl = build_neighbor_graph(
+        coord, atype, box, model.get_rcut(), pair_excl=PairExcludeMask(2, [(0, 1)])
+    )
+    out_built_excl = model.call_lower_graph(
+        atype=atype.reshape(-1),
+        n_node=ng_excl.n_node,
+        edge_index=ng_excl.edge_index,
+        edge_vec=ng_excl.edge_vec,
+        edge_mask=ng_excl.edge_mask,
+    )
+    # No-exclusion reference: clearing pair_excl makes the raw graph valid again
+    # (guard skipped when pair_excl is None), so the lower runs on it.
+    model.atomic_model.reinit_pair_exclude([])
+    assert model.atomic_model.pair_excl is None
+    out_no_excl_model = model.call_lower_graph(**kw)
+    assert not np.allclose(
+        np.asarray(out_built_excl["energy_redu"]),
+        np.asarray(out_no_excl_model["energy_redu"]),
+        rtol=1e-9,
+        atol=1e-9,
+    ), "build-time pair exclusion must change the graph energy"
+
+
+def test_model_pair_exclude_applied_at_build_not_in_dense_lower():
+    """Dense-route seam contract + fail-safe (decision #18/A4, mirror of the
+    graph test): model-level pair_exclude is a nlist-BUILD transform; the dense
+    lower (``call_lower``) does NOT re-apply it. With the consume-time backstop
+    removed, a non-excluded nlist would silently INCLUDE excluded pairs, so the
+    lower guards its input (eager): feeding a RAW nlist to a model that HAS
+    ``pair_exclude_types`` RAISES. Folding exclusion in at BUILD is correct and
+    changes the output.
+    """
+    from deepmd.dpmodel.utils.nlist import (
+        apply_pair_exclusion_nlist,
+        extend_input_and_build_neighbor_list,
+    )
+
+    rng = np.random.default_rng(4)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
+    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
+    model = EnergyModel(ds, ft, type_map=["a", "b"], pair_exclude_types=[(0, 1)])
+    assert model.atomic_model.pair_excl is not None
+
+    # RAW quartet: built WITHOUT pair_excl (no exclusion folded into the nlist).
+    coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord.reshape(1, -1),
+        atype,
+        model.get_rcut(),
+        model.get_sel(),
+        mixed_types=True,
+        box=box,
+    )
+    # Fail-safe: the lower refuses a non-excluded nlist (contract boundary).
+    with pytest.raises(AssertionError, match="NOT pair-excluded"):
+        model.call_lower(coord_ext, atype_ext, nlist, mapping)
+
+    # Positive control: folding the exclusion in at BUILD passes the guard AND
+    # changes the output vs the same lower with no exclusion.
+    nlist_excl = apply_pair_exclusion_nlist(
+        nlist, atype_ext, PairExcludeMask(2, [(0, 1)])
+    )
+    out_built_excl = model.call_lower(coord_ext, atype_ext, nlist_excl, mapping)
+    # No-exclusion reference: clearing pair_excl makes the raw nlist valid again.
+    model.atomic_model.reinit_pair_exclude([])
+    assert model.atomic_model.pair_excl is None
+    out_no_excl_model = model.call_lower(coord_ext, atype_ext, nlist, mapping)
+    assert not np.allclose(
+        np.asarray(out_built_excl["energy"]),
+        np.asarray(out_no_excl_model["energy"]),
+        rtol=1e-9,
+        atol=1e-9,
+    ), "build-time pair exclusion must change the dense energy"
 
 
 def test_graph_matches_dense_with_fparam():
@@ -306,3 +424,32 @@ def test_graph_matches_dense_with_out_bias():
         )
     # non-vacuous: the bias actually shifted the graph energy
     assert not np.allclose(np.asarray(g["energy"]), np.asarray(g_zero["energy"]))
+
+
+# ── apply_pair_exclusion idempotence (Task 2) ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "pair_exclude_types", [[], [(0, 1)]]
+)  # empty branch AND non-empty branch
+def test_apply_pair_exclusion_idempotent(pair_exclude_types):
+    """Applying apply_pair_exclusion twice gives the same edge_mask as once.
+
+    Covers both the empty pair_excl branch (identity) and non-empty branch.
+    """
+    rng = np.random.default_rng(42)
+    coord = rng.normal(size=(1, 5, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
+    ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord, atype, 4.0, [200], mixed_types=True, box=None
+    )
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    pair_excl = PairExcludeMask(2, pair_exclude_types) if pair_exclude_types else None
+    atype_flat = atype.reshape(-1)
+    once = apply_pair_exclusion(ng, atype_flat, pair_excl)
+    twice = apply_pair_exclusion(once, atype_flat, pair_excl)
+    # Masks must be exactly equal (AND-idempotent for 0/1 values)
+    np.testing.assert_array_equal(
+        np.asarray(once.edge_mask),
+        np.asarray(twice.edge_mask),
+    )

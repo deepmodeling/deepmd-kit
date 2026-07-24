@@ -44,6 +44,15 @@ void deepmd::soft_min_switch_cpu(FPTYPE* sw_value,
       aa += ee;
       bb += rr * ee;
     }
+    // When the whole neighbor row is padded (j_idx < 0 for every jj),
+    // aa and bb stay at zero.  Dividing bb/aa (or dd/(aa*aa) below)
+    // would produce NaN and contaminate the downstream force/virial
+    // results.  In that no-neighbor case we keep the zero-initialized
+    // sw_value/sw_deriv and skip the rest of the loop body.  See issue
+    // #5651 for details.
+    if (aa == 0) {
+      continue;
+    }
     FPTYPE smin = bb / aa;
     FPTYPE vv, dd;
     spline5_switch(vv, dd, smin, rmin, rmax);

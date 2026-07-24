@@ -8,6 +8,7 @@ into the dpmodel module via ``pt_state_to_numpy``, compare forwards with
 ``assert_parity``) are added by the tasks that port each module.
 """
 
+import math
 import subprocess
 import sys
 
@@ -806,7 +807,8 @@ class TestNormParity:
 
     @pytest.mark.parametrize("lmax", [0, 2, 3])  # 0 covers the scalar-only branch
     @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
-    def test_equivariant_rmsnorm(self, lmax, n_focus) -> None:
+    @pytest.mark.parametrize("eps", [1.0e-5, 1.0])
+    def test_equivariant_rmsnorm(self, lmax, n_focus, eps) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
             EquivariantRMSNorm as DPEquivariantRMSNorm,
         )
@@ -815,10 +817,16 @@ class TestNormParity:
         )
 
         pt_mod = PTEquivariantRMSNorm(
-            lmax, self.channels, n_focus, dtype=torch.float64, trainable=True
+            lmax,
+            self.channels,
+            n_focus,
+            eps=eps,
+            dtype=torch.float64,
+            trainable=True,
         )
         self._perturb(pt_mod, 2040)
         serialized = pt_mod.serialize()
+        assert serialized["config"]["eps"] == eps
         # pt state_dict key contract: 2 parameters + 2 persistent buffers
         assert set(serialized["@variables"]) == {
             "adam_scale",
@@ -831,6 +839,40 @@ class TestNormParity:
         x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.channels))
         x[0] = 0.0  # all-zeros row exercises the eps path
         assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
+
+    def test_equivariant_rmsnorm_eps_one_reparameterization(self) -> None:
+        """An epsilon of one preserves the legacy branch function class."""
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            EquivariantRMSNorm as PTEquivariantRMSNorm,
+        )
+
+        legacy = PTEquivariantRMSNorm(
+            2,
+            self.channels,
+            1,
+            eps=1.0e-5,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        unit_scale = PTEquivariantRMSNorm(
+            2,
+            self.channels,
+            1,
+            eps=1.0,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        self._perturb(legacy, 2042)
+        unit_scale.load_state_dict(legacy.state_dict())
+
+        rng = np.random.default_rng(2043)
+        x = to_pt(rng.normal(size=(17, 9, 1, self.channels)))
+        torch.testing.assert_close(
+            legacy(x),
+            unit_scale(x / np.sqrt(legacy.eps)),
+            rtol=PT_RTOL,
+            atol=PT_ATOL,
+        )
 
     def test_equivariant_rmsnorm_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -880,8 +922,9 @@ class TestNormParity:
         }
         dp_mod = DPReducedEquivariantRMSNorm.deserialize(serialized)
         rng = np.random.default_rng(2044)
-        x = rng.normal(size=(17, n_focus, degree_index_m.size, self.channels))
-        x[0] = 0.0  # all-zeros row exercises the eps path
+        # focus-major layout (F, E, D_m_trunc, C): the focus stream is axis 0.
+        x = rng.normal(size=(n_focus, 17, degree_index_m.size, self.channels))
+        x[:, 0] = 0.0  # an all-zeros edge exercises the eps path
         assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_reduced_equivariant_rmsnorm_roundtrip(self) -> None:
@@ -900,7 +943,8 @@ class TestNormParity:
         )
         dp_mod2 = DPReducedEquivariantRMSNorm.deserialize(dp_mod.serialize())
         rng = np.random.default_rng(2045)
-        x = rng.normal(size=(17, 2, degree_index_m.size, self.channels))
+        # focus-major layout (F, E, D_m_trunc, C): the focus stream is axis 0.
+        x = rng.normal(size=(2, 17, degree_index_m.size, self.channels))
         np.testing.assert_array_equal(
             np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
         )
@@ -2001,7 +2045,9 @@ class TestSO2Parity:
         serialized = pt_mod.serialize()
         dp_mod = DPSO2Linear.deserialize(serialized)
         rng = np.random.default_rng(2053)
-        x = rng.normal(size=(13, n_focus, dp_mod.reduced_dim, 5))
+        # SO2Linear consumes the focus-major layout (F, E, D_m, Cin): the focus
+        # stream is the batched-matmul axis and the edge axis follows.
+        x = rng.normal(size=(n_focus, 13, dp_mod.reduced_dim, 5))
         assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_so2_linear_roundtrip(self) -> None:
@@ -2020,7 +2066,8 @@ class TestSO2Parity:
         )
         dp_mod2 = DPSO2Linear.deserialize(dp_mod.serialize())
         rng = np.random.default_rng(2054)
-        x = rng.normal(size=(9, 2, dp_mod.reduced_dim, 4))
+        # focus-major (F, E, D_m, Cin)
+        x = rng.normal(size=(2, 9, dp_mod.reduced_dim, 4))
         np.testing.assert_array_equal(
             np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
         )
@@ -2203,6 +2250,178 @@ class TestSO2Parity:
         # invalid slots must produce exactly zero attention weights
         np.testing.assert_array_equal(alpha_dp[~valid], 0.0)
         assert np.all(np.isfinite(alpha_dp))
+
+    def test_high_logit_edge_vanishes_continuously(self) -> None:
+        """A vanishing high-logit edge must agree with the physical limit."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = np.array([[[0.0]], [[20.0]]], dtype=np.float64)
+        dst = np.zeros(2, dtype=np.int64)
+        z_bias_raw = np.array([[math.log(math.expm1(1.0))]], dtype=np.float64)
+        eps = 1.0e-7
+
+        def evaluate(crossing_envelope: float) -> np.ndarray:
+            edge_env = np.array([[1.0], [crossing_envelope]], dtype=np.float64)
+            alpha_dp = dp_softmax(logits, edge_env, dst, 1, z_bias_raw, eps)
+            alpha_pt = pt_softmax(
+                to_pt(logits),
+                to_pt(edge_env),
+                to_pt(dst),
+                1,
+                to_pt(z_bias_raw),
+                eps,
+            )
+            assert_parity(alpha_dp, alpha_pt)
+            return np.asarray(alpha_dp)
+
+        near = evaluate(1.0e-12)
+        zero = evaluate(0.0)
+        near_mass = math.exp(20.0) * 1.0e-24
+        near_denominator = 2.0 + eps + near_mass
+        np.testing.assert_allclose(
+            near[1, 0, 0],
+            near_mass / near_denominator,
+            rtol=1.0e-12,
+            atol=0.0,
+        )
+        expected_stable = 1.0 / (2.0 + eps)
+        np.testing.assert_allclose(
+            near[0, 0, 0], expected_stable, rtol=1.0e-12, atol=0.0
+        )
+        np.testing.assert_allclose(
+            zero[0, 0, 0], expected_stable, rtol=1.0e-12, atol=0.0
+        )
+        assert zero[1, 0, 0] == 0.0
+
+    def test_envelope_nextafter_cutoff_attention(self) -> None:
+        """Adjacent float32 distances must remain stable in both implementations."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            C3CutoffEnvelope as PTEnvelope,
+        )
+
+        rcut = np.float32(6.0)
+        zero = np.float32(0.0)
+        r_near = np.nextafter(rcut, zero)
+        r_inner = np.nextafter(r_near, zero)
+        distances = np.array([r_near, r_inner], dtype=np.float32)[:, None]
+        envelope_dp = np.asarray(
+            DPEnvelope(6.0, exponent=5, precision="float32").call(distances)
+        )
+        envelope_pt = PTEnvelope(6.0, exponent=5, dtype=torch.float32)(to_pt(distances))
+
+        distance64 = distances[:, 0].astype(np.float64)
+        u = (6.0 - distance64) / 6.0
+        x = 1.0 - u
+        reference = u**4 * (1.0 + x * (4.0 + x * (10.0 + x * (20.0 + 35.0 * x))))
+        np.testing.assert_allclose(
+            envelope_dp[:, 0].astype(np.float64),
+            reference,
+            rtol=1.0e-6,
+            atol=0.0,
+        )
+        assert_parity(envelope_dp, envelope_pt, rtol=1.0e-6, atol=0.0)
+        assert np.all(envelope_dp >= 0.0)
+
+        logits = np.array([[[0.0]], [[20.0]]], dtype=np.float32)
+        dst = np.zeros(2, dtype=np.int64)
+        z_bias_raw = np.array([[math.log(math.expm1(1.0))]], dtype=np.float32)
+        for edge_envelope in envelope_dp[:, 0]:
+            edge_env = np.array([[1.0], [edge_envelope]], dtype=np.float32)
+            alpha_dp = np.asarray(
+                dp_softmax(logits, edge_env, dst, 1, z_bias_raw, 1.0e-7)
+            )
+            alpha_pt = pt_softmax(
+                to_pt(logits),
+                to_pt(edge_env),
+                to_pt(dst),
+                1,
+                to_pt(z_bias_raw),
+                1.0e-7,
+            )
+            assert_parity(
+                alpha_dp,
+                alpha_pt,
+                rtol=1.0e-5,
+                atol=float(np.finfo(np.float32).tiny),
+            )
+            assert 0.0 <= alpha_dp[1, 0, 0] < 1.0e-30
+
+    def test_tiny_source_weight_hessian(self) -> None:
+        """The dpmodel and pt paths must preserve the physical Hessian."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=PT_DEVICE
+        )
+        edge_env = torch.ones((2, 1), dtype=torch.float32, device=PT_DEVICE)
+        dst = torch.zeros(2, dtype=torch.int64, device=PT_DEVICE)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=PT_DEVICE
+        )
+        eps = 1.0e-7
+
+        def dp_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return dp_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        def pt_attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return pt_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
+
+        def physical_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            edge_mass = source_weight * torch.exp(logits[:, 0, 0])
+            return (edge_mass / (null_mass + edge_mass.sum())).sum()
+
+        source_weight = torch.tensor(
+            [1.0, 1.0e-30], dtype=torch.float32, device=PT_DEVICE
+        )
+        hessian_dp = torch.autograd.functional.hessian(dp_attention_sum, source_weight)
+        hessian_pt = torch.autograd.functional.hessian(pt_attention_sum, source_weight)
+        reference = torch.autograd.functional.hessian(physical_sum, source_weight)
+        assert bool(torch.isfinite(hessian_dp).all())
+        torch.testing.assert_close(
+            hessian_dp[0, 0],
+            reference[0, 0],
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+        torch.testing.assert_close(hessian_dp, hessian_pt, rtol=1.0e-5, atol=32.0)
+        torch.testing.assert_close(hessian_dp, reference, rtol=1.0e-5, atol=32.0)
 
     def test_segment_softmax_arbitrary_degree(self) -> None:
         # The destination scatter is layout-agnostic: E need not be a multiple
@@ -3288,6 +3507,17 @@ class TestBlockParity:
         )
         self._assert_block_parity(pt_mod, dp_mod, kwargs)
 
+    def test_block_post_so2_eps_one(self) -> None:
+        pt_mod, dp_mod, kwargs = self._build_block_pair(
+            so2_post_norm=True,
+            so2_post_norm_eps=1.0,
+        )
+        assert pt_mod.post_so2_norm.eps == 1.0
+        assert dp_mod.post_so2_norm.eps == 1.0
+        assert pt_mod.pre_ffn_norms[0].eps == 1.0e-5
+        assert dp_mod.pre_ffn_norms[0].eps == 1.0e-5
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
     def test_block_ffn_blocks(self) -> None:
         # multiple FFN subblocks exercise the per-subblock loop and seeds
         pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_blocks=2)
@@ -3517,6 +3747,22 @@ class TestDescriptorParity:
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(
+        "edge_norm", [False, True]
+    )  # cutoff-vanishing normalization modes
+    def test_descriptor_edge_norm(self, edge_norm) -> None:
+        # edge_norm=False drops the radial MLP RMSNorm, turns the FiLM scale/shift
+        # norms into identity pass-throughs, drops the focus-compete norm, and
+        # selects unit-floor post-SO(2) residual scaling in both backends.
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            edge_norm=edge_norm, use_env_seed=True, n_focus=2
+        )
+        assert dp_mod.edge_norm == edge_norm
+        expected_eps = 1.0e-5 if edge_norm else 1.0
+        assert pt_mod.blocks[0].post_so2_norm.eps == expected_eps
+        assert dp_mod.blocks[0].post_so2_norm.eps == expected_eps
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
         "exclude_types", [[], [(0, 0)]]
     )  # pair-exclusion off vs on
     def test_descriptor_exclude_types(self, exclude_types) -> None:
@@ -3650,6 +3896,164 @@ class TestDescriptorParity:
         out1 = np.asarray(dp_mod.call(*args, mapping=inp["mapping"])[0])
         out2 = np.asarray(dp_mod2.call(*args, mapping=inp["mapping"])[0])
         np.testing.assert_array_equal(out1, out2)
+
+    def test_descriptor_zero_blocks(self) -> None:
+        # n_blocks=0: no interaction blocks. Geometry then enters only through
+        # the Geometric Initial Embedding, which is active when use_env_seed=True
+        # and lmax + extra_node_l > 0 (lmax=3 here hosts the l>=1 GIE features).
+        pt_mod, dp_mod, _ = self._build_descr_pair(n_blocks=0, use_env_seed=True)
+        assert dp_mod.n_blocks == 0
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_native_spin(self) -> None:
+        # Native per-atom spin: ``use_spin`` conditions the l=0 type features on
+        # the per-type spin magnitude and injects an l=1 direction feature (needs
+        # a node degree >= 1, satisfied by lmax=3). Parity is checked with a real
+        # spin tensor and with spin=None, and spin=None is pinned to reproduce the
+        # genuine no-spin descriptor exactly on both backends.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        use_spin = [True, False, False]  # ntypes==3; type 0 is spin-active
+        pt_mod, dp_mod, _ = self._build_descr_pair(use_spin=use_spin)
+        inp = self._inputs()
+        coord, atype_ext, nlist, mp = (
+            inp["coord"],
+            inp["atype_ext"],
+            inp["nlist"],
+            inp["mapping"],
+        )
+        nf = coord.shape[0]
+        # local types include a spin-active type-0 atom so the spin path is live
+        assert (atype_ext[:, : self.nloc] == 0).any()
+        rng = np.random.default_rng(2170)
+        spin = rng.normal(size=(nf, self.nloc, 3))
+
+        def _call(spin_arg):
+            out_dp = dp_mod.call(
+                coord.reshape(nf, -1), atype_ext, nlist, mapping=mp, spin=spin_arg
+            )
+            out_pt = pt_mod(
+                to_pt(coord),
+                to_pt(atype_ext),
+                to_pt(nlist),
+                mapping=to_pt(mp),
+                spin=None if spin_arg is None else to_pt(spin_arg),
+            )
+            return out_dp, out_pt
+
+        # spin path: pt vs dp parity (descriptor-level fp64 gate)
+        out_dp_s, out_pt_s = _call(spin)
+        assert out_dp_s[0].shape == tuple(out_pt_s[0].shape)
+        assert_parity(out_dp_s[0], out_pt_s[0], rtol=1e-10, atol=1e-12)
+        assert out_dp_s[1:] == (None, None, None, None)
+
+        # spin=None path: pt vs dp parity
+        out_dp_n, out_pt_n = _call(None)
+        assert_parity(out_dp_n[0], out_pt_n[0], rtol=1e-10, atol=1e-12)
+
+        # the spin tensor must actually move the descriptor (guards a no-op path)
+        d_s = np.asarray(out_dp_s[0])
+        d_n = np.asarray(out_dp_n[0])
+        assert np.abs(d_s - d_n).max() > 1e-3
+
+        # spin=None reproduces the genuine no-spin descriptor: copy the shared
+        # (non-spin) weights into a use_spin=None twin and check the l=0 output is
+        # bit-identical to the use_spin model evaluated with spin=None.
+        kwargs = self._descr_kwargs()
+        pt_nospin = DescrptSeZM(**kwargs, use_spin=None).double().eval()
+        sd_spin = pt_mod.state_dict()
+        pt_nospin.load_state_dict(
+            {k: sd_spin[k].clone() for k in pt_nospin.state_dict()}
+        )
+        dp_nospin = DescrptDPA4.deserialize(pt_nospin.serialize())
+        d_ns = np.asarray(
+            dp_nospin.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
+        )
+        np.testing.assert_array_equal(d_n, d_ns)
+        p_ns = pt_nospin(
+            to_pt(coord), to_pt(atype_ext), to_pt(nlist), mapping=to_pt(mp)
+        )[0]
+        assert_parity(d_ns, p_ns, rtol=1e-10, atol=1e-12)
+
+    @pytest.mark.parametrize(
+        "so3_readout", ["none", "mlp"]
+    )  # scalar readout vs SO(3) grid MLP readout
+    def test_descriptor_readout_layers(self, so3_readout) -> None:
+        # readout_layers=2 stacks a residual output-FFN layer before the final
+        # l=0 projection. pt is pinned to CPU (as in test_descriptor_so3_readout)
+        # so the strict fp64 gate holds under a CUDA default device.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        kwargs = self._descr_kwargs(readout_layers=2, so3_readout=so3_readout)
+        pt_mod = DescrptSeZM(**kwargs).double().eval().to("cpu")
+        # output projections are zero-initialized; perturb for a nontrivial readout
+        rng = np.random.default_rng(2180)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape))).to("cpu")
+        dp_mod = DescrptDPA4.deserialize(pt_mod.serialize())
+        assert dp_mod.readout_layers == 2
+
+        inp = self._inputs()
+        coord, atype_ext, nlist, mp = (
+            inp["coord"],
+            inp["atype_ext"],
+            inp["nlist"],
+            inp["mapping"],
+        )
+        nf = coord.shape[0]
+        out_dp = np.asarray(
+            dp_mod.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
+        )
+        out_pt = (
+            pt_mod(
+                torch.from_numpy(coord).to("cpu"),
+                torch.from_numpy(atype_ext.astype(np.int64)).to("cpu"),
+                torch.from_numpy(nlist.astype(np.int64)).to("cpu"),
+                mapping=torch.from_numpy(mp.astype(np.int64)).to("cpu"),
+            )[0]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        assert out_dp.shape == out_pt.shape
+        assert np.abs(out_dp).max() > 1e-6  # guards a trivially-zero readout
+        np.testing.assert_allclose(out_dp, out_pt, rtol=1e-10, atol=1e-12)
+
+    def test_descriptor_focus_major_so2(self) -> None:
+        # Multi-stream focus-major SO(2) mixing: n_focus>1 carries the mixing
+        # activation as (F, E, D_m, Cf) with the focus stream on the batched
+        # matmul axis. Combined with multi-layer mixing (mixing_layers>=2),
+        # attention (n_atten_head>0), and the cross-focus competition that
+        # activates for n_focus>1, this validates the full focus-major path.
+        # so2_norm stays False here to isolate the mixing path; the
+        # n_focus>1 + so2_norm=True combination is covered by
+        # test_descriptor_focus_major_so2_norm.
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            n_focus=2, mixing_layers=2, n_atten_head=1
+        )
+        assert dp_mod.n_focus == 2
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_focus_major_so2_norm(self) -> None:
+        # n_focus>1 + so2_norm=True: the focus-major SO(2) mixing feeds
+        # ReducedEquivariantRMSNorm a (F, E, D_m, Cf) tensor, and the norm now
+        # applies its per-focus affine on the focus axis (axis 0), so the
+        # affine broadcast holds for E != n_focus.
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            n_focus=2, so2_norm=True, mixing_layers=2
+        )
+        self._assert_descr_parity(pt_mod, dp_mod)
 
 
 class TestNoTorchImport:

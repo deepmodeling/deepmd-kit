@@ -40,6 +40,21 @@ from ...seed import (
 )
 
 
+def _assert_repeatable(a, b) -> None:
+    """Two evals of the same inputs must agree.
+
+    On CPU the reduction is bit-exact, so require exact equality. On CUDA the
+    graph descriptor's ``segment_sum`` lowers to ``torch.index_add``, whose
+    atomicAdd ordering varies run-to-run (1-2 fp64 ULP); require agreement to
+    the documented CUDA fp64 tolerance instead. Genuine non-determinism
+    (unseeded dropout/sampling) is O(1e-3+) and still fails this bound.
+    """
+    if DEVICE.type == "cpu":
+        np.testing.assert_array_equal(a, b)
+    else:
+        np.testing.assert_allclose(a, b, rtol=1e-10, atol=1e-10)
+
+
 class TestDeepEvalEner(unittest.TestCase):
     """Test pt_expt inference for energy models."""
 
@@ -1762,11 +1777,16 @@ class TestEvalDescriptor(unittest.TestCase):
         np.testing.assert_array_equal(d1, d2)
 
     def test_descriptor_deterministic_dpa1(self) -> None:
-        """Calling eval_descriptor twice gives same result for DPA1."""
+        """Calling eval_descriptor twice gives same result for DPA1.
+
+        DPA1 (mixed_types) routes through the carry-all graph path, whose
+        ``segment_sum`` is bit-exact on CPU but 1-2 ULP non-deterministic on
+        CUDA (index_add atomics); see ``_assert_repeatable``.
+        """
         coords, cells, atom_types = self._make_inputs()
         d1 = self.dp_dpa1.deep_eval.eval_descriptor(coords, cells, atom_types)
         d2 = self.dp_dpa1.deep_eval.eval_descriptor(coords, cells, atom_types)
-        np.testing.assert_array_equal(d1, d2)
+        _assert_repeatable(d1, d2)
 
     def test_descriptor_with_fparam(self) -> None:
         """eval_descriptor works with fparam."""
@@ -1920,7 +1940,12 @@ class TestEvalFittingLastLayer(unittest.TestCase):
         np.testing.assert_array_equal(fit_ll1, fit_ll2)
 
     def test_fitting_ll_deterministic_dpa1(self) -> None:
-        """Verify calling twice gives the same result for DPA1."""
+        """Verify calling twice gives the same result for DPA1.
+
+        DPA1 (mixed_types) routes through the carry-all graph path, whose
+        ``segment_sum`` is bit-exact on CPU but 1-2 ULP non-deterministic on
+        CUDA (index_add atomics); see ``_assert_repeatable``.
+        """
         coords, cells, atom_types = self._make_inputs()
         fit_ll1 = self.dp_dpa1.deep_eval.eval_fitting_last_layer(
             coords, cells, atom_types
@@ -1928,7 +1953,7 @@ class TestEvalFittingLastLayer(unittest.TestCase):
         fit_ll2 = self.dp_dpa1.deep_eval.eval_fitting_last_layer(
             coords, cells, atom_types
         )
-        np.testing.assert_array_equal(fit_ll1, fit_ll2)
+        _assert_repeatable(fit_ll1, fit_ll2)
 
     def test_fitting_ll_with_fparam_aparam(self) -> None:
         """eval_fitting_last_layer works with fparam and aparam."""

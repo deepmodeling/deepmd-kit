@@ -5,7 +5,8 @@ A non-energy model with a graph-eligible descriptor (dpa1 ``attn_layer==0``)
 routes into the graph path by default.  Before the general output transform this
 KeyError'd on ``"energy"``; now every fitting (dos/dipole/polar/property/...)
 flows through :func:`fit_output_to_model_output_graph` with no change on the
-fitting side.  Each model's graph forward (default ``neighbor_graph_method``)
+fitting side.  Each model's graph forward (EXPLICIT ``neighbor_graph_method``
+opt-in; non-energy models default to dense since the energy gate)
 must match the dense path (``neighbor_graph_method="legacy"``) on every shared
 key (carry-all graph at non-binding ``sel`` reproduces the dense neighbor set).
 """
@@ -129,8 +130,14 @@ class TestNonEnergyGraph:
         [_make_dos, _make_dipole, _make_polar, _make_property],
     )  # one builder per fitting kind
     def test_graph_matches_dense(self, make_model) -> None:
-        """Graph (default) output matches the dense (``legacy``) path on every
+        """EXPLICIT graph opt-in matches the dense (``legacy``) path on every
         shared key, including derivatives for r/c-differentiable fittings.
+
+        Non-energy models no longer DEFAULT-flip to the graph route (the
+        compiled-training trace is energy-specific; see the
+        ``_resolve_graph_method`` energy gate), but the eager graph lower
+        stays output-agnostic and available via an explicit
+        ``neighbor_graph_method`` -- which is what this parity test pins.
         """
         tol = (
             {"rtol": 1e-11, "atol": 1e-11}
@@ -139,7 +146,13 @@ class TestNonEnergyGraph:
         )
         ds = _make_descriptor()
         m = make_model(ds)
-        graph = m.call_common(self.coord, self.atype, None, do_atomic_virial=True)
+        graph = m.call_common(
+            self.coord,
+            self.atype,
+            None,
+            do_atomic_virial=True,
+            neighbor_graph_method="dense",
+        )
         # the dense path differentiates w.r.t. coord -> needs a coord leaf.
         dense = m.call_common(
             self.coord.detach().requires_grad_(True),

@@ -206,6 +206,257 @@ def main():
     else:
         print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
 
+    # ============================================================
+    # Section B: graph-eligible DPA2 (use_three_body=False) model
+    # ============================================================
+    # Three-body (repinit's optional se_t_tebd sub-block) is graph-ineligible,
+    # so the graph-form export needs a config with use_three_body=False.
+    # Everything else stays at the section-A defaults (attn toggles ON in
+    # repformer -- that's the point: repformer's own attention is graph-
+    # native, unlike DPA1's se_atten which requires attn_layer=0).
+    #
+    # Skip the whole graph section under LeakSanitizer. The C++ memleak matrix
+    # runs these gen scripts with ``LD_PRELOAD=liblsan`` (the sanitizer-
+    # instrumented deepmd op .so requires the LSAN runtime; see
+    # source/install/test_cc_local.sh). Evaluating the AOTInductor-compiled
+    # graph .pt2's BACKWARD (forces) under that runtime INTERMITTENTLY
+    # segfaults inside the repformer's fused backward kernel -- an
+    # AOTI-compiled-code vs LeakSanitizer allocator incompatibility, NOT a
+    # graph-code bug: the same backward is bit-identical and finite in eager,
+    # in the non-memleak C++ ctest, and in LAMMPS. dpa1's simpler graph .pt2
+    # does not trip it. Leak-checking torch's own compiled kernels is
+    # meaningless anyway (the memleak build exists to leak-check deepmd's C++
+    # ops). The dense DPA2 .pt2 (section A) is unaffected and still generated.
+    # The C++ dpa2_graph_ptexpt row GTEST_SKIPs when this artifact is absent
+    # (skip_if_artifact_missing).
+    #
+    # Detection is via the explicit DP_GEN_UNDER_SANITIZER flag set by
+    # test_cc_local.sh next to the preload: sniffing LD_PRELOAD here does NOT
+    # work -- the LSAN runtime removes its own entry from the process
+    # environment during startup, so os.environ never sees it (observed on
+    # CI). The LD_PRELOAD check is kept only as a belt-and-braces fallback for
+    # manual invocations where the runtime leaves the variable intact.
+    if (
+        os.environ.get("DP_GEN_UNDER_SANITIZER", "") == "lsan"
+        or "lsan" in os.environ.get("LD_PRELOAD", "").lower()
+    ):
+        # remove any graph artifacts left by a previous non-LSAN run of a
+        # REUSED workspace: skipping regeneration alone leaves them present,
+        # and the C++ tests' skip_if_artifact_missing would then execute
+        # them under LSAN and hit the very crash this branch avoids
+        for name in (
+            "deeppot_dpa2_graph_nlist_ref.pt2",
+            "deeppot_dpa2_graph.pt2",
+            "deeppot_dpa2_graph.expected",
+            "deeppot_dpa2_graph_aparam.pt2",
+        ):
+            stale = os.path.join(base_dir, name)
+            if os.path.exists(stale):
+                os.remove(stale)
+        print(  # noqa: T201
+            "\n// Skipping DPA2 graph section under LeakSanitizer "
+            "(AOTInductor .pt2 backward is incompatible with the LSAN runtime; "
+            "covered by the non-memleak C++/LAMMPS matrix)."
+        )
+        return
+
+    graph_config = copy.deepcopy(config)
+    graph_config["descriptor"]["repinit"]["use_three_body"] = False
+
+    print("\n---- Building graph-eligible DPA2 (use_three_body=False) ----")  # noqa: T201
+
+    # ---- B.1  Build dpmodel, serialize ----
+    model_g = get_model(copy.deepcopy(graph_config))
+    model_dict_g = model_g.serialize()
+
+    data_g = {
+        "model": copy.deepcopy(model_dict_g),
+        "model_def_script": graph_config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    # ---- B.2  Independent cross-check via nlist .pt2 (dense-quartet) ----
+    # Unlike the DPA1 graph fixture, deeppot_dpa2_graph.expected is NOT
+    # copied from the nlist artifact (see B.5): DPA2 is a message-passing
+    # model, so the graph path's per-edge full-to-source atomic-virial
+    # decomposition genuinely differs from the dense per-atom decomposition
+    # (only the SUM agrees), and cross-path energy/force agreement (~1e-10)
+    # sits at the universal gtest's double tolerance (1e-10).  The nlist
+    # artifact is instead used here as the independent gen-time oracle:
+    # atomic energies, forces and the TOTAL virial of the graph .pt2 must
+    # match it (checked in B.4) or generation aborts.
+    #
+    # The nlist .pt2 is PERSISTED (deeppot_dpa2_graph_nlist_ref.pt2): a
+    # C++ gtest could load it alongside the graph .pt2 to cross-check
+    # graph≈dense on arbitrary system sizes without baking a second reference
+    # block into the .expected sidecar.  Same weights as the graph model, so
+    # at non-binding sel the two paths must agree.
+    nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa2_graph_nlist_ref.pt2")
+    print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        nlist_ref_pt2,
+        copy.deepcopy(data_g),
+        do_atomic_virial=True,
+        lower_kind="nlist",  # independent: dense nlist, NOT graph
+    )
+    dp_nlist_ref = DeepPot(nlist_ref_pt2)
+
+    # PBC reference from nlist path
+    e_r1, f_r1, v_r1, ae_r1, av_r1 = dp_nlist_ref.eval(coord, box, atype, atomic=True)
+    # NoPBC reference from nlist path
+    e_rnp, f_rnp, v_rnp, ae_rnp, av_rnp = dp_nlist_ref.eval(
+        coord, None, atype, atomic=True
+    )
+
+    print(f"Nlist ref PBC energy: {e_r1[0, 0]:.18e}")  # noqa: T201
+    print(f"Nlist ref NoPBC energy: {e_rnp[0, 0]:.18e}")  # noqa: T201
+    max_ref_force_pbc = float(np.max(np.abs(f_r1)))
+    max_ref_force_nopbc = float(np.max(np.abs(f_rnp)))
+    print(f"Nlist ref PBC max |force|: {max_ref_force_pbc:.6e}")  # noqa: T201
+    print(f"Nlist ref NoPBC max |force|: {max_ref_force_nopbc:.6e}")  # noqa: T201
+    # ``not (x >= th)`` (rather than ``x < th``) so NaN forces -- e.g. from
+    # an inductor SIMD miscompile of the AOTI artifact -- fail the check
+    # instead of slipping through. Both the PBC and the NoPBC references are
+    # checked: each is baked into its own section of the .expected sidecar.
+    if (
+        not (max_ref_force_pbc >= 1e-10)
+        or not (max_ref_force_nopbc >= 1e-10)
+        or not (np.all(np.isfinite(f_r1)) and np.all(np.isfinite(f_rnp)))
+    ):
+        raise RuntimeError(
+            f"Graph model nlist-ref forces are degenerate or non-finite "
+            f"(PBC max={max_ref_force_pbc:.2e}, "
+            f"NoPBC max={max_ref_force_nopbc:.2e}); weights may need "
+            f"perturbation, or the AOTI compile is broken (known inductor "
+            f"CPU-SIMD bug; workaround: torch._inductor.config.cpp.simdlen "
+            f"= 1)."
+        )
+
+    # ---- B.3  Export graph-form .pt2 ----
+    # For DPA2, has_message_passing_across_ranks is True, so the
+    # lower_kind="graph" export automatically embeds the nested with-comm
+    # artifact (forward_lower_with_comm.pt2) alongside the graph forward --
+    # no separate export call is needed.
+    graph_pt2_path = os.path.join(base_dir, "deeppot_dpa2_graph.pt2")
+    print(f"Exporting to {graph_pt2_path} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        graph_pt2_path,
+        copy.deepcopy(data_g),
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    print("Graph .pt2 export done.")  # noqa: T201
+
+    # ---- B.4  Cross-check: graph .pt2 vs independent nlist reference ----
+    # Both use the SAME weights; at non-binding sel the math is equivalent.
+    # Atomic energies, forces and the TOTAL virial must agree.  The per-atom
+    # virial is deliberately NOT compared: the graph path assigns each edge's
+    # virial contribution fully to the source atom, which for a
+    # message-passing model is a different (equally valid) decomposition
+    # than the dense path's -- only the sum is convention-independent.
+    dp_graph = DeepPot(graph_pt2_path)
+
+    e_g1, f_g1, v_g1, ae_g1, av_g1 = dp_graph.eval(coord, box, atype, atomic=True)
+    e_gnp, f_gnp, v_gnp, ae_gnp, av_gnp = dp_graph.eval(coord, None, atype, atomic=True)
+
+    cross_tol = 1e-8
+    for label, (f_g, ae_g, v_g), (f_r, ae_r, v_r) in (
+        ("PBC", (f_g1, ae_g1, v_g1), (f_r1, ae_r1, v_r1)),
+        ("NoPBC", (f_gnp, ae_gnp, v_gnp), (f_rnp, ae_rnp, v_rnp)),
+    ):
+        f_diff = float(np.max(np.abs(f_g[0] - f_r[0])))
+        ae_diff = float(np.max(np.abs(ae_g[0] - ae_r[0])))
+        v_diff = float(np.max(np.abs(v_g[0] - v_r[0])))
+        print(  # noqa: T201
+            f"Graph .pt2 vs nlist ref {label}: ae {ae_diff:.2e}, "
+            f"f {f_diff:.2e}, total-virial {v_diff:.2e}"
+        )
+        # NaN-safe: NaN fails ``<=``
+        if not (f_diff <= cross_tol and ae_diff <= cross_tol and v_diff <= cross_tol):
+            raise RuntimeError(
+                f"BLOCKED: graph .pt2 {label} differs from nlist reference "
+                f"(ae {ae_diff:.2e}, f {f_diff:.2e}, v {v_diff:.2e}; "
+                f"threshold {cross_tol:.0e})."
+            )
+
+    # ---- B.5  Write sidecar reference file from the graph .pt2 eval ----
+    # Self-referential like the dense fixtures' .expected (the C++ gtest is a
+    # regression test of the C++ inference path against the Python eval of
+    # the same artifact); independence from the graph path is enforced above
+    # in B.4.  Sourcing e/f/v from the nlist artifact instead would break the
+    # per-atom virial comparison (convention, see B.4) and sit at the gtest's
+    # 1e-10 double tolerance for energies/forces (cross-path noise ~1e-10).
+    graph_ref_path = os.path.join(base_dir, "deeppot_dpa2_graph.expected")
+    write_expected_ref(
+        graph_ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae_g1[0, :, 0],
+                "expected_f": f_g1[0],
+                "expected_v": av_g1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_gnp[0, :, 0],
+                "expected_f": f_gnp[0],
+                "expected_v": av_gnp[0],
+            },
+        },
+        source_script="source/tests/infer/gen_dpa2.py",
+    )
+    print(f"Wrote {graph_ref_path}")  # noqa: T201
+
+    print("\nAll graph sanity checks passed.")  # noqa: T201
+
+    # ============================================================
+    # Section C: graph-eligible DPA2 with numb_aparam=1
+    # ============================================================
+    # Consumed by test_lammps_dpa2_graph_pt2.py's empty-subdomain aparam
+    # regression: a ghost-only rank (nlocal == 0, nghost > 0) must
+    # SYNTHESIZE a zero aparam covering the graph's ghost nodes instead of
+    # feeding the empty owned tensor to the artifact -- the rank-local
+    # reshape failure would otherwise desynchronize the per-layer border_op
+    # collective sequence and hang the peers.  No .expected sidecar: the
+    # LAMMPS test is an MP == SP parity check on this same artifact.
+    aparam_config = copy.deepcopy(graph_config)
+    aparam_config["fitting_net"] = {
+        **config["fitting_net"],
+        "numb_aparam": 1,
+    }
+
+    print(  # noqa: T201
+        "\n---- Building graph-eligible DPA2 (use_three_body=False, numb_aparam=1) ----"
+    )
+    model_a = get_model(copy.deepcopy(aparam_config))
+    data_a = {
+        "model": model_a.serialize(),
+        "model_def_script": aparam_config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    aparam_graph_pt2 = os.path.join(base_dir, "deeppot_dpa2_graph_aparam.pt2")
+    print(f"Exporting to {aparam_graph_pt2} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        aparam_graph_pt2,
+        copy.deepcopy(data_a),
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    # Sanity: single-rank eval with a uniform aparam must be finite, and the
+    # aparam must genuinely reach the fitting.
+    dp_ag = DeepPot(aparam_graph_pt2)
+    natoms_c = len(atype)
+    aparam_c = np.full((1, natoms_c, 1), 0.25, dtype=np.float64)
+    e_c, f_c, v_c = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_c)[:3]
+    e_c2 = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_c + 1.0)[0]
+    if not (np.all(np.isfinite(f_c)) and abs(e_c2[0, 0] - e_c[0, 0]) > 1e-12):
+        raise RuntimeError(
+            "BLOCKED: dpa2 graph aparam artifact is degenerate (non-finite "
+            "forces or aparam-insensitive energy)."
+        )
+
     print("\nDone!")  # noqa: T201
 
 

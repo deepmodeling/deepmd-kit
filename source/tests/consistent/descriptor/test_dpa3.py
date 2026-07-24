@@ -292,26 +292,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
 
     @property
     def skip_pd(self) -> bool:
-        (
-            _update_residual_init,
-            _exclude_types,
-            _update_angle,
-            _a_compress_rate,
-            _a_compress_e_rate,
-            _a_compress_use_split,
-            _optim_update,
-            _edge_init_use_dist,
-            _use_exp_switch,
-            _use_dynamic_sel,
-            _use_loc_mapping,
-            _fix_stat_std,
-            _n_multi_edge_message,
-            _precision,
-            add_chg_spin_ebd,
-            _default_chg_spin,
-            _sequential_update,
-        ) = self.param
-        return True if add_chg_spin_ebd else CommonTest.skip_pd
+        return CommonTest.skip_pd
 
     @property
     def skip_dp(self) -> bool:

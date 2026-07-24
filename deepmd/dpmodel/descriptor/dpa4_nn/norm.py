@@ -390,20 +390,20 @@ class ReducedEquivariantRMSNorm(NativeOP):
         Parameters
         ----------
         x
-            Input array with shape (E, F, D_m_trunc, C).
+            Input array with shape (F, E, D_m_trunc, C).
 
         Returns
         -------
         Array
-            Normalized array with shape `(E, F, D_m_trunc, C)`, same dtype as
+            Normalized array with shape `(F, E, D_m_trunc, C)`, same dtype as
             input.
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
         in_dtype = x.dtype
         x = xp.astype(x, get_xp_precision(xp, self.precision))
-        x0 = x[:, :, :1, :]  # (E, F, 1, C)
-        xt = x[:, :, 1:, :]  # (E, F, D_m_trunc-1, C)
+        x0 = x[:, :, :1, :]  # (F, E, 1, C)
+        xt = x[:, :, 1:, :]  # (F, E, D_m_trunc-1, C)
 
         # === Step 1. Center the scalar slice ===
         x0 = x0 - xp.mean(x0, axis=-1, keepdims=True)
@@ -416,7 +416,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
                 (xt * xt) * balance_weight[1:][None, None, :, None], axis=(2, 3)
             )
         inv_rms = 1.0 / xp.sqrt(mean_variance + self.eps)
-        inv_rms = inv_rms[:, :, None, None]  # (E, F, 1, 1)
+        inv_rms = inv_rms[:, :, None, None]  # (F, E, 1, 1)
 
         x0 = x0 * inv_rms
         if self.degree_index_m.size > 1:
@@ -426,7 +426,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         adam_scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
         degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
         expanded_scale = xp.take(adam_scale, degree_index_m, axis=1)
-        expanded_scale = expanded_scale[None, ...]  # (1, F, D_m_trunc, C)
+        expanded_scale = expanded_scale[:, None, ...]  # (F, 1, D_m_trunc, C)
         x0 = x0 * expanded_scale[:, :, :1, :]
         if self.degree_index_m.size > 1:
             xt = xt * expanded_scale[:, :, 1:, :]
@@ -434,8 +434,8 @@ class ReducedEquivariantRMSNorm(NativeOP):
         # === Step 4. Add scalar bias and restore layout ===
         bias0 = xp.reshape(
             xp_asarray_nodetach(xp, self.bias0[...], device=device),
-            (1, self.n_focus, 1, -1),
-        )  # (1, F, 1, C)
+            (self.n_focus, 1, 1, -1),
+        )  # (F, 1, 1, C)
         x0 = x0 + bias0
 
         out = x0 if self.degree_index_m.size == 1 else xp.concat([x0, xt], axis=2)
@@ -546,7 +546,7 @@ class ScalarRMSNorm(NativeOP):
         if x.ndim == 2:
             inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
             x = x * inv_rms
-            x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[0]
+            x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[0, :]
             return xp.astype(x, in_dtype)
 
         inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)

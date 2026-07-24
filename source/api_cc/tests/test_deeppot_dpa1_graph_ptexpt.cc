@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Test C++ inference for the NeighborGraph (graph-schema) .pt2 path of the
 // pt_expt backend.  The graph model is a dpa1(attn_layer=0) descriptor exported
-// with lower_kind="graph" (gen_dpa1.py section B); this is the FIRST runtime
-// exercise of the C++ graph ingestion added in PR-B Phase B2
-// (lower_input_is_graph_ / run_model_graph / buildGraphTensors / the
-// compute_inner graph branch).
+// with lower_kind="graph" (gen_dpa1.py section B).
 //
 // Reference values (deeppot_dpa1_graph.expected) come from an INDEPENDENT
 // nlist (dense-quartet) evaluation of the same weights, so a match validates
@@ -101,9 +98,7 @@ deepmd::DeepPot TestInferDpa1GraphPtExpt<VALUETYPE>::dp_ref;
 
 TYPED_TEST_SUITE(TestInferDpa1GraphPtExpt, ValueTypes);
 
-// Case 1: DeepPot builds its own neighbor list and runs the standalone graph
-// branch (lower_input_is_graph_, build_nlist -> buildGraphTensors).  Validates
-// the graph AOTI ABI/geometry against the independent nlist reference.
+// DeepPot builds its own neighbor list and runs the standalone graph branch.
 TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
@@ -114,6 +109,11 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist) {
   double& expected_tot_e = this->expected_tot_e;
   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepPot& dp = this->dp;
+  deepmd::DeepPot& dp_ref = this->dp_ref;
+  EXPECT_TRUE(dp.supports_device_edge_inference());
+  EXPECT_FALSE(dp_ref.supports_device_edge_inference());
+  EXPECT_FALSE(dp.uses_fp32_edge_vectors());
+  EXPECT_FALSE(dp.uses_canonical_graph_inference());
   double ener;
   std::vector<VALUETYPE> force, virial;
   dp.compute(ener, force, virial, coord, atype, box);
@@ -130,10 +130,33 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist) {
   }
 }
 
-// Case 2: a SECOND, larger system (12 atoms, different edge count) through the
-// SAME loaded graph model — proves the dynamic edge axis works in C++.  The
-// graph result is cross-checked against the dense nlist .pt2 (same weights);
-// at non-binding sel they must agree bit-for-bit (fp64 ~1e-10).
+TYPED_TEST(TestInferDpa1GraphPtExpt, rejects_aparam_for_zero_width_model) {
+  using VALUETYPE = TypeParam;
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force;
+  std::vector<VALUETYPE> virial;
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> invalid_aparam = {static_cast<VALUETYPE>(0)};
+
+  EXPECT_THROW(this->dp.compute(ener, force, virial, this->coord, this->atype,
+                                this->box, fparam, invalid_aparam),
+               deepmd::deepmd_exception);
+}
+
+TYPED_TEST(TestInferDpa1GraphPtExpt, rejects_empty_coordinate_system) {
+  using VALUETYPE = TypeParam;
+  double ener = 0.0;
+  std::vector<VALUETYPE> force;
+  std::vector<VALUETYPE> virial;
+  std::vector<VALUETYPE> coord;
+  std::vector<int> atype;
+  std::vector<VALUETYPE> box;
+
+  EXPECT_THROW(this->dp.compute(ener, force, virial, coord, atype, box),
+               deepmd::deepmd_exception);
+}
+
+// A larger system with a different edge count exercises the dynamic edge axis.
 TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_sys2_dynamic_edges) {
   using VALUETYPE = TypeParam;
   deepmd::DeepPot& dp = this->dp;
@@ -168,13 +191,8 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_sys2_dynamic_edges) {
   }
 }
 
-// Case 3 (CRITICAL): exercise the LAMMPS compute_inner graph branch with an
-// explicit InputNlist and the `ago` cache.  Calling compute twice WITHOUT
-// rebuilding the nlist — first ago=0 (rebuild), then ago=1 (reuse) — must give
-// identical results.  This is the only case that hits compute_inner + the
-// member-cached mapping_ vector; the build-nlist cases above never touch it.
-// Regression guard for the OOB-on-ago>0 bug fixed by caching mapping_ as a
-// member (commit 7c70db47b).
+// The LAMMPS compute_inner graph branch must preserve results when ``ago``
+// reuses the cached neighbor list and atom mapping.
 TYPED_TEST(TestInferDpa1GraphPtExpt, lammps_nlist_ago) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
@@ -221,7 +239,6 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, lammps_nlist_ago) {
   }
 
   // ago=1: reuse the cached nlist/mapping (NO rebuild).  Must match again.
-  // This is the path that previously read the local mapping vector OOB.
   ener = 0.;
   std::fill(force_.begin(), force_.end(), 0.0);
   std::fill(virial.begin(), virial.end(), 0.0);
@@ -240,9 +257,47 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, lammps_nlist_ago) {
   }
 }
 
-// Case 5: exercise the DeepPot::compute ATOMIC overload on the graph .pt2.
-// This is the first test to reach the ``if (atomic)`` branch inside
-// remap_graph_outputs_to_dense_keys (the atom_energy/atom_virial remapping).
+TYPED_TEST(TestInferDpa1GraphPtExpt, multi_rank_graph_input) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  const int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_ext;
+  std::vector<int> atype_ext, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_ext, atype_ext, mapping, coord,
+                          atype, box, dp.cutoff());
+  const int nall = coord_ext.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
+                            firstneigh.data());
+  convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
+  inlist.nprocs = 2;
+
+  double energy = 0.0;
+  std::vector<VALUETYPE> force_ext, force, virial;
+  ASSERT_NO_THROW(dp.compute(energy, force_ext, virial, coord_ext, atype_ext,
+                             box, nall - nloc, inlist, 0));
+  _fold_back<VALUETYPE>(force, force_ext, mapping, nloc, nall, 3);
+
+  EXPECT_LT(fabs(energy - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < nloc * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+// Exercise the DeepPot::compute atomic overload on the graph artifact.
 // The per-atom reference values are already loaded from
 // deeppot_dpa1_graph.expected into this->expected_e and this->expected_v by
 // SetUp().
@@ -286,10 +341,7 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_atomic) {
   }
 }
 
-// Case 4: a tiny system with no in-cutoff neighbors — only the two masked
-// dummy edges survive (nedge_min=2 guard / SIGFPE-edge family).  The graph
-// must run cleanly, produce finite, interaction-free output (zero force/virial)
-// and agree with the dense reference.
+// A tiny system with no in-cutoff neighbors retains only two masked guards.
 TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_tiny_no_edges) {
   using VALUETYPE = TypeParam;
   deepmd::DeepPot& dp = this->dp;

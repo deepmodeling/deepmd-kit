@@ -17,6 +17,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from gen_common import (
+    derive_pair_exclude_pt2,
     ensure_inductor_compiler,
     load_custom_ops,
     write_expected_ref,
@@ -110,6 +111,19 @@ def main():
     pt_expt_deserialize_to_file(
         pt2_mpi_path, copy.deepcopy(data_mpi), do_atomic_virial=True
     )
+
+    # Multi-rank variant WITH model-level ``pair_exclude_types`` — derived
+    # CHEAPLY from ``deeppot_dpa3_mpi.pt2`` by patching the exclusion list into
+    # the archive, with NO second inductor compile (same weights + lower_kind,
+    # only the exclusion list differs).  ``deeppot_dpa3_mpi.pt2`` is the exact
+    # no-exclusion baseline.  See ``derive_pair_exclude_pt2`` for why this is
+    # sound, and test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3_pairexcl_*.
+    pt2_pairexcl_mpi_path = os.path.join(base_dir, "deeppot_dpa3_pairexcl_mpi.pt2")
+    print(  # noqa: T201
+        f"Deriving {pt2_pairexcl_mpi_path} from {pt2_mpi_path} "
+        "(pair_exclude_types patch, no recompile) ..."
+    )
+    derive_pair_exclude_pt2(pt2_mpi_path, pt2_pairexcl_mpi_path, [[0, 1]])
 
     # Float32 multi-rank variant — same architecture as the float64
     # MPI fixture but with ``precision: float32``.  Used by

@@ -253,3 +253,43 @@ class TestEnergySpinLoss:
             atol=atol,
             err_msg="pt_expt vs dpmodel (all masked)",
         )
+
+    @pytest.mark.parametrize("prec", ["float64", "float32"])
+    @pytest.mark.parametrize("loss_func", ["mse", "mae"])
+    def test_no_magnetic_atoms(self, prec, loss_func) -> None:
+        """An all-false magnetic mask has a finite zero contribution.
+
+        This complements the backend-neutral NumPy regression by exercising the
+        same dpmodel implementation through the Torch Array API namespace.
+        """
+        rng = np.random.default_rng(GLOBAL_SEED + 3)
+        nframes, natoms = 2, 6
+        dtype = PRECISION_DICT[prec]
+        learning_rate = 1e-3
+        loss_fn = EnergySpinLoss(
+            starter_learning_rate=learning_rate,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            loss_func=loss_func,
+        )
+        model_pred, label = _make_data(rng, nframes, natoms, 0, dtype, self.device)
+
+        loss, more_loss = loss_fn(
+            learning_rate,
+            natoms,
+            model_pred,
+            label,
+            mae=True,
+        )
+        assert torch.isfinite(loss)
+        torch.testing.assert_close(loss, torch.zeros_like(loss))
+        torch.testing.assert_close(
+            more_loss["mae_fm"], torch.zeros_like(more_loss["mae_fm"])
+        )
+        torch.testing.assert_close(
+            more_loss["rmse"], torch.zeros_like(more_loss["rmse"])
+        )
+        if loss_func == "mse":
+            torch.testing.assert_close(
+                more_loss["rmse_fm"], torch.zeros_like(more_loss["rmse_fm"])
+            )

@@ -564,6 +564,218 @@ template void DeepPot::compute_mixed_type<float>(
     const std::vector<float>& aparam,
     const std::vector<double>& charge_spin);
 
+void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
+                                       double* d_force,
+                                       double* d_atom_virial,
+                                       const double* d_coord,
+                                       const int* d_atype,
+                                       const int* d_edge_index,
+                                       const double* d_edge_vec,
+                                       const int nloc,
+                                       const int nedge) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)nloc;
+  (void)nedge;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu (GPU-resident edge inference) is only supported by "
+      "the PyTorch Exportable (.pt2) backend.");
+}
+
+void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
+                                       double* d_force,
+                                       double* d_atom_virial,
+                                       const double* d_coord,
+                                       const int* d_atype,
+                                       const int* d_edge_index,
+                                       const double* d_edge_vec,
+                                       const int nloc,
+                                       const int nedge,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam,
+                                       const int nall_nodes,
+                                       const InputNlist* comm_nlist) {
+  if (fparam.empty() && aparam.empty() &&
+      (nall_nodes == 0 || nall_nodes == nloc) && comm_nlist == nullptr) {
+    compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                      d_edge_index, d_edge_vec, nloc, nedge);
+    return;
+  }
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)comm_nlist;
+  (void)nloc;
+  (void)nedge;
+  (void)fparam;
+  (void)aparam;
+  (void)nall_nodes;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu (GPU-resident edge inference) is only supported by "
+      "the "
+      "PyTorch Exportable (.pt2) backend.");
+}
+
+void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
+                                       double* d_force,
+                                       double* d_atom_virial,
+                                       const double* d_coord,
+                                       const int* d_atype,
+                                       const int* d_edge_index,
+                                       const float* d_edge_vec,
+                                       const int nloc,
+                                       const int nedge,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam,
+                                       const int nall_nodes,
+                                       const InputNlist* comm_nlist) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)comm_nlist;
+  (void)nloc;
+  (void)nedge;
+  (void)fparam;
+  (void)aparam;
+  (void)nall_nodes;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu with float32 edge vectors is only supported by a "
+      "compatible PyTorch Exportable (.pt2) backend.");
+}
+
+void DeepPotBackend::compute_canonical_graph_gpu(
+    double* d_atom_energy,
+    double* d_force,
+    double* d_atom_virial,
+    const std::int64_t* d_atype,
+    const std::int64_t* d_source,
+    const float* d_edge_vec,
+    const std::int64_t* d_destination_row_ptr,
+    const std::int64_t* d_source_row_ptr,
+    const std::int64_t* d_source_order,
+    const int nloc,
+    const int nall_nodes,
+    const std::int64_t edge_storage) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_atype;
+  (void)d_source;
+  (void)d_edge_vec;
+  (void)d_destination_row_ptr;
+  (void)d_source_row_ptr;
+  (void)d_source_order;
+  (void)nloc;
+  (void)nall_nodes;
+  (void)edge_storage;
+  throw deepmd::deepmd_exception(
+      "compact canonical graph inference is only supported by a compatible "
+      "PyTorch Exportable backend.");
+}
+
+bool DeepPotBackend::uses_fp32_edge_vectors() const { return false; }
+
+bool DeepPotBackend::supports_device_edge_inference() const { return false; }
+
+bool DeepPotBackend::uses_canonical_graph_inference() const { return false; }
+
+void DeepPot::compute_edges_gpu(double* d_atom_energy,
+                                double* d_force,
+                                double* d_atom_virial,
+                                const double* d_coord,
+                                const int* d_atype,
+                                const int* d_edge_index,
+                                const double* d_edge_vec,
+                                const int nloc,
+                                const int nedge) {
+  dp->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                        d_edge_index, d_edge_vec, nloc, nedge);
+}
+
+void DeepPot::compute_edges_gpu(double* d_atom_energy,
+                                double* d_force,
+                                double* d_atom_virial,
+                                const double* d_coord,
+                                const int* d_atype,
+                                const int* d_edge_index,
+                                const double* d_edge_vec,
+                                const int nloc,
+                                const int nedge,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const int nall_nodes,
+                                const InputNlist* comm_nlist) {
+  // Backend-agnostic dispatch: backends that implement device edge inference
+  // override ``compute_edges_gpu``, while the others inherit the throwing
+  // default. ``libdeepmd_cc`` does not link any backend, so the dispatch stays
+  // virtual rather than casting to a concrete backend type.
+  dp->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                        d_edge_index, d_edge_vec, nloc, nedge, fparam, aparam,
+                        nall_nodes, comm_nlist);
+}
+
+void DeepPot::compute_edges_gpu(double* d_atom_energy,
+                                double* d_force,
+                                double* d_atom_virial,
+                                const double* d_coord,
+                                const int* d_atype,
+                                const int* d_edge_index,
+                                const float* d_edge_vec,
+                                const int nloc,
+                                const int nedge,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const int nall_nodes,
+                                const InputNlist* comm_nlist) {
+  dp->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord, d_atype,
+                        d_edge_index, d_edge_vec, nloc, nedge, fparam, aparam,
+                        nall_nodes, comm_nlist);
+}
+
+void DeepPot::compute_canonical_graph_gpu(
+    double* d_atom_energy,
+    double* d_force,
+    double* d_atom_virial,
+    const std::int64_t* d_atype,
+    const std::int64_t* d_source,
+    const float* d_edge_vec,
+    const std::int64_t* d_destination_row_ptr,
+    const std::int64_t* d_source_row_ptr,
+    const std::int64_t* d_source_order,
+    const int nloc,
+    const int nall_nodes,
+    const std::int64_t edge_storage) {
+  dp->compute_canonical_graph_gpu(
+      d_atom_energy, d_force, d_atom_virial, d_atype, d_source, d_edge_vec,
+      d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc, nall_nodes,
+      edge_storage);
+}
+
+bool DeepPot::uses_fp32_edge_vectors() const {
+  return dp->uses_fp32_edge_vectors();
+}
+
+bool DeepPot::supports_device_edge_inference() const {
+  return dp->supports_device_edge_inference();
+}
+
+bool DeepPot::uses_canonical_graph_inference() const {
+  return dp->uses_canonical_graph_inference();
+}
+
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
 DeepPotModelDevi::DeepPotModelDevi() {

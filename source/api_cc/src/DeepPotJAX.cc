@@ -6,6 +6,7 @@
 #include <tensorflow/c/c_api.h>
 #include <tensorflow/c/eager/c_api.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -15,6 +16,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -459,6 +461,54 @@ inline TFE_TensorHandle* add_input(TFE_Op* op,
   return handle;
 }
 
+inline std::vector<double> make_charge_spin_input(
+    const std::vector<double>& charge_spin,
+    const int dchgspin,
+    const int nframes,
+    const std::vector<double>& default_chg_spin) {
+  if (dchgspin == 0) {
+    if (!charge_spin.empty()) {
+      std::cerr << "WARNING: charge_spin was provided, but this model does "
+                   "not support charge/spin conditioning. The provided "
+                   "charge_spin will be ignored."
+                << std::endl;
+    }
+    if (!default_chg_spin.empty()) {
+      throw deepmd::deepmd_exception(
+          "default_chg_spin is stored, but this model does not support "
+          "charge/spin conditioning");
+    }
+    return {};
+  }
+  std::vector<double> source;
+  if (!charge_spin.empty()) {
+    source = charge_spin;
+  } else if (!default_chg_spin.empty()) {
+    source = default_chg_spin;
+  } else {
+    throw deepmd::deepmd_exception(
+        "charge_spin is required for this model but was not provided, "
+        "and no default_chg_spin is stored in the model.");
+  }
+  const size_t dim = static_cast<size_t>(dchgspin);
+  const size_t expected = static_cast<size_t>(nframes) * dim;
+  if (source.size() == expected) {
+    return source;
+  }
+  if (source.size() == dim) {
+    std::vector<double> result(expected);
+    for (int ff = 0; ff < nframes; ++ff) {
+      std::copy(source.begin(), source.end(), result.begin() + ff * dim);
+    }
+    return result;
+  }
+  throw deepmd::deepmd_exception(
+      "charge_spin has " + std::to_string(source.size()) +
+      " values but the model expects dim_chg_spin=" + std::to_string(dchgspin) +
+      " (per frame) or " + std::to_string(expected) + " (for " +
+      std::to_string(nframes) + " frames).");
+}
+
 template <typename T>
 inline void tensor_to_vector(std::vector<T>& result,
                              TFE_TensorHandle* retval,
@@ -492,130 +542,199 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     return;
   }
 
-  const char* saved_model_dir = model.c_str();
-  graph = TF_NewGraph();
-  status = TF_NewStatus();
+  try {
+    const char* saved_model_dir = model.c_str();
+    graph = TF_NewGraph();
+    status = TF_NewStatus();
 
-  sessionopts = TF_NewSessionOptions();
-  int num_intra_nthreads, num_inter_nthreads;
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
-  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
-  // The following is an equivalent of setting this in Python:
-  // config = tf.ConfigProto( allow_soft_placement = True )
-  // config.gpu_options.allow_growth = True
-  // config.gpu_options.per_process_gpu_memory_fraction = percentage
-  // Create a byte-array for the serialized ProtoConfig, set the mandatory bytes
-  // (first three and last four)
-  std::array<std::uint8_t, 19> config = {
-      {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
-       static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
-       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
+    sessionopts = TF_NewSessionOptions();
+    int num_intra_nthreads, num_inter_nthreads;
+    get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+    // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
+    // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
+    // The following is an equivalent of setting this in Python:
+    // config = tf.ConfigProto( allow_soft_placement = True )
+    // config.gpu_options.allow_growth = True
+    // config.gpu_options.per_process_gpu_memory_fraction = percentage
+    // Create a byte-array for the serialized ProtoConfig, set the mandatory
+    // bytes (first three and last four)
+    std::array<std::uint8_t, 19> config = {
+        {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
+         static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
 
-  // Convert the desired percentage into a byte-array.
-  double gpu_memory_fraction = 0.9;
-  auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
+    // Convert the desired percentage into a byte-array.
+    double gpu_memory_fraction = 0.9;
+    auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
 
-  // Put it to the config byte-array, from 7 to 14:
-  for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
-    config[i + 7] = bytes[i];
-  }
+    // Put it to the config byte-array, from 7 to 14:
+    for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
+      config[i + 7] = bytes[i];
+    }
 
-  TF_SetConfig(sessionopts, config.data(), config.size(), status);
-  check_status(status);
+    TF_SetConfig(sessionopts, config.data(), config.size(), status);
+    check_status(status);
 
-  TF_Buffer* runopts = NULL;
+    TF_Buffer* runopts = NULL;
 
-  const char* tags = "serve";
-  int ntags = 1;
+    const char* tags = "serve";
+    int ntags = 1;
 
-  session = TF_LoadSessionFromSavedModel(sessionopts, runopts, saved_model_dir,
-                                         &tags, ntags, graph, NULL, status);
-  check_status(status);
+    session =
+        TF_LoadSessionFromSavedModel(sessionopts, runopts, saved_model_dir,
+                                     &tags, ntags, graph, NULL, status);
+    check_status(status);
 
-  int nfuncs = TF_GraphNumFunctions(graph);
-  // allocate memory for the TF_Function* array
-  func_vector.resize(nfuncs);
-  TF_Function** funcs = func_vector.data();
-  TF_GraphGetFunctions(graph, funcs, nfuncs, status);
-  check_status(status);
-  uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
+    int nfuncs = TF_GraphNumFunctions(graph);
+    // allocate memory for the TF_Function* array
+    func_vector.resize(nfuncs);
+    TF_Function** funcs = func_vector.data();
+    TF_GraphGetFunctions(graph, funcs, nfuncs, status);
+    check_status(status);
+    uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
 
-  ctx_opts = TFE_NewContextOptions();
-  TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
-  check_status(status);
-  ctx = TFE_NewContext(ctx_opts, status);
-  check_status(status);
+    ctx_opts = TFE_NewContextOptions();
+    TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
+    check_status(status);
+    ctx = TFE_NewContext(ctx_opts, status);
+    check_status(status);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-  int gpu_num;
-  DPGetDeviceCount(gpu_num);  // check current device environment
-  if (gpu_num > 0 && gpu_rank >= 0) {
-    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
-    device = "/gpu:" + std::to_string(gpu_rank % gpu_num);
-  } else {
-    device = "/cpu:0";
-  }
+    int gpu_num;
+    DPGetDeviceCount(gpu_num);  // check current device environment
+    if (gpu_num > 0 && gpu_rank >= 0) {
+      DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+      device = "/gpu:" + std::to_string(gpu_rank % gpu_num);
+    } else {
+      device = "/cpu:0";
+    }
 #else
-  device = "/cpu:0";
+    device = "/cpu:0";
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-  // add all functions, otherwise the function will not be found
-  // even for tf.cond
-  for (size_t i = 0; i < func_vector.size(); i++) {
-    TF_Function* func = func_vector[i];
-    TFE_ContextAddFunction(ctx, func, status);
-    check_status(status);
-  }
+    // add all functions, otherwise the function will not be found
+    // even for tf.cond
+    for (size_t i = 0; i < func_vector.size(); i++) {
+      TF_Function* func = func_vector[i];
+      TFE_ContextAddFunction(ctx, func, status);
+      check_status(status);
+    }
 
-  rcut = get_scalar<double>(ctx, "get_rcut", func_vector, device, status);
-  dfparam =
-      get_scalar<int64_t>(ctx, "get_dim_fparam", func_vector, device, status);
-  daparam =
-      get_scalar<int64_t>(ctx, "get_dim_aparam", func_vector, device, status);
-  std::vector<std::string> type_map_ =
-      get_vector_string(ctx, "get_type_map", func_vector, device, status);
-  // deepmd-kit stores type_map as a concatenated string, split by ' '
-  type_map = type_map_[0];
-  for (size_t i = 1; i < type_map_.size(); i++) {
-    type_map += " " + type_map_[i];
-  }
-  ntypes = type_map_.size();
-  sel = get_vector<int64_t>(ctx, "get_sel", func_vector, device, status);
-  nnei = std::accumulate(sel.begin(), sel.end(), decltype(sel)::value_type(0));
-  try {
-    do_message_passing = get_scalar<bool>(ctx, "has_message_passing",
-                                          func_vector, device, status);
-  } catch (tf_function_not_found& e) {
+    rcut = get_scalar<double>(ctx, "get_rcut", func_vector, device, status);
+    dfparam =
+        get_scalar<int64_t>(ctx, "get_dim_fparam", func_vector, device, status);
+    daparam =
+        get_scalar<int64_t>(ctx, "get_dim_aparam", func_vector, device, status);
     try {
-      do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+      dchgspin = get_scalar<int64_t>(ctx, "get_dim_chg_spin", func_vector,
+                                     device, status);
+    } catch (tf_function_not_found& e) {
+      dchgspin = 0;
+    }
+    try {
+      has_default_chg_spin_ = get_scalar<bool>(ctx, "has_default_chg_spin",
+                                               func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      has_default_chg_spin_ = false;
+    }
+    if (dchgspin > 0 && has_default_chg_spin_) {
+      try {
+        default_chg_spin_ = get_vector<double>(ctx, "get_default_chg_spin",
+                                               func_vector, device, status);
+      } catch (tf_function_not_found& e) {
+        default_chg_spin_.clear();
+      }
+    } else {
+      default_chg_spin_.clear();
+    }
+    std::vector<std::string> type_map_ =
+        get_vector_string(ctx, "get_type_map", func_vector, device, status);
+    // deepmd-kit stores type_map as a concatenated string, split by ' '
+    type_map = type_map_[0];
+    for (size_t i = 1; i < type_map_.size(); i++) {
+      type_map += " " + type_map_[i];
+    }
+    ntypes = type_map_.size();
+    sel = get_vector<int64_t>(ctx, "get_sel", func_vector, device, status);
+    nnei =
+        std::accumulate(sel.begin(), sel.end(), decltype(sel)::value_type(0));
+    try {
+      do_message_passing = get_scalar<bool>(ctx, "has_message_passing",
                                             func_vector, device, status);
     } catch (tf_function_not_found& e) {
-      // compatible with models generated by v3.0.0rc0
-      do_message_passing = false;
+      try {
+        do_message_passing = get_scalar<bool>(ctx, "do_message_passing",
+                                              func_vector, device, status);
+      } catch (tf_function_not_found& e) {
+        // compatible with models generated by v3.0.0rc0
+        do_message_passing = false;
+      }
     }
+    try {
+      has_default_fparam_ = get_scalar<bool>(ctx, "has_default_fparam",
+                                             func_vector, device, status);
+    } catch (tf_function_not_found& e) {
+      has_default_fparam_ = false;
+    }
+    try {
+      // Model-level pair_exclude_types, exported flat [ti0, tj0, ti1, tj1,
+      // ...]. Fold exclusion into the LAMMPS nlist at ingestion (decision
+      // #18/A4); the exported call_lower_* consumes a pre-excluded nlist.
+      // Models exported before this getter existed baked exclusion into the
+      // graph, so a missing getter (=> empty table => identity here) is correct
+      // for them.
+      std::vector<int64_t> pet_flat = get_vector<int64_t>(
+          ctx, "get_pair_exclude_types", func_vector, device, status);
+      std::vector<std::pair<int, int>> pair_exclude_types;
+      for (size_t ii = 0; ii + 1 < pet_flat.size(); ii += 2) {
+        pair_exclude_types.emplace_back(static_cast<int>(pet_flat[ii]),
+                                        static_cast<int>(pet_flat[ii + 1]));
+      }
+      pair_exclude_table_ = buildPairExcludeTable(ntypes, pair_exclude_types);
+    } catch (tf_function_not_found& e) {
+      pair_exclude_table_.clear();
+    }
+    inited = true;
+  } catch (...) {
+    clear_tf_resources();
+    throw;
   }
-  try {
-    has_default_fparam_ = get_scalar<bool>(ctx, "has_default_fparam",
-                                           func_vector, device, status);
-  } catch (tf_function_not_found& e) {
-    has_default_fparam_ = false;
-  }
-  inited = true;
 }
 
-deepmd::DeepPotJAX::~DeepPotJAX() {
-  if (inited) {
-    TF_DeleteSession(session, status);
-    TF_DeleteGraph(graph);
-    TF_DeleteSessionOptions(sessionopts);
-    TF_DeleteStatus(status);
+void deepmd::DeepPotJAX::clear_tf_resources() noexcept {
+  if (ctx != nullptr) {
     TFE_DeleteContext(ctx);
+    ctx = nullptr;
+  }
+  if (ctx_opts != nullptr) {
     TFE_DeleteContextOptions(ctx_opts);
-    for (size_t i = 0; i < func_vector.size(); i++) {
-      TF_DeleteFunction(func_vector[i]);
+    ctx_opts = nullptr;
+  }
+  for (TF_Function* function : func_vector) {
+    if (function != nullptr) {
+      TF_DeleteFunction(function);
     }
   }
+  func_vector.clear();
+  if (session != nullptr) {
+    TF_DeleteSession(session, status);
+    session = nullptr;
+  }
+  if (graph != nullptr) {
+    TF_DeleteGraph(graph);
+    graph = nullptr;
+  }
+  if (sessionopts != nullptr) {
+    TF_DeleteSessionOptions(sessionopts);
+    sessionopts = nullptr;
+  }
+  if (status != nullptr) {
+    TF_DeleteStatus(status);
+    status = nullptr;
+  }
+  inited = false;
 }
+
+deepmd::DeepPotJAX::~DeepPotJAX() { clear_tf_resources(); }
 
 template <typename VALUETYPE>
 void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
@@ -628,6 +747,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                                  const std::vector<VALUETYPE>& box,
                                  const std::vector<VALUETYPE>& fparam,
                                  const std::vector<VALUETYPE>& aparam_,
+                                 const std::vector<double>& charge_spin,
                                  const bool atomic) {
   std::vector<VALUETYPE> coord, force, aparam, atom_energy, atom_virial;
   std::vector<double> ener_double, force_double, virial_double,
@@ -660,6 +780,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> box_double(box.begin(), box.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
+  std::vector<double> charge_spin_double =
+      make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
 
   TFE_Op* op;
   if (atomic) {
@@ -669,15 +791,22 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     op = get_func_op(ctx, "call_without_atomic_virial", func_vector, device,
                      status);
   }
-  std::vector<TFE_TensorHandle*> input_list(5);
-  std::vector<TF_Tensor*> data_tensor(5);
+  const size_t num_inputs = 5 + (dchgspin > 0 ? 1 : 0);
+  std::vector<TFE_TensorHandle*> input_list(num_inputs);
+  std::vector<TF_Tensor*> data_tensor(num_inputs);
   // coord
   std::vector<int64_t> coord_shape = {nframes, nloc_real, 3};
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
+  std::vector<int> atype_input(static_cast<size_t>(nframes) * nloc_real);
+  for (int ff = 0; ff < nframes; ++ff) {
+    std::copy(atype.begin(), atype.end(),
+              atype_input.begin() + static_cast<size_t>(ff) * nloc_real);
+  }
   std::vector<int64_t> atype_shape = {nframes, nloc_real};
-  input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
+  input_list[1] =
+      add_input(op, atype_input, atype_shape, data_tensor[1], status);
   // box
   int box_size = box_double.size() > 0 ? 3 : 0;
   std::vector<int64_t> box_shape = {nframes, box_size, box_size};
@@ -690,6 +819,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
   input_list[4] =
       add_input(op, aparam_double, aparam_shape, data_tensor[4], status);
+  if (dchgspin > 0) {
+    std::vector<int64_t> charge_spin_shape = {nframes, dchgspin};
+    input_list[5] = add_input(op, charge_spin_double, charge_spin_shape,
+                              data_tensor[5], status);
+  }
   // execute the function
   int nretvals = 6;
   TFE_TensorHandle* retvals[nretvals];
@@ -754,7 +888,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (size_t i = 0; i < 5; i++) {
+  for (size_t i = 0; i < input_list.size(); i++) {
     TFE_DeleteTensorHandle(input_list[i]);
     TF_DeleteTensor(data_tensor[i]);
   }
@@ -778,6 +912,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                                  const int& ago,
                                  const std::vector<VALUETYPE>& fparam,
                                  const std::vector<VALUETYPE>& aparam_,
+                                 const std::vector<double>& charge_spin,
                                  const bool atomic) {
   std::vector<VALUETYPE> coord, force, aparam, atom_energy, atom_virial;
   std::vector<double> ener_double, force_double, virial_double,
@@ -808,6 +943,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> coord_double(coord.begin(), coord.end());
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
+  std::vector<double> charge_spin_double =
+      make_charge_spin_input(charge_spin, dchgspin, nframes, default_chg_spin_);
 
   int nall_model = nall_real;
   if (uses_xla_compilation_) {
@@ -833,8 +970,9 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     op = get_func_op(ctx, "call_lower_without_atomic_virial", func_vector,
                      device, status);
   }
-  std::vector<TFE_TensorHandle*> input_list(6);
-  std::vector<TF_Tensor*> data_tensor(6);
+  const size_t num_inputs = 6 + (dchgspin > 0 ? 1 : 0);
+  std::vector<TFE_TensorHandle*> input_list(num_inputs);
+  std::vector<TF_Tensor*> data_tensor(num_inputs);
   // coord
   std::vector<int64_t> coord_shape = {nframes, nall_model, 3};
   input_list[0] =
@@ -865,6 +1003,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
       }
     }
   }
+  // Model-level pair exclusion (decision #18/A4): erase excluded-type
+  // neighbours to -1 before the exported call_lower_* consumes the nlist.
+  // applyPairExcludeNlistVec (common.h) is the torch-free twin of
+  // applyPairExclusionNlist (commonPT.h); empty table => identity.
+  applyPairExcludeNlistVec(nlist, atype, pair_exclude_table_, ntypes, nloc_real,
+                           static_cast<int>(max_size));
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
   std::vector<int64_t> mapping_shape = {nframes, nall_model};
@@ -894,6 +1038,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
   input_list[5] =
       add_input(op, aparam_double, aparam_shape, data_tensor[5], status);
+  if (dchgspin > 0) {
+    std::vector<int64_t> charge_spin_shape = {nframes, dchgspin};
+    input_list[6] = add_input(op, charge_spin_double, charge_spin_shape,
+                              data_tensor[6], status);
+  }
   // execute the function
   int nretvals = 6;
   TFE_TensorHandle* retvals[nretvals];
@@ -943,7 +1092,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (size_t i = 0; i < 6; i++) {
+  for (size_t i = 0; i < input_list.size(); i++) {
     TFE_DeleteTensorHandle(input_list[i]);
     TF_DeleteTensor(data_tensor[i]);
   }
@@ -967,6 +1116,7 @@ template void deepmd::DeepPotJAX::compute<double>(
     const int& ago,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam_,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 template void deepmd::DeepPotJAX::compute<float>(
@@ -983,6 +1133,7 @@ template void deepmd::DeepPotJAX::compute<float>(
     const int& ago,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam_,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 void deepmd::DeepPotJAX::get_type_map(std::string& type_map_) {
@@ -1002,7 +1153,22 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<double>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam, atomic);
+          fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<double>& force,
+                                  std::vector<double>& virial,
+                                  std::vector<double>& atom_energy,
+                                  std::vector<double>& atom_virial,
+                                  const std::vector<double>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<double>& box,
+                                  const std::vector<double>& fparam,
+                                  const std::vector<double>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<float>& force,
@@ -1016,7 +1182,22 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<float>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam, atomic);
+          fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<float>& force,
+                                  std::vector<float>& virial,
+                                  std::vector<float>& atom_energy,
+                                  std::vector<float>& atom_virial,
+                                  const std::vector<float>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<float>& box,
+                                  const std::vector<float>& fparam,
+                                  const std::vector<float>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<double>& force,
@@ -1033,7 +1214,25 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<double>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam, atomic);
+          nghost, inlist, ago, fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<double>& force,
+                                  std::vector<double>& virial,
+                                  std::vector<double>& atom_energy,
+                                  std::vector<double>& atom_virial,
+                                  const std::vector<double>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<double>& box,
+                                  const int nghost,
+                                  const InputNlist& inlist,
+                                  const int& ago,
+                                  const std::vector<double>& fparam,
+                                  const std::vector<double>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<float>& force,
@@ -1050,7 +1249,25 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<float>& aparam,
                                   const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam, atomic);
+          nghost, inlist, ago, fparam, aparam, std::vector<double>(), atomic);
+}
+void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
+                                  std::vector<float>& force,
+                                  std::vector<float>& virial,
+                                  std::vector<float>& atom_energy,
+                                  std::vector<float>& atom_virial,
+                                  const std::vector<float>& coord,
+                                  const std::vector<int>& atype,
+                                  const std::vector<float>& box,
+                                  const int nghost,
+                                  const InputNlist& inlist,
+                                  const int& ago,
+                                  const std::vector<float>& fparam,
+                                  const std::vector<float>& aparam,
+                                  const std::vector<double>& charge_spin,
+                                  const bool atomic) {
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
 }
 void deepmd::DeepPotJAX::computew_mixed_type(std::vector<double>& ener,
                                              std::vector<double>& force,

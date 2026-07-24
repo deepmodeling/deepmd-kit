@@ -13,6 +13,7 @@ from __future__ import (
 import math
 from itertools import (
     permutations,
+    product,
 )
 from typing import (
     Any,
@@ -22,6 +23,9 @@ from typing import (
 import torch
 import torch.nn as nn
 
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -433,6 +437,41 @@ class WignerDCalculator(nn.Module):
                 lmax=self.lmax,
                 dtype=self.dtype,
                 device=self.device,
+            )
+            # Flatten the monomial exponent tables to Python constants in
+            # eager context: the fused monomial operator bakes them into the
+            # kernel at compile time, and a trace-time ``.tolist()`` would
+            # create unbacked symbols under ``make_fx`` and abort export.
+            self._monomial_exponents_flat: dict[str, list[int]] = {}
+            for exp_name in ("exp_l3", "exp_l4", "exp_l5", "exp_l6"):
+                exps = getattr(self.small_order_kernels, exp_name, None)
+                if exps is not None:
+                    self._monomial_exponents_flat[exp_name] = [
+                        int(v) for v in exps.reshape(-1).tolist()
+                    ]
+            self._use_triton_monomials = triton_infer_level() >= 1
+            # The l = 2 contraction tensor collapsed onto the 35 unique
+            # degree-4 monomials: column m of the coefficient matrix sums
+            # C_l2[:, :, p] over the 4^4 index tuples p whose component
+            # multiplicities equal the monomial exponents.
+            exp_l2: list[int] = []
+            columns: list[torch.Tensor] = []
+            index_of: dict[tuple[int, int, int, int], int] = {}
+            c_l2 = self.small_order_kernels.C_l2
+            for p in product(range(4), repeat=4):
+                counts = (p.count(0), p.count(1), p.count(2), p.count(3))
+                if counts not in index_of:
+                    index_of[counts] = len(index_of)
+                    exp_l2.extend(counts)
+                    columns.append(torch.zeros_like(c_l2[:, :, 0, 0, 0, 0]))
+                columns[index_of[counts]] = (
+                    columns[index_of[counts]] + c_l2[:, :, p[0], p[1], p[2], p[3]]
+                )
+            self._monomial_exponents_flat["exp_l2"] = exp_l2
+            self.register_buffer(
+                "_l2_monomial_coeff",
+                torch.stack([c.reshape(-1) for c in columns], dim=0),
+                persistent=False,
             )
 
         if self.lmax >= self.poly_lmin:
@@ -1030,26 +1069,34 @@ class WignerDCalculator(nn.Module):
         q: torch.Tensor,
         max_power: int,
     ) -> torch.Tensor:
-        """Precompute powers ``q_i^k`` as a dense table with shape ``(4, max_power+1, E)``."""
+        """Precompute powers ``q_i^k`` as a dense table with shape ``(4, max_power+1, E)``.
+
+        The table is built by an explicit multiply chain: a ``cumprod`` over
+        the short power axis lowers to a scan whose forward and leave-one-out
+        backward cost several milliseconds per model call at typical edge
+        counts, whereas the unrolled chain stays a fusable pointwise sequence.
+        """
         components = q.transpose(0, 1)
+        ones = torch.ones_like(components)
         if max_power == 0:
-            return torch.ones(4, 1, q.shape[0], dtype=q.dtype, device=q.device)
-        repeated = components.unsqueeze(1).expand(4, max_power, q.shape[0])
-        positive_powers = torch.cumprod(repeated, dim=1)
-        return torch.cat(
-            [
-                torch.ones(4, 1, q.shape[0], dtype=q.dtype, device=q.device),
-                positive_powers,
-            ],
-            dim=1,
-        )
+            return ones.unsqueeze(1)
+        powers = [ones, components]
+        for _ in range(max_power - 1):
+            powers.append(powers[-1] * components)
+        return torch.stack(powers, dim=1)
 
     @staticmethod
     def _build_monomial_matrix(
         powers: torch.Tensor,
         monomial_exponents: torch.Tensor,
     ) -> torch.Tensor:
-        """Assemble the monomial design matrix for one fixed degree by gather/prod."""
+        """Assemble the monomial design matrix for one fixed degree.
+
+        The four gathered factor rows are combined by explicit multiplies:
+        ``prod(dim=0)`` lowers to a ``cumprod`` scan pair (forward plus
+        leave-one-out backward) on the large ``(4, M, E)`` intermediate,
+        while two multiply levels keep the chain pointwise and fusable.
+        """
         gather_idx = (
             monomial_exponents.transpose(0, 1)
             .unsqueeze(-1)
@@ -1060,7 +1107,38 @@ class WignerDCalculator(nn.Module):
             )
         )
         selected = torch.gather(powers, 1, gather_idx)
-        return selected.prod(dim=0).transpose(0, 1).contiguous()
+        product = (selected[0] * selected[1]) * (selected[2] * selected[3])
+        return product.transpose(0, 1).contiguous()
+
+    def _monomial_matrix(
+        self,
+        edge_quaternion: torch.Tensor,
+        exp_name: str,
+        max_power: int,
+    ) -> torch.Tensor:
+        """Evaluate one degree kernel's monomial basis, with the fused fast path.
+
+        On the CUDA inference path the fused operator evaluates the monomials
+        in registers with the exponent table baked in at compile time (see
+        :mod:`.triton.wigner_monomials`); construction-time solves and CPU
+        targets keep the dense power-table chain.
+        """
+        exponents = self._monomial_exponents_flat.get(exp_name)
+        if (
+            self._use_triton_monomials
+            and exponents is not None
+            and edge_quaternion.is_cuda
+            and not self.training
+        ):
+            from deepmd.kernels.triton.sezm.wigner_monomials import (
+                wigner_monomials,
+            )
+
+            return wigner_monomials(edge_quaternion, exponents, max_power)
+        powers = self._precompute_powers(edge_quaternion, max_power)
+        return self._build_monomial_matrix(
+            powers, getattr(self.small_order_kernels, exp_name)
+        )
 
     def _compute_l1_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
         """Compute the vector block directly from the Cartesian rotation matrix."""
@@ -1069,7 +1147,27 @@ class WignerDCalculator(nn.Module):
         return rot_perm * self.l1_sign_outer
 
     def _compute_l2_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
-        """Compute the ``l=2`` block from the degree-4 quaternion contraction."""
+        """Compute the ``l=2`` block from the degree-4 quaternion contraction.
+
+        The fused inference path collapses the 256 rank-4 index tuples onto
+        the 35 unique degree-4 monomials, replacing the ``(E, 4, 4, 4, 4)``
+        outer product with a monomial evaluation and one ``(E, 35) x (35, 25)``
+        product with no large intermediate.
+        """
+        exponents = self._monomial_exponents_flat.get("exp_l2")
+        if (
+            self._use_triton_monomials
+            and exponents is not None
+            and edge_quaternion.is_cuda
+            and not self.training
+        ):
+            from deepmd.kernels.triton.sezm.wigner_monomials import (
+                wigner_monomials,
+            )
+
+            monomials = wigner_monomials(edge_quaternion, exponents, 4)
+            D_flat = torch.matmul(monomials, self._l2_monomial_coeff)
+            return D_flat.view(edge_quaternion.shape[0], 5, 5)
         q2 = edge_quaternion.unsqueeze(-1) * edge_quaternion.unsqueeze(-2)
         q4 = q2.unsqueeze(-1).unsqueeze(-1) * q2.unsqueeze(-3).unsqueeze(-3)
         return torch.einsum(
@@ -1080,11 +1178,7 @@ class WignerDCalculator(nn.Module):
 
     def _compute_l3_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
         """Compute the ``l=3`` block from the dedicated degree-6 monomial kernel."""
-        powers = self._precompute_powers(edge_quaternion, 6)
-        monomials = self._build_monomial_matrix(
-            powers,
-            self.small_order_kernels.exp_l3,
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l3", 6)
         D_flat = torch.matmul(
             monomials,
             self.small_order_kernels.C_l3.transpose(0, 1),
@@ -1096,11 +1190,7 @@ class WignerDCalculator(nn.Module):
         edge_quaternion: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the ``l=3`` and ``l=4`` blocks from one shared degree-8 kernel."""
-        powers = self._precompute_powers(edge_quaternion, 8)
-        monomials = self._build_monomial_matrix(
-            powers,
-            self.small_order_kernels.exp_l4,
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l4", 8)
         D_flat = torch.matmul(
             monomials,
             self.small_order_kernels.C_combined_l3l4.transpose(0, 1),
@@ -1111,11 +1201,7 @@ class WignerDCalculator(nn.Module):
 
     def _compute_l5_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
         """Compute the ``l=5`` block from the dedicated degree-10 monomial kernel."""
-        powers = self._precompute_powers(edge_quaternion, 10)
-        monomials = self._build_monomial_matrix(
-            powers,
-            self.small_order_kernels.exp_l5,
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l5", 10)
         D_flat = torch.matmul(
             monomials,
             self.small_order_kernels.C_l5.transpose(0, 1),
@@ -1127,11 +1213,7 @@ class WignerDCalculator(nn.Module):
         edge_quaternion: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the ``l=5`` and ``l=6`` blocks from one shared degree-12 kernel."""
-        powers = self._precompute_powers(edge_quaternion, 12)
-        monomials = self._build_monomial_matrix(
-            powers,
-            self.small_order_kernels.exp_l6,
-        )
+        monomials = self._monomial_matrix(edge_quaternion, "exp_l6", 12)
         D_flat = torch.matmul(
             monomials,
             self.small_order_kernels.C_combined_l5l6.transpose(0, 1),

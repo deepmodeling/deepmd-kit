@@ -131,7 +131,6 @@ class Wrap:
             w4 = w * 4  # nbit
             nhs.append(h)
             nws.append(w)
-            #
             w_full = np.ceil(w4 / nbit) * nbit
             d = e.extend_hex(d, w_full)
             # DEVELOP_DEBUG
@@ -319,7 +318,6 @@ class Wrap:
                         )
             sGSs = "".join(GSs[::-1])
             bs = sGSs + bs
-            #
             NIX = dscp["NIX"]
             ln2_NIX = -int(np.log2(NIX))
             bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
@@ -389,7 +387,6 @@ class Wrap:
             bdc.append(bdct)
             bwr.append(bwrt)
             bwc.append(bwct)
-        #
         bfps, bbps = [], []
         for ss in range(NSEL):
             tt = ss // NSTDM
@@ -537,7 +534,6 @@ class Wrap:
                 d1 = d[:, :, 0:2]
                 d2 = d[:, :, 2:4]
                 d = np.concatenate([d1, d2])
-                #
                 bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
                 bs = e.reverse_bin(bs, nmerges[ii])
                 bs = e.merge_bin(bs, nmerges[ii])
@@ -552,7 +548,6 @@ class Wrap:
                 d1 = np.reshape(d[:, :, 0:2], [-1, nd * 2])
                 d2 = np.reshape(d[:, :, 2:4], [-1, nd * 2])
                 d = np.concatenate([d1, d2], axis=1)
-                #
                 bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
                 bss.append(bs)
         bswt, bdsw, bfea, bgra = bss

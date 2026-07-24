@@ -21,9 +21,6 @@ path implemented in B3.1.
 import importlib.util
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -37,12 +34,31 @@ from expected_ref import (
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+    run_mpi_pair_runner,
+)
 from write_lmp_data import (
     write_lmp_data,
 )
 
 pb_file = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa1_graph.pt2"
+)
+# Graph-lower dpa1 with model-level pair_exclude_types=[[0,1]] and its
+# same-weights no-exclusion baseline (source/tests/infer/gen_dpa1_pairexcl.py).
+# Used to prove exclusion survives the extended-region multi-rank graph path.
+pb_file_pairexcl = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "deeppot_dpa1_pairexcl_graph.pt2"
+)
+pb_file_pairexcl_none = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "deeppot_dpa1_pairexcl_none.pt2"
 )
 ref_file = (
     Path(__file__).parent.parent.parent
@@ -112,20 +128,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    if atom_map != "no":
-        lammps.atom_modify(f"map {atom_map}")
-    lammps.neighbor("2.0 bin")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    lammps.mass("1 16")
-    lammps.mass("2 2")
-    lammps.timestep(0.0005)
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, atom_map=atom_map)
 
 
 @pytest.fixture
@@ -193,52 +196,24 @@ def _run_mpi_subprocess(
     data_path: Path | None = None,
     processors: str | None = None,
     runner_args: list[str] | None = None,
+    pb: Path | None = None,
 ) -> dict:
-    """Invoke the (backend-agnostic) DPA3 MPI runner under
-    ``mpirun -n <nprocs>`` against the dpa1 graph .pt2 and return
-    ``{"pe": float, "forces": (n, 3), "virials": (n, 9)}``.
+    """Invoke the shared DPA MPI runner against the DPA1 graph model.
 
     ``nprocs == 1`` forces ``--processors 1 1 1`` so the C++ side sees
     ``nprocs == 1`` and routes to the single-rank graph path — a
-    same-archive reference for the multi-rank comparison.
+    same-archive reference for the multi-rank comparison.  ``pb`` overrides
+    the model archive (defaults to the no-exclusion ``deeppot_dpa1_graph.pt2``).
     """
-    if data_path is None:
-        data_path = data_file
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        argv = [
-            "mpirun",
-            "-n",
-            str(nprocs),
-            sys.executable,
-            str(mpi_runner),
-            str(data_path.resolve()),
-            str(pb_file.resolve()),
-            out_path,
-        ]
-        if processors is not None:
-            argv.extend(["--processors", processors])
-        elif nprocs == 1:
-            argv.extend(["--processors", "1 1 1"])
-        if extra_args:
-            argv.extend(extra_args)
-        if runner_args:
-            argv.extend(runner_args)
-        sp.check_call(argv)
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe = float(lines[0])
-        rows = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        forces = rows[:, :3]
-        virials = rows[:, 3:]
-        return {"pe": pe, "forces": forces, "virials": virials}
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
+    return run_mpi_pair_runner(
+        mpi_runner,
+        data_path or data_file,
+        pb or pb_file,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=extra_args,
+        runner_args=runner_args,
+    )
 
 
 @pytest.mark.skipif(
@@ -317,3 +292,47 @@ def test_pair_deepmd_mpi_dpa1_graph_empty_subdomain() -> None:
         out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
     )
     assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.skipif(
+    not pb_file_pairexcl.exists(),
+    reason="gen_dpa1_pairexcl.py .pt2 fixtures not generated",
+)
+def test_pair_deepmd_mpi_dpa1_pairexcl_graph_matches_single_rank() -> None:
+    """Model-level ``pair_exclude_types`` must survive the extended-region
+    multi-rank graph path (cell 5).
+
+    Exclusion is a BUILD-time transform applied at the C++ ingestion seam
+    (``applyPairExclusion`` on ``edge_mask``); the SAME seam serves the
+    single-rank (``n_node == nloc``) and multi-rank (``n_node == nall_real``,
+    extended region) graph routes, so multi-rank must equal single-rank on the
+    excluded model. A regression that skipped the seam on the extended-region
+    path -- or fed it the wrong (local vs extended) atypes -- would diverge here.
+
+    Two checks:
+      1. MP (``-n 2``) ≡ SP (``-n 1``) on the excluded archive.
+      2. The excluded run differs from the SAME-weights no-exclusion baseline
+         (``deeppot_dpa1_pairexcl_none.pt2``), so a silently-dropped exclusion
+         on BOTH ranks cannot pass check 1 trivially.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2, pb=pb_file_pairexcl)
+    out_ref = _run_mpi_subprocess(nprocs=1, pb=pb_file_pairexcl)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+
+    # Exclusion must be ACTIVE on the multi-rank path: the excluded energy must
+    # differ from the same-weights no-exclusion baseline (O-H pairs dropped).
+    out_none = _run_mpi_subprocess(nprocs=2, pb=pb_file_pairexcl_none)
+    assert abs(out_mpi["pe"] - out_none["pe"]) > 1e-6, (
+        "pair_exclude_types had no effect on the multi-rank graph path "
+        f"(|E_excl - E_none| = {abs(out_mpi['pe'] - out_none['pe']):.2e})"
+    )

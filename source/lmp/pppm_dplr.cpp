@@ -48,6 +48,14 @@ PPPMDPLR::PPPMDPLR(LAMMPS* lmp)
 
 /* ---------------------------------------------------------------------- */
 
+void PPPMDPLR::clear_fele() {
+  int nlocal = atom->nlocal;
+  fele.resize(static_cast<size_t>(nlocal) * 3);
+  fill(fele.begin(), fele.end(), 0.0);
+}
+
+/* ---------------------------------------------------------------------- */
+
 void PPPMDPLR::init() {
   // DPLR PPPM requires newton on, b/c it computes forces on ghost atoms
 
@@ -57,10 +65,8 @@ void PPPMDPLR::init() {
 
   PPPM::init();
 
-  int nlocal = atom->nlocal;
   // cout << " ninit pppm/dplr ---------------------- " << nlocal << endl;
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 }
 
 /* ----------------------------------------------------------------------
@@ -89,6 +95,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   // return if there are no charges
 
   if (qsqsum == 0.0) {
+    clear_fele();
     return;
   }
 
@@ -296,8 +303,7 @@ void PPPMDPLR::fieldforce_ik() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];
@@ -372,8 +378,7 @@ void PPPMDPLR::fieldforce_ad() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(static_cast<size_t>(nlocal) * 3);
-  fill(fele.begin(), fele.end(), 0.0);
+  clear_fele();
 
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];

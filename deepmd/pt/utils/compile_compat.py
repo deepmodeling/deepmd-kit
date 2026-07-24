@@ -45,6 +45,7 @@ __all__ = [
     "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
+    "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
 ]
@@ -149,6 +150,57 @@ def is_prime(n: int) -> bool:
             return False
         k += 2
     return True
+
+
+def forbidden_dims_from_model(
+    model: torch.nn.Module,
+    task_buf_vals: tuple[torch.Tensor, ...] = (),
+) -> set[int]:
+    """Prime-collision set for trace-dim selection.
+
+    Collects every ``> 1`` dim of the model's parameters/buffers (so
+    :func:`next_safe_prime` never aliases an internal dim like ``g2_dim`` /
+    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
+    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the
+    compiled-training traces (``_trace_and_compile`` /
+    ``_trace_and_compile_graph``) and the graph ``.pt2`` export trace
+    (``_trace_and_export``); each caller adds its path-specific dims
+    (nall/nloc/nsel for dense, charge_spin for both) on top of this base set.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model whose parameter/buffer/conditioning dims to collect.
+    task_buf_vals : tuple of torch.Tensor
+        Per-task buffers promoted to FX placeholders (multi-task compiled
+        training); their dims join the forbidden set.
+
+    Returns
+    -------
+    set of int
+        Every ``> 1`` dimension a trace-time size must not collide with.
+    """
+    forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    for _getter_name in ("get_dim_fparam", "get_dim_aparam"):
+        try:
+            # resolve inside the try: a model without the accessor must fall
+            # through the best-effort path, not raise during tuple building
+            _dim = getattr(model, _getter_name)()
+            if _dim > 1:
+                forbidden.add(int(_dim))
+        except Exception:
+            pass  # best-effort: dim unavailable -> nothing to forbid
+    for _tbv in task_buf_vals:
+        for _d in _tbv.shape:
+            if _d > 1:
+                forbidden.add(int(_d))
+    return forbidden
 
 
 def next_safe_prime(start: int, forbidden: set[int]) -> int:
@@ -300,7 +352,37 @@ def rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
     return new_gm
 
 
-def build_inductor_compile_options() -> dict[str, Any]:
+def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.view`` in a ``make_fx`` graph to ``aten.reshape``.
+
+    ``make_fx`` lowers ``Tensor.reshape`` to ``aten.view`` whenever the traced
+    ``FakeTensor`` is view-compatible. The lowering is unsound when the fake
+    stride differs from the eager stride -- a permuted tensor that ``FakeTensor``
+    keeps strided while eager materializes contiguous -- since the baked
+    ``aten.view`` is accepted during tracing yet rejected at runtime for
+    incompatible size and stride. ``aten.reshape`` coincides with ``aten.view``
+    on view-compatible strides (and is elided by Inductor in that case) and
+    copies only when a view is impossible; the rewrite is therefore
+    semantics-preserving and free on the fast path.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    view = torch.ops.aten.view.default
+    reshape = torch.ops.aten.reshape.default
+    relaxed = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is view:
+            node.target = reshape
+            relaxed = True
+    if relaxed:
+        gm.graph.lint()
+        gm.recompile()
+
+
+def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:
     """Return the conservative Inductor options used to lower the dynamic graph.
 
     The option set disables every Inductor and Triton feature that has
@@ -310,6 +392,22 @@ def build_inductor_compile_options() -> dict[str, Any]:
     some GPU/Triton combinations. Options absent from the running PyTorch's
     configuration registry are dropped so the returned dictionary stays valid
     across releases.
+
+    Parameters
+    ----------
+    inference : bool
+        Whether the options lower an inference graph (the ``make_fx`` +
+        ``aot_module_simplified`` path and the AOTInductor freeze) rather
+        than the ``torch.compile`` training graph.  Inference graphs enter
+        Inductor with hint-less data-dependent symbols, which breaks the
+        peak-memory reordering pass (see below); training graphs carry real
+        size hints from the first traced call and benefit from the pass.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keyword options accepted by ``torch.compile(options=...)`` and by
+        ``torch._inductor.config.patch``.
     """
     compile_options: dict[str, Any] = {
         "max_autotune": False,
@@ -330,6 +428,19 @@ def build_inductor_compile_options() -> dict[str, Any]:
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
     }
+    if inference:
+        # The peak-memory reordering pass sizes buffers through
+        # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
+        # lowered from ``make_fx`` fake placeholders whose edge-count symbols
+        # carry no hint, so every dynamically shaped buffer is costed as zero
+        # bytes, the candidate orders become indistinguishable to the cost
+        # model, and the pass rewrites the schedule into an order that hoists
+        # the dynamic allocations to the head of the generated ``call()`` --
+        # all forward/backward intermediates then coexist, more than doubling
+        # peak memory on the SeZM inference graph.  Training compiles through
+        # Dynamo with real hints from the first call and measurably benefits
+        # from the pass, so it keeps the upstream default.
+        compile_options["reorder_for_peak_memory"] = False
     try:
         from torch._inductor import config as inductor_config
 
