@@ -1724,6 +1724,44 @@ class LmdbTestDataNlocView:
         return self._inner.get_test(nloc=self._nloc)
 
 
+def _validate_merge_type_maps(
+    source_metadata: list[tuple[str, dict[str, Any]]],
+) -> list[str] | None:
+    """Return the shared type map required for byte-for-byte frame merging.
+
+    ``merge_lmdb`` does not decode and rewrite atom-type arrays, so every
+    source must use exactly the same index-to-species mapping. All-missing
+    legacy metadata remains supported, but mixing explicit and missing maps is
+    rejected because compatibility cannot be established.
+    """
+    source_type_maps = [(path, meta.get("type_map")) for path, meta in source_metadata]
+    explicit_type_maps = [
+        (path, list(type_map))
+        for path, type_map in source_type_maps
+        if type_map is not None
+    ]
+    if not explicit_type_maps:
+        return None
+
+    formatted_maps = ", ".join(
+        f"{path}: {list(type_map)!r}" if type_map is not None else f"{path}: missing"
+        for path, type_map in source_type_maps
+    )
+    if len(explicit_type_maps) != len(source_type_maps):
+        raise ValueError(
+            "Cannot merge LMDB datasets with mixed type_map metadata because "
+            f"raw atom-type indices cannot be validated ({formatted_maps})"
+        )
+
+    canonical_type_map = explicit_type_maps[0][1]
+    if any(type_map != canonical_type_map for _, type_map in explicit_type_maps[1:]):
+        raise ValueError(
+            "Cannot merge LMDB datasets with incompatible type_map values "
+            f"because frames are copied without remapping ({formatted_maps})"
+        )
+    return canonical_type_map
+
+
 def merge_lmdb(
     src_paths: list[str],
     dst_path: str,
@@ -1748,33 +1786,46 @@ def merge_lmdb(
     -------
     str
         Path to the created LMDB.
+
+    Raises
+    ------
+    ValueError
+        If sources use different explicit type maps, or mix explicit type-map
+        metadata with legacy metadata where the mapping is missing.
     """
     import os
     import shutil
 
+    # Validate every source before replacing or creating the destination. A
+    # type-map validation failure must not destroy an existing dataset or
+    # leave a partial output.
+    source_metadata: list[tuple[str, dict[str, Any]]] = []
+    for src_path in src_paths:
+        src_env = _open_lmdb(src_path)
+        try:
+            with src_env.begin() as txn:
+                source_metadata.append((src_path, _read_metadata(txn)))
+        finally:
+            _close_lmdb(src_path)
+    merged_type_map = _validate_merge_type_maps(source_metadata)
+
     if os.path.exists(dst_path):
         shutil.rmtree(dst_path)
-
     dst_env = lmdb.open(dst_path, map_size=map_size)
     frame_idx = 0
     fmt = "012d"
     frame_nlocs: list[int] = []
     frame_system_ids: list[int] = []
     first_system_info: dict | None = None
-    first_type_map: list[str] | None = None
     sys_id_offset = 0
 
-    for src_path in src_paths:
+    for src_path, meta in source_metadata:
         src_env = _open_lmdb(src_path)
-        with src_env.begin() as txn:
-            meta = _read_metadata(txn)
         nframes, src_fmt, natoms_per_type = _parse_metadata(meta)
         fallback_natoms = sum(natoms_per_type)
 
         if first_system_info is None:
             first_system_info = meta.get("system_info", {})
-        if first_type_map is None:
-            first_type_map = meta.get("type_map")
 
         # Check for pre-computed frame_nlocs in source
         src_nlocs = meta.get("frame_nlocs")
@@ -1819,7 +1870,7 @@ def merge_lmdb(
         else:
             sys_id_offset += 1
 
-        src_env.close()
+        _close_lmdb(src_path)
 
     # Write merged metadata with frame_nlocs for fast init
     merged_meta = {
@@ -1829,8 +1880,8 @@ def merge_lmdb(
         "frame_nlocs": frame_nlocs,
         "frame_system_ids": frame_system_ids,
     }
-    if first_type_map is not None:
-        merged_meta["type_map"] = first_type_map
+    if merged_type_map is not None:
+        merged_meta["type_map"] = merged_type_map
     with dst_env.begin(write=True) as txn:
         txn.put(b"__metadata__", msgpack.packb(merged_meta, use_bin_type=True))
     dst_env.close()
