@@ -123,6 +123,69 @@ def make_native_spin_model(T_Model: type) -> type:
                 output_def["atom_virial"].squeeze(-2)
             return output_def
 
+        def _spin_active_mask(self, atype: np.ndarray) -> np.ndarray:
+            """Per-atom boolean spin-active mask (``mask_mag``).
+
+            The SINGLE owner of the ``mask_mag`` derivation, shared across
+            backends and forward paths: dpmodel/pt_expt ``call``/``forward``
+            and the pt_expt graph-lower export all emit it through this
+            method, so the model owns the output and no consumer (DeepEval,
+            C++) re-derives it. A pure function of atom type via the spin
+            mask; array-api compatible (``[..., None]`` and integer gather
+            work for numpy and torch alike).
+
+            Parameters
+            ----------
+            atype
+                Atom types, ``(nf, nloc)`` (eager) or ``(N,)`` (graph node
+                axis).
+
+            Returns
+            -------
+            np.ndarray
+                Boolean mask with a trailing singleton dimension, shape
+                ``(*atype.shape, 1)``; ``True`` where the type carries spin.
+            """
+            return (self.spin_mask[atype] > 0)[..., None]
+
+        def _translate_eager_call(
+            self,
+            model_ret: dict[str, np.ndarray],
+            atype: np.ndarray,
+            do_atomic_virial: bool = False,
+        ) -> dict[str, np.ndarray | None]:
+            """Assemble the public native-spin dict from ``call_common``'s output.
+
+            The SINGLE owner of the eager output translation
+            (``atom_energy``/``energy``/``mask_mag``/``force``/``force_mag``/
+            ``virial`` and, when ``do_atomic_virial``, ``atom_virial``),
+            reused verbatim by the pt_expt ``forward`` -- it is array-api
+            compatible and works on pt_expt's real autograd tensors. Every
+            derivative key follows the same rule: the backend supplies the
+            value (pt_expt autograd) or ``None`` (the energy-only dpmodel
+            backend, which produces no derivatives), so ``atom_virial`` is
+            handled here exactly like ``virial`` rather than being
+            special-cased per backend.
+            """
+            out: dict[str, np.ndarray | None] = {
+                "atom_energy": model_ret["energy"],
+                "energy": model_ret["energy_redu"],
+                "mask_mag": self._spin_active_mask(atype),
+            }
+            translated = [
+                ("energy_derv_r", "force"),
+                ("energy_derv_r_mag", "force_mag"),
+                ("energy_derv_c_redu", "virial"),
+            ]
+            if do_atomic_virial:
+                # Per-atom virial is opt-in (2.5x cost) -- only surfaced when
+                # requested, unlike the always-present reduced keys above.
+                translated.append(("energy_derv_c", "atom_virial"))
+            for kk_src, kk_dst in translated:
+                src = model_ret.get(kk_src)
+                out[kk_dst] = np.squeeze(src, axis=-2) if src is not None else None
+            return out
+
         def call(
             self,
             coord: np.ndarray,
@@ -151,8 +214,10 @@ def make_native_spin_model(T_Model: type) -> type:
             aparam
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
-                If calculate the atomic virial (unused: dpmodel is
-                energy-only for this class).
+                If set, request the per-atom virial (``atom_virial`` key).
+                The energy-only dpmodel backend produces no derivatives, so
+                the value is ``None`` here (same as ``force``/``virial``);
+                the pt_expt subclass fills it with a real autograd tensor.
             charge_spin
                 Frame-level charge/spin FiLM conditioning, shape
                 nf x dim_chg_spin (only consumed when the descriptor
@@ -163,9 +228,10 @@ def make_native_spin_model(T_Model: type) -> type:
             ret_dict
                 The result dict with translated keys: ``atom_energy``,
                 ``energy``, ``mask_mag``, plus
-                ``force``/``force_mag``/``virial`` as ``None`` placeholders
-                when the backend produces no derivatives (dpmodel; the
-                pt_expt subclass produces real autograd tensors).
+                ``force``/``force_mag``/``virial`` (and ``atom_virial`` when
+                ``do_atomic_virial``) as ``None`` placeholders when the
+                backend produces no derivatives (dpmodel; the pt_expt
+                subclass produces real autograd tensors).
             """
             model_ret = self.call_common(
                 coord,
@@ -180,19 +246,9 @@ def make_native_spin_model(T_Model: type) -> type:
                 # only lower that consumes model-level spin).
                 neighbor_graph_method="dense",
             )
-            out: dict[str, np.ndarray | None] = {
-                "atom_energy": model_ret["energy"],
-                "energy": model_ret["energy_redu"],
-                "mask_mag": (self.spin_mask[atype] > 0)[..., None],
-            }
-            for kk_src, kk_dst in (
-                ("energy_derv_r", "force"),
-                ("energy_derv_r_mag", "force_mag"),
-                ("energy_derv_c_redu", "virial"),
-            ):
-                src = model_ret.get(kk_src)
-                out[kk_dst] = np.squeeze(src, axis=-2) if src is not None else None
-            return out
+            return self._translate_eager_call(
+                model_ret, atype, do_atomic_virial=do_atomic_virial
+            )
 
         def serialize(self) -> dict:
             data = super().serialize()

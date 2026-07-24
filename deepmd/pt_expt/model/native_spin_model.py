@@ -83,28 +83,6 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
       ``forward_common_lower_graph_exportable``.
     """
 
-    def _spin_active_mask(self, atype: torch.Tensor) -> torch.Tensor:
-        """Per-atom boolean spin-active mask (``mask_mag``).
-
-        The SINGLE owner of the ``mask_mag`` derivation across this model's
-        forward paths -- the eager :meth:`forward` and the graph-lower
-        export (:meth:`forward_lower_graph_exportable`) both emit it through
-        this method, so the model owns the output and no consumer (DeepEval,
-        C++) re-derives it. A pure function of atom type via the spin mask.
-
-        Parameters
-        ----------
-        atype
-            Atom types, ``(nf, nloc)`` (eager) or ``(N,)`` (graph node axis).
-
-        Returns
-        -------
-        torch.Tensor
-            Boolean mask with a trailing singleton dimension, shape
-            ``(*atype.shape, 1)``: ``True`` where the atom type carries spin.
-        """
-        return (self.spin_mask[atype] > 0).unsqueeze(-1)
-
     def forward(
         self,
         coord: torch.Tensor,
@@ -153,7 +131,9 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         """
         # ``spin=`` rides the NeighborGraph lower only; ``neighbor_graph_method``
         # is left at its default (None) so pt_expt's own default-flip resolves
-        # it to the carry-all graph builder for this (DPA4) descriptor.
+        # it to the efficient carry-all graph builder for this (DPA4)
+        # descriptor (the energy-only dpmodel ``call`` forces the O(N^2)
+        # "dense" builder; pt_expt trades that for the fast path in training).
         model_ret = self.call_common(
             coord,
             atype,
@@ -164,24 +144,20 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             charge_spin=charge_spin,
             spin=spin,
         )
-        out: dict[str, torch.Tensor] = {
-            "atom_energy": model_ret["energy"],
-            "energy": model_ret["energy_redu"],
-            "force": model_ret["energy_derv_r"].squeeze(-2),
-            "force_mag": model_ret["energy_derv_r_mag"].squeeze(-2),
-            "virial": model_ret["energy_derv_c_redu"].squeeze(-2),
-            # Non-magnetic atoms already carry an exactly-zero magnetic force:
-            # the descriptor gates the spin embedding by type, so the
-            # autograd gradient w.r.t. their (inert) spin input is zero by
-            # construction -- mirrors pt's ``SeZMNativeSpinModel.forward``
-            # docstring, which asserts the same and does NOT re-mask the
-            # force. Re-masking here would be a defensive backstop the
-            # project's design principles forbid.
-            "mask_mag": self._spin_active_mask(atype),
-        }
-        if do_atomic_virial:
-            out["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
-        return out
+        # Reuse the dpmodel factory's backend-agnostic translation for ALL
+        # public keys (atom_energy/energy/mask_mag/force/force_mag/virial and,
+        # when requested, atom_virial) -- it operates on this backend's real
+        # autograd tensors, so ``force``/``force_mag`` are true derivatives
+        # (``-dE/dcoord`` / ``-dE/dspin``) and ``atom_virial`` is the real
+        # per-atom virial (the energy-only dpmodel yields ``None`` for the
+        # same key). Non-magnetic atoms already carry an exactly-zero magnetic
+        # force -- the descriptor gates the spin embedding by type, so the
+        # autograd gradient w.r.t. their inert spin is zero by construction
+        # (mirrors pt's ``SeZMNativeSpinModel.forward``, which does NOT
+        # re-mask; a backstop re-mask is forbidden by the design principles).
+        return self._translate_eager_call(
+            model_ret, atype, do_atomic_virial=do_atomic_virial
+        )
 
     def forward_lower_graph_exportable(
         self,
