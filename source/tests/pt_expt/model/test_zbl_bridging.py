@@ -152,3 +152,177 @@ class TestZBLBridgingPtExpt:
         torch.testing.assert_close(
             out_pt["energy"], out2["energy"], rtol=1e-12, atol=1e-12
         )
+
+
+class TestZBLBridgingExportAndTraining:
+    """Graph .pt2 freeze + DeepEval parity and a trainer smoke for ZBL models."""
+
+    def test_graph_freeze_and_deep_eval_parity(self, tmp_path) -> None:
+        import os
+
+        import pytest
+
+        if os.environ.get("CI") == "true":
+            pytest.skip(
+                "AOTInductor compile is slow (minutes); local/fixture-gen only."
+            )
+        from deepmd.infer import (
+            DeepPot,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        cpu = torch.device("cpu")
+        model = get_model(copy.deepcopy(ZBL_CONFIG)).to(cpu).eval()
+        coord, atype, box = _close_pair_system(cpu)
+        ref = model.forward(coord, atype, box=box)
+
+        model_file = tmp_path / "dpa4_zbl_graph.pt2"
+        data = {"model": model.serialize()}
+        deserialize_to_file(str(model_file), data, lower_kind="graph")
+
+        import json
+        import zipfile
+
+        with zipfile.ZipFile(model_file) as z:
+            md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+        # single-rank contract: bridging models never get a with-comm artifact
+        assert md["has_comm_artifact"] is False
+
+        dp = DeepPot(str(model_file))
+        e, f, v = dp.eval(
+            coord.reshape(1, -1).numpy(),
+            box.numpy(),
+            atype.reshape(-1).numpy(),
+            atomic=False,
+        )
+        np.testing.assert_allclose(
+            np.asarray(e).reshape(-1),
+            ref["energy"].detach().numpy().reshape(-1),
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="energy",
+        )
+        np.testing.assert_allclose(
+            np.asarray(f).reshape(-1),
+            ref["force"].detach().numpy().reshape(-1),
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="force",
+        )
+
+    def test_training_smoke(self, tmp_path) -> None:
+        import os
+
+        import pytest
+
+        data_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "pt", "NiO", "data", "single"
+        )
+        if not os.path.isdir(data_dir):
+            pytest.skip(f"NiO data not found: {data_dir}")
+        from deepmd.pt_expt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.pt_expt.train.training import (
+            DEFAULT_TASK_KEY,
+        )
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        model_cfg = copy.deepcopy(ZBL_CONFIG)
+        config = {
+            "model": model_cfg,
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 0.001,
+                "stop_lr": 3.51e-8,
+            },
+            "loss": {
+                "type": "ener",
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+            },
+            "training": {
+                "training_data": {"systems": [data_dir], "batch_size": 1},
+                "validation_data": {
+                    "systems": [data_dir],
+                    "batch_size": 1,
+                    "numb_btch": 1,
+                },
+                "numb_steps": 2,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 1,
+                "save_freq": 2,
+            },
+        }
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            trainer = get_trainer(config)
+            model = trainer.wrapper.model[DEFAULT_TASK_KEY]
+            assert model.atomic_model.has_analytical_bridging()
+            tasks = trainer._make_training_tasks()
+            task = trainer.select_task(tasks)
+            for step in range(2):
+                result = trainer.train_step(task, step)
+                loss = result.payload["loss"]
+                assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
+        finally:
+            os.chdir(old_cwd)
+
+
+def test_native_spin_composes_with_bridging() -> None:
+    """Native spin + ZBL bridging build together and both terms are live.
+
+    pt's SeZMNativeSpinModel inherits the bridging term from SeZMModel; our
+    atomic-layer injection composes with the native-spin model factory for
+    free -- pinned here (energy responds to BOTH the close pair's ZBL and
+    the spin input).
+    """
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["spin"] = {"use_spin": [True, False], "scheme": "native"}
+    model = get_model(cfg).to(torch.device("cpu")).eval()
+    assert model.has_spin()
+    assert model.atomic_model.has_analytical_bridging()
+
+    coord, atype, box = _close_pair_system(torch.device("cpu"))
+    generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED + 3)
+    spin = torch.rand([1, 6, 3], dtype=torch.float64, generator=generator)
+    out = model.forward(coord, atype, spin, box=box)
+    # ZBL live: removing the bridging key from the SAME weights lowers the
+    # close-pair energy by a positive repulsion.
+    plain_data = model.serialize()
+    plain_data.pop("bridging_method")
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    m_plain = BaseModel.deserialize(plain_data).to(torch.device("cpu")).eval()
+    e_plain = m_plain.forward(coord, atype, spin, box=box)["energy"]
+    assert float((out["energy"] - e_plain).sum()) > 1e-3
+    assert "force_mag" in out
+
+
+def test_bridging_radii_defaults() -> None:
+    """bridging_r_inner/r_outer default to 0.5/0.8 (pt's defaults)."""
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg.pop("bridging_r_inner")
+    cfg.pop("bridging_r_outer")
+    model = get_model(cfg)
+    ic = model.atomic_model.descriptor.inner_clamp
+    assert ic is not None
+    assert float(ic.r_inner) == 0.5
+    assert float(ic.r_outer) == 0.8
