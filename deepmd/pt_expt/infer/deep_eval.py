@@ -103,11 +103,11 @@ def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
     category as the physical one (``energy_derv_r``) -- only ``.magnetic``
     tells them apart -- so this checks ``magnetic`` before falling back to
     the category table.  Returns ``None`` for outputs the graph-spin ABI
-    does not produce (``mask``/``mask_mag`` -- the graph route has no owner
-    site for the boolean spin-active mask, unlike the dense/nlist spin path
-    which derives it via ``communicate_extended_output``); callers fall
-    back to a NaN-filled placeholder for those, same as any other
-    unavailable output.
+    does not export: ``mask_mag`` is synthesized by the caller
+    (``_eval_model_graph_spin``) from the artifact's ``use_spin`` metadata
+    and the input atom types, so it never reaches the placeholder path;
+    ``mask`` (real-atom mask, a virtual-atom-scheme concept) falls back to
+    the NaN-filled placeholder, same as any other unavailable output.
     """
     if odef.name in ("mask", "mask_mag"):
         return None
@@ -1954,6 +1954,18 @@ class DeepEval(DeepEvalBackend):
         results = []
         for odef in request_defs:
             shape = self._get_output_shape(odef, nframes, natoms)
+            if odef.name == "mask_mag":
+                # The graph ABI does not export mask_mag; it is a pure
+                # function of the artifact's ``use_spin`` metadata and the
+                # input atom types (``use_spin[atype]`` -- same math as the
+                # eager model's ``spin_mask[atype] > 0``), so the adapter
+                # synthesizes it here to preserve the public DeepPot
+                # semantics (``results["mask_mag"]`` is always valid for a
+                # spin model).
+                use_spin = np.asarray(self.get_use_spin(), dtype=bool)
+                mask_mag = use_spin[np.asarray(atom_types)][..., None]
+                results.append(mask_mag.reshape(shape))
+                continue
             gkey = _graph_spin_output_key(odef)
             val = model_ret.get(gkey) if gkey is not None else None
             if val is not None:
