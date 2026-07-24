@@ -92,8 +92,13 @@ class ProdForceSeAOp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
-    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
+    int ndescrpt;
+    int nnei;
+    OP_REQUIRES_OK(context,
+                   deepmd::tf_compat::GetPerAtomWidth(
+                       &ndescrpt, net_deriv_tensor.shape(), nloc, "net deriv"));
+    OP_REQUIRES_OK(context, deepmd::tf_compat::GetPerAtomWidth(
+                                &nnei, nlist_tensor.shape(), nloc, "nlist"));
     // check the sizes
     OP_REQUIRES(
         context, (nframes == in_deriv_tensor.shape().dim_size(0)),
@@ -106,6 +111,9 @@ class ProdForceSeAOp : public OpKernel {
         (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)),
         deepmd::tf_compat::InvalidArgument(
             "number of descriptors should match"));
+    OP_REQUIRES(context, (static_cast<int64_t>(nnei) * 4 == ndescrpt),
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor width should be four times neighbor width"));
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
@@ -199,8 +207,13 @@ class ProdForceSeROp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
-    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
+    int ndescrpt;
+    int nnei;
+    OP_REQUIRES_OK(context,
+                   deepmd::tf_compat::GetPerAtomWidth(
+                       &ndescrpt, net_deriv_tensor.shape(), nloc, "net deriv"));
+    OP_REQUIRES_OK(context, deepmd::tf_compat::GetPerAtomWidth(
+                                &nnei, nlist_tensor.shape(), nloc, "nlist"));
     // check the sizes
     OP_REQUIRES(
         context, (nframes == in_deriv_tensor.shape().dim_size(0)),
@@ -213,6 +226,9 @@ class ProdForceSeROp : public OpKernel {
                  in_deriv_tensor.shape().dim_size(1)),
                 deepmd::tf_compat::InvalidArgument(
                     "number of descriptors should match"));
+    OP_REQUIRES(context, (nnei == ndescrpt),
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor width should equal neighbor width"));
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
