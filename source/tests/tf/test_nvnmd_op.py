@@ -488,6 +488,51 @@ class TestOpProdEnvMatNvnmdTensorNlist(tf.test.TestCase):
         ):
             self._run_op(False, invalid_mesh)
 
+    def test_rejects_duplicate_tensor_local_index(self) -> None:
+        """Each local atom must occur exactly once in the caller ilist."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[17] = invalid_mesh[16]
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, invalid_mesh)
+
+    def test_rejects_out_of_range_tensor_local_index(self) -> None:
+        """Reject ilist rows that do not identify a live local atom."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[16] = self.natoms[0]
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, invalid_mesh)
+
+    def test_rejects_negative_tensor_neighbor_count(self) -> None:
+        """A negative row length must never reach neighbor-row copying."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[16 + self.natoms[0]] = -1
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, invalid_mesh)
+
+    def test_rejects_tensor_neighbor_count_beyond_payload(self) -> None:
+        """Declared row lengths must fit in the remaining mesh payload."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[16 + self.natoms[0]] += 1
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(False, invalid_mesh)
+
+    def test_mixed_type_op_rejects_invalid_tensor_neighbor_list(self) -> None:
+        """The mixed-type kernel must use the same validated tensor path."""
+        invalid_mesh = self.mesh.copy()
+        invalid_mesh[-1] = self.natoms[1]
+        with self.assertRaisesRegex(
+            tf.errors.InvalidArgumentError, "invalid mesh tensor"
+        ):
+            self._run_op(True, invalid_mesh)
+
 
 if __name__ == "__main__":
     unittest.main()
