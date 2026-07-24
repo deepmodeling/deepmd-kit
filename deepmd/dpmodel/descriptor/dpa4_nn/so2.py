@@ -665,7 +665,7 @@ class DynamicRadialDegreeMixer(NativeOP):
         device = array_api_compat.device(radial_feat)
         radial_m0 = xp.reshape(
             radial_feat[:, : self.lmax + 1, :],
-            (radial_feat.shape[0], self.input_dim),
+            (-1, self.input_dim),
         )
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         return xp.matmul(radial_m0, weight)
@@ -744,9 +744,45 @@ class DynamicRadialDegreeMixer(NativeOP):
             Invariant radial/type features with shape (E, D_m, C_wide).
         """
         xp = array_api_compat.array_namespace(x_local)
-        if x_local.shape != radial_feat.shape:
+        x_shape = x_local.shape
+        radial_shape = radial_feat.shape
+
+        def static_rank(shape: Any) -> int | None:
+            rank = getattr(shape, "rank", None)
+            if rank is not None:
+                return int(rank)
+            try:
+                return len(shape)
+            except (TypeError, ValueError):
+                return None
+
+        def static_dim(shape: Any, axis: int) -> int | None:
+            try:
+                dim = shape[axis]
+            except (IndexError, TypeError, ValueError):
+                return None
+            dim = getattr(dim, "value", dim)
+            return int(dim) if isinstance(dim, (int, np.integer)) else None
+
+        x_rank = static_rank(x_shape)
+        radial_rank = static_rank(radial_shape)
+        if (x_rank is not None and x_rank != 3) or (
+            radial_rank is not None and radial_rank != 3
+        ):
+            raise ValueError("DynamicRadialDegreeMixer inputs must have rank 3")
+        if any(
+            x_dim is not None and radial_dim is not None and x_dim != radial_dim
+            for x_dim, radial_dim in (
+                (static_dim(x_shape, axis), static_dim(radial_shape, axis))
+                for axis in range(3)
+            )
+        ):
             raise ValueError("`x_local` and `radial_feat` must have the same shape")
-        if x_local.shape[1] != self.reduced_dim or x_local.shape[2] != self.channels:
+        reduced_dim = static_dim(x_shape, 1)
+        channel_dim = static_dim(x_shape, 2)
+        if (reduced_dim is not None and reduced_dim != self.reduced_dim) or (
+            channel_dim is not None and channel_dim != self.channels
+        ):
             raise ValueError("Input shape is incompatible with this mixer")
 
         kernel_flat = self._project_radial(radial_feat)
@@ -755,14 +791,10 @@ class DynamicRadialDegreeMixer(NativeOP):
             return xp.matmul(kernel, x_local)
 
         if self.rank > 0:
-            compact = xp.reshape(
-                kernel_flat, (x_local.shape[0], self.degree_kernel_size, self.rank)
-            )
+            compact = xp.reshape(kernel_flat, (-1, self.degree_kernel_size, self.rank))
             return self._mix_rank_compact(compact, x_local)
 
-        compact = xp.reshape(
-            kernel_flat, (x_local.shape[0], self.degree_kernel_size, self.channels)
-        )
+        compact = xp.reshape(kernel_flat, (-1, self.degree_kernel_size, self.channels))
         kernel = self._scatter_channel_kernel(compact)
         # einsum("eoic,eic->eoc"): contract l_in i per channel c (no channel mix).
         return xp.sum(kernel * x_local[:, None, :, :], axis=2)
@@ -791,12 +823,12 @@ class DynamicRadialDegreeMixer(NativeOP):
         # via a single matmul, then weight the rank channels by channel_basis.
         kernel_or = xp.reshape(
             xp.permute_dims(kernel, (0, 1, 3, 2)),
-            (x_local.shape[0], self.reduced_dim * self.rank, self.reduced_dim),
+            (-1, self.reduced_dim * self.rank, self.reduced_dim),
         )
         mixed = xp.matmul(kernel_or, x_local)
         mixed = xp.reshape(
             mixed,
-            (x_local.shape[0], self.reduced_dim, self.rank, self.channels),
+            (-1, self.reduced_dim, self.rank, self.channels),
         )
         channel_basis = xp.reshape(
             xp_asarray_nodetach(xp, self.channel_basis[...], device=device),

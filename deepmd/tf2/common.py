@@ -2,6 +2,8 @@
 
 from collections.abc import (
     Callable,
+    Mapping,
+    Sequence,
 )
 from functools import (
     wraps,
@@ -104,6 +106,7 @@ _REGISTRATION_MODULES = (
     f"{_PACKAGE_ROOT}.descriptor.dpa2",
     f"{_PACKAGE_ROOT}.descriptor.repflows",
     f"{_PACKAGE_ROOT}.descriptor.dpa3",
+    f"{_PACKAGE_ROOT}.descriptor.dpa4",
     f"{_PACKAGE_ROOT}.descriptor.hybrid",
     f"{_PACKAGE_ROOT}.fitting",
     f"{_PACKAGE_ROOT}.atomic_model.dp_atomic_model",
@@ -253,6 +256,68 @@ def tf2_module(module: type[T]) -> type[T]:
 
     @wraps(module, updated=())
     class TF2Module(module, tf.Module):  # type: ignore[misc, valid-type]
+        @staticmethod
+        def _tf2_array_variable_storage_name(name: str) -> str:
+            return f"_tf2_{name}_variable"
+
+        @staticmethod
+        def _tf2_array_variable_list_storage_name(name: str) -> str:
+            return f"_tf2_{name}_variables"
+
+        def _tf2_array_variable_attr_names(self) -> set[str]:
+            return set(getattr(self, "_tf2_array_variable_attrs", ()))
+
+        def _tf2_array_variable_list_attr_names(self) -> set[str]:
+            return set(getattr(self, "_tf2_array_variable_list_attrs", ()))
+
+        def _set_tf2_array_variable(self, name: str, value: Any) -> None:
+            storage_name = self._tf2_array_variable_storage_name(name)
+            trainable_by_name = object.__getattribute__(self, "__dict__").get(
+                "_tf2_array_variable_trainable", {}
+            )
+            if value is None:
+                tf.Module.__setattr__(self, storage_name, None)
+                object.__getattribute__(self, "__dict__").pop(name, None)
+                return
+            tensor = to_tf_tensor(value)
+            variable = tf.Variable(
+                tensor,
+                trainable=bool(
+                    trainable_by_name.get(
+                        name,
+                        getattr(self, "trainable", True),
+                    )
+                ),
+                name=name,
+            )
+            tf.Module.__setattr__(self, storage_name, variable)
+            # The variable-backed accessor owns this value now. Keeping the
+            # original eager tensor in the public slot doubles parameter RAM.
+            object.__getattribute__(self, "__dict__").pop(name, None)
+
+        def _set_tf2_array_variable_list(self, name: str, value: Any) -> None:
+            storage_name = self._tf2_array_variable_list_storage_name(name)
+            trainable_by_name = object.__getattribute__(self, "__dict__").get(
+                "_tf2_array_variable_list_trainable", {}
+            )
+            variables = []
+            for idx, item in enumerate(value):
+                tensor = to_tf_tensor(item)
+                variables.append(
+                    tf.Variable(
+                        tensor,
+                        trainable=bool(
+                            trainable_by_name.get(
+                                name,
+                                getattr(self, "trainable", True),
+                            )
+                        ),
+                        name=f"{name}_{idx}",
+                    )
+                )
+            tf.Module.__setattr__(self, storage_name, variables)
+            object.__getattribute__(self, "__dict__").pop(name, None)
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             tf.Module.__init__(self)
             super().__init__(*args, **kwargs)
@@ -266,10 +331,112 @@ def tf2_module(module: type[T]) -> type[T]:
                     )
                     if converted is not value:
                         setattr(self, name, converted)
+            self._refresh_tf2_trackable_lists()
+
+        def _refresh_tf2_trackable_lists(self) -> None:
+            """Rebuild trackable list containers after backend conversion."""
+            seen: set[int] = set()
+
+            def visit(value: Any) -> None:
+                if value is None or isinstance(value, (str, bytes, int, float, bool)):
+                    return
+                if isinstance(value, (np.ndarray, tf.Tensor, tf.Variable, xp.Array)):
+                    return
+                value_id = id(value)
+                if value_id in seen:
+                    return
+                seen.add(value_id)
+
+                if isinstance(value, Mapping):
+                    for item in value.values():
+                        visit(item)
+                    return
+                if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+                    for item in value:
+                        visit(item)
+                    return
+
+                try:
+                    value_dict = object.__getattribute__(value, "__dict__")
+                except AttributeError:
+                    return
+
+                for attr_name, attr_value in list(value_dict.items()):
+                    if attr_name.startswith("_"):
+                        continue
+                    if not isinstance(attr_value, list):
+                        continue
+                    if any(isinstance(item, tf.Module) for item in attr_value):
+                        setattr(value, attr_name, list(attr_value))
+
+                try:
+                    value_dict = object.__getattribute__(value, "__dict__")
+                except AttributeError:
+                    return
+                for attr_name, attr_value in list(value_dict.items()):
+                    if attr_name.startswith("_"):
+                        continue
+                    visit(attr_value)
+
+            visit(self)
+
+        def __getattribute__(self, name: str) -> Any:
+            if not name.startswith("_tf2_"):
+                try:
+                    array_attrs = object.__getattribute__(
+                        self, "_tf2_array_variable_attrs"
+                    )
+                except AttributeError:
+                    array_attrs = ()
+                if name in array_attrs:
+                    storage_name = object.__getattribute__(
+                        self,
+                        "_tf2_array_variable_storage_name",
+                    )(name)
+                    variable = object.__getattribute__(self, storage_name)
+                    return None if variable is None else to_tensorflow_array(variable)
+
+                try:
+                    list_attrs = object.__getattribute__(
+                        self, "_tf2_array_variable_list_attrs"
+                    )
+                except AttributeError:
+                    list_attrs = ()
+                if name in list_attrs:
+                    storage_name = object.__getattribute__(
+                        self,
+                        "_tf2_array_variable_list_storage_name",
+                    )(name)
+                    variables = object.__getattribute__(self, storage_name)
+                    return [to_tensorflow_array(var) for var in variables]
+            return super().__getattribute__(name)
 
         def __setattr__(self, name: str, value: Any) -> None:
+            if name in self._tf2_array_variable_attr_names():
+                self._set_tf2_array_variable(name, value)
+                return None
+            if name in self._tf2_array_variable_list_attr_names():
+                self._set_tf2_array_variable_list(name, value)
+                return None
             value = tf2_setattr(self, name, value)
             return super().__setattr__(name, value)
+
+    original_deserialize = getattr(module, "deserialize", None)
+    if original_deserialize is not None:
+
+        @classmethod
+        def deserialize(cls: type[Any], data: Any) -> Any:
+            deserialize_func = getattr(original_deserialize, "__func__", None)
+            if deserialize_func is None:
+                obj = original_deserialize(data)
+            else:
+                obj = deserialize_func(cls, data)
+            refresh = getattr(obj, "_refresh_tf2_trackable_lists", None)
+            if callable(refresh):
+                refresh()
+            return obj
+
+        TF2Module.deserialize = deserialize
 
     if hasattr(TF2Module, "deserialize"):
         for base in module.__bases__:

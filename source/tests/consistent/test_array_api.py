@@ -7,6 +7,7 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_bincount,
+    xp_maximum_at,
     xp_scatter_sum,
     xp_setitem_at,
     xp_sigmoid,
@@ -53,6 +54,21 @@ class TestArrayConversion(unittest.TestCase):
         )
         self.assertTrue(param.requires_grad)
         self.assertEqual(param.device, DEVICE)
+
+
+class TestXpMaximumAtConsistent(unittest.TestCase):
+    """Test maximum-at identities that differ between backend primitives."""
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow is not installed")
+    def test_tf_preserves_all_negative_infinity_segment(self) -> None:
+        x = tnp.asarray(np.full(2, -np.inf, dtype=np.float64))
+        indices = tnp.asarray(np.array([0, 0], dtype=np.int64))
+        values = tnp.asarray(np.array([-np.inf, -np.inf], dtype=np.float64))
+
+        result = to_numpy_array(xp_maximum_at(x, indices, values))
+
+        self.assertTrue(np.isneginf(result[0]))
+        self.assertTrue(np.isneginf(result[1]))
 
 
 class TestXpScatterSumConsistent(unittest.TestCase):

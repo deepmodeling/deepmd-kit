@@ -201,6 +201,18 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         import torch
 
         return torch.index_add(x, 0, indices, values)
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1, 1))
+        values_tensor = values.unwrap()
+        updates = tf.scatter_nd(
+            indices_tensor,
+            values_tensor,
+            tf.shape(x_tensor, out_type=tf.int64),
+        )
+        return xp.asarray(x_tensor + updates)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
@@ -270,6 +282,52 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
         return torch.scatter_reduce(
             x, 0, index, values, reduce="amax", include_self=True
         )
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        reduced = tf.math.unsorted_segment_max(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        if values_tensor.dtype.is_floating:
+            # TensorFlow uses the lowest finite value as the identity of
+            # unsorted_segment_max. Restore the true maximum-at identity when
+            # every update for a touched segment element is negative infinity.
+            all_negative_infinity = (
+                tf.math.unsorted_segment_min(
+                    tf.cast(
+                        tf.math.is_inf(values_tensor) & (values_tensor < 0),
+                        tf.int32,
+                    ),
+                    indices_tensor,
+                    tf.shape(x_tensor, out_type=tf.int64)[0],
+                )
+                > 0
+            )
+            reduced = tf.where(
+                all_negative_infinity,
+                tf.cast(float("-inf"), values_tensor.dtype),
+                reduced,
+            )
+        segment_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(indices_tensor, dtype=tf.int32),
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        touched = segment_counts > 0
+        touched_shape = tf.concat(
+            [
+                tf.reshape(tf.shape(x_tensor, out_type=tf.int64)[0], (1,)),
+                tf.ones(tf.rank(x_tensor) - 1, dtype=tf.int64),
+            ],
+            axis=0,
+        )
+        touched = tf.reshape(touched, touched_shape)
+        return xp.asarray(tf.where(touched, tf.maximum(x_tensor, reduced), x_tensor))
     else:
         # Fallback for array_api_strict: basic indexing only.
         n = indices.shape[0]
