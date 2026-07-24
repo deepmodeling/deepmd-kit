@@ -91,6 +91,7 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
     process_systems,
+    validate_lmdb_systems,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -233,10 +234,25 @@ def get_trainer(
         def _make_dp_loader_set(
             systems: str | list[str],
             dataset_params: dict[str, Any],
-        ) -> DpLoaderSet:
-            """Create a DpLoaderSet from systems with pattern expansion."""
+        ) -> DpLoaderSet | LmdbDataset:
+            """Create a dataset from systems with pattern expansion/conversion."""
             patterns = dataset_params.get("rglob_patterns")
-            systems = process_systems(systems, patterns=patterns)
+            systems = process_systems(
+                systems,
+                patterns=patterns,
+                fmt=dataset_params.get("format"),
+                out_fmt=dataset_params.get(
+                    "out_format", dataset_params.get("output_format")
+                ),
+            )
+            lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
+            if lmdb_path is not None:
+                return LmdbDataset(
+                    lmdb_path,
+                    model_params_single["type_map"],
+                    dataset_params["batch_size"],
+                    auto_prob_style=dataset_params.get("auto_prob"),
+                )
             return DpLoaderSet(
                 systems,
                 dataset_params["batch_size"],
@@ -246,7 +262,11 @@ def get_trainer(
             )
 
         # LMDB path: single string → LmdbDataset
-        if isinstance(training_systems, str) and is_lmdb(training_systems):
+        if (
+            training_dataset_params.get("format", None) is None
+            and isinstance(training_systems, str)
+            and is_lmdb(training_systems)
+        ):
             auto_prob = training_dataset_params.get("auto_prob", None)
             train_data_single = LmdbDataset(
                 training_systems,
@@ -256,6 +276,7 @@ def get_trainer(
             )
             if (
                 validation_systems is not None
+                and validation_dataset_params.get("format", None) is None
                 and isinstance(validation_systems, str)
                 and is_lmdb(validation_systems)
             ):
@@ -447,23 +468,41 @@ def train(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
         )
 
-        if not multi_task:
-            type_map = config["model"].get("type_map")
-            training_systems = config["training"]["training_data"].get("systems")
+        def _get_neighbor_stat_data_from_params(
+            dataset_params: dict[str, Any],
+            type_map: list[str] | None,
+        ) -> Any:
+            training_systems = dataset_params.get("systems")
             if (
-                training_systems is not None
+                dataset_params.get("format") is None
+                and training_systems is not None
                 and isinstance(training_systems, str)
                 and is_lmdb(training_systems)
             ):
+                systems = [training_systems]
+            else:
+                systems = process_systems(
+                    training_systems,
+                    patterns=dataset_params.get("rglob_patterns"),
+                    fmt=dataset_params.get("format"),
+                    out_fmt=dataset_params.get(
+                        "out_format", dataset_params.get("output_format")
+                    ),
+                )
+            lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
+            if lmdb_path is not None:
                 from deepmd.dpmodel.utils.lmdb_data import (
                     make_neighbor_stat_data,
                 )
 
-                train_data = make_neighbor_stat_data(training_systems, type_map)
-            else:
-                train_data = get_data(
-                    config["training"]["training_data"], 0, type_map, None
-                )
+                return make_neighbor_stat_data(lmdb_path, type_map)
+            return get_data(dataset_params, 0, type_map, None)
+
+        if not multi_task:
+            type_map = config["model"].get("type_map")
+            train_data = _get_neighbor_stat_data_from_params(
+                config["training"]["training_data"], type_map
+            )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
             )
@@ -471,26 +510,10 @@ def train(
             min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
                 type_map = config["model"]["model_dict"][model_item].get("type_map")
-                training_systems = config["training"]["data_dict"][model_item][
-                    "training_data"
-                ].get("systems")
-                if (
-                    training_systems is not None
-                    and isinstance(training_systems, str)
-                    and is_lmdb(training_systems)
-                ):
-                    from deepmd.dpmodel.utils.lmdb_data import (
-                        make_neighbor_stat_data,
-                    )
-
-                    train_data = make_neighbor_stat_data(training_systems, type_map)
-                else:
-                    train_data = get_data(
-                        config["training"]["data_dict"][model_item]["training_data"],
-                        0,
-                        type_map,
-                        None,
-                    )
+                train_data = _get_neighbor_stat_data_from_params(
+                    config["training"]["data_dict"][model_item]["training_data"],
+                    type_map,
+                )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
                         train_data, type_map, config["model"]["model_dict"][model_item]
