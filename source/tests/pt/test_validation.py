@@ -183,6 +183,33 @@ def _create_partially_labeled_lmdb(path: str) -> str:
     return path
 
 
+def _create_mixed_nloc_partially_labeled_lmdb(path: str) -> str:
+    """Create frames varying atom count and complementary label availability."""
+    frame_specs = [(6, True), (6, False), (9, True), (9, False)]
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": len(frame_specs),
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [2, 4]},
+            "frame_nlocs": [natoms for natoms, _ in frame_specs],
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for frame_idx, (natoms, has_energy) in enumerate(frame_specs):
+            frame = _make_lmdb_frame(natoms=natoms, seed=frame_idx)
+            if has_energy:
+                frame.pop("forces")
+            else:
+                frame.pop("energies")
+            txn.put(
+                format(frame_idx, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+    return path
+
+
 def _make_single_task_config() -> dict:
     return {
         "model": deepcopy(model_se_e2_a),
@@ -556,6 +583,66 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertAlmostEqual(metrics["rmse_e_per_atom"], 2.0 / 6.0)
         self.assertAlmostEqual(metrics["mae_f"], 1.0)
         self.assertAlmostEqual(metrics["rmse_f"], 1.0)
+
+    def test_full_validator_lmdb_groups_nloc_and_label_availability(self) -> None:
+        """Full validation must preserve both dimensions of its tuple key."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lmdb_path = _create_mixed_nloc_partially_labeled_lmdb(
+                f"{tmpdir}/mixed-partial.lmdb"
+            )
+            validation_data = LmdbDataset(
+                lmdb_path,
+                type_map=["O", "H"],
+                batch_size=2,
+            )
+            validation_data.add_data_requirement(
+                [
+                    DataRequirementItem(
+                        "energy", 1, atomic=False, must=False, default=7.0
+                    ),
+                    DataRequirementItem(
+                        "force", 3, atomic=True, must=False, default=11.0
+                    ),
+                ]
+            )
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": False,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": "val.log",
+                    "full_val_start": 0.0,
+                },
+                validation_data=validation_data,
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                zero_stage=0,
+                restart_training=False,
+            )
+            observed_groups = []
+
+            def record_group(data_system):
+                test_data = data_system.get_test()
+                observed_groups.append(
+                    (
+                        int(test_data["type"].shape[1]),
+                        float(test_data["find_energy"]),
+                        float(test_data["find_force"]),
+                    )
+                )
+                return {}
+
+            with patch.object(validator, "_evaluate_system", side_effect=record_group):
+                validator.evaluate_all_systems()
+
+        self.assertCountEqual(
+            observed_groups,
+            [(6, 1.0, 0.0), (6, 0.0, 1.0), (9, 1.0, 0.0), (9, 0.0, 1.0)],
+        )
 
     def test_full_validator_lmdb_snapshot_requires_type_map(self) -> None:
         validator = FullValidator(

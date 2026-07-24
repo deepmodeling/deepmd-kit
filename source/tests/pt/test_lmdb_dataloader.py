@@ -116,6 +116,37 @@ def _create_partially_labeled_lmdb(path: str) -> None:
     env.close()
 
 
+def _create_partially_virial_lmdb(path: str) -> None:
+    """Create same-nloc frames that differ only by an unrequested virial."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [3, 3]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms=natoms, seed=index)
+            if index % 2 == 0:
+                frame["virials"] = {
+                    "nd": None,
+                    "type": "float64",
+                    "kind": "",
+                    "shape": [3, 3],
+                    "data": np.eye(3, dtype=np.float64).tobytes(),
+                }
+            txn.put(
+                format(index, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+
+
 @pytest.fixture
 def lmdb_dir(tmp_path):
     """Create a temporary LMDB dataset."""
@@ -445,6 +476,20 @@ class TestDataLoaderIteration:
             else:
                 assert force_loss.item() > 0.0
         assert observed_flags == {(1.0, 0.0), (0.0, 1.0)}
+
+    def test_unrequested_labels_form_homogeneous_batches(self, tmp_path):
+        """Raw labels outside the loss requirements must still partition batches."""
+        path = str(tmp_path / "partial-virial.lmdb")
+        _create_partially_virial_lmdb(path)
+        ds = LmdbDataset(path, type_map=["O", "H"], batch_size=2)
+        ds.add_data_requirement(
+            [DataRequirementItem("energy", 1, atomic=False, must=False)]
+        )
+
+        with torch.device("cpu"):
+            batches = list(ds._inner_dataloader)
+        assert len(batches) == 2
+        assert sorted("find_virial" in batch for batch in batches) == [False, True]
 
 
 # ============================================================

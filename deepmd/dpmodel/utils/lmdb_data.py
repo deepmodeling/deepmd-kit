@@ -48,6 +48,21 @@ _KEY_REMAP = {
 # (energy is set by Loss DataRequirementItem; reduce() also sets high_prec=True)
 _HIGH_PREC_KEYS = frozenset({"energy"})
 
+# Keys that describe frame geometry or LMDB bookkeeping rather than optional
+# model inputs/labels.  They must not participate in availability signatures.
+_STRUCTURAL_KEYS = frozenset(
+    {
+        "coord",
+        "box",
+        "atype",
+        "natoms",
+        "real_natoms_vec",
+        "fid",
+    }
+)
+_LMDB_METADATA_KEYS = frozenset({"atom_numbs", "atom_names", "orig"})
+_OPTIONAL_MODEL_INPUT_KEYS = frozenset({"fparam", "aparam", "spin", "charge_spin"})
+
 # Process-level cache: python-lmdb does not allow opening the same path twice
 # in one process.  We ref-count so the Environment is closed (and freed from
 # the cache) once every reader that shares it is garbage-collected.
@@ -147,6 +162,25 @@ def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
     for k, v in frame.items():
         out[_KEY_REMAP.get(k, k)] = v
     return out
+
+
+def _availability_signature_keys(
+    frame: dict[str, Any], requirement_keys: Iterator[str]
+) -> list[str]:
+    """Return data keys whose availability can affect frame collation.
+
+    In addition to registered requirements and standard optional model inputs,
+    include every label-like field that :class:`LmdbDataReader` exposes from
+    the raw frame.  This keeps sampler/validation grouping consistent with the
+    complete set of ``find_*`` flags checked during collation.
+    """
+    keys = set(requirement_keys) | set(_OPTIONAL_MODEL_INPUT_KEYS)
+    for frame_key in frame:
+        if frame_key.startswith("find_"):
+            keys.add(frame_key.removeprefix("find_"))
+        elif frame_key not in _STRUCTURAL_KEYS | _LMDB_METADATA_KEYS:
+            keys.add(frame_key)
+    return sorted(keys)
 
 
 def is_lmdb(systems: str) -> bool:
@@ -629,18 +663,8 @@ class LmdbDataReader:
         # Add find_* flags for all data keys present in the frame.
         # Core structural keys and metadata are excluded — only label-like
         # and auxiliary data keys get find_* flags.
-        _structural_keys = frozenset(
-            {
-                "coord",
-                "box",
-                "atype",
-                "natoms",
-                "real_natoms_vec",
-                "fid",
-            }
-        )
         for fk in list(frame.keys()):
-            if fk.startswith("find_") or fk in _structural_keys:
+            if fk.startswith("find_") or fk in _STRUCTURAL_KEYS:
                 continue
             # Skip keys handled by data_requirements (processed below)
             if fk in self._data_requirements:
@@ -697,7 +721,7 @@ class LmdbDataReader:
                     )
 
         # Add find_* for fparam/aparam/spin/charge_spin if not already set
-        for extra_key in ["fparam", "aparam", "spin", "charge_spin"]:
+        for extra_key in _OPTIONAL_MODEL_INPUT_KEYS:
             if f"find_{extra_key}" not in frame:
                 frame[f"find_{extra_key}"] = (
                     np.float32(1.0) if extra_key in frame else np.float32(0.0)
@@ -738,8 +762,8 @@ class LmdbDataReader:
             )
         raw_frame = msgpack.unpackb(raw, raw=False)
         frame = {_KEY_REMAP.get(name, name): value for name, value in raw_frame.items()}
-        signature_keys = sorted(
-            set(self._data_requirements) | {"fparam", "aparam", "spin", "charge_spin"}
+        signature_keys = _availability_signature_keys(
+            frame, iter(self._data_requirements)
         )
         signature = []
         for data_key in signature_keys:
@@ -1681,16 +1705,13 @@ class LmdbTestData:
         self,
     ) -> dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]]:
         """Group frames by atom count and scalar label availability."""
-        signature_keys = sorted(
-            set(self._requirements) | {"fparam", "aparam", "spin", "charge_spin"}
-        )
         groups: dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]] = {}
         for index, frame in enumerate(self._frames):
             atype = frame.get("atype")
             nloc = len(atype) if isinstance(atype, np.ndarray) else self._natoms
             signature = tuple(
                 (f"find_{key}", self._frame_has_data(frame, key))
-                for key in signature_keys
+                for key in _availability_signature_keys(frame, iter(self._requirements))
             )
             groups.setdefault((nloc, signature), []).append(index)
         return groups
