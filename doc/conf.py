@@ -201,6 +201,7 @@ mathjax_path = (
     "https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js"
 )
 myst_enable_extensions = [
+    "alert",
     "dollarmath",
     "colon_fence",
     "substitution",

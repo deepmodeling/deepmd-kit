@@ -1,8 +1,7 @@
 # Change the model output bias for trained model {{ tensorflow_icon }} {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 
 The output bias of a trained model typically originates from the statistical results of the training dataset.
 

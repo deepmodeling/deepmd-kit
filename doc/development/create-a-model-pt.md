@@ -1,10 +1,9 @@
 # Create a model in other backends {{ pytorch_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-
-In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+>
+> In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 

@@ -1,31 +1,28 @@
 # Fit spin energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 To train a model that takes additional spin information as input, you only need to modify the following sections to define the spin-specific settings,
 keeping other sections the same as the normal energy model's input script.
 
-:::{warning}
-Note that when adding spin into the model, there will be some implicit modifications automatically done by the program:
-
-- In the TensorFlow backend, the `se_e2_a` descriptor will treat those atom types with spin as new (virtual) types,
-  and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model[standard]/descriptor[se_e2_a]/sel>`) from their real atom types.
-- In the PyTorch backend, if spin settings are added, all the types (with or without spin) will have their virtual types.
-  The `se_e2_a` descriptor will thus double the {ref}`sel <model[standard]/descriptor[se_e2_a]/sel>` list,
-  while in other descriptors with mixed types (such as `dpa1` or `dpa2`), the sel number will not be changed for clarity.
-  If you are using descriptors with mixed types, to achieve better performance,
-  you should manually extend your sel number (maybe double) depending on the balance between performance and efficiency.
-:::
+> [!WARNING]
+> Note that when adding spin into the model, there will be some implicit modifications automatically done by the program:
+>
+> - In the TensorFlow backend, the `se_e2_a` descriptor will treat those atom types with spin as new (virtual) types,
+>   and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model[standard]/descriptor[se_e2_a]/sel>`) from their real atom types.
+> - In the PyTorch backend, if spin settings are added, all the types (with or without spin) will have their virtual types.
+>   The `se_e2_a` descriptor will thus double the {ref}`sel <model[standard]/descriptor[se_e2_a]/sel>` list,
+>   while in other descriptors with mixed types (such as `dpa1` or `dpa2`), the sel number will not be changed for clarity.
+>   If you are using descriptors with mixed types, to achieve better performance,
+>   you should manually extend your sel number (maybe double) depending on the balance between performance and efficiency.
 
 ## Spin
 
 The spin settings are given by the {ref}`spin <model/spin>` section, which sets the magnetism for each type of atoms as described in the following sections.
 
-:::{note}
-Note that the construction of spin settings is different between TensorFlow and PyTorch/DP.
-:::
+> [!NOTE]
+> Note that the construction of spin settings is different between TensorFlow and PyTorch/DP.
 
 ### Spin settings in TensorFlow
 
@@ -72,13 +69,12 @@ See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.
   List of float values with shape of `ntypes` or `ntypes_spin` or one single float value for all types,
   only used when {ref}`use_spin <model/spin[ener_spin]/use_spin>` is True for each atom type.
 
-:::{note}
-It should be noted that the spin models in PyTorch/DP are capable of addressing scenarios where the spin approaches zero
-(indicating the virtual atom is in close proximity to the real atom) by adjusting the non-zero
-{ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` parameter within the descriptor.
-This parameter is set to 0.01 by default in the spin model. It appears that a value of 0.01 is generally sufficient for maintaining model stability.
-For systems with nearly zero spin, users can also consider tuning this parameter to potentially enhance stability.
-:::
+> [!NOTE]
+> It should be noted that the spin models in PyTorch/DP are capable of addressing scenarios where the spin approaches zero
+> (indicating the virtual atom is in close proximity to the real atom) by adjusting the non-zero
+> {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` parameter within the descriptor.
+> This parameter is set to 0.01 by default in the spin model. It appears that a value of 0.01 is generally sufficient for maintaining model stability.
+> For systems with nearly zero spin, users can also consider tuning this parameter to potentially enhance stability.
 
 ## Spin Loss
 
@@ -146,9 +142,8 @@ If one does not want to train with virial, then he/she may set the virial prefac
 
 ## Data format
 
-:::{note}
-Note that the spin data format is different between TensorFlow and PyTorch/DP.
-:::
+> [!NOTE]
+> Note that the spin data format is different between TensorFlow and PyTorch/DP.
 
 ### Spin data format in TensorFlow
 
