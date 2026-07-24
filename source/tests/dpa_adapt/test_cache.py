@@ -57,8 +57,8 @@ class TestSystemFingerprint:
         # coords/atom_types/cells alone are identical across these two
         # systems -- only set.000/real_atom_types.npy (per-frame, with -1
         # padding) differs. The fingerprint must still change.
-        s1 = _make_system(tmp_path, "s1", natoms=3, nframes=2)
-        s2 = _make_system(tmp_path, "s2", natoms=3, nframes=2)
+        _make_system(tmp_path, "s1", natoms=3, nframes=2)
+        _make_system(tmp_path, "s2", natoms=3, nframes=2)
         # force identical coords/box so only real_atom_types.npy differs
         coord = np.load(tmp_path / "s1" / "set.000" / "coord.npy")
         np.save(tmp_path / "s2" / "set.000" / "coord.npy", coord)

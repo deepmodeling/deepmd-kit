@@ -109,7 +109,7 @@ group.add(
 assembly.write("polymer_grouped", overwrite=True)
 ```
 
-`Assembly` writes each group as one DeepMD system and stores only the tensors
+`Assembly` writes each group as one DeePMD system and stores only the tensors
 needed by training in `set.*/`. Scientific provenance such as roles, source
 paths, and fparam schema is stored in `manifest.json`.
 

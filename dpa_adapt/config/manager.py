@@ -8,9 +8,8 @@ from typing import (
 from dpa_adapt._backend import (
     resolve_dp_command,
 )
-from dpa_adapt.mft import (
-    _PROPERTY_LIKE_DOWNSTREAM_TYPES,
-)
+
+_PROPERTY_LIKE_DOWNSTREAM_TYPES = ("property", "group_property")
 
 
 def _aux_dim_case_embd(t: Any) -> int:

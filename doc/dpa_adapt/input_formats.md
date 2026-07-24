@@ -173,7 +173,7 @@ Use `dpa-adapt data mark-groups` when the structures and labels already exist
 and only grouped markers are missing:
 
 ```bash
-# One DeepMD system directory is one group.
+# One DeePMD system directory is one group.
 dpa-adapt data mark-groups --input oer/dpdata --target overpotential \
     --group-by system --weight 1.0
 
@@ -207,7 +207,7 @@ mixed grouped and ungrouped systems.
 ### Low-level grouped writer
 
 For converters that already have component arrays in memory, use
-`dpa_adapt.Assembly`. Each group becomes one DeepMD system; components inside
+`dpa_adapt.Assembly`. Each group becomes one DeePMD system; components inside
 the group become frames. Components may have different atom counts and are
 padded to the largest component in that group. Padding atoms use
 `real_atom_types = -1` and `pool_mask = 0`.

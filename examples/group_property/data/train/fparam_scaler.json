@@ -1,0 +1,43 @@
+{
+  "columns": [
+    "mn_log",
+    "conc",
+    "mw_log",
+    "pH",
+    "pdi",
+    "cat:def_type=A",
+    "cat:mass_characterisation_method=SEC(DMAc)",
+    "cat:mass_characterisation_standart=PMMA",
+    "cat:polymer_architecture=linear",
+    "cat:polymer_type=random",
+    "cat:polymerisation_type=FRP"
+  ],
+  "stats": {
+    "mean": [
+      4.064441851049887,
+      0.01,
+      4.3359981013250195,
+      7.0,
+      1.865,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "std": [
+      0.0037440106962747244,
+      1.0,
+      0.02002775586810257,
+      1.0,
+      0.07499999999999996,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+}
