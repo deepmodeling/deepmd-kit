@@ -93,6 +93,14 @@ def get_standard_model(data: dict) -> EnergyModel:
         )
     data = copy.deepcopy(data)
     ntypes = len(data["type_map"])
+    # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
+    # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
+    # atomic model's InterPotential below.
+    bridging_method = str(data.get("bridging_method", "none"))
+    bridging_enabled = bridging_method.lower() not in ("none", "")
+    if bridging_enabled:
+        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
+        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
     descriptor, fitting, fitting_net_type = _get_standard_model_components(data, ntypes)
     atom_exclude_types = data.get("atom_exclude_types", [])
     pair_exclude_types = data.get("pair_exclude_types", [])
@@ -116,6 +124,7 @@ def get_standard_model(data: dict) -> EnergyModel:
         type_map=data["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
+        **({"bridging_method": bridging_method} if bridging_enabled else {}),
     )
     return model
 

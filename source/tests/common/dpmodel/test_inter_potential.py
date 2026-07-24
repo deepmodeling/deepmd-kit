@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.model.inter_potential import (
+from deepmd.dpmodel.atomic_model.inter_potential import (
     InterPotential,
 )
 

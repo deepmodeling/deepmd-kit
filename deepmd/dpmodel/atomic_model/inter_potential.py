@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Analytical pair potentials for Zone bridging (backend-agnostic port of
-``deepmd.pt``'s ``InterPotential``).
+``deepmd.pt``'s ``InterPotential``). Lives in the atomic-model package:
+the atomic layer owns per-atom energy assembly, where the ZBL term is
+injected on the graph route.
 """
 
 from typing import (
