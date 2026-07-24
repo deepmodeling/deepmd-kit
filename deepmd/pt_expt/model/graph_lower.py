@@ -43,7 +43,4 @@ def model_uses_graph_lower(model: Any) -> bool:
     atomic_model = getattr(model, "atomic_model", None)
     if atomic_model is None:
         return False
-    descriptor = atomic_model.graph_driving_descriptor()
-    if descriptor is None:
-        return False
-    return bool(descriptor.uses_graph_lower())
+    return bool(atomic_model.uses_graph_lower())

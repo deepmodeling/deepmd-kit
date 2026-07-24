@@ -39,7 +39,8 @@ from .pairtab_atomic_model import (
 )
 
 
-@BaseAtomicModel.register("linear")
+@BaseAtomicModel.register("linear_ener")
+@BaseAtomicModel.register("linear")  # legacy wire alias
 class LinearEnergyAtomicModel(BaseAtomicModel):
     r"""Linear model makes linear combinations of several existing models.
 
@@ -223,21 +224,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 check_frequency,
             )
 
-    def graph_driving_descriptor(self) -> Any:
-        """The unique child's graph-driving descriptor, or ``None``.
+    def uses_graph_lower(self) -> bool:
+        """Graph-capable when exactly ONE child drives the graph.
 
-        A composition rides the graph route only when exactly ONE child has
-        a graph-driving descriptor (the learned model) -- the rest are
-        descriptor-free analytical terms that consume whatever graph the
-        driver defines. Two descriptor-bearing children have no single
-        graph owner, so the composition stays dense.
+        The other children must be graph-consumers without their own
+        driver (e.g. analytical pair terms): they evaluate on whatever
+        graph the single driver defines. Two drivers have no single graph
+        owner, so the composition stays dense.
         """
-        drivers = [
-            d
-            for d in (m.graph_driving_descriptor() for m in self.models)
-            if d is not None
-        ]
-        return drivers[0] if len(drivers) == 1 else None
+        drivers = [m for m in self.models if m.uses_graph_lower()]
+        return len(drivers) == 1
 
     def forward_atomic_graph(
         self,
@@ -450,7 +446,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "@version": 3,
-                "type": "linear",
+                # energy-specific wire type: future linear dipole/polar models get
+                # their own, so the flat model dict dispatches unambiguously
+                "type": "linear_ener",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
                 "weights": self.weights,

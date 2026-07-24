@@ -167,16 +167,17 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
-    def graph_driving_descriptor(self) -> Any:
-        """The descriptor that drives the NeighborGraph route, or ``None``.
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this atomic model supports the NeighborGraph lower.
 
-        Graph eligibility/export seams consult this instead of probing a
-        ``descriptor`` attribute: an atomic model without a graph-driving
-        descriptor (the concrete default) stays on the dense route.
-        Compositions return their single descriptor-bearing child's
-        descriptor.
+        Generic capability (concrete default ``False``): the model layer
+        consults it for graph-route eligibility without assuming anything
+        about the atomic model's internal architecture. Implementations
+        answer from their own structure (e.g. a descriptor+fitting model
+        delegates to its descriptor; a composition requires a single
+        graph-capable child).
         """
-        return None
+        return False
 
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""

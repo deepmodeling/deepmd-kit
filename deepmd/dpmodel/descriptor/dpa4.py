@@ -1321,9 +1321,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         charge_spin = self._canonicalize_charge_spin(
             charge_spin,
             nf=nf,
-            dtype=coord_ext.dtype,
-            device=device,
-            xp=xp,
+            ref=coord_ext,
         )
         # The dense (nlist) lower has no comm implementation of its own and
         # never will: it is the one owner of that rejection, so it raises
@@ -1688,9 +1686,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         charge_spin = self._canonicalize_charge_spin(
             charge_spin,
             nf=nf,
-            dtype=graph.edge_vec.dtype,
-            device=array_api_compat.device(graph.edge_vec),
-            xp=array_api_compat.array_namespace(graph.edge_vec),
+            ref=graph.edge_vec,
         )
         x_scalar, _ = self._run_graph(
             graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
@@ -2148,9 +2144,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         charge_spin: Array | None,
         *,
         nf: int,
-        dtype: Any,
-        device: Any,
-        xp: Any,
+        ref: Array,
     ) -> Array | None:
         """
         Canonicalize charge/spin conditions for the public descriptor path.
@@ -2161,17 +2155,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Optional frame-level charge and spin conditions.
         nf
             Number of frames.
-        dtype
-            Target floating-point dtype.
-        device
-            Target device.
-        xp
-            The CALLER's array namespace. The default-``charge_spin`` branch
-            converts the numpy ``default_chg_spin`` attribute into this
-            namespace/device -- deriving the namespace from the numpy
-            attribute itself breaks the torch path, whose device object
-            numpy's ``asarray`` rejects (array-API pitfall: convert numpy
-            attribute arrays into the caller's namespace at call time).
+        ref
+            A reference array from the caller's compute context; the
+            target namespace, dtype and device are all inferred from it
+            (array-API pitfall: deriving the namespace from the numpy
+            ``default_chg_spin`` attribute breaks the torch path).
 
         Returns
         -------
@@ -2180,6 +2168,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         if self.charge_spin_embedding is None:
             return None
+        xp = array_api_compat.array_namespace(ref)
+        dtype = ref.dtype
+        device = array_api_compat.device(ref)
         if charge_spin is None:
             if self.default_chg_spin is None:
                 raise ValueError("`charge_spin` is required for this SeZM descriptor.")

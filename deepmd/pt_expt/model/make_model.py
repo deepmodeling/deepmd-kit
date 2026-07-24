@@ -16,9 +16,6 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
-from deepmd.dpmodel.common import (
-    get_xp_precision,
-)
 from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.dpmodel.output_def import (
     OutputVariableDef,
@@ -672,16 +669,10 @@ def make_model(
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
                 spin_leaf=spin,
-                # Assemble force / virial in the descriptor compute precision
-                # (fp32 for an fp32 model) rather than the fp64 edge_vec leaf;
-                # the gradient content is only that precision, so the coarser
-                # scatter halves the atomic traffic at no accuracy cost.
-                force_precision=get_xp_precision(
-                    # the graph-DRIVING descriptor's compute precision
-                    # (compositions have no single ``.descriptor`` attribute)
-                    torch,
-                    self.atomic_model.graph_driving_descriptor().precision,
-                ),
+                # Assemble force / virial in the INPUT (edge leaf) precision,
+                # consistent with the dpmodel backend's graph path and free
+                # of any assumption about the atomic model's internals.
+                force_precision=edge_vec.dtype,
                 # Bound the per-node scatter by the INPUT node axis (the symbol
                 # ``edge_index`` indexes into), not the re-derived fitting-output
                 # shape -- avoids a CUDA out-of-bounds device-assert under
@@ -727,12 +718,7 @@ def make_model(
             # for non-energy models (eager-only, output-agnostic).
             if "energy" not in self.atomic_output_def().keys():
                 return None
-            descriptor = self.atomic_model.graph_driving_descriptor()
-            if (
-                self.mixed_types()
-                and descriptor is not None
-                and descriptor.uses_graph_lower()
-            ):
+            if self.mixed_types() and self.atomic_model.uses_graph_lower():
                 return "dense"
             return None
 
@@ -793,21 +779,20 @@ def make_model(
             # check only protects the default (None) path; an EXPLICIT
             # neighbor_graph_method would otherwise reach the builders for
             # descriptors without a graph lower.
-            descriptor = self.atomic_model.graph_driving_descriptor()
-            if not (
-                self.mixed_types()
-                and descriptor is not None
-                and descriptor.uses_graph_lower()
-            ):
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             rcut = self.get_rcut()
+            # CSR pre-sort serves the compressed-DPA1 fused kernels only;
+            # probe via the atomic model's own descriptor when it has one
+            # (compositions have none and never take the fused path).
+            _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training
                 and cuda_infer_level() >= 1
-                and bool(getattr(descriptor, "geo_compress", False))
+                and bool(getattr(_desc, "geo_compress", False))
             )
             pair_excl = getattr(self.atomic_model, "pair_excl", None)
             ng = _build_graph_for_method(

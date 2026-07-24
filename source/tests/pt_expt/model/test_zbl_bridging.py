@@ -64,6 +64,30 @@ ZBL_CONFIG = {
 }
 
 
+def _analytic_zbl_total(coord, atype, rcut, type_map=("Ni", "O")) -> float:
+    """Independent in-test ZBL reference: direct double loop over pairs."""
+    import math
+
+    z_of = {"Ni": 28.0, "O": 8.0}
+    zs = [z_of[type_map[t]] for t in atype]
+    a_coeff = (0.18175, 0.50986, 0.28022, 0.028171)
+    b_coeff = (3.1998, 0.94229, 0.4029, 0.20162)
+    total = 0.0
+    n = len(atype)
+    for i in range(n):
+        for j in range(i + 1, n):
+            r = float(np.linalg.norm(coord[i] - coord[j]))
+            if r >= rcut:
+                continue
+            a = 0.88534 * 0.5291772109 / (zs[i] ** 0.23 + zs[j] ** 0.23)
+            phi = sum(
+                ak * math.exp(-bk * (r / a))
+                for ak, bk in zip(a_coeff, b_coeff, strict=True)
+            )
+            total += 14.3996 * zs[i] * zs[j] / r * phi
+    return total
+
+
 def _close_pair_system(cpu):
     generator = torch.Generator(device=cpu).manual_seed(GLOBAL_SEED + 2)
     nloc = 6
@@ -78,8 +102,26 @@ def _close_pair_system(cpu):
 class TestZBLBridgingPtExpt:
     def setup_method(self) -> None:
         cpu = torch.device("cpu")
-        self.pt_model = pt_get_model(copy.deepcopy(ZBL_CONFIG)).to(torch.float64)
-        self.pt_model = self.pt_model.eval().to(cpu)
+        pt_model = pt_get_model(copy.deepcopy(ZBL_CONFIG)).to(torch.float64)
+        # JITTER the reference weights: a fresh DPA4 zero-initializes its
+        # residual projections and is architecturally input-independent in
+        # those paths, which would make the parity below partially vacuous
+        # (see dpa4_fixtures.jitter_zero_arrays).
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        from ...dpa4_fixtures import (
+            jitter_zero_arrays,
+        )
+
+        jittered = jitter_zero_arrays(
+            pt_model.atomic_model.descriptor.serialize(), np.random.default_rng(3)
+        )
+        pt_model.atomic_model.descriptor = DescrptSeZM.deserialize(jittered).to(
+            torch.float64
+        )
+        self.pt_model = pt_model.eval().to(cpu)
         assert self.pt_model.inter_potential is not None
 
         pt_expt_model = get_model(copy.deepcopy(ZBL_CONFIG))
@@ -106,6 +148,9 @@ class TestZBLBridgingPtExpt:
         """
         out_pt = self.pt_model.forward(self.coord, self.atype, self.box)
         out_pte = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)
+        # anti-vacuity: the jittered network must produce nontrivial forces,
+        # else the parity would compare zeros with zeros.
+        assert out_pte["force"].abs().max().item() > 1e-6
         for key in ("energy", "force", "virial"):
             torch.testing.assert_close(
                 out_pt[key], out_pte[key], rtol=1e-12, atol=1e-12, msg=key
@@ -126,7 +171,20 @@ class TestZBLBridgingPtExpt:
             "energy"
         ]
         e_dp = m_dp.forward(self.coord, self.atype, box=self.box)["energy"]
-        assert float((e_sum - e_dp).sum()) > 1e-3
+        diff = float((e_sum - e_dp).sum())
+        # EXACT analytical check, not just positivity: the composition's
+        # extra term must equal the independently computed ZBL sum over all
+        # pairs within rcut (gas phase: no box, so a direct double loop is
+        # the complete reference).
+        e_gas_sum = self.pt_expt_model.forward(self.coord, self.atype)["energy"]
+        e_gas_dp = m_dp.forward(self.coord, self.atype)["energy"]
+        ref = _analytic_zbl_total(
+            self.coord[0].numpy(), self.atype[0].numpy(), rcut=4.0
+        )
+        np.testing.assert_allclose(
+            float((e_gas_sum - e_gas_dp).sum()), ref, rtol=1e-10, atol=1e-10
+        )
+        assert diff > 1e-3
 
     def test_force_matches_finite_difference(self) -> None:
         """F = -dE/dx through the shared-edge-leaf summed autograd."""
@@ -151,7 +209,7 @@ class TestZBLBridgingPtExpt:
         )
 
         data = self.pt_expt_model.serialize()
-        assert data["type"] == "linear"
+        assert data["type"] == "linear_ener"
         m2 = BaseModel.deserialize(data).to(torch.device("cpu")).eval()
         assert type(m2) is LinearEnergyModel
         out = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)

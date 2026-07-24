@@ -94,15 +94,45 @@ def test_zbl_child_equals_composition_minus_learned():
         "energy_redu"
     ]
     diff = float(np.sum(e_sum - e_dp))
-    # positive ZBL repulsion from the close pair
     assert diff > 1e-3, f"ZBL contribution missing or non-positive: {diff:.3e}"
+    # EXACT analytical check (gas phase, no box: a direct double loop over
+    # pairs within rcut is the complete reference).
+    import math
+
+    e_gas_sum = model.call_common(coord, atype, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    e_gas_dp = m_dp.call_common(coord, atype, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    z_of = {0: 28.0, 1: 8.0}  # Ni, O
+    total = 0.0
+    for i in range(6):
+        for j in range(i + 1, 6):
+            r = float(np.linalg.norm(coord[0, i] - coord[0, j]))
+            if r >= 4.0:
+                continue
+            zi, zj = z_of[int(atype[0, i])], z_of[int(atype[0, j])]
+            a = 0.88534 * 0.5291772109 / (zi**0.23 + zj**0.23)
+            phi = sum(
+                ak * math.exp(-bk * (r / a))
+                for ak, bk in zip(
+                    (0.18175, 0.50986, 0.28022, 0.028171),
+                    (3.1998, 0.94229, 0.4029, 0.20162),
+                    strict=True,
+                )
+            )
+            total += 14.3996 * zi * zj / r * phi
+    np.testing.assert_allclose(
+        float(np.sum(e_gas_sum - e_gas_dp)), total, rtol=1e-10, atol=1e-10
+    )
 
 
 def test_zbl_serialize_roundtrip_energy_identical():
     model = get_model(copy.deepcopy(ZBL_CONFIG))
     coord, atype, box = _close_pair_inputs()
     data = model.serialize()
-    assert data["type"] == "linear"
+    assert data["type"] == "linear_ener"
     m2 = BaseModel.deserialize(data)
     assert type(m2) is LinearEnergyModel
     e1 = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[

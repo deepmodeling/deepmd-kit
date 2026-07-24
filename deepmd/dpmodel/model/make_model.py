@@ -517,12 +517,7 @@ def make_model(
                 (``<var>`` per-atom, ``<var>_redu`` reduced, derivative
                 name-holders ``None``, plus the int ``mask``).
             """
-            descriptor = self.atomic_model.graph_driving_descriptor()
-            if not (
-                self.mixed_types()
-                and descriptor is not None
-                and descriptor.uses_graph_lower()
-            ):
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"

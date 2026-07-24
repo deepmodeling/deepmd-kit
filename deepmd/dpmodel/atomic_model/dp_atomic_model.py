@@ -163,9 +163,9 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_default_chg_spin()
         return None
 
-    def graph_driving_descriptor(self) -> Any:
-        """This model's own descriptor drives the graph route."""
-        return self.descriptor
+    def uses_graph_lower(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.uses_graph_lower())
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""

@@ -27,9 +27,6 @@ DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(NativeOP, BaseMode
 
 
 @BaseModel.register("linear_ener")
-@BaseModel.register(
-    "linear"
-)  # the atomic dict's registered type (CM.serialize is the flat atomic dict)
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     r"""Energy model over a linear combination of atomic models.
 
