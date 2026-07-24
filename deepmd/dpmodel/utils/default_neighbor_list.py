@@ -230,6 +230,10 @@ def _select_nearest_padded(
     This helper requires eager, concrete candidate counts because the maximum
     row width controls an allocation.  Callers must retain the compact path for
     traced namespaces with symbolic data-dependent dimensions.
+
+    ``center`` must be a non-decreasing stream.  The cell-list caller derives it
+    from repeated ordered query IDs and preserves that ordering while filtering;
+    this grouping is what makes the arithmetic row rank collision-free.
     """
     xp = array_api_compat.array_namespace(center, neighbor_ext, distance)
     device = array_api_compat.device(center)
@@ -312,6 +316,9 @@ def _supports_padded_selection(coord: Array) -> bool:
         # Older or reduced PyTorch builds may not expose torch.compiler.  Without
         # a reliable tracing-state query, keep the dynamic compact path instead
         # of risking a data-dependent Python allocation during compilation.
+        # Eager CUDA pays one synchronization for the concrete row width, but
+        # measured RTX 5090 builds still favored the bounded row sorts.  Keep
+        # that validated path while compilation and unmeasured devices fall back.
         return (
             device.type in ("cpu", "cuda")
             and is_compiling is not None
@@ -520,6 +527,9 @@ def _build_neighbor_list_cell(
 
     # Query the 27 cells surrounding every local center.  Out-of-grid queries and
     # virtual centers get key -1; searchsorted then returns an empty interval.
+    # Keep this fixed 27x3 constant graph-local.  Caching backend arrays would
+    # retain device storage and, for TensorFlow, could reuse a tensor from the
+    # wrong graph; the small materialization cost is included in the thresholds.
     offsets = xp.asarray(_NEIGHBOR_CELL_OFFSETS, dtype=xp.int64, device=device)
     query_cell = center_cell[:, :, None, :] + offsets[None, None, :, :]
     in_bounds = xp.all(
@@ -601,6 +611,8 @@ def _build_neighbor_list_cell(
 
     ncenters = nframes * nloc
     if _supports_padded_selection(coord):
+        # repeat(arange(query_count), counts) is non-decreasing; integer division
+        # and the ordered ``keep`` gather above preserve that property for center.
         nlist = _select_nearest_padded(center, neighbor_ext, distance, ncenters, nsel)
         if nlist is not None:
             nlist = xp.reshape(nlist, (nframes, nloc, nsel))
