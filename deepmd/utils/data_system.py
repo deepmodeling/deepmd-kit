@@ -333,6 +333,7 @@ class DeepmdDataSystem:
                 output_natoms_for_type_sel=adict[kk].get(
                     "output_natoms_for_type_sel", False
                 ),
+                special_shape=adict[kk].get("special_shape"),
             )
 
     def add_data_requirements(
@@ -353,6 +354,7 @@ class DeepmdDataSystem:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
     ) -> None:
         """Add a data item that to be loaded.
 
@@ -381,6 +383,8 @@ class DeepmdDataSystem:
             The dtype of data, overwrites `high_prec` if provided
         output_natoms_for_type_sel : bool
             If True and type_sel is True, the atomic dimension will be natoms instead of nsel
+        special_shape : str, optional
+            Name of a loader-defined non-standard shape contract.
         """
         for ii in self.data_systems:
             ii.add(
@@ -394,6 +398,7 @@ class DeepmdDataSystem:
                 default=default,
                 dtype=dtype,
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
+                special_shape=special_shape,
             )
 
     def reduce(self, key_out: str, key_in: str) -> None:

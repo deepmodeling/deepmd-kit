@@ -96,7 +96,6 @@ class TestChangeBias(unittest.TestCase):
         self.model_path_user_bias = Path(current_path) / (
             model_name + "user_bias" + ".pt"
         )
-        self.loss_params = self.config["loss"]
 
     def test_change_bias_with_data(self) -> None:
         run_dp(
@@ -108,7 +107,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])
@@ -134,7 +132,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])
@@ -158,7 +155,6 @@ class TestChangeBias(unittest.TestCase):
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(
             model_params,
-            _loss_params=self.loss_params,
         )
         wrapper = ModelWrapper(model_for_wrapper)
         wrapper.load_state_dict(state_dict["model"])

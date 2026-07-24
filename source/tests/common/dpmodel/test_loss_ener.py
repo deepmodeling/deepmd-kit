@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
+)
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 from ...seed import (
@@ -15,7 +21,14 @@ from ...seed import (
 class TestEnergyLossBase(unittest.TestCase):
     """Base class providing common setup for dpmodel EnergyLoss tests."""
 
-    def _make_data(self, natoms=5, nframes=2, numb_generalized_coord=0):
+    def _make_data(
+        self,
+        natoms=5,
+        nframes=2,
+        numb_generalized_coord=0,
+        hessian=False,
+        hessian_key="hessian",
+    ):
         """Generate fake model predictions and labels."""
         rng = np.random.default_rng(GLOBAL_SEED)
         model_dict = {
@@ -43,6 +56,10 @@ class TestEnergyLossBase(unittest.TestCase):
             label_dict["find_drdq"] = 1.0
         if hasattr(self, "enable_atom_ener_coeff") and self.enable_atom_ener_coeff:
             label_dict["atom_ener_coeff"] = rng.random((nframes, natoms, 1))
+        if hessian:
+            model_dict[hessian_key] = rng.random((nframes, 3 * natoms, 3 * natoms))
+            label_dict["hessian"] = rng.random((nframes, 3 * natoms, 3 * natoms))
+            label_dict["find_hessian"] = 1.0
         return model_dict, label_dict, natoms
 
 
@@ -145,6 +162,86 @@ class TestEnergyLossHuber(TestEnergyLossBase):
         self.assertIsNotNone(loss)
 
 
+class TestEnergyLossHessian(TestEnergyLossBase):
+    """Test Hessian loss inside the dpmodel energy loss."""
+
+    def test_disabled_hessian_preserves_standard_serialization(self) -> None:
+        """Default losses must keep the pre-Hessian serialization contract."""
+        loss_fn = EnergyLoss(starter_learning_rate=1.0)
+
+        data = loss_fn.serialize()
+
+        self.assertNotIn("start_pref_h", data)
+        self.assertNotIn("limit_pref_h", data)
+        self.assertNotIn(
+            "hessian",
+            {item.key for item in loss_fn.label_requirement},
+        )
+        self.assertTrue(
+            all(
+                "special_shape" not in item.to_dict()
+                for item in loss_fn.label_requirement
+            )
+        )
+
+    def test_forward_hessian(self) -> None:
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_h=2.0,
+            limit_pref_h=1.0,
+        )
+        model_dict, label_dict, natoms = self._make_data(
+            hessian=True,
+            hessian_key="energy_derv_r_derv_r",
+        )
+        loss, more_loss = loss_fn.call(1.0, natoms, model_dict, label_dict)
+        diff_h = label_dict["hessian"].reshape(-1) - model_dict[
+            "energy_derv_r_derv_r"
+        ].reshape(-1)
+        l2_hessian_loss = np.mean(np.square(diff_h))
+        np.testing.assert_allclose(loss, 2.0 * l2_hessian_loss)
+        np.testing.assert_allclose(more_loss["rmse_h"], np.sqrt(l2_hessian_loss))
+        self.assertIn(
+            "hessian",
+            {item.key for item in loss_fn.label_requirement},
+        )
+
+    def test_hessian_label_requirement_loads_full_matrix(self) -> None:
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+        hessian_req = next(
+            item for item in loss_fn.label_requirement if item.key == "hessian"
+        )
+        self.assertFalse(hessian_req.atomic)
+        self.assertEqual(hessian_req.special_shape, "hessian")
+
+        system = (
+            Path(__file__).resolve().parents[2] / "pt" / "hessian" / "data" / "H8C4N2O"
+        )
+        data = DeepmdData(str(system), type_map=["C", "H", "N", "O"])
+        data.add(
+            hessian_req.key,
+            hessian_req.ndof,
+            atomic=hessian_req.atomic,
+            must=hessian_req.must,
+            high_prec=hessian_req.high_prec,
+            special_shape=hessian_req.special_shape,
+        )
+
+        batch = data.get_batch(2)
+
+        self.assertEqual(batch["hessian"].shape, (2, (3 * data.natoms) ** 2))
+
+
 class TestEnergyLossSerialize(TestEnergyLossBase):
     """Test serialize/deserialize round-trip."""
 
@@ -160,10 +257,17 @@ class TestEnergyLossSerialize(TestEnergyLossBase):
             start_pref_gf=1.0,
             limit_pref_gf=0.5,
             numb_generalized_coord=2,
+            start_pref_h=2.0,
+            limit_pref_h=0.5,
         )
         data = loss_fn.serialize()
+        self.assertEqual(data["start_pref_h"], 2.0)
+        self.assertEqual(data["limit_pref_h"], 0.5)
         loss_fn2 = EnergyLoss.deserialize(data)
-        model_dict, label_dict, natoms = self._make_data(numb_generalized_coord=2)
+        model_dict, label_dict, natoms = self._make_data(
+            numb_generalized_coord=2,
+            hessian=True,
+        )
         loss1, more1 = loss_fn.call(1.0, natoms, model_dict, label_dict)
         loss2, more2 = loss_fn2.call(1.0, natoms, model_dict, label_dict)
         np.testing.assert_allclose(loss1, loss2)

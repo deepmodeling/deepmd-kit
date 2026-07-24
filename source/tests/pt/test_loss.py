@@ -708,6 +708,108 @@ class TestEnerHessStdLoss(LossCommonTest):
             self.assertTrue(np.isnan(pt_more_loss_h_absent[f"l2_{key}_loss"]))
 
 
+class TestEnergyHessianLossCompatibility(unittest.TestCase):
+    """Hessian supervision is canonical on EnergyStdLoss in PyTorch."""
+
+    def test_legacy_class_matches_energy_loss(self) -> None:
+        kwargs = {
+            "starter_learning_rate": 1.0,
+            "start_pref_h": 2.0,
+            "limit_pref_h": 1.0,
+        }
+        canonical = EnergyStdLoss(**kwargs)
+        legacy = EnergyHessianStdLoss(**kwargs)
+
+        self.assertEqual(canonical.serialize(), legacy.serialize())
+        self.assertEqual(canonical.label_requirement, legacy.label_requirement)
+        hessian_req = next(
+            item for item in canonical.label_requirement if item.key == "hessian"
+        )
+        self.assertFalse(hessian_req.atomic)
+        self.assertEqual(hessian_req.special_shape, "hessian")
+
+    def test_legacy_loss_type_dispatches_to_energy_loss(self) -> None:
+        from deepmd.pt.train.training import (
+            get_loss,
+        )
+
+        for loss_type in ("ener", "ener_hess"):
+            params = {
+                "type": loss_type,
+                "start_pref_h": 0.0,
+                "limit_pref_h": 1.0,
+            }
+            loss = get_loss(params, start_lr=1.0, _ntypes=0, _model=None)
+            self.assertIs(type(loss), EnergyStdLoss)
+            self.assertTrue(loss.has_h)
+            self.assertTrue(
+                any(item.key == "hessian" for item in loss.label_requirement)
+            )
+
+    def test_model_hessian_mode_follows_loss_data_requirement(self) -> None:
+        from deepmd.pt.train.training import (
+            prepare_model_for_data_requirements,
+        )
+
+        class HessianCapableModel:
+            def __init__(self) -> None:
+                self.enable_calls = 0
+                self.model_def_script = ""
+
+            def enable_hessian(self) -> None:
+                self.enable_calls += 1
+
+        model = HessianCapableModel()
+        model_params: dict = {}
+        requirements = [
+            DataRequirementItem(
+                "hessian",
+                ndof=1,
+                special_shape="hessian",
+            )
+        ]
+
+        prepare_model_for_data_requirements(model, requirements, model_params)
+
+        self.assertEqual(model.enable_calls, 1)
+        self.assertTrue(model_params["hessian_mode"])
+        self.assertEqual(model.model_def_script, '{"hessian_mode": true}')
+
+    def test_multitask_hessian_mode_only_enables_requesting_branch(self) -> None:
+        from deepmd.pt.train.training import (
+            prepare_model_for_data_requirements,
+        )
+
+        class HessianCapableModel:
+            def __init__(self) -> None:
+                self.enable_calls = 0
+                self.model_def_script = ""
+
+            def enable_hessian(self) -> None:
+                self.enable_calls += 1
+
+        models = {
+            "with_hessian": HessianCapableModel(),
+            "without_hessian": object(),
+        }
+        requirements = {
+            "with_hessian": [DataRequirementItem("hessian", ndof=1)],
+            "without_hessian": [DataRequirementItem("energy", ndof=1)],
+        }
+        model_params = {
+            "model_dict": {
+                "with_hessian": {},
+                "without_hessian": {},
+            }
+        }
+
+        prepare_model_for_data_requirements(models, requirements, model_params)
+
+        self.assertEqual(models["with_hessian"].enable_calls, 1)
+        self.assertTrue(model_params["model_dict"]["with_hessian"]["hessian_mode"])
+        self.assertNotIn("hessian_mode", model_params["model_dict"]["without_hessian"])
+
+
 class TestEnerSpinLoss(LossCommonTest):
     def setUp(self) -> None:
         self.start_lr = 1.1

@@ -44,7 +44,6 @@ from deepmd.pt.loss import (
     DenoiseLoss,
     DeNSLoss,
     DOSLoss,
-    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PopulationLoss,
@@ -121,6 +120,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+    has_data_requirement,
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
@@ -450,12 +450,12 @@ class Trainer:
         if self.zero_stage > 0 and self.opt_type == "LKF":
             raise ValueError("training.zero_stage does not support LKF optimizer.")
 
-        # loss_param_tmp for Hessian activation
-        loss_param_tmp = None
+        # Loss parameters are also used to select SeZM/DeNS execution modes.
+        loss_params_for_model = None
         if not self.multi_task:
-            loss_param_tmp = config["loss"]
+            loss_params_for_model = config["loss"]
         else:
-            loss_param_tmp = {
+            loss_params_for_model = {
                 model_key: config["loss_dict"][model_key]
                 for model_key in self.model_keys
             }
@@ -467,10 +467,9 @@ class Trainer:
             self.model = get_model_for_wrapper(
                 model_params,
                 resuming=resuming,
-                _loss_params=loss_param_tmp,
             )
         # SeZM specific process for DeNS training
-        prepare_model_for_loss(self.model, loss_param_tmp)
+        prepare_model_for_loss(self.model, loss_params_for_model)
 
         # Loss
         if not self.multi_task:
@@ -489,6 +488,22 @@ class Trainer:
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
                 )
+
+        # Losses own the interpretation of their prefactors. The trainer only
+        # consumes their data contract when selecting expensive model outputs.
+        loss_data_requirements = (
+            {
+                model_key: self.loss[model_key].label_requirement
+                for model_key in self.model_keys
+            }
+            if self.multi_task
+            else self.loss.label_requirement
+        )
+        prepare_model_for_data_requirements(
+            self.model,
+            loss_data_requirements,
+            model_params,
+        )
 
         # Data
         if not self.multi_task:
@@ -2482,11 +2497,6 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     return additional_data_requirement
 
 
-def whether_hessian(loss_params: dict[str, Any]) -> bool:
-    loss_type = loss_params.get("type", "ener")
-    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
-
-
 def prepare_model_for_loss(
     model: Any,
     loss_params: dict[str, Any] | None,
@@ -2501,17 +2511,54 @@ def prepare_model_for_loss(
                 prepare_model_for_loss(sub_model, sub_loss)
         return
     if hasattr(model, "set_active_mode_from_loss"):
-        model.set_active_mode_from_loss(loss_params.get("type", "ener"))
+        loss_type = loss_params.get("type", "ener")
+        model.set_active_mode_from_loss(
+            "ener" if loss_type == "ener_hess" else loss_type
+        )
+
+
+def prepare_model_for_data_requirements(
+    model: Any,
+    data_requirements: list[DataRequirementItem] | dict[str, list[DataRequirementItem]],
+    model_params: dict[str, Any],
+) -> None:
+    """Enable model outputs requested by a loss's data requirements.
+
+    Hessian prefactors are deliberately not inspected here. The presence of a
+    ``hessian`` requirement is the loss-to-trainer contract for enabling that
+    expensive output. The mode is persisted in the model definition so reload
+    and freeze paths reconstruct the same model interface.
+    """
+    if isinstance(model, dict):
+        if not isinstance(data_requirements, dict):
+            raise TypeError("Multi-task models require per-task data requirements.")
+        for model_key, sub_model in model.items():
+            prepare_model_for_data_requirements(
+                sub_model,
+                data_requirements[model_key],
+                model_params["model_dict"][model_key],
+            )
+        return
+    if isinstance(data_requirements, dict):
+        raise TypeError("Single-task models require a list of data requirements.")
+    if not has_data_requirement(data_requirements, "hessian"):
+        return
+    enable_hessian = getattr(model, "enable_hessian", None)
+    if not callable(enable_hessian):
+        raise RuntimeError(
+            f"Model {type(model).__name__} does not support Hessian supervision."
+        )
+    enable_hessian()
+    model_params["hessian_mode"] = True
+    if hasattr(model, "model_def_script"):
+        model.model_def_script = json.dumps(model_params)
 
 
 def get_loss(
     loss_params: dict[str, Any], start_lr: float, _ntypes: int, _model: Any
 ) -> TaskLoss:
     loss_type = loss_params.get("type", "ener")
-    if whether_hessian(loss_params):
-        loss_params["starter_learning_rate"] = start_lr
-        return EnergyHessianStdLoss(**loss_params)
-    elif loss_type == "ener":
+    if loss_type in {"ener", "ener_hess"}:
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dens":
@@ -2568,11 +2615,8 @@ def get_single_model(
 def get_model_for_wrapper(
     _model_params: dict[str, Any],
     resuming: bool = False,
-    _loss_params: dict[str, Any] | None = None,
 ) -> Any:
     if "model_dict" not in _model_params:
-        if _loss_params is not None and whether_hessian(_loss_params):
-            _model_params["hessian_mode"] = True
         _model = get_single_model(
             _model_params,
         )
@@ -2581,8 +2625,6 @@ def get_model_for_wrapper(
         model_keys = list(_model_params["model_dict"])
         do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
-            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
-                _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )

@@ -39,6 +39,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self._hessian_enabled = False
 
     def enable_hessian(self) -> None:
+        """Enable Hessian outputs without changing an already-enabled model."""
+        if self._hessian_enabled:
+            return
         self.__class__ = make_hessian_model(type(self))
         self.hess_fitting_def = super(type(self), self).atomic_output_def()
         self.requires_hessian("energy")
