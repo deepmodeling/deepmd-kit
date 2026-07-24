@@ -83,6 +83,28 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
       ``forward_common_lower_graph_exportable``.
     """
 
+    def _spin_active_mask(self, atype: torch.Tensor) -> torch.Tensor:
+        """Per-atom boolean spin-active mask (``mask_mag``).
+
+        The SINGLE owner of the ``mask_mag`` derivation across this model's
+        forward paths -- the eager :meth:`forward` and the graph-lower
+        export (:meth:`forward_lower_graph_exportable`) both emit it through
+        this method, so the model owns the output and no consumer (DeepEval,
+        C++) re-derives it. A pure function of atom type via the spin mask.
+
+        Parameters
+        ----------
+        atype
+            Atom types, ``(nf, nloc)`` (eager) or ``(N,)`` (graph node axis).
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean mask with a trailing singleton dimension, shape
+            ``(*atype.shape, 1)``: ``True`` where the atom type carries spin.
+        """
+        return (self.spin_mask[atype] > 0).unsqueeze(-1)
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -155,7 +177,7 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             # docstring, which asserts the same and does NOT re-mask the
             # force. Re-masking here would be a defensive backstop the
             # project's design principles forbid.
-            "mask_mag": (self.spin_mask[atype] > 0).unsqueeze(-1),
+            "mask_mag": self._spin_active_mask(atype),
         }
         if do_atomic_virial:
             out["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
@@ -257,8 +279,8 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             destination_row_ptr, source_order, source_row_ptr, spin,
             fparam, aparam, charge_spin)`` and returns a dict with the
             public keys ``atom_energy``, ``energy``, ``force``,
-            ``force_mag``, ``virial``, and (when ``do_atomic_virial``)
-            ``atom_virial``.
+            ``force_mag``, ``virial``, ``mask_mag``, and (when
+            ``do_atomic_virial``) ``atom_virial``.
         """
         traced = self.forward_common_lower_graph_exportable(
             atype,
@@ -312,10 +334,15 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
                 charge_spin,
                 spin,
             )
-            return _translate_spin_energy_keys(
+            out = _translate_spin_energy_keys(
                 model_ret,
                 do_atomic_virial=do_atomic_virial,
             )
+            # The model owns ``mask_mag`` (same single-owner derivation as the
+            # eager forward), so the exported ``.pt2`` emits it directly and
+            # every consumer (DeepEval, C++) reads it rather than re-deriving.
+            out["mask_mag"] = self._spin_active_mask(atype)
+            return out
 
         return make_fx(fn, **make_fx_kwargs)(
             atype,
