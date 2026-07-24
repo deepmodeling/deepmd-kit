@@ -1123,15 +1123,16 @@ class _CompiledModel(torch.nn.Module):
     ) -> dict[str, torch.Tensor]:
         """Carry-all GRAPH forward -> compiled ``forward_common_lower_graph``.
 
-        Builds the carry-all NeighborGraph eagerly (the SAME builder the eager
-        uncompiled default-flip uses, so the graph tensors are bit-identical),
-        then calls the compiled graph lower.  The graph force is per-LOCAL-node
-        ``(N, 3)`` with ``N == nframes * nloc`` for a single-rank carry-all graph,
-        so no extended->local scatter is needed; only the flat ``(N, *)`` node
-        keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
+        Builds the carry-all NeighborGraph eagerly (the SAME auto-resolved
+        builder the eager uncompiled default-flip uses, so the graph tensors
+        match up to fp addition order), then calls the compiled graph lower.
+        The graph force is per-LOCAL-node ``(N, 3)`` with ``N == nframes * nloc``
+        for a single-rank carry-all graph, so no extended->local scatter is
+        needed; only the flat ``(N, *)`` node keys are unravelled to
+        ``(nf, nloc, *)`` at the I/O boundary.
         """
-        from deepmd.dpmodel.utils.neighbor_graph import (
-            build_neighbor_graph,
+        from deepmd.pt_expt.model.make_model import (
+            _build_graph_for_method,
         )
 
         _model = self.original_model
@@ -1181,8 +1182,9 @@ class _CompiledModel(torch.nn.Module):
         # level pair_exclude is a graph-BUILD transform (decision #18): fold it
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
+        # ``"auto"`` resolves via resolve_auto_graph_builder(coord.device).
         pair_excl = getattr(_model.atomic_model, "pair_excl", None)
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
+        ng = _build_graph_for_method("auto", coord_3d, atype, box_flat, rcut, pair_excl)
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).
