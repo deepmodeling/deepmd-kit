@@ -854,29 +854,10 @@ void PairDeepMD::settings(int narg, char** arg) {
               ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
-      virtual_len.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
-          char tmp[1024];
-          sprintf(tmp, "Illegal virtual_len, the dimension should be %d",
-                  numb_types_spin);
-          error->all(FLERR, tmp);
-        }
-        virtual_len[ii] = utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(virtual_len, "virtual_len", iarg, narg, arg,
+                               is_key);
     } else if (string(arg[iarg]) == string("spin_norm")) {
-      spin_norm.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        if (iarg + ii + 1 >= narg || is_key(arg[iarg + ii + 1])) {
-          char tmp[1024];
-          sprintf(tmp, "Illegal spin_norm, the dimension should be %d",
-                  numb_types_spin);
-          error->all(FLERR, tmp);
-        }
-        spin_norm[ii] = utils::numeric(FLERR, arg[iarg + ii + 1], false, lmp);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(spin_norm, "spin_norm", iarg, narg, arg, is_key);
     }
   }
 

@@ -103,6 +103,13 @@ class PairDeepBaseModel : public Pair {
   bool do_compute_aparam;
   std::string compute_aparam_id;
 
+  void parse_spin_vector_option(std::vector<double>& values,
+                                const std::string& option,
+                                int& iarg,
+                                int narg,
+                                char** arg,
+                                bool (*is_key)(const std::string&));
+
   void make_ttm_fparam(std::vector<double>& fparam);
 
   void make_ttm_aparam(std::vector<double>& dparam);
