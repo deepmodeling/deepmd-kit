@@ -1,8 +1,7 @@
 # Run MD with JAX-MD
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
 DeePMD-kit provides a JAX-MD compatible interface for DeePMD models trained with
 the JAX backend. The interface adapts a DeePMD model to the usual JAX-MD style,
