@@ -22,6 +22,12 @@ from dpa_adapt.utils.dotdict import (
 
 _LOG = logging.getLogger("dpa_adapt.mft")
 
+# DOWNSTREAM branch types that get a fresh, randomly-initialized head sized
+# by property_name/task_dim (as opposed to "ener", which reuses the aux
+# branch's own fitting_net dict). Shared by __init__ validation and
+# MFTConfigManager's paper-alignment branching.
+_PROPERTY_LIKE_DOWNSTREAM_TYPES = ("property", "group_property")
+
 
 class MFTFineTuner:
     """
@@ -64,27 +70,41 @@ class MFTFineTuner:
         Pass an explicit dict only if you need to override the checkpoint's
         config (e.g. for experiments).
     downstream_task_type : str
-        Either ``"property"`` (intensive scalar head, e.g. HOMO/LUMO, the
-        default) or ``"ener"`` (force-field head, legacy mode). Selects how
-        the DOWNSTREAM branch's fitting_net and loss are built:
+        One of ``"property"`` (intensive scalar head, e.g. HOMO/LUMO, the
+        default), ``"group_property"`` (grouped/assembly head, e.g. an
+        OER O*/OH*/OOH* overpotential pooled over several structures), or
+        ``"ener"`` (force-field head, legacy mode). Selects how the
+        DOWNSTREAM branch's fitting_net and loss are built:
 
         * ``"property"`` — DOWNSTREAM gets a fresh ``type: property``
           fitting_net (using ``property_name``, ``task_dim``, ``intensive``)
           and a property-style MSE loss with no force/virial prefs. This
           is what arXiv:2601.08486 Table 3 / Fig 2 reports for HOMO/LUMO.
+        * ``"group_property"`` — DOWNSTREAM gets a fresh
+          ``type: group_property`` fitting_net (using ``property_name``,
+          ``task_dim``, ``group_reduce``) and a group_property MSE loss.
+          Training data must carry the grouped markers (``group_id.npy``,
+          ``weight.npy``, ``pool_mask.npy``; see ``dpa_adapt.grouped``);
+          ``intensive`` does not apply (the group-level output bias is
+          always zero-initialized, not set from label statistics).
         * ``"ener"`` — DOWNSTREAM reuses the aux fitting_net dict and an
           ener-style loss with force/virial prefs. This is the legacy mode
           used by earlier mp_data sensitivity-analysis MFT experiments.
     property_name : str, optional
-        Required when ``downstream_task_type="property"``. Name of the
-        per-system property file (e.g. ``"homo"`` reads ``set.*/homo.npy``).
-        Must be a valid Python identifier.
+        Required when ``downstream_task_type`` is ``"property"`` or
+        ``"group_property"``. Name of the per-system property file (e.g.
+        ``"homo"`` reads ``set.*/homo.npy``). Must be a valid Python
+        identifier.
     task_dim : int
         Output dimensionality of the property head. Default ``1``.
     intensive : bool
         Whether the property is intensive (mean-pool) or extensive (sum).
         Default ``True`` (correct for HOMO/LUMO and most molecular
-        properties).
+        properties). Ignored when ``downstream_task_type="group_property"``.
+    group_reduce : str
+        Frame-embedding -> group-embedding reduction for
+        ``downstream_task_type="group_property"``: ``"mean"`` (weighted
+        average, default) or ``"sum"``. Ignored otherwise.
     learning_rate : float
         Initial learning rate.
     stop_lr : float
@@ -119,6 +139,7 @@ class MFTFineTuner:
         property_name: str | None = None,
         task_dim: int = 1,
         intensive: bool = True,
+        group_reduce: str = "mean",
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
         decay_steps: int | None = None,  # None → auto: 1000 for property, 5000 for ener
@@ -133,20 +154,27 @@ class MFTFineTuner:
         save_freq: int = 10000,
         disp_freq: int = 1000,
     ) -> None:
-        if downstream_task_type not in ("ener", "property"):
+        if downstream_task_type not in ("ener", *_PROPERTY_LIKE_DOWNSTREAM_TYPES):
             raise ValueError(
-                f"downstream_task_type must be 'ener' or 'property'; "
-                f"got {downstream_task_type!r}."
+                "downstream_task_type must be 'ener', 'property', or "
+                f"'group_property'; got {downstream_task_type!r}."
             )
-        if downstream_task_type == "property":
+        if downstream_task_type in _PROPERTY_LIKE_DOWNSTREAM_TYPES:
             if not isinstance(property_name, str) or not property_name.isidentifier():
                 raise ValueError(
-                    "property_name is required when "
-                    "downstream_task_type='property' and must be a valid "
+                    "property_name is required when downstream_task_type is "
+                    "'property' or 'group_property' and must be a valid "
                     f"Python identifier; got {property_name!r}."
                 )
             if not isinstance(task_dim, int) or task_dim < 1:
                 raise ValueError(f"task_dim must be an int >= 1; got {task_dim!r}.")
+        if downstream_task_type == "group_property" and group_reduce not in (
+            "mean",
+            "sum",
+        ):
+            raise ValueError(
+                f"group_reduce must be 'mean' or 'sum'; got {group_reduce!r}."
+            )
         validate_fparam_dim(fparam_dim)
         try:
             aux_prob = float(aux_prob)
@@ -168,6 +196,7 @@ class MFTFineTuner:
         self.property_name = property_name
         self.task_dim = task_dim
         self.intensive = intensive
+        self.group_reduce = group_reduce
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.decay_steps = decay_steps
@@ -452,14 +481,13 @@ class MFTFineTuner:
 
     @property
     def _downstream_head(self) -> str:
-        """Branch/head name of the downstream task. Paper property mode uses
-        "property" (matching MFTConfigManager); legacy ener mode keeps
-        "DOWNSTREAM".
+        """Branch/head name of the downstream task. Paper property/
+        group_property modes use the task type itself as the branch key
+        (matching MFTConfigManager); legacy ener mode keeps "DOWNSTREAM".
         """
+        task_type = getattr(self, "downstream_task_type", "ener")
         return (
-            "property"
-            if getattr(self, "downstream_task_type", "ener") == "property"
-            else "DOWNSTREAM"
+            task_type if task_type in _PROPERTY_LIKE_DOWNSTREAM_TYPES else "DOWNSTREAM"
         )
 
     def _freeze_ckpt(self) -> str:
@@ -549,6 +577,43 @@ class MFTFineTuner:
             raise RuntimeError(f"test_data {test_data!r} resolved to 0 systems.")
         return unique
 
+    @staticmethod
+    def _check_no_multi_frame_groups(systems: list[str]) -> None:
+        """Refuse group_property evaluate()/predict() on genuine multi-frame
+        groups.
+
+        ``dp --pt test`` (the generic ``DeepEval``/``DeepProperty`` path)
+        never threads ``group_id``/``weight``/``pool_mask`` through to the
+        model, so ``GroupPropertyModel.forward`` falls back to treating
+        every frame as its own one-frame group. That fallback is a correct
+        no-op when every real group is exactly one frame, but silently wrong
+        for assemblies spanning multiple frames (e.g. an OER O*/OH*/OOH*
+        overpotential group) -- the reported MAE/RMSE or per-row predictions
+        would not match what the model was trained to produce. This is a
+        limitation of ``dp --pt test`` itself, not specific to MFT.
+        """
+        for sys_path in systems:
+            for set_dir in sorted(_glob.glob(os.path.join(sys_path, "set.*"))):
+                group_id_path = os.path.join(set_dir, "group_id.npy")
+                if not os.path.isfile(group_id_path):
+                    continue
+                group_ids = np.load(group_id_path).reshape(-1)
+                _, counts = np.unique(group_ids, return_counts=True)
+                if np.any(counts > 1):
+                    raise RuntimeError(
+                        "MFT evaluate()/predict() cannot score a "
+                        "group_property head against "
+                        f"{set_dir}: it contains a group spanning more than "
+                        "one frame, but `dp --pt test` evaluates frame-by-"
+                        "frame and silently treats every frame as its own "
+                        "group, so the reported numbers would not match what "
+                        "the model was trained on. This is a known gap in "
+                        "`dp --pt test`'s group_property support (not "
+                        "specific to MFT); scoring multi-frame assemblies "
+                        "requires a group-aware evaluator, which does not "
+                        "exist yet."
+                    )
+
     def evaluate(self, test_data: str | list[str]) -> dict:
         """
         Evaluate the downstream head of the MFT checkpoint via ``dp --pt test``.
@@ -587,10 +652,19 @@ class MFTFineTuner:
         The DeePMD-kit output labels the unit as ``eV`` regardless of the
         actual training units; callers using Hartree-trained checkpoints
         should treat the returned numbers as Hartree.
-        """
-        frozen_path = self._freeze_ckpt()
 
+        For ``downstream_task_type="group_property"``, ``dp --pt test`` never
+        threads ``group_id``/``weight``/``pool_mask`` through its evaluation
+        path, so it silently scores every test frame as its own one-frame
+        group. This is a no-op for single-frame groups but wrong for genuine
+        multi-frame assemblies; ``evaluate()`` refuses to run against test
+        data containing one (see ``_check_no_multi_frame_groups``).
+        """
         systems = self._resolve_test_data(test_data)
+        if self._downstream_head == "group_property":
+            self._check_no_multi_frame_groups(systems)
+
+        frozen_path = self._freeze_ckpt()
 
         os.makedirs(self.output_dir, exist_ok=True)
         datafile = os.path.join(self.output_dir, "test_systems.txt")
@@ -628,14 +702,18 @@ class MFTFineTuner:
         ``-d`` to ``dp --pt test`` and parses the generated property detail
         files so callers get frame-level labels and predictions.
         """
-        if self._downstream_head != "property":
+        if self._downstream_head not in _PROPERTY_LIKE_DOWNSTREAM_TYPES:
             raise RuntimeError(
-                "MFT predict() is only supported for downstream_task_type='property'. "
-                "Energy-mode MFT can still use evaluate() for aggregate metrics."
+                "MFT predict() is only supported for downstream_task_type "
+                "'property' or 'group_property'. Energy-mode MFT can still "
+                "use evaluate() for aggregate metrics."
             )
 
-        frozen_path = self._freeze_ckpt()
         systems = self._resolve_test_data(test_data)
+        if self._downstream_head == "group_property":
+            self._check_no_multi_frame_groups(systems)
+
+        frozen_path = self._freeze_ckpt()
 
         os.makedirs(self.output_dir, exist_ok=True)
         datafile = os.path.join(self.output_dir, "predict_systems.txt")

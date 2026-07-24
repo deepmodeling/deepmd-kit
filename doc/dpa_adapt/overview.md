@@ -25,6 +25,94 @@ The strategy is the core choice. All four share the same pre-trained DPA backbon
 | `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | Maximum accuracy on large datasets                                            |
 | `mft`            | Multi-task co-training (property + force field) | Small / low-data | Mitigating representation collapse                                            |
 
+## Grouped property targets
+
+Most property datasets have one label per structure. Some scientific tasks have
+one label for a **group** of structures instead: for example, an OER catalyst
+label shared by the clean, `O*`, `OH*`, and `OOH*` slabs; or a polymer property
+defined by several repeating-unit and end-group components. DPA-ADAPT supports
+this layout with grouped markers stored in ordinary `deepmd/npy` systems.
+
+Grouped training is enabled automatically when every training and validation
+`set.*` directory contains `group_id.npy`, `weight.npy`, and `pool_mask.npy`.
+The same high-level `DPAFineTuner` API is used; grouped data switches the
+underlying DeePMD fitting net and loss to `group_property`.
+
+```python
+from dpa_adapt import DPAFineTuner, mark_groups
+
+# Existing deepmd/npy data: add grouped markers in place.
+# A common OER layout is "one system directory == one labeled group".
+mark_groups(
+    "oer/dpdata",
+    target="overpotential",
+    group_by="system",
+    weight=1.0,
+)
+
+model = DPAFineTuner(
+    pretrained="DPA-3.1-3M",
+    strategy="finetune",
+    property_name="overpotential",
+    task_dim=1,
+    init_branch="SPICE2",
+    max_steps=50_000,
+)
+model.fit(train_data="oer/train/*", valid_data="oer/valid/*")
+```
+
+The grouped marker API is intentionally small:
+
+```python
+mark_groups(
+    data,
+    target="property",
+    group_by="system",  # "system" | "label" | positive integer group size
+    weight=1.0,
+    overwrite=False,
+    dry_run=False,
+)
+```
+
+- `group_by="system"` assigns all frames in one system to one group.
+- `group_by="label"` groups frames with identical rows in `set.*/<target>.npy`.
+- `group_by=N` groups every consecutive `N` frames.
+- `pool_mask.npy` is derived automatically from `real_atom_types.npy < 0` when
+  virtual or padded atoms are present.
+- For `frozen_head` and `finetune`, write a complete marker set
+  (`group_id.npy`, `weight.npy`, and `pool_mask.npy`) in every `set.*`
+  directory so grouped mode can be auto-detected consistently. The low-level
+  grouped readers can default a missing weight to `1.0`, but the training
+  preflight is intentionally stricter.
+
+For converter implementations or tests that already have arrays in memory,
+`Assembly` is the low-level writer:
+
+```python
+from dpa_adapt import Assembly, PoolMask
+
+assembly = Assembly(target="cloud_point")
+group = assembly.group(key="polymer_0", label=32.1, fparam={"mn_log": 4.5})
+group.add(
+    coords=repeat_unit_xyz,
+    symbols=["C", "C", "O"],
+    weight=0.8,
+    pool_mask=PoolMask.all(),
+    role="repeat_unit",
+)
+group.add(
+    coords=end_group_xyz,
+    symbols=["C", "H", "H", "H"],
+    weight=0.2,
+    role="end_group",
+)
+assembly.write("polymer_grouped", overwrite=True)
+```
+
+`Assembly` writes each group as one DeePMD system and stores only the tensors
+needed by training in `set.*/`. Scientific provenance such as roles, source
+paths, and fparam schema is stored in `manifest.json`.
+
 ### frozen_sklearn — CPU-only, scikit-learn predictor
 
 Freezes the DPA backbone as a feature extractor and fits a scikit-learn
@@ -99,6 +187,11 @@ model.fit(train_data="/data/train", valid_data="/data/valid")
 pred = model.predict(data="/data/test")
 metrics = model.evaluate(data="/data/test")  # .mae, .rmse, .r2
 ```
+
+When `train_data` and `valid_data` contain grouped markers, `frozen_head` and
+`finetune` auto-detect grouped mode. `fitting_net_params` still works as an
+override; otherwise grouped fine-tuning uses a GELU activation by default for
+the grouped property head.
 
 | Parameter            | Type             | Default            | Description                                                                           |
 | -------------------- | ---------------- | ------------------ | ------------------------------------------------------------------------------------- |
@@ -244,7 +337,7 @@ dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/
 Lower-level helpers:
 
 ```python
-from dpa_adapt import convert, attach_labels, check_data
+from dpa_adapt import convert, attach_labels, check_data, mark_groups
 
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
 convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
@@ -257,6 +350,9 @@ labels = np.load("labels.npy")  # shape (n_systems,)
 attach_labels("./npy/", head="bandgap", values=labels)
 
 check_data("/data/system")  # → list[Issue]
+
+# Add grouped markers to existing deepmd/npy systems.
+mark_groups("./npy_root", target="overpotential", group_by="system", weight=1.0)
 ```
 
 For the full option list and supported dpdata formats, see

@@ -47,6 +47,7 @@ from deepmd.pt.loss import (
     EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    GroupPropertyLoss,
     PopulationLoss,
     PropertyLoss,
     TaskLoss,
@@ -899,8 +900,23 @@ class Trainer:
                                 not use_random_initialization
                                 and new_key not in _origin_state_dict
                             ):
+                                # GroupPropertyModel attaches the descriptor
+                                # directly (its ``atomic_model`` is a plain
+                                # namespace, not an nn.Module), so its keys read
+                                # ``model.<key>.descriptor.*``.  A standard
+                                # (energy/property) pretrained model stores the
+                                # descriptor one level deeper, under
+                                # ``model.<key_from>.atomic_model.descriptor.*``.
+                                # Bridge the two by inserting ``atomic_model``.
+                                atomic_key = new_key.replace(
+                                    f".{_model_key_from}.descriptor.",
+                                    f".{_model_key_from}.atomic_model.descriptor.",
+                                    1,
+                                )
                                 # for ZBL models finetuning from standard models
-                                if ".models.0." in new_key:
+                                if atomic_key in _origin_state_dict:
+                                    new_key = atomic_key
+                                elif ".models.0." in new_key:
                                     new_key = new_key.replace(".models.0.", ".")
                                 elif ".models.1." in new_key:
                                     use_random_initialization = True
@@ -2546,6 +2562,12 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "group_property":
+        task_dim = _model.get_task_dim()
+        var_name = _model.get_var_name()
+        loss_params["task_dim"] = task_dim
+        loss_params["var_name"] = var_name
+        return GroupPropertyLoss(**loss_params)
     elif loss_type == "population":
         loss_params["starter_learning_rate"] = start_lr
         return PopulationLoss(**loss_params)

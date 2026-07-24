@@ -101,6 +101,111 @@ DEFAULT_FITTING_NET = {
 
 _VALID_LOSSES = ("mse", "smooth_mae")
 
+# Group markers written by the grouped data writer; their presence flips the
+# fitting/loss to the ``group_property`` head.
+_GROUP_MARKERS = ("group_id", "weight", "pool_mask")
+
+
+def _first_set_dir(systems: list) -> str | None:
+    """Return the first ``set.*`` directory across the resolved systems."""
+    for sysdir in systems:
+        sets = sorted(_glob.glob(os.path.join(sysdir, "set.*")))
+        if sets:
+            return sets[0]
+    return None
+
+
+def _all_set_dirs(systems: list) -> list[str]:
+    """Return every ``set.*`` directory across the resolved systems, in order."""
+    dirs: list[str] = []
+    for sysdir in systems:
+        dirs.extend(sorted(_glob.glob(os.path.join(sysdir, "set.*"))))
+    return dirs
+
+
+def _set_marker_status(setdir: str) -> bool | None:
+    """Whether one ``set.*`` directory carries the group markers.
+
+    Returns ``True`` when all of ``_GROUP_MARKERS`` are present, ``False``
+    when none are, and ``None`` for a partial set (some but not all) -- a
+    partial set is always an error, independent of any other set.
+    """
+    present = [
+        os.path.isfile(os.path.join(setdir, f"{name}.npy")) for name in _GROUP_MARKERS
+    ]
+    if all(present):
+        return True
+    if not any(present):
+        return False
+    return None
+
+
+def _systems_are_grouped(*labeled_systems: tuple[str, list]) -> bool:
+    """Whether the given (label, systems) groups are grouped training data.
+
+    Scans *every* ``set.*`` directory of *every* given system list -- not
+    just the first set of the first system -- and requires all of them to
+    agree. Checking only the first set previously meant: a later system
+    that had markers when the first one didn't left grouped mode disabled
+    (and that system silently dropped its labels), while a later system
+    *missing* markers when the first one had them enabled grouped mode and
+    then failed, or trained inconsistently, once that system was reached.
+    Any partial marker set, or any mix of grouped and ungrouped sets across
+    the given system lists (e.g. grouped train_systems with ungrouped
+    valid_systems), raises a clear error instead of guessing.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+
+    grouped_dirs: list[str] = []
+    ungrouped_dirs: list[str] = []
+    partial_dirs: list[str] = []
+    for label, systems in labeled_systems:
+        for setdir in _all_set_dirs(systems):
+            status = _set_marker_status(setdir)
+            if status is True:
+                grouped_dirs.append(f"{label}:{setdir}")
+            elif status is False:
+                ungrouped_dirs.append(f"{label}:{setdir}")
+            else:
+                partial_dirs.append(f"{label}:{setdir}")
+
+    if partial_dirs:
+        raise DPADataError(
+            "Inconsistent grouped markers: the following set.* directories "
+            f"have only some of {_GROUP_MARKERS} (all three, or none, are "
+            "required):\n  " + "\n  ".join(partial_dirs[:10])
+        )
+    if grouped_dirs and ungrouped_dirs:
+        raise DPADataError(
+            "Inconsistent grouped markers across systems: "
+            f"{len(grouped_dirs)} set.* director{'y' if len(grouped_dirs) == 1 else 'ies'} "
+            f"carry {_GROUP_MARKERS} and {len(ungrouped_dirs)} do not. Mixing "
+            "grouped and ungrouped systems in the same train/valid run is "
+            "not supported.\n  grouped, e.g.:\n    "
+            + "\n    ".join(grouped_dirs[:5])
+            + "\n  ungrouped, e.g.:\n    "
+            + "\n    ".join(ungrouped_dirs[:5])
+        )
+    return bool(grouped_dirs)
+
+
+def _detect_fparam_dim(systems: list) -> int:
+    """Per-frame side-feature width from ``set.*/fparam.npy`` (0 if absent)."""
+    setdir = _first_set_dir(systems)
+    if setdir is None:
+        return 0
+    fpath = os.path.join(setdir, "fparam.npy")
+    if not os.path.isfile(fpath):
+        return 0
+    import numpy as np
+
+    arr = np.load(fpath)
+    if arr.ndim == 0:
+        return 0
+    return int(arr.reshape(arr.shape[0], -1).shape[1])
+
 
 # ---------------------------------------------------------------------------
 # DPATrainer
@@ -173,6 +278,7 @@ class DPATrainer:
         # ---- model overrides ----
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
+        grouped: bool | None = None,
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
@@ -235,6 +341,8 @@ class DPATrainer:
         self.type_map = type_map
         self.fitting_net_params = fitting_net_params
         self.fparam_dim = fparam_dim
+        # None => auto-detect from the resolved training systems in _build_config.
+        self.grouped = grouped
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.decay_steps = decay_steps
@@ -333,6 +441,14 @@ class DPATrainer:
                 "seed": self.seed,
             }
         )
+        if self.grouped:
+            # Grouped data pools frame embeddings per assembly, so the head and
+            # loss switch to the group_property variants (same property schema).
+            fn["type"] = "group_property"
+            # The grouped head consumes an un-normalized frame embedding + fparam;
+            # tanh saturates at that scale and the head collapses to a constant.
+            # Default to GELU (a user override via fitting_net_params still wins).
+            fn["activation_function"] = "gelu"
         # NB: dim_case_embd is intentionally NOT injected for FT/LP. The paper
         # qm9_gap input.json omits it: single-task `--finetune` (without
         # --model-branch) copies only the backbone and random-inits the
@@ -343,6 +459,26 @@ class DPATrainer:
         if self.fitting_net_params:
             fn.update(self.fitting_net_params)
         return fn
+
+    def _infer_grouped(self) -> None:
+        """Resolve grouped mode and ``numb_fparam`` from the training systems.
+
+        Idempotent, so ``fit()`` can call it *before* the fparam preflight (so
+        auto-detected grouped ``fparam.npy`` files are still validated) and
+        ``_build_config()`` can call it again cheaply.
+        """
+        if self.grouped is False:
+            return
+        if self.grouped and self.fparam_dim:
+            return
+        train_sys = self._expand_systems(self.train_systems, "train_systems")
+        if self.grouped is None:
+            valid_sys = self._expand_systems(self.valid_systems, "valid_systems")
+            self.grouped = _systems_are_grouped(
+                ("train_systems", train_sys), ("valid_systems", valid_sys)
+            )
+        if self.grouped and not self.fparam_dim:
+            self.fparam_dim = _detect_fparam_dim(train_sys)
 
     def _build_config(self) -> dict:
         # Seed propagation in DeePMD-kit v3.1.3 (deepmd/utils/argcheck.py):
@@ -357,6 +493,10 @@ class DPATrainer:
         self._resolved_train_systems = train_sys
         self._resolved_valid_systems = valid_sys
 
+        # Grouped training is inferred from the resolved systems unless the
+        # caller forced it; a grouped set also auto-sizes numb_fparam.
+        self._infer_grouped()
+
         descriptor = self._get_descriptor()
         descriptor["seed"] = self.seed  # verified: descrpt_dpa3_args (deepmd v3.1.3)
         fitting_net = self._build_fitting_net()
@@ -368,7 +508,7 @@ class DPATrainer:
                 "fitting_net": fitting_net,
             },
             "loss": {
-                "type": "property",
+                "type": "group_property" if self.grouped else "property",
                 "loss_func": self.loss_function,
                 "metric": ["mae", "rmse"],
             },
@@ -545,6 +685,11 @@ class DPATrainer:
                 self.max_steps,
             )
             return str(latest)
+
+        # Infer grouped mode / numb_fparam first so an auto-detected grouped
+        # fparam.npy is covered by the preflight below (otherwise fparam_dim is
+        # still 0 here and the shape/frame checks are skipped).
+        self._infer_grouped()
 
         if self.fparam_dim > 0:
             self._validate_fparam(self.train_systems, self.fparam_dim)

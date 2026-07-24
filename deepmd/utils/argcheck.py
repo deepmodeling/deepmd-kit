@@ -2891,6 +2891,75 @@ def fitting_property() -> list[Argument]:
     ]
 
 
+@fitting_args_plugin.register("group_property", doc=doc_only_pt_supported)
+def fitting_group_property() -> list[Argument]:
+    """Grouped frame-property fitting reuses the property head schema, but the
+    head pools an un-normalized frame embedding + fparam where tanh saturates
+    (collapsing to a constant), so it defaults to GELU instead of tanh.
+
+    It also adds ``group_reduce``, the frame-embedding -> group-embedding
+    reduction (mean or weighted sum), which GroupPropertyFittingNet supports
+    but the reused property schema has no field for.
+
+    GroupPropertyFittingNet is a small, standalone MLP (it does not go
+    through the shared GeneralFitting base class other fitting nets use), so
+    several property-schema fields have no effect on it: ``numb_aparam``
+    (there is no per-atom input at group level), ``default_fparam``,
+    ``resnet_dt`` (plain Linear layers, no residual connections),
+    ``intensive`` and ``distinguish_types`` (the group-level output bias is
+    always zero-initialized rather than set from per-type label statistics --
+    see GroupPropertyFittingNet.get_out_bias). Removing them makes setting
+    one an immediate, clear validation error instead of a silently ignored
+    no-op.
+
+    ``dim_case_embd`` IS supported (unlike the fields above): it lets a
+    group_property head share a descriptor with another fitting net in
+    multi-task training (e.g. MFT jointly training a downstream
+    group_property head and an auxiliary ener head) by giving each branch a
+    distinct one-hot case embedding.
+    """
+    doc_group_reduce = (
+        "How per-frame embeddings are reduced to one per-group embedding: "
+        "`mean` (weight-normalized average) or `sum` (weighted sum, for "
+        "extensive group properties)."
+    )
+    doc_fparam_neuron = (
+        "Hidden sizes for an optional fparam-only branch before fusing fparam "
+        "with the aggregated group embedding. Empty list keeps the historical "
+        "direct concatenation path."
+    )
+    _unsupported = {
+        "numb_aparam",
+        "default_fparam",
+        "resnet_dt",
+        "intensive",
+        "distinguish_types",
+    }
+    args = [arg for arg in fitting_property() if arg.name not in _unsupported]
+    for arg in args:
+        if arg.name == "activation_function":
+            arg.default = "gelu"
+    args.append(
+        Argument(
+            "fparam_neuron",
+            list[int],
+            optional=True,
+            default=[],
+            doc=doc_fparam_neuron,
+        )
+    )
+    args.append(
+        Argument(
+            "group_reduce",
+            str,
+            optional=True,
+            default="mean",
+            doc=doc_group_reduce,
+        )
+    )
+    return args
+
+
 @fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -4939,6 +5008,12 @@ def loss_property() -> list[Argument]:
             doc=doc_beta,
         ),
     ]
+
+
+@loss_args_plugin.register("group_property")
+def loss_group_property() -> list[Argument]:
+    """Grouped property loss uses the property loss hyper-parameters."""
+    return loss_property()
 
 
 # YWolfeee: Modified to support tensor type of loss args.
