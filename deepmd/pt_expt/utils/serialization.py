@@ -1351,6 +1351,18 @@ def deserialize_to_file(
         ``metadata.json``.
     """
     lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
+    if data["model"].get("type") == "native_spin" and lower_kind != "graph":
+        # Native-spin models implement ONLY the NeighborGraph lower; the
+        # dense/nlist trace branch does not exist for them. The public freeze
+        # layer resolves this before calling here (see
+        # deepmd.pt_expt.entrypoints.main.freeze); this guard pins the
+        # contract for direct programmatic callers with a clear error instead
+        # of an opaque trace-time failure.
+        raise ValueError(
+            "native-spin models implement only the NeighborGraph lower "
+            f"(got lower_kind={lower_kind!r}); use lower_kind='graph' with a "
+            ".pt2 output."
+        )
     # A graph lower deploys the fused inference pipeline. The trace runs at
     # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
     # operators, while the per-atom virial is mandatory for the LAMMPS Kokkos

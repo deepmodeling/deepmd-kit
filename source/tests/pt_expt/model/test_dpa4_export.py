@@ -464,6 +464,57 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
 
 
+def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:
+    """``deserialize_to_file`` fails fast on ``native_spin`` + non-graph lower.
+
+    Native spin has no dense/nlist lower; without this guard the default
+    ``lower_kind="nlist"`` used to fail deep inside tracing with an opaque
+    ``TypeError``. The guard raises before any tracing/compile, so this
+    stays fast.
+    """
+    model = _build_native_spin_model_cpu()
+    data = {"model": model.serialize()}
+    with pytest.raises(ValueError, match="only the NeighborGraph lower"):
+        deserialize_to_file(str(tmp_path / "spin_nlist.pte"), data, lower_kind="nlist")
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+def test_native_spin_default_freeze_routes_to_graph(tmp_path) -> None:
+    """Public ``freeze()`` default path yields a graph-kind ``.pt2``.
+
+    Freezes a native-spin checkpoint WITHOUT supplying ``lower_kind`` (and
+    with a suffixless output, as the CLI passes it): the public freeze layer
+    must resolve native spin to the graph lower BEFORE choosing the export
+    ABI and the default output suffix.
+    """
+    import copy
+
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    model = _build_native_spin_model_cpu()
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(NATIVE_SPIN_CONFIG))
+    ckpt = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, ckpt)
+
+    output = tmp_path / "frozen_native_spin"  # suffixless: default CLI form
+    freeze(model=str(ckpt), output=str(output))
+
+    pt2 = output.with_suffix(".pt2")
+    assert pt2.exists(), "default suffix must follow the resolved graph kind"
+    with zipfile.ZipFile(pt2) as z:
+        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+    assert md["lower_input_kind"] == "graph"
+    assert md["is_spin"] is True
+
+
 def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
     """spin_ener (virtual) graph freeze keeps raising ``NotImplementedError``.
 
@@ -533,10 +584,10 @@ def test_deep_eval_graph_spin_parity(tmp_path) -> None:
     branch end to end through the public ``DeepPot`` API: energy, force,
     force_mag and (global) virial must reproduce the eager
     ``NativeSpinEnergyModel.forward`` on the identical weights and system.
-    ``atomic=False`` is used deliberately -- the graph-spin ABI has no owner
-    site for ``mask_mag`` (see ``_graph_spin_output_key``'s docstring), so
-    only the four outputs that route through the exported forward are
-    compared here.
+    ``mask_mag`` is not exported by the graph ABI; the DeepEval adapter
+    synthesizes it from the artifact's ``use_spin`` metadata and the input
+    atom types (see ``_eval_model_graph_spin``), and this test asserts the
+    exact boolean mask through the public DeepPot API.
     """
     from deepmd.infer import (
         DeepPot,
@@ -570,7 +621,7 @@ def test_deep_eval_graph_spin_parity(tmp_path) -> None:
 
     dp = DeepPot(str(model_file))
     assert dp.has_spin
-    e, f, v, fm, _mm = dp.eval(
+    e, f, v, fm, mm = dp.eval(
         _SPIN_EVAL_COORDS,
         _SPIN_EVAL_CELL,
         _SPIN_EVAL_ATYPES,
@@ -578,6 +629,13 @@ def test_deep_eval_graph_spin_parity(tmp_path) -> None:
         spin=_SPIN_EVAL_SPINS,
     )
 
+    # Public DeepPot contract: mask_mag marks spin-active atoms
+    # (use_spin=[True, False] x atypes [0,0,0,1,1,1]).
+    np.testing.assert_array_equal(
+        mm.reshape(-1).astype(bool),
+        np.array([True, True, True, False, False, False]),
+        err_msg="mask_mag",
+    )
     np.testing.assert_allclose(
         e.reshape(-1),
         ref["energy"].detach().numpy().reshape(-1),
