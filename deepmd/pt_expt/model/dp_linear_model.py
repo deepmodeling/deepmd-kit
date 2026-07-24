@@ -27,11 +27,24 @@ from .model import (
     BaseModel,
 )
 
+from .ener_model import (
+    EnergyModel,
+)
+
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("linear_ener")
+@BaseModel.register(
+    "linear"
+)  # the atomic dict's registered type (CM.serialize is the flat atomic dict)
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
+    # The graph .pt2 exportable is energy-contract machinery (public-key
+    # translation over the CM's forward_common_lower_graph_exportable),
+    # identical for any energy model -- reuse EnergyModel's verbatim so
+    # compositions (e.g. analytical bridging) freeze like standard models.
+    forward_lower_graph_exportable = EnergyModel.forward_lower_graph_exportable
+
     def __init__(
         self,
         *args: Any,

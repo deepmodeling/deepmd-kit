@@ -1,11 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""pt_expt ZBL bridging (review 3638077323): eager pt parity, FD force,
-with-comm gate, and pt-checkpoint interop for ``bridging_method="ZBL"``.
+"""pt_expt ZBL bridging as COMPOSITION (review 3638077323, redesigned).
+
+``bridging_method: ZBL`` builds a linear composition
+(``LinearEnergyModel`` over ``[learned, InterPotentialAtomicModel]`` with
+``weights="sum"``); eager values still match pt's flag-architected
+``SeZMModel`` bit-for-bit (identical math), pinned here as a value
+regression together with FD force, export/DeepEval e2e, training smoke,
+and the single-rank with-comm gate.
 """
 
 import copy
+import json
+import os
+import zipfile
 
 import numpy as np
+import pytest
 import torch
 
 from deepmd.pt.model.model import get_model as pt_get_model
@@ -14,6 +24,9 @@ from deepmd.pt_expt.descriptor.dpa4 import (
 )
 from deepmd.pt_expt.fitting.dpa4_ener import (
     SeZMEnergyFittingNet,
+)
+from deepmd.pt_expt.model.dp_linear_model import (
+    LinearEnergyModel,
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
@@ -70,21 +83,27 @@ class TestZBLBridgingPtExpt:
         assert self.pt_model.inter_potential is not None
 
         pt_expt_model = get_model(copy.deepcopy(ZBL_CONFIG))
-        atomic = pt_expt_model.atomic_model
-        assert atomic.inter_potential is not None
-        # weight copy: pt DescrptSeZM / fitting serialize to the SAME
-        # backend-agnostic dict schema (incl. the InnerClamp radii)
-        atomic.descriptor = DescrptDPA4.deserialize(
+        assert type(pt_expt_model) is LinearEnergyModel
+        dp_child = pt_expt_model.atomic_model.models[0]
+        # weight copy into the LEARNED child: pt DescrptSeZM / fitting
+        # serialize to the SAME backend-agnostic dict schema (incl. the
+        # InnerClamp radii)
+        dp_child.descriptor = DescrptDPA4.deserialize(
             self.pt_model.atomic_model.descriptor.serialize()
         )
-        atomic.fitting_net = SeZMEnergyFittingNet.deserialize(
+        dp_child.fitting_net = SeZMEnergyFittingNet.deserialize(
             self.pt_model.atomic_model.fitting_net.serialize()
         )
         self.pt_expt_model = pt_expt_model.to(cpu).eval()
         self.coord, self.atype, self.box = _close_pair_system(cpu)
 
     def test_parity_vs_pt_with_zbl(self) -> None:
-        """Weight-copied fp64 parity incl. the ZBL term (energy/force/virial)."""
+        """Composition == pt's flag architecture on the same weights (values).
+
+        pt adds the raw ZBL to the fitting energy; the composition sums the
+        same two per-atom terms -- identical math, pinned at 1e-12 for
+        energy/force/virial.
+        """
         out_pt = self.pt_model.forward(self.coord, self.atype, self.box)
         out_pte = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)
         for key in ("energy", "force", "virial"):
@@ -92,25 +111,25 @@ class TestZBLBridgingPtExpt:
                 out_pt[key], out_pte[key], rtol=1e-12, atol=1e-12, msg=key
             )
 
-    def test_zbl_energy_is_positive_addition(self) -> None:
-        """Same weights minus the bridging key -> plain twin; diff > 0."""
-        from deepmd.pt_expt.model.model import (
-            BaseModel,
+    def test_zbl_child_adds_positive_energy(self) -> None:
+        """Learned child alone vs the composition: positive ZBL repulsion."""
+        from deepmd.pt_expt.model.ener_model import (
+            EnergyModel,
         )
 
-        data = self.pt_expt_model.serialize()
-        assert data["bridging_method"] == "ZBL"
-        plain_data = copy.deepcopy(data)
-        plain_data.pop("bridging_method")
-        m_plain = BaseModel.deserialize(plain_data).to(torch.device("cpu")).eval()
-        e_zbl = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)[
+        m_dp = (
+            EnergyModel(atomic_model_=self.pt_expt_model.atomic_model.models[0])
+            .to(torch.device("cpu"))
+            .eval()
+        )
+        e_sum = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)[
             "energy"
         ]
-        e_plain = m_plain.forward(self.coord, self.atype, box=self.box)["energy"]
-        assert float((e_zbl - e_plain).sum()) > 1e-3
+        e_dp = m_dp.forward(self.coord, self.atype, box=self.box)["energy"]
+        assert float((e_sum - e_dp).sum()) > 1e-3
 
     def test_force_matches_finite_difference(self) -> None:
-        """F = -dE/dx through the ZBL-carrying edge autograd (central FD)."""
+        """F = -dE/dx through the shared-edge-leaf summed autograd."""
         eps = 1e-5
         out = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)
         force = out["force"].reshape(-1, 3)
@@ -126,8 +145,23 @@ class TestZBLBridgingPtExpt:
                 float(force[atom, comp]), fd, rtol=1e-6, atol=1e-6
             )
 
-    def test_with_comm_gate_off_for_bridging(self) -> None:
-        """Bridging models never compile a with-comm artifact (single-rank)."""
+    def test_serialize_roundtrip(self) -> None:
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+
+        data = self.pt_expt_model.serialize()
+        assert data["type"] == "linear"
+        m2 = BaseModel.deserialize(data).to(torch.device("cpu")).eval()
+        assert type(m2) is LinearEnergyModel
+        out = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)
+        out2 = m2.forward(self.coord, self.atype, box=self.box)
+        torch.testing.assert_close(
+            out["energy"], out2["energy"], rtol=1e-12, atol=1e-12
+        )
+
+    def test_with_comm_gate_off_for_composition(self) -> None:
+        """Compositions never compile a with-comm artifact (single-rank)."""
         from deepmd.pt_expt.utils.serialization import (
             _needs_with_comm_artifact,
         )
@@ -136,32 +170,47 @@ class TestZBLBridgingPtExpt:
             _needs_with_comm_artifact(self.pt_expt_model, lower_kind="graph") is False
         )
 
-    def test_pt_checkpoint_interop(self) -> None:
-        """A pt-serialized ZBL SeZM checkpoint deserializes into pt_expt."""
+    def test_pt_bridging_checkpoint_rejected(self) -> None:
+        """Reject pt's flag-serialized bridging checkpoints.
+
+        pt serializes bridging as a wrapper flag; our architecture is a
+        linear composition with a different dict shape -- fail fast instead
+        of a silent wrong conversion.
+        """
         from deepmd.pt_expt.model.model import (
             BaseModel,
         )
 
-        pt_data = self.pt_model.serialize()
-        assert str(pt_data.get("bridging_method", "none")).upper() == "ZBL"
-        m2 = BaseModel.deserialize(pt_data)
-        assert m2.atomic_model.inter_potential is not None
-        m2 = m2.to(torch.device("cpu")).eval()
-        out_pt = self.pt_model.forward(self.coord, self.atype, self.box)
-        out2 = m2.forward(self.coord, self.atype, box=self.box)
-        torch.testing.assert_close(
-            out_pt["energy"], out2["energy"], rtol=1e-12, atol=1e-12
-        )
+        with pytest.raises(NotImplementedError, match="bridging_method"):
+            BaseModel.deserialize(self.pt_model.serialize())
+
+
+def test_native_spin_with_bridging_fails_fast() -> None:
+    """Native spin + bridging is a follow-up: the builder must not silently
+    drop the analytical term.
+    """
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["spin"] = {"use_spin": [True, False], "scheme": "native"}
+    with pytest.raises(NotImplementedError, match="native spin"):
+        get_model(cfg)
+
+
+def test_bridging_radii_defaults() -> None:
+    """bridging_r_inner/r_outer default to 0.5/0.8 on the learned child."""
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg.pop("bridging_r_inner")
+    cfg.pop("bridging_r_outer")
+    model = get_model(cfg)
+    ic = model.atomic_model.models[0].descriptor.inner_clamp
+    assert ic is not None
+    assert float(ic.r_inner) == 0.5
+    assert float(ic.r_outer) == 0.8
 
 
 class TestZBLBridgingExportAndTraining:
-    """Graph .pt2 freeze + DeepEval parity and a trainer smoke for ZBL models."""
+    """Graph .pt2 freeze + DeepEval parity and a trainer smoke."""
 
     def test_graph_freeze_and_deep_eval_parity(self, tmp_path) -> None:
-        import os
-
-        import pytest
-
         if os.environ.get("CI") == "true":
             pytest.skip(
                 "AOTInductor compile is slow (minutes); local/fixture-gen only."
@@ -182,12 +231,9 @@ class TestZBLBridgingExportAndTraining:
         data = {"model": model.serialize()}
         deserialize_to_file(str(model_file), data, lower_kind="graph")
 
-        import json
-        import zipfile
-
         with zipfile.ZipFile(model_file) as z:
             md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
-        # single-rank contract: bridging models never get a with-comm artifact
+        # single-rank contract: compositions never get a with-comm artifact
         assert md["has_comm_artifact"] is False
 
         dp = DeepPot(str(model_file))
@@ -213,10 +259,6 @@ class TestZBLBridgingExportAndTraining:
         )
 
     def test_training_smoke(self, tmp_path) -> None:
-        import os
-
-        import pytest
-
         data_dir = os.path.join(
             os.path.dirname(__file__), "..", "..", "pt", "NiO", "data", "single"
         )
@@ -235,9 +277,8 @@ class TestZBLBridgingExportAndTraining:
             update_deepmd_input,
         )
 
-        model_cfg = copy.deepcopy(ZBL_CONFIG)
         config = {
-            "model": model_cfg,
+            "model": copy.deepcopy(ZBL_CONFIG),
             "learning_rate": {
                 "type": "exp",
                 "decay_steps": 500,
@@ -273,7 +314,7 @@ class TestZBLBridgingExportAndTraining:
         try:
             trainer = get_trainer(config)
             model = trainer.wrapper.model[DEFAULT_TASK_KEY]
-            assert model.atomic_model.has_analytical_bridging()
+            assert type(model) is LinearEnergyModel
             tasks = trainer._make_training_tasks()
             task = trainer.select_task(tasks)
             for step in range(2):
@@ -282,47 +323,3 @@ class TestZBLBridgingExportAndTraining:
                 assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
         finally:
             os.chdir(old_cwd)
-
-
-def test_native_spin_composes_with_bridging() -> None:
-    """Native spin + ZBL bridging build together and both terms are live.
-
-    pt's SeZMNativeSpinModel inherits the bridging term from SeZMModel; our
-    atomic-layer injection composes with the native-spin model factory for
-    free -- pinned here (energy responds to BOTH the close pair's ZBL and
-    the spin input).
-    """
-    cfg = copy.deepcopy(ZBL_CONFIG)
-    cfg["spin"] = {"use_spin": [True, False], "scheme": "native"}
-    model = get_model(cfg).to(torch.device("cpu")).eval()
-    assert model.has_spin()
-    assert model.atomic_model.has_analytical_bridging()
-
-    coord, atype, box = _close_pair_system(torch.device("cpu"))
-    generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED + 3)
-    spin = torch.rand([1, 6, 3], dtype=torch.float64, generator=generator)
-    out = model.forward(coord, atype, spin, box=box)
-    # ZBL live: removing the bridging key from the SAME weights lowers the
-    # close-pair energy by a positive repulsion.
-    plain_data = model.serialize()
-    plain_data.pop("bridging_method")
-    from deepmd.pt_expt.model.model import (
-        BaseModel,
-    )
-
-    m_plain = BaseModel.deserialize(plain_data).to(torch.device("cpu")).eval()
-    e_plain = m_plain.forward(coord, atype, spin, box=box)["energy"]
-    assert float((out["energy"] - e_plain).sum()) > 1e-3
-    assert "force_mag" in out
-
-
-def test_bridging_radii_defaults() -> None:
-    """bridging_r_inner/r_outer default to 0.5/0.8 (pt's defaults)."""
-    cfg = copy.deepcopy(ZBL_CONFIG)
-    cfg.pop("bridging_r_inner")
-    cfg.pop("bridging_r_outer")
-    model = get_model(cfg)
-    ic = model.atomic_model.descriptor.inner_clamp
-    assert ic is not None
-    assert float(ic.r_inner) == 0.5
-    assert float(ic.r_outer) == 0.8

@@ -124,8 +124,33 @@ def get_standard_model(data: dict) -> EnergyModel:
         type_map=data["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
-        **({"bridging_method": bridging_method} if bridging_enabled else {}),
     )
+    if bridging_enabled:
+        # Composition, not a flag (first-principles design): the analytical
+        # bridging term is its own atomic model, summed with the learned one
+        # by the existing linear composition machinery.
+        from deepmd.dpmodel.atomic_model.inter_potential import (
+            InterPotentialAtomicModel,
+        )
+        from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+            LinearEnergyAtomicModel,
+        )
+        from deepmd.dpmodel.model.dp_linear_model import (
+            LinearEnergyModel,
+        )
+
+        zbl_atomic = InterPotentialAtomicModel(
+            type_map=data["type_map"],
+            mode=bridging_method,
+            rcut=descriptor.get_rcut(),
+            sel=descriptor.get_sel(),
+        )
+        composed = LinearEnergyAtomicModel(
+            models=[model.atomic_model, zbl_atomic],
+            type_map=data["type_map"],
+            weights="sum",
+        )
+        return LinearEnergyModel(atomic_model_=composed)
     return model
 
 
@@ -227,6 +252,12 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     """
     data = copy.deepcopy(data)
     spin_cfg = data.pop("spin")
+    if str(data.get("bridging_method", "none")).lower() not in ("none", ""):
+        raise NotImplementedError(
+            "analytical bridging combined with the native spin scheme is a "
+            "follow-up (the bridged model is a linear composition; the "
+            "native-spin factory composes over a single standard model)"
+        )
     # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
     # per-type boolean list (pure; validates symbols).
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])

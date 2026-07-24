@@ -19,6 +19,17 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.common import (
     NativeOP,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
+from .base_atomic_model import (
+    BaseAtomicModel,
+)
 
 # fmt: off
 ELEMENT_TO_Z: dict[str, int] = {
@@ -202,3 +213,190 @@ class InterPotential(NativeOP):
 
         atom_energy = segment_sum(pair_e * 0.5, dst, n_node)
         return xp.astype(xp.reshape(atom_energy, (1, n_node, 1)), edge_vec.dtype)
+
+
+@BaseAtomicModel.register("inter_potential")
+class InterPotentialAtomicModel(BaseAtomicModel):
+    """Analytical bridging pair potential as an ATOMIC MODEL.
+
+    First-principles composition design: the analytical term maps local
+    atomic environments to per-atom energies -- exactly the atomic-model
+    contract -- so a "bridging model" is a SUM of two atomic energy models
+    (the learned one and this one) via
+    :class:`~deepmd.dpmodel.atomic_model.linear_atomic_model.LinearEnergyAtomicModel`
+    with ``weights="sum"``, not a flag on the learned model. Graph-route
+    only: the term is evaluated on the shared ``graph.edge_vec`` leaf so
+    its force/virial ride the same edge backward as the learned energy;
+    the dense (nlist) route raises.
+
+    Parameters
+    ----------
+    type_map : list[str]
+        Element symbols; index corresponds to ``atype`` values.
+    mode : str
+        Potential formula (currently ``"zbl"``).
+    rcut : float
+        Cut-off radius this model declares (the composition uses the max
+        over children; pass the learned model's).
+    sel : list[int] | int
+        Neighbor selection this model declares (composition bookkeeping).
+    """
+
+    def __init__(
+        self,
+        type_map: list[str],
+        mode: str = "zbl",
+        rcut: float = 0.0,
+        sel: "list[int] | int" = 0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(type_map, **kwargs)
+        self.potential = InterPotential(type_map=list(type_map), mode=mode)
+        self.mode = self.potential.mode
+        self.rcut = float(rcut)
+        self.sel = (
+            [int(s) for s in sel] if isinstance(sel, (list, tuple)) else [int(sel)]
+        )
+        super().init_out_stat()
+
+    def fitting_output_def(self) -> FittingOutputDef:
+        """Per-atom analytical energy: reducible and fully differentiable."""
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    name="energy",
+                    shape=[1],
+                    reducible=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                )
+            ]
+        )
+
+    def get_rcut(self) -> float:
+        """Get the cut-off radius."""
+        return self.rcut
+
+    def get_sel(self) -> list[int]:
+        """Get the neighbor selection."""
+        return self.sel
+
+    def get_nsel(self) -> int:
+        """Get the total neighbor selection."""
+        return sum(self.sel)
+
+    def mixed_types(self) -> bool:
+        """The analytical term is type-agnostic in layout (mixed types)."""
+        return True
+
+    def has_message_passing(self) -> bool:
+        """No message passing in an analytical pair term."""
+        return False
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """No nlist ordering requirement (graph-route only)."""
+        return False
+
+    def get_dim_fparam(self) -> int:
+        """No frame parameters."""
+        return 0
+
+    def get_dim_aparam(self) -> int:
+        """No atomic parameters."""
+        return 0
+
+    def get_sel_type(self) -> list[int]:
+        """All atom types contribute."""
+        return []
+
+    def is_aparam_nall(self) -> bool:
+        """No atomic parameters."""
+        return False
+
+    def forward_atomic(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict:
+        """Dense route unsupported: the term rides the NeighborGraph route only."""
+        raise NotImplementedError(
+            "InterPotentialAtomicModel rides the NeighborGraph route only; "
+            "the dense (nlist) route has no injection site for the term"
+        )
+
+    def forward_atomic_graph(
+        self,
+        graph: Any,
+        atype: Any,
+        fparam: Any = None,
+        aparam: Any = None,
+        charge_spin: Any = None,
+        spin: Any = None,
+        comm_dict: dict | None = None,
+    ) -> dict:
+        """Evaluate the analytical per-atom energy on the flat node axis.
+
+        ``fparam``/``aparam``/``charge_spin``/``spin``/``comm_dict`` are
+        accepted for pipeline-signature compatibility and ignored (the
+        analytical term conditions on geometry and types only).
+
+        Parameters
+        ----------
+        graph
+            neighbor graph; ``graph.edge_vec`` is the differentiable edge
+            leaf on autograd backends.
+        atype
+            flat local atom types. N
+
+        Returns
+        -------
+        dict
+            ``{"energy": (N, 1)}`` per-atom analytical energies.
+        """
+        import array_api_compat
+
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        n_node = atype.shape[0]
+        energy = self.potential.call(
+            graph.edge_vec,
+            graph.edge_index,
+            atype,
+            graph.edge_mask,
+            n_node=n_node,
+            real_type_count=len(self.type_map),
+        )
+        return {"energy": xp.reshape(energy, (n_node, 1))}
+
+    def serialize(self) -> dict:
+        data = super().serialize()
+        data.update(
+            {
+                "@class": "Model",
+                "type": "inter_potential",
+                "@version": 1,
+                "mode": self.mode,
+                "rcut": self.rcut,
+                "sel": self.sel,
+            }
+        )
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "InterPotentialAtomicModel":
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        data.pop("type", None)
+        return super().deserialize(data)
+
+    def set_case_embd(self, case_idx: int) -> None:
+        """No case embedding in an analytical term."""
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Any,
+        stat_file_path: Any = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: "list[str] | None" = None,
+    ) -> None:
+        """Analytical term: no statistics to compute."""

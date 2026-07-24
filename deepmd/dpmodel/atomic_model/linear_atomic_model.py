@@ -96,6 +96,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 )
             mapping_list.append(self.remap_atype(tpmp, self.type_map))
         self.mapping_list = mapping_list
+        # Static composition property, computed EAGERLY at construction: the
+        # graph route requires identity atype mappings, and checking it at
+        # forward time would iterate (possibly traced) tensors and trip
+        # torch.export's data-dependent guards.
+        self._graph_mapping_is_identity = all(
+            list(m) == list(range(len(m))) for m in mapping_list
+        )
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         if isinstance(weights, str):
@@ -215,6 +222,110 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 table_stride_2,
                 check_frequency,
             )
+
+    def graph_driving_descriptor(self) -> Any:
+        """The unique child's graph-driving descriptor, or ``None``.
+
+        A composition rides the graph route only when exactly ONE child has
+        a graph-driving descriptor (the learned model) -- the rest are
+        descriptor-free analytical terms that consume whatever graph the
+        driver defines. Two descriptor-bearing children have no single
+        graph owner, so the composition stays dense.
+        """
+        drivers = [
+            d
+            for d in (m.graph_driving_descriptor() for m in self.models)
+            if d is not None
+        ]
+        return drivers[0] if len(drivers) == 1 else None
+
+    def forward_atomic_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict | None = None,
+    ) -> dict[str, Array]:
+        """Graph-route linear combination on the flat node axis.
+
+        Every child consumes the SAME graph, so on autograd backends the
+        shared ``graph.edge_vec`` leaf makes the summed energy's force and
+        virial exactly the sum of the children's -- one edge backward
+        covers the whole composition (this is what makes analytical
+        bridging terms compose with the learned model for free).
+
+        Only constant weights are supported here (``"sum"``/``"mean"`` or a
+        per-child float list); the distance-switched ZBL-interpolation
+        weights are a dense-route feature. Children with distinct type maps
+        are not supported on the graph route.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free).
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level conditioning, forwarded to every child (children
+            gate it on their own capabilities).
+        spin
+            flat (N, 3) per-node spin, forwarded to every child.
+        comm_dict
+            MPI communication metadata, forwarded to every child.
+
+        Returns
+        -------
+        dict
+            ``{"energy": (N, 1)}`` -- the weighted sum of the children's
+            per-atom energies.
+
+        Raises
+        ------
+        NotImplementedError
+            For non-constant weights or children with remapped type maps.
+        """
+        import array_api_compat
+
+        if not self._graph_mapping_is_identity:
+            raise NotImplementedError(
+                "the graph route supports children sharing the parent "
+                "type_map only (no atype remapping)"
+            )
+        nmodels = len(self.models)
+        if self.weights == "sum":
+            weights = [1.0] * nmodels
+        elif self.weights == "mean":
+            weights = [1.0 / nmodels] * nmodels
+        elif isinstance(self.weights, list):
+            weights = [float(w) for w in self.weights]
+        else:
+            raise NotImplementedError(
+                "the graph route supports constant weights only "
+                "('sum'/'mean'/list); distance-switched weights are a "
+                "dense-route feature"
+            )
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        energy = None
+        for model, ww in zip(self.models, weights, strict=True):
+            ret = model.forward_common_atomic_graph(
+                graph,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+                comm_dict=comm_dict,
+            )
+            contrib = ret["energy"] * ww
+            energy = contrib if energy is None else energy + contrib
+        return {"energy": xp.astype(energy, graph.edge_vec.dtype)}
 
     def forward_atomic(
         self,

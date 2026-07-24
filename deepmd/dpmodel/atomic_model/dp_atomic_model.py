@@ -114,27 +114,7 @@ class DPAtomicModel(BaseAtomicModel):
         type_map: list[str],
         **kwargs: Any,
     ) -> None:
-        # Analytical bridging pair potential (e.g. ZBL), injected into the
-        # per-atom energy on the NeighborGraph route -- owned HERE (the
-        # descriptor+fitting atomic model assembles the per-atom energy),
-        # not by the generic BaseAtomicModel. "none"/"" disables it; the
-        # descriptor's InnerClamp/BridgingSwitch own the [r_inner, r_outer]
-        # crossover.
-        bridging_method = kwargs.pop("bridging_method", "none")
         super().__init__(type_map, **kwargs)
-        self.bridging_method = (
-            str(bridging_method).upper() if bridging_method else "NONE"
-        )
-        if self.bridging_method != "NONE":
-            from deepmd.dpmodel.atomic_model.inter_potential import (
-                InterPotential,
-            )
-
-            self.inter_potential: InterPotential | None = InterPotential(
-                type_map=list(type_map), mode=self.bridging_method
-            )
-        else:
-            self.inter_potential = None
         self.descriptor = descriptor
         self.fitting_net = fitting
         if hasattr(self.fitting_net, "reinit_exclude"):
@@ -183,101 +163,9 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_default_chg_spin()
         return None
 
-    def forward_common_atomic_graph(
-        self,
-        graph: "NeighborGraph",
-        atype: Array,
-        fparam: Array | None = None,
-        aparam: Array | None = None,
-        charge_spin: Array | None = None,
-        spin: Array | None = None,
-        comm_dict: dict | None = None,
-    ) -> dict:
-        """Graph atomic forward plus the optional analytical bridging term.
-
-        Extends :meth:`BaseAtomicModel.forward_common_atomic_graph`: when
-        ``bridging_method`` is active, the analytical pair term (e.g. ZBL)
-        is added to the per-atom energy AFTER fitting and masking, BEFORE
-        the model layer's edge autograd -- mirrors pt's sezm Step 5.
-        ``graph.edge_vec`` here IS the autograd leaf created by pt_expt's
-        ``forward_common_lower_graph``, so the term's force/virial flow
-        through the shared edge backward with no extra autograd code
-        (dpmodel gets the energy contribution).
-
-        Parameters
-        ----------
-        graph
-            neighbor graph for the local atoms (ghost-free)
-        atype
-            flat local atom types. N
-        fparam
-            frame parameter. nf x ndf
-        aparam
-            atomic parameter. N x nda
-        charge_spin
-            frame-level charge/spin conditioning (see the base method).
-        spin
-            flat (N, 3) per-node spin (see the base method).
-        comm_dict
-            MPI communication metadata (see the base method).
-
-        Returns
-        -------
-        result_dict
-            the result dict on the flat node axis, with the bridging term
-            folded into ``energy`` when active.
-        """
-        ret_dict = super().forward_common_atomic_graph(
-            graph,
-            atype,
-            fparam=fparam,
-            aparam=aparam,
-            charge_spin=charge_spin,
-            spin=spin,
-            comm_dict=comm_dict,
-        )
-        if self.inter_potential is not None and "energy" in ret_dict:
-            import array_api_compat
-
-            xp = array_api_compat.array_namespace(graph.edge_vec)
-            zbl = self.inter_potential.call(
-                graph.edge_vec,
-                graph.edge_index,
-                atype,
-                graph.edge_mask,
-                n_node=atype.shape[0],
-                real_type_count=len(self.type_map),
-            )
-            energy = ret_dict["energy"]
-            ret_dict["energy"] = energy + xp.reshape(
-                xp.astype(zbl, energy.dtype), energy.shape
-            )
-        return ret_dict
-
-    def forward_common_atomic(
-        self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> dict[str, Array]:
-        """Dense atomic forward; rejects bridging models.
-
-        Analytical bridging potentials ride the NeighborGraph route only
-        (:meth:`forward_common_atomic_graph`), mirroring pt's edge-form-only
-        injection -- this dense (nlist) route raises for bridging models
-        rather than silently dropping the term.
-        """
-        if self.inter_potential is not None:
-            raise NotImplementedError(
-                "analytical bridging potentials (bridging_method="
-                f"{self.bridging_method!r}) ride the NeighborGraph route "
-                "only; the dense (nlist) route has no injection site for "
-                "the term"
-            )
-        return super().forward_common_atomic(*args, **kwargs)
-
-    def has_analytical_bridging(self) -> bool:
-        """Returns whether an analytical bridging pair potential is active."""
-        return self.inter_potential is not None
+    def graph_driving_descriptor(self) -> Any:
+        """This model's own descriptor drives the graph route."""
+        return self.descriptor
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -616,12 +504,6 @@ class DPAtomicModel(BaseAtomicModel):
                 "fitting": self.fitting_net.serialize(),
             }
         )
-        if self.bridging_method != "NONE":
-            # Emitted only when active: the InterPotential carries no
-            # trainable state and is rebuilt from (type_map, mode) on
-            # deserialize, mirroring pt; an absent key means disabled, so
-            # pre-existing serialized dicts stay byte-stable.
-            dd["bridging_method"] = self.bridging_method
         return dd
 
     # for subclass overridden

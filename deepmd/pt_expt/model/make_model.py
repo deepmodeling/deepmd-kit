@@ -677,7 +677,10 @@ def make_model(
                 # the gradient content is only that precision, so the coarser
                 # scatter halves the atomic traffic at no accuracy cost.
                 force_precision=get_xp_precision(
-                    torch, self.atomic_model.descriptor.precision
+                    # the graph-DRIVING descriptor's compute precision
+                    # (compositions have no single ``.descriptor`` attribute)
+                    torch,
+                    self.atomic_model.graph_driving_descriptor().precision,
                 ),
                 # Bound the per-node scatter by the INPUT node axis (the symbol
                 # ``edge_index`` indexes into), not the re-derived fitting-output
@@ -724,8 +727,7 @@ def make_model(
             # for non-energy models (eager-only, output-agnostic).
             if "energy" not in self.atomic_output_def().keys():
                 return None
-            # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
-            descriptor = getattr(self.atomic_model, "descriptor", None)
+            descriptor = self.atomic_model.graph_driving_descriptor()
             if (
                 self.mixed_types()
                 and descriptor is not None
@@ -791,7 +793,7 @@ def make_model(
             # check only protects the default (None) path; an EXPLICIT
             # neighbor_graph_method would otherwise reach the builders for
             # descriptors without a graph lower.
-            descriptor = getattr(self.atomic_model, "descriptor", None)
+            descriptor = self.atomic_model.graph_driving_descriptor()
             if not (
                 self.mixed_types()
                 and descriptor is not None

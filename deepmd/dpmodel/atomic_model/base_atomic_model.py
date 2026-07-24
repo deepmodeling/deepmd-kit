@@ -167,15 +167,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
-    def has_analytical_bridging(self) -> bool:
-        """Returns whether an analytical bridging pair potential is active.
+    def graph_driving_descriptor(self) -> Any:
+        """The descriptor that drives the NeighborGraph route, or ``None``.
 
-        Concrete default ``False``; atomic models that support an
-        analytical bridging term override this method. Consumers (e.g. the
-        with-comm export gate) call it directly instead of probing
-        attributes.
+        Graph eligibility/export seams consult this instead of probing a
+        ``descriptor`` attribute: an atomic model without a graph-driving
+        descriptor (the concrete default) stays on the dense route.
+        Compositions return their single descriptor-bearing child's
+        descriptor.
         """
-        return False
+        return None
 
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""

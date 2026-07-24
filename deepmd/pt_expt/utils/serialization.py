@@ -187,8 +187,16 @@ def _needs_with_comm_artifact(
     # ``supports_edge_parallel() == False`` contract: ZBL + SFPG fold each
     # node's full outgoing-edge set, which a single rank cannot observe for
     # ghost owners) -- never compile a with-comm artifact for them.
+    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+        LinearEnergyAtomicModel,
+    )
+
     atomic_model = getattr(model, "atomic_model", None)
-    if atomic_model is not None and atomic_model.has_analytical_bridging():
+    if isinstance(atomic_model, LinearEnergyAtomicModel):
+        # Compositions (e.g. analytical bridging: learned + InterPotential)
+        # are single-rank on the graph route: per-edge analytical terms fold
+        # each node's full edge set, which a single rank cannot observe for
+        # ghost owners (pt's supports_edge_parallel()==False rationale).
         return False
 
     desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)

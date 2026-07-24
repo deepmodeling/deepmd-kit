@@ -517,8 +517,7 @@ def make_model(
                 (``<var>`` per-atom, ``<var>_redu`` reduced, derivative
                 name-holders ``None``, plus the int ``mask``).
             """
-            # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
-            descriptor = getattr(self.atomic_model, "descriptor", None)
+            descriptor = self.atomic_model.graph_driving_descriptor()
             if not (
                 self.mixed_types()
                 and descriptor is not None
