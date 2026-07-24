@@ -200,10 +200,33 @@ class EnvMat(NativeOP):
         em, diff, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
         atype = xp_take_first_n(atype_ext, 1, nloc)
+        center_is_real = atype >= 0
+        # Virtual atoms use a negative type sentinel.  Never pass that sentinel to
+        # ``take``: NumPy treats -1 as the final real type, while stricter array
+        # namespaces may reject it.  Type zero is only a safe placeholder because
+        # the corresponding rows are masked out after normalization below.
+        safe_atype = xp.where(center_is_real, atype, xp.zeros_like(atype))
+        center_mask = xp.reshape(center_is_real, (nf, nloc, 1, 1))
         if davg is not None:
-            em -= xp.reshape(xp.take(davg, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            center_avg = xp.reshape(
+                xp.take(davg, xp.reshape(safe_atype, (-1,)), axis=0), em.shape
+            )
+            center_avg = xp.where(center_mask, center_avg, xp.zeros_like(center_avg))
+            em -= center_avg
         if dstd is not None:
-            em /= xp.reshape(xp.take(dstd, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            center_std = xp.reshape(
+                xp.take(dstd, xp.reshape(safe_atype, (-1,)), axis=0), em.shape
+            )
+            # A neutral scale avoids hidden divide-by-zero/NaN values in the
+            # masked branch, which is important for differentiable backends.
+            center_std = xp.where(center_mask, center_std, xp.ones_like(center_std))
+            em /= center_std
+        # The neighbor-list contract leaves every slot empty for a virtual center,
+        # but mask all center-indexed outputs explicitly so malformed or externally
+        # built lists cannot leak a fake center into downstream descriptor paths.
+        em = xp.where(center_mask, em, xp.zeros_like(em))
+        diff = xp.where(center_mask, diff, xp.zeros_like(diff))
+        sw = xp.where(center_mask, sw, xp.zeros_like(sw))
         return em, diff, sw
 
     def _call(
