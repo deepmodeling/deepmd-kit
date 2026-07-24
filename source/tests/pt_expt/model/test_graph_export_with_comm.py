@@ -16,11 +16,16 @@ import zipfile
 
 import pytest
 
+from deepmd.pt_expt.model.get_model import get_model as _get_pt_expt_model
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
+)
+
+from .test_dpa4_export import (
+    _DPA4_CONFIG,
 )
 
 # Small graph-eligible dpa2 descriptor: tebd_input_mode defaults to
@@ -123,6 +128,49 @@ def test_dpa2_graph_pt2_embeds_with_comm_artifact(dpa2_dpmodel_data, tmp_path) -
         p,
         copy.deepcopy(dpa2_dpmodel_data),
         do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    with zipfile.ZipFile(p, "r") as zf:
+        names = zf.namelist()
+    assert "model/extra/forward_lower_with_comm.pt2" in names
+
+    meta = _read_metadata(p)
+    assert meta["lower_input_kind"] == "graph"
+    assert meta["has_comm_artifact"] is True
+    assert meta["has_message_passing"] is True
+
+
+@pytest.fixture(scope="module")
+def dpa4_pt_expt_data() -> dict:
+    """Build a serialized pt_expt DPA4/SeZM model dict (same shape as
+    ``dp freeze`` input) -- mirrors ``test_dpa4_export.py``'s construction.
+
+    DPA4/SeZM's ``"type": "dpa4"`` model key is only special-cased by the
+    pt_expt model factory (``get_sezm_model``), not the plain dpmodel one
+    ``_build_data`` above uses for dpa1/dpa2, so this fixture builds the
+    model directly via ``deepmd.pt_expt.model.get_model.get_model``
+    instead.
+    """
+    model = _get_pt_expt_model(copy.deepcopy(_DPA4_CONFIG))
+    model.to("cpu")
+    model.eval()
+    return {"model": model.serialize()}
+
+
+def test_dpa4_graph_pt2_embeds_with_comm_artifact(dpa4_pt_expt_data, tmp_path) -> None:
+    # DPA4 (graph-only comm family): the graph freeze embeds the nested
+    # with-comm artifact; regression companion to the dpa1 no-artifact test.
+    #
+    # DPA4's cross-rank ghost exchange is implemented ONLY on the graph
+    # lower (``has_message_passing_across_ranks()`` is True, but
+    # ``dense_lower_supports_comm()`` is False -- see the dpa4 descriptor
+    # and ``test_dpa4_export.py``'s module docstring); freezing with
+    # ``lower_kind="graph"`` must therefore embed the nested with-comm
+    # artifact, unlike the dpa1 (non-message-passing) graph freeze above.
+    p = str(tmp_path / "m_dpa4_graph.pt2")
+    deserialize_to_file(
+        p,
+        copy.deepcopy(dpa4_pt_expt_data),
         lower_kind="graph",
     )
     with zipfile.ZipFile(p, "r") as zf:

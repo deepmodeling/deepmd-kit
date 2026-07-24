@@ -192,3 +192,54 @@ def test_dpa4_deep_eval_metadata(dpa4_pt_and_pt2) -> None:
     assert dp_pt2.deep_eval.get_dim_fparam() == dp_pt.deep_eval.get_dim_fparam()
     assert dp_pt2.deep_eval.get_dim_aparam() == dp_pt.deep_eval.get_dim_aparam()
     assert not dp_pt2.has_spin
+
+
+# ---------------------------------------------------------------------------
+# Graph-route parity: persisted fixtures from source/tests/infer/gen_dpa4.py
+# (Section B), independent of the pt-vs-pt_expt fixture above.
+# ---------------------------------------------------------------------------
+
+_INFER_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "infer")
+_DPA4_GRAPH_PT2 = os.path.join(_INFER_DIR, "deeppot_dpa4_graph.pt2")
+_DPA4_GRAPH_NLIST_REF_PT2 = os.path.join(_INFER_DIR, "deeppot_dpa4_graph_nlist_ref.pt2")
+
+
+@pytest.mark.skipif(
+    not (os.path.exists(_DPA4_GRAPH_PT2) and os.path.exists(_DPA4_GRAPH_NLIST_REF_PT2)),
+    reason="gen_dpa4.py graph fixtures not generated (e.g. skipped under "
+    "LeakSanitizer, or gen_dpa4.py has not been run)",
+)
+@pytest.mark.parametrize("pbc", [True, False])  # periodic vs open boundary
+def test_dpa4_graph_deep_eval_matches_nlist_ref(pbc) -> None:
+    """DPA4 graph ``.pt2`` (persisted by gen_dpa4.py Section B) vs its
+    independent dense-nlist oracle (same jittered weights,
+    ``lower_kind="nlist"``), both reloaded through :class:`DeepPot`.
+
+    gen_dpa4.py already performs this comparison in-process at generation
+    time (``cross_tol=1e-8``, mirroring gen_dpa2.py's B.4); this test
+    instead exercises the persisted-artifact reload path through the public
+    ``DeepPot`` API -- a regression test for the on-disk ``.pt2`` format,
+    independent of the in-process objects used during generation. Both
+    artifacts are fp64 end-to-end (descriptor/fitting ``precision:
+    "float64"``), so cross-path energy/force agreement is expected at the
+    same noise floor as the gen-time check; the same ``rtol=atol=1e-8``
+    threshold is reused here (not invented) for consistency. The per-atom
+    virial is NOT compared: the graph path assigns each edge's force/virial
+    contribution fully to the source atom (``edge_force_virial``
+    full-to-src), a different (equally valid) decomposition than the dense
+    per-atom one -- only the sum (global virial, which IS compared here) is
+    convention-independent.
+    """
+    dp_graph = DeepPot(_DPA4_GRAPH_PT2)
+    dp_nlist = DeepPot(_DPA4_GRAPH_NLIST_REF_PT2)
+
+    cell = _CELL if pbc else None
+    e_g, f_g, v_g, ae_g, av_g = dp_graph.eval(_COORDS, cell, _ATYPES, atomic=True)
+    e_n, f_n, v_n, ae_n, av_n = dp_nlist.eval(_COORDS, cell, _ATYPES, atomic=True)
+
+    tag = "pbc" if pbc else "nopbc"
+    cross_tol = {"rtol": 1e-8, "atol": 1e-8}
+    np.testing.assert_allclose(e_g, e_n, err_msg=f"{tag}: energy", **cross_tol)
+    np.testing.assert_allclose(f_g, f_n, err_msg=f"{tag}: force", **cross_tol)
+    np.testing.assert_allclose(v_g, v_n, err_msg=f"{tag}: global virial", **cross_tol)
+    np.testing.assert_allclose(ae_g, ae_n, err_msg=f"{tag}: atom energy", **cross_tol)

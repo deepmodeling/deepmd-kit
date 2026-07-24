@@ -31,8 +31,14 @@ from deepmd.dpmodel.model.dos_model import (
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
+from deepmd.dpmodel.model.dpa4_model import (
+    DPA4EnergyModel,
+)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
+)
+from deepmd.dpmodel.model.native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from deepmd.dpmodel.model.polar_model import (
     PolarModel,
@@ -45,7 +51,10 @@ from deepmd.dpmodel.model.spin_model import (
 )
 from deepmd.utils.spin import (
     Spin,
+    normalize_spin_use_spin,
 )
+
+_DPA4_SEZM_DESCRIPTOR_TYPES = ("dpa4", "DPA4", "sezm", "SeZM")
 
 
 def _get_standard_model_components(
@@ -87,6 +96,14 @@ def get_standard_model(data: dict) -> EnergyModel:
         )
     data = copy.deepcopy(data)
     ntypes = len(data["type_map"])
+    # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
+    # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
+    # atomic model's InterPotential below.
+    bridging_method = str(data.get("bridging_method", "none"))
+    bridging_enabled = bridging_method.lower() not in ("none", "")
+    if bridging_enabled:
+        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
+        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
     descriptor, fitting, fitting_net_type = _get_standard_model_components(data, ntypes)
     atom_exclude_types = data.get("atom_exclude_types", [])
     pair_exclude_types = data.get("pair_exclude_types", [])
@@ -99,6 +116,8 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = DOSModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net_type in ["dpa4_ener", "sezm_ener"]:
+        modelcls = DPA4EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
     else:
@@ -111,6 +130,32 @@ def get_standard_model(data: dict) -> EnergyModel:
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    if bridging_enabled:
+        # Composition, not a flag (first-principles design): the analytical
+        # bridging term is its own atomic model, summed with the learned one
+        # by the existing linear composition machinery.
+        from deepmd.dpmodel.atomic_model.inter_potential import (
+            InterPotentialAtomicModel,
+        )
+        from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+            LinearEnergyAtomicModel,
+        )
+        from deepmd.dpmodel.model.dp_linear_model import (
+            LinearEnergyModel,
+        )
+
+        zbl_atomic = InterPotentialAtomicModel(
+            type_map=data["type_map"],
+            mode=bridging_method,
+            rcut=descriptor.get_rcut(),
+            sel=descriptor.get_sel(),
+        )
+        composed = LinearEnergyAtomicModel(
+            models=[model.atomic_model, zbl_atomic],
+            type_map=data["type_map"],
+            weights="sum",
+        )
+        return LinearEnergyModel(atomic_model_=composed)
     return model
 
 
@@ -164,6 +209,11 @@ def get_spin_model(data: dict) -> SpinModel:
     data : dict
         The data to construct the model.
     """
+    if data["descriptor"]["type"] in _DPA4_SEZM_DESCRIPTOR_TYPES:
+        raise NotImplementedError(
+            "the virtual-atom (deepspin) scheme is not supported for "
+            "DPA4/SeZM; use spin scheme 'native'"
+        )
     data = copy.deepcopy(data)
     # include virtual spin and placeholder types
     data["type_map"] += [item + "_spin" for item in data["type_map"]]
@@ -190,6 +240,70 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
+def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
+    """Get a native (virtual-atom-free) spin model from a dictionary.
+
+    Unlike :func:`get_spin_model`, no virtual atoms or doubled type map are
+    introduced: ``spin`` is injected into the descriptor config as
+    ``use_spin`` and consumed by the descriptor's equivariant spin
+    embedding. Any descriptor declaring ``supports_native_spin()`` is
+    eligible; the gate is the capability method, not a descriptor-type
+    list.
+
+    Parameters
+    ----------
+    data : dict
+        The data to construct the model.
+    """
+    data = copy.deepcopy(data)
+    spin_cfg = data.pop("spin")
+    if str(data.get("bridging_method", "none")).lower() not in ("none", ""):
+        raise NotImplementedError(
+            "analytical bridging combined with the native spin scheme is a "
+            "follow-up (the bridged model is a linear composition; the "
+            "native-spin factory composes over a single standard model)"
+        )
+    # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
+    # per-type boolean list (pure; validates symbols).
+    use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
+    spin = Spin(
+        use_spin=use_spin,
+        virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+        allow_missing_label=spin_cfg.get("allow_missing_label", False),
+    )
+    data["descriptor"]["use_spin"] = use_spin
+    ntypes = len(data["type_map"])
+    try:
+        descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
+    except TypeError as err:
+        if "use_spin" not in str(err):
+            # Unrelated construction error (e.g. a bogus fitting kwarg):
+            # propagate with its real context instead of masking it as a
+            # capability failure.
+            raise
+        # A descriptor without native spin support rejects the injected
+        # ``use_spin`` keyword at construction; translate to the
+        # capability-gate error.
+        raise NotImplementedError(
+            "spin scheme 'native' requires a descriptor with native spin "
+            "support (supports_native_spin()); descriptor type "
+            f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
+        ) from err
+    if not descriptor.supports_native_spin():
+        raise NotImplementedError(
+            "spin scheme 'native' requires a descriptor declaring "
+            "supports_native_spin()"
+        )
+    return NativeSpinEnergyModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=data["type_map"],
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=data.get("pair_exclude_types", []),
+        spin=spin,
+    )
+
+
 def get_model(data: dict) -> BaseModel:
     """Get a model from a dictionary.
 
@@ -201,6 +315,8 @@ def get_model(data: dict) -> BaseModel:
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
+            if data["spin"].get("scheme", "deepspin") == "native":
+                return get_native_spin_model(data)
             return get_spin_model(data)
         elif "use_srtab" in data:
             return get_zbl_model(data)

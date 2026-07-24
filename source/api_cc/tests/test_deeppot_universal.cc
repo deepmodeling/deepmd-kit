@@ -325,7 +325,30 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            /*supports_no_pbc_simple=*/true,
            /*supports_no_pbc_atomic=*/false,
            /*supports_no_pbc_lmp_nlist=*/true,
-           /*supports_no_pbc_lmp_nlist_atomic=*/false}};
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
+          {"dpa4_graph_pytorch_pt2",
+           Backend::PTExpt,
+           "../../tests/infer/deeppot_dpa4_graph.pt2",
+           /*convert_pbtxt=*/false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa4_graph.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/true,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false,
+           /*skip_if_artifact_missing=*/true}};
 }
 
 std::vector<DefaultFParamCase> default_fparam_cases() {
@@ -1717,8 +1740,14 @@ TEST_P(VariantDeepPotTest, FiniteDifferenceFloat) {
     GTEST_SKIP() << GetParam().name
                  << " finite-difference coverage is not enabled.";
   }
+  // DPA4 computes in reduced precision (same established bound for both the
+  // dense-nlist and graph lowers -- they share the same descriptor/fitting
+  // math, only the lower schema differs).
   const double finite_difference_tol =
-      GetParam().name == "dpa4_pytorch_pt2" ? 3e-2 : -1.0;
+      (GetParam().name == "dpa4_pytorch_pt2" ||
+       GetParam().name == "dpa4_graph_pytorch_pt2")
+          ? 3e-2
+          : -1.0;
   check_finite_difference<float>(dp, finite_difference_tol);
 }
 

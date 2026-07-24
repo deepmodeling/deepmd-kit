@@ -196,12 +196,10 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
         self._has_spin = (
-            getattr(self.dp.model["Default"], "has_spin", False)
+            self.dp.model["Default"].has_spin()
             if isinstance(self.dp, ModelWrapper)
             else False
         )
-        if callable(self._has_spin):
-            self._has_spin = False
         self._has_hessian = False
 
     def get_rcut(self) -> float:

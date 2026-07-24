@@ -167,6 +167,18 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this atomic model supports the NeighborGraph lower.
+
+        Generic capability (concrete default ``False``): the model layer
+        consults it for graph-route eligibility without assuming anything
+        about the atomic model's internal architecture. Implementations
+        answer from their own structure (e.g. a descriptor+fitting model
+        delegates to its descriptor; a composition requires a single
+        graph-capable child).
+        """
+        return False
+
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return None
@@ -381,6 +393,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
         comm_dict: dict | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
@@ -405,8 +418,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded unchanged to
+            :meth:`forward_atomic_graph`, which only passes it on to the
+            descriptor's ``call_graph`` for descriptors that declare
+            ``supports_charge_spin`` (currently DPA4 only).
+        spin
+            flat (N, 3) per-node spin, forwarded unchanged to
+            :meth:`forward_atomic_graph` (and, from there, the descriptor's
+            ``call_graph``); None for spin-less models.
         comm_dict
             MPI communication metadata forwarded to :meth:`forward_atomic_graph`
             (and, from there, the descriptor's ``call_graph``). ``None`` for
@@ -426,6 +445,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            spin=spin,
             comm_dict=comm_dict,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)

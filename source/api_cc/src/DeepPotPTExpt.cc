@@ -29,90 +29,9 @@ using deepmd::ptexpt::read_zip_entry;
 using namespace deepmd;
 
 namespace {
-/**
- * @brief Normalize a graph-route aparam tensor to the flat node axis.
- *
- * The NeighborGraph ABI carries atomic parameters FLAT on the node axis --
- * shape (N, daparam) with N == n_node_count, the same axis as ``atype``
- * (mirrors ``build_synthetic_graph_inputs`` / ``_build_graph_dynamic_shapes``
- * on the Python export side).  The runtime aparam carries the owned (local)
- * rows only (``aparam_nall`` is structurally false for pt_expt models, see
- * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
- * the ghost rows are zero-padded here.  Ghost fitting outputs are never
- * retained -- the with-comm artifact masks non-owned energies before
- * reduction, and the plain multi-rank remap sums energy over the owned
- * prefix only -- so the padded values are inert.
- *
- * A ghost-only rank (``nlocal == 0``, ``N > 0``) synthesizes a full zero
- * tensor: the graph still carries N nodes and the artifact requires the
- * (N, daparam) input, while the owned-node mask keeps its contribution
- * exactly zero.  A missing aparam on a rank that OWNS atoms, or a width
- * mismatch, is an explicit error -- the former silently returned the empty
- * tensor (artifact reshape failure mid-collective), and a width mismatch
- * used to be absorbed by broadcasting ``copy_`` (silent result corruption
- * for daparam > 1).
- */
-at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
-                               std::int64_t n_node_count,
-                               std::int64_t nlocal,
-                               std::int64_t daparam) {
-  if (daparam <= 0) {
-    return aparam_tensor;  // model has no aparam input; passed through empty
-  }
-  if (aparam_tensor.numel() == 0) {
-    if (nlocal > 0) {
-      throw deepmd::deepmd_exception(
-          "aparam is required (dim_aparam=" + std::to_string(daparam) +
-          ") but no values were provided on a rank owning " +
-          std::to_string(nlocal) + " atoms.");
-    }
-    // ghost-only rank: there are no owned rows to supply; zeros are inert
-    // under the owned-node mask but the artifact needs the full node axis.
-    return torch::zeros({n_node_count, daparam}, aparam_tensor.options());
-  }
-  if (aparam_tensor.numel() != nlocal * daparam) {
-    throw deepmd::deepmd_exception(
-        "aparam holds " + std::to_string(aparam_tensor.numel()) +
-        " values but the graph route expects nlocal * dim_aparam = " +
-        std::to_string(nlocal) + " * " + std::to_string(daparam) + ".");
-  }
-  at::Tensor owned = aparam_tensor.reshape({nlocal, daparam});
-  if (nlocal == n_node_count) {
-    return owned;  // single-rank / folded graph: nothing to pad
-  }
-  at::Tensor padded =
-      torch::zeros({n_node_count, daparam}, aparam_tensor.options());
-  padded.slice(0, 0, nlocal).copy_(owned);
-  return padded;
-}
-
-/**
- * @brief Assert the flat graph-route aparam contract at the C++ boundary.
- *
- * The graph artifacts consume aparam FLAT on the node axis, shape
- * (N, daparam) -- the layout ``extend_graph_aparam`` produces.  A caller
- * hand-rolling a rectangular (1, N, daparam) tensor (the pre-flat
- * convention) would otherwise fail DEEP inside the artifact -- or, on a
- * GPU-only route, only at deployment where no CPU test can catch it (the
- * device-edge branch shipped exactly that bug).  Failing loudly here turns
- * any future such site into an immediate, self-explanatory error.
- */
-void check_graph_aparam_flat(const at::Tensor& aparam,
-                             std::int64_t daparam,
-                             const char* where) {
-  if (daparam <= 0) {
-    return;
-  }
-  if (aparam.dim() != 2 || aparam.size(1) != daparam) {
-    std::ostringstream oss;
-    oss << where
-        << ": graph-route aparam must be flat (N, daparam) on the node axis "
-           "(produce it with extend_graph_aparam); got a rank-"
-        << aparam.dim() << " tensor of shape " << aparam.sizes()
-        << " for daparam = " << daparam << ".";
-    throw deepmd::deepmd_exception(oss.str());
-  }
-}
+// ``extend_graph_aparam`` and ``check_graph_aparam_flat`` moved to
+// commonPT.h (deepmd namespace) so DeepSpinPTExpt.cc can share them for its
+// native-spin graph route.
 
 void synchronize_current_accelerator_stream() {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
@@ -324,6 +243,13 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
+  }
+  if (lower_input_is_edge_) {
+    std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
+                 "schema (pt-backend SeZM/DPA4 freeze). Support will be "
+                 "removed in a future release; refreeze the checkpoint with "
+                 "the pt_expt backend (graph schema)."
+              << std::endl;
   }
   graph_edge_fp32_ = false;
   if (metadata.obj_val.count("graph_edge_dtype")) {

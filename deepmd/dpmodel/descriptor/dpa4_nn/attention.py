@@ -63,8 +63,8 @@ def segment_envelope_gated_softmax(
         denominator sum are scattered over these indices, which makes the
         normalization layout-agnostic: it is correct both for the padded
         ``call`` (where ``dst == repeat(arange(n_nodes), nnei)``) and for the
-        sparse ``call_with_edges`` (arbitrary ``dst`` order and per-node
-        degree).
+        graph-native ``call_graph`` route (arbitrary ``dst`` order and
+        per-node degree).
     n_nodes
         Number of nodes.
     z_bias_raw
@@ -150,6 +150,9 @@ def segment_envelope_gated_softmax(
 
     # === Step 2. Destination-wise max including the physical null mass ===
     # The null initialization keeps empty and all-masked segments finite.
+    # Destination segment max over ``dst`` (pt ``scatter_reduce`` amax) is
+    # layout-agnostic and order-independent, so the padded ``call`` stays
+    # bit-exact while the graph-native ``call_graph`` route shares this path.
     group_max = xp_maximum_at(
         xp.zeros((n_nodes, n_channel), dtype=compute_dtype, device=device) + null_logit,
         dst,

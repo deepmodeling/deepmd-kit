@@ -20,6 +20,9 @@ import pytest
 import torch
 
 from deepmd.pt.model.model import get_model as pt_get_model
+from deepmd.pt_expt.model.dpa4_model import (
+    DPA4EnergyModel,
+)
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
@@ -110,11 +113,11 @@ class TestDPA4Interop:
         """The pt serialize layout matches the interop override's expectations."""
         ser = pt_dpa4_model.serialize()
         # wrapper: recognised model type + @version 1
-        assert ser["type"].lower() in BaseModel._SEZM_MODEL_TYPES
+        assert ser["type"].lower() in ("sezm", "dpa4")
         assert ser["@version"] == 1
         # nested atomic: sezm_atomic @version 3 carrying the pt-only dens state
         atomic = ser["atomic_model"]
-        assert atomic["type"] in BaseModel._SEZM_ATOMIC_TYPES
+        assert atomic["type"] == "sezm_atomic"
         assert atomic["@version"] == 3
         assert "dens_force_rmsd" in atomic["@variables"]
         assert "active_mode" in atomic
@@ -132,7 +135,7 @@ class TestDPA4Interop:
         """The pt-only ``dens_force_rmsd`` @variable is dropped on normalize."""
         atomic = pt_dpa4_model.serialize()["atomic_model"]
         assert set(atomic["@variables"]) >= {"out_bias", "out_std", "dens_force_rmsd"}
-        normalized = BaseModel._normalize_pt_sezm_atomic(atomic)
+        normalized = DPA4EnergyModel._normalize_pt_sezm_atomic(atomic)
         assert set(normalized["@variables"]) == {"out_bias", "out_std"}
         # version coerced to the standard atomic schema, type rewritten
         assert normalized["@version"] == 2
@@ -203,7 +206,7 @@ class TestDPA4Interop:
         """Both in-range atomic @versions {2, 3} normalize without raising."""
         atomic = pt_dpa4_model.serialize()["atomic_model"]
         atomic["@version"] = version
-        normalized = BaseModel._normalize_pt_sezm_atomic(atomic)
+        normalized = DPA4EnergyModel._normalize_pt_sezm_atomic(atomic)
         assert normalized["@version"] == 2
 
 

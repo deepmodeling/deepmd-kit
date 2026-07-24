@@ -40,11 +40,7 @@ def model_uses_graph_lower(model: Any) -> bool:
     except (AttributeError, NotImplementedError):
         return False
 
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph_lower = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph_lower is None:
+    atomic_model = getattr(model, "atomic_model", None)
+    if atomic_model is None:
         return False
-    try:
-        return bool(uses_graph_lower())
-    except (AttributeError, NotImplementedError):
-        return False
+    return bool(atomic_model.uses_graph_lower())

@@ -110,6 +110,8 @@ class VesinNeighborList(NeighborList):
             box_t = box_t.reshape(nframes, 3, 3)
 
         if return_mode == "edges":
+            # LEGACY: serves only the deprecated pt-backend edge_vec .pt2
+            # schema; scheduled for removal with that rail.
             frame_edges = [
                 _build_single_edges(
                     coord_t[ff],

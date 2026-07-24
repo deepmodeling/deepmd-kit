@@ -19,6 +19,9 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from .ener_model import (
+    EnergyModel,
+)
 from .make_model import (
     _pad_nlist_for_export,
     make_model,
@@ -32,6 +35,12 @@ DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(BaseModel,))
 
 @BaseModel.register("linear_ener")
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
+    # The graph .pt2 exportable is energy-contract machinery (public-key
+    # translation over the CM's forward_common_lower_graph_exportable),
+    # identical for any energy model -- reuse EnergyModel's verbatim so
+    # compositions (e.g. analytical bridging) freeze like standard models.
+    forward_lower_graph_exportable = EnergyModel.forward_lower_graph_exportable
+
     def __init__(
         self,
         *args: Any,

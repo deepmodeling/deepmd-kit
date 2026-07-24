@@ -163,13 +163,35 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
 
-  // Native spin shares the energy edge ABI; the deepspin scheme keeps the nlist
-  // contract. Pre-edge spin archives lack the field and default to nlist.
+  // Native spin shares the energy edge ABI; the deepspin scheme keeps the
+  // nlist contract; native spin ALSO supports the NeighborGraph schema (no
+  // dense/nlist lower at all -- see gen_dpa4_spin.py). Pre-edge spin
+  // archives lack the field and default to nlist.
   if (metadata.obj_val.count("lower_input_kind")) {
-    lower_input_is_edge_ =
-        metadata["lower_input_kind"].as_string() == "edge_vec";
+    const std::string lower_input_kind =
+        metadata["lower_input_kind"].as_string();
+    lower_input_is_edge_ = lower_input_kind == "edge_vec";
+    lower_input_is_graph_ = lower_input_kind == "graph";
   } else {
     lower_input_is_edge_ = false;
+    lower_input_is_graph_ = false;
+  }
+  if (lower_input_is_edge_) {
+    std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
+                 "schema (pt-backend SeZM/DPA4 freeze). Support will be "
+                 "removed in a future release; refreeze the checkpoint with "
+                 "the pt_expt backend (graph schema)."
+              << std::endl;
+  }
+  graph_edge_fp32_ = false;
+  if (metadata.obj_val.count("graph_edge_dtype")) {
+    const std::string graph_edge_dtype =
+        metadata["graph_edge_dtype"].as_string();
+    if (graph_edge_dtype != "float32" && graph_edge_dtype != "float64") {
+      throw deepmd::deepmd_exception(
+          "metadata graph_edge_dtype must be 'float32' or 'float64'.");
+    }
+    graph_edge_fp32_ = graph_edge_dtype == "float32";
   }
 
   type_map.clear();
@@ -292,6 +314,57 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_edges(
     auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
                            .view({1, dim_chg_spin})
                            .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
+  return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& n_local,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& destination_order,
+    const torch::Tensor& destination_row_ptr,
+    const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
+    const torch::Tensor& spin,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam) {
+  // Native-spin graph ABI: the 10 base NeighborGraph tensors, the per-node
+  // spin leaf (ALWAYS present, positional index 10), then the conditional
+  // fparam / aparam / charge_spin tail (charge_spin at slot 13 for combined
+  // native-spin + charge-spin FiLM models, mirroring the energy graph ABI's
+  // optional charge_spin tail).
+  deepmd::check_graph_aparam_flat(aparam, daparam,
+                                  "DeepSpinPTExpt::run_model_graph");
+  std::vector<torch::Tensor> inputs = {atype,
+                                       n_node,
+                                       n_local,
+                                       edge_index,
+                                       edge_vec,
+                                       edge_mask,
+                                       destination_order,
+                                       destination_row_ptr,
+                                       source_order,
+                                       source_row_ptr,
+                                       spin};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    // Frame-level default charge/spin conditions from metadata (the C++
+    // interface has no explicit charge_spin input; the default is the
+    // production contract, as on the nlist/edge routes above).
+    auto charge_spin = torch::tensor(default_chg_spin_, spin.options())
+                           .view({1, dim_chg_spin})
+                           .expand({n_node.size(0), dim_chg_spin})
                            .contiguous();
     inputs.push_back(charge_spin);
   }
@@ -540,6 +613,21 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // NeighborGraph native-spin dispatch: single-rank ONLY. There is no
+  // ``run_model_graph_with_comm`` sibling (native-spin .pt2 is exported with
+  // ``has_comm_artifact=false`` always -- see gen_dpa4_spin.py), so a
+  // multi-rank run of a graph-kind spin artifact can never drive cross-rank
+  // ghost-feature exchange. Fail fast on the SAME condition the energy graph
+  // path uses to decide it needs the with-comm artifact (see
+  // DeepPotPTExpt.cc's ``lower_input_is_graph_ && multi_rank &&
+  // has_message_passing_`` guard) -- for spin the with-comm artifact never
+  // exists, so this throws unconditionally rather than checking for it.
+  if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
+    throw deepmd::deepmd_exception(
+        "multi-rank inference is not supported for graph-kind spin .pt2 "
+        "models (has_comm_artifact=false); run native-spin DPA4 graph .pt2 "
+        "inference on a single MPI rank.");
+  }
   // Decision matrix (see PR #5450 description):
   //   non-GNN model (has_message_passing_ == false): regular path is
   //                                                  always safe.
@@ -621,6 +709,19 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
           /*fold_to_local=*/!use_with_comm);
+      edge_index_tensor = edge_tensors.edge_index;
+      edge_index_ext_tensor = edge_tensors.edge_index_ext;
+    } else if (lower_input_is_graph_) {
+      // Native-spin NeighborGraph route: single-rank ONLY (the multi-rank
+      // fail-fast above guarantees ``multi_rank == false`` here), so ghost
+      // neighbours always fold onto their local owners
+      // (``fold_to_local=true``, N == nloc).  Cache the skin topology; the
+      // model-cutoff edges are recomputed on-device every step (see
+      // DeepPotPTExpt.cc's graph branch).
+      const auto edge_tensors = createEdgeTensors(
+          nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
+          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
+          /*fold_to_local=*/true);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {
@@ -780,6 +881,38 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           coord_Tensor, atype_Tensor, spin_Tensor, firstneigh_tensor,
           mapping_tensor, fparam_tensor, aparam_tensor, comm_tensors);
     }
+  } else if (lower_input_is_graph_) {
+    // Native-spin NeighborGraph route: single-rank ONLY (guaranteed by the
+    // multi-rank fail-fast above). Compact the cached skin topology to the
+    // model cutoff and feed the OWNED-atom spin (nloc, 3) -- ghosts are
+    // already folded onto their local owners via edge_index
+    // (fold_to_local=true above), so no separate ghost spin node is needed.
+    const auto edge_tensors =
+        compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                           coord_Tensor, static_cast<double>(rcut));
+    at::Tensor n_node_tensor =
+        torch::full({1}, static_cast<std::int64_t>(nloc), int_option)
+            .to(device);
+    at::Tensor node_atype = atype_Tensor.slice(1, 0, nloc).reshape({nloc});
+    GraphTensorPack graph_pack;
+    graph_pack.atype = node_atype;
+    graph_pack.n_node = n_node_tensor;
+    graph_pack.n_local = n_node_tensor;
+    graph_pack.edge_index = edge_tensors.edge_index;
+    graph_pack.edge_vec = graph_edge_fp32_
+                              ? edge_tensors.edge_vec.to(torch::kFloat32)
+                              : edge_tensors.edge_vec;
+    // No pair-type-exclusion table on the spin route yet (known limitation;
+    // see task report): edge_mask is used as-is.
+    graph_pack.edge_mask = edge_tensors.edge_mask;
+    canonicalizeGraphPayload(graph_pack, nloc);
+    flat_outputs = run_model_graph(
+        node_atype, n_node_tensor, n_node_tensor, graph_pack.edge_index,
+        graph_pack.edge_vec, graph_pack.edge_mask, graph_pack.destination_order,
+        graph_pack.destination_row_ptr, graph_pack.source_order,
+        graph_pack.source_row_ptr,
+        spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}), fparam_tensor,
+        deepmd::extend_graph_aparam(aparam_tensor, nloc, nloc, daparam));
   } else if (lower_input_is_edge_) {
     // Native spin edge path (single-rank): recompute the model-cutoff edge
     // vectors from the cached skin topology and feed only the owned-atom
@@ -802,6 +935,16 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
 
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
+
+  if (lower_input_is_graph_) {
+    // The graph forward emits flat-N PUBLIC keys (atom_energy/energy/force/
+    // force_mag/virial/atom_virial); rewrite them into the dense internal-key
+    // layout the shared extraction below expects.  Single-rank only
+    // (N == nloc, ghosts folded onto owners), guaranteed by the multi-rank
+    // fail-fast earlier in this function.
+    deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall_real,
+                                                   atomic);
+  }
 
   // Extract energy
   torch::Tensor flat_energy_ =
@@ -1076,11 +1219,20 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           .to(device);
   at::Tensor nlist_tensor;
   EdgeTensorPack edge_tensors;
+  GraphTensorPack graph_tensors;
   if (lower_input_is_edge_) {
     // Native spin edge ABI: build the full edge schema once (no cached skin
     // topology in the standalone path), folding ghosts onto local owners.
     edge_tensors = createEdgeTensors(nlist_raw, coord_cpy_d, mapping_64, nloc,
                                      nall, device);
+  } else if (lower_input_is_graph_) {
+    // Standalone (no nlist) graph schema: build_nlist already cut at rcut
+    // and keys row i to center i, so no row_centers remapping is needed.
+    // Single-rank only (the standalone build_nlist path never sees a
+    // multi-rank comm), so fold_to_local defaults to true (N == nloc).
+    graph_tensors =
+        buildGraphTensors(nlist_raw, coord_cpy_d, atype_cpy, mapping_64, nloc,
+                          nall, static_cast<double>(rcut), device);
   } else {
     // Flatten raw nlist — the .pt2 model sorts by distance on-device.
     nlist_tensor =
@@ -1128,7 +1280,9 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   }
 
   // 5. Run the .pt2 model: native spin uses the energy edge ABI plus the
-  // owned-atom spins; the deepspin scheme keeps the 7-arg nlist contract.
+  // owned-atom spins; the deepspin scheme keeps the 7-arg nlist contract;
+  // the NeighborGraph route runs the graph artifact with the owned-atom
+  // spin (nloc, 3) as its 11th positional input.
   std::vector<torch::Tensor> flat_outputs;
   if (lower_input_is_edge_) {
     flat_outputs = run_model_edges(
@@ -1136,6 +1290,21 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         edge_tensors.edge_vec, edge_tensors.edge_index_ext,
         edge_tensors.edge_mask, spin_Tensor.slice(1, 0, nloc), fparam_tensor,
         aparam_tensor);
+  } else if (lower_input_is_graph_) {
+    // No pair-type-exclusion table on the spin route yet (known limitation;
+    // see task report): edge_mask is used as-is.
+    canonicalizeGraphPayload(graph_tensors, graph_tensors.atype.size(0));
+    if (graph_edge_fp32_) {
+      graph_tensors.edge_vec = graph_tensors.edge_vec.to(torch::kFloat32);
+    }
+    flat_outputs = run_model_graph(
+        graph_tensors.atype, graph_tensors.n_node, graph_tensors.n_local,
+        graph_tensors.edge_index, graph_tensors.edge_vec,
+        graph_tensors.edge_mask, graph_tensors.destination_order,
+        graph_tensors.destination_row_ptr, graph_tensors.source_order,
+        graph_tensors.source_row_ptr,
+        spin_Tensor.slice(1, 0, nloc).reshape({nloc, 3}), fparam_tensor,
+        deepmd::extend_graph_aparam(aparam_tensor, natoms, natoms, daparam));
   } else {
     flat_outputs =
         run_model(coord_Tensor, atype_Tensor, spin_Tensor, nlist_tensor,
@@ -1145,6 +1314,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // 6. Extract outputs
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
+
+  if (lower_input_is_graph_) {
+    // The graph forward emits LOCAL public keys; rewrite them into the dense
+    // internal-key layout used below.  nloc == N (graph node count); the
+    // standalone (build_nlist) path is always single-rank.
+    deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall,
+                                                   atomic);
+  }
 
   // 7. Extract energy
   torch::Tensor flat_energy_ =

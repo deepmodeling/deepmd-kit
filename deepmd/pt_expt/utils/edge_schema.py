@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Edge-vector neighbor-list helpers for SeZM-style models."""
+"""Edge-vector neighbor-list helpers for SeZM-style models.
+
+LEGACY: serves only the deprecated pt-backend edge_vec .pt2 schema;
+scheduled for removal with that rail.
+"""
 
 from __future__ import (
     annotations,

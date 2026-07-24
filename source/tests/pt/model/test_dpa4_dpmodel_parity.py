@@ -3010,6 +3010,76 @@ def _build_real_edge_inputs(
     }
 
 
+def _dp_cache_from_padded(
+    *,
+    type_ebed,
+    coord,
+    nlist,
+    mapping,
+    pair_keep_mask,
+    eps,
+    deg_norm_floor,
+    edge_envelope,
+    radial_basis,
+    random_gamma,
+    wigner_calc,
+    gamma=None,
+):
+    """Build the dp ``EdgeCache`` from a padded quartet via the surviving seam.
+
+    The retired padded dense builder (``build_edge_cache``) is gone; the
+    padded-quartet contract it pinned now lives in
+    ``DescrptDPA4._graph_from_padded_nlist`` (``src_ok`` sanitization) +
+    ``graph_from_dense_quartet`` (row-major shape-static conversion) +
+    ``_edge_cache_from_arrays`` (the one edge-native cache core). This
+    helper chains them exactly as the production dense adapter does, so the
+    padded parity tests keep pinning the same contract against the surviving
+    architecture.
+
+    The fixture's ``pair_keep_mask`` (which the dense builder folded into its
+    validity mask) is ANDed into the graph's ``edge_mask`` before the core --
+    mirroring what the canonical ``apply_pair_exclusion`` transform does,
+    matching the production graph route's single-exclusion-site contract
+    (the core itself has no exclusion parameter and never re-applies it).
+    ``_edge_cache_from_arrays`` folds masking into the per-edge weights and
+    leaves ``edge_mask`` unset; the padded tests assert on the validity
+    mask, so it is attached to the returned cache.
+    """
+    import dataclasses
+
+    from deepmd.dpmodel.descriptor.dpa4 import (
+        _graph_from_padded_nlist,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        _edge_cache_from_arrays,
+    )
+
+    nf, nloc, _ = nlist.shape
+    nall = coord.shape[1]
+    # atype_ext only feeds the converter's (unused here) flat-local-atype
+    # output; pair exclusion enters via the fixture's pair_keep_mask below.
+    atype_ext_dummy = np.zeros((nf, nall), dtype=np.int64)
+    graph, _ = _graph_from_padded_nlist(coord, atype_ext_dummy, nlist, mapping)
+    edge_mask = np.asarray(graph.edge_mask) & pair_keep_mask.reshape(-1)
+    cache = _edge_cache_from_arrays(
+        type_ebed=type_ebed,
+        edge_index=graph.edge_index,
+        edge_vec=graph.edge_vec,
+        edge_mask=edge_mask,
+        compute_dtype=np.float64,
+        eps=eps,
+        deg_norm_floor=deg_norm_floor,
+        inner_clamp=None,
+        bridging_switch=None,
+        edge_envelope=edge_envelope,
+        radial_basis=radial_basis,
+        random_gamma=random_gamma,
+        wigner_calc=wigner_calc,
+        gamma=gamma,
+    )
+    return dataclasses.replace(cache, edge_mask=edge_mask)
+
+
 def _build_real_edge_caches(
     inputs,
     *,
@@ -3022,15 +3092,12 @@ def _build_real_edge_caches(
     gamma=None,
     seed=2090,
 ):
-    """Run the REAL pt and dp ``build_edge_cache`` on identical inputs.
+    """Run the REAL pt builder and the surviving dp seam on identical inputs.
 
     The pt ``RadialBasis`` frequencies are perturbed and weight-copied into
     the dp side via ``deserialize`` so parity exercises copied weights.
     Returns ``(pt_cache, dp_cache)``.
     """
-    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        build_edge_cache as dp_build_edge_cache,
-    )
     from deepmd.dpmodel.descriptor.dpa4_nn.radial import C3CutoffEnvelope as DPEnvelope
     from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialBasis as DPRadialBasis
     from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import WignerDCalculator as DPWigner
@@ -3067,9 +3134,9 @@ def _build_real_edge_caches(
         random_gamma=random_gamma,
         wigner_calc=pt_wig,
     )
-    dp_cache = dp_build_edge_cache(
+    dp_cache = _dp_cache_from_padded(
         type_ebed=inputs["type_ebed"],
-        extended_coord=inputs["coord"],
+        coord=inputs["coord"],
         nlist=inputs["nlist"],
         mapping=mapping,
         pair_keep_mask=inputs["pair_keep_mask"],
@@ -3077,7 +3144,6 @@ def _build_real_edge_caches(
         deg_norm_floor=deg_norm_floor,
         edge_envelope=dp_env,
         radial_basis=dp_rb,
-        n_radial=n_radial,
         random_gamma=random_gamma,
         wigner_calc=dp_wig,
         gamma=gamma,
@@ -3170,11 +3236,8 @@ class TestEdgeCacheParity:
 
     def test_out_of_range_local_index_masked(self) -> None:
         # a local nlist entry >= nloc with mapping=None must be masked out
-        # and must not break the coordinate gather (nlist_safe is re-zeroed
-        # after the final src_ok mask update)
-        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-            build_edge_cache as dp_build_edge_cache,
-        )
+        # and must not break the coordinate gather (the src_ok sanitization
+        # rewrites the slot to -1 before conversion)
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             C3CutoffEnvelope as DPEnvelope,
         )
@@ -3189,9 +3252,9 @@ class TestEdgeCacheParity:
         nlist = inputs["nlist"].copy()
         nlist[0, 0, 0] = self.nloc  # out of [0, nloc), would gather OOB
         n_radial = 8
-        cache = dp_build_edge_cache(
+        cache = _dp_cache_from_padded(
             type_ebed=inputs["type_ebed"],
-            extended_coord=inputs["coord"],
+            coord=inputs["coord"],
             nlist=nlist,
             mapping=None,
             pair_keep_mask=inputs["pair_keep_mask"],
@@ -3201,7 +3264,6 @@ class TestEdgeCacheParity:
             radial_basis=DPRadialBasis(
                 rcut=6.0, n_radial=n_radial, precision="float64"
             ),
-            n_radial=n_radial,
             random_gamma=False,
             wigner_calc=DPWigner(self.lmax, precision="float64"),
         )

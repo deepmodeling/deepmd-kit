@@ -29,20 +29,69 @@ from torch.utils.checkpoint import (
 from deepmd.dpmodel.descriptor.dpa4_nn.block import (
     SeZMInteractionBlock as SeZMInteractionBlockDP,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.block import (
-    exchange_ghost_features,
-)
 from deepmd.pt_expt.common import (
     torch_module,
 )
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
-        EdgeFeatureCache,
+        EdgeCache,
     )
 
 # Environment values that enable an inference flag.
 _TRUTHY = {"1", "true", "yes", "on"}
+
+
+def exchange_ghost_features(
+    x: torch.Tensor,
+    comm_dict: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    """Refresh ghost-node rows from their owner ranks via ``border_op``.
+
+    Port of the pt-native SeZM exchange (``sezm_nn/block.py``): the node
+    multipole tensor is flattened to ``(nall, D*1*C)`` rows and exchanged
+    whole-row; SO(3) coefficients live in the shared global frame, so the
+    owner-to-ghost copy is exact and equivariant. ``border_op`` carries a
+    registered backward for gradient reverse-communication.
+
+    Parameters
+    ----------
+    x
+        Extended node features with shape ``(nall, D, 1, C)`` in block
+        precision. Owned rows lead; ghost rows are overwritten.
+    comm_dict
+        Border-exchange tensors ``send_list``, ``send_proc``, ``recv_proc``,
+        ``send_num``, ``recv_num``, ``communicator``, ``nlocal``, ``nghost``.
+
+    Returns
+    -------
+    torch.Tensor
+        ``x`` with ghost rows refreshed, same shape.
+
+    Raises
+    ------
+    NotImplementedError
+        When ``comm_dict`` carries ``has_spin`` — spin models do not route
+        the DPA4 graph lower.
+    """
+    if "has_spin" in comm_dict:
+        raise NotImplementedError("spin models do not route the DPA4 graph lower")
+    n_nodes, ebed_dim, n_focus, channels = x.shape
+    # border_op exchanges whole rows by raw pointer arithmetic, so the
+    # buffer must be contiguous; a strided view would corrupt the exchange.
+    g1 = x.reshape(n_nodes, ebed_dim * n_focus * channels).contiguous()
+    g1 = torch.ops.deepmd_export.border_op(
+        comm_dict["send_list"],
+        comm_dict["send_proc"],
+        comm_dict["recv_proc"],
+        comm_dict["send_num"],
+        comm_dict["recv_num"],
+        g1,
+        comm_dict["communicator"],
+        comm_dict["nlocal"],
+        comm_dict["nghost"],
+    )
+    return g1.reshape(n_nodes, ebed_dim, n_focus, channels)
 
 
 @torch_module
@@ -76,7 +125,7 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
     def _run_so2_unit(
         self,
         x: torch.Tensor,
-        edge_cache: EdgeFeatureCache,
+        edge_cache: EdgeCache,
         radial_feat: torch.Tensor,
         comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
