@@ -600,19 +600,21 @@ def freeze(
 
     m.eval()
 
-    # Native-spin models implement ONLY the NeighborGraph lower (no
-    # dense/nlist lower exists), so resolve the lower kind HERE -- before the
-    # export ABI is chosen and before the default output suffix below is
-    # derived from it. Without this, the public default (lower_kind="nlist")
-    # would reach the dense-spin trace branch and fail deep inside tracing.
-    from deepmd.dpmodel.model.native_spin_model import (
-        NativeSpinModelKind,
+    # A graph-capable model ALWAYS freezes through the NeighborGraph lower:
+    # the dense (nlist) lower is deprecated in this backend, and for some
+    # architectures it does not exist at all (native spin has no dense spin
+    # lower; an analytical bridging term has no dense injection site), so the
+    # public default ``lower_kind="nlist"`` would fail deep inside the dense
+    # trace. Resolved HERE -- before the export ABI is chosen and before the
+    # default output suffix below is derived from it.
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
     )
 
-    if isinstance(m, NativeSpinModelKind) and lower_kind != "graph":
+    if lower_kind != "graph" and model_uses_graph_lower(m):
         log.info(
-            "Native-spin model implements only the NeighborGraph lower; "
-            "resolving lower_kind=%r -> 'graph'.",
+            "Model is graph-lower capable; resolving lower_kind=%r -> 'graph' "
+            "(the dense lower is deprecated in the pt_expt backend).",
             lower_kind,
         )
         lower_kind = "graph"

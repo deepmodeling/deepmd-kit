@@ -520,6 +520,48 @@ def test_native_spin_default_freeze_routes_to_graph(tmp_path) -> None:
     assert md["is_spin"] is True
 
 
+def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
+    """A ZBL-bridged model also default-freezes to a graph-kind ``.pt2``.
+
+    The dense lower is deprecated in this backend, and for a bridged model
+    it does not exist at all: the analytical term's ``forward_atomic``
+    raises on the dense route, so the public default
+    ``lower_kind="nlist"`` used to fail deep inside the dense trace. The
+    resolution was previously an ``isinstance(NativeSpinModelKind)``
+    special case, which a bridged model is not an instance of; it now asks
+    the graph-lower capability, which covers both.
+    """
+    import copy
+
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["bridging_method"] = "ZBL"
+    config["bridging_r_inner"] = 0.8
+    config["bridging_r_outer"] = 1.2
+    model = get_model(copy.deepcopy(config)).to(torch.device("cpu")).eval()
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    ckpt = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, ckpt)
+
+    output = tmp_path / "frozen_bridged"  # suffixless: default CLI form
+    freeze(model=str(ckpt), output=str(output))
+
+    pt2 = output.with_suffix(".pt2")
+    assert pt2.exists(), "default suffix must follow the resolved graph kind"
+    with zipfile.ZipFile(pt2) as z:
+        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+    assert md["lower_input_kind"] == "graph"
+
+
 def test_virtual_spin_graph_freeze_still_rejected(tmp_path) -> None:
     """spin_ener (virtual) graph freeze keeps raising ``NotImplementedError``.
 
