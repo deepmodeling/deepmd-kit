@@ -376,10 +376,11 @@ class DPAtomicModel(BaseAtomicModel):
         # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
         # embeds types internally from ``atype`` and returns None.
         type_embedding = self.descriptor.graph_type_embedding_table()
-        # See ``self.supports_native_spin``/``self.supports_charge_spin`` in
-        # ``__init__``: only forward the ``spin``/``charge_spin`` keyword to
-        # descriptors whose ``call_graph`` declares it.
-        spin_kwargs = {"spin": spin} if self._supports_native_spin else {}
+        # Only forward the ``spin``/``charge_spin`` keyword to descriptors
+        # whose ``call_graph`` declares it.  Queried through the public
+        # capability -- an override must reach THIS call site too, so the
+        # cached field stays behind the method.
+        spin_kwargs = {"spin": spin} if self.supports_native_spin() else {}
         charge_spin_kwargs = (
             {"charge_spin": charge_spin} if self.supports_charge_spin else {}
         )
