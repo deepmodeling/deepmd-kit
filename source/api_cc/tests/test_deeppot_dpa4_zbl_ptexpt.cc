@@ -154,11 +154,13 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_build_nlist) {
 
   EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]),
+              zbl_tol<VALUETYPE>(expected_f[ii]));
   }
   EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 9; ++ii) {
-    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), zbl_tol<VALUETYPE>(expected_tot_v[ii]));
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]),
+              zbl_tol<VALUETYPE>(expected_tot_v[ii]));
   }
 }
 
@@ -179,10 +181,12 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_build_nlist_atomic) {
   EXPECT_EQ(atom_ener.size(), natoms);
   EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms; ++ii) {
-    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), zbl_tol<VALUETYPE>(expected_e[ii]));
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]),
+              zbl_tol<VALUETYPE>(expected_e[ii]));
   }
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]),
+              zbl_tol<VALUETYPE>(expected_f[ii]));
   }
 }
 
@@ -210,6 +214,7 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_lmp_nlist) {
 
   EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]),
+              zbl_tol<VALUETYPE>(expected_f[ii]));
   }
 }
