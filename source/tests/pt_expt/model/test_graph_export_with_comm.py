@@ -430,3 +430,22 @@ def test_native_spin_graph_with_comm_abi() -> None:
     # the spin-specific outputs must survive the with-comm trace
     for key in ("energy", "force", "force_mag", "mask_mag"):
         assert key in keys, f"{key} missing from the with-comm graph outputs"
+
+
+def test_graph_eligibility_guard_is_stated_exactly_once() -> None:
+    """The innermost ``lower_kind="graph"`` guard must not be duplicated.
+
+    It was once present as two verbatim copies from separate commits; the
+    second could never fire yet invited the two to drift. Asserted on the
+    source text -- behavior cannot distinguish one guard from two. Read from
+    the file, not ``inspect.getsource``: conftest wraps ``_trace_and_export``.
+    """
+    from pathlib import (
+        Path,
+    )
+
+    from deepmd.pt_expt.utils import serialization
+
+    source = Path(serialization.__file__).read_text()
+    assert source.count("graph-lower eligible (model_uses_graph_lower() is False") == 1
+    assert source.count("if not model_uses_graph_lower(model):") == 1
