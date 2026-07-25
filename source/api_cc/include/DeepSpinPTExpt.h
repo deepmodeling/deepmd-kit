@@ -284,6 +284,16 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   // Mirrors descriptor's has_message_passing(). See DeepPotPTExpt.h
   // for the full rationale and gating role.
   bool has_message_passing_ = false;
+  // Whether the collective empty-rank preflight (allreduce of the minimum
+  // owned+ghost node count over the LAMMPS communicator, native-spin graph
+  // with-comm route) has PASSED for the current neighbor topology.  Twin of
+  // ``DeepPotPTExpt::graph_comm_preflight_done_``: the preflight re-runs
+  // whenever the with-comm graph branch is entered with ``ago == 0`` (every
+  // topology rebuild) or before its first success, because the node count
+  // shares the lifetime of the cached nlist/mapping/edge topology and
+  // re-running the collective on cache-hit (``ago > 0``) force calls would
+  // add a global synchronization per MD step with no added protection.
+  bool graph_comm_preflight_done_ = false;
   // Model-level pair-type exclusion keep table, built ONCE in ``init`` from
   // the ``pair_exclude_types`` metadata field (see DeepPotPTExpt.h for the
   // full rationale).  UNDEFINED => no exclusion (identity).  Applied at the

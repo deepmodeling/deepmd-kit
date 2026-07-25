@@ -2,6 +2,7 @@
 #include "DeepSpinPTExpt.h"
 
 #if defined(BUILD_PYTORCH) && BUILD_PT_EXPT_SPIN
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
 #include <algorithm>
@@ -973,12 +974,43 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
       // ``n_local`` drives the owned-energy mask; ghost spins arrive via
       // the LAMMPS ``sp`` forward-comm, and border_op refreshes ghost node
       // FEATURES between interaction blocks.
-      if (nall_real <= 0) {
-        throw deepmd::deepmd_exception(
-            "Multi-rank native-spin graph inference does not support a rank "
-            "with zero owned+ghost atoms (the exported graph artifact needs "
-            "at least one node, and skipping the run would desync the "
-            "per-layer MPI ghost exchange).");
+      // Collective preflight (twin of DeepPotPTExpt.cc's graph with-comm
+      // branch): a rank with zero owned+ghost atoms cannot run the graph
+      // artifact, and a rank-LOCAL throw would leave the non-empty peers
+      // blocked forever in the per-layer border_op collectives.  All-reduce
+      // the minimum node count over the LAMMPS communicator
+      // (``comm_tensors[5]``) so EVERY rank agrees to run -- or every rank
+      // throws promptly with the same error.  The op is an identity when the
+      // communicator handle is null or MPI is not compiled in.
+      //
+      // Cached across ``ago > 0`` force calls: the owned+ghost node count
+      // shares the lifetime of the cached nlist/mapping/edge topology (both
+      // only change on an ``ago == 0`` rebuild, which is globally
+      // synchronized by LAMMPS), so re-running the collective on every
+      // cache-hit MD step would add a global synchronization to the hot path
+      // with no added protection.
+      if (ago == 0 || !graph_comm_preflight_done_) {
+        graph_comm_preflight_done_ = false;
+        const auto allreduce_min =
+            c10::Dispatcher::singleton()
+                .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
+                .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
+        at::Tensor local_n_node =
+            torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
+        const std::int64_t global_min_n_node =
+            allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
+                .item<std::int64_t>();
+        if (global_min_n_node <= 0) {
+          throw deepmd::deepmd_exception(
+              "Multi-rank native-spin graph inference does not support a rank "
+              "with zero owned+ghost atoms (the exported graph artifact needs "
+              "at least one node, and skipping the run would desync the "
+              "per-layer MPI ghost exchange; this rank has " +
+              std::to_string(nall_real) +
+              " owned+ghost atoms). Use a domain decomposition that keeps "
+              "every rank non-empty, or a dense .pt2.");
+        }
+        graph_comm_preflight_done_ = true;
       }
       const auto edge_tensors =
           compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
@@ -1047,12 +1079,50 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
             fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
       }
     } else {
-      flat_outputs =
-          run_model_with_comm(coord_Tensor, atype_Tensor, spin_Tensor,
-                              firstneigh_tensor, mapping_tensor, fparam_tensor,
-                              aparam_tensor, charge_spin_tensor, comm_tensors);
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported dense lower consumes a pre-excluded nlist and
+      // never re-applies it.  The multi-rank (with-comm) dense route shares
+      // the same dense nlist as the single-rank path below, so it applies the
+      // SAME seam -- otherwise a message-passing spin .pt2 with
+      // pair_exclude_types would silently include excluded pairs on the
+      // with-comm path.  The cross-rank ghost exchange happens inside
+      // run_model_with_comm and does not change the nlist's meaning, so
+      // pre-excluding it is correct per rank.  ``atype_Tensor`` is the
+      // real-atom (and, on an empty subdomain, phantom-prefixed) extended
+      // type vector that ``firstneigh_tensor`` indexes, so both live in the
+      // same index space; the spin model's internal atom doubling happens
+      // downstream of this seam.
+      const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+          firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
+      flat_outputs = run_model_with_comm(
+          coord_Tensor, atype_Tensor, spin_Tensor, excl_nlist, mapping_tensor,
+          fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
     }
   } else if (lower_input_is_graph_) {
+    if (nall_real == 0) {
+      // Truly-empty rank (no real local atoms AND no real ghosts): the graph
+      // would emit N == 0 nodes, which violates the exported
+      // ``Dim("n_node_total", min=1)``.  Such a rank contributes nothing, so
+      // fill zero outputs and return instead of running the artifact.  Twin of
+      // DeepPotPTExpt::compute_inner's non-comm graph guard.  (The
+      // ``nloc_real == 0`` empty-subdomain case has ``nall_real > 0`` -- real
+      // ghosts within rcut -- so it is phantom-padded above and still runs the
+      // model normally.)
+      ener.assign(nframes, static_cast<ENERGYTYPE>(0));
+      force.assign(static_cast<size_t>(nframes) * fwd_map.size() * 3,
+                   static_cast<VALUETYPE>(0));
+      force_mag.assign(static_cast<size_t>(nframes) * fwd_map.size() * 3,
+                       static_cast<VALUETYPE>(0));
+      virial.assign(static_cast<size_t>(nframes) * 9,
+                    static_cast<VALUETYPE>(0));
+      if (atomic) {
+        atom_energy.assign(static_cast<size_t>(nframes) * fwd_map.size(),
+                           static_cast<VALUETYPE>(0));
+        atom_virial.assign(static_cast<size_t>(nframes) * fwd_map.size() * 9,
+                           static_cast<VALUETYPE>(0));
+      }
+      return;
+    }
     // Native-spin NeighborGraph route: single-rank ONLY (guaranteed by the
     // multi-rank fail-fast above). Compact the cached skin topology to the
     // model cutoff and feed the OWNED-atom spin (nloc, 3) -- ghosts are
@@ -1103,8 +1173,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         edge_tensors.edge_mask, spin_Tensor.slice(1, 0, nloc), fparam_tensor,
         aparam_tensor, charge_spin_tensor);
   } else {
+    // Model-level pair exclusion is a BUILD-time transform (decision #18/A4):
+    // the exported dense lower consumes a pre-excluded nlist and never
+    // re-applies it.  Single-rank dense application site; the multi-rank
+    // (with-comm) dense sibling above applies the same seam.
+    const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+        firstneigh_tensor, atype_Tensor, pair_exclude_table_, ntypes);
     flat_outputs = run_model(coord_Tensor, atype_Tensor, spin_Tensor,
-                             firstneigh_tensor, mapping_tensor, fparam_tensor,
+                             excl_nlist, mapping_tensor, fparam_tensor,
                              aparam_tensor, charge_spin_tensor);
   }
 
@@ -1531,8 +1607,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         deepmd::extend_graph_aparam(aparam_tensor, natoms, natoms, daparam),
         charge_spin_tensor);
   } else {
+    // Model-level pair exclusion is a BUILD-time transform (decision #18/A4):
+    // the exported dense lower consumes a pre-excluded nlist and never
+    // re-applies it; this is the single application site on the standalone
+    // (build_nlist) dense route.
+    const at::Tensor excl_nlist = deepmd::applyPairExclusionNlist(
+        nlist_tensor, atype_Tensor, pair_exclude_table_, ntypes);
     flat_outputs = run_model(coord_Tensor, atype_Tensor, spin_Tensor,
-                             nlist_tensor, mapping_tensor, fparam_tensor,
+                             excl_nlist, mapping_tensor, fparam_tensor,
                              aparam_tensor, charge_spin_tensor);
   }
 
