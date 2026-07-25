@@ -27,6 +27,11 @@
 #include <vector>
 
 #include "DeepPot.h"
+// Defines BUILD_PT_EXPT (via its __has_include probe for the inductor
+// headers).  Without this include the guards below see it undefined and
+// every case GTEST_SKIPs with "PyTorch support is not enabled" -- silently,
+// which is how this suite first ran as 8 skips that looked like passes.
+#include "DeepPotPTExpt.h"
 #include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
