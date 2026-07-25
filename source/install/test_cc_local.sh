@@ -142,6 +142,12 @@ else:
 		PID8=$!
 		wait $PID7
 		wait $PID8
+
+		# Native-spin DPA4 graph archives (baseline + model-level pair
+		# exclusion). Without this the whole native-spin graph C++ suite
+		# GTEST_SKIPs on the missing fixture, which is how a dead
+		# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py
 	fi
 fi
 

@@ -213,6 +213,12 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   // Mirrors descriptor's has_message_passing(). See DeepPotPTExpt.h
   // for the full rationale and gating role.
   bool has_message_passing_ = false;
+  // Model-level pair-type exclusion keep table, built ONCE in ``init`` from
+  // the ``pair_exclude_types`` metadata field (see DeepPotPTExpt.h for the
+  // full rationale).  UNDEFINED => no exclusion (identity).  Applied at the
+  // neighbor-graph BUILD seam (``applyPairExclusion``), never inside the
+  // exported lower.
+  torch::Tensor pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

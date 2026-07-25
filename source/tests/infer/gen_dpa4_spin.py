@@ -1,8 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate deeppot_dpa4_spin_graph.pt2 test model (native-spin DPA4, graph route).
+"""Generate the native-spin DPA4 graph-route .pt2 test models.
 
-Mirrors ``gen_dpa4.py``'s Section B pattern: the dpmodel is built in-process
+Two archives, IDENTICAL weights, differing only in model-level exclusion:
+
+- ``deeppot_dpa4_spin_graph.pt2``    -- no exclusion (baseline)
+- ``deeppot_dpa4_spin_pairexcl.pt2`` -- ``pair_exclude_types=[[0, 1]]``, with
+  the descriptor's own ``exclude_types`` left EMPTY.
+
+The second one is deliberately anti-vacuous for the C++ ingestion seam. Model-
+level exclusion is a BUILD-time transform (decision #18/A4) owned by the
+neighbor-graph construction, so the .pt2 lower consumes a pre-excluded
+``edge_mask`` and never re-applies it; ``DeepSpinPTExpt`` must fold it in at
+its build seam (``applyPairExclusion``). Keeping the descriptor exclusion
+empty is what makes the fixture load-bearing: the ``type="dpa4"`` model alias
+copies ``pair_exclude_types`` into ``descriptor.exclude_types``, which bakes an
+equivalent mask INTO the compiled artifact and would mask a dead C++ seam.
+
+Generation follows ``gen_dpa4.py``'s Section B pattern: the dpmodel is built in-process
 from the inline ``NATIVE_SPIN_CONFIG`` below with a fixed weight-init seed,
 its zero-initialized residual projections are jittered away from exact zero
 with a fixed RNG seed (``jitter_zero_arrays``, imported from
@@ -46,6 +61,7 @@ from dpa4_fixtures import (
     jitter_zero_arrays,
 )
 from gen_common import (
+    derive_pair_exclude_pt2,
     ensure_inductor_compiler,
     load_custom_ops,
     write_expected_ref,
@@ -90,6 +106,12 @@ NATIVE_SPIN_CONFIG = {
 # docstring above). Kept as the value the fixture was originally generated
 # with, for continuity of the fixed 6-atom reference numbers below.
 _JITTER_SEED = 20260720
+
+# Model-level exclusion for the second archive: drop every Ni-O pair. Applied
+# ONLY at the model level -- ``NATIVE_SPIN_CONFIG["descriptor"]`` carries no
+# ``exclude_types``, so nothing inside the compiled artifact reproduces it (see
+# the module docstring).
+_PAIR_EXCLUDE_TYPES = [[0, 1]]
 
 
 def _build_model_dict() -> dict:
@@ -139,43 +161,8 @@ _SPINS = np.array(
 ).reshape(1, _NATOMS, 3)
 
 
-def main():
-    from deepmd.infer import (
-        DeepPot,
-    )
-    from deepmd.pt_expt.utils.serialization import (
-        deserialize_to_file as pt_expt_deserialize_to_file,
-    )
-
-    ensure_inductor_compiler()
-    load_custom_ops()
-
-    base_dir = os.path.dirname(__file__)
-    pt2_path = os.path.join(base_dir, "deeppot_dpa4_spin_graph.pt2")
-
-    # ---- 1. Build the jittered dpmodel dict from config+seed ----
-    model_dict = _build_model_dict()
-    data = {
-        "model": model_dict,
-        "model_def_script": NATIVE_SPIN_CONFIG,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
-
-    # ---- 2. Freeze directly to graph-kind .pt2 ----
-    # Native-spin DPA4 has NO dense/nlist lower at all (spin rides the
-    # NeighborGraph lower exclusively -- see the module docstring above), so
-    # ``lower_kind="auto"`` resolves to "graph" for this model
-    # (``_resolve_lower_kind``); the virtual-atom ``spin_ener`` scheme would
-    # instead hard-stop at "nlist". Pinned explicitly here for clarity.
-    print(f"Exporting to {pt2_path} (lower_kind='graph') ...")  # noqa: T201
-    pt_expt_deserialize_to_file(
-        pt2_path, data, do_atomic_virial=True, lower_kind="graph"
-    )
-    print("Export done.")  # noqa: T201
-
-    # ---- 3. Sanity-check the frozen archive's metadata ----
+def _check_metadata(pt2_path: str, expected_exclude: list) -> None:
+    """Assert the frozen archive's metadata, including the exclusion field."""
     with zipfile.ZipFile(pt2_path) as zf:
         md = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
     print("\n// metadata:")  # noqa: T201
@@ -191,6 +178,7 @@ def main():
                     "has_message_passing",
                     "ntypes_spin",
                     "use_spin",
+                    "pair_exclude_types",
                     "output_keys",
                 )
                 if k in md
@@ -207,25 +195,39 @@ def main():
     assert md["has_comm_artifact"] is False
     assert md["has_message_passing"] is True
     assert md["use_spin"] == [True, False]
+    # The exclusion travels as METADATA -- work still owed by the feeder, NOT
+    # compiled into the artifact.
+    assert md.get("pair_exclude_types", []) == expected_exclude, (
+        f"{pt2_path}: metadata pair_exclude_types = "
+        f"{md.get('pair_exclude_types')!r}, expected {expected_exclude!r}"
+    )
     for key in ("atom_energy", "energy", "force", "force_mag", "virial"):
         assert key in md["output_keys"]
 
-    # ---- 4. Run inference (PBC) ----
+
+def _eval_and_write_ref(pt2_path: str, ref_path: str) -> float:
+    """Evaluate one archive (PBC + NoPbc) and write its ``.expected`` sidecar.
+
+    Returns the PBC total energy so the caller can assert that the excluded
+    archive is not numerically identical to the baseline.
+    """
+    from deepmd.infer import (
+        DeepPot,
+    )
+
     dp = DeepPot(pt2_path)
     assert dp.has_spin
 
     e1, f1, v1, ae1, av1, fm1, _mm1 = dp.eval(
         _COORDS, _CELL, _ATYPES, atomic=True, spin=_SPINS
     )
-    print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
+    print(f"\n// {pt2_path} PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
 
-    # ---- 5. Run inference (NoPbc) ----
     e_np, f_np, v_np, ae_np, av_np, fm_np, _mm_np = dp.eval(
         _COORDS, None, _ATYPES, atomic=True, spin=_SPINS
     )
-    print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
+    print(f"// {pt2_path} NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
 
-    # ---- 6. Sanity checks ----
     spin_mask = _ATYPES == 0  # Ni carries spin; O does not
     for label, e, f, fm in (
         ("PBC", e1, f1, fm1),
@@ -260,8 +262,6 @@ def main():
             f"(O) atoms; got max |force_mag| = {fm_nospin_max:.3e}."
         )
 
-    # ---- 7. Write sidecar reference file consumed by C++ tests ----
-    ref_path = os.path.join(base_dir, "deeppot_dpa4_spin_graph.expected")
     write_expected_ref(
         ref_path,
         sections={
@@ -283,6 +283,83 @@ def main():
         source_script="source/tests/infer/gen_dpa4_spin.py",
     )
     print(f"Wrote {ref_path}")  # noqa: T201
+    return float(e1[0, 0])
+
+
+def main():
+    from deepmd.pt_expt.utils.serialization import (
+        deserialize_to_file as pt_expt_deserialize_to_file,
+    )
+
+    ensure_inductor_compiler()
+    load_custom_ops()
+
+    base_dir = os.path.dirname(__file__)
+    base_pt2 = os.path.join(base_dir, "deeppot_dpa4_spin_graph.pt2")
+    excl_pt2 = os.path.join(base_dir, "deeppot_dpa4_spin_pairexcl.pt2")
+
+    # ---- 1. Build the jittered dpmodel dict from config+seed ----
+    model_dict = _build_model_dict()
+    # Negative contract: nothing inside the artifact may reproduce a
+    # model-level exclusion, or a dead external seam would go unnoticed.  The
+    # generic (no ``type: dpa4``) config above is what keeps this empty.
+    descrpt_excl = model_dict["descriptor"].get("exclude_types") or []
+    assert not descrpt_excl, (
+        f"descriptor exclude_types must stay EMPTY for the derived "
+        f"pair-exclusion fixture to be load-bearing; got {descrpt_excl!r}"
+    )
+    data = {
+        "model": model_dict,
+        "model_def_script": NATIVE_SPIN_CONFIG,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    # ---- 2. Freeze directly to graph-kind .pt2 (the ONLY inductor compile) ----
+    # Native-spin DPA4 has NO dense/nlist lower at all (spin rides the
+    # NeighborGraph lower exclusively -- see the module docstring above), so
+    # ``lower_kind="auto"`` resolves to "graph" for this model
+    # (``_resolve_lower_kind``); the virtual-atom ``spin_ener`` scheme would
+    # instead hard-stop at "nlist". Pinned explicitly here for clarity.
+    print(f"Exporting to {base_pt2} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        base_pt2, data, do_atomic_virial=True, lower_kind="graph"
+    )
+    print("Export done.")  # noqa: T201
+    _check_metadata(base_pt2, [])
+    e_base = _eval_and_write_ref(
+        base_pt2, os.path.join(base_dir, "deeppot_dpa4_spin_graph.expected")
+    )
+
+    # ---- 3. Derive the pair-excluded variant -- NO second compile ----
+    # Model-level exclusion is not baked into the exported graph, so patching
+    # the two JSON blobs that carry the list yields an archive whose compiled
+    # AOTI artifact is byte-identical to the baseline (see
+    # gen_common.derive_pair_exclude_pt2).  That identity is exactly what makes
+    # the C++ regression sharp: the two archives can only differ through the
+    # ingestion seam.
+    print(f"\nDeriving {excl_pt2} from {base_pt2} ...")  # noqa: T201
+    derive_pair_exclude_pt2(base_pt2, excl_pt2, _PAIR_EXCLUDE_TYPES)
+    _check_metadata(excl_pt2, _PAIR_EXCLUDE_TYPES)
+    e_excl = _eval_and_write_ref(
+        excl_pt2, os.path.join(base_dir, "deeppot_dpa4_spin_pairexcl.expected")
+    )
+
+    # ---- 4. Anti-vacuity for the exclusion itself ----
+    # Dropping every Ni-O pair must move the energy.  Equal energies would mean
+    # the exclusion never reached the graph build, making the C++ regression
+    # that consumes these references pass for the wrong reason.
+    print(  # noqa: T201
+        f"\n// baseline PBC energy: {e_base:.18e}\n"
+        f"// excluded PBC energy: {e_excl:.18e}\n"
+        f"// delta:               {abs(e_excl - e_base):.6e}"
+    )
+    assert abs(e_excl - e_base) > 1e-6, (
+        f"pair_exclude_types={_PAIR_EXCLUDE_TYPES} left the energy unchanged "
+        f"({e_base:.18e} vs {e_excl:.18e}); the exclusion is not reaching the "
+        f"neighbor-graph build, so both fixtures would be vacuous."
+    )
 
     print("\nDone!")  # noqa: T201
 

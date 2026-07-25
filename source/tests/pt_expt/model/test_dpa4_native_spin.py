@@ -1223,3 +1223,112 @@ class TestCombinedChargeSpinGraphExportable:
         )
         de = (out["energy"] - out0["energy"]).abs().max().item()
         assert de > 1e-10, f"charge_spin slot appears baked/dead: {de:.3e}"
+
+
+class TestNativeSpinModelPairExcludeContract:
+    """Model-level ``pair_exclude_types`` on the native-spin graph route.
+
+    Exclusion is a BUILD-time transform owned by the neighbor-graph
+    construction (decision #18/A4): the exported lower consumes a pre-excluded
+    ``edge_mask``, so every external feeder (Python ``DeepEval``, C++
+    ``DeepSpinPTExpt::compute``) must fold it in from the
+    ``pair_exclude_types`` metadata field.  These tests pin the two properties
+    the C++ regression
+    (``source/api_cc/tests/test_deepspin_dpa4_pairexcl_ptexpt.cc``) depends on:
+    the field reaches the metadata, and nothing inside the artifact reproduces
+    the mask.
+    """
+
+    @staticmethod
+    def _generic_model(pair_exclude_types: list | None, jitter_seed: int = 11):
+        """Build the pt_expt native-spin model the way the .pt2 fixture does.
+
+        dpmodel builder -> serialize (+ inject the model-level exclusion) ->
+        pt_expt deserialize, mirroring ``source/tests/infer/gen_dpa4_spin.py``.
+        The generic (no ``type: dpa4``) config is what keeps
+        ``descriptor.exclude_types`` empty; the DPA4 alias would mirror the
+        pairs into it (see ``test_dpa4_alias_mirrors_into_descriptor``).
+        """
+        from deepmd.dpmodel.model.model import (
+            get_model as dp_get_model,
+        )
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config.pop("type")
+        data = dp_get_model(config).serialize()
+        # DPA4 zero-initializes its residual projections, so an unjittered
+        # model is edge-independent and every exclusion is invisible.
+        data = jitter_zero_arrays(data, np.random.default_rng(jitter_seed))
+        if pair_exclude_types is not None:
+            data["pair_exclude_types"] = copy.deepcopy(pair_exclude_types)
+        return BaseModel.deserialize(data).to(_env.DEVICE).eval()
+
+    def test_generic_builder_keeps_descriptor_exclusions_empty(self) -> None:
+        """Negative contract: the mask must NOT be baked into the descriptor.
+
+        A descriptor-level copy is compiled INTO the artifact and would make a
+        dead external seam invisible -- exactly the failure mode this pins.
+        """
+        model = self._generic_model([[0, 1]])
+        assert [list(p) for p in model.atomic_model.pair_exclude_types] == [[0, 1]]
+        assert not (model.atomic_model.descriptor.exclude_types or [])
+
+    def test_dpa4_alias_mirrors_into_descriptor(self) -> None:
+        """Contrast: the ``type="dpa4"`` alias DOES mirror the pairs.
+
+        Documented here so nobody rebuilds the C++ fixture from this config:
+        with the mirror in place the exclusion is applied inside the compiled
+        artifact and the external-seam regression becomes vacuous.
+        """
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)  # keeps type="dpa4"
+        config["pair_exclude_types"] = [[0, 1]]
+        model = get_model(config)
+        assert [list(p) for p in model.atomic_model.descriptor.exclude_types] == [
+            [0, 1]
+        ]
+
+    def test_metadata_carries_pair_exclude_types(self) -> None:
+        """The graph-lower metadata is what external feeders rebuild from."""
+        from deepmd.pt_expt.utils.serialization import (
+            _collect_metadata,
+        )
+
+        meta = _collect_metadata(
+            self._generic_model([[0, 1]]), is_spin=True, lower_kind="graph"
+        )
+        assert meta["pair_exclude_types"] == [[0, 1]]
+
+        base_meta = _collect_metadata(
+            self._generic_model(None), is_spin=True, lower_kind="graph"
+        )
+        assert base_meta["pair_exclude_types"] == []
+
+    def test_exclusion_changes_the_prediction(self) -> None:
+        """Anti-vacuity: with identical weights, the mask must move the energy."""
+        excluded = self._generic_model([[0, 1]])
+        baseline = self._generic_model(None)
+
+        generator = torch.Generator(device=_env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.eye(3, dtype=torch.float64, device=_env.DEVICE) * 6.0
+        coord = torch.rand(
+            [6, 3], dtype=torch.float64, device=_env.DEVICE, generator=generator
+        )
+        coord = torch.matmul(coord, cell).unsqueeze(0)
+        atype = torch.tensor(
+            [[0, 0, 0, 1, 1, 1]], dtype=torch.int64, device=_env.DEVICE
+        )
+        spin = 0.1 * torch.rand(
+            [1, 6, 3], dtype=torch.float64, device=_env.DEVICE, generator=generator
+        )
+        box = cell.reshape(1, 9)
+
+        e_excl = excluded(coord, atype, spin, box=box)["energy"]
+        e_base = baseline(coord, atype, spin, box=box)["energy"]
+        de = (e_excl - e_base).abs().max().item()
+        assert de > 1e-6, (
+            f"pair_exclude_types=[[0, 1]] left the energy unchanged (diff="
+            f"{de:.3e}); the exclusion never reached the neighbor-graph build"
+        )

@@ -221,6 +221,33 @@ void DeepSpinPTExpt::init(const std::string& model,
   // pre-PR archives so they retain their previous behaviour.
   has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
                          metadata["has_message_passing"].as_bool();
+
+  // Model-level pair-type exclusion table -- twin of DeepPotPTExpt::init (see
+  // there for the full rationale).  Exclusion is a BUILD-time transform
+  // (decision #18/A4): it belongs to the neighbor-graph construction, so the
+  // C++ ingestion seam applies it exactly once and the exported lower never
+  // re-applies it.  Uploaded once here; UNDEFINED => no exclusion (identity).
+  {
+    std::vector<std::pair<int, int>> pair_exclude_types;
+    if (metadata.obj_val.count("pair_exclude_types")) {
+      for (const auto& v : metadata["pair_exclude_types"].as_array()) {
+        pair_exclude_types.emplace_back(v[0].as_int(), v[1].as_int());
+      }
+    }
+    std::vector<int> tbl =
+        deepmd::buildPairExcludeTable(ntypes, pair_exclude_types);
+    if (!tbl.empty()) {
+      torch::Device device(torch::kCUDA, gpu_id);
+      if (!gpu_enabled) {
+        device = torch::Device(torch::kCPU);
+      }
+      pair_exclude_table_ =
+          torch::from_blob(tbl.data(), {static_cast<std::int64_t>(tbl.size())},
+                           torch::TensorOptions().dtype(torch::kInt32))
+              .clone()
+              .to(device);
+    }
+  }
   if (has_comm_artifact_) {
     try {
       with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
@@ -902,9 +929,13 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     graph_pack.edge_vec = graph_edge_fp32_
                               ? edge_tensors.edge_vec.to(torch::kFloat32)
                               : edge_tensors.edge_vec;
-    // No pair-type-exclusion table on the spin route yet (known limitation;
-    // see task report): edge_mask is used as-is.
-    graph_pack.edge_mask = edge_tensors.edge_mask;
+    // Model-level pair exclusion belongs to the graph BUILD (decision #18/A4),
+    // exactly as on the non-spin route: the exported lower consumes a
+    // pre-excluded edge_mask and never re-applies it.
+    graph_pack.edge_mask =
+        deepmd::applyPairExclusion(edge_tensors.edge_index,
+                                   edge_tensors.edge_mask, node_atype,
+                                   pair_exclude_table_, ntypes);
     canonicalizeGraphPayload(graph_pack, nloc);
     flat_outputs = run_model_graph(
         node_atype, n_node_tensor, n_node_tensor, graph_pack.edge_index,
@@ -1291,8 +1322,10 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         edge_tensors.edge_mask, spin_Tensor.slice(1, 0, nloc), fparam_tensor,
         aparam_tensor);
   } else if (lower_input_is_graph_) {
-    // No pair-type-exclusion table on the spin route yet (known limitation;
-    // see task report): edge_mask is used as-is.
+    // Same build-time seam as the cached-nlist branch above.
+    graph_tensors.edge_mask = deepmd::applyPairExclusion(
+        graph_tensors.edge_index, graph_tensors.edge_mask, graph_tensors.atype,
+        pair_exclude_table_, ntypes);
     canonicalizeGraphPayload(graph_tensors, graph_tensors.atype.size(0));
     if (graph_edge_fp32_) {
       graph_tensors.edge_vec = graph_tensors.edge_vec.to(torch::kFloat32);
