@@ -350,3 +350,52 @@ class TestNativeSpinCapabilityOnAtomicModel:
             [zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum"
         )
         assert composed.supports_native_spin() is False
+
+
+class TestCompositionForwardsConditioningCapabilities:
+    """A composition must FORWARD every capability its children own.
+
+    ``get_dim_fparam``/``get_dim_aparam`` were forwarded, but the
+    charge/spin FiLM and default-fparam accessors fell through to
+    ``BaseAtomicModel``'s ``False``/``0``.  That is silently wrong rather
+    than loudly broken: the eager forward still conditions on
+    ``charge_spin`` (the learned child consumes it), while the FREEZE reads
+    these accessors -- so a 0 dropped the charge_spin slot from the exported
+    ABI and from the metadata the C++ feeder reads, and the artifact
+    disagreed with its own eager model.
+    """
+
+    @staticmethod
+    def _model(bridging: bool, chg_spin: bool = True):
+        config = copy.deepcopy(ZBL_CONFIG)
+        config["descriptor"]["add_chg_spin_ebd"] = chg_spin
+        if not bridging:
+            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+                config.pop(key, None)
+        return get_model(config)
+
+    def test_charge_spin_survives_bridging(self) -> None:
+        plain = self._model(bridging=False)
+        bridged = self._model(bridging=True)
+        # anti-vacuity: the unbridged model must actually declare the input
+        assert plain.get_dim_chg_spin() > 0
+        assert bridged.get_dim_chg_spin() == plain.get_dim_chg_spin()
+        assert bridged.has_chg_spin_ebd() is True
+        # ... and the composition really is a composition
+        assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
+            "InterPotentialAtomicModel"
+        )
+
+    def test_no_charge_spin_stays_zero(self) -> None:
+        """The other branch: nothing is invented when no child declares it."""
+        bridged = self._model(bridging=True, chg_spin=False)
+        assert bridged.get_dim_chg_spin() == 0
+        assert bridged.has_chg_spin_ebd() is False
+
+    def test_default_conditioning_accessors_are_forwarded(self) -> None:
+        """``has_default_*`` must not fall through to the base either."""
+        bridged = self._model(bridging=True)
+        plain = self._model(bridging=False)
+        assert bridged.has_default_chg_spin() == plain.has_default_chg_spin()
+        assert bridged.has_default_fparam() == plain.has_default_fparam()
+        assert bridged.get_default_fparam() == plain.get_default_fparam()

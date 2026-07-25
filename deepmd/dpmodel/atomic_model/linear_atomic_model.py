@@ -599,6 +599,45 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
+    # --- conditioning-input capabilities owned by the children -----------
+    # A composition must FORWARD every capability its children own, exactly
+    # like get_dim_fparam/get_dim_aparam above.  Falling through to
+    # BaseAtomicModel's False/0 is silently wrong: eager forward still
+    # conditions on the input (the learned child consumes it), but the
+    # freeze reads these accessors, so a 0 here drops the charge_spin slot
+    # from the exported ABI and from the metadata the C++ feeder uses --
+    # the artifact then disagrees with its own eager model.
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Whether ANY child consumes the frame-level charge/spin FiLM input."""
+        return any(model.has_chg_spin_ebd() for model in self.models)
+
+    def get_dim_chg_spin(self) -> int:
+        """Dimension of the charge_spin input (max over children, like fparam)."""
+        return max([model.get_dim_chg_spin() for model in self.models])
+
+    def has_default_chg_spin(self) -> bool:
+        """Whether ANY child carries default charge/spin conditions."""
+        return any(model.has_default_chg_spin() for model in self.models)
+
+    def get_default_chg_spin(self) -> "Array | None":
+        """The first child's default charge/spin conditions, if any."""
+        for model in self.models:
+            if model.has_default_chg_spin():
+                return model.get_default_chg_spin()
+        return None
+
+    def has_default_fparam(self) -> bool:
+        """Whether ANY child carries default frame parameters."""
+        return any(model.has_default_fparam() for model in self.models)
+
+    def get_default_fparam(self) -> "list[float] | None":
+        """The first child's default frame parameters, if any."""
+        for model in self.models:
+            if model.has_default_fparam():
+                return model.get_default_fparam()
+        return None
+
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 

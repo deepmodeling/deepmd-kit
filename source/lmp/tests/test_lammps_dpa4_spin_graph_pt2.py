@@ -6,15 +6,11 @@ Unlike the virtual-atom ``spin_ener`` scheme exercised by
 ``test_lammps_spin_pt2.py``, native-spin DPA4 has NO dense/nlist lower at
 all -- spin rides the NeighborGraph lower exclusively (see
 ``deepmd/pt_expt/model/dpa4_native_spin_model.py``'s module docstring and
-``source/tests/infer/gen_dpa4_spin.py``). The fixture is also exported with
-``has_comm_artifact=false`` unconditionally (no nested with-comm AOTI
-artifact), so multi-rank LAMMPS has no cross-rank ghost-feature-exchange
-route to fall back to: ``DeepSpinPTExpt::compute`` fails fast on
-*any* ``nprocs > 1`` run of a graph-kind spin archive, independent of the
-usual ``has_comm_artifact_`` / ``atom_map`` decision matrix used for energy
-models and for the virtual-atom spin scheme (see
-``source/api_cc/src/DeepSpinPTExpt.cc``, the
-``lower_input_is_graph_ && multi_rank && has_message_passing_`` guard).
+``source/tests/infer/gen_dpa4_spin.py``). The fixture also carries the
+nested with-comm AOTI artifact, so multi-rank LAMMPS drives a real
+domain-decomposed run through ``DeepSpinPTExpt::run_model_graph_with_comm``:
+per-block ghost FEATURE refresh via ``border_op``, ghost SPINS via the
+LAMMPS ``sp`` forward-comm (see ``source/api_cc/src/DeepSpinPTExpt.cc``).
 
 Reference (energy / force / force_mag / virial) values are computed LIVE at
 test-setup time via ``deepmd.infer.DeepPot.eval`` on
@@ -366,10 +362,9 @@ def test_pair_deepspin_virial(lammps) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-rank fail-fast (native-spin graph .pt2 has no with-comm artifact at
-# all -- has_comm_artifact=false unconditionally, see gen_dpa4_spin.py --
-# so any nprocs > 1 run must abort loudly rather than silently produce
-# wrong-but-plausible numbers or hang).
+# Multi-rank: the native-spin graph .pt2 carries the nested with-comm
+# artifact, so a 2-rank run must REPRODUCE the 1-rank result (energy,
+# force and force_mag) rather than fail fast.
 # ---------------------------------------------------------------------------
 
 
@@ -466,34 +461,43 @@ def _run_mpi_subprocess(
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepspin_mpi_fails_fast() -> None:
-    """A 2-rank MPI run on the native-spin DPA4 graph ``.pt2`` (no
-    with-comm artifact, ``has_comm_artifact=false`` unconditionally) must
-    ABORT with the Task 9 multi-rank message rather than silently
-    succeeding or hanging.
+def test_pair_deepspin_mpi_matches_single_rank() -> None:
+    """A 2-rank MPI run must reproduce the 1-rank result on the SAME archive.
 
-    Mirrors ``test_lammps_dpa4_graph_pt2.py``'s empty-rank fail-fast test:
-    assert not-timed-out AND returncode != 0, with a bounded timeout
-    (120s) so a regression back into a hang is loud rather than an
-    indefinite CI stall.
+    The native-spin DPA4 graph ``.pt2`` now carries the nested with-comm
+    artifact, so ``DeepSpinPTExpt::compute_inner`` drives a real
+    domain-decomposed run through ``run_model_graph_with_comm``: the
+    per-block ghost FEATURE refresh rides ``border_op`` while ghost SPINS
+    arrive via the LAMMPS ``sp`` forward-comm.  Both the conservative force
+    and the MAGNETIC force must be rank-count invariant -- force_mag is the
+    output that only exists on this route, so comparing it is what proves
+    the spin leaf survived the with-comm lower.
+
+    Replaces the previous fail-fast test, which asserted the C++ throw that
+    existed only while native spin was excluded from the with-comm export.
     """
-    out = _run_mpi_subprocess(nprocs=2, capture=True, timeout=120)
-    assert not out["timed_out"], (
-        "Multi-rank graph-spin run timed out instead of failing promptly: "
-        "the has_comm_artifact=false fail-fast guard "
-        "(DeepSpinPTExpt::compute) must throw on nprocs > 1 before "
-        "any collective communication is attempted."
+    single = _run_mpi_subprocess(nprocs=1, processors="1 1 1")
+    multi = _run_mpi_subprocess(nprocs=2, processors="2 1 1")
+
+    # anti-vacuity: a degenerate fixture (all-zero forces) would make the
+    # comparison pass for the wrong reason.
+    assert np.abs(multi["rows"][:, :3]).max() > 1e-6, "forces are trivially zero"
+    assert np.abs(multi["rows"][:, 3:6]).max() > 1e-6, "force_mag is trivially zero"
+
+    np.testing.assert_allclose(
+        multi["pe"], single["pe"], rtol=1e-10, atol=1e-10, err_msg="energy"
     )
-    assert out["returncode"] != 0, (
-        "Expected the multi-rank run on the native-spin DPA4 graph .pt2 "
-        "to fail loudly (no with-comm artifact exists for this scheme), "
-        "but it exited 0.\n"
-        f"stdout:\n{out['stdout'][-2000:]}\nstderr:\n{out['stderr'][-2000:]}"
+    np.testing.assert_allclose(
+        multi["rows"][:, :3],
+        single["rows"][:, :3],
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force",
     )
-    combined = out["stdout"] + out["stderr"]
-    assert (
-        "multi-rank inference is not supported for graph-kind spin .pt2" in combined
-    ), (
-        "Expected the documented fail-loud message ('multi-rank inference "
-        f"is not supported for graph-kind spin .pt2'), got:\n{combined[-2000:]}"
+    np.testing.assert_allclose(
+        multi["rows"][:, 3:6],
+        single["rows"][:, 3:6],
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force_mag",
     )
