@@ -41,6 +41,25 @@ constexpr const char* kModelPath =
     "../../tests/infer/deeppot_dpa4_zbl_graph.pt2";
 constexpr const char* kRefPath =
     "../../tests/infer/deeppot_dpa4_zbl_graph.expected";
+
+// Magnitude-scaled bound.  The analytical ZBL term on a 0.9 A pair makes
+// this fixture's forces ~1.4e3 -- deliberately, so the term cannot be
+// mistaken for noise -- and ONE fp32 ULP at that magnitude is 2^-13 =
+// 1.22e-4.  The suite's flat 1e-4 float bound therefore asks for sub-ULP
+// agreement, which no fp32 result can satisfy: the observed deltas were
+// exact binary fractions (2^-13, 3*2^-14, 6*2^-14), i.e. 1-3 ULP of the
+// representation, not numerical error.  fp64 keeps the strict absolute
+// 1e-10 (one fp64 ULP here is 2.3e-13, so 1e-10 is still ~400x tighter
+// than the representation).
+template <class VALUETYPE>
+inline double zbl_tol(double expected) {
+  if (std::is_same<VALUETYPE, double>::value) {
+    return 1e-10;
+  }
+  // 5e-7 relative is ~4 fp32 ULP; the 1e-4 floor keeps near-zero
+  // components at the suite's usual float bound.
+  return 1e-4 + 5e-7 * fabs(expected);
+}
 }  // namespace
 
 template <class VALUETYPE>
@@ -133,13 +152,13 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_build_nlist) {
   }
   EXPECT_GT(fmax, 1e-3) << "forces are trivially small; fixture is vacuous";
 
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
   }
   EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 9; ++ii) {
-    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), zbl_tol<VALUETYPE>(expected_tot_v[ii]));
   }
 }
 
@@ -158,12 +177,12 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_build_nlist_atomic) {
   this->dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
 
   EXPECT_EQ(atom_ener.size(), natoms);
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms; ++ii) {
-    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), zbl_tol<VALUETYPE>(expected_e[ii]));
   }
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
   }
 }
 
@@ -189,8 +208,8 @@ TYPED_TEST(TestInferDeepPotDpa4ZblPtExpt, cpu_lmp_nlist) {
   convert_nlist(inlist, nlist_data);
   this->dp.compute(ener, force, virial, coord, atype, box, 0, inlist, 0);
 
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  EXPECT_LT(fabs(ener - expected_tot_e), zbl_tol<VALUETYPE>(expected_tot_e));
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), zbl_tol<VALUETYPE>(expected_f[ii]));
   }
 }
