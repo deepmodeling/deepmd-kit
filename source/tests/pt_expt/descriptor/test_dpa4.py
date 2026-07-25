@@ -152,6 +152,52 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             dd2.call(self.coord_ext, self.atype_ext, self.nlist)
             assert captured[-1] is False
 
+    def test_random_gamma_draw_obeys_torch_rng_state(self) -> None:
+        """The train-mode roll must be drawn by torch, on the edge device.
+
+        pt draws it with ``torch.rand``, so ``torch.manual_seed`` replays it.
+        A host numpy draw would answer to no seed and freeze to a constant
+        under tracing. Replay is the only property separating the two: the
+        descriptor is roll-equivariant, so comparing outputs has no teeth.
+        """
+        import deepmd.dpmodel.descriptor.dpa4_nn.edge_cache as ec_mod
+
+        dtype = PRECISION_DICT["float64"]
+        dd0 = make_descriptor(self.nt, self.sel_mix, self.rcut, random_gamma=True).to(
+            self.device
+        )
+        dd0.train()
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        def _rolled_quat() -> torch.Tensor:
+            """One train-mode forward's post-roll edge quaternion."""
+            captured: list[torch.Tensor] = []
+            orig = ec_mod.quaternion_multiply
+
+            def spy(a, b):
+                out = orig(a, b)
+                captured.append(out)
+                return out
+
+            with mock.patch.object(ec_mod, "quaternion_multiply", spy):
+                dd0(coord_ext, atype_ext, nlist)
+            assert captured, "the random roll never ran"
+            return captured[0].detach().clone()
+
+        torch.manual_seed(20260725)
+        q_a = _rolled_quat()
+        torch.manual_seed(20260725)
+        q_b = _rolled_quat()
+        torch.testing.assert_close(q_a, q_b, rtol=0.0, atol=0.0)
+
+        # anti-vacuity: a constant gamma would satisfy the replay check alone
+        torch.manual_seed(20260726)
+        assert not torch.allclose(q_a, _rolled_quat())
+        # drawn on the edge device, no host round-trip
+        assert q_a.device.type == self.device.type
+
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_exportable(self, prec) -> None:
         dtype = PRECISION_DICT[prec]

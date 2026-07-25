@@ -334,6 +334,50 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     return x
 
 
+def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> Array:
+    """Draw ``size`` uniform samples in ``[low, high)`` on ``like``'s device.
+
+    Each backend uses its own generator: torch draws with ``torch.rand`` (as
+    pt does, so ``setup_seed`` replays it, with no host copy -- and a host
+    draw would freeze to a constant under tracing); other backends use
+    :mod:`deepmd.utils.random`, which ``setup_seed`` also seeds. Draws are
+    therefore not comparable across backends -- use only for a per-forward
+    random stream, never where a parity test looks.
+
+    Parameters
+    ----------
+    like : Array
+        Reference array supplying backend, dtype and device.
+    size : int
+        Number of samples to draw.
+    low : float
+        Lower bound of the interval.
+    high : float
+        Upper bound of the interval, exclusive.
+
+    Returns
+    -------
+    Array
+        Samples of shape ``(size,)`` matching ``like``.
+    """
+    if array_api_compat.is_torch_array(like):
+        import torch
+
+        return (
+            torch.rand(size, dtype=like.dtype, device=like.device) * (high - low) + low
+        )
+    from deepmd.utils import (
+        random as dp_random,
+    )
+
+    xp = array_api_compat.array_namespace(like)
+    drawn = np.asarray(dp_random.random(size)) * (high - low) + low
+    return xp.astype(
+        xp_asarray_nodetach(xp, drawn, device=array_api_compat.device(like)),
+        like.dtype,
+    )
+
+
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)

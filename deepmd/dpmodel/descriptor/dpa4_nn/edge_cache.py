@@ -27,11 +27,11 @@ from typing import (
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
+    xp_uniform,
 )
 
 from .utils import (
@@ -292,11 +292,9 @@ def _edge_cache_from_arrays(
         blocks.
     gamma
         Optional per-edge roll angles with shape (E,), used only when
-        ``random_gamma`` is True. pt draws gamma internally with
-        ``torch.rand`` and the draw cannot be reproduced here, so callers
-        needing determinism (e.g. tests) inject the angles explicitly. When
-        None, angles are drawn from ``numpy.random.default_rng()`` uniformly
-        in ``[0, 2*pi)``, matching pt's distribution.
+        ``random_gamma`` is True. When None, drawn with the backend's RNG
+        (:func:`~deepmd.dpmodel.array_api.xp_uniform`) uniformly in
+        ``[0, 2*pi)``; callers may inject angles to pin a draw.
 
     Returns
     -------
@@ -406,9 +404,9 @@ def _build_edge_wigner(
         blocks.
     gamma
         Optional per-edge roll angles with shape (E,), used only when
-        ``random_gamma`` is True. When None, angles are drawn from
-        ``numpy.random.default_rng()`` uniformly in ``[0, 2*pi)``, matching
-        pt's ``torch.rand`` distribution.
+        ``random_gamma`` is True. When None, drawn with the backend's RNG
+        (:func:`~deepmd.dpmodel.array_api.xp_uniform`) uniformly in
+        ``[0, 2*pi)``.
     build_full
         Whether to materialize the full ``(E, D, D)`` Wigner-D blocks. When
         False (all message-passing blocks take the Cartesian path), only the
@@ -432,13 +430,11 @@ def _build_edge_wigner(
     )
 
     # === Step 2. Apply optional random local-Z roll ===
-    # pt draws the roll with ``torch.rand``; here it is injected or drawn from
-    # numpy so the array-API call site stays reproducible.
+    # Training-only augmentation: drawn with the backend's own RNG so torch
+    # replays it under setup_seed and keeps the draw on-device.
     if random_gamma:
         if gamma is None:
-            gamma = np.random.default_rng().uniform(
-                0.0, 2.0 * math.pi, edge_quat.shape[0]
-            )
+            gamma = xp_uniform(edge_quat, edge_quat.shape[0], 0.0, 2.0 * math.pi)
         gamma = xp.astype(
             xp_asarray_nodetach(xp, gamma, device=device), edge_quat.dtype
         )
