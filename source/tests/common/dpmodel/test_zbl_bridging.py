@@ -399,3 +399,52 @@ class TestCompositionForwardsConditioningCapabilities:
         assert bridged.has_default_chg_spin() == plain.has_default_chg_spin()
         assert bridged.has_default_fparam() == plain.has_default_fparam()
         assert bridged.get_default_fparam() == plain.get_default_fparam()
+
+
+class TestCompositionCarriesPairExclusion:
+    """Model-level ``pair_exclude_types`` must survive the ZBL composition.
+
+    It is a BUILD-time transform: the atomic model only carries the config,
+    and whoever builds the neighbor graph (the C++ feeder, or the Python
+    builder) applies it from the exported metadata. ``_collect_metadata``
+    reads it off ``model.atomic_model`` -- which for a bridged model is the
+    ``LinearEnergyAtomicModel``, not the learned child. Building that
+    composition without forwarding the exclusion therefore dropped it
+    silently: the eager model still behaved, while the frozen artifact told
+    its feeder there was nothing to exclude.
+    """
+
+    @staticmethod
+    def _model(bridging: bool, spin: bool = False):
+        config = copy.deepcopy(ZBL_CONFIG)
+        config["pair_exclude_types"] = [[0, 1]]
+        if spin:
+            config["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        if not bridging:
+            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+                config.pop(key, None)
+        return get_model(config)
+
+    def test_pair_exclusion_survives_bridging(self) -> None:
+        plain = self._model(bridging=False)
+        bridged = self._model(bridging=True)
+        # anti-vacuity: the unbridged model must actually carry it
+        assert plain.atomic_model.pair_exclude_types == [[0, 1]]
+        assert bridged.atomic_model.pair_exclude_types == [[0, 1]]
+        # ... and the bridged one really is the composition, so the value is
+        # read off the wrapper rather than accidentally off a lone child.
+        assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
+            "InterPotentialAtomicModel"
+        )
+
+    def test_pair_exclusion_survives_native_spin_plus_bridging(self) -> None:
+        """The three-way stack must not drop it either."""
+        assert self._model(
+            bridging=True, spin=True
+        ).atomic_model.pair_exclude_types == [[0, 1]]
+
+    def test_no_exclusion_stays_empty(self) -> None:
+        """The other branch: nothing is invented when none is configured."""
+        config = copy.deepcopy(ZBL_CONFIG)
+        config.pop("pair_exclude_types", None)
+        assert get_model(config).atomic_model.pair_exclude_types == []

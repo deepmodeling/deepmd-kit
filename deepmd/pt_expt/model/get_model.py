@@ -242,6 +242,12 @@ def get_sezm_model(data: dict) -> EnergyModel:
             models=[model.atomic_model, zbl_atomic],
             type_map=data["type_map"],
             weights="sum",
+            # Same ownership assignment as the dpmodel builder: the
+            # composition is what the freeze metadata reads, so it carries the
+            # model-level pair exclusion. Config only -- model-level pair
+            # exclusion is a BUILD-time transform that parent and child assert
+            # rather than apply.
+            pair_exclude_types=pair_exclude_types,
         )
         return LinearEnergyModel(atomic_model_=composed)
     return model

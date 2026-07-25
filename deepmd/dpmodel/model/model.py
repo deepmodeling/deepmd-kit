@@ -154,6 +154,15 @@ def get_standard_model(data: dict) -> EnergyModel:
             models=[model.atomic_model, zbl_atomic],
             type_map=data["type_map"],
             weights="sum",
+            # The composition is the atomic model the freeze metadata reads,
+            # so it must carry the model-level pair exclusion too -- otherwise
+            # a configured ``pair_exclude_types`` reaches neither the exported
+            # metadata nor the external build seam that applies it, and the
+            # exclusion is silently lost for bridged models. This is config,
+            # not a second application site: model-level pair exclusion is a
+            # BUILD-time transform (see BaseAtomicModel._assert_graph_pair_
+            # excluded), so parent and child only assert it, never re-apply.
+            pair_exclude_types=pair_exclude_types,
         )
         return LinearEnergyModel(atomic_model_=composed)
     return model

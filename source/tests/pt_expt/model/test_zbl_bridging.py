@@ -701,3 +701,54 @@ def test_bridged_metadata_carries_charge_spin_dim(tmp_path) -> None:
     plain_model = get_model(plain).to(torch.device("cpu")).eval()
     plain_meta = _collect_metadata(plain_model, is_spin=False, lower_kind="graph")
     assert meta["dim_chg_spin"] == plain_meta["dim_chg_spin"]
+
+
+def test_pair_exclusion_suppresses_the_analytical_term() -> None:
+    """Exclusion must remove the analytical term too, not just the learned one.
+
+    Model-level ``pair_exclude_types`` is a neighbor-graph BUILD transform,
+    and both children of the bridged composition read the same graph. So an
+    excluded pair type must contribute neither a learned nor a ZBL term.
+
+    This is not a free-standing preference: the composition is what drives
+    the build (and what the freeze metadata reads). Built without the
+    exclusion forwarded, the graph kept the excluded pairs and ZBL went on
+    interacting through them -- a large, silent error, since ZBL dominates at
+    short range.
+
+    Fixture: an Ni-O dimer at 0.9 A, where (0, 1) is the ONLY pair present,
+    so excluding it must remove the analytical term entirely.
+    """
+    cpu = torch.device("cpu")
+    coord = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.9, 0.0, 0.0]], dtype=torch.float64, device=cpu
+    ).reshape(1, -1)
+    atype = torch.tensor([[0, 1]], dtype=torch.int64, device=cpu)
+    box = (torch.eye(3, dtype=torch.float64, device=cpu) * 20.0).reshape(1, 9)
+
+    def energy(*, bridged: bool, excluded: bool) -> float:
+        config = copy.deepcopy(ZBL_CONFIG)
+        if not bridged:
+            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+                config.pop(key, None)
+        if excluded:
+            config["pair_exclude_types"] = [[0, 1]]
+        model = get_model(config).to(torch.device("cpu")).eval()
+        out = model(coord, atype, box=box)["energy"]
+        return float(out.detach().cpu().numpy().reshape(-1)[0])
+
+    # anti-vacuity: without exclusion the analytical term must dominate,
+    # otherwise the suppression assertion below would hold trivially.
+    zbl_contribution = energy(bridged=True, excluded=False) - energy(
+        bridged=False, excluded=False
+    )
+    assert zbl_contribution > 1.0, (
+        f"ZBL contributes only {zbl_contribution} at 0.9 A; the fixture no "
+        "longer exercises the analytical term"
+    )
+
+    # ... and with the pair type excluded, the bridged model must fall back
+    # EXACTLY onto the unbridged one: no ZBL, not merely less ZBL.
+    assert energy(bridged=True, excluded=True) == energy(
+        bridged=False, excluded=True
+    ), "the analytical ZBL term survived a pair-type exclusion"
