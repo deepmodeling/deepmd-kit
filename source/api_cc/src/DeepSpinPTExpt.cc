@@ -1095,11 +1095,21 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   if (lower_input_is_graph_) {
     // The graph forward emits flat-N PUBLIC keys (atom_energy/energy/force/
     // force_mag/virial/atom_virial); rewrite them into the dense internal-key
-    // layout the shared extraction below expects.  Single-rank only
-    // (N == nloc, ghosts folded onto owners), guaranteed by the multi-rank
-    // fail-fast earlier in this function.
-    deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall_real,
-                                                   atomic);
+    // layout the shared extraction below expects.
+    //
+    // The two node layouts need DIFFERENT remaps, and picking the wrong one
+    // is not a silent error: single-rank folds ghosts onto owners
+    // (fold_to_local=true, N == nloc) so the per-node outputs are padded up
+    // to nall, while the with-comm route keeps the extended node set
+    // (fold_to_local=false, N == nall) and must NOT pad -- padding there
+    // throws on the index_put_ as soon as nloc < nall.
+    if (use_with_comm) {
+      deepmd::remap_graph_spin_outputs_to_dense_keys_extended(
+          output_map, nloc, nall_real, atomic);
+    } else {
+      deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc,
+                                                     nall_real, atomic);
+    }
   }
 
   // Extract energy

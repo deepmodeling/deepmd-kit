@@ -847,9 +847,8 @@ inline void remap_graph_outputs_to_dense_keys(
  * @brief Remap NeighborGraph (graph-schema) native-spin public outputs onto
  *        the dense internal-key layout ``DeepSpinPTExpt::compute`` consumes.
  *
- * The native-spin graph forward is LOCAL-only (single-rank; no with-comm
- * sibling exists -- ``has_comm_artifact=false`` always, see
- * gen_dpa4_spin.py) and additionally emits ``force_mag`` (N, 3): per-node
+ * The single-rank native-spin graph forward is LOCAL-only and additionally
+ * emits ``force_mag`` (N, 3): per-node
  * magnetic force, N == nloc, already exactly zero on non-spin-carrying atoms
  * (the model's own type gate, not re-masked here per the project's
  * one-owner design principle).
@@ -861,11 +860,11 @@ inline void remap_graph_outputs_to_dense_keys(
  * ``energy_derv_r_mag`` -- the key ``DeepSpinPTExpt::compute`` reads for
  * every other lower schema (dense nlist / edge_vec).
  *
- * **Single-rank only.** See ``remap_graph_outputs_to_dense_keys`` for the
- * full rationale; unlike the energy graph route there is no multi-rank
- * sibling to call instead, so this helper does not take a ``single_rank``
- * parameter -- calling it on a multi-rank result is a caller bug that
- * ``DeepSpinPTExpt``'s multi-rank fail-fast guard prevents from occurring.
+ * **Single-rank only** (``fold_to_local=true``, so ``N == nloc``).  The
+ * multi-rank sibling is
+ * ``remap_graph_spin_outputs_to_dense_keys_extended``; calling THIS one on an
+ * extended-region result throws on the ``index_put_`` below as soon as
+ * ``nloc < nall``, because ``force_mag_pub`` then carries ``nall`` rows.
  *
  * @param[in,out] output_map Output tensor map (public keys in, internal keys
  *   added).
@@ -948,6 +947,38 @@ inline void remap_graph_outputs_to_dense_keys_extended(
         atom_energy_pub.index({Slice(0, nloc)}).reshape({nf, nloc, 1});
     output_map["energy_derv_c"] = atom_virial_pub.reshape({nf, nall, 1, 9});
   }
+}
+
+/**
+ * @brief Native-spin twin of ``remap_graph_outputs_to_dense_keys_extended``:
+ *        the MULTI-RANK (extended-region) graph-spin output remap.
+ *
+ * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes, so
+ * ``force_mag`` is already the EXTENDED magnetic force -- one row per
+ * extended atom.  Unlike the single-rank helper it must NOT zero-pad from
+ * ``nloc`` to ``nall``: the rows are already there, and padding would both
+ * truncate real ghost rows and mis-shape the tensor (the single-rank helper's
+ * ``index_put_({0, Slice(0, nloc), 0}, force_mag_pub)`` fails outright when
+ * ``force_mag_pub`` carries ``nall`` rows and ``nloc < nall``).
+ *
+ * Ghost magnetic-force rows stay distinct and are folded onto their owners by
+ * the LAMMPS spin reverse-comm, exactly as ghost conservative-force rows are.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (owned by this rank).
+ * @param[in] nall Extended atom count (== N, the graph node count).
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_spin_outputs_to_dense_keys_extended(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  const std::int64_t nf = 1;
+  remap_graph_outputs_to_dense_keys_extended(output_map, nloc, nall, atomic);
+  const auto& force_mag_pub = output_map.at("force_mag");  // (N==nall, 3)
+  output_map["energy_derv_r_mag"] = force_mag_pub.reshape({nf, nall, 1, 3});
 }
 
 }  // namespace deepmd
