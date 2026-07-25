@@ -577,6 +577,17 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
             const int& gpu_rank = 0,
             const std::vector<std::string>& file_contents =
                 std::vector<std::string>());
+
+  /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return The dimension of the charge/spin input (0 if the models have no
+   *charge/spin embedding). Taken from the first model; all models are assumed
+   *to share the same value.
+   **/
+  int dim_chg_spin() const {
+    return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
   /**
    * @brief Evaluate the energy, force and virial by using these DP spin models.
    * @param[out] all_ener The system energies of all models.
@@ -599,6 +610,10 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -610,7 +625,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -637,6 +653,10 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -650,7 +670,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force, magnetic force and virial by using these
@@ -678,6 +699,10 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -692,7 +717,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
@@ -722,6 +748,10 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -738,7 +768,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Get the per-type use_spin flags from the first model.

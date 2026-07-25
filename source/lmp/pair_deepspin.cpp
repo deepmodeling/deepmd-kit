@@ -316,9 +316,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       vector<vector<double>> all_atom_virial;
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_spin_model_devi.compute(all_energy, all_force, all_force_mag,
-                                       all_virial, dcoord, dspin, dtype, dbox,
-                                       nghost, lmp_list, ago, fparam, daparam);
+          deep_spin_model_devi.compute(
+              all_energy, all_force, all_force_mag, all_virial, dcoord, dspin,
+              dtype, dbox, nghost, lmp_list, ago, fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -327,7 +327,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           deep_spin_model_devi.compute(
               all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
               all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
-              ago, fparam, daparam);
+              ago, fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -611,15 +611,13 @@ void PairDeepSpin::settings(int narg, char** arg) {
     numb_types_spin = deep_spin_model_devi.numb_types_spin();
     dim_fparam = deep_spin_model_devi.dim_fparam();
     dim_aparam = deep_spin_model_devi.dim_aparam();
-    // DeepSpinModelDevi has no charge/spin accessor yet; take the dimension
-    // from the first model so the `charge_spin` keyword still parses (its use
-    // with multiple models is rejected below).
-    dim_chg_spin = deep_spin.dim_chg_spin();
+    dim_chg_spin = deep_spin_model_devi.dim_chg_spin();
     assert(cutoff == deep_spin.cutoff() * dist_unit_cvt_factor);
     assert(numb_types == deep_spin.numb_types());
     assert(numb_types_spin == deep_spin.numb_types_spin());
     assert(dim_fparam == deep_spin.dim_fparam());
     assert(dim_aparam == deep_spin.dim_aparam());
+    assert(dim_chg_spin == deep_spin.dim_chg_spin());
   }
 
   out_freq = 100;
@@ -761,13 +759,6 @@ void PairDeepSpin::settings(int narg, char** arg) {
     error->all(
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
-  }
-  // The model-deviation spin interface does not carry charge_spin yet, so
-  // fail fast instead of silently dropping the user's value.
-  if (charge_spin.size() > 0 && numb_models > 1) {
-    error->all(FLERR,
-               "charge_spin is not supported with multiple models (model "
-               "deviation) for pair_style deepspin");
   }
 
   if (comm->me == 0) {

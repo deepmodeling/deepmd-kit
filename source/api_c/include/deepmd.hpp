@@ -479,6 +479,7 @@ inline void _DP_DeepSpinModelDeviCompute(DP_DeepSpinModelDevi* dp,
                                          const FPTYPE* cell,
                                          const FPTYPE* fparam,
                                          const FPTYPE* aparam,
+                                         const FPTYPE* charge_spin,
                                          double* energy,
                                          FPTYPE* force,
                                          FPTYPE* force_mag,
@@ -495,15 +496,24 @@ inline void _DP_DeepSpinModelDeviCompute<double>(DP_DeepSpinModelDevi* dp,
                                                  const double* cell,
                                                  const double* fparam,
                                                  const double* aparam,
+                                                 const double* charge_spin,
                                                  double* energy,
                                                  double* force,
                                                  double* force_mag,
                                                  double* virial,
                                                  double* atomic_energy,
                                                  double* atomic_virial) {
-  DP_DeepSpinModelDeviCompute2(dp, 1, natom, coord, spin, atype, cell, fparam,
-                               aparam, energy, force, force_mag, virial,
-                               atomic_energy, atomic_virial);
+  // charge_spin == nullptr keeps the version-2 entry point so models without a
+  // charge/spin embedding still work against an older libdeepmd_c.
+  if (charge_spin) {
+    DP_DeepSpinModelDeviCompute3(dp, 1, natom, coord, spin, atype, cell, fparam,
+                                 aparam, charge_spin, energy, force, force_mag,
+                                 virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepSpinModelDeviCompute2(dp, 1, natom, coord, spin, atype, cell, fparam,
+                                 aparam, energy, force, force_mag, virial,
+                                 atomic_energy, atomic_virial);
+  }
 }
 
 template <>
@@ -515,15 +525,22 @@ inline void _DP_DeepSpinModelDeviCompute<float>(DP_DeepSpinModelDevi* dp,
                                                 const float* cell,
                                                 const float* fparam,
                                                 const float* aparam,
+                                                const float* charge_spin,
                                                 double* energy,
                                                 float* force,
                                                 float* force_mag,
                                                 float* virial,
                                                 float* atomic_energy,
                                                 float* atomic_virial) {
-  DP_DeepSpinModelDeviComputef2(dp, 1, natom, coord, spin, atype, cell, fparam,
-                                aparam, energy, force, force_mag, virial,
-                                atomic_energy, atomic_virial);
+  if (charge_spin) {
+    DP_DeepSpinModelDeviComputef3(
+        dp, 1, natom, coord, spin, atype, cell, fparam, aparam, charge_spin,
+        energy, force, force_mag, virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepSpinModelDeviComputef2(dp, 1, natom, coord, spin, atype, cell,
+                                  fparam, aparam, energy, force, force_mag,
+                                  virial, atomic_energy, atomic_virial);
+  }
 }
 
 template <typename FPTYPE>
@@ -612,6 +629,7 @@ inline void _DP_DeepSpinModelDeviComputeNList(DP_DeepSpinModelDevi* dp,
                                               const int ago,
                                               const FPTYPE* fparam,
                                               const FPTYPE* aparam,
+                                              const FPTYPE* charge_spin,
                                               double* energy,
                                               FPTYPE* force,
                                               FPTYPE* force_mag,
@@ -630,15 +648,23 @@ inline void _DP_DeepSpinModelDeviComputeNList<double>(DP_DeepSpinModelDevi* dp,
                                                       const int ago,
                                                       const double* fparam,
                                                       const double* aparam,
+                                                      const double* charge_spin,
                                                       double* energy,
                                                       double* force,
                                                       double* force_mag,
                                                       double* virial,
                                                       double* atomic_energy,
                                                       double* atomic_virial) {
-  DP_DeepSpinModelDeviComputeNList2(
-      dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
-      aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
+  if (charge_spin) {
+    DP_DeepSpinModelDeviComputeNList3(dp, 1, natom, coord, spin, atype, cell,
+                                      nghost, nlist, ago, fparam, aparam,
+                                      charge_spin, energy, force, force_mag,
+                                      virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepSpinModelDeviComputeNList2(
+        dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
+        aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
+  }
 }
 template <>
 inline void _DP_DeepSpinModelDeviComputeNList<float>(DP_DeepSpinModelDevi* dp,
@@ -652,15 +678,23 @@ inline void _DP_DeepSpinModelDeviComputeNList<float>(DP_DeepSpinModelDevi* dp,
                                                      const int ago,
                                                      const float* fparam,
                                                      const float* aparam,
+                                                     const float* charge_spin,
                                                      double* energy,
                                                      float* force,
                                                      float* force_mag,
                                                      float* virial,
                                                      float* atomic_energy,
                                                      float* atomic_virial) {
-  DP_DeepSpinModelDeviComputeNListf2(
-      dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
-      aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
+  if (charge_spin) {
+    DP_DeepSpinModelDeviComputeNListf3(dp, 1, natom, coord, spin, atype, cell,
+                                       nghost, nlist, ago, fparam, aparam,
+                                       charge_spin, energy, force, force_mag,
+                                       virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepSpinModelDeviComputeNListf2(
+        dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
+        aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
+  }
 }
 
 template <typename FPTYPE>
@@ -2914,13 +2948,14 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
   /**
    * @brief DP model deviation constructor without initialization.
    **/
-  DeepSpinModelDevi() : dp(nullptr) {};
+  DeepSpinModelDevi() : dp(nullptr), dchgspin(0) {};
   ~DeepSpinModelDevi() { DP_DeleteDeepSpinModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
    **/
-  DeepSpinModelDevi(const std::vector<std::string>& models) : dp(nullptr) {
+  DeepSpinModelDevi(const std::vector<std::string>& models)
+      : dp(nullptr), dchgspin(0) {
     try {
       init(models);
     } catch (...) {
@@ -2969,10 +3004,21 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     numb_models = models.size();
     dfparam = DP_DeepSpinModelDeviGetDimFParam(dp);
     daparam = DP_DeepSpinModelDeviGetDimAParam(dp);
+    dchgspin = DP_DeepSpinModelDeviGetDimChgSpin(dp);
     aparam_nall = DP_DeepSpinModelDeviIsAParamNAll(dp);
     has_default_fparam_ = DP_DeepSpinModelDeviHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModelDevi*)dp;
   };
+
+  /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return The dimension of the charge/spin input (0 if the models have no
+   *charge/spin embedding).
+   **/
+  int dim_chg_spin() const {
+    assert(dp);
+    return dchgspin;
+  }
 
   /**
    * @brief Evaluate the energy, force, magnetic force and virial by using this
@@ -2996,6 +3042,11 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -3008,7 +3059,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>()) {
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -3039,9 +3091,14 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
+    // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
+    // non-charge_spin models still work against an older libdeepmd_c.
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
     _DP_DeepSpinModelDeviCompute<VALUETYPE>(
-        dp, natoms, coord_, spin_, atype_, box_, fparam__, aparam__, ener_,
-        force_, force_mag_, virial_, nullptr, nullptr);
+        dp, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
+        charge_spin__, ener_, force_, force_mag_, virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
 
     // reshape
@@ -3089,6 +3146,11 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -3103,7 +3165,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>()) {
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -3138,9 +3201,15 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
+    // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
+    // non-charge_spin models still work against an older libdeepmd_c.
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
     _DP_DeepSpinModelDeviCompute<VALUETYPE>(
-        dp, natoms, coord_, spin_, atype_, box_, fparam__, aparam__, ener_,
-        force_, force_mag_, virial_, atomic_ener_, atomic_virial_);
+        dp, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
+        charge_spin__, ener_, force_, force_mag_, virial_, atomic_ener_,
+        atomic_virial_);
     DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
 
     // reshape
@@ -3200,6 +3269,11 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -3215,7 +3289,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       const InputNlist& lmp_list,
       const int& ago,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>()) {
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -3246,10 +3321,15 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
+    // non-charge_spin models still work against an older libdeepmd_c.
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
     _DP_DeepSpinModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, force_mag_, virial_, nullptr,
-        nullptr);
+        fparam__, aparam__, charge_spin__, ener_, force_, force_mag_, virial_,
+        nullptr, nullptr);
     DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
     // reshape
     ener.resize(numb_models);
@@ -3300,6 +3380,11 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin input. The array can be of size:
+   * nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -3317,7 +3402,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       const InputNlist& lmp_list,
       const int& ago,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>()) {
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -3353,10 +3439,15 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
+    // non-charge_spin models still work against an older libdeepmd_c.
+    std::vector<VALUETYPE> charge_spin_tiled_;
+    const VALUETYPE* charge_spin__ = validate_charge_spin(
+        charge_spin, dchgspin, nframes, charge_spin_tiled_);
     _DP_DeepSpinModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, force_mag_, virial_, atomic_ener_,
-        atomic_virial_);
+        fparam__, aparam__, charge_spin__, ener_, force_, force_mag_, virial_,
+        atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
     // reshape
     ener.resize(numb_models);
@@ -3392,6 +3483,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
 
  private:
   DP_DeepSpinModelDevi* dp;
+  int dchgspin;
 };
 
 /**

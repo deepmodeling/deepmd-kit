@@ -198,7 +198,7 @@ Evaluate the interaction of the system with spin by using [DeepSPIN][dpspin] mod
 
 This pair style takes the deep spin model defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
-If the keyword `charge_spin` is set, the given per-frame charge/spin value(s) will be fed to models that were trained with a charge/spin embedding. If the keyword is not set, the model's stored `default_chg_spin` (if any) is used. `charge_spin` is currently only supported with a single model (it cannot be combined with model deviation).
+If the keyword `charge_spin` is set, the given per-frame charge/spin value(s) will be fed to models that were trained with a charge/spin embedding. If the keyword is not set, the model's stored `default_chg_spin` (if any) is used. When multiple models are given, the same `charge_spin` is fed to every model.
 
 The model deviation evaluates the consistency of the force and magnetic force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force and magnetic force prediction of each atom will be output.
 The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.
