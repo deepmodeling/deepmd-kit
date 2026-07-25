@@ -261,6 +261,17 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return all(m.uses_graph_lower() for m in self.models)
 
+    def supports_native_spin(self) -> bool:
+        """Spin-capable when ANY child consumes the spin input.
+
+        Unlike :meth:`uses_graph_lower` (every child must run on the shared
+        graph), spin only has to reach ONE consumer: analytical terms accept
+        and ignore it, so a composition of a spin-aware learned model with a
+        ZBL term is a valid native-spin model.  With no consumer at all the
+        magnetic force would be identically zero, which is not a spin model.
+        """
+        return any(m.supports_native_spin() for m in self.models)
+
     def forward_atomic_graph(
         self,
         graph: Any,

@@ -133,7 +133,7 @@ class DPAtomicModel(BaseAtomicModel):
         # (that would be a ``TypeError``, not a no-op). Queried via the
         # ``supports_native_spin`` capability method declared on
         # ``BaseDescriptor`` (concrete default ``False``; DPA4 overrides).
-        self.supports_native_spin: bool = self.descriptor.supports_native_spin()
+        self._supports_native_spin: bool = self.descriptor.supports_native_spin()
         # Same capability method as ``supports_native_spin`` above, for the
         # frame-level ``charge_spin`` FiLM kwarg: only DPA4's ``call_graph``
         # declares it; other descriptors' ``call_graph`` would ``TypeError``
@@ -166,6 +166,10 @@ class DPAtomicModel(BaseAtomicModel):
     def uses_graph_lower(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
+
+    def supports_native_spin(self) -> bool:
+        """Delegates to this model's own descriptor (cached at construction)."""
+        return self._supports_native_spin
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -375,7 +379,7 @@ class DPAtomicModel(BaseAtomicModel):
         # See ``self.supports_native_spin``/``self.supports_charge_spin`` in
         # ``__init__``: only forward the ``spin``/``charge_spin`` keyword to
         # descriptors whose ``call_graph`` declares it.
-        spin_kwargs = {"spin": spin} if self.supports_native_spin else {}
+        spin_kwargs = {"spin": spin} if self._supports_native_spin else {}
         charge_spin_kwargs = (
             {"charge_spin": charge_spin} if self.supports_charge_spin else {}
         )

@@ -179,6 +179,17 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def supports_native_spin(self) -> bool:
+        """Returns whether this atomic model consumes a per-atom spin input.
+
+        Generic capability (concrete default ``False``), the twin of
+        :meth:`uses_graph_lower`: the model layer asks the atomic model
+        directly instead of reaching into it for a descriptor, so the answer
+        stays correct for architectures with no descriptor at all (analytical
+        terms) and for compositions.
+        """
+        return False
+
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return None

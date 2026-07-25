@@ -312,3 +312,41 @@ class TestInterPotentialChangeTypeMap:
         np.testing.assert_allclose(
             _pair_energy(restored), _pair_energy(model), rtol=1e-12
         )
+
+
+class TestNativeSpinCapabilityOnAtomicModel:
+    """``supports_native_spin`` is answered by the ATOMIC MODEL.
+
+    The model layer must not reach into an atomic model for a descriptor to
+    decide spin eligibility: an analytical term has no descriptor at all, and
+    a composition has several children.  Each atomic model answers from its
+    own structure, exactly like ``uses_graph_lower``.
+    """
+
+    def test_analytical_term_is_not_spin_capable(self) -> None:
+        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        # inherits the concrete base default -- no descriptor, no spin input
+        assert zbl.supports_native_spin() is False
+
+    def test_composition_is_capable_when_any_child_is(self) -> None:
+        """ANY, not ALL: analytical children accept and ignore ``spin``."""
+        learned = get_model(
+            {
+                **copy.deepcopy(ZBL_CONFIG),
+                "spin": {"use_spin": [True, False], "scheme": "native"},
+            }
+        ).atomic_model
+        assert learned.supports_native_spin() is True
+        kinds = [type(c).__name__ for c in learned.models]
+        assert kinds[1] == "InterPotentialAtomicModel", kinds
+        # ... and the spin-free analytical child alone is not capable
+        assert learned.models[1].supports_native_spin() is False
+
+    def test_composition_without_a_spin_consumer_is_not_capable(self) -> None:
+        """No consumer => the magnetic force would be identically zero."""
+        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        composed = LinearEnergyAtomicModel(
+            [zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum"
+        )
+        assert composed.supports_native_spin() is False

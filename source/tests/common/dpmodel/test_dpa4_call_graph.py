@@ -424,7 +424,7 @@ def test_supports_native_spin_capability_gate() -> None:
         seed=5,
     )
     dpa4_model = DPAtomicModel(dd, ft, type_map=["A", "B", "C"])
-    assert dpa4_model.supports_native_spin is True
+    assert dpa4_model.supports_native_spin() is True
     assert dpa4_model.supports_charge_spin is True
 
 

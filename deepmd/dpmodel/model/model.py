@@ -240,44 +240,14 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
-def learned_descriptor(atomic_model: Any) -> Any:
-    """The descriptor of the LEARNED term of an atomic model.
-
-    A plain atomic model owns its descriptor directly; a composition (e.g.
-    analytical bridging, ``LinearEnergyAtomicModel`` over ``[learned,
-    InterPotential]``) has exactly one descriptor-bearing child, since the
-    analytical terms are descriptor-free.  Shared by every backend's builder
-    so descriptor capability gates read the same object regardless of whether
-    the model happens to be composed.
-
-    Parameters
-    ----------
-    atomic_model
-        The atomic model to inspect.
-
-    Returns
-    -------
-    descriptor or None
-        The learned descriptor, or ``None`` if no child has one.
-    """
-    descriptor = getattr(atomic_model, "descriptor", None)
-    if descriptor is not None:
-        return descriptor
-    for child in getattr(atomic_model, "models", []):
-        descriptor = getattr(child, "descriptor", None)
-        if descriptor is not None:
-            return descriptor
-    return None
-
-
 def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     """Get a native (virtual-atom-free) spin model from a dictionary.
 
     Unlike :func:`get_spin_model`, no virtual atoms or doubled type map are
     introduced: ``spin`` is injected into the descriptor config as
     ``use_spin`` and consumed by the descriptor's equivariant spin
-    embedding. Any descriptor declaring ``supports_native_spin()`` is
-    eligible; the gate is the capability method, not a descriptor-type
+    embedding. Any atomic model declaring ``supports_native_spin()`` is
+    eligible; the gate is that capability method, not a descriptor-type
     list.
 
     The non-spin backbone is built by :func:`get_standard_model`, which OWNS
@@ -322,10 +292,12 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
             "support (supports_native_spin()); descriptor type "
             f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
         ) from err
-    descriptor = learned_descriptor(backbone_model.atomic_model)
-    if descriptor is None or not descriptor.supports_native_spin():
+    # The ATOMIC MODEL answers the capability -- it knows its own structure,
+    # so this holds for a plain descriptor+fitting model and for a bridging
+    # composition alike, with no assumption here about either.
+    if not backbone_model.atomic_model.supports_native_spin():
         raise NotImplementedError(
-            "spin scheme 'native' requires a descriptor declaring "
+            "spin scheme 'native' requires an atomic model declaring "
             "supports_native_spin()"
         )
     return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)

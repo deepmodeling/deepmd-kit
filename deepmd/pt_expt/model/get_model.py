@@ -258,9 +258,9 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     for the DPA4/SeZM family (keeping its bridging/lora/compile/
     preset_out_bias rejections and ``exclude_types`` consistency check),
     else :func:`get_standard_model` -- then re-classed through the
-    registered :class:`NativeSpinEnergyModel`. Eligibility is the
-    ``descriptor.supports_native_spin()`` capability, not a descriptor-type
-    list.
+    registered :class:`NativeSpinEnergyModel`. Eligibility is the atomic
+    model's own ``supports_native_spin()`` capability, not a descriptor-type
+    list -- so a bridging composition answers for itself.
 
     Parameters
     ----------
@@ -300,16 +300,12 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
             "support (supports_native_spin()); descriptor type "
             f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
         ) from err
-    # A bridged backbone is a LinearEnergyAtomicModel; the capability gate
-    # reads the LEARNED child's descriptor either way (shared helper).
-    from deepmd.dpmodel.model.model import (
-        learned_descriptor,
-    )
-
-    descriptor = learned_descriptor(backbone_model.atomic_model)
-    if descriptor is None or not descriptor.supports_native_spin():
+    # The ATOMIC MODEL answers the capability -- it knows its own structure,
+    # so this holds for a plain descriptor+fitting model and for a bridging
+    # composition alike, with no assumption here about either.
+    if not backbone_model.atomic_model.supports_native_spin():
         raise NotImplementedError(
-            "spin scheme 'native' requires a descriptor declaring "
+            "spin scheme 'native' requires an atomic model declaring "
             "supports_native_spin()"
         )
     return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)
