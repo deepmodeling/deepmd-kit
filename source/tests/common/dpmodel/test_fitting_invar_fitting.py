@@ -4,6 +4,11 @@ import unittest
 
 import numpy as np
 
+try:
+    import torch
+except ImportError:
+    torch = None
+
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
@@ -177,3 +182,48 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]:
             ifn0[ii] = foo
             np.testing.assert_allclose(foo, ifn0[ii])
+
+    @unittest.skipIf(torch is None, "PyTorch is not installed")
+    def test_runtime_buffers_follow_torch_descriptor(self) -> None:
+        """Portable fitting buffers must materialize on the active backend."""
+        fitting = InvarFitting(
+            "energy",
+            ntypes=2,
+            dim_descrpt=3,
+            dim_out=1,
+            neuron=[5, 5],
+            numb_fparam=2,
+            numb_aparam=1,
+            dim_case_embd=2,
+            default_fparam=[0.5, -0.25],
+            precision="float64",
+            mixed_types=True,
+            seed=20260717,
+        )
+        fitting.bias_atom_e[:] = [[1.5], [-0.75]]
+        fitting.fparam_avg[:] = [0.1, -0.2]
+        fitting.fparam_inv_std[:] = [2.0, 0.5]
+        fitting.aparam_avg[:] = [0.25]
+        fitting.aparam_inv_std[:] = [4.0]
+        fitting.case_embd[:] = [0.3, -0.6]
+
+        descriptor = np.array(
+            [[[0.2, -0.1, 0.4], [0.5, 0.3, -0.2], [-0.4, 0.7, 0.1]]],
+            dtype=np.float64,
+        )
+        atype = np.array([[0, 1, 0]], dtype=np.int64)
+        aparam = np.array([[[0.5], [0.0], [1.0]]], dtype=np.float64)
+        expected = fitting(descriptor, atype, aparam=aparam)["energy"]
+
+        # Backend wrappers eagerly convert these NumPy attributes and would
+        # hide the generic dpmodel boundary, so convert only runtime inputs.
+        result = fitting(
+            torch.as_tensor(descriptor),
+            torch.as_tensor(atype),
+            aparam=torch.as_tensor(aparam),
+        )["energy"]
+
+        self.assertIsInstance(result, torch.Tensor)
+        self.assertEqual(result.dtype, torch.float64)
+        self.assertEqual(result.device.type, "cpu")
+        np.testing.assert_allclose(result.detach().cpu().numpy(), expected)
