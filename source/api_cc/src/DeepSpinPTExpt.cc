@@ -816,16 +816,18 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else if (lower_input_is_graph_) {
-      // Native-spin NeighborGraph route: single-rank ONLY (the multi-rank
-      // fail-fast above guarantees ``multi_rank == false`` here), so ghost
-      // neighbours always fold onto their local owners
-      // (``fold_to_local=true``, N == nloc).  Cache the skin topology; the
-      // model-cutoff edges are recomputed on-device every step (see
-      // DeepPotPTExpt.cc's graph branch).
+      // Native-spin NeighborGraph route: single-rank folds ghost neighbours
+      // onto their local owners (``fold_to_local=true``, N == nloc);
+      // multi-rank indexes the extended node set directly
+      // (``fold_to_local=false``, N == nall_real) so ghost node features --
+      // including the per-node spin embedding -- can be refreshed across
+      // ranks via border_op (the twin of DeepPotPTExpt.cc's graph branch).
+      // Cache the skin topology; the model-cutoff edges are recomputed
+      // on-device every step (see DeepPotPTExpt.cc's graph branch).
       const auto edge_tensors = createEdgeTensors(
           nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          /*fold_to_local=*/true);
+          /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {
