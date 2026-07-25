@@ -260,8 +260,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       if (!(eflag_atom || cvflag_atom)) {
         try {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                            dtype, dbox, nghost, lmp_list, ago, fparam,
-                            daparam);
+                            dtype, dbox, nghost, lmp_list, ago, fparam, daparam,
+                            charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -273,7 +273,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
         try {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
                             dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
-                            fparam, daparam);
+                            fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -506,7 +506,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     if (numb_models == 1) {
       try {
         deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                          dtype, dbox);
+                          dtype, dbox, vector<double>(), vector<double>(),
+                          charge_spin);
       } catch (deepmd_compat::deepmd_exception& e) {
         error->one(FLERR, e.what());
       }
@@ -552,6 +553,7 @@ static bool is_key(const string& input) {
   keys.push_back("aparam");
   keys.push_back("fparam_from_compute");
   keys.push_back("aparam_from_compute");
+  keys.push_back("charge_spin");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -595,6 +597,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
     numb_types_spin = deep_spin.numb_types_spin();
     dim_fparam = deep_spin.dim_fparam();
     dim_aparam = deep_spin.dim_aparam();
+    dim_chg_spin = deep_spin.dim_chg_spin();
   } else {
     try {
       deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
@@ -608,6 +611,10 @@ void PairDeepSpin::settings(int narg, char** arg) {
     numb_types_spin = deep_spin_model_devi.numb_types_spin();
     dim_fparam = deep_spin_model_devi.dim_fparam();
     dim_aparam = deep_spin_model_devi.dim_aparam();
+    // DeepSpinModelDevi has no charge/spin accessor yet; take the dimension
+    // from the first model so the `charge_spin` keyword still parses (its use
+    // with multiple models is rejected below).
+    dim_chg_spin = deep_spin.dim_chg_spin();
     assert(cutoff == deep_spin.cutoff() * dist_unit_cvt_factor);
     assert(numb_types == deep_spin.numb_types());
     assert(numb_types_spin == deep_spin.numb_types_spin());
@@ -622,6 +629,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
   eps = 0.;
   fparam.clear();
   aparam.clear();
+  charge_spin.clear();
   while (iarg < narg) {
     if (!is_key(arg[iarg])) {
       error->all(FLERR,
@@ -661,6 +669,17 @@ void PairDeepSpin::settings(int narg, char** arg) {
         aparam.push_back(atof(arg[iarg + 1 + ii]));
       }
       iarg += 1 + dim_aparam;
+    } else if (string(arg[iarg]) == string("charge_spin")) {
+      for (int ii = 0; ii < dim_chg_spin; ++ii) {
+        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
+          char tmp[1024];
+          sprintf(tmp, "Illegal charge_spin, the dimension should be %d",
+                  dim_chg_spin);
+          error->all(FLERR, tmp);
+        }
+        charge_spin.push_back(atof(arg[iarg + 1 + ii]));
+      }
+      iarg += 1 + dim_chg_spin;
     } else if (string(arg[iarg]) == string("ttm")) {
 #ifdef USE_TTM
       for (int ii = 0; ii < 1; ++ii) {
@@ -742,6 +761,13 @@ void PairDeepSpin::settings(int narg, char** arg) {
     error->all(
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
+  }
+  // The model-deviation spin interface does not carry charge_spin yet, so
+  // fail fast instead of silently dropping the user's value.
+  if (charge_spin.size() > 0 && numb_models > 1) {
+    error->all(FLERR,
+               "charge_spin is not supported with multiple models (model "
+               "deviation) for pair_style deepspin");
   }
 
   if (comm->me == 0) {

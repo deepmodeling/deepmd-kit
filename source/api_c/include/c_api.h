@@ -13,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 28
+#define DP_C_API_VERSION 29
 
 /**
  * @brief Neighbor list.
@@ -1036,6 +1036,218 @@ extern void DP_DeepSpinComputeNListf2(DP_DeepSpin* dp,
                                       const int ago,
                                       const float* fparam,
                                       const float* aparam,
+                                      double* energy,
+                                      float* force,
+                                      float* force_mag,
+                                      float* virial,
+                                      float* atomic_energy,
+                                      float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model. (double version, with charge_spin)
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] spin The spins of atoms. The array should be of size nframes x
+ *natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size nframes
+ *x 9. Pass NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size
+ *natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 29
+ **/
+extern void DP_DeepSpinCompute3(DP_DeepSpin* dp,
+                                const int nframes,
+                                const int natoms,
+                                const double* coord,
+                                const double* spin,
+                                const int* atype,
+                                const double* cell,
+                                const double* fparam,
+                                const double* aparam,
+                                const double* charge_spin,
+                                double* energy,
+                                double* force,
+                                double* force_mag,
+                                double* virial,
+                                double* atomic_energy,
+                                double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model. (float version, with charge_spin)
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] spin The spins of atoms. The array should be of size nframes x
+ *natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size nframes
+ *x 9. Pass NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size
+ *natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 29
+ **/
+extern void DP_DeepSpinComputef3(DP_DeepSpin* dp,
+                                 const int nframes,
+                                 const int natoms,
+                                 const float* coord,
+                                 const float* spin,
+                                 const int* atype,
+                                 const float* cell,
+                                 const float* fparam,
+                                 const float* aparam,
+                                 const float* charge_spin,
+                                 double* energy,
+                                 float* force,
+                                 float* force_mag,
+                                 float* virial,
+                                 float* atomic_energy,
+                                 float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model with the neighbor list. (double version, with charge_spin)
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] spin The spins of atoms. The array should be of size nframes x
+ *natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size nframes
+ *x 9. Pass NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size
+ *natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 29
+ **/
+extern void DP_DeepSpinComputeNList3(DP_DeepSpin* dp,
+                                     const int nframes,
+                                     const int natoms,
+                                     const double* coord,
+                                     const double* spin,
+                                     const int* atype,
+                                     const double* cell,
+                                     const int nghost,
+                                     const DP_Nlist* nlist,
+                                     const int ago,
+                                     const double* fparam,
+                                     const double* aparam,
+                                     const double* charge_spin,
+                                     double* energy,
+                                     double* force,
+                                     double* force_mag,
+                                     double* virial,
+                                     double* atomic_energy,
+                                     double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model with the neighbor list. (float version, with charge_spin)
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] spin The spins of atoms. The array should be of size nframes x
+ *natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size nframes
+ *x 9. Pass NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size
+ *natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 29
+ **/
+extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
+                                      const int nframes,
+                                      const int natoms,
+                                      const float* coord,
+                                      const float* spin,
+                                      const int* atype,
+                                      const float* cell,
+                                      const int nghost,
+                                      const DP_Nlist* nlist,
+                                      const int ago,
+                                      const float* fparam,
+                                      const float* aparam,
+                                      const float* charge_spin,
                                       double* energy,
                                       float* force,
                                       float* force_mag,
@@ -2262,6 +2474,15 @@ int DP_DeepSpinGetDimFParam(DP_DeepSpin* dp);
  * @since API version 24
  */
 int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the dimension of the charge/spin input of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The dimension of the charge/spin input (0 if the model has no
+ * charge/spin embedding).
+ * @since API version 29
+ */
+int DP_DeepSpinGetDimChgSpin(DP_DeepSpin* dp);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall

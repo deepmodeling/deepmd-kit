@@ -162,6 +162,91 @@ class DeepSpinBackend : public DeepBaseModelBackend {
   /** @} */
 
   /**
+   * @brief Get dimension of charge/spin condition inputs.
+   * Returns 0 for backends that do not support charge/spin conditioning.
+   **/
+  virtual int dim_chg_spin() const { return 0; }
+
+  // charge_spin-aware computew overloads.  Default implementations call the
+  // existing pure-virtual overloads (ignoring charge_spin) so that backends
+  // that do not support charge/spin do not need any changes.  DeepSpinPTExpt
+  // overrides these to thread charge_spin through to the model.
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& force_mag,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<double>& spin,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+             spin, atype, box, fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& force_mag,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<float>& spin,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+             spin, atype, box, fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& force_mag,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<double>& spin,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+             spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& force_mag,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<float>& spin,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+             spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
+  }
+
+  /**
    * @brief Get the per-type use_spin flags.
    * @return A vector of booleans indicating which atom types have spin enabled.
    *         Empty if the backend does not provide this information.
@@ -222,6 +307,10 @@ class DeepSpin : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -234,7 +323,8 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -245,7 +335,8 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
 
   /**
@@ -273,6 +364,10 @@ class DeepSpin : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -288,7 +383,8 @@ class DeepSpin : public DeepBaseModel {
                const InputNlist& inlist,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -302,7 +398,8 @@ class DeepSpin : public DeepBaseModel {
                const InputNlist& inlist,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
 
   /**
@@ -329,6 +426,10 @@ class DeepSpin : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -343,7 +444,8 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -356,7 +458,8 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
 
   /**
@@ -386,6 +489,10 @@ class DeepSpin : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -403,7 +510,8 @@ class DeepSpin : public DeepBaseModel {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -419,8 +527,16 @@ class DeepSpin : public DeepBaseModel {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
+
+  /**
+   * @brief Get dimension of the charge/spin condition inputs.
+   * @return The dimension of charge_spin; 0 when the model does not support
+   *charge/spin conditioning.
+   **/
+  int dim_chg_spin() const;
 
   /**
    * @brief Get the per-type use_spin flags.
