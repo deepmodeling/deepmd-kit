@@ -398,6 +398,83 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph(
   return loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepSpinPTExpt::run_model_graph_with_comm(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& n_local,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& destination_order,
+    const torch::Tensor& destination_row_ptr,
+    const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
+    const torch::Tensor& spin,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 has no with-comm artifact compiled "
+        "(programming error: the caller must check has_comm_artifact_ "
+        "first), or it failed to load at init (see earlier stderr log). "
+        "Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm: comm_tensors must contain exactly 8 "
+        "tensors (send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  deepmd::check_graph_aparam_flat(aparam, daparam,
+                                  "DeepSpinPTExpt::run_model_graph_with_comm");
+  // Graph-spin with-comm ABI: exactly run_model_graph's prefix (spin stays
+  // at positional index 10) with the 8 comm tensors appended after the
+  // conditional fparam/aparam/charge_spin tail -- the twin of
+  // DeepPotPTExpt::run_model_graph_with_comm, which appends them after the
+  // energy model's shorter tail.
+  //
+  // Device placement follows the energy route: the base tensors (n_local
+  // included) live on the model device, while ALL 8 comm tensors stay on
+  // CPU -- border_op's HOST code dereferences their data_ptr and reads
+  // nlocal/nghost via cheap .item() calls.
+  //
+  // ``spin`` is the EXTENDED per-node spin: ghost rows carry their owner's
+  // spin, delivered by the LAMMPS ``sp`` forward-comm before this call, so
+  // spin needs no border exchange of its own -- only the per-block ghost
+  // FEATURE refresh rides border_op.
+  std::vector<torch::Tensor> inputs = {atype,
+                                       n_node,
+                                       n_local,
+                                       edge_index,
+                                       edge_vec,
+                                       edge_mask,
+                                       destination_order,
+                                       destination_row_ptr,
+                                       source_order,
+                                       source_row_ptr,
+                                       spin};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, spin.options())
+                           .view({1, dim_chg_spin})
+                           .expand({n_node.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& ct : comm_tensors) {
+    inputs.push_back(ct);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 std::vector<torch::Tensor> DeepSpinPTExpt::run_model_edges_with_comm(
     const torch::Tensor& coord,
     const torch::Tensor& atype,
@@ -640,20 +717,20 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
-  // NeighborGraph native-spin dispatch: single-rank ONLY. There is no
-  // ``run_model_graph_with_comm`` sibling (native-spin .pt2 is exported with
-  // ``has_comm_artifact=false`` always -- see gen_dpa4_spin.py), so a
-  // multi-rank run of a graph-kind spin artifact can never drive cross-rank
-  // ghost-feature exchange. Fail fast on the SAME condition the energy graph
-  // path uses to decide it needs the with-comm artifact (see
-  // DeepPotPTExpt.cc's ``lower_input_is_graph_ && multi_rank &&
-  // has_message_passing_`` guard) -- for spin the with-comm artifact never
-  // exists, so this throws unconditionally rather than checking for it.
-  if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
+  // NeighborGraph native-spin multi-rank goes through
+  // ``run_model_graph_with_comm`` (the spin twin of the energy graph
+  // route).  It needs the with-comm artifact for the per-block ghost
+  // FEATURE refresh; the generic GNN matrix below already fails fast when
+  // a message-passing model meets multi-rank without one, so the only
+  // spin-specific guard left is an archive frozen before native spin
+  // participated in the with-comm export.
+  if (lower_input_is_graph_ && multi_rank && has_message_passing_ &&
+      !has_comm_artifact_) {
     throw deepmd::deepmd_exception(
-        "multi-rank inference is not supported for graph-kind spin .pt2 "
-        "models (has_comm_artifact=false); run native-spin DPA4 graph .pt2 "
-        "inference on a single MPI rank.");
+        "multi-rank inference of a graph-kind native-spin .pt2 requires the "
+        "nested with-comm artifact (has_comm_artifact=false in this "
+        "archive); re-freeze the model so the with-comm graph lower is "
+        "compiled, or run on a single MPI rank.");
   }
   // Decision matrix (see PR #5450 description):
   //   non-GNN model (has_message_passing_ == false): regular path is
@@ -872,7 +949,56 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
           nghost_real);
     }
-    if (lower_input_is_edge_) {
+    if (lower_input_is_graph_) {
+      // Native-spin NeighborGraph multi-rank: the twin of
+      // DeepPotPTExpt's graph with-comm branch, plus the EXTENDED per-node
+      // spin.  Nodes are the extended set (fold_to_local=false above), so
+      // ``n_node`` counts owned+ghost while the separate device
+      // ``n_local`` drives the owned-energy mask; ghost spins arrive via
+      // the LAMMPS ``sp`` forward-comm, and border_op refreshes ghost node
+      // FEATURES between interaction blocks.
+      if (nall_real <= 0) {
+        throw deepmd::deepmd_exception(
+            "Multi-rank native-spin graph inference does not support a rank "
+            "with zero owned+ghost atoms (the exported graph artifact needs "
+            "at least one node, and skipping the run would desync the "
+            "per-layer MPI ghost exchange).");
+      }
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      const std::int64_t n_node_count = nall_real;
+      at::Tensor n_node_tensor =
+          torch::full({1}, n_node_count, int_option).to(device);
+      at::Tensor n_local_tensor =
+          torch::full({1}, static_cast<std::int64_t>(nloc), int_option)
+              .to(device);
+      at::Tensor node_atype =
+          atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
+      GraphTensorPack graph_pack;
+      graph_pack.atype = node_atype;
+      graph_pack.n_node = n_node_tensor;
+      graph_pack.n_local = n_local_tensor;
+      graph_pack.edge_index = edge_tensors.edge_index;
+      graph_pack.edge_vec = graph_edge_fp32_
+                                ? edge_tensors.edge_vec.to(torch::kFloat32)
+                                : edge_tensors.edge_vec;
+      // Same build-time exclusion seam as the single-rank graph branch.
+      graph_pack.edge_mask = deepmd::applyPairExclusion(
+          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+          pair_exclude_table_, ntypes);
+      canonicalizeGraphPayload(graph_pack, n_node_count);
+      flat_outputs = run_model_graph_with_comm(
+          node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
+          graph_pack.edge_vec, graph_pack.edge_mask,
+          graph_pack.destination_order, graph_pack.destination_row_ptr,
+          graph_pack.source_order, graph_pack.source_row_ptr,
+          spin_Tensor.slice(1, 0, n_node_count).reshape({n_node_count, 3}),
+          fparam_tensor,
+          deepmd::extend_graph_aparam(aparam_tensor, n_node_count, nloc,
+                                      daparam),
+          comm_tensors);
+    } else if (lower_input_is_edge_) {
       // Native spin multi-rank: edges index the extended node set
       // (fold_to_local=false above), the EXTENDED per-node spin feeds the
       // descriptor (ghost spins arrive via the LAMMPS sp forward-comm), and

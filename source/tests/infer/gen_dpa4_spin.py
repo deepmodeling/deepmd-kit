@@ -192,7 +192,11 @@ def _check_metadata(pt2_path: str, expected_exclude: list) -> None:
         f"{md.get('lower_input_kind')!r}"
     )
     assert md["is_spin"] is True
-    assert md["has_comm_artifact"] is False
+    # Native spin rides the with-comm artifact on the graph lower, so the
+    # archive carries the nested forward_lower_with_comm.pt2 for the C++
+    # multi-rank path (a SECOND inductor compile -- this generator is the
+    # slowest of the set for that reason).
+    assert md["has_comm_artifact"] is True
     assert md["has_message_passing"] is True
     assert md["use_spin"] == [True, False]
     # The exclusion travels as METADATA -- work still owed by the feeder, NOT

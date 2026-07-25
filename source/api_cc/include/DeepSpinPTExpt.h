@@ -268,6 +268,32 @@ class DeepSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& aparam);
 
   /**
+   * @brief Run the native-spin parallel GRAPH artifact: run_model_graph's
+   * ABI (spin at positional index 10) with the 8 border_op comm tensors
+   * appended after the conditional fparam/aparam/charge_spin tail.
+   *
+   * ``spin`` is the EXTENDED per-node spin -- ghost rows carry their
+   * owner's value from the LAMMPS ``sp`` forward-comm, so spin itself needs
+   * no cross-rank exchange; only the per-block ghost FEATURE refresh rides
+   * ``border_op``.  Twin of ``DeepPotPTExpt::run_model_graph_with_comm``.
+   */
+  std::vector<torch::Tensor> run_model_graph_with_comm(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
    * @brief Run the native-spin parallel edge artifact: the energy edge
    * with-comm schema (coord and extended types span the extended node set)
    * plus the EXTENDED per-node spin leaf, then the 8 border_op comm tensors.

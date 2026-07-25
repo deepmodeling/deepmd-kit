@@ -148,17 +148,13 @@ def _needs_with_comm_artifact(
     (absent on descriptors, such as dpa2/dpa3, whose dense lower always
     supports comm — treated as ``True``).
 
-    FIRST rule (checked before any descriptor-based logic): the native-spin
-    native-spin model (``NativeSpinEnergyModel``, type ``native_spin`` /
-    ``sezm_native_spin``) always returns ``False``, regardless of
-    ``lower_kind`` or the wrapped backbone descriptor's own
-    ``has_message_passing_across_ranks()``. Ghost-atom SPIN exchange across
-    MPI ranks is not implemented -- the wrapper's graph-spin ``.pt2`` ABI
-    (``forward_lower_graph_exportable``, spin at positional index 10) is
-    single-rank only. The backbone's own (energy-only) descriptor may well
-    report ``True`` for cross-rank message passing -- that capability
-    belongs to the energy-only backbone, not to this wrapper's (unported)
-    spin threading, so it must not leak through.
+    Native spin participates on the GRAPH lower, matching pt's
+    ``SeZMModel.supports_edge_parallel`` (which ``SeZMNativeSpinModel`` does
+    not override): the spin input is per-node and its ghost rows arrive via
+    the LAMMPS ``sp`` forward-comm, so nothing about spin needs its own
+    cross-rank exchange -- the per-block ghost FEATURE refresh is the same
+    ``border_op`` the energy model uses. It is excluded only on the dense
+    (nlist) lower, which has no spin with-comm wrapper.
 
     Parameters
     ----------
@@ -180,7 +176,9 @@ def _needs_with_comm_artifact(
     # Cross-backend family test: the dpmodel and pt_expt concrete classes
     # are parallel factory products with no subclass relation, so the shared
     # marker base -- not a concrete class -- is the membership check.
-    if isinstance(model, NativeSpinModelKind):
+    # Native spin rides the GRAPH lower only; its dense lower has no
+    # with-comm wrapper at all.
+    if isinstance(model, NativeSpinModelKind) and lower_kind != "graph":
         return False
 
     # Analytical bridging models are single-rank only (pt's
@@ -835,6 +833,7 @@ def _build_graph_dynamic_shapes(
 
 def _build_graph_dynamic_shapes_with_comm(
     *sample_inputs: torch.Tensor | None,
+    is_native_spin: bool = False,
 ) -> tuple:
     """Build dynamic-shape specs for the with-comm graph-form export.
 
@@ -855,6 +854,11 @@ def _build_graph_dynamic_shapes_with_comm(
         source_row_ptr, fparam, aparam, charge_spin, send_list, send_proc,
         recv_proc, send_num, recv_num, communicator, nlocal, nghost)`` --
         21 entries matching ``forward_lower_graph_exportable_with_comm``.
+        Native-spin ABI (``is_native_spin=True``): 22 entries, with ``spin``
+        inserted at slot 10 and the conditional tail shifted to 11-13, so
+        the comm block starts at 14.
+    is_native_spin : bool
+        Whether ``sample_inputs`` follows the native-spin positional ABI.
 
     Returns
     -------
@@ -862,9 +866,11 @@ def _build_graph_dynamic_shapes_with_comm(
         Per-input dynamic-shape specs (dicts of ``torch.export.Dim`` or
         ``None``) in the same order as ``sample_inputs``.
     """
-    fparam = sample_inputs[10]
-    aparam = sample_inputs[11]
-    charge_spin = sample_inputs[12]
+    tail_start = 11 if is_native_spin else 10
+    spin = sample_inputs[10] if is_native_spin else None
+    fparam = sample_inputs[tail_start]
+    aparam = sample_inputs[tail_start + 1]
+    charge_spin = sample_inputs[tail_start + 2]
     nframes_val = 1
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
@@ -879,6 +885,13 @@ def _build_graph_dynamic_shapes_with_comm(
         {0: n_node_total_dim + 1},  # destination_row_ptr: (N + 1,)
         {0: nedge_dim},  # source_order: (E,)
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
+        # spin: (N, 3) — EXTENDED node axis, shares atype's symbol; present
+        # only in the native-spin ABI, where it occupies slot 10.
+        *(
+            ({0: n_node_total_dim} if spin is not None else None,)
+            if is_native_spin
+            else ()
+        ),
         {0: nframes_val} if fparam is not None else None,  # fparam
         # aparam: (N, nda) — flat on the SAME extended node axis as atype
         # (owned prefix + ghost rows).
@@ -1672,6 +1685,7 @@ def _trace_and_export(
                 dtype=torch.float64,
                 edge_dtype=edge_dtype,
                 device=torch.device("cpu"),
+                want_spin=is_native_spin,
             )
             comm_inputs = _make_comm_sample_inputs(
                 nloc=nlocal_sample,
@@ -1687,7 +1701,9 @@ def _trace_and_export(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-            dynamic_shapes = _build_graph_dynamic_shapes_with_comm(*sample_inputs)
+            dynamic_shapes = _build_graph_dynamic_shapes_with_comm(
+                *sample_inputs, is_native_spin=is_native_spin
+            )
         else:
             edge_dtype = (
                 torch.float32

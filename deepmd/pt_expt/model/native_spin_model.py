@@ -133,8 +133,8 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         before the conditional ``fparam``/``aparam`` tail; the conditional
         ``charge_spin`` tail follows at index 13 (combined native-spin +
         charge-spin FiLM models, review 3638047227; ``None`` otherwise).
-        There is NO with-comm variant (single-rank only; multi-rank
-        graph-spin is a follow-up).
+        :meth:`forward_lower_graph_exportable_with_comm` extends this SAME
+        prefix with the 8 comm tensors for multi-rank.
 
         Two-layer make_fx trace, mirroring
         :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable`:
@@ -277,4 +277,164 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             fparam,
             aparam,
             charge_spin,
+        )
+
+    def forward_lower_graph_exportable_with_comm(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        destination_order: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        spin: torch.Tensor,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        send_list: torch.Tensor,
+        send_proc: torch.Tensor,
+        recv_proc: torch.Tensor,
+        send_num: torch.Tensor,
+        recv_num: torch.Tensor,
+        communicator: torch.Tensor,
+        nlocal: torch.Tensor,
+        nghost: torch.Tensor,
+        do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace the multi-rank graph-spin lower into an exportable module.
+
+        The with-comm counterpart of
+        :meth:`forward_lower_graph_exportable`: same positional prefix,
+        ``spin`` still at index 10, then the 8 comm tensors appended after
+        the conditional ``fparam``/``aparam``/``charge_spin`` tail (indices
+        14-21) -- exactly how
+        :meth:`~deepmd.pt_expt.model.ener_model.EnergyModel.forward_lower_graph_exportable_with_comm`
+        appends them for the energy model.
+
+        ``spin`` is the EXTENDED per-node spin ``(N, 3)``: ghost rows carry
+        their owner's spin, delivered by the LAMMPS ``sp`` forward-comm
+        before the call, so the descriptor's spin embedding sees the same
+        value on every rank that holds the node.  The per-block ghost
+        FEATURE refresh rides ``deepmd_export::border_op`` exactly as in the
+        energy model; spin needs no border exchange of its own because it is
+        an input, not a derived feature.
+
+        Single make_fx trace (the energy with-comm precedent), unlike the
+        two-layer trace of the non-comm spin path: the comm-dict packing,
+        the ``forward_common_lower_graph`` call with ``spin`` as a second
+        autograd leaf, and the public-key translation all live in one traced
+        ``fn``.
+
+        Parameters
+        ----------
+        atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order, destination_row_ptr, source_order, source_row_ptr, spin, fparam, aparam, charge_spin
+            As in :meth:`forward_lower_graph_exportable`.
+        send_list, send_proc, recv_proc, send_num, recv_num, communicator, nlocal, nghost
+            The 8 comm tensors, packed into ``comm_dict`` inside the traced
+            function.  Same runtime device contract as the energy model's:
+            ALL 8 stay on CPU (host control metadata for ``border_op``),
+            while the device-side owned count is the separate ``n_local``
+            input at slot 2.
+        do_atomic_virial
+            Whether to also return ``atom_virial``.
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``.
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module accepting the 22-input ABI above and returning
+            the same public keys as :meth:`forward_lower_graph_exportable`
+            (``atom_energy``, ``energy``, ``force``, ``force_mag``,
+            ``virial``, ``mask_mag``, plus ``atom_virial`` when requested).
+        """
+        model = self
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            destination_order: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            spin: torch.Tensor,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
+            send_list: torch.Tensor,
+            send_proc: torch.Tensor,
+            recv_proc: torch.Tensor,
+            send_num: torch.Tensor,
+            recv_num: torch.Tensor,
+            communicator: torch.Tensor,
+            nlocal: torch.Tensor,
+            nghost: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            comm_dict = {
+                "send_list": send_list,
+                "send_proc": send_proc,
+                "recv_proc": recv_proc,
+                "send_num": send_num,
+                "recv_num": recv_num,
+                "communicator": communicator,
+                "nlocal": nlocal,
+                "nghost": nghost,
+            }
+            model_ret = model.forward_common_lower_graph(
+                atype,
+                n_node,
+                n_local,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
+                destination_sorted=True,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+                comm_dict=comm_dict,
+            )
+            # Same single-owner translation as the eager forward and the
+            # non-comm lower, so mask_mag is emitted here too.
+            return self._translate_eager_call(
+                model_ret, atype, do_atomic_virial=do_atomic_virial
+            )
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            spin,
+            fparam,
+            aparam,
+            charge_spin,
+            send_list,
+            send_proc,
+            recv_proc,
+            send_num,
+            recv_num,
+            communicator,
+            nlocal,
+            nghost,
         )

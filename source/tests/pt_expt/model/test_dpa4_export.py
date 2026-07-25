@@ -454,7 +454,12 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert md["type_map"] == NATIVE_SPIN_CONFIG["type_map"]
     assert md["lower_input_kind"] == "graph"
     assert md["is_spin"] is True
-    assert md["has_comm_artifact"] is False
+    # Native spin participates in the with-comm artifact on the GRAPH lower
+    # (pt's SeZMNativeSpinModel does not override supports_edge_parallel):
+    # the spin input is per-node with ghost rows delivered by the LAMMPS
+    # ``sp`` forward-comm, so only the per-block ghost FEATURE refresh needs
+    # border_op -- the same one the energy model drives.
+    assert md["has_comm_artifact"] is True
     assert md["has_message_passing"] is True
     assert md["ntypes_spin"] == 1  # use_spin=[True, False]
     assert md["use_spin"] == [True, False]
