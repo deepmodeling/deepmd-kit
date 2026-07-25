@@ -245,14 +245,135 @@ class TestZBLBridgingPtExpt:
             BaseModel.deserialize(self.pt_model.serialize())
 
 
-def test_native_spin_with_bridging_fails_fast() -> None:
-    """Native spin + bridging is a follow-up: the builder must not silently
-    drop the analytical term.
-    """
+def _native_spin_zbl_config() -> dict:
     cfg = copy.deepcopy(ZBL_CONFIG)
     cfg["spin"] = {"use_spin": [True, False], "scheme": "native"}
-    with pytest.raises(NotImplementedError, match="native spin"):
-        get_model(cfg)
+    return cfg
+
+
+def _spin_system():
+    """6 atoms (3 Ni spin-active, 3 O) with one close pair driving the ZBL."""
+    coord = torch.tensor(
+        [
+            [
+                [1.0, 1.0, 1.0],
+                [1.9, 1.2, 1.1],  # close to atom 0 -> nontrivial ZBL
+                [3.0, 2.0, 1.0],
+                [1.0, 3.0, 2.0],
+                [3.5, 1.0, 2.0],
+                [2.0, 2.0, 3.0],
+            ]
+        ],
+        dtype=torch.float64,
+    )
+    atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64)
+    spin = 0.1 * torch.ones_like(coord)
+    box = (6.0 * torch.eye(3, dtype=torch.float64)).reshape(1, 9)
+    return coord, atype, spin, box
+
+
+class TestNativeSpinWithBridging:
+    """Native spin + analytical bridging compose (review 3649276109).
+
+    ``get_standard_model`` OWNS assembling the atomic model, bridging
+    composition included, and the native-spin wrapper re-classes whatever it
+    returns -- so the two features combine with no special case: the learned
+    child consumes ``spin``, the analytical child accepts and ignores it.
+    """
+
+    def test_construction_composes_and_keeps_spin(self) -> None:
+        from deepmd.pt_expt.model.native_spin_model import (
+            NativeSpinEnergyModel,
+        )
+
+        model = get_model(_native_spin_zbl_config())
+        assert isinstance(model, NativeSpinEnergyModel)
+        assert model.has_spin() is True
+        kinds = [type(c).__name__ for c in model.atomic_model.models]
+        assert kinds[1] == "InterPotentialAtomicModel", kinds
+        # bridging radii still reach the LEARNED child's descriptor
+        assert float(model.atomic_model.models[0].descriptor.inner_clamp.r_inner) == 0.8
+
+    def test_forward_energy_force_force_mag(self) -> None:
+        model = get_model(_native_spin_zbl_config()).to(torch.device("cpu")).eval()
+        coord, atype, spin, box = _spin_system()
+        out = model(coord, atype, spin, box=box)
+        for key in ("energy", "force", "force_mag"):
+            assert torch.isfinite(out[key]).all(), key
+        # mask_mag follows use_spin=[True, False] on atype [0,0,0,1,1,1]
+        assert out["mask_mag"].reshape(-1).tolist() == [
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+        ]
+        # anti-vacuity: the analytical term must actually contribute.  The
+        # learned child alone is the same model minus the ZBL energy.
+        from deepmd.pt_expt.model.native_spin_model import (
+            NativeSpinEnergyModel,
+        )
+
+        learned_only = (
+            NativeSpinEnergyModel(
+                atomic_model_=model.atomic_model.models[0], spin=model.spin
+            )
+            .to(torch.device("cpu"))
+            .eval()
+        )
+        # Gas phase (no box) for the EXACT check: the in-test reference is a
+        # direct double loop over pairs, which has no periodic images.
+        e_gas = model(coord, atype, spin)["energy"]
+        e_gas_learned = learned_only(coord, atype, spin)["energy"]
+        zbl_contrib = float((e_gas - e_gas_learned).sum())
+        ref = _analytic_zbl_total(coord[0].numpy(), atype[0].numpy(), rcut=4.0)
+        np.testing.assert_allclose(zbl_contrib, ref, rtol=1e-10, atol=1e-10)
+        assert zbl_contrib > 1e-3
+
+    def test_serialize_roundtrip(self) -> None:
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+
+        model = get_model(_native_spin_zbl_config()).to(torch.device("cpu")).eval()
+        data = model.serialize()
+        assert data["type"] == "native_spin"
+        restored = BaseModel.deserialize(data).to(torch.device("cpu")).eval()
+        coord, atype, spin, box = _spin_system()
+        out = model(coord, atype, spin, box=box)
+        out2 = restored(coord, atype, spin, box=box)
+        for key in ("energy", "force", "force_mag"):
+            torch.testing.assert_close(
+                out[key], out2[key], rtol=1e-12, atol=1e-12, msg=key
+            )
+
+
+def test_native_spin_with_bridging_dpmodel() -> None:
+    """Dpmodel twin: same composition, energy-only (no autograd there)."""
+    from deepmd.dpmodel.model.model import get_model as dp_get_model
+    from deepmd.dpmodel.model.native_spin_model import (
+        NativeSpinEnergyModel as NativeSpinEnergyModelDP,
+    )
+
+    cfg = _native_spin_zbl_config()
+    cfg.pop("type")  # generic builder; the dpa4 alias routes the same way
+    model = dp_get_model(cfg)
+    assert isinstance(model, NativeSpinEnergyModelDP)
+    kinds = [type(c).__name__ for c in model.atomic_model.models]
+    assert kinds[1] == "InterPotentialAtomicModel", kinds
+
+    coord, atype, spin, box = _spin_system()
+    out = model.call(coord.numpy(), atype.numpy(), spin.numpy(), box=box.numpy())
+    assert np.all(np.isfinite(out["energy"]))
+    assert out["mask_mag"].reshape(-1).tolist() == [
+        True,
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_bridging_radii_defaults() -> None:
@@ -383,3 +504,167 @@ class TestZBLBridgingExportAndTraining:
                 assert torch.isfinite(loss).all(), f"non-finite loss at step {step}"
         finally:
             os.chdir(old_cwd)
+
+
+class TestInterPotentialChangeTypeMapPtExpt:
+    """pt_expt twin of the dpmodel ``change_type_map`` regression.
+
+    Exercised through the REAL composition: ``LinearEnergyModel`` ->
+    ``LinearEnergyAtomicModel`` -> ``InterPotentialAtomicModel`` ->
+    ``InterPotential``.  Inside a pt_expt module tree the element lookup is a
+    wrapped torch buffer, so the rebuild must land on the same
+    device/namespace (review 3649295675) -- a numpy rebuild would desync the
+    buffer or fail outright on CUDA.
+    """
+
+    @staticmethod
+    def _zbl_child(model):
+        return model.atomic_model.models[1]
+
+    @staticmethod
+    def _pair_energy(zbl_child, atype_value: int = 0, r: float = 1.0) -> float:
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            NeighborGraph,
+        )
+        from deepmd.pt_expt.utils import env as _env
+
+        graph = NeighborGraph(
+            n_node=torch.tensor([2], dtype=torch.int64, device=_env.DEVICE),
+            edge_index=torch.tensor(
+                [[0, 1], [1, 0]], dtype=torch.int64, device=_env.DEVICE
+            ),
+            edge_vec=torch.tensor(
+                [[r, 0.0, 0.0], [-r, 0.0, 0.0]],
+                dtype=torch.float64,
+                device=_env.DEVICE,
+            ),
+            edge_mask=torch.ones(2, dtype=torch.bool, device=_env.DEVICE),
+        )
+        atype = torch.full((2,), atype_value, dtype=torch.int64, device=_env.DEVICE)
+        return float(
+            zbl_child.forward_common_atomic_graph(graph, atype)["energy"].sum()
+        )
+
+    def _build(self, type_map):
+        from deepmd.pt_expt.utils import env as _env
+
+        config = copy.deepcopy(ZBL_CONFIG)
+        config["type_map"] = list(type_map)
+        return get_model(config).to(_env.DEVICE).eval()
+
+    def test_lookup_is_a_wrapped_buffer(self) -> None:
+        """Precondition: inside pt_expt the lookup is a torch buffer."""
+        from deepmd.pt_expt.utils import env as _env
+
+        z = self._zbl_child(self._build(["Ni", "O"])).potential.atomic_numbers
+        assert isinstance(z, torch.Tensor), (
+            "the pt_expt wrapper no longer converts the lookup to a tensor; "
+            "this test would stop covering the device-safe rebuild"
+        )
+        assert z.device.type == torch.device(_env.DEVICE).type
+
+    def test_reorder_matches_a_freshly_built_model(self) -> None:
+        # NOTE: applied to the ZBL CHILD, not the whole composition -- the
+        # DPA4/SeZM learned child does not implement change_type_map at all
+        # ("change_type_map is not supported for SeZM"), a separate pre-existing
+        # limitation.  The lookup under test belongs to this child.
+        child = self._zbl_child(self._build(["Ni", "O"]))
+        e_nini = self._pair_energy(child)
+        child.change_type_map(["O", "Ni"])
+        fresh = self._zbl_child(self._build(["O", "Ni"]))
+        e_fresh = self._pair_energy(fresh)
+        # anti-vacuity: Ni-Ni and O-O must be far apart, else a stale lookup
+        # would be indistinguishable from a rebuilt one
+        assert abs(e_fresh - e_nini) > 1.0
+        np.testing.assert_allclose(self._pair_energy(child), e_fresh, rtol=1e-12)
+        assert [float(v) for v in child.potential.atomic_numbers] == [8.0, 28.0]
+
+    def test_added_element_extends_the_lookup_on_device(self) -> None:
+        from deepmd.pt_expt.utils import env as _env
+
+        child = self._zbl_child(self._build(["Ni", "O"]))
+        child.change_type_map(["Ni", "O", "H"])
+        z = child.potential.atomic_numbers
+        assert isinstance(z, torch.Tensor), "the rebuild dropped out of torch"
+        assert z.device.type == torch.device(_env.DEVICE).type
+        assert [float(v) for v in z] == [28.0, 8.0, 1.0]
+        # the new type is addressable -- a stale (length-2) table raises here
+        np.testing.assert_allclose(
+            self._pair_energy(child, atype_value=2),
+            self._pair_energy(self._zbl_child(self._build(["H"]))),
+            rtol=1e-12,
+        )
+
+    def test_serialize_roundtrip_after_change_type_map(self) -> None:
+        """Checkpoint continuity: the restored child must predict the same.
+
+        Serialization records the NEW public map, so a stale in-memory lookup
+        and its deserialized twin disagree -- the restart-time symptom.
+        """
+        from deepmd.dpmodel.atomic_model.base_atomic_model import (
+            BaseAtomicModel,
+        )
+
+        child = self._zbl_child(self._build(["Ni", "O"]))
+        child.change_type_map(["O", "Ni"])
+        data = child.serialize()
+        restored = BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
+        assert restored.get_type_map() == ["O", "Ni"]
+        np.testing.assert_allclose(
+            self._pair_energy(restored), self._pair_energy(child), rtol=1e-12
+        )
+
+
+def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
+    """Native spin + ZBL freezes to a graph .pt2 and evaluates in parity.
+
+    Both features are graph-route-only, so their combination must survive the
+    export seam too, not just eager construction (review 3649276109).
+    """
+    if os.environ.get("CI") == "true":
+        pytest.skip("AOTInductor compile is slow (minutes); local/fixture-gen only.")
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        deserialize_to_file,
+    )
+
+    cpu = torch.device("cpu")
+    model = get_model(_native_spin_zbl_config()).to(cpu).eval()
+    coord, atype, spin, box = _spin_system()
+    ref = model(coord, atype, spin, box=box)
+
+    model_file = tmp_path / "dpa4_native_spin_zbl_graph.pt2"
+    # native spin has no dense lower at all, so the graph kind is the only
+    # valid one here; the composition additionally forbids a with-comm twin.
+    deserialize_to_file(
+        str(model_file), {"model": model.serialize()}, lower_kind="graph"
+    )
+    with zipfile.ZipFile(model_file) as z:
+        md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+    assert md["is_spin"] is True
+    assert md["has_comm_artifact"] is False
+    assert md["use_spin"] == [True, False]
+
+    dp = DeepPot(str(model_file))
+    assert dp.has_spin
+    e, f, v, fm, mm = dp.eval(
+        coord.numpy(),
+        box.numpy(),
+        atype.reshape(-1).numpy(),
+        atomic=False,
+        spin=spin.numpy(),
+    )[:5]
+    for got, want, name in (
+        (e, ref["energy"], "energy"),
+        (f, ref["force"], "force"),
+        (fm, ref["force_mag"], "force_mag"),
+    ):
+        np.testing.assert_allclose(
+            np.asarray(got).reshape(-1),
+            want.detach().numpy().reshape(-1),
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg=name,
+        )

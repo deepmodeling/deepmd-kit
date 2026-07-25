@@ -221,3 +221,94 @@ def test_zbl_atomic_graph_values():
     )
     ref = 14.3996 * 64.0 / r * phi
     np.testing.assert_allclose(float(np.sum(out["energy"])), ref, atol=1e-5)
+
+
+def _pair_energy(model, natoms=2, r=1.0):
+    """Total ZBL energy of one pair at distance ``r``, all atoms of type 0."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
+
+    graph = NeighborGraph(
+        n_node=np.array([natoms], dtype=np.int64),
+        edge_index=np.array([[0, 1], [1, 0]], dtype=np.int64),
+        edge_vec=np.array([[r, 0.0, 0.0], [-r, 0.0, 0.0]], dtype=np.float64),
+        edge_mask=np.ones(2, dtype=bool),
+    )
+    out = model.forward_common_atomic_graph(graph, np.zeros(natoms, dtype=np.int64))
+    return float(np.sum(out["energy"]))
+
+
+class TestInterPotentialChangeTypeMap:
+    """``change_type_map`` must rebuild the ZBL element lookup.
+
+    The generic ``BaseAtomicModel.change_type_map`` only rewrites the public
+    map and the stat/exclusion state; the nuclear-charge table belongs to
+    ``InterPotential`` and is rebuilt there (review 3649295675).  Without it
+    the lookup keeps the ORIGINAL elements while ``atype`` values already mean
+    the new ones -- silently wrong energies, or ``IndexError`` for a longer
+    map.
+    """
+
+    def test_reorder_matches_a_freshly_built_model(self) -> None:
+        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        e_hh = _pair_energy(model)
+        model.change_type_map(["O", "H"])
+        fresh = InterPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
+        e_fresh = _pair_energy(fresh)
+        # anti-vacuity: the two element pairs must be far apart, or a stale
+        # lookup would be indistinguishable from a rebuilt one
+        assert abs(e_fresh - e_hh) > 1.0
+        np.testing.assert_allclose(_pair_energy(model), e_fresh, rtol=1e-12)
+        assert list(model.potential.atomic_numbers) == [8.0, 1.0]
+        assert model.potential.type_map == ["O", "H"]
+
+    def test_added_element_extends_the_lookup(self) -> None:
+        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model.change_type_map(["H", "O", "Ni"])
+        assert model.potential.ntypes_real == 3
+        assert list(model.potential.atomic_numbers) == [1.0, 8.0, 28.0]
+        # the new type is now addressable -- a stale (length-2) table raises
+        # IndexError here
+        graph_atype = np.full(2, 2, dtype=np.int64)
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            NeighborGraph,
+        )
+
+        graph = NeighborGraph(
+            n_node=np.array([2], dtype=np.int64),
+            edge_index=np.array([[0, 1], [1, 0]], dtype=np.int64),
+            edge_vec=np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float64),
+            edge_mask=np.ones(2, dtype=bool),
+        )
+        e_nini = float(
+            np.sum(model.forward_common_atomic_graph(graph, graph_atype)["energy"])
+        )
+        fresh = InterPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
+        np.testing.assert_allclose(e_nini, _pair_energy(fresh), rtol=1e-12)
+
+    def test_dropped_element_shrinks_the_lookup(self) -> None:
+        model = InterPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
+        model.change_type_map(["Ni"])
+        assert model.potential.ntypes_real == 1
+        assert list(model.potential.atomic_numbers) == [28.0]
+
+    def test_serialize_roundtrip_after_change_type_map(self) -> None:
+        """Checkpoint continuity: the restored model must predict the same.
+
+        Serialization records the NEW public map, so a stale in-memory lookup
+        and its deserialized twin disagree -- the restart-time symptom of the
+        same bug.
+        """
+        from deepmd.dpmodel.atomic_model.base_atomic_model import (
+            BaseAtomicModel,
+        )
+
+        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model.change_type_map(["O", "H"])
+        data = model.serialize()
+        restored = BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
+        assert restored.get_type_map() == ["O", "H"]
+        np.testing.assert_allclose(
+            _pair_energy(restored), _pair_energy(model), rtol=1e-12
+        )

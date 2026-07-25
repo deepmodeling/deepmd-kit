@@ -240,6 +240,36 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
+def learned_descriptor(atomic_model: Any) -> Any:
+    """The descriptor of the LEARNED term of an atomic model.
+
+    A plain atomic model owns its descriptor directly; a composition (e.g.
+    analytical bridging, ``LinearEnergyAtomicModel`` over ``[learned,
+    InterPotential]``) has exactly one descriptor-bearing child, since the
+    analytical terms are descriptor-free.  Shared by every backend's builder
+    so descriptor capability gates read the same object regardless of whether
+    the model happens to be composed.
+
+    Parameters
+    ----------
+    atomic_model
+        The atomic model to inspect.
+
+    Returns
+    -------
+    descriptor or None
+        The learned descriptor, or ``None`` if no child has one.
+    """
+    descriptor = getattr(atomic_model, "descriptor", None)
+    if descriptor is not None:
+        return descriptor
+    for child in getattr(atomic_model, "models", []):
+        descriptor = getattr(child, "descriptor", None)
+        if descriptor is not None:
+            return descriptor
+    return None
+
+
 def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     """Get a native (virtual-atom-free) spin model from a dictionary.
 
@@ -250,6 +280,15 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     eligible; the gate is the capability method, not a descriptor-type
     list.
 
+    The non-spin backbone is built by :func:`get_standard_model`, which OWNS
+    everything about assembling the atomic model -- descriptor/fitting,
+    exclusions and the analytical-bridging composition -- so ``spin`` and
+    ``bridging_method`` combine for free: the wrapper re-classes whatever
+    atomic model came back, be it a single learned model or a
+    ``LinearEnergyAtomicModel`` over ``[learned, InterPotential]`` (the
+    analytical child accepts and ignores ``spin``; the learned child consumes
+    it).
+
     Parameters
     ----------
     data : dict
@@ -257,12 +296,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     """
     data = copy.deepcopy(data)
     spin_cfg = data.pop("spin")
-    if str(data.get("bridging_method", "none")).lower() not in ("none", ""):
-        raise NotImplementedError(
-            "analytical bridging combined with the native spin scheme is a "
-            "follow-up (the bridged model is a linear composition; the "
-            "native-spin factory composes over a single standard model)"
-        )
     # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
     # per-type boolean list (pure; validates symbols).
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
@@ -271,10 +304,10 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
         virtual_scale=spin_cfg.get("virtual_scale", 1.0),
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
+    data.setdefault("descriptor", {})
     data["descriptor"]["use_spin"] = use_spin
-    ntypes = len(data["type_map"])
     try:
-        descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
+        backbone_model = get_standard_model(data)
     except TypeError as err:
         if "use_spin" not in str(err):
             # Unrelated construction error (e.g. a bogus fitting kwarg):
@@ -289,19 +322,13 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
             "support (supports_native_spin()); descriptor type "
             f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
         ) from err
-    if not descriptor.supports_native_spin():
+    descriptor = learned_descriptor(backbone_model.atomic_model)
+    if descriptor is None or not descriptor.supports_native_spin():
         raise NotImplementedError(
             "spin scheme 'native' requires a descriptor declaring "
             "supports_native_spin()"
         )
-    return NativeSpinEnergyModel(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=data["type_map"],
-        atom_exclude_types=data.get("atom_exclude_types", []),
-        pair_exclude_types=data.get("pair_exclude_types", []),
-        spin=spin,
-    )
+    return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)
 
 
 def get_model(data: dict) -> BaseModel:

@@ -271,12 +271,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     data = copy.deepcopy(data)
     spin_cfg = data.pop("spin")
     data.setdefault("descriptor", {})
-    if str(data.get("bridging_method", "none")).lower() not in ("none", ""):
-        raise NotImplementedError(
-            "analytical bridging combined with the native spin scheme is a "
-            "follow-up (the bridged model is a linear composition; the "
-            "native-spin factory composes over a single standard model)"
-        )
     # Expand index/symbol forms of ``use_spin`` against ``type_map`` into the
     # per-type boolean list (pure; validates symbols).
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
@@ -306,8 +300,14 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
             "support (supports_native_spin()); descriptor type "
             f"{data['descriptor'].get('type')!r} does not accept `use_spin`"
         ) from err
-    descriptor = backbone_model.atomic_model.descriptor
-    if not descriptor.supports_native_spin():
+    # A bridged backbone is a LinearEnergyAtomicModel; the capability gate
+    # reads the LEARNED child's descriptor either way (shared helper).
+    from deepmd.dpmodel.model.model import (
+        learned_descriptor,
+    )
+
+    descriptor = learned_descriptor(backbone_model.atomic_model)
+    if descriptor is None or not descriptor.supports_native_spin():
         raise NotImplementedError(
             "spin scheme 'native' requires a descriptor declaring "
             "supports_native_spin()"

@@ -72,9 +72,18 @@ class TestInferDeepSpinDpa4PairExclPtExpt : public ::testing::Test {
   std::vector<VALUETYPE> expected_f;
   std::vector<VALUETYPE> expected_fm;
   std::vector<VALUETYPE> expected_tot_v;
+  // NoPBC twin: an explicit nghost=0 InputNlist carries no periodic images,
+  // so the LAMMPS-nlist case below is the gas-phase system and must be
+  // compared against the gas-phase reference (same convention as
+  // test_deepspin_dpa4_graph_ptexpt.cc, which runs cpu_lmp_nlist only in its
+  // Nopbc fixture).
+  std::vector<VALUETYPE> expected_e_nopbc;
+  std::vector<VALUETYPE> expected_f_nopbc;
+  std::vector<VALUETYPE> expected_fm_nopbc;
 
   int natoms;
   double expected_tot_e;
+  double expected_tot_e_nopbc;
 
   deepmd::DeepSpin dp_excl;
   deepmd::DeepSpin dp_base;
@@ -98,14 +107,19 @@ class TestInferDeepSpinDpa4PairExclPtExpt : public ::testing::Test {
     expected_f = ref.get<VALUETYPE>("pbc", "expected_f");
     expected_fm = ref.get<VALUETYPE>("pbc", "expected_fm");
     expected_tot_v = ref.get<VALUETYPE>("pbc", "expected_tot_v");
+    expected_e_nopbc = ref.get<VALUETYPE>("nopbc", "expected_e");
+    expected_f_nopbc = ref.get<VALUETYPE>("nopbc", "expected_f");
+    expected_fm_nopbc = ref.get<VALUETYPE>("nopbc", "expected_fm");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
     EXPECT_EQ(9, expected_tot_v.size());
     expected_tot_e = 0.;
+    expected_tot_e_nopbc = 0.;
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
+      expected_tot_e_nopbc += expected_e_nopbc[ii];
     }
   };
 
@@ -155,11 +169,13 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_lmp_nlist) {
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;
   std::vector<int>& atype = this->atype;
-  std::vector<VALUETYPE>& box = this->box;
-  std::vector<VALUETYPE>& expected_f = this->expected_f;
-  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_f = this->expected_f_nopbc;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm_nopbc;
   int& natoms = this->natoms;
-  double& expected_tot_e = this->expected_tot_e;
+  double& expected_tot_e = this->expected_tot_e_nopbc;
+  // An nghost=0 InputNlist carries no periodic images, so this is the
+  // gas-phase system: empty box + the NoPBC reference.
+  std::vector<VALUETYPE> box = {};
 
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;

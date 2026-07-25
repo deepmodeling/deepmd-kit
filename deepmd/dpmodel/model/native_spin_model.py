@@ -227,6 +227,12 @@ def make_native_spin_model(T_Model: type) -> type:
 
         def serialize(self) -> dict:
             data = super().serialize()
+            # The backbone's own wire type would be lost under "native_spin";
+            # keep it so deserialize can rebuild the RIGHT backbone.  It is
+            # not always "standard": with analytical bridging the backbone is
+            # a composition ("linear"), whose dict has a different shape and
+            # @version.
+            data["backbone_type"] = data.get("type", "standard")
             data["type"] = "native_spin"
             data["spin"] = self.spin.serialize()
             return data
@@ -236,11 +242,18 @@ def make_native_spin_model(T_Model: type) -> type:
             data = data.copy()
             data.pop("type", None)
             spin = Spin.deserialize(data.pop("spin"))
-            # make_model flat shape: the remaining dict IS the standard
-            # model (atomic) dict -- its @class/@version belong to the
-            # atomic deserialize and must stay.
-            data["type"] = "standard"
-            backbone = T_Model.deserialize(data)
+            # make_model flat shape: the remaining dict IS the backbone
+            # (atomic) dict -- its @class/@version belong to the backbone's
+            # deserialize and must stay.  Archives written before
+            # ``backbone_type`` existed are all plain standard models.
+            backbone_type = data.pop("backbone_type", "standard")
+            data["type"] = backbone_type
+            backbone_cls = (
+                T_Model
+                if backbone_type == "standard"
+                else T_Model.get_class_by_type(backbone_type)
+            )
+            backbone = backbone_cls.deserialize(data)
             return cls(atomic_model_=backbone.atomic_model, spin=spin)
 
     return NSM

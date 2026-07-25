@@ -97,13 +97,64 @@ class InterPotential(NativeOP):
         self.mode = mode
         self.type_map = list(type_map)
         self.ntypes_real = len(type_map)
+        self.atomic_numbers = self._lookup_from_type_map(type_map)
+
+    @staticmethod
+    def _lookup_from_type_map(type_map: list[str], like: Array | None = None) -> Array:
+        """Build the per-type nuclear-charge lookup from element symbols.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            Element symbols; index corresponds to ``atype`` values.
+        like : Array, optional
+            When given, the result is created in this array's namespace, dtype
+            and device instead of NumPy -- so an in-place rebuild on a wrapped
+            backend (pt_expt buffer, possibly on CUDA) stays where it was.
+
+        Returns
+        -------
+        Array
+            Nuclear charges, shape ``(len(type_map),)``.
+
+        Raises
+        ------
+        ValueError
+            If an element symbol is not in :data:`ELEMENT_TO_Z`.
+        """
         atomic_numbers = []
         for elem in type_map:
             z = ELEMENT_TO_Z.get(elem)
             if z is None:
                 raise ValueError(f"Unknown element symbol: {elem}")
             atomic_numbers.append(z)
-        self.atomic_numbers = np.asarray(atomic_numbers, dtype=np.float64)
+        arr = np.asarray(atomic_numbers, dtype=np.float64)
+        if like is None:
+            return arr
+        xp = array_api_compat.array_namespace(like)
+        return xp.asarray(arr, dtype=like.dtype, device=array_api_compat.device(like))
+
+    def change_type_map(self, type_map: list[str]) -> None:
+        """Rebuild the element lookup for a new type map.
+
+        THIS OWNS the element lookup, so it owns every update of it: the
+        symbols, their count and the nuclear-charge table are one piece of
+        state and are replaced together.  Reordering, adding and dropping
+        elements are all covered -- the table is rebuilt from the symbols
+        rather than permuted, so no index bookkeeping can drift.  The rebuilt
+        array keeps the current one's namespace/dtype/device, so a wrapped
+        backend (pt_expt buffer on CPU or CUDA) is updated in place.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            The new element symbols.
+        """
+        self.atomic_numbers = self._lookup_from_type_map(
+            type_map, like=self.atomic_numbers
+        )
+        self.type_map = list(type_map)
+        self.ntypes_real = len(type_map)
 
     @staticmethod
     def _zbl_pair_energy(xp: Any, r: Array, zi: Array, zj: Array) -> Array:
@@ -258,6 +309,31 @@ class InterPotentialAtomicModel(BaseAtomicModel):
             [int(s) for s in sel] if isinstance(sel, (list, tuple)) else [int(sel)]
         )
         super().init_out_stat()
+
+    def change_type_map(
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+
+        The generic base handles the public map and the stat/exclusion state;
+        the element lookup belongs to :class:`InterPotential`, so the update is
+        delegated there rather than reimplemented here (review 3649295675 --
+        without it the lookup keeps the ORIGINAL elements while ``atype``
+        values mean new ones, and a longer new map raises ``IndexError``).
+
+        Parameters
+        ----------
+        type_map : list[str]
+            The new element symbols.
+        model_with_new_type_stat : optional
+            Model with statistics for the new types (unused: an analytical
+            term has no fitted statistics).
+        """
+        super().change_type_map(
+            type_map, model_with_new_type_stat=model_with_new_type_stat
+        )
+        self.potential.change_type_map(type_map)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Per-atom analytical energy: reducible and fully differentiable."""
