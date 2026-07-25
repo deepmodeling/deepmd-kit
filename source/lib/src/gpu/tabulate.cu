@@ -453,10 +453,26 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       Csub += (nnei - breakpoint) * res_grad *
               (enable_se_atten ? res * t + res : res);
       if (enable_se_atten) {
-        // from ii to ii + (nnei - breakpoint)
-        for (int ii2 = ii; ii2 < ii + nnei - breakpoint; ii2++) {
-          dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
+        if (!unloop) {
+          dy_dtwo[block_idx * nnei * last_layer_size + ii * last_layer_size +
                   jj] = oldres * res;
+        } else {
+          // Several warps can encounter different entries in the same sorted
+          // padding tail. Only its first sentinel is used by forward, so only
+          // that entry receives the repeat-scaled two-embedding gradient.
+          bool first_padding_sentinel = ii == 0;
+          if (ii > 0) {
+            const int_64 previous_em_index =
+                block_idx * nnei * MTILE + (ii - 1) * MTILE;
+            first_padding_sentinel = em_x[block_idx * nnei + ii - 1] != ago ||
+                                     em[previous_em_index + 1] != 0. ||
+                                     em[previous_em_index + 2] != 0. ||
+                                     em[previous_em_index + 3] != 0.;
+          }
+          if (first_padding_sentinel) {
+            dy_dtwo[block_idx * nnei * last_layer_size + ii * last_layer_size +
+                    jj] = (nnei - ii) * oldres * res;
+          }
         }
       }
     }
@@ -534,8 +550,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
-      // dz_dy_dtwo * res * em
-      // res above should be used instead of res + res * t below
+      // For sorted padding, only the first sentinel has a nonzero
+      // two-embedding gradient. The repeat factor below applies its full tail
+      // multiplicity to this cotangent.
       two_grad = dz_dy_dtwo[block_idx * nnei * last_layer_size +
                             ii * last_layer_size + thread_idx] *
                  res;
@@ -1071,6 +1088,12 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
+  if (two_embed != nullptr) {
+    // The sorted-padding fast path writes only the first sentinel. Explicitly
+    // clear the unused tail because framework output buffers are uninitialized.
+    DPErrcheck(
+        gpuMemset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+  }
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
