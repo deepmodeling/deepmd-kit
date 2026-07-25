@@ -668,3 +668,36 @@ def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
             atol=1e-10,
             err_msg=name,
         )
+
+
+def test_bridged_metadata_carries_charge_spin_dim(tmp_path) -> None:
+    """The FROZEN metadata must declare charge_spin for a bridged model.
+
+    This is the consequence the eager forward hides: the learned child
+    consumes ``charge_spin`` either way, but the freeze reads the MODEL's
+    ``get_dim_chg_spin()``.  While the composition failed to forward it,
+    ``dim_chg_spin`` was 0 in metadata -- so the exported ABI had no
+    charge_spin slot and the C++ feeder never supplied one, making the
+    artifact disagree with its own eager model.  Metadata-only, so no
+    inductor compile is needed.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        _collect_metadata,
+    )
+
+    config = copy.deepcopy(ZBL_CONFIG)
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    model = get_model(config).to(torch.device("cpu")).eval()
+    meta = _collect_metadata(model, is_spin=False, lower_kind="graph")
+    assert meta["dim_chg_spin"] > 0, (
+        "the bridged model's metadata dropped charge_spin; the exported "
+        "artifact would silently ignore the FiLM conditioning"
+    )
+
+    plain = copy.deepcopy(ZBL_CONFIG)
+    plain["descriptor"]["add_chg_spin_ebd"] = True
+    for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+        plain.pop(key, None)
+    plain_model = get_model(plain).to(torch.device("cpu")).eval()
+    plain_meta = _collect_metadata(plain_model, is_spin=False, lower_kind="graph")
+    assert meta["dim_chg_spin"] == plain_meta["dim_chg_spin"]
