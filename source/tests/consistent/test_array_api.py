@@ -397,9 +397,7 @@ class TestXpUniform(unittest.TestCase):
 
     def test_numpy_fallback_replays_under_the_project_seed(self) -> None:
         """The fallback uses deepmd's seeded generator, not a fresh one."""
-        from deepmd.utils import (
-            random as dp_random,
-        )
+        from deepmd.utils import random as dp_random
 
         like = np.zeros(3, dtype=np.float64)
         dp_random.seed(777)

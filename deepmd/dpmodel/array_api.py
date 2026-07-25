@@ -366,9 +366,7 @@ def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> A
         return (
             torch.rand(size, dtype=like.dtype, device=like.device) * (high - low) + low
         )
-    from deepmd.utils import (
-        random as dp_random,
-    )
+    from deepmd.utils import random as dp_random
 
     xp = array_api_compat.array_namespace(like)
     drawn = np.asarray(dp_random.random(size)) * (high - low) + low

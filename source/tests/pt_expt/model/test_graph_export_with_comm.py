@@ -444,7 +444,9 @@ def test_graph_eligibility_guard_is_stated_exactly_once() -> None:
         Path,
     )
 
-    from deepmd.pt_expt.utils import serialization
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
 
     source = Path(serialization.__file__).read_text()
     assert source.count("graph-lower eligible (model_uses_graph_lower() is False") == 1
