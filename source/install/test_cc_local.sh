@@ -153,8 +153,14 @@ else:
 		# lower, which no other C++ fixture covers.
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
 		PID12=$!
+		# Native-spin DPA4 + charge-spin FiLM: the ONLY fixture with both
+		# is_spin=true and dim_chg_spin>0, i.e. the only one on which the
+		# runtime charge_spin argument of DeepSpin::compute is not inert.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
+		PID13=$!
 		wait $PID11
 		wait $PID12
+		wait $PID13
 	fi
 fi
 
