@@ -33,7 +33,8 @@ from .model import (
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
-@BaseModel.register("linear_ener")
+@BaseModel.register("linear_ener")  # config type
+@BaseModel.register("linear")  # wire type emitted by the flat serialize
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     # The graph .pt2 exportable is energy-contract machinery (public-key
     # translation over the CM's forward_common_lower_graph_exportable),

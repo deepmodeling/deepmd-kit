@@ -132,7 +132,9 @@ def test_zbl_serialize_roundtrip_energy_identical():
     model = get_model(copy.deepcopy(ZBL_CONFIG))
     coord, atype, box = _close_pair_inputs()
     data = model.serialize()
-    assert data["type"] == "linear_ener"
+    # the flat wire type is "linear" -- the SAME string pt/tf write, so a
+    # composition round-trips across backends
+    assert data["type"] == "linear"
     m2 = BaseModel.deserialize(data)
     assert type(m2) is LinearEnergyModel
     e1 = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[

@@ -274,7 +274,7 @@ class TestGetModelDPA4(unittest.TestCase):
 # `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
 # (always "highest" precision); a truthy value must emit a warn-once message.
 @pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
-def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
+def test_enable_tf32_warns_once(enable_tf32, monkeypatch) -> None:
     import importlib
 
     # the package __init__ rebinds the name ``get_model`` to the function, so
@@ -285,27 +285,37 @@ def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
     # test ordering (other get_sezm_model calls may have already warned)
     monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
 
-    # caplog captures via a ROOT-logger handler and relies on propagation,
-    # but any earlier test that ran main() (e.g. test_dp_freeze's dispatcher
-    # tests) leaves set_log_handles' global ``deepmd``-logger
-    # propagate=False behind (deepmd/loggers/loggers.py), silently emptying
-    # caplog.records. monkeypatch restores the attribute afterwards.
-    monkeypatch.setattr(logging.getLogger("deepmd"), "propagate", True)
+    # Count emissions on the EMITTING logger with our own handler rather than
+    # through caplog: caplog reads a root handler, so whatever global logging
+    # state earlier tests left behind (set_log_handles flips the ``deepmd``
+    # logger's propagate off and installs its own handlers) changes how many
+    # records reach it -- zero when propagation is off, more than one when the
+    # record is seen through several attached handlers.  A handler on the
+    # emitting logger sees exactly one record per ``log.warning`` call.
+    records: list[logging.LogRecord] = []
 
-    raw = _make_raw_model_config(enable_tf32=enable_tf32)
+    class _Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
 
-    with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
-        gm_mod.get_sezm_model(raw)
-    matches = [r for r in caplog.records if "enable_tf32" in r.getMessage()]
-    if enable_tf32:
-        assert len(matches) == 1, caplog.text
-        # a second call must NOT warn again (warn-once per process)
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
+    handler = _Collect(level=logging.WARNING)
+    old_level = gm_mod.log.level
+    gm_mod.log.setLevel(logging.WARNING)
+    gm_mod.log.addHandler(handler)
+    try:
+        gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
+        matches = [r for r in records if "enable_tf32" in r.getMessage()]
+        if enable_tf32:
+            assert len(matches) == 1, [r.getMessage() for r in records]
+            # a second call must NOT warn again (warn-once per process)
+            records.clear()
             gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-        assert not [r for r in caplog.records if "enable_tf32" in r.getMessage()]
-    else:
-        assert not matches, caplog.text
+            assert not [r for r in records if "enable_tf32" in r.getMessage()]
+        else:
+            assert not matches, [r.getMessage() for r in records]
+    finally:
+        gm_mod.log.removeHandler(handler)
+        gm_mod.log.setLevel(old_level)
 
 
 class TestNativeSpinErrorTranslation(unittest.TestCase):

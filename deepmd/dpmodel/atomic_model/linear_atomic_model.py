@@ -39,8 +39,8 @@ from .pairtab_atomic_model import (
 )
 
 
-@BaseAtomicModel.register("linear_ener")
-@BaseAtomicModel.register("linear")  # legacy wire alias
+@BaseAtomicModel.register("linear")
+@BaseAtomicModel.register("linear_ener")  # accepted alias, never emitted
 class LinearEnergyAtomicModel(BaseAtomicModel):
     r"""Linear model makes linear combinations of several existing models.
 
@@ -472,9 +472,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "@version": 3,
-                # energy-specific wire type: future linear dipole/polar models get
-                # their own, so the flat model dict dispatches unambiguously
-                "type": "linear_ener",
+                # ONE wire type across backends: pt/tf write "linear" here, so
+                # dpmodel must too or cross-backend conversion breaks.  The
+                # unambiguous energy-specific name lives in the config/model
+                # registry ("linear_ener"), which is also accepted here.
+                "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
                 "weights": self.weights,

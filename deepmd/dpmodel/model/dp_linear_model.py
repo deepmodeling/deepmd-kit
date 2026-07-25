@@ -26,7 +26,8 @@ from deepmd.dpmodel.model.make_model import (
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
-@BaseModel.register("linear_ener")
+@BaseModel.register("linear_ener")  # config type
+@BaseModel.register("linear")  # wire type emitted by the flat serialize
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     r"""Energy model over a linear combination of atomic models.
 

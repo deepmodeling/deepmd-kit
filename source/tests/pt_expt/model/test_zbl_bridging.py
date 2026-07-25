@@ -209,7 +209,9 @@ class TestZBLBridgingPtExpt:
         )
 
         data = self.pt_expt_model.serialize()
-        assert data["type"] == "linear_ener"
+        # the flat wire type is "linear" -- the SAME string pt/tf write, so a
+        # composition round-trips across backends
+        assert data["type"] == "linear"
         m2 = BaseModel.deserialize(data).to(torch.device("cpu")).eval()
         assert type(m2) is LinearEnergyModel
         out = self.pt_expt_model.forward(self.coord, self.atype, box=self.box)
