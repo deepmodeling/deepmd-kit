@@ -188,7 +188,8 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, cpu_lmp_nlist) {
 // model-level exclusion, so equal predictions would mean the exclusion never
 // reached the graph build and both comparisons above would pass for the wrong
 // reason.
-TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, excluded_differs_from_baseline) {
+TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt,
+           excluded_differs_from_baseline) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;
@@ -209,7 +210,8 @@ TYPED_TEST(TestInferDeepSpinDpa4PairExclPtExpt, excluded_differs_from_baseline) 
          "the exclusion seam is vacuous";
   double max_df = 0.;
   for (int ii = 0; ii < natoms * 3; ++ii) {
-    max_df = std::max(max_df, static_cast<double>(fabs(f_excl[ii] - f_base[ii])));
+    max_df =
+        std::max(max_df, static_cast<double>(fabs(f_excl[ii] - f_base[ii])));
   }
   EXPECT_GT(max_df, 1e-6)
       << "excluding every Ni-O pair left the forces unchanged";

@@ -1249,9 +1249,7 @@ class TestNativeSpinModelPairExcludeContract:
         ``descriptor.exclude_types`` empty; the DPA4 alias would mirror the
         pairs into it (see ``test_dpa4_alias_mirrors_into_descriptor``).
         """
-        from deepmd.dpmodel.model.model import (
-            get_model as dp_get_model,
-        )
+        from deepmd.dpmodel.model.model import get_model as dp_get_model
         from deepmd.pt_expt.model.model import (
             BaseModel,
         )

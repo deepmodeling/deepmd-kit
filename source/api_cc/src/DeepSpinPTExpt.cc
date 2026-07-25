@@ -932,10 +932,9 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     // Model-level pair exclusion belongs to the graph BUILD (decision #18/A4),
     // exactly as on the non-spin route: the exported lower consumes a
     // pre-excluded edge_mask and never re-applies it.
-    graph_pack.edge_mask =
-        deepmd::applyPairExclusion(edge_tensors.edge_index,
-                                   edge_tensors.edge_mask, node_atype,
-                                   pair_exclude_table_, ntypes);
+    graph_pack.edge_mask = deepmd::applyPairExclusion(
+        edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+        pair_exclude_table_, ntypes);
     canonicalizeGraphPayload(graph_pack, nloc);
     flat_outputs = run_model_graph(
         node_atype, n_node_tensor, n_node_tensor, graph_pack.edge_index,
