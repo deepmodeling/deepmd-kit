@@ -25,6 +25,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& em_tensor,
                               const torch::Tensor& two_embed_tensor,
                               int64_t last_layer_size,
+                              bool is_sorted,
                               torch::Tensor& descriptor_tensor) {
   // check input shape
   if (table_tensor.dim() != 2) {
@@ -60,7 +61,8 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
-                                     two_embed, nloc, nnei, last_layer_size);
+                                     two_embed, nloc, nnei, last_layer_size,
+                                     is_sorted);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -68,7 +70,8 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
-                                     two_embed, nloc, nnei, last_layer_size);
+                                     two_embed, nloc, nnei, last_layer_size,
+                                     is_sorted);
   }
 }
 
@@ -80,6 +83,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
                                   const torch::Tensor& two_embed_tensor,
                                   const torch::Tensor& dy_tensor,
                                   const torch::Tensor& descriptor_tensor,
+                                  bool is_sorted,
                                   torch::Tensor& dy_dem_x_tensor,
                                   torch::Tensor& dy_dem_tensor,
                                   torch::Tensor& dy_dtwo_tensor) {
@@ -111,18 +115,18 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, dy_dtwo, table,
-                                          table_info, em_x, em, two_embed, dy,
-                                          nloc, nnei, last_layer_size);
+    deepmd::tabulate_fusion_se_a_grad_gpu(
+        dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
+        nloc, nnei, last_layer_size, is_sorted);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
         "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
-    deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, dy_dtwo, table,
-                                          table_info, em_x, em, two_embed, dy,
-                                          nloc, nnei, last_layer_size);
+    deepmd::tabulate_fusion_se_a_grad_cpu(
+        dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
+        nloc, nnei, last_layer_size, is_sorted);
   }
 }
 
@@ -643,7 +647,7 @@ class TabulateFusionSeAGradOp
     // compute
     TabulateFusionSeAGradForward<FPTYPE>(
         table_tensor, table_info_tensor, em_x_tensor, em_tensor, at::Tensor(),
-        dy_tensor, descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor,
+        dy_tensor, descriptor_tensor, true, dy_dem_x_tensor, dy_dem_tensor,
         dy_dtwo_tensor);
     // save data
     ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
@@ -785,7 +789,7 @@ class TabulateFusionSeAOp
     // compute
     TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
                                      em_x_tensor, em_tensor, at::Tensor(),
-                                     last_layer_size, descriptor_tensor);
+                                     last_layer_size, true, descriptor_tensor);
     // save data
     ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
                             em_tensor, descriptor_tensor});
@@ -870,8 +874,8 @@ class TabulateFusionSeAttenGradOp
     torch::Tensor dy_dtwo_tensor = torch::zeros_like(two_embed_tensor);
     TabulateFusionSeAGradForward<FPTYPE>(
         table_tensor, table_info_tensor, em_x_tensor, em_tensor,
-        two_embed_tensor, dy_tensor, descriptor_tensor, dy_dem_x_tensor,
-        dy_dem_tensor, dy_dtwo_tensor);
+        two_embed_tensor, dy_tensor, descriptor_tensor, is_sorted,
+        dy_dem_x_tensor, dy_dem_tensor, dy_dtwo_tensor);
 
     ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
                             em_tensor, two_embed_tensor, descriptor_tensor});
@@ -969,9 +973,9 @@ class TabulateFusionSeAttenOp
     torch::Tensor descriptor_tensor =
         torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
     // compute
-    TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
-                                     em_x_tensor, em_tensor, two_embed_tensor,
-                                     last_layer_size, descriptor_tensor);
+    TabulateFusionSeAForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+        two_embed_tensor, last_layer_size, is_sorted, descriptor_tensor);
     // save data
     ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
                             em_tensor, two_embed_tensor, descriptor_tensor});
