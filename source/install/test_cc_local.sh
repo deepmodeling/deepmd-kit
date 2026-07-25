@@ -158,9 +158,15 @@ else:
 		# runtime charge_spin argument of DeepSpin::compute is not inert.
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
 		PID13=$!
+		# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
+		# composition, and the only fixture pinning that a bridged model
+		# exports NO with-comm artifact (single-rank only by construction).
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
+		PID14=$!
 		wait $PID11
 		wait $PID12
 		wait $PID13
+		wait $PID14
 	fi
 fi
 
