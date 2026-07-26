@@ -521,6 +521,9 @@ class TestCompositionDefaultsRequireAgreement:
         def get_dim_fparam(self) -> int:
             return self._dim
 
+        def get_dim_aparam(self) -> int:
+            return 0
+
         def get_dim_chg_spin(self) -> int:
             return 0
 
@@ -538,6 +541,30 @@ class TestCompositionDefaultsRequireAgreement:
 
     def _compose(self, children):
         return LinearEnergyAtomicModel(children, type_map=["Ni", "O"], weights="sum")
+
+    def test_consumers_must_agree_on_dimension(self) -> None:
+        """One shared tensor means one dimension among ACTIVE consumers.
+
+        Rejected at construction, like the intensive/extensive mixture: the
+        composition feeds every child the same fparam/aparam tensor, so
+        consumers wanting different widths cannot both be satisfied.
+        """
+        with pytest.raises(ValueError, match="fparam dimension"):
+            self._compose([self._Fake(3, None), self._Fake(2, None)])
+
+    def test_dimension_and_default_align_with_the_learned_child(self) -> None:
+        """Learned + ZBL inherits BOTH the dimension and the default.
+
+        The analytical child consumes neither fparam nor aparam, so it is
+        not a consumer and must not constrain either.
+        """
+        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        # anti-vacuity: the analytical child really is a non-consumer
+        assert zbl.get_dim_fparam() == 0
+        assert zbl.get_dim_aparam() == 0
+        m = self._compose([self._Fake(3, [0.5, 0.5, 0.5]), zbl])
+        assert m.get_dim_fparam() == 3
+        assert m.get_default_fparam() == [0.5, 0.5, 0.5]
 
     def test_differing_defaults_expose_none(self) -> None:
         m = self._compose([self._Fake(1, [0.0]), self._Fake(1, [1.0])])

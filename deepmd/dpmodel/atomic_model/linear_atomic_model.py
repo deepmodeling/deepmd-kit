@@ -94,6 +94,24 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 + ", ".join(f"{type(m).__name__}={m.get_intensive()}" for m in models)
             )
 
+        # Fail fast: the composition feeds ONE external fparam/aparam tensor to
+        # every child, so all children that actually consume it must agree on
+        # its dimension. Children with dimension 0 do not consume it and are
+        # ignored, so a learned model composed with an analytical term (ZBL)
+        # simply inherits the learned dimension.
+        for name, dim_of in (
+            ("fparam", lambda m: m.get_dim_fparam()),
+            ("aparam", lambda m: m.get_dim_aparam()),
+        ):
+            dims = {dim_of(m) for m in models if dim_of(m) > 0}
+            if len(dims) > 1:
+                raise ValueError(
+                    f"LinearAtomicModel sub-models disagree on the {name} "
+                    "dimension, but the composition feeds them one shared "
+                    "tensor: "
+                    + ", ".join(f"{type(m).__name__}={dim_of(m)}" for m in models)
+                )
+
         self.models = models
         self.type_map = type_map
         self._rebuild_mapping_state()
@@ -601,12 +619,19 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
-        """Get the number (dimension) of frame parameters of this atomic model."""
-        # tricky...
+        """Get the number (dimension) of frame parameters of this atomic model.
+
+        ``max`` is exact here, not a guess: ``__init__`` rejects consumers
+        that disagree, so the only other value present is 0 from a
+        non-consumer.
+        """
         return max([model.get_dim_fparam() for model in self.models])
 
     def get_dim_aparam(self) -> int:
-        """Get the number (dimension) of atomic parameters of this atomic model."""
+        """Get the number (dimension) of atomic parameters of this atomic model.
+
+        ``max`` is exact for the same reason as :meth:`get_dim_fparam`.
+        """
         return max([model.get_dim_aparam() for model in self.models])
 
     # --- conditioning-input capabilities owned by the children -----------
