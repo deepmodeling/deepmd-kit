@@ -1326,15 +1326,18 @@ void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
  *natoms x dim_aparam.
- * @param[out] energy Output energy.
- * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be
- * of size natoms x 3.
- * @param[out] virial Output virial. The array should be of size 9.
- * @param[out] atomic_energy Output atomic energy. The array should be of size
- *natoms.
- * @param[out] atomic_virial Output atomic virial. The array should be of size
- *natoms x 9.
+ * @param[out] energy Output energies of all models. The array should be of size
+ *nmodels.
+ * @param[out] force Output forces of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] force_mag Output magnetic forces of all models. The array should
+ *be of size nmodels x natoms x 3.
+ * @param[out] virial Output virials of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energies of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virials of all models. The array
+ *should be of size nmodels x natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
  * @since API version 24
@@ -1412,15 +1415,18 @@ void DP_DeepPotModelDeviComputef2(DP_DeepPotModelDevi* dp,
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
  *natoms x dim_aparam.
- * @param[out] energy Output energy.
- * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be
- * of size natoms x 3.
- * @param[out] virial Output virial. The array should be of size 9.
- * @param[out] atomic_energy Output atomic energy. The array should be of size
- *natoms.
- * @param[out] atomic_virial Output atomic virial. The array should be of size
- *natoms x 9.
+ * @param[out] energy Output energies of all models. The array should be of size
+ *nmodels.
+ * @param[out] force Output forces of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] force_mag Output magnetic forces of all models. The array should
+ *be of size nmodels x natoms x 3.
+ * @param[out] virial Output virials of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energies of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virials of all models. The array
+ *should be of size nmodels x natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
  * @since API version 24
@@ -1583,15 +1589,18 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
  *natoms x dim_aparam.
- * @param[out] energy Output energy.
- * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be
- * of size natoms x 3.
- * @param[out] virial Output virial. The array should be of size 9.
- * @param[out] atomic_energy Output atomic energy. The array should be of size
- *natoms.
- * @param[out] atomic_virial Output atomic virial. The array should be of size
- *natoms x 9.
+ * @param[out] energy Output energies of all models. The array should be of size
+ *nmodels.
+ * @param[out] force Output forces of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] force_mag Output magnetic forces of all models. The array should
+ *be of size nmodels x natoms x 3.
+ * @param[out] virial Output virials of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energies of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virials of all models. The array
+ *should be of size nmodels x natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
  * @since API version 24
@@ -1882,15 +1891,18 @@ void DP_DeepPotModelDeviComputeNListf3(DP_DeepPotModelDevi* dp,
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
  *natoms x dim_aparam.
- * @param[out] energy Output energy.
- * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be
- * of size natoms x 3.
- * @param[out] virial Output virial. The array should be of size 9.
- * @param[out] atomic_energy Output atomic energy. The array should be of size
- *natoms.
- * @param[out] atomic_virial Output atomic virial. The array should be of size
- *natoms x 9.
+ * @param[out] energy Output energies of all models. The array should be of size
+ *nmodels.
+ * @param[out] force Output forces of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] force_mag Output magnetic forces of all models. The array should
+ *be of size nmodels x natoms x 3.
+ * @param[out] virial Output virials of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energies of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virials of all models. The array
+ *should be of size nmodels x natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
  * @since API version 24

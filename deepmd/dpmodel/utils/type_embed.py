@@ -34,6 +34,17 @@ def _array_device_or_none(array: Array) -> Any:
 class TypeEmbedNet(NativeOP):
     r"""Type embedding network.
 
+    Each atom type :math:`t` is represented by a one-hot vector
+    :math:`\mathbf e_t` (or an electronic-configuration vector), then mapped
+    by an embedding network :math:`\mathcal N`:
+
+    .. math::
+
+       \mathbf T_t=\mathcal N(\mathbf e_t).
+
+    If ``padding`` is enabled, an additional all-zero row represents padded
+    neighbor-list entries.
+
     Parameters
     ----------
     ntypes : int
@@ -103,7 +114,7 @@ class TypeEmbedNet(NativeOP):
         )
 
     def call(self) -> Array:
-        """Compute the type embedding network."""
+        r"""Return all type embeddings :math:`\mathbf T_t=\mathcal N(\mathbf e_t)`."""
         sample_array = self.embedding_net[0]["w"]
         xp = array_api_compat.array_namespace(sample_array)
         if not self.use_econf_tebd:
