@@ -362,10 +362,12 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         choices=["nlist", "graph"],
         help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
-        "frozen .pt2: 'nlist' (default, dense neighbor-list lower) or 'graph' "
-        "(NeighborGraph edge-list lower; only for graph-eligible models, i.e. "
-        "descriptors implementing the NeighborGraph lower, e.g. DPA1/DPA2/DPA4). "
-        "'graph' selects the C++ graph inference path.",
+        "frozen .pt2: 'nlist' (dense neighbor-list lower) or 'graph' "
+        "(NeighborGraph edge-list lower, which selects the C++ graph inference "
+        "path). Only consulted for models that cannot use the graph lower: a "
+        "graph-capable model (DPA1/DPA2/DPA4, and every DPA model in future) "
+        "always freezes to 'graph', since the dense lower is deprecated in this "
+        "backend -- requesting 'nlist' for one logs a warning and is overridden.",
     )
 
     # * test script ********************************************************************

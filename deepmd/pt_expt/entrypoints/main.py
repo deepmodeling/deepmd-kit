@@ -600,13 +600,14 @@ def freeze(
 
     m.eval()
 
-    # A graph-capable model ALWAYS freezes through the NeighborGraph lower:
-    # the dense (nlist) lower is deprecated in this backend, and for some
-    # architectures it does not exist at all (native spin has no dense spin
-    # lower; an analytical bridging term has no dense injection site), so the
-    # public default ``lower_kind="nlist"`` would fail deep inside the dense
-    # trace. Resolved HERE -- before the export ABI is chosen and before the
-    # default output suffix below is derived from it.
+    # A graph-capable model ALWAYS freezes through the NeighborGraph lower.
+    # The dense lower is deprecated here and every DPA model is expected to be
+    # graph-capable, so "can use graph" is deliberately the whole condition --
+    # a separate "graph-required" capability would encode a distinction that
+    # stops existing. It is also load-bearing: for native spin and for an
+    # analytical bridging term no dense lower exists at all, so the public
+    # default would otherwise fail deep inside the dense trace. Resolved HERE,
+    # before the export ABI and the default output suffix are chosen.
     from deepmd.pt_expt.model.graph_lower import (
         model_uses_graph_lower,
     )
