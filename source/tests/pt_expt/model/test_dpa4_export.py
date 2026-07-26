@@ -538,8 +538,9 @@ def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
         mock,
     )
 
-    import deepmd.pt_expt.entrypoints.main as main_mod
-    import deepmd.pt_expt.utils.serialization as ser_mod
+    from deepmd.pt_expt.entrypoints.main import (
+        freeze,
+    )
     from deepmd.pt_expt.model.get_model import (
         get_model,
     )
@@ -561,12 +562,10 @@ def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
 
     with (
         # ``freeze`` imports it inside the function, so patch it at source
-        mock.patch.object(ser_mod, "deserialize_to_file", _stub),
-        caplog.at_level(logging.WARNING, logger=main_mod.__name__),
+        mock.patch("deepmd.pt_expt.utils.serialization.deserialize_to_file", _stub),
+        caplog.at_level(logging.WARNING, logger="deepmd.pt_expt.entrypoints.main"),
     ):
-        main_mod.freeze(
-            model=str(ckpt), output=str(tmp_path / "frozen"), lower_kind="nlist"
-        )
+        freeze(model=str(ckpt), output=str(tmp_path / "frozen"), lower_kind="nlist")
 
     warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
     assert any("OVERRIDDEN" in m for m in warned), (
