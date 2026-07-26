@@ -242,19 +242,9 @@ def get_sezm_model(data: dict) -> EnergyModel:
             models=[model.atomic_model, zbl_atomic],
             type_map=data["type_map"],
             weights="sum",
-            # Atom exclusion belongs to the composition for the same reason
-            # pair exclusion does: both children evaluate on the one shared
-            # graph, so "excluded" has to mean excluded from the analytical
-            # term too, not just the learned one. Masking to zero is
-            # idempotent, so the learned child keeping its own copy is
-            # harmless -- but WITHOUT this the composition's atom_excl is
-            # None and an excluded atom still collects its full ZBL energy.
+            # Both exclusions belong to the composition: its children share one
+            # graph, so "excluded" must cover the analytical term too.
             atom_exclude_types=data.get("atom_exclude_types", []),
-            # Same ownership assignment as the dpmodel builder: the
-            # composition is what the freeze metadata reads, so it carries the
-            # model-level pair exclusion. Config only -- model-level pair
-            # exclusion is a BUILD-time transform that parent and child assert
-            # rather than apply.
             pair_exclude_types=pair_exclude_types,
         )
         return LinearEnergyModel(atomic_model_=composed)

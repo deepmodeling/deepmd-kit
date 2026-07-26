@@ -613,23 +613,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return any(model.has_chg_spin_ebd() for model in self.models)
 
     def get_intensive(self) -> bool:
-        """Intensive iff EVERY child is -- a sum of children cannot be
-        intensive while any of them scales with system size.
-
-        ``all``, not ``any``: mixing an intensive with an extensive child is
-        physically incoherent, and defaulting to the base ``False`` would
-        silently pick the extensive out-stat rule for a composition of
-        intensive fittings.
+        """Intensive iff EVERY child is: a sum cannot be intensive while one
+        child scales with system size.
         """
         return all(model.get_intensive() for model in self.models)
 
     def get_compute_stats_distinguish_types(self) -> bool:
-        """Type-distinguishing stats are needed if ANY child needs them.
-
-        ``any``, because the rule decides how out-stat bias is fitted for
-        the WHOLE composition: one child that distinguishes types would get
-        a wrong bias under the type-agnostic rule, whereas a child that does
-        not care is unharmed by the stricter one.
+        """Needed if ANY child needs them; the stricter rule is safe for
+        children that do not distinguish types.
         """
         return any(model.get_compute_stats_distinguish_types() for model in self.models)
 
