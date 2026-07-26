@@ -275,5 +275,35 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
         )
 
 
+class TestPairTabGridSpacing(unittest.TestCase):
+    @patch("numpy.loadtxt")
+    def test_non_uniform_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.09, 0.3],
+                [0.16, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            PairTab(filename="dummy_path", rcut=0.16)
+
+    @patch("numpy.loadtxt")
+    def test_uniform_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.03, 0.3],
+                [0.04, 0.0],
+            ]
+        )
+        tab = PairTab(filename="dummy_path", rcut=0.04)
+        np.testing.assert_allclose(tab.hh, 0.01)
+
+
 if __name__ == "__main__":
     unittest.main(warnings="ignore")

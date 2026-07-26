@@ -61,6 +61,15 @@ class PairTab:
         self.rmin = self.vdata[0][0]
         self.rmax = self.vdata[-1][0]
         self.hh = self.vdata[1][0] - self.vdata[0][0]
+        dx = np.diff(self.vdata[:, 0])
+        if not np.allclose(dx, self.hh, rtol=1e-5, atol=1e-8):
+            raise ValueError(
+                f"The distance grid in the pairwise table {filename} is not "
+                "evenly spaced. The tabulated potential must be provided on a "
+                "uniform grid, but the stride inferred from the first two rows "
+                f"({self.hh}) does not match all distance intervals. Please "
+                "regrid the table to use a constant distance step."
+            )
         ncol = self.vdata.shape[1] - 1
         n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
         self.ntypes = int(n0 + 0.1)
