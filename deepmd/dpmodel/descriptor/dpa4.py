@@ -1361,6 +1361,80 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             None,
         )
 
+    def call_graph(
+        self,
+        graph: NeighborGraph,
+        atype: Array,
+        type_embedding: Array | None = None,
+        comm_dict: dict[str, Array] | None = None,
+        spin: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> tuple[Array, None]:
+        """Graph-native descriptor forward on the flat node axis.
+
+        Parameters
+        ----------
+        graph
+            Neighbor graph for the local atoms (ghost-free). ``edge_vec`` is
+            the geometry/autograd leaf; ``edge_mask`` flags valid edges.
+        atype
+            Flat node types with shape (N,).
+        type_embedding
+            Accepted for graph-seam interface stability and ignored: DPA4
+            embeds types internally (``SeZMTypeEmbedding``) from ``atype``.
+        comm_dict
+            Border-exchange tensors for parallel inference, threaded down to
+            the interaction blocks. The dpmodel backend implements no
+            cross-rank exchange on any lower path: a block that actually
+            needs it raises from the ``exchange_ghost_features`` leaf (see
+            ``_run_graph``), not here.
+        spin
+            Per-node spin vectors with shape (N, 3) on the flat node axis, or
+            None. Consumed by ``spin_embedding`` (l=0 magnitude into the type
+            embedding, l=1 into the backbone and per-edge source features).
+            Ghost-free graphs need only per-local-atom spin.
+        charge_spin
+            Frame-level charge/spin conditioning with shape ``(nf, 2)`` (or a
+            shape ``_canonicalize_charge_spin`` can broadcast to it), or
+            ``None``. This is the SAME per-descriptor canonicalization the
+            dense ``call`` adapter applies (default-fill from
+            ``default_chg_spin`` when configured, shape validation,
+            broadcast to ``nf``); ``call_graph`` is the one owner of that
+            step on the graph route. ``nf`` is recovered from
+            ``graph.n_node.shape[0]`` (a static shape, safe under
+            ``torch.export``); each frame's node block must therefore hold
+            exactly ``N // nf`` nodes, which single-rank carry-all graphs
+            built from a rectangular ``(nf, nloc)`` input always satisfy.
+
+        Returns
+        -------
+        tuple[Array, None]
+            Flat ``(N, channels)`` descriptor in global precision, and
+            ``None`` (DPA4 produces no equivariant rot_mat for the fitting).
+
+        Raises
+        ------
+        NotImplementedError
+            When ``comm_dict`` is provided and a block needs the cross-rank
+            exchange (raised by the per-block leaf).
+        """
+        n_nodes = atype.shape[0]
+        nf = graph.n_node.shape[0]
+        charge_spin = self._canonicalize_charge_spin(
+            charge_spin,
+            nf=nf,
+            ref=graph.edge_vec,
+        )
+        x_scalar, _ = self._run_graph(
+            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
+        )
+        # ``_run_graph`` returns the read-out with its SO(3) singleton
+        # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
+        # graph-seam contract shape (n_nodes, channels).
+        xp = array_api_compat.array_namespace(x_scalar)
+        x_scalar = xp.reshape(x_scalar, (n_nodes, self.channels))
+        return x_scalar, None
+
     def _run_graph(
         self,
         graph: NeighborGraph,
@@ -1623,80 +1697,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x_scalar = self._apply_readout(x, n_out_nodes)
 
         return xp.astype(x_scalar, get_xp_precision(xp, "global")), x
-
-    def call_graph(
-        self,
-        graph: NeighborGraph,
-        atype: Array,
-        type_embedding: Array | None = None,
-        comm_dict: dict[str, Array] | None = None,
-        spin: Array | None = None,
-        charge_spin: Array | None = None,
-    ) -> tuple[Array, None]:
-        """Graph-native descriptor forward on the flat node axis.
-
-        Parameters
-        ----------
-        graph
-            Neighbor graph for the local atoms (ghost-free). ``edge_vec`` is
-            the geometry/autograd leaf; ``edge_mask`` flags valid edges.
-        atype
-            Flat node types with shape (N,).
-        type_embedding
-            Accepted for graph-seam interface stability and ignored: DPA4
-            embeds types internally (``SeZMTypeEmbedding``) from ``atype``.
-        comm_dict
-            Border-exchange tensors for parallel inference, threaded down to
-            the interaction blocks. The dpmodel backend implements no
-            cross-rank exchange on any lower path: a block that actually
-            needs it raises from the ``exchange_ghost_features`` leaf (see
-            ``_run_graph``), not here.
-        spin
-            Per-node spin vectors with shape (N, 3) on the flat node axis, or
-            None. Consumed by ``spin_embedding`` (l=0 magnitude into the type
-            embedding, l=1 into the backbone and per-edge source features).
-            Ghost-free graphs need only per-local-atom spin.
-        charge_spin
-            Frame-level charge/spin conditioning with shape ``(nf, 2)`` (or a
-            shape ``_canonicalize_charge_spin`` can broadcast to it), or
-            ``None``. This is the SAME per-descriptor canonicalization the
-            dense ``call`` adapter applies (default-fill from
-            ``default_chg_spin`` when configured, shape validation,
-            broadcast to ``nf``); ``call_graph`` is the one owner of that
-            step on the graph route. ``nf`` is recovered from
-            ``graph.n_node.shape[0]`` (a static shape, safe under
-            ``torch.export``); each frame's node block must therefore hold
-            exactly ``N // nf`` nodes, which single-rank carry-all graphs
-            built from a rectangular ``(nf, nloc)`` input always satisfy.
-
-        Returns
-        -------
-        tuple[Array, None]
-            Flat ``(N, channels)`` descriptor in global precision, and
-            ``None`` (DPA4 produces no equivariant rot_mat for the fitting).
-
-        Raises
-        ------
-        NotImplementedError
-            When ``comm_dict`` is provided and a block needs the cross-rank
-            exchange (raised by the per-block leaf).
-        """
-        n_nodes = atype.shape[0]
-        nf = graph.n_node.shape[0]
-        charge_spin = self._canonicalize_charge_spin(
-            charge_spin,
-            nf=nf,
-            ref=graph.edge_vec,
-        )
-        x_scalar, _ = self._run_graph(
-            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
-        )
-        # ``_run_graph`` returns the read-out with its SO(3) singleton
-        # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
-        # graph-seam contract shape (n_nodes, channels).
-        xp = array_api_compat.array_namespace(x_scalar)
-        x_scalar = xp.reshape(x_scalar, (n_nodes, self.channels))
-        return x_scalar, None
 
     def _forward_blocks(
         self,
