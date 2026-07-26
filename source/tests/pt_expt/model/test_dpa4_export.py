@@ -466,7 +466,13 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert "force_mag" in md["output_keys"]
     for key in ("atom_energy", "energy", "force", "virial"):
         assert key in md["output_keys"]
-    assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
+    # ... and the nested artifact must actually BE there. This assertion was
+    # inverted while native spin was single-rank; leaving it that way made the
+    # test contradict its own has_comm_artifact check above, and it survived
+    # only because the CPU freeze fails earlier on an unrelated inductor bug.
+    assert any(n.endswith("forward_lower_with_comm.pt2") for n in names), (
+        "has_comm_artifact is True but the nested with-comm .pt2 is missing"
+    )
 
 
 def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:
