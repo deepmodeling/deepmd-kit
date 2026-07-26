@@ -608,7 +608,13 @@ class TestInterPotentialChangeTypeMapPtExpt:
         child = self._zbl_child(self._build(["Ni", "O"]))
         child.change_type_map(["O", "Ni"])
         data = child.serialize()
-        restored = BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
+        # The wire type must still resolve through the shared registry ...
+        assert BaseAtomicModel.get_class_by_type(data["type"]) is not None
+        # ... but restore through the pt_expt class the child actually is:
+        # the dpmodel class is NumPy-backed, and this test feeds device
+        # tensors, so a CUDA run would index a NumPy out_bias with a CUDA
+        # atype and fail. Same-class restore is also the stricter check.
+        restored = type(child).deserialize(data)
         assert restored.get_type_map() == ["O", "Ni"]
         np.testing.assert_allclose(
             self._pair_energy(restored), self._pair_energy(child), rtol=1e-12
