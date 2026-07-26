@@ -520,6 +520,61 @@ def test_native_spin_default_freeze_routes_to_graph(tmp_path) -> None:
     assert md["is_spin"] is True
 
 
+def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
+    """Overriding the caller's lower_kind must be WARNED, not silent.
+
+    The dense lower is deprecated here, so a graph-capable model is forced
+    onto the graph lower even when the caller asked for "nlist". The two
+    lowers are not numerically identical, so the override has to be visible
+    in the log rather than inferred from the output suffix.
+
+    The export itself is stubbed: this pins the resolution and its log, and
+    a real compile would only add minutes (and this workstation's inductor
+    bug) without testing anything extra.
+    """
+    import copy
+    import logging
+    from unittest import mock
+
+    import deepmd.pt_expt.entrypoints.main as main_mod
+    import deepmd.pt_expt.utils.serialization as ser_mod
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+
+    config = copy.deepcopy(_DPA4_CONFIG)
+    model = get_model(copy.deepcopy(config)).to(torch.device("cpu")).eval()
+    wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
+    ckpt = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, ckpt)
+
+    seen: dict = {}
+
+    def _stub(model_file, data, *args, **kwargs):
+        seen["model_file"] = model_file
+        seen["lower_kind"] = kwargs.get("lower_kind")
+
+    with (
+        # ``freeze`` imports it inside the function, so patch it at source
+        mock.patch.object(ser_mod, "deserialize_to_file", _stub),
+        caplog.at_level(logging.WARNING, logger=main_mod.__name__),
+    ):
+        main_mod.freeze(
+            model=str(ckpt), output=str(tmp_path / "frozen"), lower_kind="nlist"
+        )
+
+    warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("OVERRIDDEN" in m for m in warned), (
+        f"the lower_kind override was not warned about; got {warned}"
+    )
+    # ... and it really did override, both in the export call and the suffix
+    assert seen["lower_kind"] == "graph"
+    assert seen["model_file"].endswith(".pt2")
+
+
 def test_bridged_default_freeze_routes_to_graph(tmp_path) -> None:
     """A ZBL-bridged model also default-freezes to a graph-kind ``.pt2``.
 

@@ -612,9 +612,16 @@ def freeze(
     )
 
     if lower_kind != "graph" and model_uses_graph_lower(m):
-        log.info(
-            "Model is graph-lower capable; resolving lower_kind=%r -> 'graph' "
-            "(the dense lower is deprecated in the pt_expt backend).",
+        # WARNING, not info: this overrides what the caller asked for, and
+        # the two lowers are not numerically identical (dpa1's graph and
+        # dense attention semantics differ by ~1e-4), so the override must
+        # be visible in the log rather than inferred from the output suffix.
+        log.warning(
+            "Requested lower_kind=%r is being OVERRIDDEN to 'graph': the "
+            "dense (nlist) lower is deprecated in the pt_expt backend and "
+            "this model is graph-lower capable. The frozen artifact will be "
+            "a graph-kind .pt2, and its outputs may differ slightly from the "
+            "dense lower.",
             lower_kind,
         )
         lower_kind = "graph"
