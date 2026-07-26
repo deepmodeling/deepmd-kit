@@ -490,6 +490,78 @@ class TestCompositionCarriesAtomExclusion:
         assert model.atomic_model.atom_excl is None
 
 
+class TestCompositionDefaultsRequireAgreement:
+    """A parent default is only valid when every ACTIVE child shares it.
+
+    The composition exposes ONE external tensor to all children, so
+    advertising the first child's default made ``get_additional_data_
+    requirement`` mark the input optional and inject that value into every
+    child -- silently overriding the others' own defaults (reported as an
+    8.13e-4 energy change for two learned children defaulting to [0.0] and
+    [1.0]). Dimension-zero children (an analytical bridging term) are not
+    consumers and must be ignored, so learned+ZBL still inherits the
+    learned default.
+    """
+
+    class _Fake:
+        """Learned-child stand-in with its own fparam default."""
+
+        def __init__(self, dim: int, default) -> None:
+            self._dim, self._default = dim, default
+
+        def mixed_types(self) -> bool:
+            return True
+
+        def get_type_map(self) -> list:
+            return ["Ni", "O"]
+
+        def get_intensive(self) -> bool:
+            return False
+
+        def get_dim_fparam(self) -> int:
+            return self._dim
+
+        def get_dim_chg_spin(self) -> int:
+            return 0
+
+        def has_default_fparam(self) -> bool:
+            return self._default is not None
+
+        def get_default_fparam(self):
+            return self._default
+
+        def has_default_chg_spin(self) -> bool:
+            return False
+
+        def get_default_chg_spin(self):
+            return None
+
+    def _compose(self, children):
+        return LinearEnergyAtomicModel(children, type_map=["Ni", "O"], weights="sum")
+
+    def test_differing_defaults_expose_none(self) -> None:
+        m = self._compose([self._Fake(1, [0.0]), self._Fake(1, [1.0])])
+        assert m.has_default_fparam() is False
+        assert m.get_default_fparam() is None
+
+    def test_matching_defaults_are_exposed(self) -> None:
+        m = self._compose([self._Fake(1, [1.0]), self._Fake(1, [1.0])])
+        assert m.has_default_fparam() is True
+        assert m.get_default_fparam() == [1.0]
+
+    def test_dimension_zero_child_is_ignored(self) -> None:
+        """Learned + ZBL must still inherit the learned default."""
+        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        assert zbl.get_dim_fparam() == 0  # anti-vacuity: really a non-consumer
+        m = self._compose([self._Fake(1, [0.5]), zbl])
+        assert m.has_default_fparam() is True
+        assert m.get_default_fparam() == [0.5]
+
+    def test_active_child_without_default_exposes_none(self) -> None:
+        m = self._compose([self._Fake(1, [1.0]), self._Fake(1, None)])
+        assert m.has_default_fparam() is False
+
+
 class TestCompositionForwardsStatCapabilities:
     """``get_intensive`` / ``get_compute_stats_distinguish_types`` aggregate.
 

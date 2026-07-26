@@ -639,27 +639,71 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Dimension of the charge_spin input (max over children, like fparam)."""
         return max([model.get_dim_chg_spin() for model in self.models])
 
+    @staticmethod
+    def _agreed_default(
+        actives: "list[BaseAtomicModel]",
+        has: "Callable[[BaseAtomicModel], bool]",
+        get: "Callable[[BaseAtomicModel], Any]",
+    ) -> "tuple[bool, Any]":
+        """Shared default of the ACTIVE children, or none if they disagree.
+
+        The composition exposes ONE external tensor to all children, so a
+        parent default is only meaningful when every active consumer would
+        have used the same value anyway. Otherwise omitting the input must
+        stay omitted, letting each child apply its own default, rather than
+        silently broadcasting one child's value to the others.
+
+        Children that do not consume the input (dimension 0, e.g. an
+        analytical bridging term) are excluded by the caller, so a learned
+        model composed with ZBL still inherits the learned default.
+        """
+        if not actives or not all(has(m) for m in actives):
+            return False, None
+        values = [np.asarray(get(m), dtype=float).reshape(-1) for m in actives]
+        first = values[0]
+        if any(v.shape != first.shape or not np.allclose(v, first) for v in values[1:]):
+            return False, None
+        return True, get(actives[0])
+
+    def _chg_spin_consumers(self) -> list:
+        """Children that actually consume ``charge_spin``."""
+        return [m for m in self.models if m.get_dim_chg_spin() > 0]
+
+    def _fparam_consumers(self) -> list:
+        """Children that actually consume ``fparam``."""
+        return [m for m in self.models if m.get_dim_fparam() > 0]
+
     def has_default_chg_spin(self) -> bool:
-        """Whether ANY child carries default charge/spin conditions."""
-        return any(model.has_default_chg_spin() for model in self.models)
+        """Whether every active child shares one default charge/spin."""
+        return self._agreed_default(
+            self._chg_spin_consumers(),
+            lambda m: m.has_default_chg_spin(),
+            lambda m: m.get_default_chg_spin(),
+        )[0]
 
     def get_default_chg_spin(self) -> "Array | None":
-        """The first child's default charge/spin conditions, if any."""
-        for model in self.models:
-            if model.has_default_chg_spin():
-                return model.get_default_chg_spin()
-        return None
+        """The shared default charge/spin conditions, if the children agree."""
+        return self._agreed_default(
+            self._chg_spin_consumers(),
+            lambda m: m.has_default_chg_spin(),
+            lambda m: m.get_default_chg_spin(),
+        )[1]
 
     def has_default_fparam(self) -> bool:
-        """Whether ANY child carries default frame parameters."""
-        return any(model.has_default_fparam() for model in self.models)
+        """Whether every active child shares one default frame parameter."""
+        return self._agreed_default(
+            self._fparam_consumers(),
+            lambda m: m.has_default_fparam(),
+            lambda m: m.get_default_fparam(),
+        )[0]
 
     def get_default_fparam(self) -> "list[float] | None":
-        """The first child's default frame parameters, if any."""
-        for model in self.models:
-            if model.has_default_fparam():
-                return model.get_default_fparam()
-        return None
+        """The shared default frame parameters, if the children agree."""
+        return self._agreed_default(
+            self._fparam_consumers(),
+            lambda m: m.has_default_fparam(),
+            lambda m: m.get_default_fparam(),
+        )[1]
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
