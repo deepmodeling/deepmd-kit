@@ -36,6 +36,7 @@ _AOTI_COMPILE_MODULES = frozenset(
         "pt_expt/model/test_export_with_comm.py",
         "pt_expt/model/test_dpa1_graph_lower.py",
         "pt_expt/model/test_graph_export.py",
+        "pt_expt/model/test_zbl_bridging.py",
         "pt_expt/model/test_graph_export_with_comm.py",
         "pt_expt/utils/test_graph_pt2_metadata.py",
         "pt_expt/infer/test_deep_eval_metadata_only.py",

@@ -479,20 +479,48 @@ def train(
     )
 
 
+def _default_output_path(output: str, lower_kind: str) -> str:
+    """Default a suffixless frozen-model path from the RESOLVED lower kind.
+
+    Parameters
+    ----------
+    output : str
+        Requested output path. An explicit ``.pte`` / ``.pt2`` suffix is
+        preserved; any other (or missing) suffix is replaced.
+    lower_kind : str
+        The resolved lower kind (after ``freeze``'s native-spin
+        resolution): ``"graph"`` selects ``.pt2`` (an AOTI ``.pt2`` archive
+        is what the C++ graph path consumes), anything else ``.pte``.
+
+    Returns
+    -------
+    str
+        The output path with a definite ``.pte`` / ``.pt2`` suffix.
+    """
+    if not output.endswith((".pte", ".pt2")):
+        return str(
+            Path(output).with_suffix(".pt2" if lower_kind == "graph" else ".pte")
+        )
+    return output
+
+
 def freeze(
     model: str,
-    output: str = "frozen_model.pte",
+    output: str = "frozen_model",
     head: str | None = None,
     lower_kind: str = "nlist",
 ) -> None:
-    """Freeze a pt_expt checkpoint into a .pte exported model.
+    """Freeze a pt_expt checkpoint into a .pte/.pt2 exported model.
 
     Parameters
     ----------
     model : str
         Path to the checkpoint file (.pt).
     output : str
-        Path for the output .pte file.
+        Path for the output file. When it carries no ``.pte``/``.pt2``
+        suffix, the suffix is chosen from the RESOLVED lower kind (after the
+        native-spin resolution below): ``.pt2`` for a graph lower, ``.pte``
+        otherwise.
     head : str or None
         Head to freeze in multi-task mode.
     lower_kind : str
@@ -507,6 +535,10 @@ def freeze(
         softmax denominator, so graph-form results are sel-independent and
         differ from the legacy dense lower by up to ~1e-4 (see
         ``DescrptDPA1.call_graph``).
+        A NATIVE-spin model (``NativeSpinEnergyModel``) implements ONLY the
+        graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
+        regardless of the requested value -- before the export ABI and the
+        default output suffix are selected.
     """
     import torch
 
@@ -567,6 +599,35 @@ def freeze(
         single_model_params = model_params
 
     m.eval()
+
+    # A graph-capable model ALWAYS freezes through the NeighborGraph lower.
+    # The dense lower is deprecated here and every DPA model is expected to be
+    # graph-capable, so "can use graph" is deliberately the whole condition --
+    # a separate "graph-required" capability would encode a distinction that
+    # stops existing. It is also load-bearing: for native spin and for an
+    # analytical bridging term no dense lower exists at all, so the public
+    # default would otherwise fail deep inside the dense trace. Resolved HERE,
+    # before the export ABI and the default output suffix are chosen.
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
+    )
+
+    if lower_kind != "graph" and model_uses_graph_lower(m):
+        # WARNING, not info: this overrides what the caller asked for, and
+        # the two lowers are not numerically identical (dpa1's graph and
+        # dense attention semantics differ by ~1e-4), so the override must
+        # be visible in the log rather than inferred from the output suffix.
+        log.warning(
+            "Requested lower_kind=%r is being OVERRIDDEN to 'graph': the "
+            "dense (nlist) lower is deprecated in the pt_expt backend and "
+            "this model is graph-lower capable. The frozen artifact will be "
+            "a graph-kind .pt2, and its outputs may differ slightly from the "
+            "dense lower.",
+            lower_kind,
+        )
+        lower_kind = "graph"
+
+    output = _default_output_path(output, lower_kind)
 
     # The graph lower is opt-in and only valid for graph-eligible models
     # (dpa1 with concat tebd, incl. attention layers and exclude_types
@@ -833,18 +894,14 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
                     f"Checkpoint path '{model_path}' does not exist."
                 )
             FLAGS.model = str(model_path)
-        _lower_kind = getattr(FLAGS, "lower_kind", "nlist")
-        if not FLAGS.output.endswith((".pte", ".pt2")):
-            # Default suffix: .pt2 for the graph export (an AOTI .pt2 archive is
-            # what the C++ graph path consumes), .pte otherwise. Explicit user
-            # .pte / .pt2 suffixes are preserved for both.
-            _default_suffix = ".pt2" if _lower_kind == "graph" else ".pte"
-            FLAGS.output = str(Path(FLAGS.output).with_suffix(_default_suffix))
+        # Suffix defaulting lives in freeze(): the correct suffix depends on
+        # the RESOLVED lower kind (native-spin models force 'graph'), which
+        # is only known after the checkpoint's model is built there.
         freeze(
             model=FLAGS.model,
             output=FLAGS.output,
             head=FLAGS.head,
-            lower_kind=_lower_kind,
+            lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
         )
     elif FLAGS.command == "change-bias":
         change_bias(

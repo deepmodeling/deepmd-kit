@@ -261,6 +261,22 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
             )
         )
+    if _model.has_spin():
+        # ``model.spin.allow_missing_label`` relaxes the spin label from
+        # mandatory to optional with a zero default, so a system without a
+        # ``spin`` file is filled with zeros rather than rejected. Mirrors
+        # ``deepmd.pt.train.training.get_additional_data_requirement``.
+        # Every spin model wrapper carries a ``spin`` attribute.
+        allow_missing_spin = _model.spin.allow_missing_label
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "spin",
+                ndof=3,
+                atomic=True,
+                must=not allow_missing_spin,
+                default=0.0,
+            )
+        )
     if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         if has_default_cs:
@@ -1852,10 +1868,9 @@ class Trainer(AbstractTrainer):
                 "training; multi-task training is not supported."
             )
 
-        has_spin = getattr(self.models[DEFAULT_TASK_KEY], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin or isinstance(self.loss, EnergySpinLoss):
+        if self.models[DEFAULT_TASK_KEY].has_spin() or isinstance(
+            self.loss, EnergySpinLoss
+        ):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training; spin-energy training is not supported."

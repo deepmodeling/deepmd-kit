@@ -762,6 +762,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
             def get_default_fparam(self) -> list[float]:
                 return [0.0, 1.0]
 
+            def has_spin(self) -> bool:
+                return False
+
             def has_chg_spin_ebd(self) -> bool:
                 return False
 
@@ -795,6 +798,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
 
             def get_default_fparam(self) -> None:
                 return None
+
+            def has_spin(self) -> bool:
+                return False
 
             def has_chg_spin_ebd(self) -> bool:
                 return False

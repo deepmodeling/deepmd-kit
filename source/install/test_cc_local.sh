@@ -142,6 +142,31 @@ else:
 		PID8=$!
 		wait $PID7
 		wait $PID8
+
+		# Native-spin DPA4 graph archives (baseline + model-level pair
+		# exclusion). Without this the whole native-spin graph C++ suite
+		# GTEST_SKIPs on the missing fixture, which is how a dead
+		# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
+		PID11=$!
+		# DPA4 + analytical ZBL bridging: a linear COMPOSITION on the graph
+		# lower, which no other C++ fixture covers.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
+		PID12=$!
+		# Native-spin DPA4 + charge-spin FiLM: the ONLY fixture with both
+		# is_spin=true and dim_chg_spin>0, i.e. the only one on which the
+		# runtime charge_spin argument of DeepSpin::compute is not inert.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
+		PID13=$!
+		# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
+		# composition, and the only fixture pinning that a bridged model
+		# exports NO with-comm artifact (single-rank only by construction).
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
+		PID14=$!
+		wait $PID11
+		wait $PID12
+		wait $PID13
+		wait $PID14
 	fi
 fi
 
