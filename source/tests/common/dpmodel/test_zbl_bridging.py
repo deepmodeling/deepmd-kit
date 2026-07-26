@@ -448,3 +448,63 @@ class TestCompositionCarriesPairExclusion:
         config = copy.deepcopy(ZBL_CONFIG)
         config.pop("pair_exclude_types", None)
         assert get_model(config).atomic_model.pair_exclude_types == []
+
+
+class TestCompositionCarriesAtomExclusion:
+    """``atom_exclude_types`` must reach the ZBL term too.
+
+    The twin of :class:`TestCompositionCarriesPairExclusion`. Unlike pair
+    exclusion this one IS applied at runtime, which is why it was initially
+    (and wrongly) left unforwarded on the theory that forwarding would
+    double-apply. It does not: the composition's own ``atom_excl`` was
+    ``None``, the learned child masked only itself, and the analytical child
+    never heard about the exclusion -- so an excluded atom still collected
+    its full share of the ZBL energy. Masking to zero is idempotent, so the
+    child keeping its own copy is harmless.
+    """
+
+    @staticmethod
+    def _model(bridging: bool):
+        config = copy.deepcopy(ZBL_CONFIG)
+        config["atom_exclude_types"] = [1]
+        if not bridging:
+            for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
+                config.pop(key, None)
+        return get_model(config)
+
+    def test_atom_exclusion_reaches_the_composition(self) -> None:
+        bridged = self._model(bridging=True)
+        plain = self._model(bridging=False)
+        # anti-vacuity: the unbridged model must actually carry it
+        assert plain.atomic_model.atom_exclude_types == [1]
+        assert bridged.atomic_model.atom_exclude_types == [1]
+        # the mask is what actually zeroes the analytical child's output
+        assert bridged.atomic_model.atom_excl is not None
+
+    def test_no_exclusion_stays_empty(self) -> None:
+        """Nothing is invented when none is configured."""
+        config = copy.deepcopy(ZBL_CONFIG)
+        config.pop("atom_exclude_types", None)
+        model = get_model(config)
+        assert model.atomic_model.atom_exclude_types == []
+        assert model.atomic_model.atom_excl is None
+
+
+class TestCompositionForwardsStatCapabilities:
+    """``get_intensive`` / ``get_compute_stats_distinguish_types`` aggregate.
+
+    Both silently fell through to ``BaseAtomicModel``'s defaults, so a
+    bridged model would fit its out-stat bias with the wrong extensivity and
+    the wrong type-distinguishing rule -- the same class of gap as the
+    charge-spin and pair-exclusion accessors.
+    """
+
+    def test_forwarded_from_children(self) -> None:
+        bridged = get_model(copy.deepcopy(ZBL_CONFIG))
+        children = bridged.atomic_model.models
+        assert bridged.atomic_model.get_intensive() == all(
+            c.get_intensive() for c in children
+        )
+        assert bridged.atomic_model.get_compute_stats_distinguish_types() == any(
+            c.get_compute_stats_distinguish_types() for c in children
+        )

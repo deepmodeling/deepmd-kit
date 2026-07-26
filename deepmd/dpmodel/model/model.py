@@ -154,6 +154,14 @@ def get_standard_model(data: dict) -> EnergyModel:
             models=[model.atomic_model, zbl_atomic],
             type_map=data["type_map"],
             weights="sum",
+            # Atom exclusion belongs to the composition for the same reason
+            # pair exclusion does: both children evaluate on the one shared
+            # graph, so "excluded" has to mean excluded from the analytical
+            # term too, not just the learned one. Masking to zero is
+            # idempotent, so the learned child keeping its own copy is
+            # harmless -- but WITHOUT this the composition's atom_excl is
+            # None and an excluded atom still collects its full ZBL energy.
+            atom_exclude_types=atom_exclude_types,
             # The composition is the atomic model the freeze metadata reads,
             # so it must carry the model-level pair exclusion too -- otherwise
             # a configured ``pair_exclude_types`` reaches neither the exported
