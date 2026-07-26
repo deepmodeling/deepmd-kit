@@ -34,6 +34,7 @@ from deepmd.dpmodel.train import (
     TrainStepResult,
     change_model_out_bias,
     change_model_out_bias_by_task,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -41,6 +42,9 @@ from deepmd.dpmodel.utils.batch import (
 )
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
+)
+from deepmd.dpmodel.utils.training_utils import (
+    compute_total_numb_batch,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -1390,7 +1394,6 @@ class Trainer(AbstractTrainer):
         self.world_size = dist.get_world_size() if self.is_distributed else 1
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
@@ -1503,19 +1506,18 @@ class Trainer(AbstractTrainer):
             for model_key in self.model_keys:
                 self._broadcast_model_stat(self.models[model_key])
 
-        # Model probability (multi-task) --------------------------------------
-        if self.multi_task:
-            from deepmd.dpmodel.utils.training_utils import (
-                resolve_model_prob,
-            )
-
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                training_params.get("model_prob"),
-                self.training_data_by_task,
-            )
-        else:
-            self.model_prob = None
+        # Training schedule ---------------------------------------------------
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=self.training_data_by_task,
+            epoch_length=self._epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
 
         # Learning rate -------------------------------------------------------
         self.lr_schedule = make_learning_rate_schedule(
@@ -2080,6 +2082,33 @@ class Trainer(AbstractTrainer):
 
         return input_dict, label_dict
 
+    def _epoch_length(self, model_key: str) -> int:
+        """Return the steps this rank takes during one epoch of a task.
+
+        Parameters
+        ----------
+        model_key : str
+            Key of the task whose training data is measured.
+
+        Returns
+        -------
+        int
+            Number of steps covering one pass over the task's training data.
+
+        Notes
+        -----
+        A data system reports ``nbatches[i]``, the batch count of system ``i``,
+        and ``sys_probs[i]``, the probability of drawing from that system, from
+        which ``compute_total_numb_batch`` derives the dataset-wide epoch
+        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``.  Unlike the pt
+        backend, whose loader shards the systems, every rank here holds the
+        complete data system and samples it independently, so the ranks jointly
+        cover one epoch after ``total / world_size`` steps each.
+        """
+        data = self.training_data_by_task[model_key]
+        total = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        return int(np.ceil(total / self.world_size))
+
     # ------------------------------------------------------------------
     # DDP helpers
     # ------------------------------------------------------------------
@@ -2098,6 +2127,23 @@ class Trainer(AbstractTrainer):
             dist.broadcast(p.data, src=0)
         for b in model.buffers():
             dist.broadcast(b, src=0)
+
+    def _broadcast_value_from_rank0(self, value: Any) -> Any:
+        """Return rank 0's copy of ``value`` on every rank.
+
+        Epoch lengths round a quotient of sampling probabilities that is often
+        an exact integer in real arithmetic, so a last-bit difference between
+        ranks -- as reduction kernels dispatched for different CPU features
+        produce -- flips the rounded result and hence ``num_steps``. Ranks that
+        disagree on ``num_steps`` also disagree on the full-validation start
+        step and deadlock on mismatched collective calls, so the whole world
+        adopts rank 0's value.
+        """
+        if not self.is_distributed:
+            return value
+        holder = [value]
+        dist.broadcast_object_list(holder, src=0, device=DEVICE)
+        return holder[0]
 
     # ------------------------------------------------------------------
     # Checkpointing

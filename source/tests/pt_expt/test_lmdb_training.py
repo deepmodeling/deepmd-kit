@@ -405,6 +405,24 @@ class TestLmdbTrainingLoop(unittest.TestCase):
         finally:
             os.chdir(cwd)
 
+    def test_numb_epoch_counts_passes_over_the_lmdb(self) -> None:
+        """One epoch is one pass over the frames of the LMDB."""
+        config = self._make_lmdb_config()
+        del config["training"]["numb_steps"]
+        config["training"]["numb_epoch"] = 2.0
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+        finally:
+            os.chdir(cwd)
+
+        # train.lmdb holds eight frames, read one frame per batch.
+        self.assertEqual(trainer.num_steps, 2 * 8)
+
     def test_training_closes_parallel_lmdb_pipeline(self) -> None:
         """Trainer shutdown releases spawned decoder processes."""
         config = self._make_lmdb_config(numb_steps=2)

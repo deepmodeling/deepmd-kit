@@ -26,6 +26,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
@@ -34,6 +37,9 @@ import torch.multiprocessing as mp
 
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
+)
+from deepmd.pt_expt.train.training import (
+    Trainer,
 )
 from deepmd.pt_expt.utils.finetune import (
     get_finetune_rules,
@@ -62,6 +68,9 @@ EXAMPLE_DIR = os.path.join(
 
 # Auto-detect DDP backend based on device availability.
 _DDP_BACKEND = "nccl" if torch.cuda.is_available() else "gloo"
+
+# Epoch length reported by rank 0 when the ranks are made to disagree.
+_DRIFTED_EPOCH_LENGTH = 40
 
 # NCCL requires at least 2 GPUs for multi-rank tests.
 if _DDP_BACKEND == "nccl" and torch.cuda.device_count() < 2:
@@ -607,9 +616,89 @@ def _worker_finetune(
         dist.destroy_process_group()
 
 
+def _worker_epoch_schedule(rank, world_size, port, data_dir, drifted, result_dict):
+    """Worker: build a trainer whose run length comes from numb_epoch.
+
+    When *drifted* is set, each rank reports a different local epoch length,
+    reproducing the last-bit disagreement that floating-point sampling
+    probabilities can produce between ranks.
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_epoch_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_config(data_dir)
+            del config["training"]["numb_steps"]
+            config["training"]["numb_epoch"] = 1.0
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config)
+            if drifted:
+                with patch.object(
+                    Trainer,
+                    "_epoch_length",
+                    lambda self, model_key: _DRIFTED_EPOCH_LENGTH + rank,
+                ):
+                    num_steps = get_trainer(config).num_steps
+            else:
+                num_steps = get_trainer(config).num_steps
+            result_dict[rank] = {"num_steps": num_steps}
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
 # ---------------------------------------------------------------------------
 # Test classes
 # ---------------------------------------------------------------------------
+
+
+class TestDDPEpochSchedule(unittest.TestCase):
+    """An epoch spans the dataset once across the whole world, not per rank."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = os.path.join(data_dir, "data_0")
+
+    def _run(self, drifted: bool) -> dict:
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            _worker_epoch_schedule,
+            args=(2, port, self.data_dir, drifted, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        return dict(result_dict)
+
+    def test_ranks_share_an_epoch(self) -> None:
+        results = self._run(drifted=False)
+
+        # The system is read one frame per batch, so two ranks cover its
+        # frames in half as many steps each.
+        nframes = np.load(os.path.join(self.data_dir, "set.000", "coord.npy")).shape[0]
+        self.assertEqual(results[0]["num_steps"], nframes // 2)
+        self.assertEqual(results[1]["num_steps"], results[0]["num_steps"])
+
+    def test_drifting_epoch_lengths_are_pinned_to_rank_zero(self) -> None:
+        """Ranks that round differently still agree on the run length.
+
+        A run length that drifts by one step across ranks desynchronizes the
+        full-validation start step and deadlocks the mismatched collectives,
+        so rank 0's value must win everywhere.
+        """
+        results = self._run(drifted=True)
+
+        self.assertEqual(results[0]["num_steps"], _DRIFTED_EPOCH_LENGTH)
+        self.assertEqual(results[1]["num_steps"], _DRIFTED_EPOCH_LENGTH)
 
 
 class TestDDPSingleTaskTrain(unittest.TestCase):

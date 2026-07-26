@@ -33,8 +33,10 @@ class LmdbDataSystem:
     """LMDB-backed data system for pt_expt.
 
     Exposes the small surface that pt_expt's trainer touches:
-    ``get_batch(sys_idx=None)``, ``add_data_requirements(list)``, and
-    ``get_nsystems()``. Internally uses :class:`LmdbDataReader` for I/O and
+    ``get_batch(sys_idx=None)``, ``add_data_requirements(list)``,
+    ``get_nsystems()``, and the ``nbatches``/``sys_probs`` pair from which the
+    trainer derives an epoch length. The whole LMDB counts as one logical
+    system. Internally uses :class:`LmdbDataReader` for I/O and
     :class:`SameNlocBatchSampler` to draw same-nloc batches. Statistics use a
     separate logical-system view in which every ``nloc`` group is sampled
     independently, matching the PyTorch DataLoader adapter without changing
@@ -180,6 +182,16 @@ class LmdbDataSystem:
     def get_nsystems(self) -> int:
         """Return one logical LMDB training dataset."""
         return 1
+
+    @property
+    def nbatches(self) -> list[int]:
+        """Return the batch count of one full pass, per logical system."""
+        return [len(self._sampler)]
+
+    @property
+    def sys_probs(self) -> list[float]:
+        """Return the sampling probability of each logical system."""
+        return [1.0]
 
     # ------------------------------------------------------------------
     # Misc forwarders
