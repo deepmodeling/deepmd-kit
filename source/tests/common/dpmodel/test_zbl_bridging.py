@@ -499,6 +499,28 @@ class TestCompositionForwardsStatCapabilities:
     charge-spin and pair-exclusion accessors.
     """
 
+    def test_intensive_mixture_is_rejected_at_construction(self) -> None:
+        """An intensive/extensive mixture must not be CONSTRUCTIBLE.
+
+        Rejected in ``__init__`` rather than at query time: such a
+        composition is not physically meaningful, so it should never exist
+        rather than exist and answer a plausible-looking default.
+        """
+        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        # anti-vacuity: matching children compose fine and report their value
+        assert zbl_a.get_intensive() is False
+        assert (
+            LinearEnergyAtomicModel(
+                [zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum"
+            ).get_intensive()
+            is False
+        )
+
+        zbl_b.get_intensive = lambda: True  # type: ignore[method-assign]
+        with pytest.raises(ValueError, match="intensive and extensive"):
+            LinearEnergyAtomicModel([zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum")
+
     def test_forwarded_from_children(self) -> None:
         bridged = get_model(copy.deepcopy(ZBL_CONFIG))
         children = bridged.atomic_model.models

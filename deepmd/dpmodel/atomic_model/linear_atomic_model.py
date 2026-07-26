@@ -84,6 +84,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {model_mixed_type}."
             )
 
+        # Fail fast: a sum mixing an intensive with an extensive term is not
+        # physically meaningful, so such a composition must not exist.
+        intensive_flags = {m.get_intensive() for m in models}
+        if len(intensive_flags) > 1:
+            raise ValueError(
+                "LinearAtomicModel cannot combine intensive and extensive "
+                "sub-models: "
+                + ", ".join(f"{type(m).__name__}={m.get_intensive()}" for m in models)
+            )
+
         self.models = models
         self.type_map = type_map
         self._rebuild_mapping_state()
@@ -613,10 +623,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return any(model.has_chg_spin_ebd() for model in self.models)
 
     def get_intensive(self) -> bool:
-        """Intensive iff EVERY child is: a sum cannot be intensive while one
-        child scales with system size.
+        """Whether the composed property is intensive.
+
+        All children agree by construction (validated in ``__init__``).
         """
-        return all(model.get_intensive() for model in self.models)
+        return self.models[0].get_intensive() if self.models else False
 
     def get_compute_stats_distinguish_types(self) -> bool:
         """Needed if ANY child needs them; the stricter rule is safe for
