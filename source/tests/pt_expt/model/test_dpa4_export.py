@@ -534,7 +534,9 @@ def test_lower_kind_override_is_logged(tmp_path, caplog) -> None:
     """
     import copy
     import logging
-    from unittest import mock
+    from unittest import (
+        mock,
+    )
 
     import deepmd.pt_expt.entrypoints.main as main_mod
     import deepmd.pt_expt.utils.serialization as ser_mod
