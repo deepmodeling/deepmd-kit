@@ -273,6 +273,58 @@ def _type_pair_table(desc: Any, type_embedding: torch.Tensor) -> torch.Tensor:
 class DescrptDPA1(DescrptDPA1DP):
     _update_sel_cls = UpdateSel
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Persisted graph-routing knob (first-class training configuration):
+        # ``disable_graph_lower()`` used to flip only the plain dpmodel bool,
+        # which a Trainer checkpoint restart silently reset (the fresh model
+        # is rebuilt from config before ``load_state_dict``, and neither the
+        # state-dict keys nor ``_extra_state.model_params`` carried the
+        # choice) -- on a binding-sel system that switched the training
+        # equation and gradients without warning.  A persistent buffer rides
+        # every pt_expt state_dict, so save/restart round-trips it.
+        torch.nn.Module.register_buffer(
+            self,
+            "graph_lower_disabled",
+            torch.zeros((), dtype=torch.bool, device="cpu"),
+        )
+
+    def disable_graph_lower(self) -> None:
+        """Persisted variant of the dpmodel escape hatch (see base class).
+
+        The buffer (and the routing bool) are PER-TASK state: multi-task
+        ``share_params`` shares network submodules, not this buffer, so
+        disabling the graph lower on one task branch does not propagate to
+        branches sharing the same descriptor weights -- each branch owns
+        its routing decision.
+        """
+        super().disable_graph_lower()
+        self.graph_lower_disabled.fill_(True)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written before the knob was persisted lack
+        # the buffer; default to the fresh module's value (graph enabled)
+        # instead of failing the strict load.
+        key = prefix + "graph_lower_disabled"
+        if key not in state_dict:
+            state_dict[key] = self.graph_lower_disabled.detach().clone()
+        else:
+            # Re-sync the dpmodel-side routing bool from the RESTORED value
+            # here, at load time, where the incoming tensor is real.  The
+            # routing predicate itself must stay a plain python bool:
+            # ``uses_graph_lower()`` runs inside traced forwards (the dense
+            # adapter gate), and reading the buffer there would emit a
+            # data-dependent ``bool(FakeTensor)`` guard that breaks
+            # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
+            self._graph_lower_disabled = bool(state_dict[key])
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     def share_params(
         self,
         base_class: Any,
@@ -451,6 +503,7 @@ class DescrptDPA1(DescrptDPA1DP):
         atype: torch.Tensor,
         type_embedding: torch.Tensor | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> Any:
         """Graph-native forward, routed through the fused edge kernel when eligible.
 
@@ -499,10 +552,15 @@ class DescrptDPA1(DescrptDPA1DP):
             graph = dataclasses.replace(graph, edge_vec=graph.edge_vec.to(prec))
         # Triton edge convolution: serves the uncompressed concat / strip lower;
         # a tabulated (geo_compress) descriptor stays on the table path below.
+        # Descriptor-level exclusions stay on the reference path: the fused
+        # edge kernel bypasses the reference ``apply_pair_exclusion(graph,
+        # atype, emask)`` (descriptor exclude_types is independent of the
+        # model-level pair_exclude_types already applied at graph build).
         if (
             fused
             and triton_infer_level() >= 1
             and not self.geo_compress
+            and not self.se_atten.exclude_types
             and self._fused_eligible("triton")
         ):
             return self._call_graph_triton(graph, atype, type_embedding)
@@ -511,7 +569,12 @@ class DescrptDPA1(DescrptDPA1DP):
         if self.geo_compress:
             return self._call_graph_compress_reference(graph, atype, type_embedding)
         return DescrptDPA1DP.call_graph(
-            self, graph, atype, type_embedding=type_embedding, static_nnei=static_nnei
+            self,
+            graph,
+            atype,
+            type_embedding=type_embedding,
+            static_nnei=static_nnei,
+            comm_dict=comm_dict,
         )
 
     def _fused_eligible(self, backend: str) -> bool:
@@ -589,6 +652,12 @@ class DescrptDPA1(DescrptDPA1DP):
         return (
             TRITON_AVAILABLE
             and se.tebd_input_mode in ("strip", "concat")
+            # No exclude_types condition here: exclusion handling differs per
+            # dispatch site.  The dense ``_call_triton`` applies the descriptor
+            # emask itself (``_env_mat`` masks nlist / sw / rr), so it serves
+            # excluded models; the graph ``_call_graph_triton`` bypasses the
+            # reference ``apply_pair_exclusion`` and is gated at its dispatch
+            # site in :meth:`call_graph` instead.
             and str(layers[-1].activation_function).lower() in ACT_CODES
         )
 

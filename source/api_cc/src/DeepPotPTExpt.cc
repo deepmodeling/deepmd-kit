@@ -29,6 +29,90 @@ using deepmd::ptexpt::read_zip_entry;
 using namespace deepmd;
 
 namespace {
+/**
+ * @brief Normalize a graph-route aparam tensor to the flat node axis.
+ *
+ * The NeighborGraph ABI carries atomic parameters FLAT on the node axis --
+ * shape (N, daparam) with N == n_node_count, the same axis as ``atype``
+ * (mirrors ``build_synthetic_graph_inputs`` / ``_build_graph_dynamic_shapes``
+ * on the Python export side).  The runtime aparam carries the owned (local)
+ * rows only (``aparam_nall`` is structurally false for pt_expt models, see
+ * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
+ * the ghost rows are zero-padded here.  Ghost fitting outputs are never
+ * retained -- the with-comm artifact masks non-owned energies before
+ * reduction, and the plain multi-rank remap sums energy over the owned
+ * prefix only -- so the padded values are inert.
+ *
+ * A ghost-only rank (``nlocal == 0``, ``N > 0``) synthesizes a full zero
+ * tensor: the graph still carries N nodes and the artifact requires the
+ * (N, daparam) input, while the owned-node mask keeps its contribution
+ * exactly zero.  A missing aparam on a rank that OWNS atoms, or a width
+ * mismatch, is an explicit error -- the former silently returned the empty
+ * tensor (artifact reshape failure mid-collective), and a width mismatch
+ * used to be absorbed by broadcasting ``copy_`` (silent result corruption
+ * for daparam > 1).
+ */
+at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
+                               std::int64_t n_node_count,
+                               std::int64_t nlocal,
+                               std::int64_t daparam) {
+  if (daparam <= 0) {
+    return aparam_tensor;  // model has no aparam input; passed through empty
+  }
+  if (aparam_tensor.numel() == 0) {
+    if (nlocal > 0) {
+      throw deepmd::deepmd_exception(
+          "aparam is required (dim_aparam=" + std::to_string(daparam) +
+          ") but no values were provided on a rank owning " +
+          std::to_string(nlocal) + " atoms.");
+    }
+    // ghost-only rank: there are no owned rows to supply; zeros are inert
+    // under the owned-node mask but the artifact needs the full node axis.
+    return torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  }
+  if (aparam_tensor.numel() != nlocal * daparam) {
+    throw deepmd::deepmd_exception(
+        "aparam holds " + std::to_string(aparam_tensor.numel()) +
+        " values but the graph route expects nlocal * dim_aparam = " +
+        std::to_string(nlocal) + " * " + std::to_string(daparam) + ".");
+  }
+  at::Tensor owned = aparam_tensor.reshape({nlocal, daparam});
+  if (nlocal == n_node_count) {
+    return owned;  // single-rank / folded graph: nothing to pad
+  }
+  at::Tensor padded =
+      torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  padded.slice(0, 0, nlocal).copy_(owned);
+  return padded;
+}
+
+/**
+ * @brief Assert the flat graph-route aparam contract at the C++ boundary.
+ *
+ * The graph artifacts consume aparam FLAT on the node axis, shape
+ * (N, daparam) -- the layout ``extend_graph_aparam`` produces.  A caller
+ * hand-rolling a rectangular (1, N, daparam) tensor (the pre-flat
+ * convention) would otherwise fail DEEP inside the artifact -- or, on a
+ * GPU-only route, only at deployment where no CPU test can catch it (the
+ * device-edge branch shipped exactly that bug).  Failing loudly here turns
+ * any future such site into an immediate, self-explanatory error.
+ */
+void check_graph_aparam_flat(const at::Tensor& aparam,
+                             std::int64_t daparam,
+                             const char* where) {
+  if (daparam <= 0) {
+    return;
+  }
+  if (aparam.dim() != 2 || aparam.size(1) != daparam) {
+    std::ostringstream oss;
+    oss << where
+        << ": graph-route aparam must be flat (N, daparam) on the node axis "
+           "(produce it with extend_graph_aparam); got a rank-"
+        << aparam.dim() << " tensor of shape " << aparam.sizes()
+        << " for daparam = " << daparam << ".";
+    throw deepmd::deepmd_exception(oss.str());
+  }
+}
 
 void synchronize_current_accelerator_stream() {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
@@ -428,6 +512,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
     const torch::Tensor& aparam,
     const torch::Tensor& charge_spin) {
   // Graph-input ABI: original edge payload plus destination/source CSR views.
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph");
   std::vector<torch::Tensor> inputs = {
       atype,        n_node,        n_local,           edge_index,
       edge_vec,     edge_mask,     destination_order, destination_row_ptr,
@@ -538,6 +623,76 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges_with_comm(
   return with_comm_loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph_with_comm(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& n_local,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& destination_order,
+    const torch::Tensor& destination_row_ptr,
+    const torch::Tensor& source_order,
+    const torch::Tensor& source_row_ptr,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_graph_with_comm: comm_tensors must contain exactly 8 "
+        "tensors (send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  check_graph_aparam_flat(aparam, daparam, "run_model_graph_with_comm");
+  // NeighborGraph ABI: the 13-input base of run_model_graph (atype, n_node,
+  // n_local, edge_index, edge_vec, edge_mask, destination_order,
+  // destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
+  // [charge_spin]) with the 8 comm tensors appended, like
+  // run_model_with_comm / run_model_edges_with_comm.
+  //
+  // Device placement: the base tensors (n_local included) live on the model
+  // device -- n_local feeds the in-graph owned-node mask, a device kernel
+  // after ``move_to_device_pass`` (a CPU tensor fed there is read as a
+  // device pointer -- CUDA illegal memory access, first observed live in
+  // the dpa2 graph LAMMPS MP test).  The 8 comm tensors stay ON CPU,
+  // symmetric with the dense with-comm route: they are consumed only by the
+  // opaque ``deepmd_export::border_op`` whose HOST code dereferences their
+  // ``data_ptr`` directly (``send_list`` even carries raw host pointers)
+  // and reads ``nlocal``/``nghost`` via cheap host ``.item()`` calls --
+  // splitting the compute role (device n_local) from the host-MPI-control
+  // role removes the per-layer synchronizing D2H scalar reads a
+  // device-placed nlocal forced inside border_op (2 per layer forward + 2
+  // per layer backward).
+  std::vector<torch::Tensor> inputs = {
+      atype,        n_node,        n_local,           edge_index,
+      edge_vec,     edge_mask,     destination_order, destination_row_ptr,
+      source_order, source_row_ptr};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& ct : comm_tensors) {
+    inputs.push_back(ct);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
@@ -636,10 +791,24 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // NeighborGraph multi-rank dispatch:
+  //   - NON-message-passing (dpa1, se_e2_a, ...): the SAME single-rank graph
+  //     .pt2 runs on the EXTENDED region (fold_to_local=false; ghosts are
+  //     distinct nodes whose features come from their real ghost types).  No
+  //     with-comm artifact / no border_op is needed; ghost reaction forces are
+  //     folded to their owners by LAMMPS reverse-comm.  Handled below.
+  //   - message-passing graph (DPA2/DPA3): multi-rank requires a with-comm
+  //     graph artifact for cross-rank ghost-feature exchange
+  //     (``run_model_graph_with_comm``, below).  Fail fast before building any
+  //     tensors when that artifact is missing, so callers get a clear message
+  //     instead of a wrong answer or the loader's own runtime error.
   if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
-    throw deepmd::deepmd_exception(
-        "Multi-rank message-passing graph-input inference requires an "
-        "edge-input model with its with-comm artifact.");
+    if (!has_comm_artifact_ || !with_comm_loader) {
+      throw deepmd::deepmd_exception(
+          "Multi-rank message-passing graph .pt2 inference requires a "
+          "with-comm artifact; re-freeze the model with a deepmd-kit that "
+          "exports it (this .pt2 predates multi-rank graph support).");
+    }
   }
   // Dispatch guards for message-passing models:
   //   non-message-passing, or nghost == 0: the regular path is always safe.
@@ -918,6 +1087,96 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
             aparam_tensor, charge_spin_tensor, comm_tensors);
       }
+    } else if (lower_input_is_graph_) {
+      // Message-passing NeighborGraph route (DPA2/DPA3), multi-rank, with-comm
+      // artifact.  Reachable only when the artifact-presence guard earlier in
+      // ``compute_impl`` passed (``has_comm_artifact_ && with_comm_loader``),
+      // which the export pipeline only sets for message-passing models, so
+      // ``use_with_comm`` implies ``has_message_passing_`` here -- non-MP
+      // graph models (dpa1) never carry a comm artifact and take the plain
+      // extended-region branch below instead.
+      //
+      // Topology construction mirrors the non-comm multi-rank graph branch
+      // below exactly (extended region, N == nall_real, node types from the
+      // on-device extended ``atype_Tensor`` slice): ghost nodes are distinct
+      // and their embeddings are filled in-place by ``border_op`` inside the
+      // with-comm artifact instead of being read directly from local ghost
+      // types, so no geometry/mask changes are needed -- only the model
+      // entry point (and the appended comm tensors) differ.
+      // Collective preflight: a rank with zero owned+ghost atoms cannot run
+      // the graph artifact, and a rank-LOCAL failure would leave the
+      // non-empty peers blocked forever in the per-layer border_op
+      // collectives.  All-reduce the minimum node count over the LAMMPS
+      // communicator (comm_tensors[5]) so EVERY rank agrees to run -- or
+      // every rank throws promptly with the same error.  The op is an
+      // identity when the communicator handle is null or MPI is not
+      // compiled in.
+      //
+      // Cached across ``ago > 0`` force calls: the owned+ghost node count
+      // shares the lifetime of the cached nlist/mapping/edge topology
+      // (both only change on an ``ago == 0`` rebuild, which is globally
+      // synchronized by LAMMPS), so re-running the collective on every
+      // cache-hit MD step added a global synchronization to the hot path
+      // with no added protection.
+      if (ago == 0 || !graph_comm_preflight_done_) {
+        graph_comm_preflight_done_ = false;
+        const auto allreduce_min =
+            c10::Dispatcher::singleton()
+                .findSchemaOrThrow("deepmd_export::allreduce_min_int", "")
+                .typed<at::Tensor(const at::Tensor&, const at::Tensor&)>();
+        at::Tensor local_n_node =
+            torch::full({1}, static_cast<std::int64_t>(nall_real), int_option);
+        const std::int64_t global_min_n_node =
+            allreduce_min.call(local_n_node, comm_tensors[5].to(torch::kCPU))
+                .item<std::int64_t>();
+        if (global_min_n_node == 0) {
+          throw deepmd::deepmd_exception(
+              "Multi-rank message-passing graph inference does not yet "
+              "support a rank with zero owned+ghost atoms (the exported "
+              "graph artifact requires at least one node, and skipping the "
+              "run would desync the per-layer MPI ghost exchange; this rank "
+              "has " +
+              std::to_string(nall_real) +
+              " owned+ghost atoms). Use a domain decomposition that keeps "
+              "every rank non-empty, or a dense .pt2.");
+        }
+        graph_comm_preflight_done_ = true;
+      }
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      const std::int64_t n_node_count = nall_real;
+      at::Tensor n_node_tensor =
+          torch::full({1}, n_node_count, int_option).to(device);
+      // Device owned-count input for the in-graph owned-node mask; the CPU
+      // nlocal comm tensor stays host-side for border_op.
+      at::Tensor n_local_tensor =
+          torch::full({1}, static_cast<std::int64_t>(nloc), int_option)
+              .to(device);
+      at::Tensor node_atype =
+          atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
+      GraphTensorPack graph_pack;
+      graph_pack.atype = node_atype;
+      graph_pack.n_node = n_node_tensor;
+      graph_pack.n_local = n_local_tensor;
+      graph_pack.edge_index = edge_tensors.edge_index;
+      graph_pack.edge_vec = graph_edge_fp32_
+                                ? edge_tensors.edge_vec.to(torch::kFloat32)
+                                : edge_tensors.edge_vec;
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported graph lower consumes a pre-excluded edge_mask
+      // and never re-applies it -- same seam as the non-comm graph route.
+      graph_pack.edge_mask = deepmd::applyPairExclusion(
+          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
+          pair_exclude_table_, ntypes);
+      canonicalizeGraphPayload(graph_pack, n_node_count);
+      flat_outputs = run_model_graph_with_comm(
+          node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
+          graph_pack.edge_vec, graph_pack.edge_mask,
+          graph_pack.destination_order, graph_pack.destination_row_ptr,
+          graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam),
+          charge_spin_tensor, comm_tensors);
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
       // #18/A4): the exported dense lower consumes a pre-excluded nlist and
@@ -978,13 +1237,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       at::Tensor n_local_tensor = torch::full({1}, nloc, int_option).to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      at::Tensor graph_aparam = aparam_tensor;
-      if (daparam > 0 && n_node_count > nloc) {
-        graph_aparam = torch::cat(
-            {aparam_tensor, torch::zeros({1, n_node_count - nloc, daparam},
-                                         aparam_tensor.options())},
-            1);
-      }
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
+      // rows, and synthesize a zero tensor on a ghost-only rank (see
+      // extend_graph_aparam).
+      at::Tensor graph_aparam =
+          extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam);
       GraphTensorPack graph_pack;
       graph_pack.atype = node_atype;
       graph_pack.n_node = n_node_tensor;
@@ -1035,7 +1292,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     if (multi_rank) {
       // Extended region (N == nall_real): force is already per-extended-atom,
       // owned energy = sum over local atom energies, no zero-padding.  Ghost
-      // forces fold back via LAMMPS reverse-comm (no with-comm artifact).
+      // forces fold back via LAMMPS reverse-comm (both the plain and with-comm
+      // graph routes).
       deepmd::remap_graph_outputs_to_dense_keys_extended(output_map, nloc,
                                                          nall_real, atomic);
     } else {
@@ -1394,7 +1652,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           graph_tensors.edge_index, graph_tensors.edge_vec,
           graph_tensors.edge_mask, graph_tensors.destination_order,
           graph_tensors.destination_row_ptr, graph_tensors.source_order,
-          graph_tensors.source_row_ptr, fparam_tensor, aparam_tensor,
+          graph_tensors.source_row_ptr, fparam_tensor,
+          // standalone path is single-rank (every node owned): this only
+          // normalizes the rectangular runtime aparam to the flat
+          // (N, daparam) node axis of the graph ABI.
+          extend_graph_aparam(aparam_tensor, natoms, natoms, daparam),
           charge_spin_tensor);
     }
   } else {
@@ -2154,12 +2416,14 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
           torch::full({1}, static_cast<std::int64_t>(nnode), opt_i64);
       const at::Tensor n_local =
           torch::full({1}, static_cast<std::int64_t>(nloc), opt_i64);
-      at::Tensor graph_aparam = aparam_tensor;
-      if (daparam > 0 && nnode > nloc) {
-        graph_aparam = torch::cat(
-            {aparam_tensor, torch::zeros({1, nnode - nloc, daparam}, opt_f64)},
-            1);
-      }
+      // Flat (N, daparam) graph ABI: validate the width, zero-pad ghost
+      // rows, and synthesize a zero tensor on a ghost-only subdomain --
+      // the rank-3 (1, nnode, daparam) pad this branch used before is
+      // rejected by the artifact (GeneralFitting.call_graph requires
+      // rank-2 aparam), so device-edge graph inference with
+      // numb_aparam > 0 failed at the artifact boundary.
+      at::Tensor graph_aparam =
+          extend_graph_aparam(aparam_tensor, nnode, nloc, daparam);
       GraphTensorPack graph_pack;
       graph_pack.atype = atype_t.reshape({nnode});
       graph_pack.n_node = n_node;

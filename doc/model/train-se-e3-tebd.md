@@ -1,8 +1,7 @@
 # Descriptor `"se_e3_tebd"` {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 
 The notation of `se_e3_tebd` is short for the three-body embedding descriptor with type embeddings, where the notation `se` denotes the Deep Potential Smooth Edition (DeepPot-SE).
 The embedding takes bond angles between a central atom and its two neighboring atoms (denoted by `e3`) and their type embeddings (denoted by `tebd`) as input.

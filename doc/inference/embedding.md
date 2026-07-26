@@ -4,13 +4,12 @@ A trained model can export learned representations ("embeddings") for downstream
 analysis, such as clustering, visualization, or training auxiliary models. A
 single forward pass produces the embeddings without computing forces or virials.
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, for energy models (including
-DPA4/SeZM and DP+ZBL / linear combinations, where the embedding comes from the
-descriptor-fitting sub-model). It also works for other descriptor-fitting models
-(dipole, polarizability, dos, property), though the `structural_feature` is only
-physically meaningful for energy models. Spin models are not supported.
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, for energy models (including
+> DPA4/SeZM and DP+ZBL / linear combinations, where the embedding comes from the
+> descriptor-fitting sub-model). It also works for other descriptor-fitting models
+> (dipole, polarizability, dos, property), though the `structural_feature` is only
+> physically meaningful for energy models. Spin models are not supported.
 
 Three embeddings are produced for each frame:
 

@@ -303,6 +303,15 @@ class TestDescrptDPA2(TestCaseSingleFrameWithNlist):
         dd0.repinit.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
         dd0.repformers.mean = torch.tensor(davg_2, dtype=dtype, device=self.device)
         dd0.repformers.stddev = torch.tensor(dstd_2, dtype=dtype, device=self.device)
+        # This test checks compression accuracy against the legacy DENSE
+        # body specifically (compression itself is graph-ineligible, see
+        # DescrptDPA2.uses_graph_lower). Force the dense route for the
+        # "uncompressed" reference forward too: this config is otherwise
+        # graph-eligible (strip tebd) and `mapping` is supplied, so it would
+        # silently take the graph-native adapter route instead, which is
+        # NOT what this test intends to exercise -- disable it explicitly
+        # rather than relying on incidental non-eligibility.
+        dd0.disable_graph_lower()
 
         coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
         atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
