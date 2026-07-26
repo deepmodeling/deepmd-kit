@@ -38,8 +38,24 @@ from .invar_fitting import (
 
 
 class GLUFittingNet(NativeOP):
-    """
+    r"""
     GLU-based fitting network for SeZM.
+
+    Each hidden layer splits its affine output into a value and a gate.  For
+    input :math:`\mathbf x^{(l)}`, the update is
+
+    .. math::
+        [\mathbf v^{(l)},\mathbf g^{(l)}]
+        = \mathbf x^{(l)}\mathbf W^{(l)}+\mathbf b^{(l)},
+        \qquad
+        \mathbf x^{(l+1)}=\mathbf v^{(l)}\odot
+        \phi(\mathbf g^{(l)}),
+
+    followed by the output projection
+
+    .. math::
+        \mathbf y=\mathbf x^{(L)}\mathbf W^{\mathrm{out}}
+        +\mathbf b^{\mathrm{out}}.
 
     Parameters
     ----------

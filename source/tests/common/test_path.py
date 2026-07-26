@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 
 from deepmd.utils.path import (
+    DPH5Path,
     DPPath,
 )
 
@@ -51,3 +52,25 @@ class TestH5Path(PathTest, unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
+
+
+class TestH5PathReadOnly(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        h5file = str((Path(self.tempdir.name) / "testcase.h5").resolve())
+        with h5py.File(h5file, "w"):
+            pass
+        self.path = DPPath(h5file, "r")
+
+    def tearDown(self) -> None:
+        assert isinstance(self.path, DPH5Path)
+        self.path.root.close()
+        DPH5Path._load_h5py.cache_clear()
+        DPH5Path._file_keys.cache_clear()
+        self.tempdir.cleanup()
+
+    def test_write_operations_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "read-only"):
+            (self.path / "value").save_numpy(np.ones(1))
+        with self.assertRaisesRegex(ValueError, "read-only"):
+            (self.path / "group").mkdir()
