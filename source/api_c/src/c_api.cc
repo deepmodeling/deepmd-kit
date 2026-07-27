@@ -730,6 +730,27 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
   }
 }
 
+namespace {
+
+constexpr char model_devi_nframes_error[] =
+    "DeePMD-kit Error: Model-deviation C APIs support exactly one frame.";
+
+bool validate_model_devi_nframes(DP_DeepBaseModelDevi* dp, const int nframes) {
+  if (nframes == 1) {
+    return true;
+  }
+
+  // These helpers serve extern "C" entry points, so an unsupported frame
+  // count must be reported through DP_*CheckOK instead of unwinding a C++
+  // exception into a C caller. Keep this validation before constructing any
+  // pointer ranges or accessing the model/neighbor list: invalid input must
+  // remain safe even when those arguments are otherwise unusable.
+  dp->exception = model_devi_nframes_error;
+  return false;
+}
+
+}  // namespace
+
 template <typename VALUETYPE>
 void DP_DeepPotModelDeviCompute_variant(
     DP_DeepPotModelDevi* dp,
@@ -746,8 +767,8 @@ void DP_DeepPotModelDeviCompute_variant(
     VALUETYPE* atomic_energy,
     VALUETYPE* atomic_virial,
     const VALUETYPE* charge_spin = nullptr) {
-  if (nframes > 1) {
-    throw std::runtime_error("nframes > 1 not supported yet");
+  if (!validate_model_devi_nframes(dp, nframes)) {
+    return;
   }
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
@@ -857,8 +878,8 @@ void DP_DeepSpinModelDeviCompute_variant(DP_DeepSpinModelDevi* dp,
                                          VALUETYPE* virial,
                                          VALUETYPE* atomic_energy,
                                          VALUETYPE* atomic_virial) {
-  if (nframes > 1) {
-    throw std::runtime_error("nframes > 1 not supported yet");
+  if (!validate_model_devi_nframes(dp, nframes)) {
+    return;
   }
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
@@ -912,11 +933,11 @@ void DP_DeepSpinModelDeviCompute_variant(DP_DeepSpinModelDevi* dp,
     flatten_vector(ae_flat, ae);
     std::copy(ae_flat.begin(), ae_flat.end(), atomic_energy);
   }
-  // if (atomic_virial) {
-  //   std::vector<VALUETYPE> av_flat;
-  //   flatten_vector(av_flat, av);
-  //   std::copy(av_flat.begin(), av_flat.end(), atomic_virial);
-  // }
+  if (atomic_virial) {
+    std::vector<VALUETYPE> av_flat;
+    flatten_vector(av_flat, av);
+    std::copy(av_flat.begin(), av_flat.end(), atomic_virial);
+  }
 }
 
 template void DP_DeepSpinModelDeviCompute_variant<double>(
@@ -972,8 +993,8 @@ void DP_DeepPotModelDeviComputeNList_variant(
     VALUETYPE* atomic_energy,
     VALUETYPE* atomic_virial,
     const VALUETYPE* charge_spin = nullptr) {
-  if (nframes > 1) {
-    throw std::runtime_error("nframes > 1 not supported yet");
+  if (!validate_model_devi_nframes(dp, nframes)) {
+    return;
   }
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
@@ -1097,8 +1118,8 @@ void DP_DeepSpinModelDeviComputeNList_variant(DP_DeepSpinModelDevi* dp,
                                               VALUETYPE* virial,
                                               VALUETYPE* atomic_energy,
                                               VALUETYPE* atomic_virial) {
-  if (nframes > 1) {
-    throw std::runtime_error("nframes > 1 not supported yet");
+  if (!validate_model_devi_nframes(dp, nframes)) {
+    return;
   }
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);

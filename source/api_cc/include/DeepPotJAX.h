@@ -242,6 +242,13 @@ class DeepPotJAX : public DeepPotBackend {
                            const bool atomic);
 
  private:
+  /** Release every TensorFlow C API handle owned by this backend.
+   *
+   * This helper is intentionally safe for partially initialized objects so an
+   * exception from init() cannot leak handles or make a later retry unsafe.
+   */
+  void clear_tf_resources() noexcept;
+
   bool inited;
   // device
   std::string device;
@@ -284,12 +291,12 @@ class DeepPotJAX : public DeepPotBackend {
   /**  TF C API objects.
    * @{
    */
-  TF_Graph* graph;
-  TF_Status* status;
-  TF_Session* session;
-  TF_SessionOptions* sessionopts;
-  TFE_ContextOptions* ctx_opts;
-  TFE_Context* ctx;
+  TF_Graph* graph = nullptr;
+  TF_Status* status = nullptr;
+  TF_Session* session = nullptr;
+  TF_SessionOptions* sessionopts = nullptr;
+  TFE_ContextOptions* ctx_opts = nullptr;
+  TFE_Context* ctx = nullptr;
   std::vector<TF_Function*> func_vector;
   /**
    * @}

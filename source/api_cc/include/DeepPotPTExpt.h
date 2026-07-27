@@ -451,6 +451,16 @@ class DeepPotPTExpt : public DeepPotBackend {
   // ``has_message_passing`` metadata field; archives without it default to
   // non-message-passing.
   bool has_message_passing_ = false;
+  // Whether the collective empty-rank preflight (allreduce of the minimum
+  // owned+ghost node count over the LAMMPS communicator, graph with-comm
+  // route) has PASSED for the current neighbor topology.  The preflight
+  // re-runs whenever the with-comm graph branch is entered with
+  // ``ago == 0`` (every topology rebuild) or before its first success:
+  // the node count shares the lifetime of the cached nlist/mapping/edge
+  // topology, so re-running the collective on cache-hit (``ago > 0``)
+  // force calls added a global synchronization per MD step without any
+  // added protection.
+  bool graph_comm_preflight_done_ = false;
   // Device-resident (ntypes+1)^2 model-level pair-type keep table, uploaded
   // ONCE in ``init`` from the ``pair_exclude_types`` metadata field (see
   // ``deepmd::buildPairExcludeTable``).  An UNDEFINED tensor => no model-level
@@ -613,6 +623,58 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& edge_vec,
       const torch::Tensor& edge_scatter_index,
       const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
+   * @brief Run the with-comm NeighborGraph (message-passing, e.g. DPA2/DPA3)
+   *        ``.pt2`` artifact with comm tensors appended.
+   *
+   * Positional AOTI input order mirrors ``run_model_graph``: ``(atype,
+   * n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
+   * destination_row_ptr, source_order, source_row_ptr, [fparam], [aparam],
+   * [charge_spin], comm_tensors...)``.  The graph is built on the
+   * EXTENDED region (``fold_to_local=false``): ghost nodes are distinct and
+   * their embeddings are filled in-place by ``border_op`` inside the
+   * exported artifact, exactly as the with-comm dense/edge artifacts do.
+   *
+   * @param[in] atype Per-node extended-region types, shape ``(N,)`` int64,
+   *            N == nall_real (owned prefix first, then ghost).
+   * @param[in] n_node Per-frame node count, shape ``(nf,)`` int64.
+   * @param[in] edge_index Extended-region edge graph ``(2, E)`` int64
+   *            [src, dst]; ghost-node indices retained (NOT folded to
+   *            owners -- ``fold_to_local=false``).
+   * @param[in] edge_vec Edge vectors ``(E, 3)`` (neighbour - center).
+   * @param[in] edge_mask Physical-edge mask ``(E,)`` bool.
+   * @param[in] aparam Atomic parameters on the flat EXTENDED node axis,
+   *            shape ``(N, dim_aparam)`` (owned prefix filled, ghost rows
+   *            zero-padded -- ghost fitting outputs are masked inside the
+   *            artifact), or an empty tensor when ``dim_aparam == 0``.
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.  All 8 stay on CPU (host
+   *            control metadata for the opaque ``border_op``, symmetric
+   *            with the dense with-comm artifact).
+   * @param[in] n_local (1,) int64 owned-node count consumed IN-GRAPH by the
+   *            owned-node energy mask; moved to the model device here (its
+   *            consumer is a device kernel after ``move_to_device_pass``).
+   *            Same value as the ``nlocal`` comm tensor -- the two inputs
+   *            separate the device-compute role from the host-MPI-control
+   *            role, so ``border_op`` never pulls device scalars.
+   */
+  std::vector<torch::Tensor> run_model_graph_with_comm(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin,
