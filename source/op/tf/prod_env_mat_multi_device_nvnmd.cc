@@ -798,8 +798,11 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
         deepmd::prod_env_mat_a_nvnmd_quantize_cpu(
             em, em_deriv, rij, nlist, coord, type, inlist, max_nbor_size, avg,
             std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, f_type);
-        // do nlist mapping if coords were copied
-        _map_nei_info_cpu(nlist, ntype, nmask, type, &idx_mapping[0], nloc,
+        // The mapping is populated only when PBC coordinate copies are made.
+        // Other neighbor-list modes must not form a pointer into the empty
+        // vector.
+        _map_nei_info_cpu(nlist, ntype, nmask, type,
+                          b_nlist_map ? idx_mapping.data() : nullptr, nloc,
                           nnei, ntypes, b_nlist_map);
       }
     }
