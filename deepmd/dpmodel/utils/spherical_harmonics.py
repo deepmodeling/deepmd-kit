@@ -38,11 +38,20 @@ __all__ = ["real_spherical_harmonics"]
 
 
 def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
-    """
-    Evaluate real spherical harmonics in the e3nn ``"norm"`` convention.
+    r"""Evaluate real spherical harmonics in the e3nn ``"norm"`` convention.
 
     Exactly matches ``e3nn.o3.spherical_harmonics(list(range(lmax + 1)),
     vecs, normalize=True, normalization="norm")`` (see module docstring).
+
+    For :math:`m>0`, using the e3nn polar-axis convention, the components are
+
+    .. math::
+
+       Y_{l,-m}=\sqrt{2}\,N_{lm}P_l^m(\cos\theta)\sin(m\phi),\qquad
+       Y_{l,m}=\sqrt{2}\,N_{lm}P_l^m(\cos\theta)\cos(m\phi),
+
+    with :math:`Y_{l,0}=N_{l0}P_l(\cos\theta)` and normalization chosen so
+    that :math:`\sum_{m=-l}^lY_{lm}(\hat{\mathbf r})^2=1`.
 
     Parameters
     ----------

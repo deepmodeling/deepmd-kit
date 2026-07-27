@@ -5304,6 +5304,13 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
+    doc_stat_file_mode = (
+        doc_only_pt_supported + "The access mode for `stat_file`. "
+        "`update` creates the cache when needed and writes any missing statistics; "
+        "this is the behavior used when the option is omitted. "
+        "`read` requires a complete existing cache and opens it read-only, allowing "
+        "multiple training processes to share an HDF5 statistics file safely."
+    )
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
@@ -5339,6 +5346,15 @@ def training_args(
         arg_training_data,
         arg_validation_data,
         Argument("stat_file", str, optional=True, doc=doc_stat_file),
+        Argument(
+            "stat_file_mode",
+            str,
+            optional=True,
+            default="update",
+            extra_check=lambda x: x in {"read", "update"},
+            extra_check_errmsg="must be either 'read' or 'update'",
+            doc=doc_stat_file_mode,
+        ),
     ]
     args = (
         data_args
@@ -5517,9 +5533,23 @@ def training_args(
         ),
     ]
 
+    def _validate_stat_file_mode(data: dict[str, Any], scope: str) -> None:
+        if data.get("stat_file_mode") == "read" and not data.get("stat_file"):
+            raise ValueError(
+                f"{scope}.stat_file_mode='read' requires {scope}.stat_file."
+            )
+
     def training_extra_check(data: dict | None) -> bool:
         if data is None:
             return True
+        if multi_task:
+            for model_key, data_dict in data.get("data_dict", {}).items():
+                _validate_stat_file_mode(
+                    data_dict,
+                    f"training.data_dict[{model_key!r}]",
+                )
+        else:
+            _validate_stat_file_mode(data, "training")
         num_steps = data.get("numb_steps")
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})

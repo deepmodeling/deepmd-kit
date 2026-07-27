@@ -1,8 +1,7 @@
 # Runtime environment variables
 
-:::{note}
-For build-time environment variables, see [Install from source code](./install/install-from-source.md).
-:::
+> [!NOTE]
+> For build-time environment variables, see [Install from source code](./install/install-from-source.md).
 
 ## All interfaces
 
