@@ -43,19 +43,22 @@ class TestEnvMat(unittest.TestCase, ArrayAPITest):
             self.assert_device_equal(output, coord)
             self.assert_dtype_equal(output, coord)
 
-    def test_mixed_centers_mask_all_virtual_outputs(self) -> None:
-        """The shared JAX/pt_expt EnvMat keeps real rows and masks bad virtual rows."""
+    def test_mixed_centers_keep_virtual_rows_at_zero(self) -> None:
+        """A real center is normalized; a virtual one is left untouched at zero."""
         coord = xp.asarray([[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]], dtype=xp.float64)
-        atype = xp.asarray([[1, -1]], dtype=xp.int64)
-        # Deliberately violate the normal virtual-center contract to verify that
-        # em, diff, and switch all provide the documented defense in depth.
-        nlist = xp.asarray([[[1], [0]]], dtype=xp.int64)
+        atype = xp.asarray([[0, -1]], dtype=xp.int64)
+        # The virtual center's neighbor row is empty, per the neighbor-list
+        # contract, so _make_env_mat leaves its outputs at zero. Only the
+        # normalization below could shift them off zero.
+        nlist = xp.asarray([[[1], [-1]]], dtype=xp.int64)
+        # The last row is what an unguarded ``take`` selects for atype -1, so
+        # keep it nonzero: borrowing it would shift the virtual row off zero.
         davg = xp.asarray(
-            [[[11.0, 13.0, 17.0, 19.0]], [[0.0, 0.0, 0.0, 0.0]]],
+            [[[0.0, 0.0, 0.0, 0.0]], [[11.0, 13.0, 17.0, 19.0]]],
             dtype=xp.float64,
         )
         dstd = xp.asarray(
-            [[[0.0, 0.0, 0.0, 0.0]], [[1.0, 1.0, 1.0, 1.0]]],
+            [[[1.0, 1.0, 1.0, 1.0]], [[2.0, 2.0, 2.0, 2.0]]],
             dtype=xp.float64,
         )
 

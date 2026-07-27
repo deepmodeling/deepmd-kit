@@ -204,9 +204,16 @@ class EnvMat(NativeOP):
         # Virtual atoms use a negative type sentinel.  Never pass that sentinel to
         # ``take``: NumPy treats -1 as the final real type, while stricter array
         # namespaces may reject it.  Type zero is only a safe placeholder because
-        # the corresponding rows are masked out after normalization below.
+        # the gathered rows are neutralized below.
         safe_atype = xp.where(center_is_real, atype, xp.zeros_like(atype))
         center_mask = xp.reshape(center_is_real, (nf, nloc, 1, 1))
+        # ``_make_env_mat`` already zeroes em, diff and sw wherever ``nlist < 0``,
+        # so a virtual center -- whose neighbor row is empty by the neighbor-list
+        # contract -- leaves this function at zero as long as normalization does
+        # not shift it.  Neutralizing the offset and the scale is therefore the
+        # whole fix; masking em/diff/sw again afterwards would make the
+        # descriptor depend on ``atype_ext``, which the compiled pt_expt DPA2
+        # lower miscompiles into wrong forces.
         if davg is not None:
             center_avg = xp.reshape(
                 xp.take(davg, xp.reshape(safe_atype, (-1,)), axis=0), em.shape
@@ -221,12 +228,6 @@ class EnvMat(NativeOP):
             # masked branch, which is important for differentiable backends.
             center_std = xp.where(center_mask, center_std, xp.ones_like(center_std))
             em /= center_std
-        # The neighbor-list contract leaves every slot empty for a virtual center,
-        # but mask all center-indexed outputs explicitly so malformed or externally
-        # built lists cannot leak a fake center into downstream descriptor paths.
-        em = xp.where(center_mask, em, xp.zeros_like(em))
-        diff = xp.where(center_mask, diff, xp.zeros_like(diff))
-        sw = xp.where(center_mask, sw, xp.zeros_like(sw))
         return em, diff, sw
 
     def _call(
