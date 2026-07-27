@@ -69,7 +69,12 @@ class TestConvertedLmdbValidation(unittest.TestCase):
                 "deepmd.pt_expt.entrypoints.main.process_systems",
                 return_value=converted,
             ),
-            patch("deepmd.utils.data_system.is_lmdb", return_value=True),
+            # is_lmdb is imported inside the validating function, so patch
+            # it at the source module rather than at an import site.
+            patch(
+                "deepmd.dpmodel.utils.lmdb_data.is_lmdb",
+                return_value=True,
+            ),
         ):
             with self.assertRaisesRegex(ValueError, "exactly one path"):
                 _get_neighbor_stat_data(params, ["O", "H"])
