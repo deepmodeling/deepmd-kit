@@ -245,12 +245,18 @@ class SpinModel(NativeOP):
         if virtual_scale:
             mask = self._to_xp(self.virtual_scale_mask, xp, out_tensor)
         else:
-            mask = self._to_xp(self.spin_mask, xp, out_tensor)
+            # spin_mask is integral; it multiplies out_mag below, and the array
+            # API does not promote across kinds.
+            mask = xp.astype(
+                self._to_xp(self.spin_mask, xp, out_tensor), out_tensor.dtype
+            )
         atomic_mask = xp.reshape(
             self._lookup_type_values(mask, atype, out_tensor),
             (nframes, nloc, 1),
         )
-        out_real, out_mag = out_tensor[:, :nloc], out_tensor[:, nloc:]
+        # Trailing ellipsis: the array API does not specify numpy's implicit
+        # expansion of a partial multi-axis index.
+        out_real, out_mag = out_tensor[:, :nloc, ...], out_tensor[:, nloc:, ...]
         if add_mag:
             out_real = out_real + out_mag
         out_mag = xp.reshape(
@@ -274,22 +280,27 @@ class SpinModel(NativeOP):
         if virtual_scale:
             mask = self._to_xp(self.virtual_scale_mask, xp, extended_out_tensor)
         else:
-            mask = self._to_xp(self.spin_mask, xp, extended_out_tensor)
+            # spin_mask is integral; it multiplies extended_out_mag below, and
+            # the array API does not promote across kinds.
+            mask = xp.astype(
+                self._to_xp(self.spin_mask, xp, extended_out_tensor),
+                extended_out_tensor.dtype,
+            )
         atomic_mask = xp.reshape(
             self._lookup_type_values(mask, extended_atype, extended_out_tensor),
             (nframes, nall, 1),
         )
         extended_out_real = xp.concat(
             [
-                extended_out_tensor[:, :nloc],
-                extended_out_tensor[:, nloc + nloc : nloc + nall],
+                extended_out_tensor[:, :nloc, ...],
+                extended_out_tensor[:, nloc + nloc : nloc + nall, ...],
             ],
             axis=1,
         )
         extended_out_mag = xp.concat(
             [
-                extended_out_tensor[:, nloc : nloc + nloc],
-                extended_out_tensor[:, nloc + nall :],
+                extended_out_tensor[:, nloc : nloc + nloc, ...],
+                extended_out_tensor[:, nloc + nall :, ...],
             ],
             axis=1,
         )
