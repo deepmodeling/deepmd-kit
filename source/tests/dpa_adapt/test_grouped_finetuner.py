@@ -25,6 +25,12 @@ from source.tests.dpa_adapt.test_finetuner_strategies import (
 )
 
 
+def _write_group_markers(set_dir: Path, group_id: int, *, natoms: int = 2) -> None:
+    np.save(set_dir / "group_id.npy", np.array([group_id, group_id], dtype=np.int64))
+    np.save(set_dir / "weight.npy", np.ones(2, dtype=float))
+    np.save(set_dir / "pool_mask.npy", np.ones((2, natoms), dtype=float))
+
+
 def test_grouped_training_strategy_uses_group_property_config(monkeypatch, tmp_path):
     import torch
 
@@ -36,9 +42,7 @@ def test_grouped_training_strategy_uses_group_property_config(monkeypatch, tmp_p
     valid_systems = _make_system_dirs(tmp_path, formulas=("GroupedValid",), n=1)
     for sid, sysdir in enumerate(systems + valid_systems):
         set_dir = Path(sysdir) / "set.000"
-        np.save(set_dir / "group_id.npy", np.array([sid, sid], dtype=np.int64))
-        np.save(set_dir / "weight.npy", np.array([0.5, 0.5], dtype=float))
-        np.save(set_dir / "pool_mask.npy", np.ones((2, 2), dtype=float))
+        _write_group_markers(set_dir, sid)
 
     model = DPAFineTuner(
         pretrained=str(ckpt),
@@ -61,6 +65,37 @@ def test_grouped_training_strategy_uses_group_property_config(monkeypatch, tmp_p
     assert cfg["loss"]["type"] == "group_property"
 
 
+def test_training_strategy_target_key_aliases_property_name(monkeypatch, tmp_path):
+    import torch
+
+    monkeypatch.setattr(torch, "load", lambda *a, **kw: _fake_ckpt_sd())
+    ckpt = tmp_path / "fake.pt"
+    ckpt.write_bytes(b"")
+    out_dir = tmp_path / "out"
+    systems = _make_system_dirs(tmp_path, formulas=("GroupedTrain",), n=2)
+    valid_systems = _make_system_dirs(tmp_path, formulas=("GroupedValid",), n=1)
+    for sid, sysdir in enumerate(systems + valid_systems):
+        set_dir = Path(sysdir) / "set.000"
+        _write_group_markers(set_dir, sid)
+
+    model = DPAFineTuner(
+        pretrained=str(ckpt),
+        strategy="finetune",
+        max_steps=20,
+        output_dir=str(out_dir),
+    )
+    with patch("subprocess.run", side_effect=_mock_dp_train(str(out_dir))):
+        model.fit(
+            train_data=systems,
+            valid_data=valid_systems,
+            target_key="overpotential",
+        )
+
+    cfg = json.loads((out_dir / "input.json").read_text())
+    assert model.property_name == "overpotential"
+    assert cfg["model"]["fitting_net"]["property_name"] == "overpotential"
+
+
 def test_grouped_target_alias_and_auto_fparam_dim(monkeypatch, tmp_path):
     """target= aliases property_name; fit(train=/valid=) work; fparam_dim auto."""
     import torch
@@ -73,9 +108,7 @@ def test_grouped_target_alias_and_auto_fparam_dim(monkeypatch, tmp_path):
     valid_systems = _make_system_dirs(tmp_path, formulas=("GroupedValid",), n=1)
     for sid, sysdir in enumerate(systems + valid_systems):
         set_dir = Path(sysdir) / "set.000"
-        np.save(set_dir / "group_id.npy", np.array([sid, sid], dtype=np.int64))
-        np.save(set_dir / "weight.npy", np.array([0.5, 0.5], dtype=float))
-        np.save(set_dir / "pool_mask.npy", np.ones((2, 2), dtype=float))
+        _write_group_markers(set_dir, sid)
         # per-group side features -> fparam_dim should be auto-detected as 3
         np.save(set_dir / "fparam.npy", np.ones((2, 3), dtype=float))
 

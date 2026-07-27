@@ -175,14 +175,14 @@ and only grouped markers are missing:
 ```bash
 # One DeePMD system directory is one group.
 dpa-adapt data mark-groups --input oer/dpdata --target overpotential \
-    --group-by system --weight 1.0
+    --group-by system
 
 # Several groups merged into one system; identical labels define groups.
 dpa-adapt data mark-groups --input merged_system --target property \
-    --group-by label --weight 1.0
+    --group-by label
 
 # Every consecutive 3 frames form one group.
-dpa-adapt data mark-groups --input triplets --group-by 3 --weight 1.0
+dpa-adapt data mark-groups --input triplets --group-by 3
 ```
 
 Equivalent Python API:
@@ -190,19 +190,21 @@ Equivalent Python API:
 ```python
 from dpa_adapt import mark_groups
 
-mark_groups("oer/dpdata", target="overpotential", group_by="system", weight=1.0)
+mark_groups("oer/dpdata", target="overpotential", group_by="system")
 ```
 
 `mark_groups` searches recursively for directories that directly contain
-`set.*`. When `real_atom_types.npy` is present and contains negative virtual
-atom types, `pool_mask.npy` is derived as `real_atom_types >= 0`. Existing marker
-files are preserved unless `overwrite=True` or `--overwrite` is used.
+`set.*`. It writes the complete grouped marker contract in every set:
+`group_id.npy`, `weight.npy`, and `pool_mask.npy`. When `real_atom_types.npy` is
+present, `pool_mask.npy` is derived as `real_atom_types >= 0`; otherwise an
+all-one mask is written. `weight.npy` defaults to explicit `1.0` values unless
+`--weight` / `weight=` is provided. Existing marker files are preserved unless
+`overwrite=True` or `--overwrite` is used.
 
-For `frozen_head` and `finetune`, avoid partial marker sets: every `set.*` in
-both training and validation data should contain all three marker files. The
-offline `frozen_sklearn` grouped path can default a missing `weight.npy` to
-`1.0`, but the training preflight requires a complete marker set to prevent
-mixed grouped and ungrouped systems.
+For `frozen_head` and `finetune`, avoid partial marker sets: every grouped
+`set.*` in both training and validation data must contain all three marker files.
+The training preflight rejects partial marker sets to prevent mixed grouped and
+ungrouped systems.
 
 ### Low-level grouped writer
 

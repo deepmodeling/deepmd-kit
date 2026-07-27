@@ -47,7 +47,6 @@ mark_groups(
     "oer/dpdata",
     target="overpotential",
     group_by="system",
-    weight=1.0,
 )
 
 model = DPAFineTuner(
@@ -68,7 +67,7 @@ mark_groups(
     data,
     target="property",
     group_by="system",  # "system" | "label" | positive integer group size
-    weight=1.0,
+    weight=None,  # None writes explicit weight.npy = 1.0
     overwrite=False,
     dry_run=False,
 )
@@ -77,13 +76,14 @@ mark_groups(
 - `group_by="system"` assigns all frames in one system to one group.
 - `group_by="label"` groups frames with identical rows in `set.*/<target>.npy`.
 - `group_by=N` groups every consecutive `N` frames.
-- `pool_mask.npy` is derived automatically from `real_atom_types.npy < 0` when
-  virtual or padded atoms are present.
-- For `frozen_head` and `finetune`, write a complete marker set
-  (`group_id.npy`, `weight.npy`, and `pool_mask.npy`) in every `set.*`
-  directory so grouped mode can be auto-detected consistently. The low-level
-  grouped readers can default a missing weight to `1.0`, but the training
-  preflight is intentionally stricter.
+- `pool_mask.npy` is always written explicitly. It is derived from
+  `real_atom_types.npy >= 0` when available; otherwise it is an all-one mask.
+- `weight.npy` is always written explicitly. `weight=None` writes `1.0` for
+  every frame; pass `weight=<float>` to set another constant value.
+- For `frozen_head` and `finetune`, every grouped `set.*` directory must contain
+  the complete marker set (`group_id.npy`, `weight.npy`, and `pool_mask.npy`).
+  Partial marker sets are rejected so grouped and ungrouped data cannot be mixed
+  silently.
 
 For converter implementations or tests that already have arrays in memory,
 `Assembly` is the low-level writer:
@@ -276,6 +276,90 @@ metrics = model.evaluate(data="/data/test")  # .mae, .rmse, .r2
 | `downstream_batch_size` | `int` or `None`       | `None`                        | Batch size for downstream head; auto-selected if `None`                                                                                                                                                       |
 | `fitting_net_params`    | `dict` or `None`      | `None`                        | Overrides for the **aux** fitting net; downstream uses property defaults. `None` = auto-read from checkpoint.                                                                                                 |
 
+## Training-time regularizer
+
+`Regularizer` defines extra training-time losses on the current downstream
+training path. It is shared by ordinary property training and grouped property
+training. It does not duplicate MFT: if the regularization signal comes from an
+external auxiliary dataset and an auxiliary head, use `strategy="mft"`.
+
+```python
+from dpa_adapt import DPAFineTuner, Regularizer
+
+model = DPAFineTuner(
+    strategy="finetune",
+    target="cloud_point",
+    regularizer=Regularizer(descriptor_anchor=0.0),
+)
+```
+
+The first API term is `descriptor_anchor`, which will penalize drift between
+the current descriptor and the frozen base descriptor on the same downstream
+structures. Non-zero `descriptor_anchor` is reserved for the descriptor-anchor
+training backend and currently fails loudly instead of silently doing nothing.
+Use MFT today for auxiliary-task regularization.
+
+```text
+MFT:
+  external auxiliary task + auxiliary head
+  regularizes the shared descriptor through aux_data
+
+Regularizer:
+  extra loss on the current downstream training path
+  no auxiliary dataset or auxiliary head
+```
+
+## Post-training calibration
+
+`Calibrator` defines post-training prediction correction. It is fitted after the
+model has already been trained, and it does not participate in backward.
+
+The main user-facing API is `model.calibrate(...)`:
+
+```python
+model.calibrate(
+    data="polymer_grouped/calib",
+    method="ridge",
+    alpha=3.0,
+    features=["prediction", "fparam", "group_stats"],
+)
+
+pred = model.predict("polymer_grouped/test")
+```
+
+Conceptually:
+
+```text
+trained model prediction
+-> calibrator
+-> corrected prediction
+```
+
+Implemented feature sources are:
+
+- `"prediction"`: raw model prediction columns.
+- `"fparam"`: columns from `set.*/fparam.npy`, aligned per frame for ordinary
+  data and per group for grouped data. Grouped calibration requires fparam to be
+  constant within each group.
+- `"group_stats"`: `n_frames`, weight sum/mean/std/min/max, effective sample
+  count, and L2 weight norm from grouped `group_id.npy` and `weight.npy`.
+  Ordinary data uses the one-frame, unit-weight equivalent.
+
+`Calibrator` is useful when the finetuned model has learned a reasonable trend,
+but its absolute scale or OOD boundary behavior is biased. Unlike `Regularizer`,
+it does not change the descriptor or fitting net; it only changes the final
+prediction rule.
+
+Advanced users may construct a reusable calibrator object explicitly:
+
+```python
+from dpa_adapt import Calibrator
+
+calibrator = Calibrator(method="ridge", alpha=3.0, features=["prediction", "fparam", "group_stats"])
+calibrator.fit(model, data="polymer_grouped/calib")
+pred = calibrator.predict(model, data="polymer_grouped/test")
+```
+
 ## Data preparation
 
 DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Python
@@ -352,7 +436,7 @@ attach_labels("./npy/", head="bandgap", values=labels)
 check_data("/data/system")  # → list[Issue]
 
 # Add grouped markers to existing deepmd/npy systems.
-mark_groups("./npy_root", target="overpotential", group_by="system", weight=1.0)
+mark_groups("./npy_root", target="overpotential", group_by="system")
 ```
 
 For the full option list and supported dpdata formats, see
@@ -441,6 +525,8 @@ from dpa_adapt import (
     check_data,  # data sanity checks
     attach_labels,  # inject label arrays
     load_dataset,  # label-filtered data loading
+    Regularizer,  # training-time downstream-batch regularizer config
+    Calibrator,  # post-training prediction correction
 )
 ```
 

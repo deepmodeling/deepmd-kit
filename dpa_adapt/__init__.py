@@ -33,6 +33,8 @@ _LAZY = {
     "MFTFineTuner": (".mft", "MFTFineTuner"),
     "DPAPredictor": (".predictor", "DPAPredictor"),
     "DPATrainer": (".trainer", "DPATrainer"),
+    "Regularizer": (".regularizer", "Regularizer"),
+    "Calibrator": (".calibrator", "Calibrator"),
 }
 
 __all__ = list(_LAZY)

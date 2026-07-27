@@ -999,6 +999,9 @@ class DPAFineTuner:
         strategies.  For ``frozen_sklearn``, fparam columns are
         standardized and concatenated to the descriptor via
         ``ConditionManager``.  Default 0 (disabled).
+    regularizer : Regularizer, dict, or None
+        Training-time downstream-batch regularizer.  Does not accept
+        MFT-style aux_data; use ``strategy='mft'`` for external aux tasks.
     output_dir : str
         Directory for ``input.json``, checkpoints, and logs.
     save_freq, disp_freq : int
@@ -1052,6 +1055,7 @@ class DPAFineTuner:
         loss_function: str = "mse",
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
+        regularizer: object | None = None,
         output_dir: str = "./dpa_output",
         save_freq: int = 10_000,
         disp_freq: int = 1_000,
@@ -1080,6 +1084,11 @@ class DPAFineTuner:
                 "composite pooling."
             )
         validate_fparam_dim(fparam_dim)
+        from dpa_adapt.regularizer import (
+            Regularizer,
+        )
+
+        self.regularizer = Regularizer.from_config(regularizer)
 
         self.strategy = strategy
 
@@ -1141,6 +1150,7 @@ class DPAFineTuner:
         self._device = None  # set when model is first loaded
         self._checkpoint_type_map = []  # set by _load_descriptor_model
         self._condition_manager = None
+        self.calibrator = None
 
     # ------------------------------------------------------------------
     # Frozen-sklearn pipeline helpers (thin delegators)
@@ -1540,7 +1550,9 @@ class DPAFineTuner:
             Element symbols.  Auto-inferred from the checkpoint and data
             ``type_map.raw`` when not provided.
         target_key : str, optional
-            (frozen_sklearn) Label key, e.g. ``"energy"``.
+            Label key, e.g. ``"energy"``. For ``frozen_sklearn`` this selects
+            labels to load. For training strategies it is a fit-time alias for
+            ``property_name``.
         labels : np.ndarray, optional
             (frozen_sklearn) Pre-computed labels.
         fmt : str, optional
@@ -1558,8 +1570,25 @@ class DPAFineTuner:
         if train_data is None:
             raise ValueError("fit() requires train_data (or the train= alias).")
 
+        self.regularizer.require_supported_backend()
+
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
+
+        if labels is not None:
+            raise ValueError(
+                "labels is only valid when strategy='frozen_sklearn'; "
+                f"got strategy={self.strategy!r}."
+            )
+        if target_key is not None:
+            if not isinstance(target_key, str):
+                raise ValueError(
+                    "training strategies require a single string target_key; "
+                    f"got {target_key!r}."
+                )
+            self.property_name = target_key
+            if self._mft is not None:
+                self._mft.property_name = target_key
 
         if self.strategy == "mft":
             if aux_data is None:
@@ -1786,7 +1815,13 @@ class DPAFineTuner:
         p._condition_manager = None
         p._fitted = True
 
-    def predict(self, data: str | list[str], fmt: str | None = None) -> DotDict:
+    def predict(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        *,
+        calibrated: bool = True,
+    ) -> DotDict:
         """
         Predict with the adapted model.
 
@@ -1807,14 +1842,20 @@ class DPAFineTuner:
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
         """
         if self.strategy in {"frozen_head", "finetune"}:
-            return self._run_training_predict(data, fmt=fmt)
+            result = self._run_training_predict(data, fmt=fmt)
+            return self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
         if self.strategy == "mft":
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft predict(); "
                     "provide deepmd/npy system directories."
                 )
-            return self._ensure_mft().predict(data)
+            result = self._ensure_mft().predict(data)
+            return self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
 
         if not self._fitted:
             raise RuntimeError(
@@ -1836,7 +1877,12 @@ class DPAFineTuner:
             )
             raw = self.predictor.predict(dataset.get_embeddings())
             predictions = np.asarray(raw).reshape(-1, self._task_dim)
-            return DotDict({"predictions": predictions})
+            return self._apply_calibrator(
+                DotDict({"predictions": predictions}),
+                calibrated=calibrated,
+                data=data,
+                fmt=fmt,
+            )
 
         systems = load_data(data, fmt=fmt)
         features = self._extract_features(systems)
@@ -1857,9 +1903,57 @@ class DPAFineTuner:
 
         raw = self.predictor.predict(features)
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
-        return DotDict({"predictions": predictions})
+        return self._apply_calibrator(
+            DotDict({"predictions": predictions}),
+            calibrated=calibrated,
+            data=data,
+            fmt=fmt,
+        )
 
-    def evaluate(self, data: str | list[str], fmt: str | None = None) -> DotDict:
+    def _apply_calibrator(
+        self,
+        result: DotDict,
+        *,
+        calibrated: bool,
+        data: str | list[str] | None = None,
+        fmt: str | None = None,
+    ) -> DotDict:
+        if calibrated and self.calibrator is not None:
+            raw_predictions = np.asarray(result.predictions)
+            result["raw_predictions"] = raw_predictions
+            result["predictions"] = self.calibrator.predict_from_arrays(
+                raw_predictions,
+                data=data,
+                fmt=fmt,
+            )
+        return result
+
+    def calibrate(
+        self,
+        data: str | list[str],
+        *,
+        method: str = "ridge",
+        alpha: float = 1.0,
+        features: list[str] | tuple[str, ...] = ("prediction",),
+        fmt: str | None = None,
+    ) -> object:
+        """Fit a post-training prediction calibrator and attach it to the model."""
+        from dpa_adapt.calibrator import (
+            Calibrator,
+        )
+
+        calibrator = Calibrator(method=method, alpha=alpha, features=features)
+        calibrator.fit(self, data=data, fmt=fmt)
+        self.calibrator = calibrator
+        return calibrator
+
+    def evaluate(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        *,
+        calibrated: bool = True,
+    ) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -1879,9 +1973,14 @@ class DPAFineTuner:
         """
         if self.strategy in {"frozen_head", "finetune"}:
             result = self._run_training_predict(data, fmt=fmt)
+            result = self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
+            result["mae"] = float(np.mean(np.abs(err)))
+            result["rmse"] = float(np.sqrt(np.mean(err**2)))
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
@@ -1896,15 +1995,20 @@ class DPAFineTuner:
             if getattr(mft, "downstream_task_type", "property") == "ener":
                 return DotDict(mft.evaluate(data))
             result = mft.predict(data)
+            result = self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
+            result["mae"] = float(np.mean(np.abs(err)))
+            result["rmse"] = float(np.sqrt(np.mean(err**2)))
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
 
-        result = self.predict(data, fmt=fmt)
+        result = self.predict(data, fmt=fmt, calibrated=calibrated)
         predictions = result.predictions
 
         if getattr(self, "_grouped", False):
@@ -2017,6 +2121,7 @@ class DPAFineTuner:
             "pooling": self.pooling,
             "condition_manager": self._condition_manager,
             "fparam_dim": self.fparam_dim,
+            "calibrator": self.calibrator,
         }
 
         output_path = str(output_path)

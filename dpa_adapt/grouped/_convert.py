@@ -4,21 +4,23 @@
 Several upstream builders (e.g. the OER ``O*/OH*/OOH*`` adsorption datasets)
 already write mixed-type ``real_atom_types.npy`` with ``-1`` marking masked /
 virtual atoms and one shared label per frame group, but do **not** write the
-``group_id`` / ``pool_mask`` files that the grouped training route
+``group_id`` / ``weight`` / ``pool_mask`` files that the grouped training route
 (:mod:`deepmd.pt.utils.grouped`, ``strategy="finetune"``) needs:
 
 * without ``group_id.npy`` the finetuner never routes into the grouped path and,
   even if it did, the loss falls back to one group per frame -- so the shared
   label is never aggregated across the group;
-* without ``pool_mask.npy`` the model pools the ``-1`` virtual atoms in with the
-  real atoms (``pool_mask`` defaults to all-ones), so e.g. ``O*``/``OH*``/``OOH*``
-  frames become nearly indistinguishable.
+* without explicit ``weight.npy`` and ``pool_mask.npy`` the dataset is only
+  partially marked as grouped, making validation and downstream tooling
+  ambiguous even though the backend has numerical defaults.
 
 This module fills that gap **in place**, deriving ``pool_mask`` from the
-mixed-type ``real_atom_types`` and assigning ``group_id`` by a configurable
-policy, without touching the existing coord/box/label data.  The files it writes
-match :func:`dpa_adapt.grouped._core._write_group_system` exactly (``group_id``
-shape ``(nframes,)`` int64, ``pool_mask`` shape ``(nframes, natoms)`` float64).
+mixed-type ``real_atom_types`` when present (otherwise all ones), assigning
+``group_id`` by a configurable policy, and writing an explicit frame weight,
+without touching the existing coord/box/label data.  The files it writes match
+:func:`dpa_adapt.grouped._core._write_group_system` exactly (``group_id`` shape
+``(nframes,)`` int64, ``weight`` shape ``(nframes,)`` float64, ``pool_mask`` shape
+``(nframes, natoms)`` float64).
 """
 
 from __future__ import (
@@ -77,7 +79,7 @@ def mark_groups(
     overwrite: bool = False,
     dry_run: bool = False,
 ) -> list[GroupMarkerResult]:
-    """Write ``group_id`` / ``pool_mask`` markers into deepmd/npy systems.
+    """Write grouped markers into deepmd/npy systems.
 
     Parameters
     ----------
@@ -104,9 +106,9 @@ def mark_groups(
         Label key read from ``set.*/{property_name}.npy`` when
         ``group_by="label"``.  Ignored otherwise.
     weight
-        When not ``None`` a constant ``weight.npy`` of this value is written for
-        every frame.  Rarely needed: the grouped model defaults missing weights
-        to ``1.0`` (an unweighted sum over the group).
+        Constant ``weight.npy`` value written for every frame.  When ``None``,
+        ``1.0`` is written explicitly so grouped data always carries the full
+        ``group_id`` / ``weight`` / ``pool_mask`` contract.
     overwrite
         When ``False`` (default) an existing ``group_id.npy`` / ``pool_mask.npy``
         / ``weight.npy`` is left untouched; only missing files are written.
@@ -233,7 +235,7 @@ def _process_system(
         sysdir, n_frames=total, n_groups=len(np.unique(group_ids))
     )
     offset = 0
-    for set_dir, nframes, _natoms, real_types in per_set:
+    for set_dir, nframes, natoms, real_types in per_set:
         result.set_dirs.append(set_dir)
         gid_slice = group_ids[offset : offset + nframes].astype(np.int64, copy=False)
         if _should_write(set_dir / f"{GROUP_ID_KEY}.npy", overwrite):
@@ -242,28 +244,25 @@ def _process_system(
             result.wrote_group_id = True
 
         pool_mask_path = set_dir / f"{POOL_MASK_KEY}.npy"
-        needs_pool_mask = real_types is not None and bool((real_types < 0).any())
-        if needs_pool_mask:
-            if _should_write(pool_mask_path, overwrite):
-                pool_mask = (real_types >= 0).astype(np.float64)
-                if not dry_run:
-                    np.save(pool_mask_path, pool_mask)
-                result.wrote_pool_mask = True
-        elif overwrite and pool_mask_path.is_file():
-            # The deterministic derivation says "no virtual atoms -> no mask".
-            # Drop any stale pool_mask.npy from an earlier run so it cannot
-            # silently mask real atoms on the next load.
+        if _should_write(pool_mask_path, overwrite):
+            pool_mask = (
+                (real_types >= 0).astype(np.float64)
+                if real_types is not None
+                else np.ones((nframes, natoms), dtype=np.float64)
+            )
             if not dry_run:
-                pool_mask_path.unlink()
+                np.save(pool_mask_path, pool_mask)
             result.wrote_pool_mask = True
 
-        if weight is not None and _should_write(
-            set_dir / f"{WEIGHT_KEY}.npy", overwrite
-        ):
+        if _should_write(set_dir / f"{WEIGHT_KEY}.npy", overwrite):
             if not dry_run:
                 np.save(
                     set_dir / f"{WEIGHT_KEY}.npy",
-                    np.full((nframes,), float(weight), dtype=np.float64),
+                    np.full(
+                        (nframes,),
+                        1.0 if weight is None else float(weight),
+                        dtype=np.float64,
+                    ),
                 )
             result.wrote_weight = True
         offset += nframes

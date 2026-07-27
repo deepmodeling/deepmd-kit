@@ -43,7 +43,7 @@ def _write_mixed_system(
     (set_dir.parent / "type_map.raw").write_text("Ni\nO\n")
 
 
-def test_group_by_system_writes_group_id_and_pool_mask(tmp_path):
+def test_group_by_system_writes_full_group_marker_contract(tmp_path):
     sysdir = tmp_path / "Fe0.2Ni0.8" / "05"
     _write_mixed_system(sysdir / "set.000", natoms=5, masked_per_frame=(2, 1, 0))
 
@@ -52,7 +52,7 @@ def test_group_by_system_writes_group_id_and_pool_mask(tmp_path):
     r = results[0]
     assert r.n_frames == 3
     assert r.n_groups == 1
-    assert r.wrote_group_id and r.wrote_pool_mask
+    assert r.wrote_group_id and r.wrote_pool_mask and r.wrote_weight
 
     set_dir = sysdir / "set.000"
     gid = np.load(set_dir / "group_id.npy")
@@ -68,6 +68,11 @@ def test_group_by_system_writes_group_id_and_pool_mask(tmp_path):
     # O*/OH*/OOH*: 2 / 1 / 0 masked -> 3 / 4 / 5 pooled atoms
     assert pool_mask.sum(axis=1).tolist() == [3.0, 4.0, 5.0]
 
+    weight = np.load(set_dir / "weight.npy")
+    assert weight.dtype == np.float64
+    assert weight.shape == (3,)
+    assert weight.tolist() == [1.0, 1.0, 1.0]
+
 
 def test_discovers_deeply_nested_systems(tmp_path):
     # mimic dpdata/set_XX/{equation}/{natoms}/set.000 layout
@@ -79,9 +84,12 @@ def test_discovers_deeply_nested_systems(tmp_path):
     results = mark_groups(tmp_path, target="overpotential")
     assert len(results) == 4
     assert all(r.wrote_group_id for r in results)
-    # every leaf now has both markers
+    # every leaf now has the full grouped marker contract
     for gid in tmp_path.rglob("group_id.npy"):
+        set_dir = gid.parent
         assert np.load(gid).tolist() == [0, 0, 0]
+        assert (set_dir / "weight.npy").is_file()
+        assert (set_dir / "pool_mask.npy").is_file()
 
 
 def test_group_by_label_splits_distinct_labels(tmp_path):
@@ -108,15 +116,18 @@ def test_group_by_int_chunks(tmp_path):
     assert gid.tolist() == [0, 0, 0, 1, 1, 1, 2]  # trailing remainder is its own group
 
 
-def test_no_masked_atoms_skips_pool_mask(tmp_path):
+def test_no_masked_atoms_writes_all_one_pool_mask(tmp_path):
     set_dir = tmp_path / "homog" / "set.000"
     set_dir.mkdir(parents=True)
     np.save(set_dir / "coord.npy", np.zeros((3, 9)))
     np.save(set_dir / "real_atom_types.npy", np.zeros((3, 3), dtype=np.int32))
     r = mark_groups(tmp_path)[0]
     assert r.wrote_group_id
-    assert not r.wrote_pool_mask  # pool_mask defaults to 1.0 at train time
-    assert not (set_dir / "pool_mask.npy").exists()
+    assert r.wrote_pool_mask
+    np.testing.assert_array_equal(
+        np.load(set_dir / "pool_mask.npy"),
+        np.ones((3, 3), dtype=np.float64),
+    )
 
 
 def test_overwrite_false_preserves_existing(tmp_path):
@@ -135,9 +146,14 @@ def test_dry_run_writes_nothing(tmp_path):
     set_dir = tmp_path / "sys" / "set.000"
     _write_mixed_system(set_dir, masked_per_frame=(2, 1, 0))
     results = mark_groups(tmp_path, target="overpotential", dry_run=True)
-    assert results[0].wrote_group_id and results[0].wrote_pool_mask
+    assert (
+        results[0].wrote_group_id
+        and results[0].wrote_pool_mask
+        and results[0].wrote_weight
+    )
     assert not (set_dir / "group_id.npy").exists()
     assert not (set_dir / "pool_mask.npy").exists()
+    assert not (set_dir / "weight.npy").exists()
 
 
 def test_no_systems_found_raises(tmp_path):
