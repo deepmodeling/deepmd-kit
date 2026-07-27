@@ -80,16 +80,21 @@ FixDPLR::FixDPLR(LAMMPS* lmp, int narg, char** arg)
       error->all(FLERR, "Illegal fix command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
-      if (iarg + 1 > narg) {
-        error->all(FLERR, "Illegal fix adapt command");
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal fix dplr model option, not provided");
       }
       model = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("efield")) {
-      if (iarg + 3 > narg) {
-        error->all(FLERR,
-                   "Illegal fix adapt command, efield should be provided 3 "
-                   "float numbers");
+      // A following option keyword is not an electric-field component. Check
+      // all three positions before reading any of them so truncated commands
+      // cannot access beyond LAMMPS's argument array.
+      for (int ii = 1; ii <= 3; ++ii) {
+        if (iarg + ii >= narg || is_key(arg[iarg + ii])) {
+          error->all(FLERR,
+                     "Illegal fix dplr efield option, three values are "
+                     "required");
+        }
       }
       if (utils::strmatch(arg[iarg + 1], "^v_")) {
         xstr = utils::strdup(arg[iarg + 1] + 2);
@@ -137,8 +142,12 @@ FixDPLR::FixDPLR(LAMMPS* lmp, int narg, char** arg)
       break;
     }
   }
-  assert(map_vec.size() % 2 == 0 &&
-         "number of ints provided by type_associate should be even");
+  if (map_vec.size() % 2 != 0) {
+    error->all(
+        FLERR,
+        "Illegal fix dplr type_associate option, an even number of atom types "
+        "is required");
+  }
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");

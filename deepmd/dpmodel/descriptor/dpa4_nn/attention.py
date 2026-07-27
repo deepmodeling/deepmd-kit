@@ -28,6 +28,17 @@ from deepmd.dpmodel.utils.network import (
 )
 
 
+def _stop_gradient(value: Any) -> Any:
+    """Return ``value`` with backend gradient tracking disabled."""
+    if array_api_compat.is_torch_array(value):
+        return value.detach()
+    if array_api_compat.is_jax_array(value):
+        import jax
+
+        return jax.lax.stop_gradient(value)
+    return value
+
+
 def segment_envelope_gated_softmax(
     logits: Any,
     edge_env: Any,
@@ -60,22 +71,21 @@ def segment_envelope_gated_softmax(
         Unconstrained denominator bias with shape (F, H).
         Softplus is applied to keep the bias strictly positive.
     eps
-        Small epsilon for denominator stability.
+        Small positive floor added to the physical null mass.
     src_weight
         Optional per-edge source-side multiplier with shape (E, 1) or
-        (E,). When provided the per-edge weight becomes
-        ``edge_env**2 * src_weight`` and the attention reduces to
-        ``edge_env**2 * src_weight * exp(logits) /
-        (zeta + sum(edge_env**2 * src_weight * exp(logits)))``.
+        (E,). When provided, the physical per-edge mass is
+        ``edge_env**2 * src_weight * exp(logits)`` and the denominator is the
+        sum of edge masses plus the positive null mass
+        ``softplus(z_bias_raw) + eps``.
         ``src_weight = 0`` therefore removes the source from both the
         numerator and the denominator, which is what SFPG needs so that
         a muted source does not even leak through the softmax
         normalization.
     edge_mask
-        Optional padded-edge validity mask with shape (E,) or (E, 1);
-        zero marks invalid slots. Folded into the non-negative per-edge
-        weight so invalid slots drop out of the group max, the numerator,
-        and the denominator.
+        Optional binary padded-edge validity mask with shape (E,) or (E, 1);
+        one marks valid slots and zero marks invalid slots. Invalid slots drop
+        out of the group max, the numerator, and the denominator.
 
     Returns
     -------
@@ -85,72 +95,82 @@ def segment_envelope_gated_softmax(
     xp = array_api_compat.array_namespace(logits)
     n_edge, n_focus, n_head = logits.shape
     n_channel = n_focus * n_head
-    eps_f = float(eps)
     device = array_api_compat.device(logits)
+    input_dtype = logits.dtype
+    promote = "float16" in str(input_dtype)
+    compute_dtype = xp.float32 if promote else input_dtype
     dst = xp.astype(dst, xp.int64)
 
-    # === Step 1. Flatten (F, H) and build the effective per-edge weight ===
-    logits_2d = xp.reshape(logits, (n_edge, n_channel))
-    zeros_e = xp.zeros((n_edge,), dtype=logits.dtype, device=device)
-    edge_env_1d = xp.astype(xp.reshape(edge_env, (n_edge,)), logits.dtype)
-    edge_env_1d = xp.where(edge_env_1d > 0.0, edge_env_1d, zeros_e)
-    # edge_weight_sq acts as the non-negative multiplier applied to every
-    # ``exp(logit)`` term. Folding ``src_weight`` (and, in the padded
-    # layout, ``edge_mask``) here guarantees that any edge with zero weight
-    # is excluded from the group max, the numerator, and the denominator in
-    # a single pass.
-    edge_weight_sq = edge_env_1d * edge_env_1d
+    # === Step 1. Build factor-wise effective logits ===
+    # Computing the logarithms before multiplying the factors avoids losing a
+    # physically nonzero edge when ``edge_env**2 * src_weight`` underflows.
+    logits_2d = xp.astype(xp.reshape(logits, (n_edge, n_channel)), compute_dtype)
+    edge_env_1d = xp.astype(xp.reshape(edge_env, (n_edge,)), compute_dtype)
+    edge_positive = edge_env_1d > 0.0
+    ones = xp.ones((n_edge,), dtype=compute_dtype, device=device)
+    log_weight = 2.0 * xp.log(xp.where(edge_positive, edge_env_1d, ones))
+    active = edge_positive
+    source_ratio = None
     if src_weight is not None:
-        src_weight_1d = xp.astype(xp.reshape(src_weight, (n_edge,)), logits.dtype)
-        src_weight_1d = xp.where(src_weight_1d > 0.0, src_weight_1d, zeros_e)
-        edge_weight_sq = edge_weight_sq * src_weight_1d
+        source_weight = xp.astype(xp.reshape(src_weight, (n_edge,)), compute_dtype)
+        source_positive = source_weight > 0.0
+        safe_source = xp.where(source_positive, source_weight, ones)
+        source_scale = _stop_gradient(safe_source)
+        log_weight = log_weight + xp.log(source_scale)
+        source_ratio = xp.where(
+            source_positive,
+            source_weight / source_scale,
+            xp.zeros((n_edge,), dtype=compute_dtype, device=device),
+        )
+        active = active & source_positive
     if edge_mask is not None:
-        mask_1d = xp.astype(xp.reshape(edge_mask, (n_edge,)), logits.dtype)
-        edge_weight_sq = edge_weight_sq * mask_1d
-    zeta = xp.astype(xp.reshape(softplus_t(z_bias_raw), (1, n_channel)), logits.dtype)
-    has_weight = edge_weight_sq > 0.0
+        mask = xp.astype(xp.reshape(edge_mask, (n_edge,)), compute_dtype)
+        mask_positive = mask > 0.0
+        # ``edge_mask`` is a binary validity mask, so its positive branch has
+        # log-factor zero and only needs to participate in the active predicate.
+        active = active & mask_positive
+
+    effective_logits = logits_2d + log_weight[:, None]
     minus_inf = xp.full(
         (n_edge, n_channel),
         float("-inf"),
-        dtype=logits.dtype,
+        dtype=compute_dtype,
         device=device,
     )
-    logits_for_max = xp.where(
-        has_weight[:, None],
-        logits_2d,
+    effective_logits = xp.where(
+        active[:, None],
+        effective_logits,
         minus_inf,
     )
+    null_mass = xp.reshape(
+        softplus_t(xp.astype(z_bias_raw, compute_dtype)) + float(eps),
+        (1, n_channel),
+    )
+    null_logit = xp.log(null_mass)
 
-    # === Step 2. Destination-wise max for stable exponentials ===
-    # Destination segment max over ``dst`` (pt ``scatter_reduce`` amax). The
-    # scatter is layout-agnostic and the maximum is order-independent, so the
-    # padded ``call`` stays bit-exact while the sparse ``call_with_edges`` is
-    # handled by the same code path.
+    # === Step 2. Destination-wise max including the physical null mass ===
+    # The null initialization keeps empty and all-masked segments finite.
     group_max = xp_maximum_at(
-        xp.full((n_nodes, n_channel), float("-inf"), dtype=logits.dtype, device=device),
+        xp.zeros((n_nodes, n_channel), dtype=compute_dtype, device=device) + null_logit,
         dst,
-        logits_for_max,
+        effective_logits,
     )  # (N, n_channel)
     edge_max = xp.take(group_max, dst, axis=0)
-    zeros_en = xp.zeros((n_edge, n_channel), dtype=logits.dtype, device=device)
-    zeros_nn = xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device)
-    edge_max = xp.where(xp.isfinite(edge_max), edge_max, zeros_en)
-    group_max_safe = xp.where(xp.isfinite(group_max), group_max, zeros_nn)
 
-    # === Step 3. Envelope/SFPG-gated exponential terms ===
-    exp_shifted = xp.exp(logits_2d - edge_max)
-    edge_weighted_exp = edge_weight_sq[:, None] * exp_shifted
-
-    # === Step 4. Destination-wise normalization with positive denominator bias ===
-    # Destination segment sum over ``dst`` (pt ``scatter_add``); invalid slots
-    # already carry zero weight. Layout-agnostic like the group max above.
+    # === Step 3. Normalize edge and null masses in the shared shifted frame ===
+    edge_exp = xp.exp(effective_logits - edge_max)
+    if source_ratio is not None:
+        # ``source_scale`` carries the forward magnitude in log space, while
+        # this linear ratio carries derivatives without differentiating
+        # ``log(src_weight)`` at extremely small positive gates.
+        edge_exp = edge_exp * source_ratio[:, None]
     denom_sum = xp_add_at(
-        xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device),
+        xp.zeros((n_nodes, n_channel), dtype=compute_dtype, device=device),
         dst,
-        edge_weighted_exp,
+        edge_exp,
     )  # (N, n_channel)
-    denom = denom_sum + zeta * xp.exp(-group_max_safe)
-
-    denom_edge = xp.take(denom, dst, axis=0)
-    alpha = edge_weighted_exp / (denom_edge + eps_f)
+    denominator = denom_sum + xp.exp(null_logit - group_max)
+    alpha = edge_exp / xp.take(denominator, dst, axis=0)
+    if promote:
+        alpha = xp.astype(alpha, input_dtype)
     return xp.reshape(alpha, (n_edge, n_focus, n_head))

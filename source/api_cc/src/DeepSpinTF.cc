@@ -401,22 +401,32 @@ template void run_model<float, float>(
 // end single frame
 
 DeepSpinTF::DeepSpinTF()
-    : inited(false), init_nbor(false), graph_def(new GraphDef()) {}
+    : session(nullptr),
+      graph_def(new GraphDef()),
+      inited(false),
+      init_nbor(false) {}
 
 DeepSpinTF::DeepSpinTF(const std::string& model,
                        const int& gpu_rank,
                        const std::string& file_content)
-    : inited(false), init_nbor(false), graph_def(new GraphDef()) {
+    : session(nullptr),
+      graph_def(new GraphDef()),
+      inited(false),
+      init_nbor(false) {
   try {
     init(model, gpu_rank, file_content);
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
+    deepmd::close_and_delete_session(session);
     delete graph_def;
     throw;
   }
 }
 
-DeepSpinTF::~DeepSpinTF() { delete graph_def; }
+DeepSpinTF::~DeepSpinTF() {
+  deepmd::close_and_delete_session(session);
+  delete graph_def;
+}
 
 void DeepSpinTF::init(const std::string& model,
                       const int& gpu_rank,
@@ -427,6 +437,7 @@ void DeepSpinTF::init(const std::string& model,
               << std::endl;
     return;
   }
+  deepmd::SessionCleanupGuard session_guard(session);
   SessionOptions options;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
@@ -498,6 +509,7 @@ void DeepSpinTF::init(const std::string& model,
   }
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   inited = true;
+  session_guard.release();
 
   init_nbor = false;
 }

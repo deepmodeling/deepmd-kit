@@ -8,6 +8,11 @@ target_link_libraries(runUnitTests_cc GTest::gtest_main ${LIB_DEEPMD_CC}
                       coverage_config)
 if(ENABLE_TENSORFLOW)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_TENSORFLOW)
+  # Lifecycle tests instantiate the backend classes directly, so they need both
+  # the backend symbols and TensorFlow's public header search path.
+  target_link_libraries(
+    runUnitTests_cc deepmd_backend_tf TensorFlow::tensorflow_cc
+    TensorFlow::tensorflow_framework)
 endif()
 if(ENABLE_PYTORCH)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_PYTORCH)
@@ -18,6 +23,9 @@ if(ENABLE_PYTORCH)
 endif()
 if(ENABLE_JAX)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_JAX)
+  # DeepPotJAX lifecycle tests instantiate the backend directly to exercise
+  # cleanup without relying on the dlopen plugin facade.
+  target_link_libraries(runUnitTests_cc deepmd_backend_jax)
 endif()
 if(ENABLE_PADDLE)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_PADDLE)

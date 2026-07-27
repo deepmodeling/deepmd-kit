@@ -330,8 +330,16 @@ class PolarFitting(GeneralFitting):
         results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
         out = results.pop(self.var_name)
         # out = out * self.scale[atype, ...]
+        # Scale and diagonal shifts are serialized as NumPy arrays. Keep that
+        # portable representation, but gather them on the prediction backend
+        # so direct dpmodel use does not depend on eager wrapper conversion.
+        scale = xp.asarray(
+            self.scale,
+            dtype=out.dtype,
+            device=array_api_compat.device(out),
+        )
         scale_atype = xp.reshape(
-            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, (-1,)), axis=0),
+            xp.take(scale, xp.reshape(atype, (-1,)), axis=0),
             (*atype.shape, 1),
         )
         out = out * scale_atype
@@ -354,9 +362,14 @@ class PolarFitting(GeneralFitting):
         out = xp.reshape(out, (nframes, nloc, 3, 3))
         if self.shift_diag:
             # bias = self.constant_matrix[atype]
+            constant_matrix = xp.asarray(
+                self.constant_matrix,
+                dtype=out.dtype,
+                device=array_api_compat.device(out),
+            )
             bias = xp.reshape(
                 xp.take(
-                    xp.astype(self.constant_matrix, out.dtype),
+                    constant_matrix,
                     xp.reshape(atype, (-1,)),
                     axis=0,
                 ),
