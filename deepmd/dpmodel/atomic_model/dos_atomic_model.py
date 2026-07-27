@@ -19,6 +19,11 @@ from .dp_atomic_model import (
 
 
 class DPDOSAtomicModel(DPAtomicModel):
+    r"""Atomic DOS model predicting :math:`D_{ik}=F_{\theta,k}(\mathcal D_i)`.
+
+    The global DOS is :math:`D_k=\sum_iD_{ik}`.
+    """
+
     def __init__(
         self,
         descriptor: BaseDescriptor,

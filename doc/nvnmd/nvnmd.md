@@ -1,8 +1,7 @@
 # Introduction {{ tensorflow_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}
 
 NVNMD stands for non-von Neumann molecular dynamics.
 

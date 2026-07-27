@@ -1,13 +1,11 @@
 # Run MD with LAMMPS
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
-:::{note}
-Each MPI rank can only use at most one GPU card.
-See [How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) for details.
-:::
+> [!NOTE]
+> Each MPI rank can only use at most one GPU card.
+> See [How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) for details.
 
 ## units
 
@@ -147,9 +145,8 @@ pair_style deepspin models ... keyword value ...
   and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _aparam_ or _ttm_
 
-:::{note}
-Please note that the virial and atomic virial are not currently supported in spin models.
-:::
+> [!NOTE]
+> Please note that the virial and atomic virial are not currently supported in spin models.
 
 <pre>
     <i>out_file</i> value = filename
@@ -199,9 +196,8 @@ The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lamm
 
 Other settings and output for this pair style is the same as `deepmd` pair style, please see the detailed description [above](#pair_style-deepmd).
 
-:::{note}
-Please note that the virial and atomic virial are not currently supported in spin models.
-:::
+> [!NOTE]
+> Please note that the virial and atomic virial are not currently supported in spin models.
 
 ### Restrictions
 
@@ -333,9 +329,8 @@ If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, 
 
 ### D3 dispersion
 
-:::{note}
-Requires LAMMPS version 4Feb2025 or newer.
-:::
+> [!NOTE]
+> Requires LAMMPS version 4Feb2025 or newer.
 
 The DP model can be trained using plain DFT calculations without the dispersion correction, and the dispersion correction can be added during the simulation via the [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
 For example, when `water.pb` is trained against the PBE0 functional, the simulation can be performed under the PBE0-D3 level with the following commands:

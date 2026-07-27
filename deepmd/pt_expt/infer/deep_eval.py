@@ -1832,6 +1832,22 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self.metadata.get("lower_input_kind") == "dpa1_canonical":
+            # The canonical ABI has NO fparam/aparam/charge_spin slots; the
+            # export gate (fitting_eligible) rejects such models today, so
+            # this is unreachable -- assert it loudly so a future loosening
+            # of the eligibility fails here instead of silently dropping
+            # conditioning inputs at inference.
+            if (
+                self.get_dim_fparam() > 0
+                or self.get_dim_aparam() > 0
+                or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
+            ):
+                raise NotImplementedError(
+                    "dpa1_canonical artifacts carry no fparam/aparam/"
+                    "charge_spin inputs; a model requiring them must not be "
+                    "frozen with lower_kind='dpa1_canonical' (the export "
+                    "eligibility gate should have rejected it)."
+                )
             from deepmd.dpmodel.utils.neighbor_graph import (
                 NeighborGraph,
             )
@@ -1866,6 +1882,11 @@ class DeepEval(DeepEvalBackend):
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(
                 fparam, aparam, nframes, natoms, DEVICE
             )
+            if aparam_t is not None:
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
+                # -- the same axis as ``atype`` (the shared helper above
+                # returns the dense rectangular (nf, natoms, nda) layout).
+                aparam_t = aparam_t.reshape(nframes * natoms, -1)
             charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
             model_inputs = (
                 atype_t,
