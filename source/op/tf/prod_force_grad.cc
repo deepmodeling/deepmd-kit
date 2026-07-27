@@ -86,6 +86,10 @@ class ProdForceGradOp : public OpKernel {
         context, (nframes == axis_shape.dim_size(0)),
         deepmd::tf_compat::InvalidArgument("number of frames should match"));
 
+    // natoms is [nloc, nall, ...]. In training nall == nloc, so these two
+    // checks are contract documentation rather than a reachable failure: the
+    // only caller is TF's registered gradient for ProdForce, which never sees
+    // ghosts. They pin the layout grad() is indexed with further down.
     OP_REQUIRES(
         context, (nall >= nloc),
         deepmd::tf_compat::InvalidArgument(
@@ -127,12 +131,20 @@ class ProdForceGradOp : public OpKernel {
     // ProdForce returns one force vector for every local and ghost atom. Keep
     // those upstream gradients distinct: folding ghost indices modulo nloc
     // would differentiate a different output than the forward op produced.
+    //
+    // The registered gradient only ever sees the neighbor list that ProdForce
+    // consumed, so an index past nall cannot arise there. This op is public,
+    // though, and j_idx addresses grad() directly below, so bound it once with
+    // a parallel reduction rather than a per-element check on the hot path.
     const int64_t nlist_size = static_cast<int64_t>(nframes) * nloc * nnei;
+    int nlist_out_of_range = 0;
+#pragma omp parallel for reduction(| : nlist_out_of_range)
     for (int64_t ii = 0; ii < nlist_size; ++ii) {
-      OP_REQUIRES(context, nlist(ii) < nall,
-                  deepmd::tf_compat::InvalidArgument(
-                      "neighbor index should be smaller than all atoms"));
+      nlist_out_of_range |= (nlist(ii) >= nall);
     }
+    OP_REQUIRES(context, (!nlist_out_of_range),
+                deepmd::tf_compat::InvalidArgument(
+                    "neighbor index should be smaller than all atoms"));
 
     // loop over frames
 #pragma omp parallel for
