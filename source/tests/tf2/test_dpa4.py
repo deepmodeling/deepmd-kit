@@ -193,3 +193,75 @@ def test_dynamic_radial_mixer_accepts_unknown_rank_tensor_specs() -> None:
         inputs = tf.ones((nedge, mixer.reduced_dim, mixer.channels), tf.float64)
         output = apply_mixer(inputs, inputs)
         assert tuple(output.shape) == (nedge, mixer.reduced_dim, mixer.channels)
+
+
+def _make_edge_descriptor() -> DescrptDPA4:
+    """Build the smallest descriptor that still runs one interaction block."""
+    return DescrptDPA4(
+        ntypes=2,
+        sel=4,
+        rcut=4.0,
+        channels=4,
+        n_radial=4,
+        lmax=1,
+        mmax=1,
+        n_blocks=1,
+        grid_branch=0,
+        random_gamma=False,
+        precision="float64",
+        trainable=True,
+        seed=20260725,
+    )
+
+
+def test_call_with_edges_supports_an_empty_edge_list() -> None:
+    """A frame whose atoms have no neighbors must reduce without scattering."""
+    descriptor = _make_edge_descriptor()
+    coord_ext = np.zeros((1, 1, 3), dtype=np.float64)
+    atype_ext = np.zeros((1, 1), dtype=np.int64)
+
+    def run(coord, atype, edge_index, edge_vec, edge_mask):
+        descrpt, force_embedding = descriptor.call_with_edges(
+            coord_ext=wrap_tensor(coord),
+            atype_ext=wrap_tensor(atype),
+            edge_index=wrap_tensor(edge_index),
+            edge_vec=wrap_tensor(edge_vec),
+            edge_mask=wrap_tensor(edge_mask),
+        )
+        return to_tf_tensor(descrpt), to_tf_tensor(force_embedding)
+
+    args = (
+        to_tf_tensor(coord_ext),
+        to_tf_tensor(atype_ext),
+        to_tf_tensor(np.zeros((2, 0), dtype=np.int64)),
+        to_tf_tensor(np.zeros((0, 3), dtype=np.float64)),
+        to_tf_tensor(np.zeros((0,), dtype=bool)),
+    )
+    eager_descrpt, _ = run(*args)
+    assert tuple(eager_descrpt.shape) == (1, 1, descriptor.channels)
+    assert np.all(np.isfinite(eager_descrpt.numpy()))
+
+    traced_descrpt, _ = tf.function(run, reduce_retracing=True)(*args)
+    np.testing.assert_allclose(traced_descrpt.numpy(), eager_descrpt.numpy())
+
+
+def test_call_supports_a_zero_width_neighbor_list() -> None:
+    """The dense path must survive a neighbor list with no neighbor slots."""
+    descriptor = _make_edge_descriptor()
+    coord_ext = to_tf_tensor(np.zeros((1, 1, 3), dtype=np.float64))
+    atype_ext = to_tf_tensor(np.zeros((1, 1), dtype=np.int64))
+    nlist = to_tf_tensor(np.zeros((1, 1, 0), dtype=np.int64))
+
+    def run(coord, atype, neighbors):
+        return to_tf_tensor(
+            descriptor(wrap_tensor(coord), wrap_tensor(atype), wrap_tensor(neighbors))[
+                0
+            ]
+        )
+
+    eager = run(coord_ext, atype_ext, nlist)
+    assert tuple(eager.shape) == (1, 1, descriptor.channels)
+    assert np.all(np.isfinite(eager.numpy()))
+
+    traced = tf.function(run, reduce_retracing=True)(coord_ext, atype_ext, nlist)
+    np.testing.assert_allclose(traced.numpy(), eager.numpy())

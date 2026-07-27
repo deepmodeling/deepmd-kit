@@ -205,12 +205,16 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         import tensorflow as tf
 
         x_tensor = x.unwrap()
-        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1, 1))
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
         values_tensor = values.unwrap()
-        updates = tf.scatter_nd(
-            indices_tensor,
+        # unsorted_segment_sum rather than scatter_nd: both accumulate repeated
+        # indices, but scatter_nd rejects a destination with no elements even
+        # when the updates are empty too, which a descriptor call with zero
+        # edges legitimately produces.
+        updates = tf.math.unsorted_segment_sum(
             values_tensor,
-            tf.shape(x_tensor, out_type=tf.int64),
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
         )
         return xp.asarray(x_tensor + updates)
     else:
