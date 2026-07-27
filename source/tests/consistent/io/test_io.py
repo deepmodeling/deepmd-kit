@@ -39,15 +39,6 @@ class IOTest:
     # property model), skipped by the cross-backend round trips below.
     skip_backends: ClassVar[set[str]] = set()
 
-    def _has_fparam_aparam(self) -> bool:
-        """Whether the serialized fitting requires both parameter families."""
-        fitting = self.data.get("model_def_script", {}).get("fitting_net", {})
-        return (
-            isinstance(fitting, dict)
-            and fitting.get("numb_fparam", 0) > 0
-            and fitting.get("numb_aparam", 0) > 0
-        )
-
     def get_data_from_model(self, model_file: str) -> dict:
         """Get data from a model file.
 
@@ -165,7 +156,6 @@ class IOTest:
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
             ("tf2", 0) if DP_TEST_TF2_ONLY else (None, None),
             ("pytorch", 0),
-            ("paddle", 1) if self._has_fparam_aparam() else (None, None),
             ("dpmodel", 0),
             ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
         ):
@@ -191,7 +181,11 @@ class IOTest:
                 aparam = np.ones((nframes, natoms, deep_eval.get_dim_aparam()))
             else:
                 aparam = None
-            if backend_name in {"pytorch", "jax", "tf2", "paddle"} and (
+            # Paddle is absent from the loop above: deserialize_to_file only
+            # writes .json, serialize_from_file is not implemented, and the
+            # .json reader rejects fparam/aparam. Its normalization is covered
+            # by source/tests/common/test_deep_eval_parameter_shorthand.py.
+            if backend_name in {"pytorch", "jax", "tf2"} and (
                 deep_eval.get_dim_fparam() > 0 and deep_eval.get_dim_aparam() > 0
             ):
                 self._assert_backend_parameter_shorthand(model_file, deep_eval)
