@@ -41,7 +41,6 @@ __all__ = [
     "compress",
     "convert",
     "doc_train_input",
-    "doc_train_input",
     "freeze",
     "make_model_devi",
     "neighbor_stat",
