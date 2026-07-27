@@ -333,6 +333,114 @@ def main():
         )
 
     print("\nAll graph sanity checks passed.")  # noqa: T201
+
+    # ============================================================
+    # Section C: graph-eligible DPA1 with numb_aparam=2
+    # ============================================================
+    # Distinct per-COMPONENT aparam values: the C++ graph route once
+    # under-sized the selected aparam buffer (select_real_atoms_coord
+    # missing the daparam factor) and the broadcasting ``copy_`` then
+    # smeared column 0 over all columns -- silent result corruption that a
+    # numb_aparam=1 fixture can never expose.  The C++ gtest
+    # (test_deeppot_dpa1_graph_aparam_ptexpt.cc) feeds the same aparam
+    # values and compares against the independent nlist reference below.
+    aparam_config = copy.deepcopy(graph_config)
+    aparam_config["fitting_net"] = {
+        **graph_config["fitting_net"],
+        "numb_aparam": 2,
+    }
+
+    print(  # noqa: T201
+        "\n---- Building graph-eligible DPA1 (attn_layer=0, numb_aparam=2) ----"
+    )
+    model_a = get_model(copy.deepcopy(aparam_config))
+    data_a = {
+        "model": model_a.serialize(),
+        "model_def_script": aparam_config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    # Distinct per-atom, per-component values -- MUST match the C++ gtest.
+    aparam_vals = (np.arange(1, 13, dtype=np.float64) * 0.1).reshape(1, 6, 2)
+
+    # ---- C.1  Independent nlist reference (same weights, dense path) ----
+    aparam_nlist_ref_pt2 = os.path.join(
+        base_dir, "deeppot_dpa1_graph_aparam_nlist_ref.pt2"
+    )
+    print(f"Exporting reference nlist .pt2 to {aparam_nlist_ref_pt2} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        aparam_nlist_ref_pt2,
+        copy.deepcopy(data_a),
+        do_atomic_virial=True,
+        lower_kind="nlist",
+    )
+    dp_ar = DeepPot(aparam_nlist_ref_pt2)
+    e_a1, f_a1, v_a1, ae_a1, av_a1 = dp_ar.eval(
+        coord, box, atype, atomic=True, aparam=aparam_vals
+    )
+    e_anp, f_anp, v_anp, ae_anp, av_anp = dp_ar.eval(
+        coord, None, atype, atomic=True, aparam=aparam_vals
+    )
+    print(f"Aparam nlist ref PBC energy: {e_a1[0, 0]:.18e}")  # noqa: T201
+
+    # Anti-vacuity: swapping the two aparam COLUMNS must change the energy,
+    # otherwise this fixture cannot catch column-broadcast corruption.
+    aparam_swapped = aparam_vals[..., ::-1].copy()
+    e_sw = dp_ar.eval(coord, box, atype, atomic=False, aparam=aparam_swapped)[0]
+    col_sensitivity = abs(float(e_sw[0, 0]) - float(e_a1[0, 0]))
+    print(f"Aparam column-swap energy shift: {col_sensitivity:.6e}")  # noqa: T201
+    if col_sensitivity < 1e-10:
+        raise RuntimeError(
+            "aparam columns are degenerate (swap shift "
+            f"{col_sensitivity:.2e}); the fixture cannot expose "
+            "column-broadcast bugs."
+        )
+
+    # ---- C.2  Sidecar reference file ----
+    aparam_ref_path = os.path.join(base_dir, "deeppot_dpa1_graph_aparam.expected")
+    write_expected_ref(
+        aparam_ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae_a1[0, :, 0],
+                "expected_f": f_a1[0],
+                "expected_v": av_a1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_anp[0, :, 0],
+                "expected_f": f_anp[0],
+                "expected_v": av_anp[0],
+            },
+        },
+        source_script="source/tests/infer/gen_dpa1.py",
+    )
+    print(f"Wrote {aparam_ref_path}")  # noqa: T201
+
+    # ---- C.3  Export graph-form .pt2 and sanity-check vs nlist ref ----
+    aparam_graph_pt2 = os.path.join(base_dir, "deeppot_dpa1_graph_aparam.pt2")
+    print(f"Exporting to {aparam_graph_pt2} (lower_kind='graph') ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        aparam_graph_pt2,
+        copy.deepcopy(data_a),
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    dp_ag = DeepPot(aparam_graph_pt2)
+    e_ag, f_ag, v_ag = dp_ag.eval(coord, box, atype, atomic=False, aparam=aparam_vals)[
+        :3
+    ]
+    aparam_force_diff = float(np.max(np.abs(f_ag[0] - f_a1[0])))
+    print(  # noqa: T201
+        f"Aparam graph .pt2 vs nlist ref PBC force max diff: {aparam_force_diff:.2e}"
+    )
+    if aparam_force_diff > 1e-5:
+        raise RuntimeError(
+            f"BLOCKED: aparam graph .pt2 PBC force differs from nlist "
+            f"reference by {aparam_force_diff:.2e} (threshold 1e-5)."
+        )
+
     print("\nDone!")  # noqa: T201
 
 

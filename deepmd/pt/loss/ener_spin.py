@@ -368,15 +368,14 @@ class EnergySpinLoss(TaskLoss):
                 # over an empty tensor (NaN), and ``0 * NaN`` is still NaN, so
                 # ``nan_to_num`` keeps such a batch's force_mag term at zero
                 # loss and zero gradient instead of poisoning the whole step.
-                loss += (pref_fm * torch.nan_to_num(l2_force_mag_loss)).to(
-                    GLOBAL_PT_FLOAT_PRECISION
-                )
-                rmse_fm = l2_force_mag_loss.sqrt()
+                safe_l2_force_mag_loss = torch.nan_to_num(l2_force_mag_loss)
+                loss += (pref_fm * safe_l2_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                rmse_fm = safe_l2_force_mag_loss.sqrt()
                 more_loss["rmse_fm"] = self.display_if_exist(
                     rmse_fm.detach(), find_force_m
                 )
                 if mae:
-                    mae_fm = torch.mean(torch.abs(diff_fm))
+                    mae_fm = torch.nan_to_num(torch.mean(torch.abs(diff_fm)))
                     more_loss["mae_fm"] = self.display_if_exist(
                         mae_fm.detach(), find_force_m
                     )
@@ -385,13 +384,13 @@ class EnergySpinLoss(TaskLoss):
                 # force_mag MSE, force_real MAE and the displayed mae_fm) so the
                 # loss is batch-size independent: a 2-frame batch equals the mean
                 # of the two single-frame losses.
-                l1_force_mag_loss = torch.mean(torch.abs(label_fm - pred_fm))
+                l1_force_mag_loss = torch.nan_to_num(
+                    torch.mean(torch.abs(label_fm - pred_fm))
+                )
                 more_loss["mae_fm"] = self.display_if_exist(
                     l1_force_mag_loss.detach(), find_force_m
                 )
-                loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
-                    GLOBAL_PT_FLOAT_PRECISION
-                )
+                loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for magnetic force loss."
