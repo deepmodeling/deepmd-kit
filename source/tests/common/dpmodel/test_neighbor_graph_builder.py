@@ -15,8 +15,12 @@ import unittest
 
 import numpy as np
 
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
+    apply_pair_exclusion,
     build_neighbor_graph,
     from_dense_quartet,
 )
@@ -98,6 +102,45 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.assertEqual(
             graph_neighbor_sets(ng, 4),
             brute_force_neighbor_sets(self.coord[0], None, self.rcut),
+        )
+
+    def test_canonicalization_is_explicit(self) -> None:
+        generic = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        with_csr = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            with_csr=True,
+        )
+        canonical = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            canonicalize=True,
+        )
+
+        self.assertFalse(generic.destination_sorted)
+        self.assertIsNone(generic.destination_order)
+        self.assertIsNone(generic.destination_row_ptr)
+        self.assertIsNone(generic.source_order)
+        self.assertIsNone(generic.source_row_ptr)
+        self.assertFalse(with_csr.destination_sorted)
+        self.assertIsNotNone(with_csr.destination_order)
+        self.assertIsNotNone(with_csr.destination_row_ptr)
+        self.assertIsNotNone(with_csr.source_order)
+        self.assertIsNotNone(with_csr.source_row_ptr)
+        self.assertTrue(canonical.destination_sorted)
+        np.testing.assert_array_equal(
+            canonical.destination_order,
+            np.arange(canonical.edge_index.shape[1]),
+        )
+        real_destination = canonical.edge_index[1, canonical.edge_mask]
+        self.assertTrue(bool(np.all(real_destination[:-1] <= real_destination[1:])))
+        self.assertEqual(
+            graph_neighbor_sets(canonical, 4),
+            graph_neighbor_sets(generic, 4),
         )
 
     def test_periodic_matches_brute_force(self) -> None:
@@ -311,6 +354,181 @@ class TestFromDenseQuartet(unittest.TestCase):
         # src = local owner of the ghost (0), dst = center (0); vec carries the shift
         self.assertEqual((int(ei[0, 0]), int(ei[1, 0])), (0, 0))
         np.testing.assert_allclose(ev[0], np.array([3.0, 0.0, 0.0]))
+
+
+def valid_edge_set(ng):
+    """Return the set of (src, dst, rounded edge_vec) for all real edges."""
+    ei = ng.edge_index[:, ng.edge_mask]
+    ev = ng.edge_vec[ng.edge_mask]
+    return {
+        (int(ei[0, k]), int(ei[1, k]), tuple(np.round(ev[k], 6)))
+        for k in range(ei.shape[1])
+    }
+
+
+class TestBuildNeighborGraphPairExclOracle(unittest.TestCase):
+    """Oracle harness: builder(pair_excl=X) == builder() + apply_pair_exclusion(X).
+
+    Covers both ``pair_excl=None`` (identity; no exclusion applied) and a
+    non-empty exclusion set, for the ``dense`` backend.  The oracle asserts
+    SET-EQUALITY of the valid-edge set, matching the Task 3b contract.
+    """
+
+    def setUp(self) -> None:
+        self.rcut = 4.0
+        # 4 atoms, 2 types (0 and 1); atom 2 offset avoids degenerate rcut alignment.
+        self.coord = np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.3, 0.0], [3.5, 0.0, 0.0]],
+            dtype=np.float64,
+        ).reshape(1, 4, 3)
+        # type sequence: 0,1,0,1 -- pairs (0,1) and (1,0) are heterogeneous
+        self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+        self.ntypes = 2
+
+    def _pair_excl(self, exclude_pairs):
+        """Build a PairExcludeMask from a list of (ti, tj) tuples."""
+        return PairExcludeMask(self.ntypes, exclude_pairs)
+
+    def test_pair_excl_none_identity_dense(self) -> None:
+        """pair_excl=None: builder output unchanged (identity)."""
+        ng_ref = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        ng_excl = build_neighbor_graph(
+            self.coord, self.atype, None, self.rcut, pair_excl=None
+        )
+        self.assertEqual(valid_edge_set(ng_ref), valid_edge_set(ng_excl))
+
+    def test_pair_excl_empty_list_identity_dense(self) -> None:
+        """pair_excl with empty exclude set: builder output unchanged."""
+        pe = self._pair_excl([])
+        ng_ref = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        ng_excl = build_neighbor_graph(
+            self.coord, self.atype, None, self.rcut, pair_excl=pe
+        )
+        self.assertEqual(valid_edge_set(ng_ref), valid_edge_set(ng_excl))
+
+    def test_oracle_set_equality_dense_nonperiodic(self) -> None:
+        """Builder with pair_excl==(0,1) == builder() + apply_pair_exclusion."""
+        pe = self._pair_excl([(0, 1), (1, 0)])
+        # reference: build without exclusion then apply separately
+        ng_base = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        atype_flat = self.atype.reshape(-1)
+        ng_post = apply_pair_exclusion(ng_base, atype_flat, pe)
+        # under test: builder applies exclusion internally
+        ng_fused = build_neighbor_graph(
+            self.coord, self.atype, None, self.rcut, pair_excl=pe
+        )
+        self.assertEqual(valid_edge_set(ng_post), valid_edge_set(ng_fused))
+        # sanity: exclusion actually REMOVED some edges
+        self.assertLess(int(ng_fused.edge_mask.sum()), int(ng_base.edge_mask.sum()))
+
+    def test_canonical_csr_reflects_pair_exclusion(self) -> None:
+        pe = self._pair_excl([(0, 1), (1, 0)])
+        graph = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            pair_excl=pe,
+            canonicalize=True,
+        )
+
+        valid_edges = int(graph.edge_mask.sum())
+        self.assertEqual(int(graph.destination_row_ptr[-1]), valid_edges)
+        self.assertEqual(int(graph.source_row_ptr[-1]), valid_edges)
+        self.assertTrue(bool(np.all(graph.edge_mask[:valid_edges])))
+        self.assertFalse(bool(np.any(graph.edge_mask[valid_edges:])))
+        destination = graph.edge_index[1, :valid_edges]
+        self.assertTrue(bool(np.all(destination[:-1] <= destination[1:])))
+
+    def test_oracle_set_equality_dense_periodic(self) -> None:
+        """Periodic PBC: builder with pair_excl==(0,0) == builder() + apply."""
+        pe = self._pair_excl([(0, 0)])
+        box = np.eye(3, dtype=np.float64)[None] * 6.0
+        ng_base = build_neighbor_graph(self.coord, self.atype, box, self.rcut)
+        atype_flat = self.atype.reshape(-1)
+        ng_post = apply_pair_exclusion(ng_base, atype_flat, pe)
+        ng_fused = build_neighbor_graph(
+            self.coord, self.atype, box, self.rcut, pair_excl=pe
+        )
+        self.assertEqual(valid_edge_set(ng_post), valid_edge_set(ng_fused))
+        # type-0 centers: atoms 0,2; type-0 neighbors excluded; fewer edges expected
+        self.assertLess(int(ng_fused.edge_mask.sum()), int(ng_base.edge_mask.sum()))
+
+    def test_oracle_set_equality_dense_multiframe(self) -> None:
+        """Multi-frame: set-equality holds per frame."""
+        pe = self._pair_excl([(0, 1), (1, 0)])
+        coord2 = np.concatenate([self.coord, self.coord + 0.5], axis=0)
+        atype2 = np.concatenate([self.atype, self.atype], axis=0)
+        ng_base = build_neighbor_graph(coord2, atype2, None, self.rcut)
+        atype_flat = atype2.reshape(-1)
+        ng_post = apply_pair_exclusion(ng_base, atype_flat, pe)
+        ng_fused = build_neighbor_graph(coord2, atype2, None, self.rcut, pair_excl=pe)
+        self.assertEqual(valid_edge_set(ng_post), valid_edge_set(ng_fused))
+
+
+class TestBuildNeighborGraphAseOracle(unittest.TestCase):
+    """Oracle harness for the ASE builder pair_excl parameter.
+
+    Skipped when ``ase`` is not installed.  Asserts set-equality of the
+    valid-edge set between the ASE builder called with ``pair_excl`` and
+    the dense reference builder + separate :func:`apply_pair_exclusion`.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        try:
+            import ase  # noqa: F401
+        except ImportError as e:
+            raise unittest.SkipTest("ase not installed") from e
+
+    def setUp(self) -> None:
+        self.rcut = 4.0
+        self.coord = np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.3, 0.0], [3.5, 0.0, 0.0]],
+            dtype=np.float64,
+        ).reshape(1, 4, 3)
+        self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+        self.ntypes = 2
+
+    def _pair_excl(self, exclude_pairs):
+        return PairExcludeMask(self.ntypes, exclude_pairs)
+
+    def test_ase_pair_excl_none_identity(self) -> None:
+        """pair_excl=None: ASE builder output unchanged."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph_ase,
+        )
+
+        ng_ref = build_neighbor_graph_ase(self.coord, self.atype, None, self.rcut)
+        ng_excl = build_neighbor_graph_ase(
+            self.coord, self.atype, None, self.rcut, pair_excl=None
+        )
+        self.assertEqual(valid_edge_set(ng_ref), valid_edge_set(ng_excl))
+
+    def test_ase_oracle_set_equality(self) -> None:
+        """ASE builder with pair_excl == dense ref + apply_pair_exclusion."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph_ase,
+        )
+
+        pe = self._pair_excl([(0, 1), (1, 0)])
+        # dense reference + separate post-process
+        ng_dense = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        atype_flat = self.atype.reshape(-1)
+        ng_ref = apply_pair_exclusion(ng_dense, atype_flat, pe)
+        # ASE builder with fused post-process
+        ng_ase = build_neighbor_graph_ase(
+            self.coord, self.atype, None, self.rcut, pair_excl=pe
+        )
+        self.assertEqual(valid_edge_set(ng_ref), valid_edge_set(ng_ase))
+        # exclusion actually removed edges
+        ng_ase_plain = build_neighbor_graph_ase(self.coord, self.atype, None, self.rcut)
+        self.assertLess(int(ng_ase.edge_mask.sum()), int(ng_ase_plain.edge_mask.sum()))
+
+
+# NOTE: nvalchemiops builder has no local oracle set-equality test for pair_excl
+# because it requires CUDA; validation is deferred to GPU box tests (PR-C/nv-gtest).
+# See deepmd.pt_expt.utils.nv_graph_builder.build_neighbor_graph_nv docstring.
 
 
 if __name__ == "__main__":

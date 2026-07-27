@@ -33,6 +33,7 @@ from deepmd.pt.model.model.sezm_model import (
 from deepmd.pt.model.model.spin_model import (
     SpinModel,
     _lookup_type_values,
+    _pack_spin_stat_sample,
 )
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
@@ -209,7 +210,13 @@ class SeZMSpinModel(SeZMModel):
                 edge_schema.edge_mask,
                 fparam=fp,
                 aparam=ap,
-                extended_coord_corr=extended_coord_corr[:, : nloc * 2, :],
+                # Slicing the doubled-extended correction down to the local
+                # region yields a stride-(2*nall*3, ...) view; the compiled
+                # virial matmul reshapes it to (N, 1, 3), which ``torch.compile``
+                # lowers to ``aten.view`` and rejects on the non-contiguous
+                # layout. Materialize a contiguous copy, mirroring the local
+                # coord/atype slices in ``edge_schema_from_extended``.
+                extended_coord_corr=extended_coord_corr[:, : nloc * 2, :].contiguous(),
                 charge_spin=charge_spin,
                 input_prec=input_prec,
             )
@@ -395,7 +402,7 @@ class SeZMSpinModel(SeZMModel):
             )
         trace_inputs = (*trace_inputs, charge_spin)
 
-        return self._trace_lower_exportable(
+        return self.trace_lower_exportable(
             fn,
             *trace_inputs,
         )
@@ -462,6 +469,16 @@ class SeZMSpinModel(SeZMModel):
         """Return whether this model consumes spin input."""
         return True
 
+    def export_lower_input_kind(self) -> str:
+        """Return the ``.pt2`` lower ABI: the deepspin scheme needs the nlist.
+
+        Virtual atoms are placed and the neighbor list is expanded inside the
+        traced graph from the extended inputs, so the export contract feeds the
+        real extended coordinates, spin and neighbor list rather than a
+        pre-built edge schema.
+        """
+        return "nlist"
+
     def get_type_map(self) -> list[str]:
         """Return the real atom type map."""
         return super().get_type_map()[: self.ntypes_real]
@@ -502,9 +519,8 @@ class SeZMSpinModel(SeZMModel):
 
     def model_output_def(self) -> ModelOutputDef:
         """Return the spin-aware model output definition."""
-        var_name = self._get_output_var_name()
         atomic_output_def = self.atomic_output_def()
-        atomic_output_def[var_name].magnetic = True
+        atomic_output_def["energy"].magnetic = True
         return ModelOutputDef(atomic_output_def)
 
     def translated_output_def(self) -> dict[str, Any]:
@@ -585,10 +601,6 @@ class SeZMSpinModel(SeZMModel):
         """Return the number of real types for real-only ZBL masking."""
         return self.ntypes_real
 
-    def _get_output_var_name(self) -> str:
-        """Return the primary atomic output variable name."""
-        return "energy"
-
     def _get_spin_sampled_func(
         self, sampled_func: Callable[[], list[dict[str, Any]]]
     ) -> Callable[[], list[dict[str, Any]]]:
@@ -596,36 +608,7 @@ class SeZMSpinModel(SeZMModel):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict[str, Any]]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "aparam" in sys:
-                    tmp_dict["aparam"] = self.expand_aparam(
-                        sys["aparam"], atype_updated.shape[1]
-                    )
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    tmp_dict["natoms"] = torch.cat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in [
-                        "coord",
-                        "atype",
-                        "spin",
-                        "natoms",
-                        "aparam",
-                    ]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
 
         return self.atomic_model._make_wrapped_sampler(spin_sampled_func)
 
@@ -650,22 +633,21 @@ class SeZMSpinModel(SeZMModel):
         nloc: int,
     ) -> dict[str, torch.Tensor]:
         """Split full-interface SeZM outputs into real and magnetic parts."""
-        var_name = self._get_output_var_name()
-        model_ret[var_name] = torch.split(model_ret[var_name], [nloc, nloc], dim=1)[0]
-        if self.do_grad_r(var_name) and model_ret.get(f"{var_name}_derv_r") is not None:
+        model_ret["energy"] = torch.split(model_ret["energy"], [nloc, nloc], dim=1)[0]
+        if self.do_grad_r("energy") and model_ret.get("energy_derv_r") is not None:
             (
-                model_ret[f"{var_name}_derv_r"],
-                model_ret[f"{var_name}_derv_r_mag"],
+                model_ret["energy_derv_r"],
+                model_ret["energy_derv_r_mag"],
                 model_ret["mask_mag"],
-            ) = self.process_spin_output(atype, model_ret[f"{var_name}_derv_r"])
-        if self.do_grad_c(var_name) and model_ret.get(f"{var_name}_derv_c") is not None:
+            ) = self.process_spin_output(atype, model_ret["energy_derv_r"])
+        if self.do_grad_c("energy") and model_ret.get("energy_derv_c") is not None:
             (
-                model_ret[f"{var_name}_derv_c"],
-                model_ret[f"{var_name}_derv_c_mag"],
+                model_ret["energy_derv_c"],
+                model_ret["energy_derv_c_mag"],
                 model_ret["mask_mag"],
             ) = self.process_spin_output(
                 atype,
-                model_ret[f"{var_name}_derv_c"],
+                model_ret["energy_derv_c"],
                 add_mag=True,
                 virtual_scale=False,
             )
@@ -679,24 +661,23 @@ class SeZMSpinModel(SeZMModel):
         nloc: int,
     ) -> dict[str, torch.Tensor]:
         """Split lower-interface SeZM outputs into real and magnetic parts."""
-        var_name = self._get_output_var_name()
-        model_ret[var_name] = torch.split(model_ret[var_name], [nloc, nloc], dim=1)[0]
-        if self.do_grad_r(var_name) and model_ret.get(f"{var_name}_derv_r") is not None:
+        model_ret["energy"] = torch.split(model_ret["energy"], [nloc, nloc], dim=1)[0]
+        if self.do_grad_r("energy") and model_ret.get("energy_derv_r") is not None:
             (
-                model_ret[f"{var_name}_derv_r"],
-                model_ret[f"{var_name}_derv_r_mag"],
+                model_ret["energy_derv_r"],
+                model_ret["energy_derv_r_mag"],
                 model_ret["mask_mag"],
             ) = self.process_spin_output_lower(
-                extended_atype, model_ret[f"{var_name}_derv_r"], nloc
+                extended_atype, model_ret["energy_derv_r"], nloc
             )
-        if self.do_grad_c(var_name) and model_ret.get(f"{var_name}_derv_c") is not None:
+        if self.do_grad_c("energy") and model_ret.get("energy_derv_c") is not None:
             (
-                model_ret[f"{var_name}_derv_c"],
-                model_ret[f"{var_name}_derv_c_mag"],
+                model_ret["energy_derv_c"],
+                model_ret["energy_derv_c_mag"],
                 model_ret["mask_mag"],
             ) = self.process_spin_output_lower(
                 extended_atype,
-                model_ret[f"{var_name}_derv_c"],
+                model_ret["energy_derv_c"],
                 nloc,
                 add_mag=True,
                 virtual_scale=False,

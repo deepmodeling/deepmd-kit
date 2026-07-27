@@ -180,6 +180,18 @@ def _tiny_sezm_spin_model_params() -> dict:
     params["spin"] = {
         "use_spin": [True, False],
         "virtual_scale": 0.2,
+        "scheme": "deepspin",
+    }
+    return params
+
+
+def _tiny_sezm_native_spin_model_params() -> dict:
+    """Minimal fp64 native-spin SeZM config for freeze routing tests."""
+    params = copy.deepcopy(_tiny_sezm_model_params())
+    params["type_map"] = ["O", "H"]
+    params["spin"] = {
+        "use_spin": [True, False],
+        "scheme": "native",
     }
     return params
 
@@ -1009,6 +1021,57 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         # does not apply, so multi-rank inference fails fast in C++.
         self.assertFalse(metadata["has_comm_artifact"])
         self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_freeze_accepts_native_spin_checkpoint_metadata(self) -> None:
+        """Native-spin checkpoints export the energy edge contract plus spin.
+
+        The native scheme reuses the ``edge_vec`` lower ABI; the per-local-atom
+        spin is the only extra input, so the C++ backend builds the edge schema
+        exactly as for a non-spin model. The magnetic force and spin mask are
+        still emitted, and the type map / ntypes stay at the real-system sizes
+        (no virtual atoms).
+        """
+
+        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
+            with zipfile.ZipFile(package_path, "w") as zf:
+                zf.writestr("model/data.pkl", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            params = _tiny_sezm_native_spin_model_params()
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            out = tmp_path / "native_spin.pt2"
+
+            with mock.patch(
+                "torch._inductor.aoti_compile_and_package",
+                side_effect=fake_compile,
+            ):
+                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
+
+            with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
+                metadata = json.loads(
+                    zf.read("model/extra/metadata.json").decode("utf-8")
+                )
+
+        self.assertTrue(metadata["is_spin"])
+        # Native spin shares the energy edge ABI; only the deepspin scheme keeps
+        # the nlist contract.
+        self.assertEqual(metadata["lower_input_kind"], "edge_vec")
+        # Native spin keeps the real-system type map and count (no virtual atoms).
+        self.assertEqual(metadata["type_map"], params["type_map"])
+        self.assertEqual(metadata["ntypes"], len(params["type_map"]))
+        self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
+        self.assertEqual(metadata["ntypes_spin"], 1)
+        # The magnetic force and spin mask are still exported.
+        self.assertIn("energy_derv_r_mag", metadata["output_keys"])
+        self.assertIn("mask_mag", metadata["output_keys"])
+        # Native spin reuses the edge_vec contract and is rank-decomposable, so
+        # the freeze embeds the multi-rank with-comm artifact (extended spin leaf
+        # plus the eight border_op communication tensors).
+        self.assertTrue(metadata["has_comm_artifact"])
+        self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_embeds_with_comm_artifact(self) -> None:

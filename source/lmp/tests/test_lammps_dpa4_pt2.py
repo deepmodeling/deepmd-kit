@@ -52,6 +52,9 @@ from expected_ref import (
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+)
 from write_lmp_data import (
     write_lmp_data,
 )
@@ -117,41 +120,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    # LAMMPS rejects ``atom_modify map no``; the supported way to leave
-    # the atom-map disabled is to simply omit the command (default for
-    # ``atom_style atomic``).
-    if atom_map != "no":
-        lammps.atom_modify(f"map {atom_map}")
-    if units == "metal" or units == "real":
-        lammps.neighbor("2.0 bin")
-    elif units == "si":
-        lammps.neighbor("2.0e-10 bin")
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal" or units == "real":
-        lammps.mass("1 16")
-        lammps.mass("2 2")
-    elif units == "si":
-        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
-        lammps.mass("2 %.10e" % (2 * constants.mass_metal2si))
-    else:
-        raise ValueError("units should be metal, real, or si")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    elif units == "si":
-        lammps.timestep(5e-16)
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, atom_map=atom_map)
 
 
 @pytest.fixture

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import operator
 from enum import (
     Enum,
@@ -77,11 +78,14 @@ class LinearModel(Model):
 
     def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
-        # the first model that is not None, or None if all models are None
+        # Return the first submodel loss that is not None, or None if all
+        # submodels are non-trainable. Each submodel must receive the original
+        # loss config: frozen/table submodels return None, so consuming the
+        # return value would pass None to a later trainable submodel.
         for model in self.models:
-            loss = model.get_loss(loss, lr)
-            if loss is not None:
-                return loss
+            submodel_loss = model.get_loss(copy.deepcopy(loss), lr)
+            if submodel_loss is not None:
+                return submodel_loss
         return None
 
     def get_rcut(self) -> float:

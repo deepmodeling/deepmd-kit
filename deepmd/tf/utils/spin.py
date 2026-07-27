@@ -26,6 +26,25 @@ class Spin:
         virtual_len: list[float] | None = None,
     ) -> None:
         """Constructor."""
+        # The TensorFlow spin implementation assumes spin-enabled types form a
+        # contiguous prefix of the type map: the SE-A ``sel`` extension takes the
+        # first ``ntypes_spin`` selections, and the coordinate/force splitting
+        # and bias merging address the virtual block with a dense real->virtual
+        # offset. Reject a layout where a non-spin type precedes a spin type,
+        # which would silently read the wrong real/virtual type ranges.
+        if use_spin is not None:
+            seen_non_spin = False
+            for flag in use_spin:
+                if flag:
+                    if seen_non_spin:
+                        raise ValueError(
+                            "The TensorFlow spin implementation requires "
+                            "spin-enabled types (use_spin=True) to form a prefix "
+                            f"of the type map; got use_spin={use_spin}. List all "
+                            "spin-enabled types first in the type map."
+                        )
+                else:
+                    seen_non_spin = True
         self.use_spin = use_spin
         self.spin_norm = spin_norm
         self.virtual_len = virtual_len

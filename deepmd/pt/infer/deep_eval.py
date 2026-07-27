@@ -284,7 +284,7 @@ class DeepEval(DeepEvalBackend):
         if callable(self_built) and self_built():
             # The model builds its own neighbor list and runs the native path;
             # an external strategy would bypass it, so always use native.
-            log.info(
+            log.debug(
                 "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
                 nlist_backend,
                 type(inner).__name__,
@@ -971,6 +971,17 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.model_def_script
+
+    def serialize(self) -> dict[str, Any]:
+        model = self.dp.model["Default"]
+        if hasattr(model, "serialize"):
+            return model.serialize()
+
+        from deepmd.pt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file(self.model_path)["model"]
 
     def get_model_size(self) -> dict:
         """Get model parameter count.

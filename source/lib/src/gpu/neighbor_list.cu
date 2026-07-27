@@ -78,19 +78,28 @@ template <typename FPTYPE>
 __global__ void build_nlist(int* ilist,
                             int* temp_nlist,
                             const FPTYPE* c_cpy,
+                            const int* type,
                             const FPTYPE rcut2,
                             const int nloc,
                             const int nall,
                             const int mem_size) {
-  const unsigned int atom_idx = blockIdx.x;
+  const unsigned int row_idx = blockIdx.x;
+  const unsigned int atom_idx = row_idx % nloc;
+  const unsigned int frame_idx = row_idx / nloc;
   const unsigned int neighbor_idx = blockIdx.y * blockDim.y + threadIdx.y;
   if (neighbor_idx < nall) {
-    int* neighbor_row = temp_nlist + atom_idx * mem_size;
+    int* neighbor_row = temp_nlist + row_idx * mem_size;
     if (neighbor_idx == atom_idx) {
-      ilist[atom_idx] = atom_idx;
+      ilist[row_idx] = atom_idx;
     } else {
-      const FPTYPE* ccoord = c_cpy + atom_idx * 3;
-      const FPTYPE* ncoord = c_cpy + neighbor_idx * 3;
+      const int_64 frame_offset = int_64(frame_idx) * nall;
+      if (type != NULL && (type[frame_offset + atom_idx] < 0 ||
+                           type[frame_offset + neighbor_idx] < 0)) {
+        return;
+      }
+      const FPTYPE* frame_coord = c_cpy + int_64(frame_idx) * nall * 3;
+      const FPTYPE* ccoord = frame_coord + atom_idx * 3;
+      const FPTYPE* ncoord = frame_coord + neighbor_idx * 3;
       FPTYPE diff[3];
       for (int kk = 0; kk < 3; kk++) {
         diff[kk] = ccoord[kk] - ncoord[kk];
@@ -193,41 +202,44 @@ int build_nlist_gpu(InputNlist& nlist,
                     const int& nloc,
                     const int& nall,
                     const int& mem_size,
-                    const float& rcut) {
+                    const float& rcut,
+                    const int& nframes,
+                    const int* type) {
   if (mem_size < nall) {
     return 1;
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int nblock = (nall + TPB - 1) / TPB;
+  const int_64 nrows = int_64(nframes) * nloc;
   int* ilist = nlist.ilist;
   int* numneigh = nlist.numneigh;
   int** firstneigh = nlist.firstneigh;
-  DPErrcheck(gpuMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
-  int* temp_nlist = nlist_data;  // nloc*mem_size
-  int* nei_order = temp_nlist + nloc * mem_size;
-  nlist.inum = nloc;
+  DPErrcheck(gpuMemset(nlist_data, -1, sizeof(int) * 2 * nrows * mem_size));
+  int* temp_nlist = nlist_data;  // nrows*mem_size
+  int* nei_order = temp_nlist + nrows * mem_size;
+  nlist.inum = nrows;
   FPTYPE rcut2 = rcut * rcut;
 
-  dim3 block_grid(nloc, nblock);
+  dim3 block_grid(nrows, nblock);
   dim3 thread_grid(1, TPB);
-  build_nlist<<<block_grid, thread_grid>>>(ilist, temp_nlist, c_cpy, rcut2,
-                                           nloc, nall, mem_size);
+  build_nlist<<<block_grid, thread_grid>>>(ilist, temp_nlist, c_cpy, type,
+                                           rcut2, nloc, nall, mem_size);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   parallel_prefix_scan<TPB>
-      <<<nloc, TPB>>>(numneigh, nei_order, temp_nlist, mem_size, nloc, nall);
+      <<<nrows, TPB>>>(numneigh, nei_order, temp_nlist, mem_size, nloc, nall);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   fill_nlist<<<block_grid, thread_grid>>>(firstneigh, temp_nlist, nei_order,
                                           mem_size, nall);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
-  int* numneigh_host = new int[nloc];
-  DPErrcheck(gpuMemcpy(numneigh_host, numneigh, sizeof(int) * nloc,
+  int* numneigh_host = new int[nrows];
+  DPErrcheck(gpuMemcpy(numneigh_host, numneigh, sizeof(int) * nrows,
                        gpuMemcpyDeviceToHost));
   int max_nei = 0;
-  for (int ii = 0; ii < nloc; ii++) {
+  for (int_64 ii = 0; ii < nrows; ii++) {
     if (numneigh_host[ii] > max_nei) {
       max_nei = numneigh_host[ii];
     }
@@ -285,7 +297,9 @@ template int build_nlist_gpu<float>(InputNlist& nlist,
                                     const int& nloc,
                                     const int& nall,
                                     const int& mem_size,
-                                    const float& rcut);
+                                    const float& rcut,
+                                    const int& nframes,
+                                    const int* type);
 template int build_nlist_gpu<double>(InputNlist& nlist,
                                      int* max_list_size,
                                      int* nlist_data,
@@ -293,7 +307,9 @@ template int build_nlist_gpu<double>(InputNlist& nlist,
                                      const int& nloc,
                                      const int& nall,
                                      const int& mem_size,
-                                     const float& rcut);
+                                     const float& rcut,
+                                     const int& nframes,
+                                     const int* type);
 
 __global__ void map_filter_ftype(int* ftype_out,
                                  const int* ftype_in,

@@ -4,15 +4,19 @@
 Can handle local training.
 """
 
-import json
 import logging
 import time
 from typing import (
     Any,
 )
 
-from deepmd.common import (
-    j_loader,
+from deepmd.dpmodel.train import (
+    AbstractTrainEntrypoint,
+    TrainEntrypointOptions,
+    TrainingTaskConfig,
+    iter_training_task_configs,
+    make_task_maps,
+    print_data_summaries,
 )
 from deepmd.jax.env import (
     jax,
@@ -24,16 +28,13 @@ from deepmd.jax.model.base_model import (
 from deepmd.jax.train.trainer import (
     DPTrainer,
 )
+from deepmd.jax.utils.serialization import (
+    serialize_from_file,
+)
 from deepmd.jax.utils.update_sel import (
     use_jax_update_sel,
 )
 from deepmd.utils import random as dp_random
-from deepmd.utils.argcheck import (
-    normalize,
-)
-from deepmd.utils.compat import (
-    update_deepmd_input,
-)
 from deepmd.utils.data_system import (
     get_data,
 )
@@ -79,6 +80,134 @@ class SummaryPrinter(BaseSummaryPrinter):
             return "Unknown"
 
 
+class JAXTrainEntrypoint(AbstractTrainEntrypoint):
+    """JAX implementation of the common training entrypoint pipeline."""
+
+    def __init__(self) -> None:
+        self.finetune_links: dict[str, Any] | None = None
+        self.shared_links: dict[str, Any] | None = None
+
+    def validate_options(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+    ) -> None:
+        """Validate currently unsupported JAX train features."""
+        if options.init_frz_model:
+            raise NotImplementedError(
+                "JAX training does not support init_frz_model yet"
+            )
+
+    def preprocess_config(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+    ) -> dict[str, Any]:
+        """Apply JAX fine-tuning and pretrained-script preprocessing."""
+        self.finetune_links = None
+        self.shared_links = None
+
+        if options.finetune is not None:
+            from deepmd.jax.utils.finetune import (
+                get_finetune_rules,
+            )
+
+            config["model"], self.finetune_links = get_finetune_rules(
+                options.finetune,
+                config["model"],
+                model_branch=options.model_branch,
+                change_model_params=options.use_pretrain_script,
+            )
+        elif options.init_model is not None and options.use_pretrain_script:
+            model_data = serialize_from_file(options.init_model)
+            config["model"] = model_data["model_def_script"]
+        if self.is_multi_task(config):
+            if config["model"].get("shared_dict"):
+                from deepmd.jax.utils.multi_task import (
+                    preprocess_shared_params,
+                )
+
+                config["model"], self.shared_links = preprocess_shared_params(
+                    config["model"]
+                )
+            if "RANDOM" in config["model"]["model_dict"]:
+                raise ValueError("Model name can not be 'RANDOM' in multi-task mode!")
+        return config
+
+    def update_neighbor_stat(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+        *,
+        multi_task: bool,
+    ) -> tuple[dict[str, Any], float | dict[str, float | None] | None]:
+        """Update JAX descriptor selections from neighbor statistics."""
+        return update_sel(config, multi_task=multi_task)
+
+    def print_summary(self) -> None:
+        """Print JAX backend summary."""
+        SummaryPrinter()()
+
+    def run_training(
+        self,
+        config: dict[str, Any],
+        options: TrainEntrypointOptions,
+        neighbor_stat: float | dict[str, float | None] | None,
+    ) -> None:
+        """Build JAX data/trainer objects and run training."""
+        # make necessary checks
+        assert "training" in config
+
+        model = DPTrainer(
+            config,
+            init_model=options.init_model,
+            restart=options.restart,
+            finetune_model=options.finetune,
+            finetune_links=self.finetune_links,
+            shared_links=self.shared_links,
+        )
+        if neighbor_stat is not None:
+            model.set_min_nbor_dist(neighbor_stat)
+
+        # init random seed of data systems
+        seed = config["training"].get("seed", None)
+        if seed is not None:
+            seed += jax.process_index()
+            seed = seed % (2**32)
+        dp_random.seed(seed)
+
+        def factory(
+            task_config: TrainingTaskConfig,
+        ) -> tuple[Any, Any | None, None]:
+            task_model = model.models[task_config.key]
+            type_map = task_model.get_type_map()
+            ipt_type_map = type_map if len(type_map) > 0 else None
+            train_data = get_data(
+                dict(task_config.training_data_params),
+                task_model.get_rcut(),
+                ipt_type_map,
+                None,
+            )
+            valid_data = None
+            if task_config.validation_data_params is not None:
+                valid_data = get_data(
+                    dict(task_config.validation_data_params),
+                    task_model.get_rcut(),
+                    train_data.type_map,
+                    None,
+                )
+            return train_data, valid_data, None
+
+        train_data_map, valid_data_map, _ = make_task_maps(config, factory)
+        print_data_summaries(train_data_map, valid_data_map)
+
+        start_time = time.time()
+        model.train(train_data_map, valid_data_map)
+        end_time = time.time()
+        log.info("finished training")
+        log.info(f"wall time: {(end_time - start_time):.3f} s")
+
+
 def train(
     *,
     INPUT: str,
@@ -91,6 +220,7 @@ def train(
     log_path: str | None,
     skip_neighbor_stat: bool = False,
     finetune: str | None = None,
+    model_branch: str = "",
     use_pretrain_script: bool = False,
     **kwargs: Any,
 ) -> None:
@@ -129,94 +259,50 @@ def train(
     RuntimeError
         if the training command fails.
     """
-    # load json database
-    jdata = j_loader(INPUT)
-
-    if init_frz_model:
-        raise NotImplementedError("JAX training does not support init_frz_model yet")
-    if finetune:
-        raise NotImplementedError("JAX training does not support finetune yet")
-    if use_pretrain_script:
-        raise NotImplementedError(
-            "JAX training does not support use_pretrain_script yet"
+    JAXTrainEntrypoint().run(
+        TrainEntrypointOptions(
+            input_file=INPUT,
+            output=output,
+            init_model=init_model,
+            restart=restart,
+            init_frz_model=init_frz_model,
+            finetune=finetune,
+            model_branch=model_branch,
+            use_pretrain_script=use_pretrain_script,
+            skip_neighbor_stat=skip_neighbor_stat,
         )
-
-    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-
-    jdata = normalize(jdata)
-    min_nbor_dist = None
-    if not skip_neighbor_stat:
-        jdata, min_nbor_dist = update_sel(jdata)
-
-    with open(output, "w") as fp:
-        json.dump(jdata, fp, indent=4)
-    SummaryPrinter()()
-
-    # make necessary checks
-    assert "training" in jdata
-
-    # init the model
-
-    model = DPTrainer(
-        jdata,
-        init_model=init_model,
-        restart=restart,
     )
-    if min_nbor_dist is not None:
-        model.model.min_nbor_dist = min_nbor_dist
-    rcut = model.model.get_rcut()
-    type_map = model.model.get_type_map()
-    if len(type_map) == 0:
-        ipt_type_map = None
-    else:
-        ipt_type_map = type_map
-
-    # init random seed of data systems
-    seed = jdata["training"].get("seed", None)
-    if seed is not None:
-        seed += jax.process_index()
-        seed = seed % (2**32)
-    dp_random.seed(seed)
-
-    # init data
-    train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, None)
-    train_data.add_data_requirements(model.data_requirements)
-    train_data.print_summary("training")
-    if jdata["training"].get("validation_data", None) is not None:
-        valid_data = get_data(
-            jdata["training"]["validation_data"],
-            rcut,
-            train_data.type_map,
-            None,
-        )
-        valid_data.add_data_requirements(model.data_requirements)
-        valid_data.print_summary("validation")
-    else:
-        valid_data = None
-
-    # train the model with the provided systems in a cyclic way
-    start_time = time.time()
-    model.train(train_data, valid_data)
-    end_time = time.time()
-    log.info("finished training")
-    log.info(f"wall time: {(end_time - start_time):.3f} s")
 
 
-def update_sel(jdata: dict) -> tuple[dict, float | None]:
+def update_sel(
+    jdata: dict,
+    *,
+    multi_task: bool | None = None,
+) -> tuple[dict, float | dict[str, float | None] | None]:
     """Update descriptor selections from neighbor statistics when available."""
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
     jdata_cpy = jdata.copy()
-    type_map = jdata["model"].get("type_map")
-    train_data = get_data(
-        jdata["training"]["training_data"],
-        0,  # not used
-        type_map,
-        None,  # not used
-    )
+    if multi_task is None:
+        multi_task = "model_dict" in jdata["model"]
+    min_nbor_dist: dict[str, float | None] = {}
     with use_jax_update_sel():
-        jdata_cpy["model"], min_nbor_dist = BaseModel.update_sel(
-            train_data, type_map, jdata["model"]
-        )
+        for task_config in iter_training_task_configs(jdata):
+            type_map = task_config.model_params.get("type_map")
+            train_data = get_data(
+                dict(task_config.training_data_params),
+                0,  # not used
+                type_map,
+                None,  # not used
+            )
+            updated_model, task_min_nbor_dist = BaseModel.update_sel(
+                train_data, type_map, dict(task_config.model_params)
+            )
+            if multi_task:
+                jdata_cpy["model"]["model_dict"][task_config.key] = updated_model
+                min_nbor_dist[task_config.key] = task_min_nbor_dist
+            else:
+                jdata_cpy["model"] = updated_model
+                return jdata_cpy, task_min_nbor_dist
     return jdata_cpy, min_nbor_dist

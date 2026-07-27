@@ -124,18 +124,14 @@ class DeepDOS(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        # energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
-        atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
-        # not same as dos_redu... why?
-        energy = np.sum(atomic_energy, axis=1)
-
+        energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
         if atomic:
+            atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
             return (
                 energy,
                 atomic_energy,
             )
-        else:
-            return (energy,)
+        return (energy,)
 
     def get_numb_dos(self) -> int:
         return self.deep_eval.get_numb_dos()

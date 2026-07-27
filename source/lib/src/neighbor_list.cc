@@ -877,23 +877,33 @@ int deepmd::build_nlist_cpu(InputNlist& nlist,
                             const int& nloc,
                             const int& nall,
                             const int& mem_size_,
-                            const float& rcut) {
+                            const float& rcut,
+                            const int& nframes,
+                            const int* type) {
   const int mem_size = mem_size_;
   *max_list_size = 0;
-  nlist.inum = nloc;
+  nlist.inum = nframes * nloc;
   FPTYPE rcut2 = rcut * rcut;
   std::vector<int> jlist;
   jlist.reserve(mem_size);
   for (int ii = 0; ii < nlist.inum; ++ii) {
-    nlist.ilist[ii] = ii;
+    const int atom_idx = ii % nloc;
+    const int frame_idx = ii / nloc;
+    const int frame_offset = frame_idx * nall;
+    nlist.ilist[ii] = atom_idx;
     jlist.clear();
     for (int jj = 0; jj < nall; ++jj) {
-      if (jj == ii) {
+      if (jj == atom_idx) {
+        continue;
+      }
+      if (type != nullptr &&
+          (type[frame_offset + atom_idx] < 0 || type[frame_offset + jj] < 0)) {
         continue;
       }
       FPTYPE diff[3];
       for (int dd = 0; dd < 3; ++dd) {
-        diff[dd] = c_cpy[ii * 3 + dd] - c_cpy[jj * 3 + dd];
+        diff[dd] = c_cpy[(frame_offset + atom_idx) * 3 + dd] -
+                   c_cpy[(frame_offset + jj) * 3 + dd];
       }
       FPTYPE diff2 = deepmd::dot3(diff, diff);
       if (diff2 < rcut2) {
@@ -963,7 +973,9 @@ template int deepmd::build_nlist_cpu<double>(InputNlist& nlist,
                                              const int& nloc,
                                              const int& nall,
                                              const int& mem_size,
-                                             const float& rcut);
+                                             const float& rcut,
+                                             const int& nframes,
+                                             const int* type);
 
 template int deepmd::build_nlist_cpu<float>(InputNlist& nlist,
                                             int* max_list_size,
@@ -971,7 +983,9 @@ template int deepmd::build_nlist_cpu<float>(InputNlist& nlist,
                                             const int& nloc,
                                             const int& nall,
                                             const int& mem_size,
-                                            const float& rcut);
+                                            const float& rcut,
+                                            const int& nframes,
+                                            const int* type);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 void deepmd::convert_nlist_gpu_device(InputNlist& gpu_nlist,

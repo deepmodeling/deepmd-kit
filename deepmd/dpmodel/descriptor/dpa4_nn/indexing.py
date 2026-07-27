@@ -3,14 +3,10 @@
 SO(3) packed-index and projection helpers for DPA4/SeZM.
 
 This module defines the packed `(l, m)` indexing helpers and the projection
-utilities used by the DPA4 equivariant operators. It is the dpmodel port of
-``deepmd.pt.model.descriptor.sezm_nn.indexing``.
+utilities used by the SeZM equivariant operators.
 
-The index-table builders run at module-init time on static index data and are
-implemented in plain numpy by design (not array-API); they return ``np.int64``
-arrays. The torch-specific ``device``/``dtype`` keyword parameters of the pt
-versions are dropped for those builders. Only ``project_D_to_m`` and
-``project_Dt_from_m`` operate on runtime tensors and are array-API compatible.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.indexing``.
 """
 
 from __future__ import (
@@ -59,9 +55,6 @@ def map_degree_idx(lmax: int) -> np.ndarray:
     For each spherical harmonic coefficient position in the packed tensor,
     returns the corresponding angular momentum quantum number l.
 
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table.
-
     Examples
     --------
     For lmax=2, the packed layout has D=9 positions:
@@ -79,11 +72,14 @@ def map_degree_idx(lmax: int) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        ``np.int64`` array with shape (D,), where D=(lmax+1)^2.
+        Integer array with shape (D,), where D=(lmax+1)^2.
         Each element is the l value for that position.
     """
     lmax = int(lmax)
-    counts = np.array([2 * degree + 1 for degree in range(lmax + 1)], dtype=np.int64)
+    counts = np.array(
+        [2 * degree + 1 for degree in range(lmax + 1)],
+        dtype=np.int64,
+    )
     return np.repeat(np.arange(lmax + 1, dtype=np.int64), counts)
 
 
@@ -94,9 +90,6 @@ def build_gie_zonal_index(lmax: int) -> tuple[np.ndarray, np.ndarray, np.ndarray
     The returned arrays are aligned row-wise for every non-scalar packed
     coefficient in the node representation. They select the local ``m=0`` column
     of the matching degree from ``Dt_full`` or an equivalent zonal coupling table.
-
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table.
 
     Parameters
     ----------
@@ -109,7 +102,6 @@ def build_gie_zonal_index(lmax: int) -> tuple[np.ndarray, np.ndarray, np.ndarray
         ``(node_row_index, node_zonal_m0_col_index, node_radial_l_index)``.
         The first two index packed SO(3) rows/columns; the last one indexes
         radial features with degree slots ``l=1..lmax`` stored as ``0..lmax-1``.
-        All are ``np.int64`` arrays.
     """
     lmax_i = int(lmax)
     ebed_dim = get_so3_dim_of_lmax(lmax_i)
@@ -135,8 +127,6 @@ def project_D_to_m(
 ) -> Any:
     """
     Row-project block-diagonal Wigner-D to the m-major truncated layout.
-
-    This function operates on runtime tensors and is array-API compatible.
 
     Parameters
     ----------
@@ -192,8 +182,6 @@ def project_Dt_from_m(
 ) -> Any:
     """
     Column-project block-diagonal Wigner-D^T for inverse rotation.
-
-    This function operates on runtime tensors and is array-API compatible.
 
     Parameters
     ----------
@@ -274,9 +262,6 @@ def build_l_major_index(lmax: int, mmax: int) -> np.ndarray:
     - l = 0..lmax
     - within each l, m = -min(mmax, l) .. +min(mmax, l)
 
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table.
-
     Parameters
     ----------
     lmax
@@ -287,9 +272,9 @@ def build_l_major_index(lmax: int, mmax: int) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        ``np.int64`` array of indices with shape (D_m_trunc,), selecting
-        coefficients from the full packed layout with D=(lmax+1)^2, where
-        D_m_trunc is the number of coefficients kept under ``|m| <= min(mmax, l)``.
+        Long array of indices with shape (D_m_trunc,), selecting coefficients
+        from the full packed layout with D=(lmax+1)^2, where D_m_trunc is
+        the number of coefficients kept under ``|m| <= min(mmax, l)``.
 
     Examples
     --------
@@ -312,7 +297,7 @@ def build_l_major_index(lmax: int, mmax: int) -> np.ndarray:
         m_keep = min(mmax_i, degree)
         for m in range(-m_keep, m_keep + 1):
             indices.append(so3_packed_index(degree, m))
-    return np.asarray(indices, dtype=np.int64)
+    return np.array(indices, dtype=np.int64)
 
 
 def build_m_major_index(lmax: int, mmax: int) -> np.ndarray:
@@ -326,9 +311,6 @@ def build_m_major_index(lmax: int, mmax: int) -> np.ndarray:
         - negative part: l = m..lmax, coefficient (l, -m)
         - positive part: l = m..lmax, coefficient (l, +m)
 
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table.
-
     Parameters
     ----------
     lmax
@@ -339,9 +321,9 @@ def build_m_major_index(lmax: int, mmax: int) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        ``np.int64`` array of indices with shape (D_m_trunc,), selecting
-        coefficients from the full packed layout with D=(lmax+1)^2, where
-        D_m_trunc is the number of coefficients kept under ``|m| <= min(mmax, l)``.
+        Long array of indices with shape (D_m_trunc,), selecting coefficients
+        from the full packed layout with D=(lmax+1)^2, where D_m_trunc is
+        the number of coefficients kept under ``|m| <= min(mmax, l)``.
 
     Examples
     --------
@@ -372,15 +354,12 @@ def build_m_major_index(lmax: int, mmax: int) -> np.ndarray:
         for degree in range(m, lmax_i + 1):
             indices.append(so3_packed_index(degree, m))
 
-    return np.asarray(indices, dtype=np.int64)
+    return np.array(indices, dtype=np.int64)
 
 
 def build_m_major_l_index(lmax: int, mmax: int) -> np.ndarray:
     """
     Build degree (l) index aligned with `build_m_major_index`.
-
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table.
 
     Parameters
     ----------
@@ -392,8 +371,8 @@ def build_m_major_l_index(lmax: int, mmax: int) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        ``np.int64`` array of degrees with shape (D_m_trunc,). Entry i is the
-        degree l for the i-th coefficient in the m-major layout.
+        Long array of degrees with shape (D_m_trunc,). Entry i is the degree
+        l for the i-th coefficient in the m-major layout.
 
     Examples
     --------
@@ -424,15 +403,13 @@ def build_m_major_l_index(lmax: int, mmax: int) -> np.ndarray:
         for degree in range(m, lmax_i + 1):
             degrees.append(degree)
 
-    return np.asarray(degrees, dtype=np.int64)
+    return np.array(degrees, dtype=np.int64)
 
 
 def build_rotate_inv_rescale(
     lmax: int,
     mmax: int,
     degree_index: np.ndarray,
-    *,
-    dtype: Any = np.float64,
 ) -> np.ndarray:
     """
     Build reduced-layout inverse-rotation rescale factors.
@@ -441,10 +418,6 @@ def build_rotate_inv_rescale(
     for each degree ``l > mmax``. The inverse rotation rescales those truncated
     degrees by ``sqrt((2*l+1)/(2*mmax+1))`` so the reduced representation matches
     the amplitude expected by the full SO(3) basis.
-
-    The torch version's ``device`` parameter is dropped: the output is a static
-    numpy table. ``dtype`` is kept (as a numpy dtype) since the floating-point
-    precision of the rescale vector is meaningful.
 
     Parameters
     ----------
@@ -455,8 +428,6 @@ def build_rotate_inv_rescale(
     degree_index
         Degree index aligned with the reduced coefficient layout, typically
         returned by ``build_m_major_l_index``.
-    dtype
-        Floating-point numpy dtype for the returned array.
 
     Returns
     -------
@@ -474,13 +445,13 @@ def build_rotate_inv_rescale(
         raise ValueError("`mmax` must be <= `lmax`")
 
     degrees = np.asarray(degree_index, dtype=np.int64)
-    rescale = np.ones(degrees.shape[0], dtype=dtype)
+    rescale = np.ones(degrees.shape[0], dtype=np.float64)
     if mmax_i == lmax_i:
         return rescale
 
     mask = degrees > mmax_i
     if mask.any():
         denom = float(2 * mmax_i + 1)
-        degree_values = degrees[mask].astype(dtype)
+        degree_values = degrees[mask].astype(np.float64)
         rescale[mask] = np.sqrt((2.0 * degree_values + 1.0) / denom)
     return rescale

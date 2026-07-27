@@ -1,9 +1,33 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from copy import (
+    deepcopy,
+)
 
 from deepmd.utils import (
     finetune,
 )
+
+
+def _model_config(
+    type_map: list[str],
+    *,
+    descriptor_sel: list[int] | None = None,
+    fitting_neuron: list[int] | None = None,
+    trainable: bool = True,
+) -> dict:
+    return {
+        "type_map": type_map,
+        "descriptor": {
+            "type": "se_e2_a",
+            "sel": descriptor_sel or [1 for _ in type_map],
+            "trainable": trainable,
+        },
+        "fitting_net": {
+            "neuron": fitting_neuron or [4],
+            "trainable": trainable,
+        },
+    }
 
 
 def test_descriptor_normalization_uses_descriptor_type_count():
@@ -97,3 +121,154 @@ def test_descriptor_config_warning_distinguishes_none_from_missing(monkeypatch, 
 
     assert "input_none: input=None, pretrained=(missing)" in caplog.text
     assert "pretrained_none: input=(missing), pretrained=None" in caplog.text
+
+
+def test_finetune_rule_builder_updates_single_task_config_preserving_trainable():
+    pretrained = _model_config(["O", "H"], descriptor_sel=[8, 16], fitting_neuron=[32])
+    target = _model_config(
+        ["O", "H", "B"],
+        descriptor_sel=[1, 1, 1],
+        fitting_neuron=[2],
+        trainable=False,
+    )
+
+    updated, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    rule = links["Default"]
+    assert updated["descriptor"]["sel"] == [8, 16]
+    assert updated["descriptor"]["trainable"] is False
+    assert updated["fitting_net"]["neuron"] == [32]
+    assert updated["fitting_net"]["trainable"] is False
+    assert rule.get_finetune_tmap() == ["O", "H", "B"]
+    assert rule.get_pretrained_tmap() == ["O", "H"]
+    assert rule.get_has_new_type()
+
+
+def test_finetune_rule_builder_random_fitting_keeps_target_fitting_net():
+    pretrained = _model_config(["O", "H"], descriptor_sel=[8, 16], fitting_neuron=[32])
+    target = _model_config(["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[2])
+
+    updated, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        model_branch="RANDOM",
+        change_model_params=True,
+    ).build()
+
+    assert updated["descriptor"]["sel"] == [8, 16]
+    assert updated["fitting_net"]["neuron"] == [2]
+    assert links["Default"].get_random_fitting()
+
+
+def test_finetune_rule_builder_rejects_unknown_branch_from_single_task():
+    try:
+        finetune.FinetuneRuleBuilder(
+            _model_config(["O", "H"]),
+            _model_config(["O", "H"], descriptor_sel=[1, 1]),
+            model_branch="typo",
+        ).build()
+    except ValueError as exc:
+        assert "Single-task pretrained models" in str(exc)
+        assert "typo" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_finetune_rule_builder_handles_multitask_resume_branch_and_random():
+    pretrained = {
+        "model_dict": {
+            "task_a": _model_config(["O", "H"], descriptor_sel=[8, 16]),
+            "task_b": _model_config(["O", "H"], descriptor_sel=[4, 4]),
+        }
+    }
+    target = {
+        "model_dict": {
+            "task_a": _model_config(["O", "H"], descriptor_sel=[1, 1]),
+            "task_c": {
+                **_model_config(["O", "H"], descriptor_sel=[1, 1]),
+                "finetune_head": "task_b",
+            },
+            "task_d": _model_config(
+                ["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[7]
+            ),
+        }
+    }
+
+    updated, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert links["task_a"].get_resuming()
+    assert links["task_a"].get_model_branch() == "task_a"
+    assert not links["task_c"].get_resuming()
+    assert links["task_c"].get_model_branch() == "task_b"
+    assert not links["task_c"].get_random_fitting()
+    assert links["task_d"].get_model_branch() == "task_a"
+    assert links["task_d"].get_random_fitting()
+    assert updated["model_dict"]["task_c"]["descriptor"]["sel"] == [4, 4]
+    assert updated["model_dict"]["task_d"]["descriptor"]["sel"] == [8, 16]
+    assert updated["model_dict"]["task_d"]["fitting_net"]["neuron"] == [7]
+
+
+def test_finetune_rule_builder_accepts_multitask_finetune_head_alias():
+    pretrained = {
+        "model_dict": {
+            "task_a": _model_config(["O", "H"], descriptor_sel=[8, 16]),
+            "task_b": {
+                **_model_config(["O", "H"], descriptor_sel=[4, 4]),
+                "model_branch_alias": ["alias_b"],
+            },
+        }
+    }
+    target = {
+        "model_dict": {
+            "task_c": {
+                **_model_config(["O", "H"], descriptor_sel=[1, 1]),
+                "finetune_head": "alias_b",
+            },
+        }
+    }
+
+    updated, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert links["task_c"].get_model_branch() == "task_b"
+    assert updated["model_dict"]["task_c"]["descriptor"]["sel"] == [4, 4]
+
+
+def test_finetune_rule_builder_does_not_mutate_input_config():
+    target = _model_config(["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[2])
+    target_before = deepcopy(target)
+
+    finetune.FinetuneRuleBuilder(
+        _model_config(["O", "H"], descriptor_sel=[8, 16], fitting_neuron=[32]),
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert target == target_before
+
+
+def test_finetune_rule_builder_rejects_multitask_cli_branch():
+    pretrained = {"model_dict": {"task_a": _model_config(["O", "H"])}}
+    target = {"model_dict": {"task_a": _model_config(["O", "H"])}}
+
+    try:
+        finetune.FinetuneRuleBuilder(
+            pretrained,
+            target,
+            model_branch="task_a",
+        ).build()
+    except ValueError as exc:
+        assert "Multi-task fine-tuning" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

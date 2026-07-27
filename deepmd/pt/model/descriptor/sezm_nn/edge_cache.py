@@ -224,6 +224,7 @@ def build_edge_cache(
     n_radial: int,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
+    build_wigner: bool = True,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from DeePMD padded neighbor list.
@@ -348,6 +349,7 @@ def build_edge_cache(
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
+            build_full=build_wigner,
         )  # (E, D, D), (E, D, D), (E, 4)
 
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)  # (E, C)
@@ -386,6 +388,7 @@ def build_edge_cache_from_edges(
     edge_type_keep_mask: EdgeTypeKeepMaskFn,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
+    build_wigner: bool = True,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -475,6 +478,7 @@ def build_edge_cache_from_edges(
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
+            build_full=build_wigner,
         )  # (E, D, D), (E, D, D), (E, 4)
 
     # === Step 5. Edge type features ===
@@ -520,7 +524,8 @@ def _build_edge_wigner(
     eps: float,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    build_full: bool = True,
+) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
     """
     Build packed Wigner-D blocks from edge vectors.
 
@@ -537,12 +542,18 @@ def _build_edge_wigner(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
+    build_full
+        Whether to materialize the full ``(E, D, D)`` Wigner-D blocks. When
+        False (all message-passing blocks take the Cartesian path), only the
+        quaternion is returned and the blocks are ``None``; the geometric
+        initial embedding reconstructs the zonal coupling from the quaternion.
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]
         Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
-        and the quaternion used to build them with shape ``(E, 4)``.
+        (or ``None`` when ``build_full`` is False) and the quaternion used to
+        build them with shape ``(E, 4)``.
     """
     # === Step 1. Build edge-aligned quaternions ===
     edge_quat = build_edge_quaternion(
@@ -561,6 +572,8 @@ def _build_edge_wigner(
         edge_quat = quaternion_multiply(quaternion_z_rotation(gamma), edge_quat)
 
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
+    if not build_full:
+        return None, None, edge_quat
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat
 
@@ -574,8 +587,8 @@ def _finalize_edge_cache(
     edge_vec: torch.Tensor,
     edge_rbf: torch.Tensor,
     edge_env: torch.Tensor,
-    D_full: torch.Tensor,
-    Dt_full: torch.Tensor,
+    D_full: torch.Tensor | None,
+    Dt_full: torch.Tensor | None,
     edge_quat: torch.Tensor,
     deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
@@ -600,9 +613,11 @@ def _finalize_edge_cache(
     edge_env
         Smooth edge envelope weights with shape (E, 1).
     D_full
-        Packed Wigner-D matrices with shape (E, D, D).
+        Packed Wigner-D matrices with shape (E, D, D), or None when the
+        full Wigner-D construction is skipped (all-Cartesian model).
     Dt_full
-        Transposed packed Wigner-D matrices with shape (E, D, D).
+        Transposed packed Wigner-D matrices with shape (E, D, D), or None
+        when the full Wigner-D construction is skipped.
     edge_quat
         Global-to-local quaternions used to build the Wigner-D matrices with
         shape (E, 4).

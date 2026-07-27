@@ -151,11 +151,18 @@ class SeZMInteractionBlock(nn.Module):
         ``focus_dim=0`` means using ``channels``.
     focus_compete
         If True, enable cross-focus softmax competition in SO(2) convolution.
+    focus_norm
+        If True, RMS-normalize the cross-focus competition scalars before the
+        softmax. The competition input is envelope-gated (via radial modulation)
+        and vanishes at the cutoff, so normalizing it crosses the norm ``eps``
+        floor near ``rcut``; ``False`` drops the norm so the competition decays
+        smoothly to uniform weights at the cutoff.
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core. ``0``
+        applies only the edge-condition modulation.
     so2_attn_res
         Depth-wise attention residual mode across the internal SO(2) layer
         history. Must be one of ``"none"``, ``"independent"``, or
@@ -169,6 +176,16 @@ class SeZMInteractionBlock(nn.Module):
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
         per-channel dynamic degree kernel.
+    edge_cartesian
+        If True, replace the per-edge SO(2) rotation-frame tensor product inside
+        ``SO2Convolution`` with the global-frame Cartesian rank-2 tensor
+        product. Requires ``lmax`` in ``{1, 2}``.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message inside ``SO2Convolution``, configured by a ``"<mode>:<layers>"``
+        string (``mode`` is ``"default"`` or ``"parity"``); a bare integer ``N``
+        is shorthand for ``"default:N"``, and ``"none"`` disables it. Requires
+        ``lmax`` in ``{1, 2}`` and is orthogonal to ``edge_cartesian``.
     n_atten_head
         Number of attention heads when aggregating messages in SO(2) convolution.
         0 means no attention is used; >0 enables envelope-gated grouped softmax
@@ -187,6 +204,10 @@ class SeZMInteractionBlock(nn.Module):
         If True, apply pre-norm before SO(2) convolution.
     so2_post_norm
         If True, apply post-norm on SO(2) output before the residual add.
+    so2_post_norm_eps
+        Variance floor for the SO(2) post-norm. A value of ``1`` preserves small
+        residual messages instead of amplifying them by ``1/sqrt(eps)``. Other
+        normalization sites retain their own RMSNorm floors.
     ffn_pre_norm
         If True, apply pre-norm before each FFN subblock.
     ffn_post_norm
@@ -288,17 +309,21 @@ class SeZMInteractionBlock(nn.Module):
         n_focus: int = 1,
         focus_dim: int = 0,
         focus_compete: bool = True,
+        focus_norm: bool = True,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         n_atten_head: int = 1,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         so2_pre_norm: bool = True,
         so2_post_norm: bool = False,
+        so2_post_norm_eps: float = 1e-5,
         ffn_pre_norm: bool = True,
         ffn_post_norm: bool = False,
         ffn_neurons: int = 96,
@@ -353,8 +378,9 @@ class SeZMInteractionBlock(nn.Module):
         if self.focus_dim < 0:
             raise ValueError("`focus_dim` must be >= 0")
         self.focus_compete = bool(focus_compete)
+        self.focus_norm = bool(focus_norm)
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        self.mixing_layers = int(mixing_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -362,12 +388,15 @@ class SeZMInteractionBlock(nn.Module):
             )
         self.radial_so2_mode = str(radial_so2_mode).lower()
         self.radial_so2_rank = int(radial_so2_rank)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.n_atten_head = int(n_atten_head)
         self.atten_f_mix = bool(atten_f_mix)
         self.use_atten_v_proj = bool(atten_v_proj)
         self.use_atten_o_proj = bool(atten_o_proj)
         self.so2_pre_norm = bool(so2_pre_norm)
         self.so2_post_norm = bool(so2_post_norm)
+        self.so2_post_norm_eps = float(so2_post_norm_eps)
         self.ffn_pre_norm = bool(ffn_pre_norm)
         self.ffn_post_norm = bool(ffn_post_norm)
         self.ffn_neurons = int(ffn_neurons)
@@ -448,6 +477,7 @@ class SeZMInteractionBlock(nn.Module):
                 self.lmax,
                 self.channels,
                 n_focus=1,
+                eps=self.so2_post_norm_eps,
                 dtype=self.compute_dtype,
                 trainable=trainable,
             )
@@ -462,11 +492,14 @@ class SeZMInteractionBlock(nn.Module):
             n_focus=self.n_focus,
             focus_dim=self.focus_dim,
             focus_compete=self.focus_compete,
+            focus_norm=self.focus_norm,
             so2_norm=self.so2_norm,
-            so2_layers=self.so2_layers,
+            mixing_layers=self.mixing_layers,
             so2_attn_res=self.so2_attn_res_mode,
             radial_so2_mode=self.radial_so2_mode,
             radial_so2_rank=self.radial_so2_rank,
+            edge_cartesian=self.edge_cartesian,
+            node_cartesian=self.node_cartesian,
             layer_scale=self.layer_scale,
             n_atten_head=n_atten_head,
             atten_f_mix=self.atten_f_mix,
@@ -1020,17 +1053,21 @@ class SeZMInteractionBlock(nn.Module):
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
+                "focus_norm": self.focus_norm,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "n_atten_head": self.n_atten_head,
                 "atten_f_mix": self.atten_f_mix,
                 "atten_v_proj": self.use_atten_v_proj,
                 "atten_o_proj": self.use_atten_o_proj,
                 "so2_pre_norm": self.so2_pre_norm,
                 "so2_post_norm": self.so2_post_norm,
+                "so2_post_norm_eps": self.so2_post_norm_eps,
                 "ffn_pre_norm": self.ffn_pre_norm,
                 "ffn_post_norm": self.ffn_post_norm,
                 "ffn_neurons": self.ffn_neurons,

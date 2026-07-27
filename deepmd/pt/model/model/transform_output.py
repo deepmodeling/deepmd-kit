@@ -9,6 +9,9 @@ from deepmd.dpmodel import (
     get_deriv_name,
     get_reduce_name,
 )
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -216,7 +219,8 @@ def edge_energy_deriv(
     nall: int,
     create_graph: bool,
     extended_coord_corr: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    spin_leaf: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """Assemble extended force, virial and atomic virial from edge gradients.
 
     The energy depends on coordinates only through the per-edge displacement
@@ -261,6 +265,11 @@ def edge_energy_deriv(
     extended_coord_corr
         Optional spin virtual-displacement correction with shape
         ``(nf, nall, 3)``; adds ``force (x) coord_corr`` per extended atom.
+    spin_leaf
+        Optional per-atom spin leaf with shape ``(nf, nloc, 3)`` for the native
+        spin scheme. When provided, the energy is also differentiated with
+        respect to it in the same backward, so the magnetic force shares the
+        first-derivative graph used by the force-loss second backward.
 
     Returns
     -------
@@ -271,34 +280,68 @@ def edge_energy_deriv(
         symmetrically between the two endpoints of each edge.
     energy_derv_c_redu
         Reduced global virial with shape ``(nf, 1, 9)``.
+    energy_derv_r_mag
+        Magnetic force ``-dE/dspin`` with shape ``(nf, nloc, 1, 3)`` when
+        ``spin_leaf`` is provided, otherwise ``None``.
     """
-    (g,) = torch.autograd.grad(
+    grad_inputs = [edge_vec] if spin_leaf is None else [edge_vec, spin_leaf]
+    grads = torch.autograd.grad(
         [energy_redu],
-        [edge_vec],
+        grad_inputs,
         grad_outputs=[torch.ones_like(energy_redu)],
         create_graph=create_graph,
         retain_graph=True,
     )
+    g = grads[0]
     # Padded edges carry no energy contribution, so their gradient is zero;
     # mask defensively before the scatter.
     g = torch.where(edge_mask.unsqueeze(-1), g, torch.zeros_like(g))
 
     n_ext = nf * nall
-    # Force: F_k = sum_{dst=k} g_e - sum_{src=k} g_e.
-    force_flat = torch.zeros(n_ext, 3, dtype=g.dtype, device=g.device)
-    force_flat = force_flat.index_add(0, dst_ext, g)
-    force_flat = force_flat.index_add(0, src_ext, -g)
-    extended_force = force_flat.view(nf, nall, 3)
+    if triton_infer_level() >= 1 and not create_graph and g.is_cuda:
+        # Inference: assemble force and per-atom virial with two CSR segment
+        # reductions instead of four ``index_add`` scatters (which serialize
+        # on the colliding edges of each atom) and a materialized ``(E, 9)``
+        # outer product. The extended indices carry no ordering guarantee, so
+        # the topology is sorted here; these integer ops trace as ordinary
+        # aten nodes under ``make_fx``.
+        from deepmd.kernels.triton.sezm.force_assembly import (
+            edge_force_assembly,
+        )
 
-    # Per-edge virial outer product w_e[k, j] = -g_e^k * edge_vec_e^j, flattened
-    # to 9 with (force component k, coordinate component j) ordering.
-    w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
-    # Atomic virial: split each per-edge tensor symmetrically between endpoints.
-    half_w = 0.5 * w_edge
-    av_flat = torch.zeros(n_ext, 9, dtype=g.dtype, device=g.device)
-    av_flat = av_flat.index_add(0, dst_ext, half_w)
-    av_flat = av_flat.index_add(0, src_ext, half_w)
-    extended_virial = av_flat.view(nf, nall, 9)
+        dst_order = torch.argsort(dst_ext)
+        src_order = torch.argsort(src_ext)
+        boundaries = torch.arange(n_ext + 1, device=g.device, dtype=dst_ext.dtype)
+        dst_row_ptr = torch.searchsorted(dst_ext.index_select(0, dst_order), boundaries)
+        src_row_ptr = torch.searchsorted(src_ext.index_select(0, src_order), boundaries)
+        force_flat, av_flat = edge_force_assembly(
+            g.contiguous(),
+            edge_vec.detach().contiguous(),
+            dst_order,
+            dst_row_ptr,
+            src_order,
+            src_row_ptr,
+        )
+        extended_force = force_flat.view(nf, nall, 3)
+        extended_virial = av_flat.view(nf, nall, 9)
+    else:
+        # Force: F_k = sum_{dst=k} g_e - sum_{src=k} g_e.
+        force_flat = torch.zeros(n_ext, 3, dtype=g.dtype, device=g.device)
+        force_flat = force_flat.index_add(0, dst_ext, g)
+        force_flat = force_flat.index_add(0, src_ext, -g)
+        extended_force = force_flat.view(nf, nall, 3)
+
+        # Per-edge virial outer product w_e[k, j] = -g_e^k * edge_vec_e^j,
+        # flattened to 9 with (force component k, coordinate component j)
+        # ordering.
+        w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
+        # Atomic virial: split each per-edge tensor symmetrically between
+        # endpoints.
+        half_w = 0.5 * w_edge
+        av_flat = torch.zeros(n_ext, 9, dtype=g.dtype, device=g.device)
+        av_flat = av_flat.index_add(0, dst_ext, half_w)
+        av_flat = av_flat.index_add(0, src_ext, half_w)
+        extended_virial = av_flat.view(nf, nall, 9)
 
     if extended_coord_corr is not None:
         # Spin: the virtual-atom displacement adds force (x) coord_corr per atom.
@@ -311,7 +354,14 @@ def edge_energy_deriv(
     energy_derv_r = extended_force.unsqueeze(-2)
     energy_derv_c = extended_virial.unsqueeze(-2)
     energy_derv_c_redu = energy_derv_c.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).sum(dim=1)
-    return energy_derv_r, energy_derv_c, energy_derv_c_redu
+
+    # Magnetic force is the negative spin gradient, matching the dataset
+    # ``force_mag = -dE/dspin`` convention (the virtual-atom scheme reaches the
+    # same quantity through ``F_virtual * virtual_scale``).
+    energy_derv_r_mag: torch.Tensor | None = None
+    if spin_leaf is not None:
+        energy_derv_r_mag = (-grads[1]).unsqueeze(-2)
+    return energy_derv_r, energy_derv_c, energy_derv_c_redu, energy_derv_r_mag
 
 
 def communicate_extended_output(

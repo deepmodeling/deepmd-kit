@@ -25,6 +25,31 @@ from deepmd.jax.model.model import (
 )
 
 
+def _convert_str_to_int_key(item: dict) -> None:
+    """Convert Orbax-restored numeric index keys from strings back to ints."""
+    for key, value in item.copy().items():
+        if isinstance(value, dict):
+            _convert_str_to_int_key(value)
+        if isinstance(key, str) and key.isdigit():
+            item[int(key)] = item.pop(key)
+
+
+def _normalize_restored_state_keys(
+    state: dict,
+    model_def_script: dict,
+) -> None:
+    """Normalize restored state keys while preserving multi-task branch names."""
+    if "model_dict" in model_def_script:
+        state_by_model = state.get("models", state)
+        for model_key in model_def_script["model_dict"]:
+            if model_key in state_by_model and isinstance(
+                state_by_model[model_key], dict
+            ):
+                _convert_str_to_int_key(state_by_model[model_key])
+        return
+    _convert_str_to_int_key(state)
+
+
 def _state_sequence_to_numpy_list(state_value: Any) -> list[np.ndarray]:
     """Convert an Orbax-restored list/dict sequence to NumPy arrays."""
     if isinstance(state_value, dict):
@@ -160,7 +185,19 @@ def _check_compressed_hlo_exportable(data: dict) -> None:
         )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def _prepare_hessian_model_def_script(
+    model_def_script: dict,
+    hessian: bool,
+) -> tuple[dict, bool]:
+    """Return a copied model definition and whether Hessian should be enabled."""
+    model_def_script = model_def_script.copy()
+    hessian = hessian or model_def_script.get("hessian_mode", False)
+    if hessian:
+        model_def_script["hessian_mode"] = True
+    return model_def_script, hessian
+
+
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
@@ -169,10 +206,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The model file to be saved.
     data : dict
         The dictionary to be deserialized.
+    hessian : bool, default=False
+        Whether to include the Hessian in the model outputs.
     """
     if model_file.endswith(".jax"):
-        model = BaseModel.deserialize(data["model"])
-        model_def_script = data["model_def_script"].copy()
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
         min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
         if min_nbor_dist is None:
             min_nbor_dist = _to_optional_float(
@@ -180,14 +221,33 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             )
         if min_nbor_dist is not None:
             model_def_script["_min_nbor_dist"] = min_nbor_dist
-        _, state = nnx.split(model)
+        if "model_dict" in model_def_script:
+            models = {
+                model_key: BaseModel.deserialize(data["model"]["model_dict"][model_key])
+                for model_key in model_def_script["model_dict"]
+            }
+            if hessian:
+                for model in models.values():
+                    model.enable_hessian()
+            state = {
+                "models": {
+                    model_key: nnx.split(model)[1].to_pure_dict()
+                    for model_key, model in models.items()
+                }
+            }
+        else:
+            model = BaseModel.deserialize(data["model"])
+            if hessian:
+                model.enable_hessian()
+            _, state = nnx.split(model)
+            state = state.to_pure_dict()
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
             checkpointer.save(
                 Path(model_file).absolute(),
                 ocp.args.Composite(
-                    state=ocp.args.StandardSave(state.to_pure_dict()),
+                    state=ocp.args.StandardSave(state),
                     model_def_script=ocp.args.JsonSave(model_def_script),
                 ),
             )
@@ -195,7 +255,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         _check_compressed_hlo_exportable(data)
         model = BaseModel.deserialize(data["model"])
         _set_model_min_nbor_dist_from_data(model, data)
-        model_def_script = data["model_def_script"]
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
+        if hessian:
+            model.enable_hessian()
         call_lower = model.call_common_lower
 
         nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
@@ -260,6 +325,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         serialized_atomic_virial_no_ghost = exported_atomic_virial_no_ghost.serialize()
 
         data = data.copy()
+        data["model_def_script"] = model_def_script
         data.setdefault("@variables", {})
         data["@variables"]["stablehlo"] = np.void(serialized)
         data["@variables"]["stablehlo_atomic_virial"] = np.void(
@@ -272,6 +338,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),
+            "numb_dos": model.get_numb_dos(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
             "sel_type": model.get_sel_type(),
@@ -282,14 +349,30 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             "sel": model.get_sel(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
+            # property models: the output name/dimension/intensiveness cannot be
+            # recovered from the StableHLO alone, so persist them for the
+            # evaluator (None for non-property models).
+            "var_name": model.get_var_name()
+            if hasattr(model, "get_var_name")
+            else None,
+            "task_dim": model.get_task_dim()
+            if hasattr(model, "get_task_dim")
+            else None,
+            "intensive": model.get_intensive()
+            if hasattr(model, "get_intensive")
+            else False,
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
-        from deepmd.tf2.utils.serialization import (
-            deserialize_to_savedmodel,
+        # Keep the historical JAX/JAX2TF meaning of ".savedmodel": this
+        # exporter must lower the JAX model through jax2tf and preserve
+        # XlaCallModule ops in the SavedModel. The TF2 eager SavedModel
+        # exporter owns the ".savedmodeltf" suffix.
+        from deepmd.jax.jax2tf.serialization import (
+            deserialize_to_file as deserialize_to_savedmodel,
         )
 
-        return deserialize_to_savedmodel(model_file, data)
+        deserialize_to_savedmodel(model_file, data, hessian=hessian)
     else:
         raise ValueError("Unsupported file extension")
 
@@ -319,27 +402,31 @@ def serialize_from_file(model_file: str) -> dict:
                 ),
             )
         state = data.state
-
-        # convert str "1" to int 1 key
-        def convert_str_to_int_key(item: dict) -> None:
-            for key, value in item.copy().items():
-                if isinstance(value, dict):
-                    convert_str_to_int_key(value)
-                if key.isdigit():
-                    item[int(key)] = item.pop(key)
-
-        convert_str_to_int_key(state)
-
         model_def_script = data.model_def_script
-        abstract_model = get_model(model_def_script)
-        _restore_compression_slots_from_state(abstract_model, state)
-        graphdef, abstract_state = nnx.split(abstract_model)
-        abstract_state.replace_by_pure_dict(state)
-        model = nnx.merge(graphdef, abstract_state)
-        model_dict = model.serialize()
-        min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
-        if min_nbor_dist is None:
-            min_nbor_dist = _to_optional_float(model_def_script.get("_min_nbor_dist"))
+        _normalize_restored_state_keys(state, model_def_script)
+        min_nbor_dist = None
+
+        def restore_model(model_params: dict, model_state: dict) -> BaseModel:
+            abstract_model = get_model(model_params)
+            _restore_compression_slots_from_state(abstract_model, model_state)
+            graphdef, abstract_state = nnx.split(abstract_model)
+            abstract_state.replace_by_pure_dict(model_state)
+            return nnx.merge(graphdef, abstract_state)
+
+        if "model_dict" in model_def_script:
+            state_by_model = state.get("models", state)
+            model_dict = {"model_dict": {}}
+            for model_key, model_params in model_def_script["model_dict"].items():
+                model = restore_model(model_params, state_by_model[model_key])
+                model_dict["model_dict"][model_key] = model.serialize()
+        else:
+            model = restore_model(model_def_script, state)
+            model_dict = model.serialize()
+            min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
+            if min_nbor_dist is None:
+                min_nbor_dist = _to_optional_float(
+                    model_def_script.get("_min_nbor_dist")
+                )
         data = {
             "backend": "JAX",
             "jax_version": jax.__version__,
@@ -355,5 +442,13 @@ def serialize_from_file(model_file: str) -> dict:
         data.pop("constants")
         data["@variables"].pop("stablehlo")
         return data
+    elif model_file.endswith(".savedmodel"):
+        raise ValueError(
+            "JAX SavedModel does not support lossless file serialization. "
+            "Use DeepEval.serialize() for a structure-only model tree."
+        )
     else:
-        raise ValueError("JAX backend only supports converting .jax directory")
+        raise ValueError(
+            "JAX backend only supports lossless file serialization for .jax "
+            "directory and .hlo."
+        )

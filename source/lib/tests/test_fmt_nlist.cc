@@ -359,7 +359,7 @@ TEST_F(TestFormatNlist, gpu) {
   // format nlist
   format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
                        array_int_dev, array_longlong_dev, max_nbor_size, nloc,
-                       nall, rc, sec_a);
+                       nall, 1, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);
@@ -419,7 +419,7 @@ TEST_F(TestFormatNlistShortSel, gpu) {
   // format nlist
   format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
                        array_int_dev, array_longlong_dev, max_nbor_size, nloc,
-                       nall, rc, sec_a);
+                       nall, 1, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);

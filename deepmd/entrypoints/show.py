@@ -149,3 +149,17 @@ def show(
                 observed_types = model.get_observed_types()
             log.info(f"Number of observed types: {observed_types['type_num']} ")
             log.info(f"Observed types: {observed_types['observed_type']} ")
+
+    if "serialization-tree" in ATTRIBUTES:
+        from deepmd.dpmodel.utils.serialization import (
+            Node,
+        )
+
+        if model_is_multi_task:
+            for branch in model_params["model_dict"]:
+                branch_model = DeepEval(INPUT, head=branch)
+                root = Node.deserialize(branch_model.serialize())
+                log.info("Model serialization tree of branch %s:\n%s", branch, root)
+        else:
+            root = Node.deserialize(model.serialize())
+            log.info("Model serialization tree:\n%s", root)

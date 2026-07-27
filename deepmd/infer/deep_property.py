@@ -134,14 +134,13 @@ class DeepProperty(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        atomic_property = results[self.get_var_name()].reshape(
-            nframes, natoms, self.get_task_dim()
-        )
         property = results[f"{self.get_var_name()}_redu"].reshape(
             nframes, self.get_task_dim()
         )
-
         if atomic:
+            atomic_property = results[self.get_var_name()].reshape(
+                nframes, natoms, self.get_task_dim()
+            )
             return (
                 property,
                 atomic_property,

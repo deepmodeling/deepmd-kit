@@ -14,6 +14,9 @@ if(ENABLE_TENSORFLOW)
 endif()
 option(ENABLE_PADDLE "Enable Paddle interface" OFF)
 option(BUILD_TESTING "Build test and enable coverage" OFF)
+option(ALLOW_NO_BACKEND
+       "Allow a backend-neutral C/C++ build without built-in backend plugins"
+       OFF)
 set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
@@ -353,6 +356,16 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
     endif()
   endif()
   find_package(Torch REQUIRED)
+  # TorchConfig populates TORCH_CUDA_LIBRARIES only when PyTorch itself was
+  # built with CUDA. The fused graph-lower operators in op/pt include ATen CUDA
+  # headers and link libtorch_cuda, so they can be compiled only against a
+  # CUDA-enabled PyTorch: a CPU-only wheel ships the ATen/c10 CUDA headers but
+  # neither the generated c10/cuda/impl/cuda_cmake_macros.h nor libtorch_cuda.
+  if(TORCH_CUDA_LIBRARIES)
+    set(DEEPMD_TORCH_HAS_CUDA TRUE)
+  else()
+    set(DEEPMD_TORCH_HAS_CUDA FALSE)
+  endif()
   if(NOT Torch_VERSION VERSION_LESS "2.1.0")
     set_if_higher(CMAKE_CXX_STANDARD 17)
   elseif(NOT Torch_VERSION VERSION_LESS "1.5.0")
@@ -455,7 +468,15 @@ if(NOT DEEPMD_C_ROOT)
      AND NOT ENABLE_JAX
      AND NOT ENABLE_PADDLE
      AND NOT BUILD_PY_IF)
-    message(FATAL_ERROR "No backend is enabled.")
+    if(ALLOW_NO_BACKEND)
+      message(STATUS "- none (backend-neutral C/C++ library only)")
+    else()
+      message(
+        FATAL_ERROR
+          "No backend is enabled. Enable at least one backend, or set "
+          "ALLOW_NO_BACKEND=ON for a backend-neutral C/C++ library that "
+          "loads backend plugins at runtime.")
+    endif()
   endif()
 endif()
 

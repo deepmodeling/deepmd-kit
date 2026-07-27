@@ -28,7 +28,7 @@ jobs:
             dp_variant: clang
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - uses: lukka/get-cmake@latest
@@ -77,7 +77,7 @@ jobs:
   pass:
     name: Pass building C++
     needs: [buildcc]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: always()
     steps:
       - name: Decide whether the needed jobs succeeded or failed

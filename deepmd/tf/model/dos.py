@@ -214,11 +214,15 @@ class DOSModel(StandardModel):
 
         self.atom_dos = atom_dos
 
-        dos_raw = atom_dos
-
-        dos_raw = tf.reshape(dos_raw, [natoms[0], -1], name="o_atom_dos" + suffix)
+        # Reduce the atomic DOS to the global DOS per frame. Reshaping to
+        # [nframes, nloc, numb_dos] and summing over the atom axis mirrors the
+        # energy model; the previous [nloc, -1] reshape summed over the wrong
+        # axis and mixed frames together for multi-frame inputs.
+        dos_raw = tf.reshape(
+            atom_dos, [-1, natoms[0], self.numb_dos], name="o_atom_dos" + suffix
+        )
         dos = tf.reduce_sum(
-            global_cvt_2_ener_float(dos_raw), axis=0, name="o_dos" + suffix
+            global_cvt_2_ener_float(dos_raw), axis=1, name="o_dos" + suffix
         )
 
         model_dict = {}

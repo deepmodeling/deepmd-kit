@@ -37,15 +37,15 @@ from __future__ import (
 import importlib.util
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
 
 import numpy as np
 import pytest
+from lammps_test_utils import (
+    run_mpi_pair_runner,
+)
 from write_lmp_data import (
     write_lmp_data_spin,
 )
@@ -158,61 +158,17 @@ def _run_mpi_subprocess(
     fixtures. ``runner_args`` flows additional flags (e.g.
     ``--pair-coeff``, ``--mass3``) to the subprocess runner.
     """
-    if data_path is None:
-        data_path = data_file
-    if pb_path is None:
-        pb_path = pb_file_mpi
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        argv = [
-            "mpirun",
-            "-n",
-            str(nprocs),
-            sys.executable,
-            str(Path(__file__).parent / "run_mpi_pair_deepmd_spin_dpa3_pt2.py"),
-            str(data_path.resolve()),
-            str(pb_path.resolve()),
-            out_path,
-        ]
-        if processors is not None:
-            argv.extend(["--processors", processors])
-        elif nprocs == 1:
-            argv.extend(["--processors", "1 1 1"])
-        if extra_args:
-            argv.extend(extra_args)
-        if runner_args:
-            argv.extend(runner_args)
-        if capture:
-            # Used by fail-fast tests: return raw subprocess info instead of
-            # parsing output (the subprocess is expected to exit non-zero).
-            proc = sp.run(argv, capture_output=True, text=True)
-            return {
-                "returncode": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-            }
-        sp.check_call(argv)
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe = float(lines[0])
-        rows = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        # Each row: 3 force + 3 force_mag + 9 virial = 15 cols (see runner).
-        forces = rows[:, :3]
-        force_mag = rows[:, 3:6]
-        virials = rows[:, 6:]
-        return {
-            "pe": pe,
-            "forces": forces,
-            "force_mag": force_mag,
-            "virials": virials,
-        }
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
+    return run_mpi_pair_runner(
+        Path(__file__).parent / "run_mpi_pair_deepmd_spin_dpa3_pt2.py",
+        data_path or data_file,
+        pb_path or pb_file_mpi,
+        nprocs=nprocs,
+        processors=processors,
+        extra_args=extra_args,
+        runner_args=runner_args,
+        output_columns=(("forces", 3), ("force_mag", 3), ("virials", 9)),
+        capture=capture,
+    )
 
 
 @pytest.mark.skipif(

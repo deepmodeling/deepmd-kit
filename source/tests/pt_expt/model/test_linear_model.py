@@ -343,6 +343,12 @@ _sub_model_1 = {
         "temperature": 1.0,
         "set_davg_zero": True,
         "type_one_side": True,
+        # smooth attention diverges between the graph default (standard model,
+        # carry-all: no phantom sel-padding softmax terms) and the dense route
+        # (linear models are graph-ineligible) by design (NeighborGraph PR-D);
+        # pin smooth off so both routes are exact and the weight-combination
+        # comparison stays at 1e-10.
+        "smooth_type_embedding": False,
         "seed": 1,
     },
     "fitting_net": {

@@ -178,7 +178,6 @@ class FioBin:
         buff = []
         for si in data:
             buff.extend(list(bytearray.fromhex(si))[::-1])
-        #
         with open(file_name, "wb") as fp:
             fp.write(struct.pack(f"{len(buff)}B", *buff))
 

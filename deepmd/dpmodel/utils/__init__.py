@@ -48,6 +48,7 @@ from .network import (
     make_multilayer_network,
 )
 from .nlist import (
+    apply_pair_exclusion_nlist,
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -94,6 +95,7 @@ __all__ = [
     "PairExcludeMask",
     "SameNlocBatchSampler",
     "aggregate",
+    "apply_pair_exclusion_nlist",
     "build_multiple_neighbor_list",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",

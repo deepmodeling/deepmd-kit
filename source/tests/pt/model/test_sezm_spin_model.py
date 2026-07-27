@@ -157,6 +157,7 @@ class TestSeZMSpinModel(unittest.TestCase):
             "spin": {
                 "use_spin": [True, False],
                 "virtual_scale": 0.2,
+                "scheme": "deepspin",
             },
             "descriptor": {
                 "type": "SeZM",

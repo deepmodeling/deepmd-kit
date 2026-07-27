@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
 #include <iostream>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AtomMap.h"
@@ -190,6 +193,11 @@ void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
  */
 void load_op_library();
 
+/**
+ * @brief Dynamically load the OP library required by a backend.
+ */
+void load_op_library(DPBackend backend);
+
 /** @struct deepmd::deepmd_exception
  **/
 
@@ -263,6 +271,106 @@ void fold_back(std::vector<VT>& out,
       for (ptrdiff_t dd = 0; dd < ndim_; ++dd) {
         out[kk * nloc_ * ndim_ + out_idx * ndim_ + dd] +=
             in[kk * nall_ * ndim_ + ii * ndim_ + dd];
+      }
+    }
+  }
+}
+
+/**
+ * @brief Build the flat ``(ntypes+1)^2`` pair-type keep table.
+ *
+ * Inference-path mirror of the Python ``PairExcludeMask`` constructor
+ * (``deepmd/dpmodel/utils/exclude_mask.py``).  The table is row-major over
+ * ``[tj][ti]`` (flat index ``tj * (ntypes+1) + ti``); an entry is ``0`` when
+ * the ordered pair ``(ti, tj)`` is excluded and ``1`` otherwise.  Both ``(ti,
+ * tj)`` and ``(tj, ti)`` are inserted into the exclude set, so the table is
+ * symmetric.  Type ``ntypes`` is the reserved virtual-atom row/column.
+ *
+ * Returns an empty vector when ``exclude_types`` is empty, so callers can treat
+ * an empty table as "no exclusion" (identity) just like the Python
+ * ``pair_excl is None`` early-exit.
+ *
+ * This lives in the backend-agnostic ``common.h`` (not ``commonPT.h``) so both
+ * the libtorch apply-helpers (``applyPairExclusion*`` in ``commonPT.h``) and
+ * the torch-free TF-C-API ``DeepPotJAX`` ingestion seam share one canonical
+ * table builder.
+ *
+ * @param ntypes Number of real atom types.
+ * @param exclude_types List of excluded ``(ti, tj)`` type pairs.
+ */
+inline std::vector<int> buildPairExcludeTable(
+    const int ntypes, const std::vector<std::pair<int, int>>& exclude_types) {
+  if (exclude_types.empty()) {
+    return {};
+  }
+  const int n1 = ntypes + 1;
+  std::set<std::pair<int, int>> excl;
+  for (const auto& tt : exclude_types) {
+    excl.insert({tt.first, tt.second});
+    excl.insert({tt.second, tt.first});
+  }
+  // type_mask[tj][ti] == 0 iff (ti, tj) is excluded (mirrors the Python
+  // list comprehension in PairExcludeMask.__init__, reshape(-1)).
+  std::vector<int> type_mask(static_cast<size_t>(n1) * n1, 1);
+  for (int tj = 0; tj < n1; ++tj) {
+    for (int ti = 0; ti < n1; ++ti) {
+      if (excl.count({ti, tj})) {
+        type_mask[static_cast<size_t>(tj) * n1 + ti] = 0;
+      }
+    }
+  }
+  return type_mask;
+}
+
+/**
+ * @brief Dense-nlist pair-type exclusion on a plain flat ``int64`` neighbour
+ *        list: erase excluded-type neighbours to ``-1`` in place.
+ *
+ * Torch-free twin of ``applyPairExclusionNlist`` (``commonPT.h``, which works
+ * on
+ * ``torch::Tensor``); used by the TF-C-API ``DeepPotJAX`` ingestion seam, which
+ * cannot depend on libtorch.  Same keep-table convention as
+ * ``buildPairExcludeTable`` / ``applyPairExclusionNlist``: keep index
+ * ``center_type * (ntypes+1) + neighbour_type``.  An empty ``type_mask_table``
+ * is identity (no-op), mirroring the ``pair_excl is None`` early-exit.
+ *
+ * Exclusion is a BUILD-time transform (decision #18/A4): the exported
+ * ``call_lower_*`` consumes a pre-excluded nlist and never re-applies it, so
+ * this is the single application site for the JAX/tf2 SavedModel LAMMPS path.
+ *
+ * @param nlist Flat ``nloc * max_size`` neighbour list (extended-space indices;
+ *   ``-1`` == empty slot), modified in place.
+ * @param atype Extended atom types; ``atype[i] >= 0`` for real atoms.  Indexed
+ *   by the centre id ``ii < nloc`` and by each neighbour id in ``nlist``.
+ * @param type_mask_table Flat ``(ntypes+1)^2`` keep table from
+ *   ``buildPairExcludeTable``.  Empty => identity.
+ * @param ntypes Number of real atom types.
+ * @param nloc Number of local (centre) atoms.
+ * @param max_size Neighbours per centre (row stride of ``nlist``).
+ */
+inline void applyPairExcludeNlistVec(std::vector<std::int64_t>& nlist,
+                                     const std::vector<int>& atype,
+                                     const std::vector<int>& type_mask_table,
+                                     const int ntypes,
+                                     const int nloc,
+                                     const int max_size) {
+  if (type_mask_table.empty()) {
+    return;
+  }
+  const int n1 = ntypes + 1;
+  for (int ii = 0; ii < nloc; ++ii) {
+    const int ti = atype[ii];  // centre type
+    for (int jj = 0; jj < max_size; ++jj) {
+      const std::int64_t nb = nlist[static_cast<size_t>(ii) * max_size + jj];
+      if (nb < 0) {
+        continue;  // empty slot
+      }
+      const int tj = atype[static_cast<size_t>(nb)];  // neighbour type
+      if (tj < 0) {
+        continue;  // padding atom; nothing to exclude
+      }
+      if (type_mask_table[static_cast<size_t>(ti) * n1 + tj] == 0) {
+        nlist[static_cast<size_t>(ii) * max_size + jj] = -1;
       }
     }
   }

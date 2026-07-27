@@ -1,31 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """
-Interaction blocks for DPA4/SeZM.
+Interaction blocks for the DPA4/SeZM descriptor.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.block``.
-It defines the SeZM interaction block that combines SO(2) message passing and
-equivariant feed-forward subblocks with residual shortcuts.
+This module defines the SeZM interaction block that combines SO(2)
+message passing, equivariant feed-forward subblocks, and optional
+attention-residual history aggregation.
 
-Branches guarded with ``NotImplementedError`` at this level (flags consumed by
-block.py itself, all unused by the core DPA4 config):
-
-- ``full_attn_res != "none"`` / ``block_attn_res != "none"`` — the pt block
-  builds ``DepthAttnRes`` aggregators and switches the forward implementation
-  (pt block.py:514/541); only the baseline residual-shortcut path
-  (pt block.py:756) is ported.
-- ``layer_scale=True`` — the pt block builds per-channel
-  ``adam_ffn_layer_scales`` on the FFN residual branches (pt block.py:500)
-  in addition to the SO(2)-internal scales; not ported.
-
-Flags merely forwarded to sub-components keep their guards there (delegated,
-not duplicated here): ``so2_attn_res``, ``so2_s2_activation``,
-``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj`` (raised by
-``SO2Convolution``). The cross-mode grid products (``node_wise_s2/so3``,
-``message_node_s2/so3``) are ported and forwarded to ``SO2Convolution``.
-
-The pt eval-time activation-checkpoint / nvtx instrumentation
-(``DP_ACT_INFER``, ``DP_COMPILE_INFER``, ``nvtx_range``) is pt-runtime-only
-and intentionally not ported.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.block``.
 """
 
 from __future__ import (
@@ -45,6 +27,15 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+from deepmd.dpmodel.utils.network import (
+    Identity,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -52,6 +43,9 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
+from .attn_res import (
+    DepthAttnRes,
+)
 from .ffn import (
     EquivariantFFN,
 )
@@ -60,15 +54,59 @@ from .norm import (
 )
 from .so2 import (
     SO2Convolution,
-    _compute_precision,
 )
 from .utils import (
     ATTN_RES_MODES,
+    get_promoted_dtype,
 )
 
 if TYPE_CHECKING:
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
+
     from .edge_cache import (
-        EdgeCache,
+        EdgeFeatureCache,
+    )
+
+
+def exchange_ghost_features(
+    x: Array,
+    comm_dict: dict[str, Array],
+) -> Array:
+    """
+    Refresh ghost-node features from their owner ranks via MPI border exchange.
+
+    SeZM node features are SO(3) coefficients expressed in the shared global
+    frame, so a ghost atom and its owner carry identical features and the
+    per-row owner->ghost copy is exact and equivariance-preserving. The opaque
+    ``deepmd_export::border_op`` performs the exchange and carries a registered
+    backward (reverse communication of gradients), so a single
+    ``autograd.grad(energy, edge_vec)`` accumulates cross-rank force
+    contributions when every rank runs the exchange in lockstep.
+
+    This is applied to the SO(2) convolution input — the descriptor's only
+    cross-node operation — so ghost rows are correct exactly where message
+    passing reads them, regardless of how the (per-node) attention-residual
+    history that produced the input populated its ghost rows.
+
+    Parameters
+    ----------
+    x
+        Extended node features with shape (nall, D, 1, channels). Owned-atom rows
+        hold up-to-date values; ghost rows are overwritten by this call.
+    comm_dict
+        Border-exchange tensors ``send_list``, ``send_proc``, ``recv_proc``,
+        ``send_num``, ``recv_num``, ``communicator``, ``nlocal``, ``nghost``.
+
+    Returns
+    -------
+    Array
+        Node features with ghost rows filled, same shape as ``x``.
+    """
+    raise NotImplementedError(
+        "Multi-rank border exchange (comm_dict) is not supported in the "
+        "dpmodel backend."
     )
 
 
@@ -81,15 +119,175 @@ class SeZMInteractionBlock(NativeOP):
     2. FFN branch: repeated subblocks of
        optional pre-norm -> `EquivariantFFN` -> optional post-norm.
 
-    Outer residual shortcuts are applied around the SO(2) unit and each FFN
-    subblock (the pt AttnRes paths are not ported; see the module docstring).
+    In the baseline path, outer residual shortcuts are applied around the SO(2)
+    unit and each FFN subblock. In AttnRes paths, these shortcuts are replaced by
+    selective depth-wise aggregation before each unit.
 
     `SO2Convolution` internally handles the real multi-focus expansion, so this
     block keeps a singleton-focus backbone layout `(N, D, 1, C)` at boundaries.
 
-    Parameters mirror the pt ``SeZMInteractionBlock`` (pt block.py:227) with
-    ``precision`` replacing ``dtype``; see the pt docstring for the full
-    per-parameter description.
+    Parameters
+    ----------
+    lmax
+        Maximum message-passing spherical harmonic degree.
+    node_lmax
+        Maximum node representation degree. If None, equals `lmax`.
+    mmax
+        Maximum SO(2) order (|m|) mixed inside SO(2) convolution.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid branches.
+    channels
+        Total channels per (l, m) coefficient.
+    n_focus
+        Number of multi-focus streams used only by the internal SO(2) branch.
+    focus_dim
+        Hidden width per focus stream used inside the SO(2) branch.
+        ``focus_dim=0`` means using ``channels``.
+    focus_compete
+        If True, enable cross-focus softmax competition in SO(2) convolution.
+    focus_norm
+        If True, RMS-normalize the cross-focus competition scalars before the
+        softmax. The competition input is envelope-gated and vanishes at the
+        cutoff, so ``False`` drops the norm to keep the competition smooth there.
+    so2_norm
+        If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
+        When False (default), no normalization is applied between layers.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core. ``0``
+        applies only the edge-condition modulation.
+    so2_attn_res
+        Depth-wise attention residual mode across the internal SO(2) layer
+        history. Must be one of ``"none"``, ``"independent"``, or
+        ``"dependent"``.
+    radial_so2_mode
+        Dynamic radial degree mixer mode inside SO(2) convolution. ``"none"``
+        applies elementwise radial modulation, ``"degree"`` uses a
+        channel-shared edge-conditioned cross-degree kernel, and
+        ``"degree_channel"`` uses a per-channel cross-degree kernel.
+    radial_so2_rank
+        Low-rank channel factorization rank for
+        ``radial_so2_mode="degree_channel"``. ``0`` uses the full
+        per-channel dynamic degree kernel.
+    edge_cartesian
+        If True, replace the per-edge SO(2) rotation-frame tensor product inside
+        ``SO2Convolution`` with the global-frame Cartesian rank-2 tensor
+        product. Requires ``lmax`` in ``{1, 2}``.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message inside ``SO2Convolution``, configured by a ``"<mode>:<layers>"``
+        string (``mode`` is ``"default"`` or ``"parity"``); a bare integer ``N``
+        is shorthand for ``"default:N"``, and ``"none"`` disables it. Requires
+        ``lmax`` in ``{1, 2}`` and is orthogonal to ``edge_cartesian``.
+    n_atten_head
+        Number of attention heads when aggregating messages in SO(2) convolution.
+        0 means no attention is used; >0 enables envelope-gated grouped softmax
+        attention with output-side head gate.
+    atten_f_mix
+        If True, merge SO(2) focus streams into one attention stream after
+        rotate-back. This gives each attention head access to the full
+        multi-focus hidden width.
+    atten_v_proj
+        If True, apply an explicit degree-aware value projection inside SO(2)
+        attention.
+    atten_o_proj
+        If True, apply an explicit degree-aware output projection inside SO(2)
+        attention.
+    so2_pre_norm
+        If True, apply pre-norm before SO(2) convolution.
+    so2_post_norm
+        If True, apply post-norm on SO(2) output before the residual add.
+    so2_post_norm_eps
+        Variance floor for the SO(2) post-norm. A value of ``1`` preserves small
+        residual messages instead of amplifying them by ``1/sqrt(eps)``. Other
+        normalization sites retain their own RMSNorm floors.
+    ffn_pre_norm
+        If True, apply pre-norm before each FFN subblock.
+    ffn_post_norm
+        If True, apply post-norm on each FFN subblock output before the residual add.
+    ffn_neurons
+        Hidden dimension for each FFN subblock.
+    node_wise_grid_mlp
+        If True, select the polynomial grid MLP operation for the SO(2)
+        convolution node-wise cross-grid path.
+    node_wise_grid_branch
+        Number of scalar-routed polynomial product branches for the node-wise
+        cross-grid path. ``0`` disables branch mixing; positive values take
+        precedence over ``node_wise_grid_mlp``.
+    message_node_grid_mlp
+        If True, select the polynomial grid MLP operation for the SO(2)
+        convolution message-node cross-grid path.
+    message_node_grid_branch
+        Number of scalar-routed polynomial product branches for the
+        message-node cross-grid path. ``0`` disables branch mixing; positive
+        values take precedence over ``message_node_grid_mlp``.
+    ffn_grid_mlp
+        If True, select the polynomial grid MLP operation for the
+        block-internal FFN grid path.
+    ffn_grid_branch
+        Number of scalar-routed polynomial product branches for the FFN grid
+        path. ``0`` disables branch mixing; positive values take precedence
+        over ``ffn_grid_mlp``.
+    ffn_blocks
+        Number of FFN subblocks per block.
+    layer_scale
+        If True, apply learnable LayerScale (init 1e-3) on residual branches:
+        - SO(2) branch: per-focus-channel scales `(n_focus, focus_dim)`
+          on each SO(2) mixing layer.
+        - FFN branch: per-channel scales `(channels,)` on each FFN subblock.
+    full_attn_res
+        Descriptor-level full attention residual mode for this block wrapper.
+        When enabled, the block uses external unit history to build the SO(2)
+        input and the input of each FFN unit.
+    block_attn_res
+        Descriptor-level block attention residual mode for this block wrapper.
+        When enabled, the block uses external block history plus an intra-block
+        partial sum to build the SO(2) input and the input of each FFN unit.
+    so2_s2_activation
+        If True, enable the merged scalar/grid SwiGLU-S2 activation in the SO(2)
+        branch.
+    node_wise_s2
+        If True, enable the edge-local source-destination S2 product branch in
+        the SO(2) convolution.
+    node_wise_so3
+        If True, enable the corresponding edge-local SO(3) Wigner-D grid branch
+        in the SO(2) convolution.
+    message_node_s2
+        If True, enable the post-aggregation message-node S2 product branch in
+        the SO(2) convolution.
+    message_node_so3
+        If True, enable the corresponding post-aggregation SO(3) Wigner-D grid
+        branch in the SO(2) convolution.
+    ffn_s2_activation
+        If True, enable the merged scalar/grid SwiGLU-S2 activation in the
+        default FFN activation path.
+    ffn_so3_grid
+        If True, use the SO(3) Wigner-D grid in the block-internal FFN. This
+        takes precedence over ``ffn_s2_activation``.
+    so2_lebedev_quadrature
+        If True, use Lebedev quadrature for the SO(2) S2 activation projector.
+    ffn_lebedev_quadrature
+        If True, use Lebedev quadrature for the FFN S2 activation projector.
+    so2_activation_function
+        Activation function for the block-internal SO(2) l=0 gated activation
+        path when ``so2_s2_activation=False``.
+    ffn_activation_function
+        Activation function for the block-internal FFN l=0 components.
+    ffn_glu_activation
+        If True, use GLU-style gating in the block-internal FFN
+        (e.g., silu -> swiglu, gelu -> geglu).
+    mlp_bias
+        Whether to use bias in equivariant layers. Controls:
+        - SO3Linear: l=0 bias
+        - SO2Linear: l=0 bias
+        - GatedActivation: gate linear bias
+    eps
+        Small epsilon for numerical stability.
+    precision
+        Parameter precision.
+    seed
+        Random seed for weight initialization.
+    trainable
+        Whether parameters are trainable.
     """
 
     def __init__(
@@ -103,17 +301,21 @@ class SeZMInteractionBlock(NativeOP):
         n_focus: int = 1,
         focus_dim: int = 0,
         focus_compete: bool = True,
+        focus_norm: bool = True,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         n_atten_head: int = 1,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         so2_pre_norm: bool = True,
         so2_post_norm: bool = False,
+        so2_post_norm_eps: float = 1e-5,
         ffn_pre_norm: bool = True,
         ffn_post_norm: bool = False,
         ffn_neurons: int = 96,
@@ -142,8 +344,8 @@ class SeZMInteractionBlock(NativeOP):
         mlp_bias: bool = False,
         eps: float = 1e-7,
         precision: str = DEFAULT_PRECISION,
-        seed: int | list[int] | None = None,
-        trainable: bool = True,
+        seed: int | list[int] | None,
+        trainable: bool,
     ) -> None:
         self.lmax = int(lmax)
         self.node_lmax = self.lmax if node_lmax is None else int(node_lmax)
@@ -167,8 +369,9 @@ class SeZMInteractionBlock(NativeOP):
         if self.focus_dim < 0:
             raise ValueError("`focus_dim` must be >= 0")
         self.focus_compete = bool(focus_compete)
+        self.focus_norm = bool(focus_norm)
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        self.mixing_layers = int(mixing_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -176,12 +379,15 @@ class SeZMInteractionBlock(NativeOP):
             )
         self.radial_so2_mode = str(radial_so2_mode).lower()
         self.radial_so2_rank = int(radial_so2_rank)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.n_atten_head = int(n_atten_head)
         self.atten_f_mix = bool(atten_f_mix)
         self.use_atten_v_proj = bool(atten_v_proj)
         self.use_atten_o_proj = bool(atten_o_proj)
         self.so2_pre_norm = bool(so2_pre_norm)
         self.so2_post_norm = bool(so2_post_norm)
+        self.so2_post_norm_eps = float(so2_post_norm_eps)
         self.ffn_pre_norm = bool(ffn_pre_norm)
         self.ffn_post_norm = bool(ffn_post_norm)
         self.ffn_neurons = int(ffn_neurons)
@@ -204,9 +410,6 @@ class SeZMInteractionBlock(NativeOP):
         if self.ffn_blocks < 1:
             raise ValueError("`ffn_blocks` must be >= 1")
         self.layer_scale = bool(layer_scale)
-        if self.layer_scale:
-            # consumed by block.py itself (FFN-branch adam_ffn_layer_scales)
-            raise NotImplementedError("layer_scale=True is not ported to dpmodel")
         self.full_attn_res_mode = str(full_attn_res).lower()
         if self.full_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -217,13 +420,11 @@ class SeZMInteractionBlock(NativeOP):
             raise ValueError(
                 "`block_attn_res` must be one of 'none', 'independent', or 'dependent'"
             )
-        if self.full_attn_res_mode != "none":
-            raise NotImplementedError(
-                "full_attn_res != 'none' (DepthAttnRes) is not ported to dpmodel"
-            )
-        if self.block_attn_res_mode != "none":
-            raise NotImplementedError(
-                "block_attn_res != 'none' (DepthAttnRes) is not ported to dpmodel"
+        self.use_full_attn_res = self.full_attn_res_mode != "none"
+        self.use_block_attn_res = self.block_attn_res_mode != "none"
+        if self.use_full_attn_res and self.use_block_attn_res:
+            raise ValueError(
+                "`full_attn_res` and `block_attn_res` cannot both be enabled"
             )
         self.so2_s2_activation = bool(so2_s2_activation)
         self.node_wise_s2 = bool(node_wise_s2)
@@ -240,40 +441,39 @@ class SeZMInteractionBlock(NativeOP):
         self.mlp_bias = bool(mlp_bias)
         self.eps = float(eps)
         self.precision = precision
-        self.compute_precision = _compute_precision(precision)
-        self.trainable = bool(trainable)
+        self.compute_precision = np.dtype(
+            get_promoted_dtype(PRECISION_DICT[self.precision])
+        ).name
 
         # === Step 0. Split deterministic seeds at the block top-level ===
-        # pt also splits seed_full_attn / seed_block_attn (block.py:378-379);
-        # those consumers are guarded above, so the splits are unused here.
         seed_so2_conv = child_seed(seed, 0)
         seed_ffn = child_seed(seed, 1)
+        seed_full_attn = child_seed(seed, 2)
+        seed_block_attn = child_seed(seed, 3)
 
         # === Step 1. SO(2) convolution branch norms ===
-        # pt uses nn.Identity() for disabled norms (parameter-free); the
-        # dpmodel equivalent is None.
-        self.pre_so2_norm: EquivariantRMSNorm | None = (
-            EquivariantRMSNorm(
+        if self.so2_pre_norm:
+            self.pre_so2_norm = EquivariantRMSNorm(
                 self.lmax,
                 self.channels,
                 n_focus=1,
                 precision=self.compute_precision,
-                trainable=self.trainable,
+                trainable=trainable,
             )
-            if self.so2_pre_norm
-            else None
-        )
-        self.post_so2_norm: EquivariantRMSNorm | None = (
-            EquivariantRMSNorm(
+        else:
+            self.pre_so2_norm = Identity()
+
+        if self.so2_post_norm:
+            self.post_so2_norm = EquivariantRMSNorm(
                 self.lmax,
                 self.channels,
                 n_focus=1,
+                eps=self.so2_post_norm_eps,
                 precision=self.compute_precision,
-                trainable=self.trainable,
+                trainable=trainable,
             )
-            if self.so2_post_norm
-            else None
-        )
+        else:
+            self.post_so2_norm = Identity()
 
         self.so2_conv = SO2Convolution(
             lmax=self.lmax,
@@ -283,13 +483,16 @@ class SeZMInteractionBlock(NativeOP):
             n_focus=self.n_focus,
             focus_dim=self.focus_dim,
             focus_compete=self.focus_compete,
+            focus_norm=self.focus_norm,
             so2_norm=self.so2_norm,
-            so2_layers=self.so2_layers,
+            mixing_layers=self.mixing_layers,
             so2_attn_res=self.so2_attn_res_mode,
             radial_so2_mode=self.radial_so2_mode,
             radial_so2_rank=self.radial_so2_rank,
+            edge_cartesian=self.edge_cartesian,
+            node_cartesian=self.node_cartesian,
             layer_scale=self.layer_scale,
-            n_atten_head=self.n_atten_head,
+            n_atten_head=n_atten_head,
             atten_f_mix=self.atten_f_mix,
             atten_v_proj=self.use_atten_v_proj,
             atten_o_proj=self.use_atten_o_proj,
@@ -306,69 +509,210 @@ class SeZMInteractionBlock(NativeOP):
             activation_function=self.so2_activation_function,
             mlp_bias=self.mlp_bias,
             eps=self.eps,
-            precision=self.precision,
+            precision=precision,
             seed=seed_so2_conv,
-            trainable=self.trainable,
+            trainable=trainable,
         )
 
         # === Step 2. FFN subblock sequence ===
-        pre_ffn_norms: list[EquivariantRMSNorm | None] = []
-        post_ffn_norms: list[EquivariantRMSNorm | None] = []
+        pre_ffn_norms: list = []
+        post_ffn_norms: list = []
         ffns: list[EquivariantFFN] = []
 
         for i in range(self.ffn_blocks):
             seed_ffn_i = child_seed(seed_ffn, i)
-            pre_ffn_norms.append(
-                EquivariantRMSNorm(
-                    self.node_lmax,
-                    self.channels,
-                    n_focus=1,
-                    precision=self.compute_precision,
-                    trainable=self.trainable,
+
+            if self.ffn_pre_norm:
+                pre_ffn_norms.append(
+                    EquivariantRMSNorm(
+                        self.node_lmax,
+                        self.channels,
+                        n_focus=1,
+                        precision=self.compute_precision,
+                        trainable=trainable,
+                    )
                 )
-                if self.ffn_pre_norm
-                else None
-            )
-            post_ffn_norms.append(
-                EquivariantRMSNorm(
-                    self.node_lmax,
-                    self.channels,
-                    n_focus=1,
-                    precision=self.compute_precision,
-                    trainable=self.trainable,
+            else:
+                pre_ffn_norms.append(Identity())
+
+            if self.ffn_post_norm:
+                post_ffn_norms.append(
+                    EquivariantRMSNorm(
+                        self.node_lmax,
+                        self.channels,
+                        n_focus=1,
+                        precision=self.compute_precision,
+                        trainable=trainable,
+                    )
                 )
-                if self.ffn_post_norm
-                else None
-            )
+            else:
+                post_ffn_norms.append(Identity())
+
             ffns.append(
                 EquivariantFFN(
                     lmax=self.node_lmax,
                     channels=self.channels,
-                    hidden_channels=self.ffn_neurons,
+                    hidden_channels=ffn_neurons,
                     kmax=self.kmax,
                     grid_mlp=self.ffn_grid_mlp,
                     grid_branch=self.ffn_grid_branch,
+                    precision=precision,
                     s2_activation=self.ffn_s2_activation,
                     ffn_so3_grid=self.ffn_so3_grid,
                     lebedev_quadrature=self.ffn_lebedev_quadrature,
                     activation_function=self.ffn_activation_function,
                     glu_activation=self.ffn_glu_activation,
                     mlp_bias=self.mlp_bias,
-                    precision=self.precision,
-                    trainable=self.trainable,
+                    trainable=trainable,
                     seed=seed_ffn_i,
                 )
             )
+
         self.pre_ffn_norms = pre_ffn_norms
         self.post_ffn_norms = post_ffn_norms
         self.ffns = ffns
 
+        # Optional per-channel LayerScale on each FFN residual branch
+        if self.layer_scale:
+            self.adam_ffn_layer_scales = [
+                np.ones((self.channels,), dtype=PRECISION_DICT[self.precision]) * 1e-3
+                for _ in range(self.ffn_blocks)
+            ]
+        else:
+            self.adam_ffn_layer_scales = None
+
+        # === Step 3. Optional full attention residuals for block inputs ===
+        if self.use_full_attn_res:
+            self.full_attn_res_so2: DepthAttnRes | None = DepthAttnRes(
+                channels=self.channels,
+                input_dependent=self.full_attn_res_mode == "dependent",
+                eps=self.eps,
+                bias=self.mlp_bias,
+                precision=self.compute_precision,
+                trainable=trainable,
+                seed=child_seed(seed_full_attn, 0),
+            )
+            self.full_attn_res_ffns: list | None = [
+                DepthAttnRes(
+                    channels=self.channels,
+                    input_dependent=self.full_attn_res_mode == "dependent",
+                    eps=self.eps,
+                    bias=self.mlp_bias,
+                    precision=self.compute_precision,
+                    trainable=trainable,
+                    seed=child_seed(seed_full_attn, i + 1),
+                )
+                for i in range(self.ffn_blocks)
+            ]
+            self.block_attn_res_so2 = None
+            self.block_attn_res_ffns = None
+            self._forward_impl = self._forward_with_full_attn_res
+        elif self.use_block_attn_res:
+            self.full_attn_res_so2 = None
+            self.full_attn_res_ffns = None
+            self.block_attn_res_so2: DepthAttnRes | None = DepthAttnRes(
+                channels=self.channels,
+                input_dependent=self.block_attn_res_mode == "dependent",
+                eps=self.eps,
+                bias=self.mlp_bias,
+                precision=self.compute_precision,
+                trainable=trainable,
+                seed=child_seed(seed_block_attn, 0),
+            )
+            self.block_attn_res_ffns: list | None = [
+                DepthAttnRes(
+                    channels=self.channels,
+                    input_dependent=self.block_attn_res_mode == "dependent",
+                    eps=self.eps,
+                    bias=self.mlp_bias,
+                    precision=self.compute_precision,
+                    trainable=trainable,
+                    seed=child_seed(seed_block_attn, i + 1),
+                )
+                for i in range(self.ffn_blocks)
+            ]
+            self._forward_impl = self._forward_with_block_attn_res
+        else:
+            self.full_attn_res_so2 = None
+            self.full_attn_res_ffns = None
+            self.block_attn_res_so2 = None
+            self.block_attn_res_ffns = None
+            self._forward_impl = self._forward_with_residual_shortcuts
+
+        self.trainable = bool(trainable)
+
+    def call(
+        self,
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+        unit_history: list[Array] | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[
+        Array,
+        Array | None,
+        Array | None,
+        list[Array] | None,
+    ]:
+        """
+        Parameters
+        ----------
+        x
+            Features with shape `(N, D, 1, C)`.
+        edge_cache
+            Edge cache.
+        radial_feat
+            Per-edge radial features with shape (E, lmax+1, C).
+        unit_history
+            Optional truncated depth history in canonical node layout. When
+            `full_attn_res != "none"`, it is interpreted as completed unit
+            history. When `block_attn_res != "none"`, it is interpreted as
+            completed block history.
+        comm_dict
+            Border-exchange tensors for parallel (LAMMPS multi-rank) inference.
+            When provided, the SO(2) convolution input has its ghost rows
+            refreshed from owner ranks; the depth-attention history may carry
+            stale ghost rows because the exchange happens at the convolution
+            input, after the (per-node) aggregation that consumes it.
+
+        Returns
+        -------
+        tuple[Array, Array | None, Array | None, list[Array] | None]
+            Tuple `(block_output, block_summary, so2_unit_output, ffn_unit_outputs)`
+            in canonical node layout. `block_output` is always returned.
+            Auxiliary outputs are mode-dependent and may be `None` when the
+            current caller does not need them:
+
+            - baseline path returns `(block_output, None, None, None)`
+            - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
+            - block AttnRes path returns `(block_output, block_summary, None, None)`
+        """
+        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
+
+    def _extract_l0_from_canonical(self, value: Array) -> Array:
+        """
+        Extract scalar channels from canonical node layout.
+
+        Parameters
+        ----------
+        value
+            Canonical node features with shape `(N, D, 1, C)`.
+
+        Returns
+        -------
+        Array
+            Scalar channels with shape (N, channels).
+        """
+        xp = array_api_compat.array_namespace(value)
+        return xp.reshape(value[:, 0, :, :], (value.shape[0], self.channels))
+
     def _run_so2_unit(
         self,
-        x: Any,
-        edge_cache: EdgeCache,
-        radial_feat: Any,
-    ) -> Any:
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> Array:
         """
         Run the SO(2) unit without an outer block-level residual shortcut.
 
@@ -377,40 +721,52 @@ class SeZMInteractionBlock(NativeOP):
         x
             Canonical node features with shape `(N, D, 1, C)`.
         edge_cache
-            Edge cache (padded layout; see ``edge_cache.EdgeCache``).
+            Edge cache.
         radial_feat
             Per-edge radial features with shape (E, lmax+1, C).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            convolution input's ghost rows are refreshed from owner ranks
+            immediately before the only cross-node operation in the block, so
+            owned destinations gather up-to-date neighbour features.
 
         Returns
         -------
         Array
             SO(2) unit output with shape `(N, D, 1, C)`.
         """
+        if comm_dict is not None:
+            x = exchange_ghost_features(x, comm_dict)
+        return self._run_so2_unit_impl(x, edge_cache, radial_feat)
+
+    def _run_so2_unit_impl(
+        self,
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+    ) -> Array:
+        """Run the SO(2) unit implementation."""
         xp = array_api_compat.array_namespace(x)
         n_node = x.shape[0]
         channels = self.channels
         use_full_node = self.node_lmax == self.lmax
         x_so2 = x if use_full_node else x[:, : self.mp_ebed_dim, :, :]
-        x_pre = x_so2 if self.pre_so2_norm is None else self.pre_so2_norm(x_so2)
+        x_pre = self.pre_so2_norm(x_so2)
         so2_unit_output = self.so2_conv(
             xp.reshape(x_pre, (n_node, x_so2.shape[1], channels)),
             edge_cache,
             radial_feat,
         )
-        so2_unit_output = so2_unit_output[:, :, None, :]
-        if self.post_so2_norm is not None:
-            so2_unit_output = self.post_so2_norm(so2_unit_output)
+        so2_unit_output = self.post_so2_norm(so2_unit_output[:, :, None, :])
         if use_full_node:
             return so2_unit_output
-        # zero-pad the degrees above lmax (pt writes into x.new_zeros)
-        pad = xp.zeros(
-            (n_node, self.node_ebed_dim - self.mp_ebed_dim, 1, channels),
-            dtype=x.dtype,
-            device=array_api_compat.device(x),
+        output = xp.zeros(x.shape, dtype=x.dtype, device=array_api_compat.device(x))
+        output = xp.concat(
+            [so2_unit_output, output[:, self.mp_ebed_dim :, :, :]], axis=1
         )
-        return xp.concat([so2_unit_output, pad], axis=1)
+        return output
 
-    def _run_ffn_unit(self, x: Any, unit_idx: int) -> Any:
+    def _run_ffn_unit(self, x: Array, unit_idx: int) -> Array:
         """
         Run one FFN subblock without the outer unit-level residual shortcut.
 
@@ -426,111 +782,291 @@ class SeZMInteractionBlock(NativeOP):
         Array
             FFN unit output with shape `(N, D, 1, C)`.
         """
-        pre_norm = self.pre_ffn_norms[unit_idx]
-        post_norm = self.post_ffn_norms[unit_idx]
-        x_pre = x if pre_norm is None else pre_norm(x)
-        y = self.ffns[unit_idx](x_pre)
-        if post_norm is not None:
-            y = post_norm(y)
+        return self._run_ffn_unit_impl(x, unit_idx)
+
+    def _run_ffn_unit_impl(self, x: Array, unit_idx: int) -> Array:
+        """Run one FFN subblock implementation."""
+        xp = array_api_compat.array_namespace(x)
+        n_node = x.shape[0]
+        ebed_dim = x.shape[1]
+        channels = self.channels
+        x_ffn = xp.reshape(x, (n_node, ebed_dim, 1, channels))  # (N, D, 1, C)
+        x_pre = self.pre_ffn_norms[unit_idx](x_ffn)
+        y: Array = self.ffns[unit_idx](x_pre)
+        y = self.post_ffn_norms[unit_idx](y)
+        if self.layer_scale:
+            device = array_api_compat.device(x)
+            y = y * xp_asarray_nodetach(
+                xp, self.adam_ffn_layer_scales[unit_idx][...], device=device
+            )
         return y
 
-    def call(
+    def _forward_with_residual_shortcuts(
         self,
-        x: Any,
-        edge_cache: EdgeCache,
-        radial_feat: Any,
-        unit_history: list[Any] | None = None,
-    ) -> tuple[Any, None, None, None]:
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+        unit_history: list[Array] | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[
+        Array,
+        Array | None,
+        Array | None,
+        list[Array] | None,
+    ]:
         """
-        Run the residual-connected block path (pt baseline path).
+        Run the original residual-connected block path.
 
         Parameters
         ----------
         x
-            Features with shape `(N, D, 1, C)`.
+            Canonical node features with shape `(N, D, 1, C)`.
         edge_cache
-            Edge cache (padded layout).
+            Edge cache.
         radial_feat
             Per-edge radial features with shape (E, lmax+1, C).
         unit_history
-            Unused in the residual-connected path (the pt AttnRes paths that
-            consume it are not ported).
+            Unused in the residual-connected path.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The owned-atom residual reads the original ``x``, which
+            is already correct on owned rows.
 
         Returns
         -------
-        tuple[Array, None, None, None]
-            Tuple `(block_output, None, None, None)` matching the pt
-            baseline-path return convention.
+        tuple[Array, Array | None, Array | None, list[Array] | None]
+            Tuple `(block_output, None, None, None)`.
         """
-        so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat)
-        ffn_state = x + so2_unit_output
-        for i in range(self.ffn_blocks):
-            ffn_state = ffn_state + self._run_ffn_unit(ffn_state, i)
-        return ffn_state, None, None, None
+        so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat, comm_dict)
+        so2_state = x + so2_unit_output
 
-    def _sub_modules(self) -> list[tuple[str, NativeOP | None]]:
-        """Sub-modules with their pt module names (None = pt nn.Identity)."""
-        subs: list[tuple[str, NativeOP | None]] = [
-            ("pre_so2_norm", self.pre_so2_norm),
-            ("post_so2_norm", self.post_so2_norm),
-            ("so2_conv", self.so2_conv),
-        ]
+        ffn_state = so2_state
         for i in range(self.ffn_blocks):
-            subs.append((f"pre_ffn_norms.{i}", self.pre_ffn_norms[i]))
-            subs.append((f"post_ffn_norms.{i}", self.post_ffn_norms[i]))
-            subs.append((f"ffns.{i}", self.ffns[i]))
-        return subs
+            ffn_unit_output = self._run_ffn_unit(ffn_state, i)
+            ffn_state = ffn_state + ffn_unit_output
 
-    def _variables(self) -> dict[str, Any]:
-        """Variables keyed by the pt ``state_dict`` key names."""
-        variables: dict[str, Any] = {}
-        for prefix, sub in self._sub_modules():
-            if sub is None:
-                continue
-            if isinstance(sub, SO2Convolution):
-                sub_vars = sub._variables()
-            else:
-                sub_vars = sub.serialize()["@variables"]
-            for key, value in sub_vars.items():
-                variables[f"{prefix}.{key}"] = value
+        block_output = ffn_state
+        return block_output, None, None, None
+
+    def _forward_with_full_attn_res(
+        self,
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+        unit_history: list[Array] | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[
+        Array,
+        Array | None,
+        Array | None,
+        list[Array] | None,
+    ]:
+        """
+        Run the block with full attention residuals over unit history.
+
+        Parameters
+        ----------
+        x
+            Current block input with shape `(N, D, 1, C)`.
+        edge_cache
+            Edge cache.
+        radial_feat
+            Per-edge radial features with shape (E, lmax+1, C).
+        unit_history
+            Truncated history in canonical node layout. Each source has shape
+            `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
+
+        Returns
+        -------
+        tuple[Array, Array | None, Array | None, list[Array] | None]
+            Tuple `(block_output, None, so2_unit_output, ffn_unit_outputs)`.
+        """
+        so2_input = self.full_attn_res_so2(
+            sources=unit_history,
+            scalar_extractor=self._extract_l0_from_canonical,
+            current_x=x,
+        )
+        so2_unit_output = self._run_so2_unit(
+            so2_input, edge_cache, radial_feat, comm_dict
+        )
+
+        completed_units = [*unit_history, so2_unit_output]
+        current_x = so2_unit_output
+        ffn_unit_outputs: list[Array] = []
+        for i in range(self.ffn_blocks):
+            ffn_input: Array = self.full_attn_res_ffns[i](
+                sources=completed_units,
+                scalar_extractor=self._extract_l0_from_canonical,
+                current_x=current_x,
+            )
+            ffn_unit_output = self._run_ffn_unit(ffn_input, i)
+            ffn_unit_outputs.append(ffn_unit_output)
+            completed_units.append(ffn_unit_output)
+            current_x = ffn_unit_output
+
+        block_output = current_x
+        return block_output, None, so2_unit_output, ffn_unit_outputs
+
+    def _forward_with_block_attn_res(
+        self,
+        x: Array,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: Array,
+        unit_history: list[Array] | None = None,
+        comm_dict: dict[str, Array] | None = None,
+    ) -> tuple[
+        Array,
+        Array | None,
+        Array | None,
+        list[Array] | None,
+    ]:
+        """
+        Run the block with block attention residuals over block history.
+
+        Parameters
+        ----------
+        x
+            Current block input with shape `(N, D, 1, C)`.
+        edge_cache
+            Edge cache.
+        radial_feat
+            Per-edge radial features with shape (E, lmax+1, C).
+        unit_history
+            Truncated block history in canonical node layout. Each source has shape
+            `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
+
+        Returns
+        -------
+        tuple[Array, Array | None, Array | None, list[Array] | None]
+            Tuple `(block_output, block_summary, None, None)`.
+        """
+        so2_input = self.block_attn_res_so2(
+            sources=unit_history,
+            scalar_extractor=self._extract_l0_from_canonical,
+            current_x=x,
+        )
+        so2_unit_output = self._run_so2_unit(
+            so2_input, edge_cache, radial_feat, comm_dict
+        )
+
+        partial_block = so2_unit_output
+        current_x = so2_unit_output
+        for i in range(self.ffn_blocks):
+            ffn_input: Array = self.block_attn_res_ffns[i](
+                sources=[*unit_history, partial_block],
+                scalar_extractor=self._extract_l0_from_canonical,
+                current_x=current_x,
+            )
+            ffn_unit_output = self._run_ffn_unit(ffn_input, i)
+            partial_block = partial_block + ffn_unit_output
+            current_x = ffn_unit_output
+
+        block_output = current_x
+        block_summary = partial_block
+        return block_output, block_summary, None, None
+
+    def _variables(self) -> dict[str, np.ndarray]:
+        variables: dict[str, np.ndarray] = {}
+        if self.pre_so2_norm is not None:
+            pre_so2_vars = self.pre_so2_norm.serialize().get("@variables", {})
+            for key, value in pre_so2_vars.items():
+                variables[f"pre_so2_norm.{key}"] = value
+        if self.post_so2_norm is not None:
+            post_so2_vars = self.post_so2_norm.serialize().get("@variables", {})
+            for key, value in post_so2_vars.items():
+                variables[f"post_so2_norm.{key}"] = value
+        for key, value in self.so2_conv.serialize()["@variables"].items():
+            variables[f"so2_conv.{key}"] = value
+        for i, ffn in enumerate(self.ffns):
+            for key, value in ffn.serialize()["@variables"].items():
+                variables[f"ffns.{i}.{key}"] = value
+        for i, norm in enumerate(self.pre_ffn_norms):
+            if norm is not None:
+                for key, value in norm.serialize().get("@variables", {}).items():
+                    variables[f"pre_ffn_norms.{i}.{key}"] = value
+        for i, norm in enumerate(self.post_ffn_norms):
+            if norm is not None:
+                for key, value in norm.serialize().get("@variables", {}).items():
+                    variables[f"post_ffn_norms.{i}.{key}"] = value
+        if self.adam_ffn_layer_scales is not None:
+            for i, scale in enumerate(self.adam_ffn_layer_scales):
+                variables[f"adam_ffn_layer_scales.{i}"] = to_numpy_array(scale)
+        if self.full_attn_res_so2 is not None:
+            for key, value in self.full_attn_res_so2.serialize()["@variables"].items():
+                variables[f"full_attn_res_so2.{key}"] = value
+        if self.full_attn_res_ffns is not None:
+            for i, attn in enumerate(self.full_attn_res_ffns):
+                for key, value in attn.serialize()["@variables"].items():
+                    variables[f"full_attn_res_ffns.{i}.{key}"] = value
+        if self.block_attn_res_so2 is not None:
+            for key, value in self.block_attn_res_so2.serialize()["@variables"].items():
+                variables[f"block_attn_res_so2.{key}"] = value
+        if self.block_attn_res_ffns is not None:
+            for i, attn in enumerate(self.block_attn_res_ffns):
+                for key, value in attn.serialize()["@variables"].items():
+                    variables[f"block_attn_res_ffns.{i}.{key}"] = value
         return variables
 
-    def _load_variables(self, variables: dict[str, Any]) -> None:
-        """Load variables keyed by the pt ``state_dict`` key names."""
-        variables = dict(variables)
-        for name, sub in self._sub_modules():
-            if sub is None:
-                continue
-            full = f"{name}."
-            sv = {
-                key[len(full) :]: value
+    def _load_variables(self, variables: dict[str, np.ndarray]) -> None:
+        def load(module: NativeOP, prefix: str) -> NativeOP:
+            data = module.serialize()
+            data["@variables"] = {
+                key[len(prefix) :]: value
                 for key, value in variables.items()
-                if key.startswith(full)
+                if key.startswith(prefix)
             }
-            for key in list(variables):
-                if key.startswith(full):
-                    del variables[key]
-            if not sv:
-                raise KeyError(f"Missing variables with prefix: {full}")
-            if isinstance(sub, SO2Convolution):
-                sub._load_variables(sv)
-            elif isinstance(sub, EquivariantFFN):
-                sub._load_variables(sv)
-            else:
-                # norms: rebuild through the shape-checking deserialize
-                data = sub.serialize()
-                data["@variables"] = sv
-                new_sub = type(sub).deserialize(data)
-                attr, _, idx = name.partition(".")
-                if idx:
-                    getattr(self, attr)[int(idx)] = new_sub
-                else:
-                    setattr(self, attr, new_sub)
-        if variables:
-            raise KeyError(f"Unknown variables: {sorted(variables)}")
+            return type(module).deserialize(data)
+
+        if self.pre_so2_norm is not None:
+            self.pre_so2_norm = load(self.pre_so2_norm, "pre_so2_norm.")
+        if self.post_so2_norm is not None:
+            self.post_so2_norm = load(self.post_so2_norm, "post_so2_norm.")
+        self.so2_conv = load(self.so2_conv, "so2_conv.")
+        self.ffns = [load(ffn, f"ffns.{i}.") for i, ffn in enumerate(self.ffns)]
+        self.pre_ffn_norms = [
+            load(norm, f"pre_ffn_norms.{i}.") if norm is not None else None
+            for i, norm in enumerate(self.pre_ffn_norms)
+        ]
+        self.post_ffn_norms = [
+            load(norm, f"post_ffn_norms.{i}.") if norm is not None else None
+            for i, norm in enumerate(self.post_ffn_norms)
+        ]
+        if self.adam_ffn_layer_scales is not None:
+            self.adam_ffn_layer_scales = [
+                np.asarray(
+                    variables[f"adam_ffn_layer_scales.{i}"],
+                    dtype=PRECISION_DICT[self.precision],
+                )
+                for i in range(len(self.adam_ffn_layer_scales))
+            ]
+        if self.full_attn_res_so2 is not None:
+            self.full_attn_res_so2 = load(self.full_attn_res_so2, "full_attn_res_so2.")
+        if self.full_attn_res_ffns is not None:
+            self.full_attn_res_ffns = [
+                load(attn, f"full_attn_res_ffns.{i}.")
+                for i, attn in enumerate(self.full_attn_res_ffns)
+            ]
+        if self.block_attn_res_so2 is not None:
+            self.block_attn_res_so2 = load(
+                self.block_attn_res_so2, "block_attn_res_so2."
+            )
+        if self.block_attn_res_ffns is not None:
+            self.block_attn_res_ffns = [
+                load(attn, f"block_attn_res_ffns.{i}.")
+                for i, attn in enumerate(self.block_attn_res_ffns)
+            ]
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the SeZMInteractionBlock to a dict (pt-compatible format)."""
         return {
             "@class": "SeZMInteractionBlock",
             "@version": 1,
@@ -543,17 +1079,21 @@ class SeZMInteractionBlock(NativeOP):
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
+                "focus_norm": self.focus_norm,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "n_atten_head": self.n_atten_head,
                 "atten_f_mix": self.atten_f_mix,
                 "atten_v_proj": self.use_atten_v_proj,
                 "atten_o_proj": self.use_atten_o_proj,
                 "so2_pre_norm": self.so2_pre_norm,
                 "so2_post_norm": self.so2_post_norm,
+                "so2_post_norm_eps": self.so2_post_norm_eps,
                 "ffn_pre_norm": self.ffn_pre_norm,
                 "ffn_post_norm": self.ffn_post_norm,
                 "ffn_neurons": self.ffn_neurons,
@@ -590,16 +1130,14 @@ class SeZMInteractionBlock(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> SeZMInteractionBlock:
-        """Deserialize a SeZMInteractionBlock from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "SeZMInteractionBlock":
             raise ValueError(f"Invalid class for SeZMInteractionBlock: {data_cls}")
         version = int(data.pop("@version"))
         check_version_compatibility(version, 1, 1)
-        config = dict(data.pop("config"))
+        config = data.pop("config")
         variables = data.pop("@variables")
-        config["precision"] = str(config.pop("precision"))
         obj = cls(**config)
         obj._load_variables(variables)
         return obj

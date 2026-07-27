@@ -51,6 +51,9 @@ from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.utils import (
+    use_amp_infer,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -87,6 +90,7 @@ from .sezm_nn import (
     ScalarRMSNorm,
     SeZMInteractionBlock,
     SeZMTypeEmbedding,
+    SpinEmbedding,
     WignerDCalculator,
     build_edge_cache,
     build_edge_cache_from_edges,
@@ -155,6 +159,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
+    edge_norm
+        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
+        branches: the radial network hidden layers, the environment-seed FiLM
+        scale/shift logits, the cross-focus competition scalars, and the
+        post-SO(2) residual messages. ``False`` replaces the first three norms
+        with identity and changes only the post-SO(2) norm to unit-floor residual
+        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
+        retain their cutoff envelope instead of receiving the standard
+        ``1/sqrt(eps)`` small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -172,6 +185,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         If True, apply a random roll about the edge-aligned local ``+Z`` axis
         before building the Wigner-D blocks. The roll is sampled independently
         per edge and per forward call.
+    edge_cartesian
+        If True, every block whose message-passing degree is ``1`` or ``2``
+        replaces its per-edge SO(2) rotation-frame tensor product with the
+        equivalent global-frame Cartesian rank-2 tensor product, removing the two
+        per-edge Wigner-D rotations. Blocks with degree ``0`` or ``>= 3`` keep
+        the SO(2) path. When every block takes the Cartesian path the full
+        Wigner-D construction is skipped automatically, and the geometric initial
+        embedding falls back to the zonal coupling.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message, applied in every block whose message-passing degree is ``1`` or
+        ``2``. Configured by a ``"<mode>:<layers>"`` string where ``mode`` is
+        ``"default"`` (one-sided product) or ``"parity"`` (symmetrized product)
+        and ``layers`` is the stack depth; a bare integer ``N`` is shorthand for
+        ``"default:N"``, and ``"none"`` disables it. Orthogonal to
+        ``edge_cartesian``: either, both, or neither may be set. Unlike
+        ``edge_cartesian`` it does not affect the Wigner-D construction, since the
+        per-edge message path is left unchanged.
     lmax
         Maximum degree, only used when `l_schedule` is None.
     l_schedule
@@ -194,12 +225,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         The node degree of block `i` is `l_schedule[i] + extra_node_l`, while
         SO(2) message passing still uses `l_schedule[i]`.
     n_blocks
-        Number of blocks (only used when `l_schedule` is None).
+        Number of blocks (only used when `l_schedule` is None). ``0`` disables
+        the interaction blocks and builds the zero-block descriptor: type
+        embedding, optional env FiLM and geometric initial embedding, then the
+        final SO(3) read-out. The backbone degree is taken from `lmax`
+        (plus `extra_node_l`). Geometry then enters only through the GIE, which
+        is active when `use_env_seed=True` and `lmax + extra_node_l > 0`.
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers per block.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core of each
+        block (legacy alias: ``so2_layers``). ``0`` applies only the
+        edge-condition modulation: the rotation-free per-degree radial scaling on
+        the SO(2) path, or a single ``x @ T_e`` when ``edge_cartesian`` applies.
+        The per-node ``node_cartesian`` stack carries its own independent depth.
     so2_attn_res
         SO(2)-internal depth-wise attention residual mode inside each interaction
         block. Must be one of ``"none"``, ``"independent"``, or ``"dependent"``.
@@ -207,7 +247,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Dynamic radial degree mixer mode inside SO(2) convolution. ``"none"``
         applies elementwise radial modulation, ``"degree"`` uses a
         channel-shared edge-conditioned cross-degree kernel, and
-        ``"degree_channel"`` uses a per-channel cross-degree kernel.
+        ``"degree_channel"`` uses a per-channel cross-degree kernel. Has no
+        effect on blocks taking the Cartesian path (``edge_cartesian`` with
+        degree 1 or 2), where the dynamic radial degree mixer is bypassed.
     radial_so2_rank
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
@@ -328,8 +370,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         interaction block, driven by the SO(3) Wigner-D grid, so ``l>0`` geometry
         is folded into ``l=0`` before the scalar is extracted. The value selects
         the quadratic grid product (``"glu"``) or the polynomial point-wise grid
-        MLP (``"mlp"``). The Wigner-D frame order follows ``kmax``. The residual
-        stays on the ``l=0`` channel.
+        MLP (``"mlp"``). The Wigner-D frame order follows ``kmax``.
+    readout_layers
+        Number of stacked equivariant residual read-out FFNs (default ``1``).
+        Every layer is an ``x + FFN(x)`` residual block sharing the read-out
+        degree; intermediate layers keep the full SO(3) tensor so high-degree
+        geometry is folded into ``l=0`` repeatedly, and only the final layer
+        slices the ``l=0`` channel from its residual sum. With ``so3_readout`` of
+        ``"none"`` the stack is a degree-0 scalar residual MLP on the ``l=0``
+        slice.
     lebedev_quadrature
         Either one boolean applied to both S2 branches, or two booleans
         ``[so2_enabled, ffn_enabled]`` aligned with ``s2_activation``. If
@@ -346,7 +395,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         FFN always keeps this user-provided value.
     use_amp
         If True, use automatic mixed precision (AMP) with bfloat16 on CUDA
-        during training. This can improve speed and reduce memory usage.
+        during training. In eval/inference, AMP is opt-in through
+        ``DP_AMP_INFER``. This can improve speed and reduce memory usage.
         Enabling this option is recommended on GPUs with native bfloat16 support.
         Disable it on GPUs without native bfloat16 support to avoid runtime
         errors or additional conversion overhead.
@@ -400,8 +450,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
+        edge_norm: bool = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         lmax: int = 3,
         l_schedule: list[int] | None = None,
         mmax: int | None = 1,
@@ -410,7 +463,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         extra_node_l: int = 0,
         n_blocks: int = 3,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
+        so2_layers: int | None = None,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "degree_channel",
         radial_so2_rank: int = 1,
@@ -436,6 +490,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         message_node_s2: bool = False,
         message_node_so3: bool = False,
         so3_readout: str = "none",
+        readout_layers: int = 1,
         lebedev_quadrature: bool | list[bool] | None = True,
         activation_function: str = "silu",
         glu_activation: bool = True,
@@ -450,6 +505,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         inner_clamp_r_outer: float | None = None,
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
+        use_spin: list[bool] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -496,6 +552,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
+        self.edge_norm = bool(edge_norm)
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -526,6 +583,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.so3_readout = str(so3_readout).lower()
         if self.so3_readout not in {"none", "glu", "mlp"}:
             raise ValueError("`so3_readout` must be one of 'none', 'glu', or 'mlp'")
+        self.readout_layers = int(readout_layers)
+        if self.readout_layers < 1:
+            raise ValueError("`readout_layers` must be >= 1")
         if lebedev_quadrature is None:
             lebedev_quadrature = [True, True]
         elif isinstance(lebedev_quadrature, bool):
@@ -566,16 +626,25 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.compute_dtype = get_promoted_dtype(self.dtype)
         self.mlp_bias = bool(mlp_bias)
         self.layer_scale = bool(layer_scale)
-        self.use_amp = bool(use_amp)  # and self.training
+        self.use_amp = bool(use_amp)
+        self.use_amp_infer = use_amp_infer()
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         if default_chg_spin is not None and len(default_chg_spin) != 2:
             raise ValueError("`default_chg_spin` must contain [charge, spin].")
         self.default_chg_spin = (
             None if default_chg_spin is None else [float(x) for x in default_chg_spin]
         )
+
+        # === Native per-atom spin embedding ===
+        # The spin vector enters the descriptor as an l=0 magnitude scalar plus
+        # an l=1 direction feature (see ``SpinEmbedding``). Providing per-type
+        # ``use_spin`` flags enables the native spin embedding.
+        self.use_spin = None if use_spin is None else [bool(x) for x in use_spin]
 
         # === Zone bridging: InnerClamp + Source Freeze Propagation Gate ===
         # Both the geometry clamp (``InnerClamp``) and the message-passing
@@ -627,6 +696,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         seed_full_attn = child_seed(self.seed, 5)
         seed_block_attn = child_seed(self.seed, 6)
         seed_charge_spin = child_seed(self.seed, 7)
+        seed_spin_embedding = child_seed(self.seed, 8)
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
@@ -635,12 +705,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             raise ValueError("`kmax` must be non-negative")
         if self.kmax > self.lmax:
             raise ValueError("`kmax` must be <= `lmax`")
-        self.ebed_dims = [get_so3_dim_of_lmax(l) for l in self.l_schedule]
         self._init_node_l_schedules(extra_node_l)
         self.rad_sizes_per_block = [l + 1 for l in self.l_schedule]
 
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        # ``so2_layers`` is the legacy alias for ``mixing_layers``; when supplied
+        # it takes precedence so existing configs keep working.
+        self.mixing_layers = int(mixing_layers if so2_layers is None else so2_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -741,6 +812,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         else:
             self.charge_spin_embedding = None
 
+        if self.use_spin is not None:
+            if self.node_init_lmax < 1:
+                raise ValueError(
+                    "`use_spin` requires a node degree >= 1 "
+                    "(lmax + extra_node_l) to host the l=1 spin feature."
+                )
+            self.spin_embedding: SpinEmbedding | None = SpinEmbedding(
+                ntypes=self.ntypes,
+                channels=self.channels,
+                use_spin=self.use_spin,
+                activation_function=self.activation_function,
+                dtype=self.compute_dtype,  # force fp32+
+                seed=seed_spin_embedding,
+                trainable=self.trainable,
+            )
+            # Packed rows hosting the l=1 spin coefficients (m = -1, 0, +1).
+            self.register_buffer(
+                "_spin_l1_rows",
+                torch.arange(1, 4, dtype=torch.long, device=self.device),
+                persistent=False,
+            )
+        else:
+            self.spin_embedding = None
+
         # === Env FiLM embedding (optional) ===
         if self.use_env_seed:
             self.env_seed_embedding: EnvironmentInitialEmbedding | None = (
@@ -755,25 +850,34 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     mlp_bias=self.mlp_bias,
                     activation_function=self.activation_function,
                     eps=self.eps,
+                    use_spin=self.use_spin,
                     dtype=self.compute_dtype,  # force fp32+
                     trainable=self.trainable,
                     seed=seed_env_seed,
                 )
             )
-            self.film_scale_norm = ScalarRMSNorm(
-                channels=self.channels,
-                n_focus=1,
-                eps=self.eps,
-                dtype=self.compute_dtype,
-                trainable=self.trainable,
-            )
-            self.film_shift_norm = ScalarRMSNorm(
-                channels=self.channels,
-                n_focus=1,
-                eps=self.eps,
-                dtype=self.compute_dtype,
-                trainable=self.trainable,
-            )
+            # The FiLM logits derive from the env-seed matrix D = envᵀenv, which
+            # vanishes at rcut; normalizing them shares the radial network's
+            # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
+            # norms (identity pass-through) to keep the FiLM scale/shift smooth.
+            if self.edge_norm:
+                self.film_scale_norm: nn.Module = ScalarRMSNorm(
+                    channels=self.channels,
+                    n_focus=1,
+                    eps=self.eps,
+                    dtype=self.compute_dtype,
+                    trainable=self.trainable,
+                )
+                self.film_shift_norm: nn.Module = ScalarRMSNorm(
+                    channels=self.channels,
+                    n_focus=1,
+                    eps=self.eps,
+                    dtype=self.compute_dtype,
+                    trainable=self.trainable,
+                )
+            else:
+                self.film_scale_norm = nn.Identity()
+                self.film_shift_norm = nn.Identity()
             film_strength_init = 0.01
             # Use 1D tensor (not scalar) for FSDP2 compatibility
             self.film_scale_strength_log = nn.Parameter(
@@ -814,38 +918,48 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # GIE and truncated for each SO2Conv block.
         # radial_mlp specifies hidden layer sizes; input/output layers are prepended/appended.
         # Use fp32+ precision (same as RBF output) for numerical stability.
-        radial_out_dim = (self.node_l_schedule[0] + 1) * self.channels
+        radial_out_dim = (self.node_init_lmax + 1) * self.channels
         radial_mlp_layers = [self.n_radial, *self.radial_mlp, radial_out_dim]
         self.radial_embedding = RadialMLP(
             radial_mlp_layers,
             activation_function=self.activation_function,
             dtype=self.compute_dtype,  # force fp32+
             trainable=self.trainable,
+            radial_norm=self.edge_norm,
             seed=seed_radial_embedding,
         )
 
         # === C^3 cutoff envelope for edge weight ===
         self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
 
-        wigner_lmax = self.l_schedule[0]
-        # force fp32+
+        # === Edge-aligned Wigner-D calculator ===
+        # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
+        # per-edge Wigner-D blocks are built only when a block keeps the SO(2)
+        # path (tracked by ``_need_full_wigner``).
+        block_edge_cartesian = [
+            self.edge_cartesian and l_b in (1, 2) for l_b in self.l_schedule
+        ]
+        block_node_cartesian = [
+            self.node_cartesian if l_b in (1, 2) else "none" for l_b in self.l_schedule
+        ]
+        self._need_full_wigner = not all(block_edge_cartesian)
         self.wigner_calc = WignerDCalculator(
-            lmax=wigner_lmax,
+            lmax=self.mp_init_lmax,
             eps=self.eps,
-            dtype=self.compute_dtype,
+            dtype=self.compute_dtype,  # force fp32+
         )
 
-        self.use_gie = self.use_env_seed and self.node_l_schedule[0] > 0
+        self.use_gie = self.use_env_seed and self.node_init_lmax > 0
         if self.use_gie:
             self.gie = GeometricInitialEmbedding(
-                lmax=self.node_l_schedule[0],
+                lmax=self.node_init_lmax,
                 channels=self.channels,
                 dtype=self.compute_dtype,  # force fp32+
             )
             if self.extra_node_l > 0:
                 self.gie_zonal_wigner_calc: WignerDCalculator | None = (
                     WignerDCalculator(
-                        lmax=self.node_l_schedule[0],
+                        lmax=self.node_init_lmax,
                         eps=self.eps,
                         dtype=self.compute_dtype,
                     )
@@ -874,11 +988,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
+                    focus_norm=self.edge_norm,
                     so2_norm=self.so2_norm,
-                    so2_layers=self.so2_layers,
+                    mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
                     radial_so2_mode=self.radial_so2_mode,
                     radial_so2_rank=self.radial_so2_rank,
+                    edge_cartesian=block_edge_cartesian[block_idx],
+                    node_cartesian=block_node_cartesian[block_idx],
                     ffn_neurons=self.block_ffn_neurons,
                     node_wise_grid_mlp=self.node_wise_grid_mlp,
                     node_wise_grid_branch=self.node_wise_grid_branch,
@@ -906,6 +1023,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
+                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -945,37 +1063,42 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 seed=child_seed(seed_block_attn, 2000),
             )
 
-        # === Final FFN for l=0 output mixing ===
-        # ``so3_readout="none"`` runs a degree-0 scalar FFN on the l=0 slice.
-        # ``"glu"``/``"mlp"`` run a full FFN at the last block's node degree whose
-        # SO(3) Wigner-D grid folds l>0 geometry into l=0; the value selects the
-        # quadratic grid product or the point-wise grid MLP.
-        readout_lmax = self.node_l_schedule[-1]
-        self.output_ffn = EquivariantFFN(
-            lmax=0 if self.so3_readout == "none" else readout_lmax,
-            channels=self.channels,
-            hidden_channels=self.out_ffn_neurons,
-            kmax=min(self.kmax, readout_lmax),
-            grid_mlp=self.so3_readout == "mlp",
-            grid_branch=0,
-            dtype=self.compute_dtype,
-            s2_activation=False,
-            ffn_so3_grid=self.so3_readout != "none",
-            activation_function=self.out_activation_function,
-            glu_activation=self.out_glu_activation,
-            mlp_bias=self.mlp_bias,
-            trainable=self.trainable,
-            seed=seed_out,
+        # === Final FFN stack for l=0 output mixing ===
+        # ``readout_layers`` residual blocks run in sequence (see
+        # ``_apply_readout``): ``readout_pre_layers`` keep the full SO(3) tensor
+        # and only the final ``output_ffn`` slices l=0. The final layer keeps the
+        # ``output_ffn`` name and ``seed_out`` so a single-layer read-out matches
+        # the single-module checkpoint layout.
+        readout_lmax = self.node_readout_lmax
+        readout_ffn_kwargs = {
+            "lmax": 0 if self.so3_readout == "none" else readout_lmax,
+            "channels": self.channels,
+            "hidden_channels": self.out_ffn_neurons,
+            "kmax": min(self.kmax, readout_lmax),
+            "grid_mlp": self.so3_readout == "mlp",
+            "grid_branch": 0,
+            "dtype": self.compute_dtype,
+            "s2_activation": False,
+            "ffn_so3_grid": self.so3_readout != "none",
+            "activation_function": self.out_activation_function,
+            "glu_activation": self.out_glu_activation,
+            "mlp_bias": self.mlp_bias,
+            "trainable": self.trainable,
+        }
+        self.readout_pre_layers = nn.ModuleList(
+            EquivariantFFN(**readout_ffn_kwargs, seed=child_seed(seed_out, layer_index))
+            for layer_index in range(self.readout_layers - 1)
         )
+        self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
 
         for p in self.parameters():
             p.requires_grad = self.trainable
 
-        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP)
+        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(
             "_empty_tensor",
             torch.empty(0, device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            persistent=True,
+            persistent=False,
         )
 
         # === Statistics buffers (interface compatibility) ===
@@ -1004,6 +1127,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         fparam: torch.Tensor | None = None,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1041,7 +1165,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         force_embedding
             Optional precomputed equivariant force embedding with shape
             ``(nf * nloc, D, 1, channels)``, where
-            ``D = (node_l_schedule[0] + 1) ** 2``. This tensor is added to the
+            ``D = (node_init_lmax + 1) ** 2``. This tensor is added to the
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
@@ -1082,6 +1206,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_mask=edge_mask,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                spin=spin,
             )
             return (
                 descriptor,
@@ -1124,6 +1249,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     nloc=nloc,
                 )
 
+            # Native spin: condition the l=0 type features on the spin magnitude
+            # and hold the l=1 direction coefficients for the backbone seed.
+            spin_vec = None
+            if self.spin_embedding is not None and spin is not None:
+                type_ebed, spin_vec = self._apply_spin_embedding(
+                    type_ebed, spin, atype_loc.reshape(-1), n_nodes=n_nodes
+                )
+
         # === Step 4. Build edge cache once (geometry + RBF + Wigner-D) ===
         # Zone bridging (InnerClamp + SFPG + ZBL) is not routed through the
         # standard DeePMD path: bridging only makes physical sense when
@@ -1148,23 +1281,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
+                build_wigner=self._need_full_wigner,
             )
 
-        ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
+        ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
 
         # === Step 5. Compute radial features once (fp32+) ===
-        # Shape: (E, (node_lmax+1)*C) -> (E, node_lmax+1, C)
+        # Shape: (E, (node_init_lmax+1)*C) -> (E, node_init_lmax+1, C)
         radial_feat = None
         with nvtx_range("radial_embedding"):
             if edge_cache.src.numel() > 0:
                 radial_feat = rearrange(
                     self.radial_embedding(edge_cache.edge_rbf),
                     "E (L C) -> E L C",
-                    L=self.node_l_schedule[0] + 1,
+                    L=self.node_init_lmax + 1,
                     C=self.channels,
-                )  # (E, lmax+1, C)
+                )  # (E, node_init_lmax+1, C)
                 if self.version >= 1.1:
                     radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
@@ -1172,10 +1306,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("env_film"):
             if self.use_env_seed and edge_cache.src.numel() > 0:
                 atype_flat = atype_loc.reshape(-1)  # (N,)
+                spin_flat = (
+                    spin.reshape(n_nodes, 3)
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
                     n_nodes=n_nodes,
+                    spin=spin_flat,
                 )  # (N, 2*C)
                 scale_logits = film[:, : self.channels]  # (N, C)
                 shift_logits = film[:, self.channels :]  # (N, C)
@@ -1191,19 +1331,35 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 8. Geometric Initial Embedding (fp32+) ===
+        # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
             if self.use_gie and radial_feat is not None:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
+                spin_l1_message = (
+                    self.spin_embedding.edge_l1(
+                        spin.reshape(n_nodes, 3),
+                        atype_loc.reshape(-1),
+                        edge_cache,
+                    )
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
+                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
 
-        # === Step 9. Fuse edge type features into radial features (fp32+) ===
+        # === Step 9. Add the on-site native spin l=1 to the backbone ===
+        # The neighbor-spin l=1 is aggregated inside GIE (degree-normalized like
+        # the geometry); the atom's own spin direction is added here, un-normalized.
+        if spin_vec is not None:
+            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
+
+        # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
             if radial_feat is not None:
                 radial_feat = radial_feat + rearrange(
@@ -1216,36 +1372,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             else:
                 rad_feat_per_block = []
 
-        # === Step 10. Convert to self.dtype and run blocks ===
+        # === Step 11. Convert to self.dtype and run blocks ===
+        # The block stage is skipped entirely when there are no interaction
+        # blocks (zero-block descriptor) or no valid edges, sparing the working
+        # edge-cache dtype cast that only the blocks consume.
         with nvtx_range("blocks"):
             x = x.to(dtype=self.dtype)  # (N, D, 1, C)
             if force_embedding is not None:
                 x = x + force_embedding.to(dtype=self.dtype)
-            if edge_cache.src.numel() > 0:
+            if self.blocks and edge_cache.src.numel() > 0:
                 edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
                 with self._compute_mode_ctx(extended_coord.device):
                     x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
 
-        # === Step 11. Final l=0 output mixing ===
-        # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
-        # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
-        # residual is added on the full coefficient tensor before extracting
-        # l=0: slicing the summed tensor rather than the FFN output keeps the
-        # saved degree-axis stride static under torch.compile dynamic shapes.
+        # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
-            ffn_in = (
-                x[:, 0:1, :, :]
-                .reshape(n_nodes, 1, 1, self.channels)
-                .to(dtype=self.compute_dtype)
-                if self.so3_readout == "none"
-                # truncate to the final node degree: the empty-edge path
-                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
-                # is built for node_ebed_dims[-1]. No-op when blocks ran.
-                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
-            )
-            x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
+            x_scalar = self._apply_readout(x, n_nodes)
 
-        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        # === Step 13. Reshape to (nf, nloc, channels) and return ===
         descriptor = rearrange(
             x_scalar, "(nf nloc) 1 1 C -> nf nloc C", nf=nf, nloc=nloc
         )  # (nf, nloc, C)
@@ -1267,6 +1411,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         edge_mask: torch.Tensor,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         nloc: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1300,7 +1445,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         force_embedding
             Optional precomputed equivariant force embedding with shape
             ``(nf * nloc, D, 1, channels)``, where
-            ``D = (node_l_schedule[0] + 1) ** 2``. This tensor is added to the
+            ``D = (node_init_lmax + 1) ** 2``. This tensor is added to the
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
@@ -1356,6 +1501,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
             n_nodes = type_ebed.shape[0]
 
+            # Native spin: condition the l=0 type features on the spin magnitude
+            # and hold the l=1 direction coefficients for the backbone seed.
+            spin_vec = None
+            if self.spin_embedding is not None and spin is not None:
+                type_ebed, spin_vec = self._apply_spin_embedding(
+                    type_ebed, spin, atype_flat, n_nodes=n_nodes
+                )
+
         # === Step 3. Build edge cache once (sparse edges) ===
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache_from_edges(
@@ -1379,9 +1532,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
+                build_wigner=self._need_full_wigner,
             )
 
-        ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
+        ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
         x0 = type_ebed  # (N, C)
         x0_out = x0  # (N, C)
 
@@ -1390,19 +1544,25 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             radial_feat_flat = self.radial_embedding(edge_cache.edge_rbf)
             radial_feat = radial_feat_flat.reshape(
                 radial_feat_flat.shape[0],
-                self.node_l_schedule[0] + 1,
+                self.node_init_lmax + 1,
                 self.channels,
-            )  # (E, lmax+1, C)
+            )  # (E, node_init_lmax+1, C)
             if self.version >= 1.1:
                 radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
         # === Step 5. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
             if self.use_env_seed:
+                spin_flat = (
+                    spin.reshape(n_nodes, 3)
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
                     n_nodes=n_nodes,
+                    spin=spin_flat,
                 )  # (N, 2*C)
                 scale_logits = film[:, : self.channels]  # (N, C)
                 shift_logits = film[:, self.channels :]  # (N, C)
@@ -1418,18 +1578,32 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 7. Geometric Initial Embedding (fp32+) ===
+        # === Step 7. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
             if self.use_gie:
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
+                spin_l1_message = (
+                    self.spin_embedding.edge_l1(
+                        spin.reshape(n_nodes, 3), atype_flat, edge_cache
+                    )
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
+                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
 
-        # === Step 8. Fuse edge type features into radial features (fp32+) ===
+        # === Step 8. Add the on-site native spin l=1 to the backbone ===
+        # The neighbor-spin l=1 is aggregated inside GIE; the
+        # atom's own spin direction is added here, un-normalized.
+        if spin_vec is not None:
+            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
+
+        # === Step 9. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
             radial_feat = radial_feat.to(dtype=self.dtype)
             radial_feat = radial_feat + rearrange(
@@ -1439,18 +1613,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
             ]
 
-        # === Step 9. Convert to self.dtype and run blocks ===
+        # === Step 10. Convert to self.dtype and run blocks ===
+        # The block stage is skipped entirely for the zero-block descriptor,
+        # sparing the working edge-cache dtype cast that only the blocks consume.
         with nvtx_range("blocks"):
             x = x.to(dtype=self.dtype)  # (N, D, 1, C)
             if force_embedding is not None:
                 x = x + force_embedding.to(dtype=self.dtype)
-            edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
-            with self._compute_mode_ctx(extended_coord.device):
-                x = self._forward_blocks(
-                    x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
-                )
+            if self.blocks:
+                edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
+                with self._compute_mode_ctx(extended_coord.device):
+                    x = self._forward_blocks(
+                        x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
+                    )
 
-        # === Step 10. Keep the owned-atom rows for the read-out ===
+        # === Step 11. Keep the owned-atom rows for the read-out ===
         # ``n_out_nodes`` is the owned-node count in the flattened layout
         # (``nf * nloc``). Single-domain: ``out_nloc == n_per_frame``, so this
         # equals the whole node set and the slice is a no-op. Parallel
@@ -1459,26 +1636,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         n_out_nodes = nf * out_nloc
         x = x[:n_out_nodes]
 
-        # === Step 11. Final l=0 output mixing ===
-        # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
-        # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
-        # residual is added on the full coefficient tensor before extracting
-        # l=0: slicing the summed tensor rather than the FFN output keeps the
-        # saved degree-axis stride static under torch.compile dynamic shapes.
+        # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
-            ffn_in = (
-                x[:, 0:1, :, :]
-                .reshape(n_out_nodes, 1, 1, self.channels)
-                .to(dtype=self.compute_dtype)
-                if self.so3_readout == "none"
-                # truncate to the final node degree: the empty-edge path
-                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
-                # is built for node_ebed_dims[-1]. No-op when blocks ran.
-                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
-            )
-            x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
+            x_scalar = self._apply_readout(x, n_out_nodes)
 
-        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        # === Step 13. Reshape to (nf, nloc, channels) and return ===
         descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
         return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
 
@@ -1557,7 +1719,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 x = block_output
 
             # === Step 3. Final aggregation over all completed unit representations ===
-            final_dim = self.node_ebed_dims[-1]
+            final_dim = self.node_readout_dim
             final_sources = [source[:, :final_dim, :, :] for source in unit_history]
             x = self.final_full_attn_res(
                 sources=final_sources,
@@ -1589,7 +1751,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             x = block_output
 
         # === Step 3. Final aggregation over all completed block summaries ===
-        final_dim = self.node_ebed_dims[-1]
+        final_dim = self.node_readout_dim
         final_sources = [source[:, :final_dim, :, :] for source in block_history]
         x = self.final_block_attn_res(
             sources=final_sources,
@@ -1597,6 +1759,71 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             current_x=x,
         ).to(dtype=self.dtype)
         return x
+
+    def _apply_readout(self, x: torch.Tensor, n_rows: int) -> torch.Tensor:
+        """Fold the node tensor into the scalar (``l=0``) descriptor.
+
+        Runs the ``readout_layers`` stack of equivariant residual read-out FFNs.
+        ``so3_readout="none"`` feeds only the ``l=0`` slice; ``"glu"``/``"mlp"``
+        feed the full ``(N, D, 1, C)`` node tensor so the SO(3) grid folds
+        ``l>0`` geometry into ``l=0``. Each layer is an ``x + FFN(x)`` residual:
+        the ``readout_pre_layers`` keep the full tensor so the geometry keeps
+        folding, while the final ``output_ffn`` slices the ``l=0`` channel from
+        its residual sum. Slicing the summed tensor rather than the FFN output
+        keeps the saved degree-axis stride static under ``torch.compile`` dynamic
+        shapes.
+
+        Parameters
+        ----------
+        x
+            Node features with shape ``(n_rows, D, 1, channels)``. With the
+            blocks skipped (zero-block or empty-edge path) ``D`` is the initial
+            degree; otherwise the pyramid has shrunk it, so the read-out slice to
+            ``node_readout_dim`` is a no-op there.
+        n_rows
+            Number of node rows fed to the read-out.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar descriptor with shape ``(n_rows, 1, 1, channels)``.
+        """
+        if self.so3_readout == "none":
+            x_ro = (
+                x[:, 0:1, :, :]
+                .reshape(n_rows, 1, 1, self.channels)
+                .to(dtype=self.compute_dtype)
+            )
+        else:
+            x_ro = x[:, : self.node_readout_dim, :, :].to(dtype=self.compute_dtype)
+        for layer in self.readout_pre_layers:
+            x_ro = x_ro + layer(x_ro)
+        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+
+    def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
+        """
+        Return the cached global->local edge quaternion, rebuilding if absent.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            Per-edge cache. ``edge_quat`` is populated by the cache builder; the
+            fallback covers caches produced without it.
+
+        Returns
+        -------
+        torch.Tensor
+            Unit quaternions with shape (E, 4).
+        """
+        edge_quat = edge_cache.edge_quat
+        if edge_quat is None:
+            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_quat = build_edge_quaternion(
+                edge_cache.edge_vec,
+                edge_len=edge_len,
+                eps=self.eps,
+            )
+        return edge_quat
 
     def _build_gie_zonal_coupling(
         self,
@@ -1608,12 +1835,18 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Returns
         -------
         torch.Tensor or None
-            Coupling with shape ``(E, D_node - 1)`` when ``extra_node_l > 0``;
-            otherwise None, letting GIE gather from the MP Wigner-D cache.
+            Coupling with shape ``(E, D_node - 1)``. ``None`` is returned only
+            when the full Wigner-D blocks are present and ``extra_node_l == 0``,
+            in which case GIE gathers the coupling from the cache directly. When
+            the blocks are skipped (all-Cartesian model) the full coupling is
+            reconstructed from the edge quaternion via the m=0-only path.
         """
+        if edge_cache.Dt_full is None:
+            calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
-        mp_row_count = self.ebed_dims[0] - 1
+        mp_row_count = self.mp_init_dim - 1
         mp_row_index = self.gie.non_scalar_row_index[:mp_row_count]
         mp_m0_col_index = self.gie.zonal_m0_col_index_for_row[:mp_row_count]
         mp_coupling = edge_cache.Dt_full[
@@ -1621,16 +1854,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             mp_row_index,
             mp_m0_col_index,
         ]
-        edge_quat = edge_cache.edge_quat
-        if edge_quat is None:
-            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
-            edge_quat = build_edge_quaternion(
-                edge_cache.edge_vec,
-                edge_len=edge_len,
-                eps=self.eps,
-            )
         extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
-            edge_quat,
+            self._edge_quaternion(edge_cache),
             lmin=self.lmax + 1,
         )
         return torch.cat([mp_coupling, extra_coupling], dim=1)
@@ -1665,6 +1890,44 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         condition = self.charge_spin_embedding(charge_spin.to(dtype=type_ebed.dtype))
         condition = condition[:, None, :].expand(nf, nloc, self.channels)
         return type_ebed + condition.reshape_as(type_ebed)
+
+    def _apply_spin_embedding(
+        self,
+        type_ebed: torch.Tensor,
+        spin: torch.Tensor,
+        atype_flat: torch.Tensor,
+        *,
+        n_nodes: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Inject the per-atom spin embedding into the node features.
+
+        The l=0 magnitude scalar is added to the flattened type embedding so it
+        propagates into the scalar backbone, the per-edge type features, and
+        every block's radial features (exactly like the type embedding). The l=1
+        direction coefficients are returned for the caller to add to the
+        equivariant backbone after the geometric initial embedding.
+
+        Parameters
+        ----------
+        type_ebed
+            Flattened type embedding with shape (N, channels).
+        spin
+            Per-atom spin vectors with shape (nf, nloc, 3) or (N, 3).
+        atype_flat
+            Flattened local atom types with shape (N,).
+        n_nodes
+            Number of local nodes ``N = nf * nloc``.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            The l=0-conditioned type embedding with shape (N, channels) and the
+            packed l=1 direction coefficients with shape (N, 3, channels).
+        """
+        scalar, vector = self.spin_embedding(spin.reshape(n_nodes, 3), atype_flat)
+        type_ebed = type_ebed + scalar.to(dtype=type_ebed.dtype)
+        return type_ebed, vector
 
     def _edge_type_keep_mask(
         self,
@@ -1752,14 +2015,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         mmax: int | None,
         m_schedule: list[int] | None,
     ) -> None:
-        """Parse and validate L/M schedules, setting self.l_schedule/m_schedule/lmax/mmax."""
+        """Parse and validate L/M schedules, setting self.l_schedule/m_schedule/lmax/mmax.
+
+        An empty schedule (``n_blocks=0`` or ``l_schedule=[]``) is valid and
+        selects the zero-block descriptor: no interaction blocks are built, only
+        the initial SO(3) backbone (type embedding, optional env FiLM and GIE)
+        followed by the final read-out. The backbone degree then derives from
+        the configured ``lmax``/``mmax`` instead of the schedule endpoints.
+        """
         # === L schedule ===
         if l_schedule is None:
             self.l_schedule = [int(lmax)] * int(n_blocks)
         else:
             self.l_schedule = [int(x) for x in l_schedule]
-        if len(self.l_schedule) == 0:
-            raise ValueError("`l_schedule` must be non-empty")
         if any(x < 0 for x in self.l_schedule):
             raise ValueError("`l_schedule` entries must be non-negative")
         if any(
@@ -1768,7 +2036,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ):
             raise ValueError("`l_schedule` must be non-increasing (pyramid schedule)")
 
-        self.lmax = int(self.l_schedule[0])
+        # The first entry sets the maximum degree; with zero blocks the backbone
+        # degree falls back to the configured ``lmax``.
+        self.lmax = int(self.l_schedule[0]) if self.l_schedule else int(lmax)
         self.n_blocks = len(self.l_schedule)
 
         # === M schedule ===
@@ -1782,8 +2052,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 self.m_schedule = [min(mmax_i, int(l)) for l in self.l_schedule]
         else:
             self.m_schedule = [int(x) for x in m_schedule]
-        if len(self.m_schedule) == 0:
-            raise ValueError("`m_schedule` must be non-empty")
         if len(self.m_schedule) != len(self.l_schedule):
             raise ValueError("`m_schedule` must have the same length as `l_schedule`")
         if any(x < 0 for x in self.m_schedule):
@@ -1793,10 +2061,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "`m_schedule` entries must satisfy `m_schedule[i] <= l_schedule[i]`"
             )
 
-        self.mmax = int(self.m_schedule[0])
+        self.mmax = (
+            int(self.m_schedule[0])
+            if self.m_schedule
+            else (int(mmax) if mmax is not None else int(self.lmax))
+        )
 
     def _init_node_l_schedules(self, extra_node_l: int) -> None:
-        """Parse node degree schedules derived from message-passing schedules."""
+        """Parse node degree schedules and resolve the canonical backbone degrees.
+
+        The descriptor references three backbone degrees that must stay valid
+        even with zero interaction blocks, so they are resolved here into
+        scalars rather than indexed off the (possibly empty) schedules:
+
+        - ``mp_init_lmax`` : message-passing degree at initialization, driving
+          the Wigner-D calculator and the GIE message-passing coupling rows.
+        - ``node_init_lmax`` : node backbone degree at initialization, driving
+          the radial-embedding width, the initial state dimension, and GIE.
+        - ``node_readout_lmax`` : node backbone degree fed to the read-out FFN.
+
+        With blocks these equal ``l_schedule[0]``, ``node_l_schedule[0]`` and
+        ``node_l_schedule[-1]``; with zero blocks all three collapse onto the
+        configured ``lmax`` (plus ``extra_node_l`` on the node side), so the
+        pyramid endpoints are never read from an empty list.
+        """
         self.extra_node_l = int(extra_node_l)
         if self.extra_node_l < 0:
             raise ValueError("`extra_node_l` must be non-negative")
@@ -1806,8 +2094,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.node_ebed_dims = [
             get_so3_dim_of_lmax(l_value) for l_value in self.node_l_schedule
         ]
-        self.node_lmax = int(self.node_l_schedule[0])
-        self.node_ebed_dim = int(self.node_ebed_dims[0])
+
+        # === Canonical backbone degrees (valid for any block count) ===
+        self.mp_init_lmax = int(self.lmax)
+        self.node_init_lmax = int(self.lmax) + self.extra_node_l
+        self.node_readout_lmax = (
+            int(self.node_l_schedule[-1]) if self.n_blocks > 0 else self.node_init_lmax
+        )
+        self.mp_init_dim = get_so3_dim_of_lmax(self.mp_init_lmax)
+        self.node_init_dim = get_so3_dim_of_lmax(self.node_init_lmax)
+        self.node_readout_dim = get_so3_dim_of_lmax(self.node_readout_lmax)
 
     def _canonicalize_charge_spin(
         self,
@@ -1897,21 +2193,28 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         Notes
         -----
-        - When `use_amp=True` and the model is in training mode, enables
-          torch.autocast with bfloat16 on CUDA. This can improve speed and
-          reduce memory usage on GPUs with native bfloat16 support.
+        - When `use_amp=True`, enables torch.autocast with bfloat16 on CUDA
+          during training. Eval/inference enables the same autocast region only
+          when ``DP_AMP_INFER`` was truthy at construction time.
+          This can improve speed and reduce memory usage on GPUs with native
+          bfloat16 support.
           Disable AMP on GPUs without native bfloat16 support to avoid runtime
           errors or additional conversion overhead.
         - Only affects autocast-eligible operations.
-        - Does nothing during inference (`self.training=False`), on non-CUDA
-          devices, or when `use_amp=False`.
+        - Does nothing during inference (`self.training=False`) unless
+          ``DP_AMP_INFER`` is enabled, on non-CUDA devices, or when
+          `use_amp=False`.
 
         Yields
         ------
         None
             Runs the wrapped region under the configured AMP setting.
         """
-        if not self.use_amp or device.type != "cuda" or not self.training:
+        if (
+            not self.use_amp
+            or device.type != "cuda"
+            or (not self.training and not self.use_amp_infer)
+        ):
             yield
             return
 
@@ -2158,10 +2461,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
+                "edge_norm": self.edge_norm,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
@@ -2186,6 +2492,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "message_node_s2": self.message_node_s2,
                 "message_node_so3": self.message_node_so3,
                 "so3_readout": self.so3_readout,
+                "readout_layers": self.readout_layers,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
@@ -2199,6 +2506,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "inner_clamp_r_outer": self.inner_clamp_r_outer,
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
+                "use_spin": self.use_spin,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
             "env_mat": DPEnvMat(self.rcut, self.rcut, self.eps).serialize(),

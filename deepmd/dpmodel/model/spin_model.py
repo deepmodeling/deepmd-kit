@@ -63,6 +63,16 @@ class SpinModel(NativeOP):
         super().__init__()
         self.backbone_model = backbone_model
         self.spin = spin
+        # Spin graph-lower unsupported: carry-all routing diverges on
+        # sel-binding spin systems and spin export trips inductor scatter
+        # codegen. Re-derived structurally here so it survives both
+        # construction and serialize/deserialize round trips (the flag is
+        # not part of the serialized schema).
+        dp_atomic_model = self.backbone_model.get_dp_atomic_model()
+        if dp_atomic_model is not None:
+            descriptor = getattr(dp_atomic_model, "descriptor", None)
+            if descriptor is not None and hasattr(descriptor, "disable_graph_lower"):
+                descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
@@ -170,6 +180,26 @@ class SpinModel(NativeOP):
             mapping_updated = None
         # extend the nlist
         nlist_updated = self.extend_nlist(extended_atype, nlist)
+        # This extension CREATES the virtual-atom nlist entries, so it is the
+        # BUILD site of the spin-extended nlist: fold the backbone's model-level
+        # pair exclusion in here (decision #18/A4 — the lower consumes a
+        # pre-excluded nlist and never re-applies it). No-op when the backbone
+        # has no pair_exclude_types.
+        pair_excl = getattr(
+            self.backbone_model.atomic_model
+            if hasattr(self.backbone_model, "atomic_model")
+            else self.backbone_model,
+            "pair_excl",
+            None,
+        )
+        if pair_excl is not None:
+            from deepmd.dpmodel.utils.nlist import (
+                apply_pair_exclusion_nlist,
+            )
+
+            nlist_updated = apply_pair_exclusion_nlist(
+                nlist_updated, extended_atype_updated, pair_excl
+            )
         return (
             extended_coord_updated,
             extended_atype_updated,
@@ -628,6 +658,12 @@ class SpinModel(NativeOP):
             charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             coord_corr_for_virial=coord_corr_for_virial,
+            # Spin graph support is not yet implemented; the carry-all graph
+            # route diverges on sel-binding spin systems (virtual atoms double
+            # the density).  Belt-and-braces: the backbone descriptor already
+            # has graph-lower disabled in ``__init__``, but force the legacy
+            # dense-nlist path here too until spin-graph support lands.
+            neighbor_graph_method="legacy",
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:

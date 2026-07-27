@@ -144,14 +144,25 @@ int max_numneigh(const InputNlist& to_nlist);
 // build neighbor list.
 // outputs
 //	nlist, max_list_size
+//	nlist contains nframes * nloc rows. Row frame_idx * nloc + atom_idx
+//	stores the neighbors of local atom atom_idx in that frame.
 //	max_list_size is the maximal size of jlist.
 // inputs
-//	c_cpy, nloc, nall, mem_size, rcut, region
-//	mem_size is the size of allocated memory for jlist.
+//	c_cpy, nloc, nall, mem_size, rcut, nframes, type
+//	c_cpy stores nframes coordinate blocks with nall atoms each, including
+//	ghost atoms, laid out as c_cpy[(frame_idx * nall + atom) * 3 + dim].
+//	nloc is the number of local atoms per frame; nall is the total number of
+//	local and ghost atoms per frame.
+//	mem_size is the size of allocated memory for each jlist row.
+//	nframes is the number of coordinate frames.
+//	type may be nullptr/NULL, or a per-atom type array.
+//	The type array uses the same frame-major nall stride as c_cpy:
+//	type[frame_idx * nall + atom].
+//	When the center or neighbor atom has type < 0, that pair is excluded.
 // returns
 //	0: successful
 //	1: the memory is not large enough to hold all neighbors.
-//	   i.e. max_list_size > mem_nall
+//	   i.e. max_list_size > mem_size
 template <typename FPTYPE>
 int build_nlist_cpu(InputNlist& nlist,
                     int* max_list_size,
@@ -159,7 +170,9 @@ int build_nlist_cpu(InputNlist& nlist,
                     const int& nloc,
                     const int& nall,
                     const int& mem_size,
-                    const float& rcut);
+                    const float& rcut,
+                    const int& nframes = 1,
+                    const int* type = nullptr);
 
 void use_nei_info_cpu(int* nlist,
                       int* ntype,
@@ -208,14 +221,27 @@ void use_nlist_map(int* nlist,
 // build neighbor list.
 // outputs
 //	nlist, max_list_size
+//	nlist contains nframes * nloc rows. Row frame_idx * nloc + atom_idx
+//	stores the neighbors of local atom atom_idx in that frame.
 //	max_list_size is the maximal size of jlist.
 // inputs
-//	c_cpy, nloc, nall, mem_size, rcut, region
-//	mem_size is the size of allocated memory for jlist.
+//	nlist_data, c_cpy, nloc, nall, mem_size, rcut, nframes, type
+//	nlist_data is temporary GPU workspace of at least
+//	2 * nframes * nloc * mem_size ints.
+//	c_cpy stores nframes coordinate blocks with nall atoms each, including
+//	ghost atoms, laid out as c_cpy[(frame_idx * nall + atom) * 3 + dim].
+//	nloc is the number of local atoms per frame; nall is the total number of
+//	local and ghost atoms per frame.
+//	mem_size is the size of allocated memory for each jlist row.
+//	nframes is the number of coordinate frames.
+//	type may be nullptr/NULL, or a per-atom type array.
+//	The type array uses the same frame-major nall stride as c_cpy:
+//	type[frame_idx * nall + atom].
+//	When the center or neighbor atom has type < 0, that pair is excluded.
 // returns
 //	0: successful
-//	1: the memory is not large enough to hold all neighbors.
-//	   i.e. max_list_size > mem_nall
+//	1: the temporary row storage is not large enough.
+//	   i.e. mem_size < nall
 template <typename FPTYPE>
 int build_nlist_gpu(InputNlist& nlist,
                     int* max_list_size,
@@ -224,7 +250,9 @@ int build_nlist_gpu(InputNlist& nlist,
                     const int& nloc,
                     const int& nall,
                     const int& mem_size,
-                    const float& rcut);
+                    const float& rcut,
+                    const int& nframes = 1,
+                    const int* type = NULL);
 
 /**
  * @brief Filter the fake atom type.

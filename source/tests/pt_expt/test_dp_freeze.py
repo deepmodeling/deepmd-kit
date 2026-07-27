@@ -41,6 +41,36 @@ model_se_e2_a = {
     "data_stat_nbatch": 20,
 }
 
+# dpa1 with attn_layer == 0 — the only graph-eligible model family today
+# (mixed_types and uses_graph_lower()==True), used to exercise the
+# ``freeze --lower-kind graph`` public-CLI path.
+model_dpa1_graph = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "se_atten",
+        "sel": 30,
+        "rcut_smth": 2.0,
+        "rcut": 6.0,
+        "neuron": [2, 4, 8],
+        "axis_neuron": 4,
+        "attn": 5,
+        "attn_layer": 0,
+        "attn_dotr": True,
+        "attn_mask": False,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": True,
+        "temperature": 1.0,
+        "type_one_side": True,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [5, 5, 5],
+        "resnet_dt": True,
+        "seed": 1,
+    },
+}
+
 
 class TestDPFreezePtExpt(unittest.TestCase):
     """Test dp freeze for the pt_expt backend."""
@@ -102,6 +132,79 @@ class TestDPFreezePtExpt(unittest.TestCase):
         main(flags)
         expected = os.path.join(self.tmpdir, "frozen_default_suffix.pte")
         self.assertTrue(os.path.exists(expected))
+
+    def test_freeze_output_suffix_by_lower_kind(self) -> None:
+        """main() defaults a suffix-less output to .pt2 for --lower-kind graph
+        and .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
+        review). freeze() is mocked so the suffix logic is checked without the
+        AOTInductor compile cost.
+        """
+        from unittest import (
+            mock,
+        )
+
+        cases = [
+            ("graph", "out_g", None, ".pt2"),  # graph, no suffix -> .pt2
+            ("nlist", "out_n", None, ".pte"),  # nlist, no suffix -> .pte
+            ("graph", "out_g_explicit", ".pte", ".pte"),  # explicit .pte kept
+            ("nlist", "out_n_explicit", ".pt2", ".pt2"),  # explicit .pt2 kept
+        ]
+        for lower_kind, stem, explicit, expected_suffix in cases:
+            with self.subTest(lower_kind=lower_kind, explicit=explicit):
+                name = stem + (explicit or "")
+                captured: dict = {}
+
+                def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+                    captured["output"] = output
+                    captured["lower_kind"] = lower_kind
+
+                flags = argparse.Namespace(
+                    command="freeze",
+                    checkpoint_folder=self.ckpt_file,
+                    output=os.path.join(self.tmpdir, name),
+                    head=None,
+                    lower_kind=lower_kind,
+                    log_level=2,
+                    log_path=None,
+                )
+                with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
+                    main(flags)
+                self.assertTrue(captured["output"].endswith(expected_suffix))
+                self.assertEqual(captured["lower_kind"], lower_kind)
+
+    def test_freeze_graph_rejects_ineligible(self) -> None:
+        """``--lower-kind graph`` on a non-graph-eligible model (se_e2_a,
+        mixed_types=False) fails fast rather than emitting a broken .pt2.
+        """
+        output = os.path.join(self.tmpdir, "frozen_graph_reject.pt2")
+        with self.assertRaises(ValueError):
+            freeze(model=self.ckpt_file, output=output, lower_kind="graph")
+
+    def test_freeze_graph_dpa1(self) -> None:
+        """``freeze --lower-kind graph`` on a graph-eligible dpa1(attn_layer=0)
+        model produces a .pt2 whose metadata records the graph lower (the
+        user-facing entry point to the C++ graph inference path).
+        """
+        import json
+        import zipfile
+
+        model_params = deepcopy(model_dpa1_graph)
+        model = get_model(model_params)
+        wrapper = ModelWrapper(model, model_params=model_params)
+        ckpt = os.path.join(self.tmpdir, "dpa1_graph.pt")
+        torch.save({"model": wrapper.state_dict()}, ckpt)
+
+        output = os.path.join(self.tmpdir, "frozen_dpa1_graph.pt2")
+        freeze(model=ckpt, output=output, lower_kind="graph")
+        self.assertTrue(os.path.exists(output))
+
+        # the .pt2 is a zip; metadata.json must record the graph lower
+        with zipfile.ZipFile(output) as zf:
+            meta_name = next(
+                n for n in zf.namelist() if n.endswith("extra/metadata.json")
+            )
+            metadata = json.loads(zf.read(meta_name))
+        self.assertEqual(metadata["lower_input_kind"], "graph")
 
     def test_freeze_pt2(self) -> None:
         """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""

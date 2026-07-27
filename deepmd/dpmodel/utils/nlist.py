@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -16,6 +17,11 @@ from .region import (
     normalize_coord,
     to_face_distance,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 
 def _is_ndtensorflow_namespace(xp: Any) -> bool:
@@ -46,6 +52,7 @@ def extend_input_and_build_neighbor_list(
     sel: list[int],
     mixed_types: bool = False,
     box: Array | None = None,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
@@ -66,9 +73,59 @@ def extend_input_and_build_neighbor_list(
         rcut,
         sel,
         distinguish_types=(not mixed_types),
+        pair_excl=pair_excl,
     )
     extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     return extended_coord, extended_atype, mapping, nlist
+
+
+def apply_pair_exclusion_nlist(
+    nlist: Array,
+    atype_ext: Array,
+    pair_excl: "PairExcludeMask | None",
+) -> Array:
+    """Apply model-level pair-type exclusion to a dense neighbor list.
+
+    Replaces excluded neighbor entries with ``-1`` so that downstream
+    descriptors see them as empty slots.  Identity (returns ``nlist``
+    unchanged) when *pair_excl* is ``None`` or its exclude-types list is
+    empty.
+
+    This is the nlist-representation counterpart of
+    :func:`deepmd.dpmodel.utils.neighbor_graph.apply_pair_exclusion`.
+
+    Parameters
+    ----------
+    nlist : Array
+        Dense neighbor list of shape ``(nf, nloc, nnei)``.  Entries equal
+        to ``-1`` indicate empty / padding slots.
+    atype_ext : Array
+        Extended atom types of shape ``(nf, nall)``.
+    pair_excl : PairExcludeMask or None
+        Exclusion mask object, or ``None`` / empty to skip.
+
+    Returns
+    -------
+    Array
+        Neighbor list of the same shape with excluded entries set to ``-1``.
+        Erasing ``-1`` entries a second time is a no-op (idempotent).
+
+    Notes
+    -----
+    Exclusion is a nlist-BUILD transform (decision #18/A4), same as the graph
+    route: it is applied ONCE where the nlist is built — the Python builders
+    (``build_neighbor_list(pair_excl=...)`` / the NeighborList strategies) or
+    the C++ ingestion seam (``applyPairExclusionNlist`` in
+    ``source/api_cc/include/commonPT.h``, same table lookup and variable
+    names). The lower interfaces (``call_lower`` / ``forward_common_atomic``
+    and the exported artifacts) consume a pre-excluded nlist and never
+    re-apply it.
+    """
+    if pair_excl is None or len(pair_excl.exclude_types) == 0:
+        return nlist
+    xp = array_api_compat.array_namespace(nlist, atype_ext)
+    pair_mask = pair_excl.build_type_exclude_mask(nlist, atype_ext)
+    return xp.where(pair_mask == 1, nlist, xp.full_like(nlist, -1))
 
 
 ## translated from torch implementation by chatgpt
@@ -79,6 +136,7 @@ def build_neighbor_list(
     rcut: float,
     sel: int | list[int],
     distinguish_types: bool = True,
+    pair_excl: "PairExcludeMask | None" = None,
 ) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
@@ -100,6 +158,12 @@ def build_neighbor_list(
         types.
     distinguish_types : bool
         distinguish different types.
+    pair_excl : PairExcludeMask or None, optional
+        When provided, excluded type pairs are erased from the returned
+        neighbor list (entries set to ``-1``) immediately after the
+        geometric search.  This is a convenience shortcut for calling
+        :func:`apply_pair_exclusion_nlist` separately.  ``None`` (default)
+        leaves the list unchanged.
 
     Returns
     -------
@@ -195,9 +259,8 @@ def build_neighbor_list(
     )
 
     if distinguish_types:
-        return nlist_distinguish_types(nlist, atype, sel)
-    else:
-        return nlist
+        nlist = nlist_distinguish_types(nlist, atype, sel)
+    return apply_pair_exclusion_nlist(nlist, atype, pair_excl)
 
 
 def nlist_distinguish_types(
@@ -296,9 +359,11 @@ def format_nlist(
     # Swapping the operands would force the SymInt comparison to run and
     # emit an `_assert_scalar` node in the exported graph.
     if extra_nlist_sort or n_nnei > nnei:
-        n_nf, n_nloc, n_nnei = nlist.shape
-        m_real_nei = nlist >= 0
-        ret = xp.where(m_real_nei, nlist, 0)
+        # Sort the padded list so forced sorting preserves the requested width
+        # when the input has fewer than ``nnei`` entries (issue #5629).
+        n_nf, n_nloc, n_nnei = ret.shape
+        m_real_nei = ret >= 0
+        ret = xp.where(m_real_nei, ret, 0)
         coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
         index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
         coord1 = xp_take_along_axis(extended_coord, index, axis=1)

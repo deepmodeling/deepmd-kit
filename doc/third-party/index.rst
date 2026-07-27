@@ -12,4 +12,5 @@ Note that the model for inference is required to be compatible with the DeePMD-k
    jaxmd
    ipi
    gromacs
+   nvalchemi
    out-of-deepmd-kit

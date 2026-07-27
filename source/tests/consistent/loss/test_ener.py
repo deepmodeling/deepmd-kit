@@ -23,7 +23,7 @@ from ..common import (
     INSTALLED_TF,
     INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     LossTest,
@@ -62,14 +62,50 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
 
-@parameterized(
-    (False, True),  # huber
-    (False, True),  # enable_atom_ener_coeff
-    ("mse", "mae"),  # loss_func
-    (False, True),  # f_use_norm
-    (False, True),  # mae (dp test extra MAE metrics)
-    (False, True),  # intensive_ener_virial
+ENER_LOSS_CASE_FIELDS = (
+    "use_huber",
+    "enable_atom_ener_coeff",
+    "loss_func",
+    "f_use_norm",
+    "mae",
+    "intensive_ener_virial",
 )
+
+ENER_LOSS_BASELINE_CASE = {
+    "use_huber": False,
+    "enable_atom_ener_coeff": False,
+    "loss_func": "mse",
+    "f_use_norm": False,
+    "mae": False,
+    "intensive_ener_virial": False,
+}
+
+
+def ener_loss_case(**overrides: Any) -> tuple:
+    case = ENER_LOSS_BASELINE_CASE | overrides
+    return tuple(case[field] for field in ENER_LOSS_CASE_FIELDS)
+
+
+ENER_LOSS_CURATED_CASES = (
+    ener_loss_case(),
+    ener_loss_case(use_huber=True),
+    ener_loss_case(enable_atom_ener_coeff=True),
+    ener_loss_case(loss_func="mae"),
+    ener_loss_case(f_use_norm=True),
+    ener_loss_case(mae=True),
+    ener_loss_case(intensive_ener_virial=True),
+    ener_loss_case(
+        use_huber=True,
+        enable_atom_ener_coeff=True,
+        loss_func="mae",
+        f_use_norm=True,
+        mae=True,
+        intensive_ener_virial=True,
+    ),
+)
+
+
+@parameterized_cases(*ENER_LOSS_CURATED_CASES)
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:

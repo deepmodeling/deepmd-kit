@@ -36,11 +36,17 @@ def _cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
 
 def preprocess_shared_params(
     model_config: dict[str, Any],
+    require_shared_type_map: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Preprocess the model params for multitask model, and generate the links dict for further sharing.
+    """Preprocess shared model params and generate links for parameter sharing.
 
     Args:
-        model_config: Model params of multitask model.
+        model_config: Model params containing ``model_dict`` and optional
+            ``shared_dict``.
+        require_shared_type_map: Whether exactly one ``type_map`` entry must be
+            referenced from ``shared_dict``. Multi-task training keeps this
+            requirement; linear models may inherit an explicit top-level
+            ``type_map`` instead.
 
     Returns
     -------
@@ -167,7 +173,10 @@ def preprocess_shared_params(
                 item_params = model_params_item[item_key]
                 if isinstance(item_params, str):
                     replace_one_item(model_params_item, item_key, item_params)
-                elif item_params.get("type", "") == "hybrid":
+                elif (
+                    isinstance(item_params, dict)
+                    and item_params.get("type", "") == "hybrid"
+                ):
                     for ii, hybrid_item in enumerate(item_params["list"]):
                         if isinstance(hybrid_item, str):
                             replace_one_item(
@@ -187,7 +196,10 @@ def preprocess_shared_params(
         )
         # little trick to make spin models in the front to be the base models,
         # because its type embeddings are more general.
-    assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
+    if require_shared_type_map:
+        assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
+    else:
+        assert len(type_map_keys) <= 1, "Shared params must have at most one type_map!"
     return model_config, shared_links
 
 

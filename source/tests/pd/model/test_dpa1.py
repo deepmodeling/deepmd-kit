@@ -97,12 +97,17 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
                 err_msg=err_msg,
             )
-            # dp impl
+            # dp impl. `mapping` is passed because that is the production
+            # invocation (DPAtomicModel.forward_atomic always forwards it);
+            # the dense `.call()` must give the same answer with or without
+            # it -- mapping only enables ghost folding on graph routes, it
+            # must never change the dense numerics.
             dd2 = DPDescrptDPA1.deserialize(dd0.serialize())
             rd2, _, _, _, _ = dd2.call(
                 self.coord_ext,
                 self.atype_ext,
                 self.nlist,
+                self.mapping,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),

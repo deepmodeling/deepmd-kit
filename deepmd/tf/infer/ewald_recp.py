@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -93,3 +96,23 @@ class EwaldRecp:
         )
 
         return energy, force, virial
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this object."""
+        sess = getattr(self, "sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass

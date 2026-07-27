@@ -1,68 +1,5 @@
 node {
-  name: "train_attr/min_nbor_dist"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_DOUBLE
-        tensor_shape {
-        }
-        double_val: 1.9612421421978445
-      }
-    }
-  }
-}
-node {
-  name: "train_attr/training_script"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_STRING
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_STRING
-        tensor_shape {
-        }
-        string_val: "{\"model\":{\"type_map\":[\"Si\"],\"descriptor\":{\"type\":\"se_e2_a\",\"sel\":[90],\"rcut_smth\":4.8,\"rcut\":5.0,\"neuron\":[5,10,20],\"resnet_dt\":false,\"axis_neuron\":2,\"seed\":1,\"activation_function\":\"tanh\",\"type_one_side\":false,\"precision\":\"default\",\"trainable\":true,\"exclude_types\":[],\"set_davg_zero\":false},\"fitting_net\":{\"type\":\"dos\",\"numb_dos\":250,\"ener_min\":-15.0,\"ener_max\":10.0,\"neuron\":[40,40,40],\"resnet_dt\":true,\"numb_fparam\":0,\"seed\":1,\"numb_aparam\":0,\"activation_function\":\"tanh\",\"precision\":\"float64\",\"trainable\":true,\"rcond\":0.001},\"data_stat_nbatch\":10,\"data_stat_protect\":0.01,\"data_bias_nsample\":10},\"loss\":{\"type\":\"dos\",\"start_pref_dos\":0.0,\"limit_pref_dos\":0.0,\"start_pref_cdf\":0.0,\"limit_pref_cdf\":0.0,\"start_pref_ados\":1.0,\"limit_pref_ados\":1.0,\"start_pref_acdf\":0.0,\"limit_pref_acdf\":0.0},\"learning_rate\":{\"type\":\"exp\",\"start_lr\":0.001,\"stop_lr\":1e-08,\"scale_by_worker\":\"linear\",\"decay_steps\":5000},\"training\":{\"seed\":1,\"disp_file\":\"lcurve.out\",\"disp_freq\":100,\"save_freq\":1000,\"save_ckpt\":\"model.ckpt\",\"disp_training\":true,\"time_training\":true,\"profiling\":false,\"profiling_file\":\"timeline.json\",\"training_data\":{\"systems\":[\"/data/home/djy4/work/dp-dos/set-train/111/size-80\",\"/data/home/djy4/work/dp-dos/set-train/111/heat-5-fermi\",\"/data/home/djy4/work/dp-dos/set-train/211/cd-2000-5-fermi\",\"/data/home/djy4/work/dp-dos/set-train/211/heat-5-fermi\",\"/data/home/djy4/work/dp-dos/set-train/221/heat-5-fermi\",\"/data/home/djy4/work/dp-dos/set-train/222/heat-5-fermi\"],\"batch_size\":1,\"auto_prob\":\"prob_sys_size\",\"sys_probs\":null},\"numb_steps\":50000,\"validation_data\":null,\"enable_profiler\":false,\"tensorboard\":false,\"tensorboard_log_dir\":\"log\",\"tensorboard_freq\":1}}"
-      }
-    }
-  }
-}
-node {
-  name: "model_type"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_STRING
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_STRING
-        tensor_shape {
-        }
-        string_val: "original_model"
-      }
-    }
-  }
-}
-node {
-  name: "t_box"
+  name: "t_coord"
   op: "Placeholder"
   attr {
     key: "dtype"
@@ -82,7 +19,7 @@ node {
   }
 }
 node {
-  name: "t_coord"
+  name: "t_box"
   op: "Placeholder"
   attr {
     key: "dtype"
@@ -220,6 +157,104 @@ node {
         tensor_shape {
         }
         string_val: "1.1"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_attr/t_out_bias"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 1
+          }
+          dim {
+            size: 1
+          }
+          dim {
+            size: 250
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_attr/t_out_bias/read"
+  op: "Identity"
+  input: "model_attr/model_attr/t_out_bias"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@model_attr/model_attr/t_out_bias"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_attr/t_out_std"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 1
+          }
+          dim {
+            size: 1
+          }
+          dim {
+            size: 250
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?\000\000\000\000\000\000\360?"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_attr/t_out_std/read"
+  op: "Identity"
+  input: "model_attr/model_attr/t_out_std"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@model_attr/model_attr/t_out_std"
       }
     }
   }
@@ -673,6 +708,12 @@ node {
   name: "descrpt_attr/sel"
   op: "Const"
   attr {
+    key: "_has_manual_control_dependencies"
+    value {
+      b: true
+    }
+  }
+  attr {
     key: "dtype"
     value {
       type: DT_INT32
@@ -696,6 +737,12 @@ node {
 node {
   name: "descrpt_attr/original_sel"
   op: "Const"
+  attr {
+    key: "_has_manual_control_dependencies"
+    value {
+      b: true
+    }
+  }
   attr {
     key: "dtype"
     value {
@@ -1316,7 +1363,7 @@ node {
   }
 }
 node {
-  name: "Reshape_5/shape"
+  name: "Reshape_7/shape"
   op: "Const"
   attr {
     key: "dtype"
@@ -1340,10 +1387,10 @@ node {
   }
 }
 node {
-  name: "Reshape_5"
+  name: "Reshape_7"
   op: "Reshape"
   input: "ProdEnvMatA"
-  input: "Reshape_5/shape"
+  input: "Reshape_7/shape"
   attr {
     key: "T"
     value {
@@ -1360,7 +1407,7 @@ node {
 node {
   name: "o_rmat"
   op: "Identity"
-  input: "Reshape_5"
+  input: "Reshape_7"
   attr {
     key: "T"
     value {
@@ -1491,7 +1538,7 @@ node {
   }
 }
 node {
-  name: "Reshape_6/shape/0"
+  name: "Reshape_8/shape/0"
   op: "Const"
   attr {
     key: "dtype"
@@ -1512,7 +1559,7 @@ node {
   }
 }
 node {
-  name: "Reshape_6/shape/2"
+  name: "Reshape_8/shape/2"
   op: "Const"
   attr {
     key: "dtype"
@@ -1533,11 +1580,11 @@ node {
   }
 }
 node {
-  name: "Reshape_6/shape"
+  name: "Reshape_8/shape"
   op: "Pack"
-  input: "Reshape_6/shape/0"
+  input: "Reshape_8/shape/0"
   input: "strided_slice_5"
-  input: "Reshape_6/shape/2"
+  input: "Reshape_8/shape/2"
   attr {
     key: "N"
     value {
@@ -1558,10 +1605,10 @@ node {
   }
 }
 node {
-  name: "Reshape_6"
+  name: "Reshape_8"
   op: "Reshape"
   input: "o_rmat"
-  input: "Reshape_6/shape"
+  input: "Reshape_8/shape"
   attr {
     key: "T"
     value {
@@ -1791,7 +1838,7 @@ node {
 node {
   name: "Slice"
   op: "Slice"
-  input: "Reshape_6"
+  input: "Reshape_8"
   input: "Slice/begin"
   input: "Slice/size"
   attr {
@@ -1808,7 +1855,7 @@ node {
   }
 }
 node {
-  name: "Reshape_7/shape"
+  name: "Reshape_9/shape"
   op: "Const"
   attr {
     key: "dtype"
@@ -1832,10 +1879,10 @@ node {
   }
 }
 node {
-  name: "Reshape_7"
+  name: "Reshape_9"
   op: "Reshape"
   input: "Slice"
-  input: "Reshape_7/shape"
+  input: "Reshape_9/shape"
   attr {
     key: "T"
     value {
@@ -1900,7 +1947,7 @@ node {
 node {
   name: "filter_type_0/Slice"
   op: "Slice"
-  input: "Reshape_7"
+  input: "Reshape_9"
   input: "filter_type_0/Slice/begin"
   input: "filter_type_0/Slice/size"
   attr {
@@ -1930,6 +1977,15 @@ node {
     key: "out_type"
     value {
       type: DT_INT32
+    }
+  }
+  experimental_type {
+    type_id: TFT_PRODUCT
+    args {
+      type_id: TFT_SHAPE_TENSOR
+      args {
+        type_id: TFT_INT32
+      }
     }
   }
 }
@@ -2307,6 +2363,18 @@ node {
     }
   }
   attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
+    }
+  }
+  attr {
     key: "transpose_a"
     value {
       b: false
@@ -2488,6 +2556,18 @@ node {
     key: "T"
     value {
       type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
     }
   }
   attr {
@@ -2730,6 +2810,18 @@ node {
     key: "T"
     value {
       type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
     }
   }
   attr {
@@ -3024,6 +3116,18 @@ node {
       b: false
     }
   }
+  attr {
+    key: "grad_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_y"
+    value {
+      b: false
+    }
+  }
 }
 node {
   name: "filter_type_0/truediv/y"
@@ -3148,6 +3252,18 @@ node {
       b: false
     }
   }
+  attr {
+    key: "grad_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_y"
+    value {
+      b: false
+    }
+  }
 }
 node {
   name: "filter_type_0/Reshape_7/shape"
@@ -3194,7 +3310,7 @@ node {
 node {
   name: "Shape_2"
   op: "Shape"
-  input: "Reshape_6"
+  input: "Reshape_8"
   attr {
     key: "T"
     value {
@@ -3205,6 +3321,15 @@ node {
     key: "out_type"
     value {
       type: DT_INT32
+    }
+  }
+  experimental_type {
+    type_id: TFT_PRODUCT
+    args {
+      type_id: TFT_SHAPE_TENSOR
+      args {
+        type_id: TFT_INT32
+      }
     }
   }
 }
@@ -3453,7 +3578,7 @@ node {
   }
 }
 node {
-  name: "Reshape_9/shape/2"
+  name: "Reshape_11/shape/2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3474,11 +3599,11 @@ node {
   }
 }
 node {
-  name: "Reshape_9/shape"
+  name: "Reshape_11/shape"
   op: "Pack"
   input: "strided_slice_9"
   input: "strided_slice_10"
-  input: "Reshape_9/shape/2"
+  input: "Reshape_11/shape/2"
   attr {
     key: "N"
     value {
@@ -3499,10 +3624,10 @@ node {
   }
 }
 node {
-  name: "Reshape_9"
+  name: "Reshape_11"
   op: "Reshape"
   input: "filter_type_0/Reshape_7"
-  input: "Reshape_9/shape"
+  input: "Reshape_11/shape"
   attr {
     key: "T"
     value {
@@ -3517,9 +3642,9 @@ node {
   }
 }
 node {
-  name: "concat/concat"
+  name: "concat_1/concat"
   op: "Identity"
-  input: "Reshape_9"
+  input: "Reshape_11"
   attr {
     key: "T"
     value {
@@ -3530,7 +3655,7 @@ node {
 node {
   name: "o_descriptor"
   op: "Identity"
-  input: "concat/concat"
+  input: "concat_1/concat"
   attr {
     key: "T"
     value {
@@ -3724,7 +3849,7 @@ node {
   }
 }
 node {
-  name: "Reshape_11/shape/0"
+  name: "Reshape_13/shape/0"
   op: "Const"
   attr {
     key: "dtype"
@@ -3745,7 +3870,7 @@ node {
   }
 }
 node {
-  name: "Reshape_11/shape/2"
+  name: "Reshape_13/shape/2"
   op: "Const"
   attr {
     key: "dtype"
@@ -3766,11 +3891,11 @@ node {
   }
 }
 node {
-  name: "Reshape_11/shape"
+  name: "Reshape_13/shape"
   op: "Pack"
-  input: "Reshape_11/shape/0"
+  input: "Reshape_13/shape/0"
   input: "strided_slice_14"
-  input: "Reshape_11/shape/2"
+  input: "Reshape_13/shape/2"
   attr {
     key: "N"
     value {
@@ -3791,10 +3916,10 @@ node {
   }
 }
 node {
-  name: "Reshape_11"
+  name: "Reshape_13"
   op: "Reshape"
   input: "o_descriptor"
-  input: "Reshape_11/shape"
+  input: "Reshape_13/shape"
   attr {
     key: "T"
     value {
@@ -4024,7 +4149,7 @@ node {
 node {
   name: "Slice_2"
   op: "Slice"
-  input: "Reshape_11"
+  input: "Reshape_13"
   input: "Slice_2/begin"
   input: "Slice_2/size"
   attr {
@@ -4041,7 +4166,7 @@ node {
   }
 }
 node {
-  name: "Reshape_14/shape"
+  name: "Reshape_16/shape"
   op: "Const"
   attr {
     key: "dtype"
@@ -4065,10 +4190,10 @@ node {
   }
 }
 node {
-  name: "Reshape_14"
+  name: "Reshape_16"
   op: "Reshape"
   input: "Slice_2"
-  input: "Reshape_14/shape"
+  input: "Reshape_16/shape"
   attr {
     key: "T"
     value {
@@ -4174,12 +4299,24 @@ node {
 node {
   name: "layer_0_type_0/MatMul"
   op: "MatMul"
-  input: "Reshape_14"
+  input: "Reshape_16"
   input: "layer_0_type_0/matrix/read"
   attr {
     key: "T"
     value {
       type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
     }
   }
   attr {
@@ -4367,6 +4504,18 @@ node {
     }
   }
   attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
+    }
+  }
+  attr {
     key: "transpose_a"
     value {
       b: false
@@ -4506,7 +4655,7 @@ node {
   }
 }
 node {
-  name: "add_1"
+  name: "add_2"
   op: "AddV2"
   input: "layer_0_type_0/Reshape"
   input: "layer_1_type_0/mul"
@@ -4609,12 +4758,24 @@ node {
 node {
   name: "layer_2_type_0/MatMul"
   op: "MatMul"
-  input: "add_1"
+  input: "add_2"
   input: "layer_2_type_0/matrix/read"
   attr {
     key: "T"
     value {
       type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
     }
   }
   attr {
@@ -4757,9 +4918,9 @@ node {
   }
 }
 node {
-  name: "add_2"
+  name: "add_3"
   op: "AddV2"
-  input: "add_1"
+  input: "add_2"
   input: "layer_2_type_0/mul"
   attr {
     key: "T"
@@ -4860,12 +5021,24 @@ node {
 node {
   name: "final_layer_type_0/MatMul"
   op: "MatMul"
-  input: "add_2"
+  input: "add_3"
   input: "final_layer_type_0/matrix/read"
   attr {
     key: "T"
     value {
       type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "grad_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "grad_b"
+    value {
+      b: false
     }
   }
   attr {
@@ -4902,7 +5075,7 @@ node {
 node {
   name: "Shape_4"
   op: "Shape"
-  input: "Reshape_11"
+  input: "Reshape_13"
   attr {
     key: "T"
     value {
@@ -4913,6 +5086,15 @@ node {
     key: "out_type"
     value {
       type: DT_INT32
+    }
+  }
+  experimental_type {
+    type_id: TFT_PRODUCT
+    args {
+      type_id: TFT_SHAPE_TENSOR
+      args {
+        type_id: TFT_INT32
+      }
     }
   }
 }
@@ -5161,14 +5343,36 @@ node {
   }
 }
 node {
-  name: "Reshape_15/shape"
+  name: "Reshape_17/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 250
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_17/shape"
   op: "Pack"
   input: "strided_slice_18"
   input: "strided_slice_19"
+  input: "Reshape_17/shape/2"
   attr {
     key: "N"
     value {
-      i: 2
+      i: 3
     }
   }
   attr {
@@ -5185,10 +5389,10 @@ node {
   }
 }
 node {
-  name: "Reshape_15"
+  name: "Reshape_17"
   op: "Reshape"
   input: "final_layer_type_0/BiasAdd"
-  input: "Reshape_15/shape"
+  input: "Reshape_17/shape"
   attr {
     key: "T"
     value {
@@ -5203,9 +5407,9 @@ node {
   }
 }
 node {
-  name: "concat_2/concat"
+  name: "concat_3/concat"
   op: "Identity"
-  input: "Reshape_15"
+  input: "Reshape_17"
   attr {
     key: "T"
     value {
@@ -5214,44 +5418,28 @@ node {
   }
 }
 node {
-  name: "Reshape_16/shape"
-  op: "Const"
+  name: "Shape_5"
+  op: "Shape"
+  input: "Reshape"
   attr {
-    key: "dtype"
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
     value {
       type: DT_INT32
     }
   }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-          dim {
-            size: 1
-          }
-        }
-        int_val: -1
+  experimental_type {
+    type_id: TFT_PRODUCT
+    args {
+      type_id: TFT_SHAPE_TENSOR
+      args {
+        type_id: TFT_INT32
       }
-    }
-  }
-}
-node {
-  name: "Reshape_16"
-  op: "Reshape"
-  input: "concat_2/concat"
-  input: "Reshape_16/shape"
-  attr {
-    key: "T"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "Tshape"
-    value {
-      type: DT_INT32
     }
   }
 }
@@ -5330,7 +5518,7 @@ node {
 node {
   name: "strided_slice_21"
   op: "StridedSlice"
-  input: "t_natoms"
+  input: "Shape_5"
   input: "strided_slice_21/stack"
   input: "strided_slice_21/stack_1"
   input: "strided_slice_21/stack_2"
@@ -5378,7 +5566,251 @@ node {
   }
 }
 node {
-  name: "o_atom_dos/shape/1"
+  name: "strided_slice_22/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_22/stack"
+  input: "strided_slice_22/stack_1"
+  input: "strided_slice_22/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_23/stack"
+  input: "strided_slice_23/stack_1"
+  input: "strided_slice_23/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_18/shape/2"
   op: "Const"
   attr {
     key: "dtype"
@@ -5393,16 +5825,59 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: -1
+        int_val: 250
       }
     }
   }
 }
 node {
-  name: "o_atom_dos/shape"
+  name: "Reshape_18/shape"
   op: "Pack"
   input: "strided_slice_21"
-  input: "o_atom_dos/shape/1"
+  input: "strided_slice_22"
+  input: "Reshape_18/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_18"
+  op: "Reshape"
+  input: "concat_3/concat"
+  input: "Reshape_18/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_19/shape"
+  op: "Pack"
+  input: "strided_slice_21"
+  input: "strided_slice_23"
   attr {
     key: "N"
     value {
@@ -5423,9 +5898,1010 @@ node {
   }
 }
 node {
+  name: "Reshape_19"
+  op: "Reshape"
+  input: "Reshape_1"
+  input: "Reshape_19/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Const"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "Const_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack"
+  op: "Pack"
+  input: "strided_slice_24/stack/0"
+  input: "Const"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_1/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_1"
+  op: "Pack"
+  input: "strided_slice_24/stack_1/0"
+  input: "strided_slice_22"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_2/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_2"
+  op: "Pack"
+  input: "strided_slice_24/stack_2/0"
+  input: "Const_1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "strided_slice_24"
+  op: "StridedSlice"
+  input: "Reshape_19"
+  input: "strided_slice_24/stack"
+  input: "strided_slice_24/stack_1"
+  input: "strided_slice_24/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 1
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "GreaterEqual/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "GreaterEqual"
+  op: "GreaterEqual"
+  input: "strided_slice_24"
+  input: "GreaterEqual/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "zeros_like"
+  op: "ZerosLike"
+  input: "strided_slice_24"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Select"
+  op: "Select"
+  input: "GreaterEqual"
+  input: "strided_slice_24"
+  input: "zeros_like"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_25/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_25/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_25/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_25"
+  op: "StridedSlice"
+  input: "model_attr/model_attr/t_out_bias/read"
+  input: "strided_slice_25/stack"
+  input: "strided_slice_25/stack_1"
+  input: "strided_slice_25/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "GatherV2/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "GatherV2"
+  op: "GatherV2"
+  input: "strided_slice_25"
+  input: "Select"
+  input: "GatherV2/axis"
+  attr {
+    key: "Taxis"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tindices"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tparams"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "batch_dims"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_26"
+  op: "StridedSlice"
+  input: "model_attr/model_attr/t_out_std/read"
+  input: "strided_slice_26/stack"
+  input: "strided_slice_26/stack_1"
+  input: "strided_slice_26/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "GatherV2_1/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "GatherV2_1"
+  op: "GatherV2"
+  input: "strided_slice_26"
+  input: "Select"
+  input: "GatherV2_1/axis"
+  attr {
+    key: "Taxis"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tindices"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tparams"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "batch_dims"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "mul_2"
+  op: "Mul"
+  input: "Reshape_18"
+  input: "GatherV2_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "add_5"
+  op: "AddV2"
+  input: "mul_2"
+  input: "GatherV2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "ExpandDims/dim"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "ExpandDims"
+  op: "ExpandDims"
+  input: "GreaterEqual"
+  input: "ExpandDims/dim"
+  attr {
+    key: "T"
+    value {
+      type: DT_BOOL
+    }
+  }
+  attr {
+    key: "Tdim"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Tile/multiples"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 3
+          }
+        }
+        tensor_content: "\001\000\000\000\001\000\000\000\372\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Tile"
+  op: "Tile"
+  input: "ExpandDims"
+  input: "Tile/multiples"
+  attr {
+    key: "T"
+    value {
+      type: DT_BOOL
+    }
+  }
+  attr {
+    key: "Tmultiples"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Select_1"
+  op: "Select"
+  input: "Tile"
+  input: "add_5"
+  input: "Reshape_18"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "Shape_6"
+  op: "Shape"
+  input: "concat_3/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+  experimental_type {
+    type_id: TFT_PRODUCT
+    args {
+      type_id: TFT_SHAPE_TENSOR
+      args {
+        type_id: TFT_INT32
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_20"
+  op: "Reshape"
+  input: "Select_1"
+  input: "Shape_6"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_27/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_27/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_27/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_27"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_27/stack"
+  input: "strided_slice_27/stack_1"
+  input: "strided_slice_27/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "o_atom_dos/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "o_atom_dos/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 250
+      }
+    }
+  }
+}
+node {
+  name: "o_atom_dos/shape"
+  op: "Pack"
+  input: "o_atom_dos/shape/0"
+  input: "strided_slice_27"
+  input: "o_atom_dos/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
   name: "o_atom_dos"
   op: "Reshape"
-  input: "Reshape_16"
+  input: "Reshape_20"
   input: "o_atom_dos/shape"
   attr {
     key: "T"
@@ -5456,7 +6932,7 @@ node {
         dtype: DT_INT32
         tensor_shape {
         }
-        int_val: 0
+        int_val: 1
       }
     }
   }
@@ -5485,7 +6961,50 @@ node {
     }
   }
 }
+node {
+  name: "train_attr/training_script"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "{\"model\":{\"type_map\":[\"Si\"],\"descriptor\":{\"type\":\"se_e2_a\",\"sel\":[90],\"rcut_smth\":4.8,\"rcut\":5.0,\"neuron\":[5,10,20],\"resnet_dt\":false,\"axis_neuron\":2,\"seed\":1,\"activation_function\":\"tanh\",\"type_one_side\":false,\"precision\":\"default\",\"trainable\":true,\"exclude_types\":[],\"set_davg_zero\":false},\"fitting_net\":{\"type\":\"dos\",\"numb_dos\":250,\"ener_min\":-15.0,\"ener_max\":10.0,\"neuron\":[40,40,40],\"resnet_dt\":true,\"numb_fparam\":0,\"seed\":1,\"numb_aparam\":0,\"activation_function\":\"tanh\",\"precision\":\"float64\",\"trainable\":true,\"rcond\":0.001},\"data_stat_nbatch\":10,\"data_stat_protect\":0.01,\"data_bias_nsample\":10}}"
+      }
+    }
+  }
+}
+node {
+  name: "train_attr/min_nbor_dist"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+        }
+        double_val: 1.9612421421978445
+      }
+    }
+  }
+}
 library {
 }
 versions {
+  producer: 1766
 }

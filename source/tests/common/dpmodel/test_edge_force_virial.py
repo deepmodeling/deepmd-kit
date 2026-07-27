@@ -97,6 +97,49 @@ class TestEdgeForceVirial(unittest.TestCase):
             np.testing.assert_allclose(av, np.zeros((n, 3, 3)))
             np.testing.assert_allclose(vir, np.zeros((nf, 3, 3)))
 
+    def test_zero_nodes_with_masked_guards_gives_empty_outputs(self) -> None:
+        edge_index = np.zeros((2, 2), dtype=np.int64)
+        edge_vec = np.zeros((2, 3))
+        edge_mask = np.zeros(2, dtype=np.bool_)
+        g = np.ones((2, 3))
+        n_node = np.array([0], dtype=np.int64)
+
+        force, atom_virial, virial = edge_force_virial(
+            g,
+            edge_vec,
+            edge_index,
+            edge_mask,
+            n_node,
+        )
+
+        self.assertEqual(force.shape, (0, 3))
+        self.assertEqual(atom_virial.shape, (0, 3, 3))
+        self.assertEqual(virial.shape, (1, 3, 3))
+        np.testing.assert_allclose(virial, 0.0)
+
+    def test_modulo_clamp_leaves_real_edges_unchanged(self) -> None:
+        # The endpoint bound must leave every valid edge unchanged. Masked
+        # guards may carry out-of-range sentinels because their contributions
+        # are zeroed before the scatter.
+        n_node = np.array([5], dtype=np.int64)  # 1 frame, nodes 0..4 (n_out = 5)
+        # e0: real, src on the boundary node 4 -> node 0 ; e1: real, node 0 -> 4
+        # e2: MASKED guard with out-of-range indices src=99, dst=77 (>= n_out)
+        edge_index = np.array([[4, 0, 99], [0, 4, 77]], dtype=np.int64)
+        edge_vec = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [9.0, 9.0, 9.0]])
+        edge_mask = np.array([True, True, False])
+        g = np.array([[0.5, 0.2, 0.0], [0.3, 0.0, 0.1], [7.0, 7.0, 7.0]])
+        force, av, vir = edge_force_virial(g, edge_vec, edge_index, edge_mask, n_node)
+
+        # reference: the SAME two real edges only (no guard edge at all)
+        ref_force, ref_av, ref_vir = edge_force_virial(
+            g[:2], edge_vec[:2], edge_index[:, :2], edge_mask[:2], n_node
+        )
+        np.testing.assert_allclose(force, ref_force)
+        np.testing.assert_allclose(av, ref_av)
+        np.testing.assert_allclose(vir, ref_vir)
+        # explicit: the boundary real edge scattered its force to node 4 (unwrapped)
+        self.assertTrue(np.any(force[4] != 0.0))
+
     def test_ragged_multiframe_with_edge_and_node_padding(self) -> None:
         # MOST GENERAL case: 2 frames with DIFFERENT node counts (3 and 5) AND
         # different edge counts (2 and 3), masked guard EDGES, and a padded NODE

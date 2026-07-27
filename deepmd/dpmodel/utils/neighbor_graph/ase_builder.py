@@ -21,8 +21,14 @@ from typing import (
 
 import numpy as np
 
+from .csr import (
+    attach_edge_csr,
+)
 from .from_ijs import (
     neighbor_graph_from_ijs,
+)
+from .graph import (
+    apply_pair_exclusion,
 )
 
 if TYPE_CHECKING:
@@ -33,6 +39,7 @@ if TYPE_CHECKING:
     from .graph import (
         GraphLayout,
         NeighborGraph,
+        PairExcludeMask,
     )
 
 
@@ -42,6 +49,11 @@ def build_neighbor_graph_ase(
     box: Array | None,
     rcut: float,
     layout: GraphLayout | None = None,
+    *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
+    pair_excl: PairExcludeMask | None = None,
+    compact: bool = False,
 ) -> NeighborGraph:
     """Build a CARRY-ALL NeighborGraph using ASE's O(N) cell-list search.
 
@@ -58,13 +70,28 @@ def build_neighbor_graph_ase(
     coord
         (nf, nloc, 3) local coordinates.
     atype
-        (nf, nloc) local atom types (unused for the search; carried for API parity).
+        (nf, nloc) local atom types; ``type < 0`` marks a virtual atom, excluded
+        as center and neighbor (the search itself is type-blind).
     box
         (nf, 3, 3) simulation cell, or ``None`` for non-periodic.
     rcut
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
+    pair_excl
+        Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
+        for model-level ``pair_exclude_types``. When given,
+        :func:`apply_pair_exclusion` is applied after the geometric search. ``None``
+        (default) leaves all geometrically valid edges present.
+    compact
+        Passed to :func:`apply_pair_exclusion`; see that function for details.
+        Ignored when ``pair_excl`` is ``None``.
 
     Returns
     -------
@@ -127,6 +154,30 @@ def build_neighbor_graph_ase(
         np.concatenate(nframe_parts) if nframe_parts else np.zeros((0,), dtype=np.int64)
     )
 
-    return neighbor_graph_from_ijs(
-        i_all, j_all, S_all, coord, box, nframe_all, nloc, layout=layout
+    # virtual atoms (atype < 0) are excluded as centers AND neighbors -- the
+    # World-2 builder contract shared with the dense reference builder; the
+    # geometric search above cannot know about them.
+    atype_np = _to_cpu_numpy(atype).reshape(nf, nloc)
+    keep = (atype_np[nframe_all, i_all] >= 0) & (atype_np[nframe_all, j_all] >= 0)
+    i_all, j_all = i_all[keep], j_all[keep]
+    S_all, nframe_all = S_all[keep], nframe_all[keep]
+
+    graph = neighbor_graph_from_ijs(
+        i_all,
+        j_all,
+        S_all,
+        coord,
+        box,
+        nframe_all,
+        nloc,
+        layout=layout,
     )
+    if pair_excl is not None:
+        import array_api_compat
+
+        xp = array_api_compat.array_namespace(coord)
+        atype_flat = xp.reshape(xp.asarray(atype), (-1,))
+        graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
+    return graph

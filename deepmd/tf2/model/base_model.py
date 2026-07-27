@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
 )
@@ -20,35 +24,12 @@ from deepmd.tf2.env import (
 BaseModel = make_base_model()
 
 
-def forward_common_atomic(
-    self: "BaseModel",
-    extended_coord: xp.ndarray,
-    extended_atype: xp.ndarray,
-    nlist: xp.ndarray,
-    mapping: xp.ndarray | None = None,
-    fparam: xp.ndarray | None = None,
-    aparam: xp.ndarray | None = None,
-    do_atomic_virial: bool = False,
-    extended_coord_corr: xp.ndarray | None = None,
-    comm_dict: dict | None = None,
-    charge_spin: xp.ndarray | None = None,
-) -> dict[str, xp.ndarray]:
-    del comm_dict  # tf2 path has no MPI ghost exchange
-
-    coord_tensor = to_tf_tensor(extended_coord)
-    assert coord_tensor is not None
-    coord_array = wrap_tensor(coord_tensor)
-    atomic_ret = self.atomic_model.forward_common_atomic(
-        coord_array,
-        extended_atype,
-        nlist,
-        mapping=mapping,
-        fparam=fparam,
-        aparam=aparam,
-        charge_spin=charge_spin,
-    )
-    atomic_output_def = self.atomic_output_def()
-    model_predict = {}
+def _collect_model_predict(
+    atomic_ret: dict[str, xp.ndarray],
+    atomic_output_def: Any,
+) -> tuple[dict[str, xp.ndarray], dict[str, tf.Tensor]]:
+    model_predict: dict[str, xp.ndarray] = {}
+    reduced_output_tensors: dict[str, tf.Tensor] = {}
     for kk, vv in atomic_ret.items():
         model_predict[kk] = vv
         vdef = atomic_output_def[kk]
@@ -68,36 +49,110 @@ def forward_common_atomic(
         else:
             model_predict[kk_redu] = xp.sum(vv, axis=atom_axis)
 
-        kk_derv_r, kk_derv_c = get_deriv_name(kk)
         if vdef.r_differentiable:
-            with tf.GradientTape() as tape:
-                tape.watch(coord_tensor)
-                grad_atomic_ret = self.atomic_model.forward_common_atomic(
-                    wrap_tensor(coord_tensor),
-                    extended_atype,
-                    nlist,
-                    mapping=mapping,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                )
-                reduced_output = xp.sum(grad_atomic_ret[kk], axis=atom_axis)
-                reduced_output_tensor = to_tf_tensor(reduced_output)
-                assert reduced_output_tensor is not None
-            ff_tensor = -tape.batch_jacobian(reduced_output_tensor, coord_tensor)
-            ff = wrap_tensor(ff_tensor)
+            reduced_output_tensor = to_tf_tensor(model_predict[kk_redu])
+            assert reduced_output_tensor is not None
+            reduced_output_tensors[kk] = reduced_output_tensor
+    return model_predict, reduced_output_tensors
 
-            # extended_force: [nf, nall, *def, 3]
-            def_ndim = len(vdef.shape)
-            model_predict[kk_derv_r] = xp.transpose(
-                ff, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
+
+def _negative_coordinate_derivative(
+    tape: tf.GradientTape,
+    reduced_output_tensor: tf.Tensor,
+    coord_tensor: tf.Tensor,
+    output_size: int,
+) -> tf.Tensor:
+    if output_size == 1:
+        grad = tape.gradient(
+            reduced_output_tensor,
+            coord_tensor,
+            unconnected_gradients=tf.UnconnectedGradients.ZERO,
+        )
+        return -grad[:, tf.newaxis, :, :]
+    return -tape.batch_jacobian(reduced_output_tensor, coord_tensor)
+
+
+def forward_common_atomic(
+    self: "BaseModel",
+    extended_coord: xp.ndarray,
+    extended_atype: xp.ndarray,
+    nlist: xp.ndarray,
+    mapping: xp.ndarray | None = None,
+    fparam: xp.ndarray | None = None,
+    aparam: xp.ndarray | None = None,
+    do_atomic_virial: bool = False,
+    do_deriv_c: bool = True,
+    extended_coord_corr: xp.ndarray | None = None,
+    comm_dict: dict | None = None,
+    charge_spin: xp.ndarray | None = None,
+) -> dict[str, xp.ndarray]:
+    del comm_dict  # tf2 path has no MPI ghost exchange
+
+    coord_tensor = to_tf_tensor(extended_coord)
+    assert coord_tensor is not None
+    atomic_output_def = self.atomic_output_def()
+    derivative_keys = [
+        kk for kk in atomic_output_def.keys() if atomic_output_def[kk].r_differentiable
+    ]
+    tape: tf.GradientTape | None = None
+    if derivative_keys:
+        tape = tf.GradientTape(persistent=len(derivative_keys) > 1)
+        with tape:
+            tape.watch(coord_tensor)
+            atomic_ret = self.atomic_model.forward_common_atomic(
+                wrap_tensor(coord_tensor),
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
             )
-            if vdef.r_hessian:
-                kk_hessian = get_hessian_name(kk)
-                model_predict[kk_hessian] = None
+            model_predict, reduced_output_tensors = _collect_model_predict(
+                atomic_ret, atomic_output_def
+            )
+    else:
+        atomic_ret = self.atomic_model.forward_common_atomic(
+            wrap_tensor(coord_tensor),
+            extended_atype,
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+        )
+        model_predict, reduced_output_tensors = _collect_model_predict(
+            atomic_ret, atomic_output_def
+        )
+
+    for kk in derivative_keys:
+        vdef = atomic_output_def[kk]
+        kk_derv_r, kk_derv_c = get_deriv_name(kk)
+        assert tape is not None
+        reduced_output_tensor = reduced_output_tensors[kk]
+        ff_tensor = _negative_coordinate_derivative(
+            tape,
+            reduced_output_tensor,
+            coord_tensor,
+            vdef.output_size,
+        )
+        ff = wrap_tensor(ff_tensor)
+
+        # extended_force: [nf, nall, *def, 3]
+        def_ndim = len(vdef.shape)
+        model_predict[kk_derv_r] = xp.transpose(
+            ff, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
+        )
+        if vdef.r_hessian:
+            kk_hessian = get_hessian_name(kk)
+            model_predict[kk_hessian] = None
 
         if vdef.c_differentiable:
             assert vdef.r_differentiable
+            if not do_deriv_c:
+                model_predict[kk_derv_c] = None
+                model_predict[kk_derv_c + "_redu"] = None
+                continue
             # avr: [nf, *def, nall, 3, 3]
             avr = xp.einsum("f...ai,faj->f...aij", ff, extended_coord)
             if extended_coord_corr is not None:
@@ -151,4 +206,5 @@ def forward_common_atomic(
             model_predict[kk_derv_c] = extended_virial
             # [nf, *def, 9]
             model_predict[kk_derv_c + "_redu"] = xp.sum(extended_virial, axis=1)
+    del tape
     return model_predict

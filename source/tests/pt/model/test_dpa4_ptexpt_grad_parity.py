@@ -181,6 +181,66 @@ class TestDescriptorGradParity:
         # math, where fp64 accumulation-order drift reaches ~3e-11 rel
         _assert_grad_trees_match(pt_mod, expt_mod, rtol=1e-10, atol=1e-12)
 
+    def test_descriptor_grad_parity_native_spin(self) -> None:
+        # Native per-atom spin (``use_spin``) adds trainable Parameters that
+        # pt_expt must promote from dpmodel numpy->buffer:
+        # ``SpinEmbedding.{adam_spin_vec_weight, adam_spin_nbr_weight}``,
+        # its ``mag_layer1/2`` weights (NativeLayer auto-promotes), and
+        # ``EnvironmentInitialEmbedding.spin_scale``.  A missing promotion
+        # surfaces as the trainable-parameter-count mismatch asserted inside
+        # ``_assert_grad_trees_match`` (n_pt vs n_expt).  Type 0 carries spin;
+        # the fixture's local types include type-0 atoms that are also edge
+        # sources, so both the on-site (l=0 magnitude + l=1 direction) and the
+        # neighbor-aggregation (edge l=1, gated by ``spin_scale``) paths fire.
+        use_spin = [True, False]  # ntypes == 2; type 0 is spin-active
+        pt_mod, expt_mod = self._build_pair(use_spin=use_spin)
+        inp = self._inputs()
+        coord = inp["coord"].reshape(self.nf, -1)
+        atype_ext, nlist, mapping = inp["atype_ext"], inp["nlist"], inp["mapping"]
+        # a spin-active type-0 atom must be local for the on-site spin path
+        assert (atype_ext[:, : self.nloc] == 0).any()
+        rng = np.random.default_rng(2170)
+        spin = rng.normal(size=(self.nf, self.nloc, 3))
+
+        out_pt = pt_mod(
+            to_pt(inp["coord"]),
+            to_pt(atype_ext),
+            to_pt(nlist),
+            mapping=to_pt(mapping),
+            spin=to_pt(spin),
+        )[0]
+        out_expt = expt_mod(
+            to_pt(coord),
+            to_pt(atype_ext.astype(np.int64)),
+            to_pt(nlist.astype(np.int64)),
+            mapping=to_pt(mapping.astype(np.int64)),
+            spin=to_pt(spin),
+        )[0]
+        # guard: forward outputs must match before comparing gradients
+        np.testing.assert_allclose(
+            out_expt.detach().cpu().numpy(),
+            out_pt.detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-12,
+        )
+        # guard: the spin tensor must actually move the descriptor, otherwise
+        # the spin-parameter gradients below would be a trivial (zero) match
+        with torch.no_grad():
+            out_pt_nospin = pt_mod(
+                to_pt(inp["coord"]),
+                to_pt(atype_ext),
+                to_pt(nlist),
+                mapping=to_pt(mapping),
+                spin=None,
+            )[0]
+        assert (out_pt - out_pt_nospin).abs().max().item() > 1e-3
+        # quadratic loss -> dL/dw depends on the weights, not just the inputs
+        (out_pt**2).sum().backward()
+        (out_expt**2).sum().backward()
+        # count parity (validates spin-Parameter promotion) + name-aligned
+        # gradient parity across the full descriptor, spin parameters included
+        _assert_grad_trees_match(pt_mod, expt_mod, rtol=1e-10, atol=1e-12)
+
 
 class TestFittingGradParity:
     nf = 2

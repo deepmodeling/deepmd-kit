@@ -35,6 +35,9 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.stat import (
+    _require_stat_file_items,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -261,6 +264,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             return
         # stat fparam
         if self.numb_fparam > 0:
+            _require_stat_file_items(stat_file_path, ["fparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()
@@ -319,6 +323,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         # stat aparam
         if self.numb_aparam > 0:
+            _require_stat_file_items(stat_file_path, ["aparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()
@@ -666,8 +671,16 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.numb_fparam > 0 and fparam is None:
             # use default fparam
             assert self.default_fparam_tensor is not None
+            # Fitting statistics remain NumPy for portable serialization.
+            # Materialize constants next to the runtime descriptor instead of
+            # asking a backend namespace to reshape a foreign array directly.
+            default_fparam_tensor = xp.asarray(
+                self.default_fparam_tensor,
+                dtype=descriptor.dtype,
+                device=array_api_compat.device(descriptor),
+            )
             fparam = xp.tile(
-                xp.reshape(self.default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
+                xp.reshape(default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
             )
 
         # check fparam dim, concate to input descriptor
@@ -680,7 +693,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"input fparam: cannot reshape {fparam.shape} "
                     f"into ({nf}, {self.numb_fparam})."
                 ) from e
-            fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
+            fparam_device = array_api_compat.device(fparam)
+            fparam_avg = xp.asarray(
+                self.fparam_avg,
+                dtype=fparam.dtype,
+                device=fparam_device,
+            )
+            fparam_inv_std = xp.asarray(
+                self.fparam_inv_std,
+                dtype=fparam.dtype,
+                device=fparam_device,
+            )
+            fparam = (fparam - fparam_avg) * fparam_inv_std
             fparam = xp.tile(
                 xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
@@ -703,7 +727,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"input aparam: cannot reshape {aparam.shape} "
                     f"into ({nf}, {nloc}, {self.numb_aparam})."
                 ) from e
-            aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
+            aparam_device = array_api_compat.device(aparam)
+            aparam_avg = xp.asarray(
+                self.aparam_avg,
+                dtype=aparam.dtype,
+                device=aparam_device,
+            )
+            aparam_inv_std = xp.asarray(
+                self.aparam_inv_std,
+                dtype=aparam.dtype,
+                device=aparam_device,
+            )
+            aparam = (aparam - aparam_avg) * aparam_inv_std
             xx = xp.concat(
                 [xx, aparam],
                 axis=-1,
@@ -716,9 +751,12 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
-            case_embd = xp.tile(
-                xp.reshape(self.case_embd[...], (1, 1, -1)), (nf, nloc, 1)
+            case_embd_buffer = xp.asarray(
+                self.case_embd,
+                dtype=descriptor.dtype,
+                device=array_api_compat.device(descriptor),
             )
+            case_embd = xp.tile(xp.reshape(case_embd_buffer, (1, 1, -1)), (nf, nloc, 1))
             xx = xp.concat(
                 [xx, case_embd],
                 axis=-1,
@@ -773,9 +811,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                 outs -= self.nets[()](xx_zeros)
             if self.eval_return_middle_output and len(self.neuron) > 0:
                 middle_outs = self.nets[()].call_until_last(xx)
+        bias_atom_e = xp.asarray(
+            self.bias_atom_e,
+            dtype=outs.dtype,
+            device=array_api_compat.device(outs),
+        )
         outs += xp.reshape(
             xp.take(
-                xp.astype(self.bias_atom_e[...], outs.dtype),
+                bias_atom_e,
                 xp.reshape(atype, (-1,)),
                 axis=0,
             ),
@@ -839,6 +882,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         d1 = xp.reshape(descriptor, (n, 1, nd))
         a1 = xp.reshape(atype, (n, 1))
         g1 = None if gr is None else xp.reshape(gr, (n, 1, gr.shape[-2], 3))
+        if aparam is not None and len(aparam.shape) != 2:
+            # enforce the flat contract loudly: a rectangular (nf, nloc, nda)
+            # aparam with nf*nloc == N would silently reshape into the right
+            # element order here but hand torch.export an unprovable
+            # N == nf*nloc relation (and misalign rows for any other layout).
+            raise ValueError(
+                "graph-route aparam must be flat (N, nda) on the node axis; "
+                f"got a rank-{len(aparam.shape)} array of shape {aparam.shape}"
+            )
         ap1 = None if aparam is None else xp.reshape(aparam, (n, 1, aparam.shape[-1]))
         # fparam: dense API expects (nf, nfp); here nf'=N single-atom frames, so the
         # node-level (N, nfp) IS the per-(pseudo)frame param -- tiled over nloc'=1.

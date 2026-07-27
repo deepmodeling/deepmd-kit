@@ -100,14 +100,24 @@ class PropertyLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-        model_pred = model(**input_dict)
+        model_pred = self._inject_atom_mask(model(**input_dict), input_dict)
         var_name = self.var_name
         nbz = model_pred[var_name].shape[0]
         assert model_pred[var_name].shape == (nbz, self.task_dim)
         assert label[var_name].shape == (nbz, self.task_dim)
         if not self.intensive:
-            model_pred[var_name] = model_pred[var_name] / natoms
-            label[var_name] = label[var_name] / natoms
+            if "mask" in model_pred:
+                # Per-frame real atom count: shape [nf] → broadcast over [nf, task_dim].
+                real_natoms = (
+                    torch.sum(model_pred["mask"], dim=-1)
+                    .to(dtype=model_pred[var_name].dtype)
+                    .reshape(-1, 1)
+                )
+                model_pred[var_name] = model_pred[var_name] / real_natoms
+                label[var_name] = label[var_name] / real_natoms
+            else:
+                model_pred[var_name] = model_pred[var_name] / natoms
+                label[var_name] = label[var_name] / natoms
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]

@@ -47,6 +47,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -134,8 +137,9 @@ class DeepEval(DeepEvalBackend):
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
-        """The the evaluator of the model type."""
-        model_output_type = self.dp.model_output_type()
+        """The evaluator of the model type."""
+        model = self.get_model()
+        model_output_type = model.model_output_type()
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -146,6 +150,8 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif self._get_property_var_name(model) in model_output_type:
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -160,7 +166,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return 0
+        return self.dp.get_numb_dos()
 
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
@@ -238,6 +244,12 @@ class DeepEval(DeepEvalBackend):
         out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, fparam, aparam, request_defs
         )
+        # ``AutoBatchSize.execute_all`` unwraps a single-output result out of
+        # its tuple, which would make ``zip`` iterate over the array's frame
+        # axis. Re-wrap so the request-def names line up (a single request def
+        # arises for global-only DOS/property inference at atomic=False).
+        if not isinstance(out, tuple):
+            out = (out,)
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -415,6 +427,10 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def serialize(self) -> dict[str, Any]:
+        model = self.dp
+        return model.serialize()
 
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics.

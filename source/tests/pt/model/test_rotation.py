@@ -35,7 +35,7 @@ class CheckSymmetry(DeepmdData):
 
     def get_rotation(self, index, rotation_matrix):
         for i in range(
-            0, len(self.dirs) + 1
+            len(self.dirs) + 1
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break

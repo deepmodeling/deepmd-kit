@@ -810,7 +810,7 @@ class DescrptSeT(DescrptSe):
             clear_ij(i, j)
             clear_ij(j, i)
         for i in range(ntypes):
-            for j in range(0, i):
+            for j in range(i):
                 clear_ij(i, j)
 
         if suffix != "":

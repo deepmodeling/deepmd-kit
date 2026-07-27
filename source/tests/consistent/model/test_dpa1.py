@@ -20,7 +20,7 @@ from ..common import (
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -55,11 +55,14 @@ else:
     EnergyModelJAX = None
 
 
-@parameterized(
-    ("strip", "concat"),  # tebd_input_mode
-    # strip + smooth is inconsistent
-    (False,),  # smooth
+DPA1_ENER_CURATED_CASES = (
+    ("strip", False),
+    ("concat", False),
+    ("concat", True),
 )
+
+
+@parameterized_cases(*DPA1_ENER_CURATED_CASES)
 class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -124,6 +127,11 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
+
+    @property
+    def skip_tf(self) -> bool:
+        _, smooth_type_embedding = self.param
+        return CommonTest.skip_tf or smooth_type_embedding
 
     @property
     def skip_jax(self) -> bool:

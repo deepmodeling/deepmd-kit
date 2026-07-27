@@ -184,3 +184,6 @@ class PretrainedDeepEvalBackend(DeepEvalBackend):
 
     def get_model(self) -> Any:
         return self._backend.get_model()
+
+    def serialize(self) -> dict[str, Any]:
+        return self._backend.serialize()

@@ -323,6 +323,18 @@ def _eval_with_jax_md_neighbor(
         displacement_fn,
         displacement_kwargs,
     )
+    # Model-level ``pair_exclude_types`` is a nlist-BUILD transform (decision
+    # #18/A4): ``call_lower`` consumes a pre-excluded nlist and no longer
+    # re-applies it. The JAX-MD neighbor list is built without exclusion, so
+    # fold it in at this ingestion seam -- otherwise excluded pairs would be
+    # silently included (fail-open).
+    pair_excl = getattr(getattr(model, "atomic_model", None), "pair_excl", None)
+    if pair_excl is not None:
+        from deepmd.dpmodel.utils.nlist import (
+            apply_pair_exclusion_nlist,
+        )
+
+        nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
     return model.call_lower(
         extended_coord,
         extended_atype,

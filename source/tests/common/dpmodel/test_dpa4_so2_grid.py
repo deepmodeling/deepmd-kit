@@ -48,7 +48,7 @@ def _base_kwargs(**overrides):
         "focus_dim": 0,
         "focus_compete": True,
         "so2_norm": False,
-        "so2_layers": 2,
+        "mixing_layers": 2,
         "so2_attn_res": "none",
         "layer_scale": False,
         "n_atten_head": 1,
@@ -235,14 +235,14 @@ def test_so2_message_node_so3_parity(masked, lmax, mmax) -> None:
 
 def test_so2_both_so3_parity() -> None:
     # node_wise_so3 + message_node_so3 together, example-config-like
-    # (lmax=3, mmax=1, n_focus=2, so2_layers=3, degree_channel radial).
+    # (lmax=3, mmax=1, n_focus=2, mixing_layers=3, degree_channel radial).
     pt_mod, dp_mod, kwargs = _build_conv_pair(
         node_wise_so3=True,
         message_node_so3=True,
         lmax=3,
         mmax=1,
         n_focus=2,
-        so2_layers=3,
+        mixing_layers=3,
         lebedev_quadrature=False,
     )
     _assert_conv_parity(pt_mod, dp_mod, kwargs)
@@ -298,19 +298,3 @@ def test_so2_no_grid_regression(masked) -> None:
     assert dp_mod.node_wise_grid_product is None
     assert dp_mod.message_node_grid_product is None
     _assert_conv_parity(pt_mod, dp_mod, kwargs, masked=masked)
-
-
-def test_so2_deserialize_rejects_drift_key() -> None:
-    """A drift key under a grid-product prefix fails deserialization loudly."""
-    pt_mod, _dp_mod, _kwargs = _build_conv_pair(
-        message_node_so3=True, lmax=3, mmax=1, lebedev_quadrature=False
-    )
-    data = pt_mod.serialize()
-    var_key = next(
-        k for k in data["@variables"] if k.startswith("message_node_grid_product.")
-    )
-    data["@variables"]["message_node_grid_product.__bogus__"] = data["@variables"][
-        var_key
-    ]
-    with pytest.raises(ValueError, match="message_node_grid_product"):
-        DPSO2Conv.deserialize(data)

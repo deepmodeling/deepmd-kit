@@ -126,6 +126,23 @@ def change_bias(
             log_level,
         )
     else:
+        # Checkpoint directory, or a checkpoint prefix such as "model.ckpt-1000"
+        # that carries no recognized suffix. Route these to the checkpoint
+        # handler when a TensorFlow "checkpoint" state file is present.
+        input_path = Path(INPUT)
+        checkpoint_dir = input_path if input_path.is_dir() else input_path.parent
+        if (checkpoint_dir / "checkpoint").is_file():
+            return _change_bias_checkpoint_file(
+                INPUT,
+                mode,
+                bias_value,
+                datafile,
+                system,
+                numb_batch,
+                model_branch,
+                output,
+                log_level,
+            )
         raise RuntimeError(
             "The model provided must be a checkpoint file or frozen model file (.pb)"
         )
@@ -147,7 +164,9 @@ def _change_bias_checkpoint_file(
     tf.reset_default_graph()
 
     checkpoint_path = Path(checkpoint_prefix)
-    checkpoint_dir = checkpoint_path.parent
+    checkpoint_dir = (
+        checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+    )
 
     # Check for valid checkpoint and find the actual checkpoint path
     checkpoint_state_file = checkpoint_dir / "checkpoint"
@@ -242,7 +261,9 @@ def _change_bias_checkpoint_file(
             log.info(f"Using bias adjustment mode: {bias_adjust_mode}")
 
             # Read current bias values from the session (after variables are restored)
-            _apply_data_based_bias(trainer, data, type_map, bias_adjust_mode)
+            _apply_data_based_bias(
+                trainer, data, type_map, bias_adjust_mode, numb_batch
+            )
 
         # Save the updated variables back to checkpoint format first
         # Create a separate directory for updated checkpoint to avoid polluting original
@@ -352,9 +373,17 @@ def _find_input_json(checkpoint_dir: Path) -> Path:
 
 
 def _apply_data_based_bias(
-    trainer: DPTrainer, data: DeepmdDataSystem, type_map: list, bias_adjust_mode: str
+    trainer: DPTrainer,
+    data: DeepmdDataSystem,
+    type_map: list,
+    bias_adjust_mode: str,
+    numb_batch: int = 0,
 ) -> None:
-    """Apply data-based bias calculation by reading current bias from session."""
+    """Apply data-based bias calculation by reading current bias from session.
+
+    ``numb_batch`` is the number of frames to use per data system when
+    estimating the bias; ``0`` means use all data.
+    """
     from deepmd.tf.env import (
         tf,
     )
@@ -393,7 +422,7 @@ def _apply_data_based_bias(
                 type_map,  # full_type_map
                 current_bias,  # Use the restored bias values
                 bias_adjust_mode=bias_adjust_mode,
-                ntest=1,
+                ntest=numb_batch,
             )
 
             # Update the bias in the session

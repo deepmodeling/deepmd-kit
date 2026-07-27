@@ -15,6 +15,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.stat import (
+    _require_stat_file_items,
+)
 from deepmd.pt.model.atomic_model.dp_atomic_model import (
     DPAtomicModel,
 )
@@ -188,6 +191,7 @@ class SeZMAtomicModel(DPAtomicModel):
         force_stat_path = (
             None if stat_file_path is None else stat_file_path / "rmsd_dforce"
         )
+        _require_stat_file_items(stat_file_path, ["rmsd_dforce"])
         if force_stat_path is not None and force_stat_path.is_file():
             force_rmsd = float(np.asarray(force_stat_path.load_numpy()).reshape(-1)[0])
         else:
@@ -733,9 +737,8 @@ class SeZMAtomicModel(DPAtomicModel):
         """Reconstruct SeZM `dens`-head kwargs from energy head and descriptor."""
         descriptor = self.descriptor
         kwargs = self._build_ener_fitting_kwargs()
-        node_l_schedule = getattr(descriptor, "node_l_schedule", descriptor.l_schedule)
-        kwargs["condition_lmax"] = int(node_l_schedule[0])
-        kwargs["latent_lmax"] = int(node_l_schedule[-1])
+        kwargs["condition_lmax"] = int(descriptor.node_init_lmax)
+        kwargs["latent_lmax"] = int(descriptor.node_readout_lmax)
         kwargs["channels"] = int(descriptor.channels)
         return kwargs
 

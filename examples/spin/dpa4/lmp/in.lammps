@@ -1,0 +1,23 @@
+units           metal
+atom_style      spin
+boundary        p p p
+atom_modify     map yes
+
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no
+
+read_data       init.data
+mass            1 58.69
+mass            2 16.00
+
+pair_style      deepspin frozen_model.pt2
+pair_coeff      * * Ni O
+
+# per-atom magnetic force fm = -dE/dspin
+compute         fmag all property/atom fmx fmy fmz
+
+thermo_style    custom step pe
+thermo          1
+dump            1 all custom 1 spin.dump id type x y z fx fy fz c_fmag[1] c_fmag[2] c_fmag[3]
+dump_modify     1 sort id format float %.12e
+run             0

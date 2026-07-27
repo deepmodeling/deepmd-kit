@@ -76,7 +76,7 @@ void DeepTensorPT::init(const std::string& model,
   }
   name_scope = name_scope_;
   preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorch);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);

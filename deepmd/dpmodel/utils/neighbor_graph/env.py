@@ -41,7 +41,8 @@ def edge_env_mat(
     rcut_smth: float,
     protection: float = 0.0,
     edge_mask: Array | None = None,
-) -> Array:
+    return_sw: bool = False,
+) -> Array | tuple[Array, Array]:
     """Compute the per-edge environment-matrix 4-vector.
 
     Mirrors the math in ``_make_env_mat`` / ``EnvMat.call`` (env_mat.py)
@@ -79,6 +80,9 @@ def edge_env_mat(
         (E, 4) normalized environment-matrix vectors.
         Padding edges (``edge_vec = 0``) produce nonzero values but are
         masked by ``NeighborGraph.edge_mask`` downstream.
+        When ``return_sw`` is True, returns ``(em, sw)`` where ``sw`` is the
+        (E, 1) smooth switch, zeroed on padding edges (mirrors the dense
+        ``_make_env_mat`` mask; consumed by the smooth attention branch).
     """
     xp = array_api_compat.array_namespace(edge_vec)
     dev = array_api_compat.device(edge_vec)
@@ -114,4 +118,13 @@ def edge_env_mat(
     avg = xp.take(xp.asarray(davg, device=dev), center_type, axis=0)  # (E, 4)
     std = xp.take(xp.asarray(dstd, device=dev), center_type, axis=0)  # (E, 4)
 
+    if return_sw:
+        # per-edge switch, zeroed on padding edges — mirrors the dense
+        # ``_make_env_mat`` (``weight = weight * mask``); used by the smooth
+        # attention branch.
+        if edge_mask is not None:
+            sw_out = sw * xp.astype(edge_mask[:, None], sw.dtype)
+        else:
+            sw_out = sw
+        return (em - avg) / std, sw_out
     return (em - avg) / std

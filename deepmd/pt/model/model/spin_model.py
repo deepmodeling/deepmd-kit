@@ -35,6 +35,59 @@ from .make_model import (
     make_model,
 )
 
+_NATOMS_VEC_KEYS = ("natoms", "real_natoms_vec")
+_SPIN_STAT_RESERVED_KEYS = frozenset(
+    {"coord", "atype", "spin", "natoms", "real_natoms_vec", "aparam"}
+)
+
+
+def _expand_natoms_vec_for_virtual_spin(natoms: torch.Tensor) -> torch.Tensor:
+    """Expand a DeePMD natoms vector for the virtual-atom spin layout.
+
+    The leading two entries count local and extended atoms; they are doubled
+    to reflect real/virtual atom pairs. Per-type counts are duplicated so that
+    virtual spin slots inherit the population of their real counterparts.
+
+    Parameters
+    ----------
+    natoms
+        Natoms vector with shape ``(nframes, ntypes_real + 2)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Expanded vector with shape ``(nframes, 2 * ntypes_real + 2)``.
+    """
+    return torch.cat(
+        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]],
+        dim=-1,
+    )
+
+
+def _pack_spin_stat_sample(
+    spin_model: "SpinModel",
+    sample: dict[str, Any],
+) -> dict[str, Any]:
+    """Transform one statistics sample into the virtual-atom spin layout."""
+    coord_updated, atype_updated, _ = spin_model.process_spin_input(
+        sample["coord"], sample["atype"], sample["spin"]
+    )
+    packed: dict[str, Any] = {
+        "coord": coord_updated,
+        "atype": atype_updated,
+    }
+    if "aparam" in sample:
+        packed["aparam"] = spin_model.expand_aparam(
+            sample["aparam"], atype_updated.shape[1]
+        )
+    for key in _NATOMS_VEC_KEYS:
+        if key in sample:
+            packed[key] = _expand_natoms_vec_for_virtual_spin(sample[key])
+    for item_key in sample:
+        if item_key not in _SPIN_STAT_RESERVED_KEYS:
+            packed[item_key] = sample[item_key]
+    return packed
+
 
 def _lookup_type_values(values: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
     """
@@ -44,8 +97,14 @@ def _lookup_type_values(values: torch.Tensor, atype: torch.Tensor) -> torch.Tens
     that advanced-indexing form to a CUDA ``index.Tensor`` shim even for a CPU
     ``.pt2`` package. ``index_select`` keeps the exported spin graph device
     stable while preserving the same lookup semantics.
+
+    Padding ghost slots carry ``atype == -1`` (batched extended regions are
+    padded to a uniform ``nall``). Unlike advanced indexing, ``index_select``
+    rejects negative indices, so the padding entries are clamped to row 0; their
+    looked-up value is irrelevant because padding atoms carry zero spin and are
+    dropped from the per-local output downstream.
     """
-    flat_atype = atype.reshape(-1).to(dtype=torch.long)
+    flat_atype = torch.clamp_min(atype.reshape(-1).to(dtype=torch.long), 0)
     return torch.index_select(values.to(atype.device), 0, flat_atype).view(atype.shape)
 
 
@@ -413,26 +472,7 @@ class SpinModel(torch.nn.Module):
     ) -> Callable[[], list[dict]]:
         @functools.lru_cache
         def spin_sampled_func() -> list[dict]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    tmp_dict["natoms"] = torch.cat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
 
         return self.backbone_model.atomic_model._make_wrapped_sampler(spin_sampled_func)
 
@@ -501,36 +541,7 @@ class SpinModel(torch.nn.Module):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict[str, Any]]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "aparam" in sys:
-                    tmp_dict["aparam"] = self.expand_aparam(
-                        sys["aparam"], atype_updated.shape[1]
-                    )
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    tmp_dict["natoms"] = torch.cat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in [
-                        "coord",
-                        "atype",
-                        "spin",
-                        "natoms",
-                        "aparam",
-                    ]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
 
         self.backbone_model.compute_or_load_stat(
             spin_sampled_func,

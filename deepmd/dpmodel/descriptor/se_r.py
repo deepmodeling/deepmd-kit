@@ -22,6 +22,7 @@ from deepmd.dpmodel.common import (
     cast_precision,
     get_xp_precision,
     to_numpy_array,
+    to_numpy_dtype,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -410,7 +411,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Store tabulated embedding-net data in the descriptor state."""
         compress_data = []
         compress_info = []
-        dtype = self.davg.dtype
+        dtype = to_numpy_dtype(self.davg.dtype)
         for embedding_idx in range(self.ntypes):
             net = "filter_-1_net_" + str(embedding_idx)
             if net not in table_data:

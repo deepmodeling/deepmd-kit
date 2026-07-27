@@ -87,7 +87,8 @@ class GatedActivation(nn.Module):
         Whether to use bias in the gate linear layer.
     layout
         Tensor layout convention. ``"nfdc"`` means input shape (N, F, D, C);
-        ``"ndfc"`` means input shape (N, D, F, C).
+        ``"ndfc"`` means input shape (N, D, F, C); ``"fndc"`` means input shape
+        (F, N, D, C), the focus-major layout used by the SO(2) mixing stack.
     trainable
         Whether parameters are trainable.
     seed
@@ -123,8 +124,8 @@ class GatedActivation(nn.Module):
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.mlp_bias = bool(mlp_bias)
         self.layout = str(layout).lower()
-        if self.layout not in {"nfdc", "ndfc"}:
-            raise ValueError("`layout` must be either 'nfdc' or 'ndfc'")
+        if self.layout not in {"nfdc", "ndfc", "fndc"}:
+            raise ValueError("`layout` must be one of 'nfdc', 'ndfc', or 'fndc'")
 
         self.scalar_act = ActivationFn(activation_function)
 
@@ -169,7 +170,8 @@ class GatedActivation(nn.Module):
         ----------
         x
             Value features. Shape is (N, F, D, C) when ``layout='nfdc'``,
-            or (N, D, F, C) when ``layout='ndfc'``.
+            (N, D, F, C) when ``layout='ndfc'``, or (F, N, D, C) when
+            ``layout='fndc'``.
         gate
             Optional gate features with the same layout as ``x``.
             When provided, enables GLU mode:
@@ -182,6 +184,10 @@ class GatedActivation(nn.Module):
         torch.Tensor
             Gated features with the same layout as ``x``.
         """
+        # ``ndfc`` carries the degree axis at position 1; ``nfdc`` and the
+        # focus-major ``fndc`` carry it at position 2. Every select/narrow/reshape
+        # below is expressed against this single degree axis, so the three layouts
+        # share one code path apart from the per-focus gate projection.
         degree_axis = 1 if self.layout == "ndfc" else 2
 
         if gate is not None:
@@ -200,9 +206,15 @@ class GatedActivation(nn.Module):
             return x0
 
         input_dtype = gate_scalar_source.dtype
-        gating_scalars = torch.sigmoid(
-            self.gate_linear(gate_scalar_source.to(dtype=self.dtype))
-        ).to(dtype=input_dtype)
+        gate_src = gate_scalar_source.to(dtype=self.dtype)
+        if self.layout == "fndc":
+            # The scalar source is focus-major (F, N, C). ``FocusLinear`` mixes
+            # channels with the focus stream on axis 1, so present it in the shared
+            # (N, F, C) convention and restore the focus-major orientation.
+            gate_logits = self.gate_linear(gate_src.transpose(0, 1)).transpose(0, 1)
+        else:
+            gate_logits = self.gate_linear(gate_src)
+        gating_scalars = torch.sigmoid(gate_logits).to(dtype=input_dtype)
         gating_scalars = gating_scalars.reshape(
             x.shape[0], gate_scalar_source.shape[1], self.lmax, self.channels
         )

@@ -1026,12 +1026,6 @@ class TestFullValidation(unittest.TestCase):
             ),
         )
 
-    def test_full_validation_rejects_spin_loss(self) -> None:
-        config = deepcopy(self.config)
-        config["loss"]["type"] = "ener_spin"
-        with self.assertRaisesRegex(ValueError, "spin-energy"):
-            get_trainer(config)
-
     def test_full_validation_rejects_multitask(self) -> None:
         multitask_json = str(Path(__file__).parent / "water/multitask.json")
         with open(multitask_json) as f:

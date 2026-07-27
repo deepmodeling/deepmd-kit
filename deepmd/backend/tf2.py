@@ -33,7 +33,12 @@ class TensorFlow2Backend(Backend):
     """TensorFlow 2 eager backend."""
 
     name = "TensorFlow2"
-    features: ClassVar[Backend.Feature] = Backend.Feature.DEEP_EVAL | Backend.Feature.IO
+    features: ClassVar[Backend.Feature] = (
+        Backend.Feature.ENTRY_POINT
+        | Backend.Feature.DEEP_EVAL
+        | Backend.Feature.NEIGHBOR_STAT
+        | Backend.Feature.IO
+    )
     suffixes: ClassVar[list[str]] = [".savedmodeltf"]
 
     @classmethod
@@ -45,7 +50,11 @@ class TensorFlow2Backend(Backend):
 
     @property
     def entry_point_hook(self) -> Callable[["Namespace"], None]:
-        raise NotImplementedError("Training entry point is not implemented for TF2")
+        from deepmd.tf2.entrypoints.main import (
+            main,
+        )
+
+        return main
 
     @property
     def deep_eval(self) -> type["DeepEvalBackend"]:
@@ -57,7 +66,11 @@ class TensorFlow2Backend(Backend):
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
-        raise NotImplementedError("Neighbor statistics are not implemented for TF2")
+        from deepmd.dpmodel.utils.neighbor_stat import (
+            NeighborStat,
+        )
+
+        return NeighborStat
 
     @property
     def serialize_hook(self) -> Callable[[str], dict]:

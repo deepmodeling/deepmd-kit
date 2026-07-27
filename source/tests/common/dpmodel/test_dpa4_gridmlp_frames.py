@@ -123,7 +123,7 @@ def test_gridmlp_parity(n_frames, mode) -> None:
     left = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
     right = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
 
-    dp_out = dp_mlp.call(left, right, to_grid=np_to_grid, from_grid=np_from_grid)
+    dp_out = dp_mlp.call(left, right, None, to_grid=np_to_grid, from_grid=np_from_grid)
     pt_out = pt_mlp(
         torch.from_numpy(left),
         torch.from_numpy(right),
@@ -211,7 +211,7 @@ def test_gridmlp_s2_regression(mode) -> None:
     right = rng.normal(size=(5, coeff_dim, n_focus, channels))
 
     dp_out = dp_mlp.call(
-        left, right, to_grid=dp_net._to_grid, from_grid=dp_net._from_grid
+        left, right, None, to_grid=dp_net._to_grid, from_grid=dp_net._from_grid
     )
     pt_out = pt_mlp(
         torch.from_numpy(left),
@@ -264,8 +264,8 @@ def test_gridmlp_serialize_roundtrip(mode) -> None:
 
     left = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
     right = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
-    out0 = mlp.call(left, right, to_grid=to_grid, from_grid=from_grid)
-    out1 = restored.call(left, right, to_grid=to_grid, from_grid=from_grid)
+    out0 = mlp.call(left, right, None, to_grid=to_grid, from_grid=from_grid)
+    out1 = restored.call(left, right, None, to_grid=to_grid, from_grid=from_grid)
     np.testing.assert_allclose(
         np.asarray(out0), np.asarray(out1), rtol=1e-12, atol=1e-12
     )
@@ -296,10 +296,11 @@ def test_gridmlp_torch_namespace(mode) -> None:
     left = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
     right = rng.normal(size=(n_batch, coeff_dim, n_focus, n_frames * channels))
 
-    np_out = mlp.call(left, right, to_grid=to_grid, from_grid=from_grid)
+    np_out = mlp.call(left, right, None, to_grid=to_grid, from_grid=from_grid)
     torch_out = mlp.call(
         torch.from_numpy(left),
         torch.from_numpy(right),
+        None,
         to_grid=to_grid,
         from_grid=from_grid,
     )

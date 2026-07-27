@@ -132,6 +132,7 @@ class SeZMPropertyModel(SeZMModel):
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Compute property outputs through the SeZM forward-only graph."""
@@ -148,11 +149,12 @@ class SeZMPropertyModel(SeZMModel):
             comm_dict=comm_dict,
             extended_atype=extended_atype,
             extended_coord_corr=extended_coord_corr,
+            spin=spin,
             embedding_only=embedding_only,
             conservative=False,
         )
 
-    def _inductor_compile_options(self) -> dict[str, Any]:
+    def _inductor_compile_options(self, *, inference: bool = False) -> dict[str, Any]:
         """Augment the shared Inductor options for the property compile path.
 
         The non-conservative property backward graph triggers a TorchInductor
@@ -163,7 +165,7 @@ class SeZMPropertyModel(SeZMModel):
         backend, so CUDA/Triton lowering -- the actual ``use_compile`` deployment
         target -- is unchanged.
         """
-        options = super()._inductor_compile_options()
+        options = super()._inductor_compile_options(inference=inference)
         options["cpp.simdlen"] = 0
         return options
 

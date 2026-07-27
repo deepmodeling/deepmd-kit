@@ -10,6 +10,10 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
+
 log = logging.getLogger(__name__)
 
 _IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
@@ -256,6 +260,256 @@ class FinetuneRuleItem:
     def get_finetune_tmap(self) -> list[str]:
         """Returns the type map in the fine-tuned model."""
         return self.type_map
+
+
+class FinetuneRuleBuilder:
+    """Build backend-independent fine-tuning config rules.
+
+    The builder only handles model-config and branch-selection semantics. Backend
+    wrappers are still responsible for loading pretrained model params, and
+    backend trainers are responsible for copying tensor/state values.
+    """
+
+    def __init__(
+        self,
+        pretrained_model_params: dict[str, Any],
+        target_model_config: dict[str, Any],
+        *,
+        model_branch: str = "",
+        change_model_params: bool = True,
+        default_branch: str = "Default",
+        multitask_branch_error: str | None = None,
+        missing_model_params_error: str | None = None,
+    ) -> None:
+        self.pretrained_model_params = pretrained_model_params
+        self.target_model_config = target_model_config
+        self.model_branch = model_branch
+        self.change_model_params = change_model_params
+        self.default_branch = default_branch
+        self.multitask_branch_error = multitask_branch_error or (
+            "Multi-task fine-tuning does not support command-line branch "
+            "selection. Define 'finetune_head' in each model branch."
+        )
+        self.missing_model_params_error = missing_model_params_error or (
+            "Cannot use --use-pretrain-script: the pretrained model does not "
+            "contain full model params."
+        )
+
+    @property
+    def target_is_multitask(self) -> bool:
+        """Whether the target model config is multi-task."""
+        return "model_dict" in self.target_model_config
+
+    @property
+    def pretrained_is_multitask(self) -> bool:
+        """Whether the pretrained model params are multi-task."""
+        return "model_dict" in self.pretrained_model_params
+
+    def build(self) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
+        """Return updated target model config and fine-tuning rules."""
+        model_config = deepcopy(self.target_model_config)
+        finetune_links: dict[str, FinetuneRuleItem] = {}
+
+        if not self.target_is_multitask:
+            model_branch = self.model_branch
+            if model_branch == "" and "finetune_head" in model_config:
+                model_branch = model_config["finetune_head"]
+            model_config, finetune_rule = self.build_single_rule(
+                model_config,
+                model_branch=self.default_branch,
+                model_branch_from=model_branch,
+            )
+            finetune_links[self.default_branch] = finetune_rule
+            return model_config, finetune_links
+
+        if self.model_branch != "":
+            raise ValueError(self.multitask_branch_error)
+
+        pretrained_keys = self._pretrained_keys()
+        pretrained_aliases = self._pretrained_aliases()
+        for model_key in model_config["model_dict"]:
+            target_branch = model_config["model_dict"][model_key]
+            resuming = False
+            if (
+                "finetune_head" in target_branch
+                and target_branch["finetune_head"] != "RANDOM"
+            ):
+                model_branch_from = target_branch["finetune_head"]
+                if model_branch_from not in pretrained_aliases:
+                    raise ValueError(
+                        f"'{model_branch_from}' head chosen to finetune does not "
+                        "exist in the pretrained model. Available heads are: "
+                        f"{pretrained_keys}"
+                    )
+            elif "finetune_head" not in target_branch and model_key in pretrained_keys:
+                model_branch_from = model_key
+                resuming = True
+            else:
+                model_branch_from = "RANDOM"
+
+            model_config["model_dict"][model_key], finetune_rule = (
+                self.build_single_rule(
+                    target_branch,
+                    model_branch=model_key,
+                    model_branch_from=model_branch_from,
+                )
+            )
+            finetune_rule.resuming = resuming
+            finetune_links[model_key] = finetune_rule
+        return model_config, finetune_links
+
+    def build_single_rule(
+        self,
+        single_param_target: dict[str, Any],
+        *,
+        model_branch: str = "Default",
+        model_branch_from: str = "",
+    ) -> tuple[dict[str, Any], FinetuneRuleItem]:
+        """Build a fine-tuning rule for one target branch."""
+        single_config = deepcopy(single_param_target)
+        new_fitting = False
+        model_branch_chosen = self.default_branch
+
+        if not self.pretrained_is_multitask:
+            if model_branch_from not in ("", self.default_branch, "RANDOM"):
+                raise ValueError(
+                    "Single-task pretrained models only provide the "
+                    f"{self.default_branch!r} branch, got {model_branch_from!r}."
+                )
+            single_config_chosen = deepcopy(self.pretrained_model_params)
+            if model_branch_from == "RANDOM":
+                new_fitting = True
+        else:
+            model_dict_params = self.pretrained_model_params["model_dict"]
+            if model_branch_from in ["", "RANDOM"]:
+                model_branch_chosen = next(iter(model_dict_params))
+                new_fitting = True
+                log.warning(
+                    "The fitting net will be re-initialized instead of using the "
+                    "pretrained fitting net. The bias_adjust_mode will be "
+                    "set-by-statistic."
+                )
+            else:
+                model_branch_chosen = model_branch_from
+            model_alias_dict, _ = get_model_dict(model_dict_params)
+            if model_branch_chosen not in model_alias_dict:
+                raise ValueError(
+                    f"No model branch or alias named '{model_branch_chosen}'. "
+                    f"Available branches are {list(model_dict_params)}."
+                )
+            model_branch_chosen = model_alias_dict[model_branch_chosen]
+            single_config_chosen = deepcopy(model_dict_params[model_branch_chosen])
+
+        old_type_map = single_config_chosen["type_map"]
+        new_type_map = single_config["type_map"]
+        finetune_rule = FinetuneRuleItem(
+            p_type_map=old_type_map,
+            type_map=new_type_map,
+            model_branch=model_branch_chosen,
+            random_fitting=new_fitting,
+        )
+        if self.change_model_params:
+            self._apply_pretrained_model_params(
+                single_config,
+                single_config_chosen,
+                model_branch=model_branch,
+                model_branch_chosen=model_branch_chosen,
+                random_fitting=new_fitting,
+            )
+        return single_config, finetune_rule
+
+    def _apply_pretrained_model_params(
+        self,
+        single_config: dict[str, Any],
+        pretrained_config: dict[str, Any],
+        *,
+        model_branch: str,
+        model_branch_chosen: str,
+        random_fitting: bool,
+    ) -> None:
+        if "descriptor" not in pretrained_config:
+            raise ValueError(self.missing_model_params_error)
+        if not random_fitting and "fitting_net" not in pretrained_config:
+            raise ValueError(self.missing_model_params_error)
+        if "descriptor" in single_config:
+            warn_descriptor_config_differences(
+                single_config["descriptor"],
+                pretrained_config["descriptor"],
+                model_branch_chosen,
+            )
+        trainable_param = {
+            "descriptor": single_config.get("descriptor", {}).get("trainable", True),
+            "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
+        }
+        single_config["descriptor"] = deepcopy(pretrained_config["descriptor"])
+        if not random_fitting:
+            single_config["fitting_net"] = deepcopy(pretrained_config["fitting_net"])
+        log.info(
+            "Change the '%s' model configurations according to pretrained branch '%s'.",
+            model_branch,
+            model_branch_chosen,
+        )
+        for net_type, trainable in trainable_param.items():
+            if net_type in single_config:
+                single_config[net_type]["trainable"] = trainable
+            else:
+                single_config[net_type] = {"trainable": trainable}
+
+    def _pretrained_keys(self) -> list[str]:
+        if self.pretrained_is_multitask:
+            return list(self.pretrained_model_params["model_dict"])
+        return [self.default_branch]
+
+    def _pretrained_aliases(self) -> dict[str, str]:
+        if self.pretrained_is_multitask:
+            model_alias_dict, _ = get_model_dict(
+                self.pretrained_model_params["model_dict"]
+            )
+            return dict(model_alias_dict)
+        return {self.default_branch: self.default_branch}
+
+
+def get_finetune_rule_single(
+    single_param_target: dict[str, Any],
+    model_param_pretrained: dict[str, Any],
+    from_multitask: bool = False,
+    model_branch: str = "Default",
+    model_branch_from: str = "",
+    change_model_params: bool = False,
+) -> tuple[dict[str, Any], FinetuneRuleItem]:
+    """Build one backend-independent fine-tuning rule."""
+    builder = FinetuneRuleBuilder(
+        model_param_pretrained,
+        single_param_target,
+        change_model_params=change_model_params,
+    )
+    if from_multitask != builder.pretrained_is_multitask:
+        raise ValueError("from_multitask does not match pretrained model params.")
+    return builder.build_single_rule(
+        single_param_target,
+        model_branch=model_branch,
+        model_branch_from=model_branch_from,
+    )
+
+
+def get_finetune_rules_from_model_params(
+    pretrained_model_params: dict[str, Any],
+    model_config: dict[str, Any],
+    *,
+    model_branch: str = "",
+    change_model_params: bool = True,
+    multitask_branch_error: str | None = None,
+    missing_model_params_error: str | None = None,
+) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
+    """Build fine-tuning rules from already-loaded pretrained model params."""
+    return FinetuneRuleBuilder(
+        pretrained_model_params,
+        model_config,
+        model_branch=model_branch,
+        change_model_params=change_model_params,
+        multitask_branch_error=multitask_branch_error,
+        missing_model_params_error=missing_model_params_error,
+    ).build()
 
 
 def get_index_between_two_maps(

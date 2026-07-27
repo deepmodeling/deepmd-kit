@@ -263,7 +263,7 @@ def to_numpy_array(
     # Create a reverse mapping of PD_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PD_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
-    prec = reverse_precision_dict.get(xx.dtype, None)
+    prec = reverse_precision_dict.get(xx.dtype)
     prec = NP_PRECISION_DICT.get(prec, np.float64)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
@@ -293,7 +293,7 @@ def to_paddle_tensor(
     # Create a reverse mapping of NP_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
-    prec = reverse_precision_dict.get(xx.dtype.type, None)
+    prec = reverse_precision_dict.get(xx.dtype.type)
     prec = PD_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")

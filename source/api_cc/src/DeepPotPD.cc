@@ -202,7 +202,7 @@ void DeepPotPD::init(const std::string& model,
               << std::endl;
     return;
   }
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::Paddle);
   // NOTE: Only support 1 GPU now.
   int gpu_num = 1;
   if (gpu_num > 0) {

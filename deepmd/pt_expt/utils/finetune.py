@@ -10,15 +10,18 @@ from typing import (
 
 import torch
 
-from deepmd.pt.utils.finetune import (
-    get_finetune_rule_single,
-)
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
 )
+from deepmd.utils.finetune import get_finetune_rule_single as get_finetune_rule_single
+from deepmd.utils.finetune import (
+    get_finetune_rules_from_model_params,
+)
+
+__all__ = ["get_finetune_rule_single", "get_finetune_rules"]
 
 
 def _is_pte(path: str) -> bool:
@@ -74,79 +77,18 @@ def get_finetune_rules(
         single-task, or per-branch keys for multi-task).
     """
     last_model_params = _load_model_params(finetune_model)
-
-    if change_model_params and "descriptor" not in last_model_params:
-        # For multi-task pretrained, check inside model_dict
-        if "model_dict" not in last_model_params or "descriptor" not in next(
-            iter(last_model_params["model_dict"].values())
-        ):
-            raise ValueError(
-                "Cannot use --use-pretrain-script: the pretrained model does not "
-                "contain full model params.  If finetuning from a .pte file, "
-                "re-freeze it with the latest code so that model_def_script is embedded."
-            )
-
-    multi_task = "model_dict" in model_config
-    finetune_from_multi_task = "model_dict" in last_model_params
-    finetune_links: dict[str, FinetuneRuleItem] = {}
-
-    if not multi_task:
-        # Single-task target
-        if model_branch == "" and "finetune_head" in model_config:
-            model_branch = model_config["finetune_head"]
-        model_config, finetune_rule = get_finetune_rule_single(
-            model_config,
-            last_model_params,
-            from_multitask=finetune_from_multi_task,
-            model_branch="Default",
-            model_branch_from=model_branch,
-            change_model_params=change_model_params,
-        )
-        finetune_links["Default"] = finetune_rule
-    else:
-        # Multi-task target — mirrors PT's logic
-        if model_branch != "":
-            raise ValueError(
-                "Multi-task fine-tuning does not support command-line branches chosen! "
-                "Please define the 'finetune_head' in each model params!"
-            )
-        if not finetune_from_multi_task:
-            pretrained_keys = ["Default"]
-        else:
-            pretrained_keys = list(last_model_params["model_dict"].keys())
-        for model_key in model_config["model_dict"]:
-            resuming = False
-            if (
-                "finetune_head" in model_config["model_dict"][model_key]
-                and model_config["model_dict"][model_key]["finetune_head"] != "RANDOM"
-            ):
-                pretrained_key = model_config["model_dict"][model_key]["finetune_head"]
-                if pretrained_key not in pretrained_keys:
-                    raise ValueError(
-                        f"'{pretrained_key}' head chosen to finetune not exist in the pretrained model! "
-                        f"Available heads are: {list(pretrained_keys)}"
-                    )
-                model_branch_from = pretrained_key
-            elif (
-                "finetune_head" not in model_config["model_dict"][model_key]
-                and model_key in pretrained_keys
-            ):
-                # resume — no finetune
-                model_branch_from = model_key
-                resuming = True
-            else:
-                # new branch or RANDOM → random fitting
-                model_branch_from = "RANDOM"
-            model_config["model_dict"][model_key], finetune_rule = (
-                get_finetune_rule_single(
-                    model_config["model_dict"][model_key],
-                    last_model_params,
-                    from_multitask=finetune_from_multi_task,
-                    model_branch=model_key,
-                    model_branch_from=model_branch_from,
-                    change_model_params=change_model_params,
-                )
-            )
-            finetune_links[model_key] = finetune_rule
-            finetune_links[model_key].resuming = resuming
-    return model_config, finetune_links
+    return get_finetune_rules_from_model_params(
+        last_model_params,
+        model_config,
+        model_branch=model_branch,
+        change_model_params=change_model_params,
+        multitask_branch_error=(
+            "Multi-task fine-tuning does not support command-line branches chosen! "
+            "Please define the 'finetune_head' in each model params!"
+        ),
+        missing_model_params_error=(
+            "Cannot use --use-pretrain-script: the pretrained model does not "
+            "contain full model params.  If finetuning from a .pte file, "
+            "re-freeze it with the latest code so that model_def_script is embedded."
+        ),
+    )

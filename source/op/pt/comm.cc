@@ -105,6 +105,13 @@ class Border : public torch::autograd::Function<Border> {
       if (cuda_aware == 0) {
         recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
         recv_g1_tensor.copy_(g1);
+      } else if (g1.device().is_cuda()) {
+        // nlocal/nghost are HOST tensors (their .item() reads above no
+        // longer synchronize the device): explicitly order the prior CUDA
+        // work that produced g1 before MPI reads the device buffers on the
+        // CUDA-aware path.  The non-CUDA-aware path is ordered by the
+        // synchronizing copy_ to CPU above.
+        DPErrcheck(gpuDeviceSynchronize());
       }
     }
 #endif
@@ -130,6 +137,15 @@ class Border : public torch::autograd::Function<Border> {
                     world, &request);
         }
         if (nsend) {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+          // the index_select pack above is an asynchronous kernel launch;
+          // the pre-loop fence only ordered work launched BEFORE it, so
+          // CUDA-aware MPI must be ordered behind the pack explicitly or
+          // MPI_Send races with stale device data
+          if (cuda_aware != 0 && send_g1_tensor.is_cuda()) {
+            DPErrcheck(gpuDeviceSynchronize());
+          }
+#endif
           MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
                    world);
         }
@@ -263,6 +279,11 @@ class Border : public torch::autograd::Function<Border> {
       if (cuda_aware == 0) {
         d_local_g1_tensor = torch::empty_like(grad_g1).to(torch::kCPU);
         d_local_g1_tensor.copy_(grad_g1);
+      } else if (grad_g1.device().is_cuda()) {
+        // Same explicit CUDA-stream-to-MPI ordering as the forward: the
+        // host-side nlocal/nghost reads no longer act as an accidental
+        // barrier before MPI touches the device gradient buffers.
+        DPErrcheck(gpuDeviceSynchronize());
       }
     }
 #endif
@@ -317,6 +338,15 @@ class Border : public torch::autograd::Function<Border> {
                     world, &request);
         }
         if (nsend) {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+          // chained reverse communication: a PRIOR iteration's asynchronous
+          // index_add_ may write rows this iteration sends, and the pre-loop
+          // fence cannot order those later launches -- fence before letting
+          // CUDA-aware MPI read the device buffer
+          if (cuda_aware != 0 && d_local_g1_tensor.is_cuda()) {
+            DPErrcheck(gpuDeviceSynchronize());
+          }
+#endif
           MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
                    world);
         }
@@ -353,6 +383,22 @@ class Border : public torch::autograd::Function<Border> {
         d_local_g1_tensor.index_add_(0, irecvlist,
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
+    }
+    // When the forward ran swaps it overwrites every ghost row
+    // (g_out[ghost] = g_in[owner]), so a ghost INPUT value never reaches the
+    // output and its gradient is exactly zero. The reverse-comm loop above has
+    // already routed every ghost output-gradient into its owner row, but it
+    // leaves the upstream ghost-row gradients in ``d_local_g1_tensor``
+    // untouched. Zeroing them is what makes this the true Jacobian-vector
+    // product: without it the op returns a spurious
+    // dL/dg_in[ghost] = dL/dg_out[ghost], which is harmless for an
+    // edge-geometry leaf (ghost rows feed no edge there) but corrupts any
+    // per-node leaf that flows through the exchanged features (e.g. the native
+    // spin magnitude/direction carried in the node state). With ``nswap == 0``
+    // the forward is the identity and the ghost inputs are preserved, so the
+    // gradient passes through unchanged.
+    if (nswap > 0 && nghost > 0) {
+      d_local_g1_tensor.slice(0, nlocal, ntotal).zero_();
     }
 #ifdef USE_MPI
     // Drain pending eager-send ACKs before returning — see forward_t
@@ -558,6 +604,40 @@ DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_export(
                             communicator_tensor, nlocal_tensor, nghost_tensor)
       .clone();
 }
+
+/**
+ * @brief Communicator-wide int64 min-reduction (collective preflight).
+ *
+ * Used by the C++ inference runtime to agree ACROSS RANKS whether a
+ * multi-rank graph run may proceed (e.g. "does any rank have zero
+ * owned+ghost atoms?") BEFORE entering the per-layer ``border_op``
+ * collectives -- a rank-local failure there would leave the peers blocked
+ * forever. Identity when MPI is not compiled in or the communicator handle
+ * is null (single-process runs).
+ */
+DEEPMD_MAYBE_UNUSED torch::Tensor allreduce_min_int_export(
+    const torch::Tensor& value_tensor,
+    const torch::Tensor& communicator_tensor) {
+  torch::Tensor value_cpu = value_tensor.to(torch::kCPU).contiguous();
+#ifdef USE_MPI
+  torch::Tensor comm_cpu = communicator_tensor.to(torch::kCPU).contiguous();
+  if (*comm_cpu.data_ptr<std::int64_t>() != 0) {
+    MPI_Comm world;
+#ifdef OMPI_MPI_H
+    std::int64_t* communicator = comm_cpu.data_ptr<std::int64_t>();
+#else
+    std::int64_t* ptr = comm_cpu.data_ptr<std::int64_t>();
+    int* communicator = reinterpret_cast<int*>(ptr);
+#endif
+    world = reinterpret_cast<MPI_Comm>(*communicator);
+    std::int64_t local = *value_cpu.data_ptr<std::int64_t>();
+    std::int64_t global_min = local;
+    MPI_Allreduce(&local, &global_min, 1, MPI_INT64_T, MPI_MIN, world);
+    return torch::full_like(value_cpu, global_min);
+  }
+#endif
+  return value_cpu.clone();
+}
 }  // namespace
 #undef DEEPMD_MAYBE_UNUSED
 
@@ -570,6 +650,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
       "border_op_backward(Tensor sendlist, Tensor sendproc, Tensor recvproc, "
       "Tensor sendnum, Tensor recvnum, Tensor grad_g1, Tensor communicator, "
       "Tensor nlocal, Tensor nghost) -> Tensor");
+  m.def("allreduce_min_int(Tensor value, Tensor communicator) -> Tensor");
 }
 
 // Register CPU + CUDA implementations under explicit dispatch keys so
@@ -578,10 +659,12 @@ TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
 TORCH_LIBRARY_IMPL(deepmd_export, CPU, m) {
   m.impl("border_op", border_op_export);
   m.impl("border_op_backward", border_op_backward_export);
+  m.impl("allreduce_min_int", allreduce_min_int_export);
 }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 TORCH_LIBRARY_IMPL(deepmd_export, CUDA, m) {
   m.impl("border_op", border_op_export);
   m.impl("border_op_backward", border_op_backward_export);
+  m.impl("allreduce_min_int", allreduce_min_int_export);
 }
 #endif

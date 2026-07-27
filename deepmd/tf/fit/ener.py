@@ -419,7 +419,7 @@ class EnerFitting(Fitting):
             one_layer = one_layer_nvnmd
         else:
             one_layer = one_layer_deepmd
-        for ii in range(0, len(self.n_neuron)):
+        for ii in range(len(self.n_neuron)):
             if self.layer_name is not None and self.layer_name[ii] is not None:
                 layer_suffix = "share_" + self.layer_name[ii] + type_suffix
                 layer_reuse = tf.AUTO_REUSE
@@ -519,8 +519,8 @@ class EnerFitting(Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        type_embedding = input_dict.get("type_embedding", None)
-        atype = input_dict.get("atype", None)
+        type_embedding = input_dict.get("type_embedding")
+        atype = input_dict.get("atype")
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.0
@@ -1040,7 +1040,8 @@ def change_energy_bias_lower(
     for sys in data.data_systems:
         test_data = sys.get_test()
         nframes = test_data["box"].shape[0]
-        numb_test = min(nframes, ntest)
+        # ntest <= 0 means using all frames in the system
+        numb_test = nframes if ntest <= 0 else min(nframes, ntest)
         if mixed_type:
             atype = test_data["type"][:numb_test].reshape([numb_test, -1])
         else:

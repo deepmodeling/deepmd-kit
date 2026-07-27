@@ -13,6 +13,9 @@ from deepmd.dpmodel.descriptor import (
 from deepmd.dpmodel.fitting import (
     InvarFitting,
 )
+from deepmd.dpmodel.utils.nlist import (
+    apply_pair_exclusion_nlist,
+)
 
 from .case_single_frame_with_nlist import (
     TestCaseSingleFrameWithNlist,
@@ -76,8 +79,15 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             md0.reinit_pair_exclude(pair_excl)
             md1 = DPAtomicModel.deserialize(md0.serialize())
 
-            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
-            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
+            # forward_common_atomic consumes a pre-excluded nlist (decision
+            # #18/A4). md0 and md1 share the same pair_excl (deserialized), so
+            # fold it into the nlist once; the serialize/deserialize consistency
+            # check is unaffected by which (identical) nlist both consume.
+            nlist = self.nlist
+            if md0.pair_excl is not None:
+                nlist = apply_pair_exclusion_nlist(nlist, self.atype_ext, md0.pair_excl)
+            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, nlist)
+            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, nlist)
 
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
 
@@ -111,10 +121,16 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             md1.descriptor.reinit_exclude(pair_excl)
             md1.fitting_net.reinit_exclude(atom_excl)
 
-            # check energy consistency
-            args = [self.coord_ext, self.atype_ext, self.nlist]
-            ret0 = md0.forward_common_atomic(*args)
-            ret1 = md1.forward_common_atomic(*args)
+            # check energy consistency.  Model-level pair exclusion is a
+            # nlist-BUILD transform (decision #18/A4): forward_common_atomic
+            # consumes a pre-excluded nlist, so fold md0's exclusion into its
+            # nlist here (the descriptor-level md1 keeps the raw nlist; its
+            # emask applies inside the descriptor).
+            nlist0 = apply_pair_exclusion_nlist(
+                self.nlist, self.atype_ext, md0.pair_excl
+            )
+            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, nlist0)
+            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
             np.testing.assert_allclose(
                 ret0["energy"],
                 ret1["energy"],

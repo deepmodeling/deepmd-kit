@@ -22,12 +22,10 @@ def _Tanh4FltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     xx = xhi * xlo
     xxhi = xx + tf.stop_gradient(tf.floor(xx * prechi) / prechi - xx)
     xxlo = xx + tf.stop_gradient(tf.floor(xx * preclo) / preclo - xx)
-    #
     dydx = xxlo * (xhi / 4 - 3 / 4) + 1
     # dydx = xxhi * (xlo/4 - 3/4) + 1
     dydxhi = dydx + tf.stop_gradient(tf.floor(dydx * prechi) / prechi - dydx)
     dydxlo = dydx + tf.stop_gradient(tf.floor(dydx * preclo) / preclo - dydx)
-    #
     gradhi = grad + tf.stop_gradient(tf.floor(grad * prechi) / prechi - grad)
     dx = dydxlo * gradhi
     dx = dx + tf.stop_gradient(tf.floor(dx * prechi) / prechi - dx)

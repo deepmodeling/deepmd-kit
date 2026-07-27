@@ -10,7 +10,6 @@ from pathlib import (
     Path,
 )
 
-import torch  # noqa: TID253
 from packaging.version import (
     Version,
 )
@@ -18,17 +17,6 @@ from packaging.version import (
 from deepmd.env import (
     SHARED_LIB_DIR,
 )
-from deepmd.tf.env import (  # noqa: TID253
-    TF_VERSION,
-    tf,
-)
-
-if Version(TF_VERSION) < Version("2.12"):
-    from find_libpython import (
-        find_libpython,
-    )
-else:
-    find_libpython = None
 
 
 def get_env(paths: list[str | None]) -> str:
@@ -60,6 +48,36 @@ def get_library_path(module: str, filename: str) -> list[str]:
         return [str(lib) for lib in libs]
 
 
+def _get_tensorflow_library_paths() -> tuple[list[str], list[str]]:
+    """Get TensorFlow library and preload paths when TensorFlow is installed."""
+    try:
+        tf_env = import_module("deepmd.tf.env")
+    except ModuleNotFoundError as exc:
+        if exc.name == "tensorflow":
+            return [], []
+        raise
+
+    tf_dir = tf_env.tf.sysconfig.get_lib()
+    preload_paths = []
+    if Version(tf_env.TF_VERSION) < Version("2.12"):
+        find_libpython = import_module("find_libpython").find_libpython
+        libpython = find_libpython()
+        if libpython is not None:
+            preload_paths.append(libpython)
+    return [tf_dir, os.path.join(tf_dir, "python")], preload_paths
+
+
+def _get_pytorch_library_paths() -> list[str]:
+    """Get PyTorch library paths when PyTorch is installed."""
+    try:
+        torch = import_module("torch")
+    except ModuleNotFoundError as exc:
+        if exc.name == "torch":
+            return []
+        raise
+    return [os.path.join(torch.__path__[0], "lib")]
+
+
 if platform.system() == "Linux":
     lib_env = "LD_LIBRARY_PATH"
 elif platform.system() == "Darwin":
@@ -74,52 +92,49 @@ elif platform.system() == "Darwin":
 else:
     raise RuntimeError("Unsupported platform")
 
-tf_dir = tf.sysconfig.get_lib()
-pt_dir = os.path.join(torch.__path__[0], "lib")
 op_dir = str(SHARED_LIB_DIR)
 
-cuda_library_paths = []
-if platform.system() == "Linux":
-    cuda_library_paths.extend(
-        [
-            *get_library_path("nvidia.cuda_runtime.lib", "libcudart.so*"),
-            *get_library_path("nvidia.cublas.lib", "libcublasLt.so*"),
-            *get_library_path("nvidia.cublas.lib", "libcublas.so*"),
-            *get_library_path("nvidia.cufft.lib", "libcufft.so*"),
-            *get_library_path("nvidia.curand.lib", "libcurand.so*"),
-            *get_library_path("nvidia.cusolver.lib", "libcusolver.so*"),
-            *get_library_path("nvidia.cusparse.lib", "libcusparse.so*"),
-            *get_library_path("nvidia.cudnn.lib", "libcudnn.so*"),
-        ]
-    )
 
-os.environ[preload_env] = get_env(
-    [
-        os.environ.get(preload_env),
-        *cuda_library_paths,
-    ]
-)
+def _configure_lammps_environment() -> None:
+    """Configure library paths for the installed LAMMPS backends."""
+    cuda_library_paths = []
+    if platform.system() == "Linux":
+        cuda_library_paths.extend(
+            [
+                *get_library_path("nvidia.cuda_runtime.lib", "libcudart.so*"),
+                *get_library_path("nvidia.cublas.lib", "libcublasLt.so*"),
+                *get_library_path("nvidia.cublas.lib", "libcublas.so*"),
+                *get_library_path("nvidia.cufft.lib", "libcufft.so*"),
+                *get_library_path("nvidia.curand.lib", "libcurand.so*"),
+                *get_library_path("nvidia.cusolver.lib", "libcusolver.so*"),
+                *get_library_path("nvidia.cusparse.lib", "libcusparse.so*"),
+                *get_library_path("nvidia.cudnn.lib", "libcudnn.so*"),
+            ]
+        )
 
-# set LD_LIBRARY_PATH
-os.environ[lib_env] = get_env(
-    [
-        os.environ.get(lib_env),
-        tf_dir,
-        os.path.join(tf_dir, "python"),
-        pt_dir,
-        op_dir,
-    ]
-)
+    tf_library_paths, tf_preload_paths = _get_tensorflow_library_paths()
+    pt_library_paths = _get_pytorch_library_paths()
 
-# preload python library, only for TF<2.12
-if find_libpython is not None:
-    libpython = find_libpython()
     os.environ[preload_env] = get_env(
         [
             os.environ.get(preload_env),
-            libpython,
+            *cuda_library_paths,
+            *tf_preload_paths,
         ]
     )
+
+    # set LD_LIBRARY_PATH
+    os.environ[lib_env] = get_env(
+        [
+            os.environ.get(lib_env),
+            *tf_library_paths,
+            *pt_library_paths,
+            op_dir,
+        ]
+    )
+
+
+_configure_lammps_environment()
 
 
 def get_op_dir() -> str:

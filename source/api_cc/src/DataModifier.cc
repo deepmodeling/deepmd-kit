@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DataModifier.h"
 
-#ifdef BUILD_TENSORFLOW
-#include "DataModifierTF.h"
-#endif
+#include "BackendPlugin.h"
 #include "common.h"
 
 using namespace deepmd;
@@ -30,16 +28,17 @@ void DipoleChargeModifier::init(const std::string& model,
   }
   const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
-#ifdef BUILD_TENSORFLOW
-    dcm = std::make_shared<deepmd::DipoleChargeModifierTF>(model, gpu_rank,
-                                                           name_scope_);
-#else
-    throw deepmd::deepmd_exception("TensorFlow backend is not built");
-#endif
+    dcm = create_dipole_charge_modifier_backend_from_plugin(
+        backend, model, gpu_rank, name_scope_);
   } else if (deepmd::DPBackend::PyTorch == backend) {
     throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
+  } else if (deepmd::DPBackend::PyTorchExportable == backend) {
+    throw deepmd::deepmd_exception(
+        "PyTorch Exportable backend is not supported yet");
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
+  } else if (deepmd::DPBackend::JAX == backend) {
+    throw deepmd::deepmd_exception("JAX backend is not supported yet");
   } else {
     throw deepmd::deepmd_exception("Unknown file type");
   }

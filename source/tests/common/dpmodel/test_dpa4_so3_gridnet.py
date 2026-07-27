@@ -13,8 +13,6 @@ module-level ``deepmd.pt`` imports under ``source/tests/common``; pt modules are
 pinned to CPU (``.to("cpu")``) under the CUDA-default-device CI.
 """
 
-import copy
-
 import array_api_compat
 import numpy as np
 import pytest
@@ -330,7 +328,8 @@ def test_so3_serialize_roundtrip(mode, op_type) -> None:
 
     data = dp_net.serialize()
     assert data["@version"] == 1
-    assert data["config"]["projector"]["@class"] == "SO3GridProjector"
+    assert data["@class"] == "SO3GridNet"
+    assert data["config"]["kmax"] == kmax
     assert "residual_scale" in data["@variables"]
     if mode == "cross":
         assert "frame_expand.weight" in data["@variables"]
@@ -439,10 +438,9 @@ def test_s2_regression(mode) -> None:
 def test_so3_cross_mixed_precision_runs() -> None:
     """fp32 inputs through an fp64 SO3GridNet cross net run cleanly.
 
-    ``_FrameMixer`` casts its weights to the operand dtype, so operands are
-    lifted to compute precision before frame expansion (matching pt's fp64
-    FrameExpand); the mixed-precision path must run and stay close to the
-    fp64-input result.
+    ``call`` lifts the operands to the fp64 compute precision (and
+    ``FrameExpand`` holds fp64 weights), so the mixed-precision path must run
+    and stay close to the all-fp64 result while returning the fp32 input dtype.
     """
     _pt, dp_net = _build_so3_nets(
         mode="cross", op_type="glu", layout="ndfc", precision="float64"
@@ -457,21 +455,3 @@ def test_so3_cross_mixed_precision_runs() -> None:
     out64 = np.asarray(dp_net.call(query, context))
     assert np.all(np.isfinite(out32))
     np.testing.assert_allclose(out32, out64, rtol=1e-4, atol=1e-4)
-
-
-def test_so3_deserialize_rejects_bad_projector() -> None:
-    """SO3GridNet.deserialize validates the nested projector @class/@version."""
-    _pt, dp_net = _build_so3_nets(mode="self", op_type="glu", layout="ndfc")
-    data = dp_net.serialize()
-    bad_class = copy.deepcopy(data)
-    bad_class["config"]["projector"]["@class"] = "S2GridProjector"
-    with pytest.raises(ValueError, match="projector"):
-        DPSO3GridNet.deserialize(bad_class)
-    bad_ver = copy.deepcopy(data)
-    bad_ver["config"]["projector"]["@version"] = 99
-    with pytest.raises(ValueError, match="version"):
-        DPSO3GridNet.deserialize(bad_ver)
-    missing_ver = copy.deepcopy(data)
-    del missing_ver["config"]["projector"]["@version"]
-    with pytest.raises(ValueError, match="@version"):
-        DPSO3GridNet.deserialize(missing_ver)

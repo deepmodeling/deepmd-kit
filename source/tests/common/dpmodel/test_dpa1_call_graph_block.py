@@ -90,30 +90,165 @@ class TestDpa1BlockCallGraph:
             atol=1e-12,
         )
 
-    def test_attn_layer_gt0_raises(self) -> None:
-        """The graph block kernel fail-fasts for attn_layer > 0 (unsupported)."""
-        dd = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
-        with pytest.raises(NotImplementedError):
-            dd.se_atten.call_graph(None, np.array([0], dtype=np.int64))
+    # attn_layer > 0 is supported since NeighborGraph PR-D; parity is covered
+    # by test_dpa1_graph_attention_parity.py (the fail-fast test was removed).
 
-    def test_exclude_types_raises(self) -> None:
-        """The graph block kernel fail-fasts for exclude_types (not yet applied)."""
-        # the graph path does not yet apply type exclusion; it must fail-fast
-        # rather than silently diverge from the dense path (which masks edges).
+    @pytest.mark.parametrize("type_one_side", [False, True])  # tebd concat branch
+    @pytest.mark.parametrize("attn_layer", [0, 2])  # no-attn and multi-layer attention
+    def test_exclude_types_graph_parity(self, attn_layer, type_one_side) -> None:
+        """The graph block kernel supports exclude_types via apply_pair_exclusion.
+
+        Excluded edges are masked (edge_mask zeroed) before segment_sum, so
+        the graph block output matches the dense block output at rtol=atol=1e-12
+        for a non-binding sel.  Parametrized over attn_layer (0 and 2) and
+        type_one_side (False and True).  smooth_type_embedding=False is used
+        for attn_layer>0 to avoid the known by-design divergence where the dense
+        smooth path keeps sel-padding terms in the softmax denominator.
+        """
+        from deepmd.dpmodel.utils.nlist import (
+            extend_input_and_build_neighbor_list,
+        )
+
+        rng = np.random.default_rng(99)
+        nloc = 4
+        coord = rng.normal(size=(1, nloc, 3)) * 1.5
+        atype_arr = np.array([[0, 1, 0, 1]], dtype=np.int64)
         dd = DescrptDPA1(
             rcut=4.0,
             rcut_smth=0.5,
-            sel=[20],
+            sel=[30],  # non-binding
             ntypes=2,
-            attn_layer=0,
+            attn_layer=attn_layer,
+            axis_neuron=2,
+            neuron=[6, 12],
             exclude_types=[(0, 1)],
+            type_one_side=type_one_side,
+            smooth_type_embedding=False,  # avoid dense smooth divergence at attn>0
         )
-        ng = from_dense_quartet(
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord,
+            atype_arr,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        ng = from_dense_quartet(ext_coord, nlist, mapping, compact=False)
+        atype_local = atype_arr.reshape(-1)
+        tebd = dd.type_embedding.call()
+        nf, nall = ext_atype.shape
+        atype_embd_ext = np.reshape(
+            np.take(tebd, ext_atype.reshape(-1), axis=0),
+            (nf, nall, dd.tebd_dim),
+        )
+        # dense block call (apply_pair_exclusion inside)
+        grrg_dense, *_ = dd.se_atten.call(
+            nlist,
+            ext_coord,
+            ext_atype,
+            atype_embd_ext=atype_embd_ext,
+            mapping=None,
+            type_embedding=tebd,
+        )
+        # graph block call (apply_pair_exclusion via edge_mask zeroing)
+        grrg_blk, _rot_mat = dd.se_atten.call_graph(
+            ng, atype_local, type_embedding=tebd
+        )
+        assert grrg_blk.shape[0] == atype_local.shape[0]  # flat N axis
+        assert not np.any(np.isnan(grrg_blk))
+        np.testing.assert_allclose(
+            grrg_blk.reshape(grrg_dense.shape),
+            grrg_dense,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+
+class TestDpa1BlockCallGraphStrip:
+    """Bit-exact parity between the graph-native ``call_graph`` and the dense
+    ``call`` for ``tebd_input_mode='strip'``.
+
+    Strip mode factorizes the per-neighbor feature as ``gg = gg_s*gg_t + gg_s``
+    (radial embedding times type-pair strip embedding); it has no neighbor-axis
+    coupling, so the graph translation is edge-for-edge and must be bit-exact
+    with the dense block on the SAME neighbor list.
+    """
+
+    def setup_method(self) -> None:
+        rng = np.random.default_rng(3)
+        self.nloc = 4
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+
+    def _make(self, type_one_side: bool, smooth: bool, attn_layer: int) -> DescrptDPA1:
+        return DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[20],  # non-binding sel: carry-all graph == dense on real neighbors
+            ntypes=2,
+            attn_layer=attn_layer,
+            axis_neuron=2,
+            neuron=[6, 12],
+            tebd_input_mode="strip",
+            type_one_side=type_one_side,
+            smooth_type_embedding=smooth,
+        )
+
+    def _assert_parity(self, dd: DescrptDPA1, compact: bool) -> None:
+        (
+            ext_coord,
+            ext_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
             self.coord,
-            -np.ones((1, self.nloc, 1), dtype=np.int64),  # any graph; guard fires first
-            np.arange(self.nloc, dtype=np.int64)[None],
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
         )
-        with pytest.raises(NotImplementedError):
-            dd.se_atten.call_graph(
-                ng, self.atype.reshape(-1), type_embedding=dd.type_embedding.call()
-            )
+        tebd = dd.type_embedding.call()
+        nf, nall = ext_atype.shape
+        atype_embd_ext = np.reshape(
+            np.take(tebd, np.reshape(ext_atype, (-1,)), axis=0),
+            (nf, nall, dd.tebd_dim),
+        )
+        dense_g, *_ = dd.se_atten.call(
+            nlist,
+            ext_coord,
+            ext_atype,
+            atype_embd_ext=atype_embd_ext,
+            mapping=None,
+            type_embedding=tebd,
+        )
+        ng = from_dense_quartet(ext_coord, nlist, mapping, compact=compact)
+        graph_g, _rot_mat = dd.se_atten.call_graph(
+            ng,
+            np.reshape(ext_atype, (-1,)),
+            type_embedding=tebd,
+        )
+        assert not np.any(np.isnan(graph_g))
+        np.testing.assert_allclose(
+            graph_g.reshape(dense_g.shape),
+            dense_g,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+    @pytest.mark.parametrize(
+        "type_one_side", [False, True]
+    )  # two-side vs one-side strip table
+    @pytest.mark.parametrize("smooth", [False, True])  # gg_t switch-smoothing branch
+    def test_strip_attn0_equals_dense(self, type_one_side, smooth) -> None:
+        """attn_layer=0: no attention, so strip parity is bit-exact for both smooth values."""
+        dd = self._make(type_one_side, smooth, attn_layer=0)
+        self._assert_parity(dd, compact=True)
+
+    @pytest.mark.parametrize(
+        "type_one_side", [False, True]
+    )  # two-side vs one-side strip table
+    def test_strip_attn2_equals_dense(self, type_one_side) -> None:
+        """attn_layer=2, smooth=False: bit-exact (avoids by-design smooth softmax divergence)."""
+        dd = self._make(type_one_side, smooth=False, attn_layer=2)
+        self._assert_parity(dd, compact=False)
