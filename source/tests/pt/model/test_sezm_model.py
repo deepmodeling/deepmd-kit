@@ -53,6 +53,9 @@ from deepmd.pt.train.training import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -72,18 +75,19 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# SeZM's ``torch.compile`` / AOT-export code paths are validated on torch
-# 2.11.x and 2.12.x, the releases the compile pipeline supports (see
-# ``deepmd.pt.utils.compile_compat``). Other torch versions can segfault or
-# drift, so the compile-parity tests are skipped there.
+# SeZM's ``torch.compile`` / AOT-export code paths are validated only on the
+# releases the compile pipeline supports (see ``deepmd.pt.utils.compile_compat``).
+# Other torch versions can segfault or drift, so the compile-parity tests are
+# skipped there.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
-    (2, 11),
-    (2, 12),
-}
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
 _SKIP_OFF_COMPILE_TORCH_REASON = (
-    "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x; "
-    f"current torch is {torch.__version__}."
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
