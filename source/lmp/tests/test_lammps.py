@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import shutil
+import subprocess as sp
+import sys
 from pathlib import (
     Path,
 )
@@ -734,3 +736,33 @@ def test_pair_deepmd_mpi(balance_args: list) -> None:
     assert md[1] == pytest.approx(np.max(expected_md_v))
     assert md[2] == pytest.approx(np.min(expected_md_v))
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_subcommunicators(tmp_path: Path) -> None:
+    """Independent LAMMPS communicators must load their requested models."""
+    output_a = tmp_path / "forces_a.out"
+    output_b = tmp_path / "forces_b.out"
+    sp.check_call(
+        [
+            "mpirun",
+            "-n",
+            "4",
+            sys.executable,
+            str(Path(__file__).parent / "run_mpi_pair_subcommunicators.py"),
+            str(data_file.resolve()),
+            str(pb_file.resolve()),
+            str(pb_file2.resolve()),
+            str(output_a),
+            str(output_b),
+        ],
+        timeout=120,
+    )
+
+    np.testing.assert_allclose(np.loadtxt(output_a), expected_f)
+    np.testing.assert_allclose(np.loadtxt(output_b), expected_f2)

@@ -100,6 +100,60 @@ class TestPairwiseOP(tf.test.TestCase):
         np.testing.assert_array_equal(natoms_qmmm, np.array([5, 7, 5], dtype=int))
         np.testing.assert_array_equal(qmmm_frame_idx, np.array([0, 0, 0], dtype=int))
 
+    def test_op_single_fragment_with_placeholders(self) -> None:
+        """Count a QM-only frame and pad its maps against a larger frame."""
+        idxs = np.array(
+            [
+                [0, -1, 0, -1, -1, 0, -1],
+                [0, 0, 0, 1, 1, -1, 1],
+            ],
+            dtype=int,
+        )
+        natoms = np.array([5, 7, 5], dtype=int)
+        with self.cached_session() as sess:
+            t_outputs = op_module.dprc_pairwise_idx(
+                tf.convert_to_tensor(idxs, dtype=tf.int32),
+                tf.convert_to_tensor(natoms, dtype=tf.int32),
+            )
+            (
+                forward_qm_map,
+                backward_qm_map,
+                forward_qmmm_map,
+                backward_qmmm_map,
+                natoms_qm,
+                natoms_qmmm,
+                qmmm_frame_idx,
+            ) = run_sess(sess, t_outputs)
+
+        # Frame 0 has two local QM atoms and one ghost. The local section is
+        # padded before its ghost to match frame 1's three local QM atoms.
+        np.testing.assert_array_equal(
+            forward_qm_map,
+            np.array([[0, 2, -1, 5], [0, 1, 2, -1]], dtype=int),
+        )
+        np.testing.assert_array_equal(
+            backward_qm_map,
+            np.array(
+                [
+                    [0, -1, 1, -1, -1, 3, -1],
+                    [0, 1, 2, -1, -1, -1, -1],
+                ],
+                dtype=int,
+            ),
+        )
+        # Only frame 1 contains an MM fragment, so it contributes the sole
+        # QMMM row and retains its original frame index.
+        np.testing.assert_array_equal(
+            forward_qmmm_map, np.array([[0, 1, 2, 3, 4, 6]], dtype=int)
+        )
+        np.testing.assert_array_equal(
+            backward_qmmm_map,
+            np.array([[0, 1, 2, 3, 4, -1, 5]], dtype=int),
+        )
+        np.testing.assert_array_equal(natoms_qm, np.array([3, 4, 3], dtype=int))
+        np.testing.assert_array_equal(natoms_qmmm, np.array([5, 6, 5], dtype=int))
+        np.testing.assert_array_equal(qmmm_frame_idx, np.array([1], dtype=int))
+
 
 class TestConvertForwardMapOP(tf.test.TestCase):
     """Test convert_forward_map OP."""
