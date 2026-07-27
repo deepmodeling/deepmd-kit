@@ -50,9 +50,8 @@ In general, we always use the following convention of units:
 
 ## Mixed type
 
-:::{note}
-Only the [DPA-1](../model/train-se-atten.md) and [DPA-2](../model/dpa2.md) descriptors support this format.
-:::
+> [!NOTE]
+> Only the [DPA-1](../model/train-se-atten.md) and [DPA-2](../model/dpa2.md) descriptors support this format.
 
 In the standard data format, only those frames with the same fingerprint (i.e. the number of atoms of different elements) can be put together as a unified system.
 This may lead to sparse frame numbers in those rare systems.
