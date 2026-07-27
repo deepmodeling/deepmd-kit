@@ -329,7 +329,7 @@ class Trainer:
                         rank=self.rank,
                         world_size=self.world_size,
                         shuffle=True,
-                        seed=_training_params.get("seed", None),
+                        seed=_training_params.get("seed"),
                         block_targets=_block_targets,
                     )
                 else:

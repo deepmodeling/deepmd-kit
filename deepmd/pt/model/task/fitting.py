@@ -20,6 +20,9 @@ from typing_extensions import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.stat import (
+    _require_stat_file_items,
+)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -269,6 +272,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat fparam
         if self.numb_fparam > 0:
+            _require_stat_file_items(stat_file_path, ["fparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()
@@ -307,6 +311,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat aparam
         if self.numb_aparam > 0:
+            _require_stat_file_items(stat_file_path, ["aparam"])
             if (
                 stat_file_path is not None
                 and stat_file_path.is_dir()

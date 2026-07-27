@@ -359,9 +359,11 @@ def format_nlist(
     # Swapping the operands would force the SymInt comparison to run and
     # emit an `_assert_scalar` node in the exported graph.
     if extra_nlist_sort or n_nnei > nnei:
-        n_nf, n_nloc, n_nnei = nlist.shape
-        m_real_nei = nlist >= 0
-        ret = xp.where(m_real_nei, nlist, 0)
+        # Sort the padded list so forced sorting preserves the requested width
+        # when the input has fewer than ``nnei`` entries (issue #5629).
+        n_nf, n_nloc, n_nnei = ret.shape
+        m_real_nei = ret >= 0
+        ret = xp.where(m_real_nei, ret, 0)
         coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
         index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
         coord1 = xp_take_along_axis(extended_coord, index, axis=1)

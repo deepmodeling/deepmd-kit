@@ -286,7 +286,7 @@ class BackgroundConsumer(Thread):
         Thread.__init__(self)
         self._queue = queue
         self._source = source  # Main DL iterator
-        self._max_len = max_len  #
+        self._max_len = max_len
 
     def run(self) -> None:
         for item in self._source:

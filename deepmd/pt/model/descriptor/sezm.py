@@ -159,6 +159,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
+    edge_norm
+        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
+        branches: the radial network hidden layers, the environment-seed FiLM
+        scale/shift logits, the cross-focus competition scalars, and the
+        post-SO(2) residual messages. ``False`` replaces the first three norms
+        with identity and changes only the post-SO(2) norm to unit-floor residual
+        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
+        retain their cutoff envelope instead of receiving the standard
+        ``1/sqrt(eps)`` small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -441,6 +450,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
+        edge_norm: bool = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -542,6 +552,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
+        self.edge_norm = bool(edge_norm)
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -845,20 +856,28 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     seed=seed_env_seed,
                 )
             )
-            self.film_scale_norm = ScalarRMSNorm(
-                channels=self.channels,
-                n_focus=1,
-                eps=self.eps,
-                dtype=self.compute_dtype,
-                trainable=self.trainable,
-            )
-            self.film_shift_norm = ScalarRMSNorm(
-                channels=self.channels,
-                n_focus=1,
-                eps=self.eps,
-                dtype=self.compute_dtype,
-                trainable=self.trainable,
-            )
+            # The FiLM logits derive from the env-seed matrix D = envᵀenv, which
+            # vanishes at rcut; normalizing them shares the radial network's
+            # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
+            # norms (identity pass-through) to keep the FiLM scale/shift smooth.
+            if self.edge_norm:
+                self.film_scale_norm: nn.Module = ScalarRMSNorm(
+                    channels=self.channels,
+                    n_focus=1,
+                    eps=self.eps,
+                    dtype=self.compute_dtype,
+                    trainable=self.trainable,
+                )
+                self.film_shift_norm: nn.Module = ScalarRMSNorm(
+                    channels=self.channels,
+                    n_focus=1,
+                    eps=self.eps,
+                    dtype=self.compute_dtype,
+                    trainable=self.trainable,
+                )
+            else:
+                self.film_scale_norm = nn.Identity()
+                self.film_shift_norm = nn.Identity()
             film_strength_init = 0.01
             # Use 1D tensor (not scalar) for FSDP2 compatibility
             self.film_scale_strength_log = nn.Parameter(
@@ -906,6 +925,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             activation_function=self.activation_function,
             dtype=self.compute_dtype,  # force fp32+
             trainable=self.trainable,
+            radial_norm=self.edge_norm,
             seed=seed_radial_embedding,
         )
 
@@ -968,6 +988,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
+                    focus_norm=self.edge_norm,
                     so2_norm=self.so2_norm,
                     mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
@@ -1002,6 +1023,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
+                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -2439,6 +2461,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
+                "edge_norm": self.edge_norm,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "edge_cartesian": self.edge_cartesian,

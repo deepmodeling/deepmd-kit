@@ -128,7 +128,6 @@ exhale_projects_args = {
 # Tell sphinx what the pygments highlight language should be.
 # highlight_language = 'cpp'
 
-#
 myst_heading_anchors = 4
 nb_execution_mode = "off"
 
@@ -202,6 +201,7 @@ mathjax_path = (
     "https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.min.js"
 )
 myst_enable_extensions = [
+    "alert",
     "dollarmath",
     "colon_fence",
     "substitution",

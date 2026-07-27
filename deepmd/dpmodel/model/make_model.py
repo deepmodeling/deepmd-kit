@@ -516,7 +516,12 @@ def make_model(
                 edge_vec=ng.edge_vec,
                 edge_mask=ng.edge_mask,
                 fparam=fp,
-                aparam=ap,
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+                aparam=(
+                    xp.reshape(ap, (nf * nloc, ap.shape[-1]))
+                    if ap is not None
+                    else None
+                ),
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
@@ -666,9 +671,9 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
@@ -676,18 +681,19 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu`` (see
+                :func:`fit_output_to_model_output_graph`); ``None`` (default)
+                is the single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
                 Atomic parameter, ``(N, nda)``.
             comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for ABI
-                stability.
+                Optional MPI communication metadata.
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Charge/spin conditioning.
 
             Returns
             -------
@@ -701,6 +707,7 @@ def make_model(
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                n_local=n_local,
             )
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
                 graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
@@ -710,6 +717,7 @@ def make_model(
                 self.atomic_output_def(),
                 graph,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                n_local=n_local,
             )
 
         def call_common_lower_graph(
@@ -739,9 +747,9 @@ def make_model(
             Parameters
             ----------
             atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+                (N,) flat local-plus-halo atom types, ``N == sum(n_node)``.
             n_node
-                (nf,) per-frame local atom counts.
+                (nf,) per-frame total node counts.
             edge_index
                 (2, E) ``[src, dst]`` edge endpoints (flat local indices).
             edge_vec
@@ -749,18 +757,18 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference. Ignored in
-                PR-A (single-rank); accepted for ABI stability.
+                Per-rank local (owned) atom counts for multi-rank inference,
+                ``(nf,)``. When given, ghost rows (index ``>= n_local[frame]``)
+                are excluded from ``<var>_redu``; ``None`` (default) is the
+                single-rank/all-owned behavior.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
                 Atomic parameter, ``(N, nda)``.
             comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for ABI
-                stability.
+                Optional MPI communication metadata.
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Charge/spin conditioning.
 
             Returns
             -------

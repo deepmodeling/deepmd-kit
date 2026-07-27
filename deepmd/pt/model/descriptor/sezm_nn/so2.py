@@ -903,6 +903,11 @@ class SO2Convolution(nn.Module):
         If True, apply cross-focus softmax competition in SO(2) local layout.
         Competition logits are constructed only from l=0 scalar channels and the
         resulting invariant weights are broadcast to all (l, m) components.
+    focus_norm
+        If True, RMS-normalize the competition l=0 scalars before the softmax.
+        Those scalars are envelope-gated (radial modulation) and vanish at the
+        cutoff, so the norm crosses its eps floor near ``rcut``; ``False`` uses an
+        identity pass-through and lets the competition decay smoothly to uniform.
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm as pre-norm before
         each SO(2) mixing layer. The last SO(2) layer always uses Identity.
@@ -1018,6 +1023,7 @@ class SO2Convolution(nn.Module):
         n_focus: int = 1,
         focus_dim: int = 0,
         focus_compete: bool = True,
+        focus_norm: bool = True,
         so2_norm: bool = False,
         mixing_layers: int = 4,
         so2_attn_res: str = "none",
@@ -1068,6 +1074,7 @@ class SO2Convolution(nn.Module):
         self.hidden_channels = int(self.n_focus * self.so2_focus_dim)
         self.use_hidden_projection = self.hidden_channels != self.channels
         self.focus_compete = bool(focus_compete)
+        self.focus_norm = bool(focus_norm)
         self.focus_softmax_tau = 1.0
         self.focus_label_smoothing = 0.02
         self.so2_norm = bool(so2_norm)
@@ -1370,16 +1377,24 @@ class SO2Convolution(nn.Module):
             )
 
         # === Step 7.5. Optional cross-focus competition ===
-        self.focus_compete_norm: ScalarRMSNorm | None = None
+        self.focus_compete_norm: nn.Module | None = None
         self.adamw_focus_compete_w: nn.Parameter | None = None
         self.focus_compete_bias: nn.Parameter | None = None
         if self.focus_compete and self.n_focus > 1:
-            self.focus_compete_norm = ScalarRMSNorm(
-                channels=self.so2_focus_dim,
-                n_focus=self.n_focus,
-                eps=self.eps,
-                dtype=self.compute_dtype,
-                trainable=trainable,
+            # The competition scalars are envelope-gated (radial modulation) and
+            # vanish at rcut; normalizing them crosses the eps floor near the
+            # cutoff, so ``focus_norm=False`` uses an identity pass-through and
+            # lets the softmax decay smoothly to uniform weights there.
+            self.focus_compete_norm = (
+                ScalarRMSNorm(
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    eps=self.eps,
+                    dtype=self.compute_dtype,
+                    trainable=trainable,
+                )
+                if self.focus_norm
+                else nn.Identity()
             )
             self.adamw_focus_compete_w = nn.Parameter(
                 torch.empty(
@@ -2488,6 +2503,7 @@ class SO2Convolution(nn.Module):
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
+                "focus_norm": self.focus_norm,
                 "so2_norm": self.so2_norm,
                 "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,

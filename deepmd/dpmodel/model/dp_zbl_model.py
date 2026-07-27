@@ -31,6 +31,32 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel, T_Bases=(NativeOP, BaseMo
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
+    r"""Combine DP and ZBL atomic energies by a short-range switch.
+
+    For the soft minimum neighbor distance :math:`\sigma_i`, define
+    :math:`u_i=(\sigma_i-r_{\min})/(r_{\max}-r_{\min})` and
+
+    .. math::
+
+       s_i=\begin{cases}
+       1,&\sigma_i<r_{\min},\\
+       1-10u_i^3+15u_i^4-6u_i^5,
+       &r_{\min}\leq\sigma_i<r_{\max},\\
+       0,&\sigma_i\geq r_{\max}.
+       \end{cases}
+
+    The total energy and forces are
+
+    .. math::
+
+       E=\sum_i\left[(1-s_i)E_i^{\mathrm{DP}}+s_iE_i^{\mathrm{ZBL}}\right],
+       \qquad
+       \mathbf F_i=-\nabla_{\mathbf r_i}E.
+
+    Thus the force also contains derivatives of the coordinate-dependent
+    switching weights in the interpolation region.
+    """
+
     def __init__(
         self,
         *args: Any,

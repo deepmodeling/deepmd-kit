@@ -102,6 +102,14 @@ class DeepPotJAX : public DeepPotBackend {
     assert(inited);
     return has_default_fparam_;
   };
+  /**
+   * @brief Get dimension of charge/spin condition inputs.
+   * @return The dimension of charge/spin condition inputs.
+   **/
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
 
   // forward to template class
   void computew(std::vector<double>& ener,
@@ -116,6 +124,18 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<double>& aparam,
                 const bool atomic);
   void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
                 std::vector<float>& atom_energy,
@@ -126,6 +146,18 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -141,6 +173,21 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<double>& aparam,
                 const bool atomic);
   void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
                 std::vector<float>& atom_energy,
@@ -154,6 +201,21 @@ class DeepPotJAX : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
   void computew_mixed_type(std::vector<double>& ener,
                            std::vector<double>& force,
                            std::vector<double>& virial,
@@ -180,6 +242,13 @@ class DeepPotJAX : public DeepPotBackend {
                            const bool atomic);
 
  private:
+  /** Release every TensorFlow C API handle owned by this backend.
+   *
+   * This helper is intentionally safe for partially initialized objects so an
+   * exception from init() cannot leak handles or make a later retry unsafe.
+   */
+  void clear_tf_resources() noexcept;
+
   bool inited;
   // device
   std::string device;
@@ -191,6 +260,12 @@ class DeepPotJAX : public DeepPotBackend {
   int dfparam;
   // the dimension of the atomic parameter
   int daparam;
+  // the dimension of charge/spin condition inputs
+  int dchgspin;
+  // has default charge/spin values
+  bool has_default_chg_spin_;
+  // default charge/spin values
+  std::vector<double> default_chg_spin_;
   // type map
   std::string type_map;
   // sel
@@ -216,12 +291,12 @@ class DeepPotJAX : public DeepPotBackend {
   /**  TF C API objects.
    * @{
    */
-  TF_Graph* graph;
-  TF_Status* status;
-  TF_Session* session;
-  TF_SessionOptions* sessionopts;
-  TFE_ContextOptions* ctx_opts;
-  TFE_Context* ctx;
+  TF_Graph* graph = nullptr;
+  TF_Status* status = nullptr;
+  TF_Session* session = nullptr;
+  TF_SessionOptions* sessionopts = nullptr;
+  TFE_ContextOptions* ctx_opts = nullptr;
+  TFE_Context* ctx = nullptr;
   std::vector<TF_Function*> func_vector;
   /**
    * @}
@@ -262,6 +337,7 @@ class DeepPotJAX : public DeepPotBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 
   /**
@@ -304,6 +380,7 @@ class DeepPotJAX : public DeepPotBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 };
 }  // namespace deepmd

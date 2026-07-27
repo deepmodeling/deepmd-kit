@@ -113,8 +113,8 @@ class TestDpa1GraphLower:
             attn_layer=attn_layer,
             attn_dotr=True,
             attn_mask=False,
-            # smooth attention keeps sel-padding in the dense softmax
-            # denominator; the carry-all graph drops it BY DESIGN (PR-D), so
+            # Smooth attention keeps sel-padding in the dense softmax
+            # denominator; the carry-all graph omits it, so
             # exact graph-vs-dense parity requires smooth=False here.
             smooth_type_embedding=smooth,
             activation_function="tanh",
@@ -185,7 +185,7 @@ class TestDpa1GraphLower:
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
         return ext_coord, ext_atype, nlist_t, mapping_t
 
-    @pytest.mark.parametrize("attn_layer", [0, 2])  # factorizable AND attention
+    @pytest.mark.parametrize("attn_layer", [0, 2])
     @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
     @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
     @pytest.mark.parametrize(
@@ -238,6 +238,7 @@ class TestDpa1GraphLower:
         ng = apply_pair_exclusion(ng, atype_local, model.atomic_model.pair_excl)
         graph = model.forward_common_lower_graph(
             atype_local,
+            ng.n_node,
             ng.n_node,
             ng.edge_index,
             ng.edge_vec,
@@ -303,23 +304,69 @@ class TestDpa1GraphLower:
             dtype=torch.float64,
             device=torch.device("cpu"),
         )
-        atype, n_node, ei, ev, em, fp, ap, cs = sample
-        traced = model.forward_lower_graph_exportable(
+        (
             atype,
             n_node,
+            n_local,
             ei,
             ev,
             em,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fp,
+            ap,
+            cs,
+        ) = sample
+        traced = model.forward_lower_graph_exportable(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
             fparam=fp,
             aparam=ap,
             do_atomic_virial=True,
             charge_spin=cs,
+            destination_sorted=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
-        out = traced(atype, n_node, ei, ev, em, fp, ap, cs)
+        out = traced(
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fp,
+            ap,
+            cs,
+        )
         ref = model.forward_common_lower_graph(
-            atype, n_node, ei, ev, em, fparam=fp, aparam=ap, do_atomic_virial=True
+            atype,
+            n_node,
+            n_local,
+            ei,
+            ev,
+            em,
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=True,
         )
         tol = {"rtol": 1e-12, "atol": 1e-12}
         torch.testing.assert_close(out["energy"], ref["energy_redu"], **tol)
@@ -336,7 +383,7 @@ class TestDpa1GraphLower:
         nonzero and bounded by the documented ~1e-4 magnitude.
 
         The carry-all graph drops sel-padding phantom terms from the smooth
-        attention softmax denominator BY DESIGN (NeighborGraph PR-D), while
+        attention softmax denominator, while
         the dense path keeps them, so dense output is sel-dependent.  This
         test pins that divergence at the public model forward so a future
         refactor cannot silently change the carry-all smooth semantics.
@@ -540,6 +587,8 @@ class TestDpa1GraphLower:
         )
         tol = {"rtol": 1e-5, "atol": 1e-6}
         torch.testing.assert_close(graph["energy_redu"], dense["energy_redu"], **tol)
+        # The graph lower assembles force / virial in the model compute precision
+        # (fp32 here) while the dense reference stays fp64; compare values only.
         torch.testing.assert_close(
-            graph["energy_derv_r"], dense["energy_derv_r"], **tol
+            graph["energy_derv_r"], dense["energy_derv_r"], check_dtype=False, **tol
         )

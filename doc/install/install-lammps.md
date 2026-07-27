@@ -80,6 +80,16 @@ make -j4
 make install
 ```
 
+To build the GPU-resident `pair_style deepmd/kk`, enable the LAMMPS Kokkos
+package. The pair style uses the DeePMD C API:
+
+```bash
+cmake -D PKG_KOKKOS=ON \
+    -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes \
+    -D CMAKE_INSTALL_PREFIX=${deepmd_root} \
+    -D CMAKE_PREFIX_PATH=${deepmd_root} ../cmake
+```
+
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
 ```bash
@@ -113,16 +123,21 @@ make -j4
 make install
 ```
 
+Configure LAMMPS with `PKG_KOKKOS=ON`, then configure the DeePMD plugin with
+`DEEPMD_LAMMPS_KOKKOS=ON` and `Kokkos_DIR` pointing to the Kokkos package
+exported by the LAMMPS build. This registers the GPU-resident
+`pair_style deepmd/kk`; the plugin and built-in integrations use the same C API
+device-graph interface.
+
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
 ```bash
 ${deepmd_root}/bin/lmp -h
 ```
 
-:::{note}
-If `${tensorflow_root}`, `${deepmd_root}`, or the path to TensorFlow Python package if applicable is different from the prefix of LAMMPS, you need to append the library path to [`RUNPATH`](https://man7.org/linux/man-pages/man8/ld.so.8.html) of `liblammps.so`. For example, use patchelf >= 0.13
-
-```sh
-patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
-```
-:::
+> [!NOTE]
+> If `${tensorflow_root}`, `${deepmd_root}`, or the path to TensorFlow Python package if applicable is different from the prefix of LAMMPS, you need to append the library path to [`RUNPATH`](https://man7.org/linux/man-pages/man8/ld.so.8.html) of `liblammps.so`. For example, use patchelf >= 0.13
+>
+> ```sh
+> patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
+> ```

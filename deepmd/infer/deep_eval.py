@@ -61,6 +61,7 @@ class DeepEvalBackend(ABC):
         "energy_derv_c": "atom_virial",
         "energy_derv_c_mag": "atom_virial_mag",
         "energy_derv_c_redu": "virial",
+        "energy_derv_c_mag_redu": "virial_mag",
         "polar": "polar",
         "polar_redu": "global_polar",
         "polar_derv_r": "force",

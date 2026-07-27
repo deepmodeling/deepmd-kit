@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Pairs of edges sharing a center (``dst``) — the edge-pair axis.
 
-Shared primitive: graph-native attention (NeighborGraph PR-D) uses
+Graph-native attention uses
 ``(ordered=True, include_self=True)`` = the full transformer neighbor-pair
-square per center; 3-body angles (PR-E) use ``(ordered=False,
+square per center; 3-body angles use ``(ordered=False,
 include_self=False)``.
 
 Two forms:
@@ -16,8 +16,8 @@ Two forms:
   UNBACKED SymInt sizes via :func:`xp_hint_dynamic_size`, so the form traces
   through ``make_fx``/``torch.export`` and compiles under AOTI (torch >= 2.6
   unbacked-symint support) — this is what makes the carry-all attention
-  graph lower exportable to a ``.pt2``. numpy/jax run it eagerly as before
-  (jax.jit would still need a static realization — deferred to the jax PR).
+  graph lower exportable to a ``.pt2``. NumPy and JAX run it eagerly;
+  ``jax.jit`` requires the shape-static form.
 - **shape-static** (``static_nnei`` set): assumes the center-major static
   layout (``E = n_center * static_nnei``, edge ``c * static_nnei + m`` belongs
   to center ``c`` — the layout ``from_dense_quartet(compact=False)`` emits).

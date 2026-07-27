@@ -19,11 +19,14 @@ from deepmd.pt.model.descriptor.sezm import (
     DescrptSeZM,
 )
 from deepmd.pt.model.descriptor.sezm_nn import (
+    C3CutoffEnvelope,
     DynamicRadialDegreeMixer,
     EdgeCartesianTensorProduct,
     ForceEmbedding,
     InnerClamp,
     NodeCartesianTensorProduct,
+    RadialBasis,
+    RadialMLP,
     SeZMDirectForceHead,
     SO2Linear,
     SpinEmbedding,
@@ -36,6 +39,7 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     quaternion_multiply,
     quaternion_to_rotation_matrix,
     safe_norm,
+    segment_envelope_gated_softmax,
 )
 from deepmd.pt.model.model import (
     get_sezm_model,
@@ -1824,6 +1828,262 @@ class TestInnerClamp(_SeZMTestCase):
             InnerClamp(-1.0, 1.0)
         with self.assertRaises(ValueError):
             InnerClamp(1.0, 1.0)
+
+
+class TestCutoffNumerics(_SeZMTestCase):
+    """Numerical stability at cutoff-vanishing attention boundaries."""
+
+    def test_high_logit_edge_vanishes_continuously(self) -> None:
+        """A zero-weight high-logit edge must leave the segment continuously."""
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float64, device=self.device
+        )
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float64, device=self.device
+        )
+        eps = 1.0e-7
+
+        def evaluate(crossing_envelope: float) -> torch.Tensor:
+            edge_env = torch.tensor(
+                [[1.0], [crossing_envelope]],
+                dtype=torch.float64,
+                device=self.device,
+            )
+            return segment_envelope_gated_softmax(
+                logits, edge_env, dst, 1, z_bias_raw, eps
+            )
+
+        near = evaluate(1.0e-12)
+        zero = evaluate(0.0)
+        near_mass = math.exp(20.0) * 1.0e-24
+        near_denominator = 2.0 + eps + near_mass
+        torch.testing.assert_close(
+            near[1, 0, 0],
+            torch.tensor(
+                near_mass / near_denominator,
+                dtype=torch.float64,
+                device=self.device,
+            ),
+            rtol=1.0e-12,
+            atol=0.0,
+        )
+        expected_stable = 1.0 / (2.0 + eps)
+        torch.testing.assert_close(
+            near[0, 0, 0],
+            torch.tensor(expected_stable, dtype=torch.float64, device=self.device),
+        )
+        torch.testing.assert_close(
+            zero[0, 0, 0],
+            torch.tensor(expected_stable, dtype=torch.float64, device=self.device),
+        )
+        self.assertEqual(float(zero[1, 0, 0]), 0.0)
+
+    def test_envelope_nextafter_cutoff_attention(self) -> None:
+        """Adjacent float32 distances must not create a spurious attention edge."""
+        envelope_fn = C3CutoffEnvelope(6.0, exponent=5, dtype=torch.float32)
+        rcut = torch.tensor(6.0, dtype=torch.float32, device=self.device)
+        zero = torch.tensor(0.0, dtype=torch.float32, device=self.device)
+        r_near = torch.nextafter(rcut, zero)
+        r_inner = torch.nextafter(r_near, zero)
+        distances = torch.stack([r_near, r_inner])[:, None]
+        envelope = envelope_fn(distances)
+
+        distance64 = distances[:, 0].to(torch.float64)
+        u = (6.0 - distance64) / 6.0
+        x = 1.0 - u
+        reference = u**4 * (1.0 + x * (4.0 + x * (10.0 + x * (20.0 + 35.0 * x))))
+        torch.testing.assert_close(
+            envelope[:, 0].to(torch.float64),
+            reference,
+            rtol=1.0e-6,
+            atol=0.0,
+        )
+        self.assertTrue(bool((envelope >= 0.0).all()))
+
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=self.device
+        )
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=self.device
+        )
+        for edge_envelope in envelope[:, 0]:
+            edge_env = torch.stack([torch.ones_like(edge_envelope), edge_envelope])[
+                :, None
+            ]
+            alpha = segment_envelope_gated_softmax(
+                logits, edge_env, dst, 1, z_bias_raw, 1.0e-7
+            )
+            self.assertLess(float(alpha[1, 0, 0]), 1.0e-30)
+
+    def test_tiny_source_weight_hessian(self) -> None:
+        """Log-domain source scaling must preserve the physical Hessian."""
+        logits = torch.tensor(
+            [[[0.0]], [[20.0]]], dtype=torch.float32, device=self.device
+        )
+        edge_env = torch.ones((2, 1), dtype=torch.float32, device=self.device)
+        dst = torch.zeros(2, dtype=torch.int64, device=self.device)
+        z_bias_raw = torch.tensor(
+            [[math.log(math.expm1(1.0))]], dtype=torch.float32, device=self.device
+        )
+        eps = 1.0e-7
+
+        def attention_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            return segment_envelope_gated_softmax(
+                logits,
+                edge_env,
+                dst,
+                1,
+                z_bias_raw,
+                eps,
+                source_weight[:, None],
+            ).sum()
+
+        null_mass = torch.nn.functional.softplus(z_bias_raw[0, 0]) + eps
+
+        def physical_sum(source_weight: torch.Tensor) -> torch.Tensor:
+            edge_mass = source_weight * torch.exp(logits[:, 0, 0])
+            return (edge_mass / (null_mass + edge_mass.sum())).sum()
+
+        source_weight = torch.tensor(
+            [1.0, 1.0e-30], dtype=torch.float32, device=self.device
+        )
+        actual = torch.autograd.functional.hessian(attention_sum, source_weight)
+        reference = torch.autograd.functional.hessian(physical_sum, source_weight)
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(
+            actual[0, 0],
+            reference[0, 0],
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+        torch.testing.assert_close(actual, reference, rtol=1.0e-5, atol=32.0)
+
+
+class TestEdgeNorm(_SeZMTestCase):
+    """The ``edge_norm`` switch and its effect on cutoff smoothness.
+
+    The descriptor exposes a single ``edge_norm`` flag; internally it drives the
+    ``RadialMLP.radial_norm`` hidden RMSNorm, the FiLM scale/shift norms, and the
+    cross-focus competition norm, and selects the post-SO(2) residual scaling
+    floor. The RadialMLP-level tests exercise the radial mechanism directly; the
+    descriptor test checks the umbrella propagation.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.dtype = torch.float64
+        self.rcut = 6.0
+
+    def _radial_feature_curve(self, *, radial_norm: bool, seed: int) -> torch.Tensor:
+        """Radial features over a near-cutoff distance sweep.
+
+        ``RadialBasis`` bakes in the C^3 envelope, so ``edge_rbf`` vanishes at
+        ``rcut``. With ``radial_norm=True`` the hidden RMSNorm divides that
+        envelope out and its ``eps`` floor is crossed near ``rcut``, injecting a
+        localized curvature spike; ``radial_norm=False`` drops the RMSNorm so the
+        feature stays smooth. Both variants share the same linear weights (same
+        ``seed``), isolating the effect of the norm.
+
+        Parameters
+        ----------
+        radial_norm : bool
+            Whether the RadialMLP keeps its hidden RMSNorm.
+        seed : int
+            Seed shared by both variants so the linear weights match.
+
+        Returns
+        -------
+        torch.Tensor
+            Radial features with shape (N, out_dim) over the distance sweep.
+        """
+        basis = RadialBasis(rcut=self.rcut, n_radial=8, exponent=7, dtype=self.dtype)
+        mlp = RadialMLP(
+            [8, 12, 8], radial_norm=radial_norm, dtype=self.dtype, seed=seed
+        )
+        r = torch.linspace(
+            0.5 * self.rcut,
+            0.9995 * self.rcut,
+            4000,
+            dtype=self.dtype,
+            device=self.device,
+        ).view(-1, 1)
+        with torch.no_grad():
+            return mlp(basis(r))
+
+    @staticmethod
+    def _peak_curvature(feat: torch.Tensor) -> float:
+        """Peak absolute second finite difference of the feature L2 norm."""
+        y = feat.norm(dim=1)
+        return float((y[2:] - 2.0 * y[1:-1] + y[:-2]).abs().max())
+
+    def test_radial_norm_false_removes_cutoff_curvature_spike(self) -> None:
+        """``radial_norm=False`` suppresses the eps-crossing kink near ``rcut``."""
+        feat_norm = self._radial_feature_curve(radial_norm=True, seed=3)
+        feat_smooth = self._radial_feature_curve(radial_norm=False, seed=3)
+        # Both vanish at rcut: edge_rbf -> 0 and RadialMLP(0) = 0 (bias=False).
+        self.assertLess(feat_smooth[-1].abs().max().item(), 1.0e-8)
+        # The normalized variant floor-crosses just inside rcut; dropping the
+        # RMSNorm removes that localized curvature spike by a wide margin.
+        self.assertLess(
+            self._peak_curvature(feat_smooth) * 5.0,
+            self._peak_curvature(feat_norm),
+        )
+
+    def test_radial_norm_structure_and_serialization(self) -> None:
+        """The flag toggles the hidden RMSNorm and round-trips through serialize."""
+        for radial_norm in (True, False):
+            with self.subTest(radial_norm=radial_norm):
+                mlp = RadialMLP(
+                    [8, 12, 8], radial_norm=radial_norm, dtype=self.dtype, seed=5
+                )
+                has_norm = any(type(m).__name__ == "RMSNorm" for m in mlp.net)
+                self.assertEqual(has_norm, radial_norm)
+
+                restored = RadialMLP.deserialize(mlp.serialize())
+                self.assertEqual(restored.radial_norm, radial_norm)
+                x = torch.rand(16, 8, dtype=self.dtype, device=self.device)
+                with torch.no_grad():
+                    torch.testing.assert_close(mlp(x), restored(x))
+
+    def test_edge_norm_gates_all_cutoff_vanishing_norms(self) -> None:
+        """``edge_norm`` controls every cutoff-vanishing normalization path."""
+        for edge_norm in (True, False):
+            with self.subTest(edge_norm=edge_norm):
+                desc = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        edge_norm=edge_norm,
+                        use_env_seed=True,
+                        n_focus=2,
+                        sandwich_norm=[True, True, True, True],
+                        precision="float64",
+                    )
+                )
+                # radial MLP hidden RMSNorm
+                radial_has_norm = any(
+                    type(m).__name__ == "RMSNorm" for m in desc.radial_embedding.net
+                )
+                self.assertEqual(radial_has_norm, edge_norm)
+                # env-seed FiLM scale/shift norms
+                self.assertEqual(
+                    type(desc.film_scale_norm).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                self.assertEqual(
+                    type(desc.film_shift_norm).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                # cross-focus competition norm (n_focus>1 -> competition active)
+                focus_norm_mod = desc.blocks[0].so2_conv.focus_compete_norm
+                self.assertEqual(
+                    type(focus_norm_mod).__name__ == "ScalarRMSNorm", edge_norm
+                )
+                # Only the post-SO(2) residual branch uses unit-floor scaling.
+                expected_eps = 1.0e-5 if edge_norm else 1.0
+                self.assertEqual(desc.blocks[0].post_so2_norm.eps, expected_eps)
+                self.assertEqual(desc.blocks[0].pre_so2_norm.eps, 1.0e-5)
+                self.assertEqual(desc.blocks[0].pre_ffn_norms[0].eps, 1.0e-5)
+                self.assertEqual(desc.blocks[0].post_ffn_norms[0].eps, 1.0e-5)
+                self.assertEqual(desc.serialize()["config"]["edge_norm"], edge_norm)
 
 
 class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):

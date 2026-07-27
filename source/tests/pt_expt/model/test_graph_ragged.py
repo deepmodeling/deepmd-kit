@@ -8,6 +8,9 @@ energy_derv_r leading dim 5.  All entries must be finite.
 
 import torch
 
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    _extend_graph_aparam,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -99,6 +102,7 @@ class TestGraphRagged:
         ret = self.model.forward_common_lower_graph(
             self.atype,
             self.n_node,
+            self.n_node,
             self.edge_index,
             self.edge_vec,
             self.edge_mask,
@@ -128,6 +132,7 @@ class TestGraphRagged:
         ret = self.model.forward_common_lower_graph(
             self.atype,
             self.n_node,
+            self.n_node,
             self.edge_index,
             self.edge_vec,
             self.edge_mask,
@@ -143,15 +148,85 @@ class TestGraphRagged:
         assert torch.isfinite(ret["energy_derv_c"]).all()
         assert torch.isfinite(ret["energy_derv_c_redu"]).all()
 
+    def test_halo_nodes_do_not_contribute_atomic_energy(self) -> None:
+        n_local = torch.tensor([2, 1], dtype=torch.int64, device=self.device)
+        ret = self.model.forward_common_lower_graph(
+            self.atype,
+            self.n_node,
+            n_local,
+            self.edge_index,
+            self.edge_vec,
+            self.edge_mask,
+            do_atomic_virial=True,
+        )
+
+        torch.testing.assert_close(
+            ret["energy"][[2, 4]],
+            torch.zeros_like(ret["energy"][[2, 4]]),
+        )
+        torch.testing.assert_close(
+            ret["energy_redu"][0],
+            ret["energy"][:2].sum(dim=0),
+        )
+        torch.testing.assert_close(
+            ret["energy_redu"][1],
+            ret["energy"][3:4].sum(dim=0),
+        )
+        torch.testing.assert_close(
+            ret["mask"],
+            torch.tensor([1, 1, 0, 1, 0], dtype=torch.int32, device=self.device),
+        )
+
+    def test_ragged_local_aparam_expands_to_halo_axis(self) -> None:
+        n_node = torch.tensor([3, 4], dtype=torch.int64, device=self.device)
+        n_local = torch.tensor([2, 1], dtype=torch.int64, device=self.device)
+        aparam = torch.tensor(
+            [
+                [[1.0, 2.0], [3.0, 4.0]],
+                [[5.0, 6.0], [99.0, 99.0]],
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        actual = _extend_graph_aparam(aparam, n_node, n_local, 7)
+        expected = torch.tensor(
+            [
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [0.0, 0.0],
+                [5.0, 6.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        torch.testing.assert_close(actual, expected)
+
+    def test_zero_owned_aparam_expands_to_zeros(self) -> None:
+        n_node = torch.tensor([3], dtype=torch.int64, device=self.device)
+        n_local = torch.tensor([0], dtype=torch.int64, device=self.device)
+        aparam = torch.empty(
+            (1, 0, 2),
+            dtype=torch.float64,
+            device=self.device,
+        )
+        actual = _extend_graph_aparam(aparam, n_node, n_local, 3)
+        torch.testing.assert_close(
+            actual,
+            torch.zeros((3, 2), dtype=torch.float64, device=self.device),
+        )
+
     def test_invariant_to_charge_spin(self) -> None:
         """dpa1 does NOT consume charge_spin (``get_dim_chg_spin() == 0``);
-        forward_common_lower_graph accepts it only for ABI stability with
-        charge/spin descriptors (dpa3/dpa4, PR-G), so energy / force / virial /
-        atom-virial must be INVARIANT to it.
+        forward_common_lower_graph accepts it for descriptors with charge/spin
+        conditioning, so dpa1 outputs must be invariant to it.
         """
         assert self.model.get_descriptor().get_dim_chg_spin() == 0  # dpa1
         args = (
             self.atype,
+            self.n_node,
             self.n_node,
             self.edge_index,
             self.edge_vec,

@@ -50,7 +50,7 @@ from .norm import (
 
 class RadialMLP(NativeOP):
     """
-    Radial MLP with channel RMSNorm and configurable activation.
+    Radial MLP with optional channel RMSNorm and configurable activation.
 
     Parameters
     ----------
@@ -63,11 +63,14 @@ class RadialMLP(NativeOP):
         Floating point precision for the linear layers.
     trainable : bool
         Whether the parameters are trainable.
+    radial_norm : bool
+        Whether to insert a channel RMSNorm in each hidden layer.
 
     Architecture
     ------------
-    Linear → RMSNorm → Activation for all hidden layers,
-    with the final layer being a plain Linear (no norm, no activation).
+    ``radial_norm=True``  : Linear → RMSNorm → Activation for each hidden layer.
+    ``radial_norm=False`` : Linear → Activation for each hidden layer.
+    The final layer is always a plain Linear (no norm, no activation).
 
     Notes
     -----
@@ -76,6 +79,15 @@ class RadialMLP(NativeOP):
     pads masked edges with zero ``edge_rbf``; any non-zero bias would leak
     spurious features into GIE scatter, causing energy divergence between
     compile and non-compile paths.
+
+    The hidden RMSNorm normalizes each edge's radial features by their own RMS.
+    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
+    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
+    (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
+    energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
+    the RMSNorm so the radial features vanish smoothly with the envelope, which
+    restores C^3 smoothness at the cutoff.
     """
 
     def __init__(
@@ -85,6 +97,7 @@ class RadialMLP(NativeOP):
         activation_function: str = "silu",
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
+        radial_norm: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
         if len(mlp_layers) < 2:
@@ -93,6 +106,7 @@ class RadialMLP(NativeOP):
         self.activation_function = str(activation_function)
         self.precision = precision
         self.trainable = bool(trainable)
+        self.radial_norm = bool(radial_norm)
 
         modules: list = []
         n_layers = len(mlp_layers)
@@ -109,13 +123,14 @@ class RadialMLP(NativeOP):
             modules.append(linear)
             # Last layer: no RMSNorm/activation
             if i < n_layers - 2:
-                modules.append(
-                    RMSNorm(
-                        channels=mlp_layers[i + 1],
-                        precision=self.precision,
-                        trainable=trainable,
+                if self.radial_norm:
+                    modules.append(
+                        RMSNorm(
+                            channels=mlp_layers[i + 1],
+                            precision=self.precision,
+                            trainable=trainable,
+                        )
                     )
-                )
                 modules.append(get_activation_fn(self.activation_function))
 
         self.net = modules
@@ -153,6 +168,7 @@ class RadialMLP(NativeOP):
             "activation_function": self.activation_function,
             "dtype": np.dtype(PRECISION_DICT[self.precision]).name,
             "trainable": self.trainable,
+            "radial_norm": self.radial_norm,
             "@variables": variables,
         }
 
@@ -188,28 +204,20 @@ class C3CutoffEnvelope(NativeOP):
 
     Notes
     -----
-    The envelope function is defined for scaled distance ``x = r / rcut`` as::
+    For scaled distance ``x = r / rcut`` and ``u = 1 - x``, the envelope is
+    evaluated in the cancellation-free form::
 
-        E(x) = 1 + x^p * (a + b*x + c*x^2 + d*x^3),  for x < 1
-        E(x) = 0,                                     for x >= 1
+        E_p(x) = u^4 * sum(comb(k + 3, 3) * x^k, k=0..p-1),  for x < 1
+        E_p(x) = 0,                                             for x >= 1
 
-    where the coefficients are chosen to satisfy::
+    This positive-coefficient factorization satisfies::
 
         E(0) = 1,    E(1) = 0
         E'(1) = 0,   E''(1) = 0,   E'''(1) = 0
 
-    This ensures C^3 continuity at the cutoff boundary. The coefficients are::
+    For the default exponent ``p=5``::
 
-        a = -(p + 1)(p + 2)(p + 3) / 6
-        b = p(p + 2)(p + 3) / 2
-        c = -p(p + 1)(p + 3) / 2
-        d = p(p + 1)(p + 2) / 6
-
-    For the default exponent p=5, the coefficients are a=-56, b=140, c=-120,
-    d=35::
-
-        E(x) = 1 + x^5 * (-56 + 140*x - 120*x^2 + 35*x^3)
-             = 1 - 56*x^5 + 140*x^6 - 120*x^7 + 35*x^8
+        E_5(x) = u^4 * (1 + 4*x + 10*x^2 + 20*x^3 + 35*x^4)
 
     Parameters
     ----------
@@ -224,14 +232,6 @@ class C3CutoffEnvelope(NativeOP):
         Cutoff radius in Å.
     p : float
         Polynomial exponent.
-    a : float
-        Quadratic coefficient for x^p term.
-    b : float
-        Linear coefficient for x^(p+1) term.
-    c : float
-        Quadratic coefficient for x^(p+2) term.
-    d : float
-        Cubic coefficient for x^(p+3) term.
     """
 
     def __init__(
@@ -248,20 +248,25 @@ class C3CutoffEnvelope(NativeOP):
         self.rcut = float(rcut)
         self.p = int(exponent)
         self.precision = precision
-        self.coeff_a = -((self.p + 1) * (self.p + 2) * (self.p + 3)) / 6.0
-        self.coeff_b = (self.p * (self.p + 2) * (self.p + 3)) / 2.0
-        self.coeff_c = -(self.p * (self.p + 1) * (self.p + 3)) / 2.0
-        self.coeff_d = (self.p * (self.p + 1) * (self.p + 2)) / 6.0
+        self._series_coefficients = tuple(
+            float(math.comb(k + 3, 3)) for k in range(self.p)
+        )
 
     def call(self, dst: Any) -> Any:
         """Compute the envelope value for given distances."""
         xp = array_api_compat.array_namespace(dst)
-        d_scaled = xp.clip(dst / self.rcut, min=0.0, max=1.0)
-        poly = self.coeff_a + d_scaled * (
-            self.coeff_b + d_scaled * (self.coeff_c + d_scaled * self.coeff_d)
+        device = array_api_compat.device(dst)
+        u = xp.clip((self.rcut - dst) / self.rcut, min=0.0, max=1.0)
+        x = 1.0 - u
+        series = xp.full(
+            x.shape,
+            self._series_coefficients[-1],
+            dtype=x.dtype,
+            device=device,
         )
-        env_val = 1 + d_scaled**self.p * poly
-        return env_val * xp.astype(d_scaled < 1.0, dst.dtype)
+        for coefficient in reversed(self._series_coefficients[:-1]):
+            series = coefficient + x * series
+        return u**4 * series
 
 
 class InnerClamp(NativeOP):

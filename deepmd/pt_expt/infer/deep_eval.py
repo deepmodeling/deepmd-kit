@@ -187,10 +187,9 @@ class DeepEval(DeepEvalBackend):
         # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
         # (_eval_model_graph); fail fast instead of silently ignoring it on
         # nlist-form artifacts (there, the builder knob is nlist_backend).
-        if (
-            neighbor_graph_method != "dense"
-            and getattr(self, "metadata", {}).get("lower_input_kind") != "graph"
-        ):
+        if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
+            "lower_input_kind"
+        ) not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
@@ -1527,7 +1526,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        if self.metadata.get("lower_input_kind") == "graph":
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
             return self._eval_model_graph(
                 coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
@@ -1767,11 +1766,14 @@ class DeepEval(DeepEvalBackend):
         Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
         from the eval system at its exact (tight) edge count and feeds the
         positional schema
-        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
-        charge_spin)`` to the exported forward.  The AOTI artifact's edge axis
-        is DYNAMIC (B2.0), so no ``edge_capacity`` padding is needed.  The
-        forward returns the LOCAL public keys directly, so results are reshaped
-        without ``communicate_extended_output``.
+        ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
+        destination_order, destination_row_ptr, source_order, source_row_ptr,
+        fparam, aparam, charge_spin)`` to the exported forward. The AOTI
+        artifact's edge axis is dynamic, so no ``edge_capacity`` padding is needed. The
+        ``graph_edge_dtype`` metadata selects float32 geometry for compressed
+        DPA1 and float64 for generic graph descriptors. The forward returns the
+        LOCAL public keys directly, so results are reshaped without
+        ``communicate_extended_output``.
         """
         from deepmd.pt_expt.utils.env import (
             DEVICE,
@@ -1786,8 +1788,8 @@ class DeepEval(DeepEvalBackend):
 
         coord_input = coords.reshape(nframes, natoms, 3)
         box_input = cells.reshape(nframes, 9) if cells is not None else None
-        # Dynamic edge axis (B2.0): build the carry-all graph at its exact edge
-        # count (no static padding); the AOTI artifact accepts any E.
+        # Build the carry-all graph at its exact edge count; the exported edge
+        # axis is dynamic.
         graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
 
         atype_t = torch.tensor(
@@ -1799,24 +1801,108 @@ class DeepEval(DeepEvalBackend):
         edge_index_t = torch.as_tensor(
             graph.edge_index, dtype=torch.int64, device=DEVICE
         )
-        edge_vec_t = torch.as_tensor(graph.edge_vec, dtype=torch.float64, device=DEVICE)
+        edge_dtype = (
+            torch.float32
+            if self.metadata.get("graph_edge_dtype") == "float32"
+            else torch.float64
+        )
+        edge_vec_t = torch.as_tensor(
+            graph.edge_vec,
+            dtype=edge_dtype,
+            device=DEVICE,
+        )
         edge_mask_t = torch.as_tensor(graph.edge_mask, dtype=torch.bool, device=DEVICE)
-
-        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
-            fparam, aparam, nframes, natoms, DEVICE
+        destination_order_t = torch.as_tensor(
+            graph.destination_order,
+            device=DEVICE,
         )
-        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
-
-        model_inputs = (
-            atype_t,
-            n_node_t,
-            edge_index_t,
-            edge_vec_t,
-            edge_mask_t,
-            fparam_t,
-            aparam_t,
-            charge_spin_t,
+        destination_row_ptr_t = torch.as_tensor(
+            graph.destination_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
         )
+        source_order_t = torch.as_tensor(
+            graph.source_order,
+            device=DEVICE,
+        )
+        source_row_ptr_t = torch.as_tensor(
+            graph.source_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
+        )
+
+        if self.metadata.get("lower_input_kind") == "dpa1_canonical":
+            # The canonical ABI has NO fparam/aparam/charge_spin slots; the
+            # export gate (fitting_eligible) rejects such models today, so
+            # this is unreachable -- assert it loudly so a future loosening
+            # of the eligibility fails here instead of silently dropping
+            # conditioning inputs at inference.
+            if (
+                self.get_dim_fparam() > 0
+                or self.get_dim_aparam() > 0
+                or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
+            ):
+                raise NotImplementedError(
+                    "dpa1_canonical artifacts carry no fparam/aparam/"
+                    "charge_spin inputs; a model requiring them must not be "
+                    "frozen with lower_kind='dpa1_canonical' (the export "
+                    "eligibility gate should have rejected it)."
+                )
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
+            from deepmd.pt_expt.utils.canonical_graph import (
+                canonical_graph_from_neighbor_graph,
+            )
+
+            generic_graph = NeighborGraph(
+                n_node=n_node_t,
+                edge_index=edge_index_t,
+                edge_vec=edge_vec_t,
+                edge_mask=edge_mask_t,
+                n_local=n_node_t,
+                destination_order=destination_order_t,
+                destination_row_ptr=destination_row_ptr_t,
+                source_order=source_order_t,
+                source_row_ptr=source_row_ptr_t,
+                destination_sorted=bool(graph.destination_sorted),
+            )
+            compact = canonical_graph_from_neighbor_graph(generic_graph)
+            model_inputs = (
+                atype_t,
+                compact.n_node,
+                compact.n_local,
+                compact.source,
+                compact.edge_vec,
+                compact.destination_row_ptr,
+                compact.source_row_ptr,
+                compact.source_order,
+            )
+        else:
+            fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+                fparam, aparam, nframes, natoms, DEVICE
+            )
+            if aparam_t is not None:
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
+                # -- the same axis as ``atype`` (the shared helper above
+                # returns the dense rectangular (nf, natoms, nda) layout).
+                aparam_t = aparam_t.reshape(nframes * natoms, -1)
+            charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+            model_inputs = (
+                atype_t,
+                n_node_t,
+                n_node_t,
+                edge_index_t,
+                edge_vec_t,
+                edge_mask_t,
+                destination_order_t,
+                destination_row_ptr_t,
+                source_order_t,
+                source_row_ptr_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:
@@ -1847,7 +1933,9 @@ class DeepEval(DeepEvalBackend):
         Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
         backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
         All backends emit the SAME neighbor set (carry-all, sel-free), so the
-        selection is a pure performance choice and results are unchanged.
+        selection is a pure performance choice and results are unchanged. The
+        result is canonicalized to the destination-major graph-form ``.pt2``
+        ABI after construction.
         """
         method = self._neighbor_graph_method
         # Model-level ``pair_exclude_types`` is a graph-BUILD transform
@@ -1861,7 +1949,12 @@ class DeepEval(DeepEvalBackend):
             )
 
             return build_neighbor_graph(
-                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
+                coord_input,
+                atom_types,
+                box_input,
+                self._rcut,
+                canonicalize=True,
+                pair_excl=pair_excl,
             )
         if method == "ase":
             from deepmd.dpmodel.utils.neighbor_graph import (
@@ -1869,7 +1962,12 @@ class DeepEval(DeepEvalBackend):
             )
 
             return build_neighbor_graph_ase(
-                coord_input, atom_types, box_input, self._rcut, pair_excl=pair_excl
+                coord_input,
+                atom_types,
+                box_input,
+                self._rcut,
+                canonicalize=True,
+                pair_excl=pair_excl,
             )
         if method in ("vesin", "nv"):
             cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
@@ -1887,13 +1985,25 @@ class DeepEval(DeepEvalBackend):
                 )
 
                 return build_neighbor_graph_vesin(
-                    cc, aa, bb, self._rcut, pair_excl=pair_excl
+                    cc,
+                    aa,
+                    bb,
+                    self._rcut,
+                    canonicalize=True,
+                    pair_excl=pair_excl,
                 )
             from deepmd.pt_expt.utils.nv_graph_builder import (
                 build_neighbor_graph_nv,
             )
 
-            return build_neighbor_graph_nv(cc, aa, bb, self._rcut, pair_excl=pair_excl)
+            return build_neighbor_graph_nv(
+                cc,
+                aa,
+                bb,
+                self._rcut,
+                canonicalize=True,
+                pair_excl=pair_excl,
+            )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
             "use 'dense', 'ase', 'vesin', or 'nv'"

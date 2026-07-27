@@ -9,6 +9,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+)
 from model_convert import (
     ensure_converted_pb,
 )
@@ -264,19 +267,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file) -> PyLammps:
-    lammps = PyLammps()
-    lammps.units("metal")
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    lammps.neighbor("2.0 bin")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    lammps.mass("1 16")
-    lammps.mass("2 2")
-    lammps.mass("3 16")
-    lammps.timestep(0.0005)
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, masses=(16, 2, 16))
 
 
 @pytest.fixture

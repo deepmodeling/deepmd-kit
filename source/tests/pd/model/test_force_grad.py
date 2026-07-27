@@ -37,7 +37,7 @@ class CheckSymmetry(DeepmdData):
 
     def get_disturb(self, index, atom_index, axis_index, delta):
         for i in range(
-            0, len(self.dirs) + 1
+            len(self.dirs) + 1
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break

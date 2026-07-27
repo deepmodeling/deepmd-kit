@@ -23,6 +23,9 @@ from typing import (
 
 import array_api_compat
 
+from .graph import (
+    frame_id_from_n_node,
+)
 from .segment import (
     segment_sum,
 )
@@ -80,40 +83,22 @@ def edge_force_virial(
         frame via the frame of their ``dst`` node.
     """
     xp = array_api_compat.array_namespace(g_e)
-    # node-axis size; when a ``node_capacity`` is supplied (the jax/export path)
-    # use it AS-IS so we never call int() on the traced ``sum(n_node)`` -- and,
-    # crucially, never on ``node_capacity`` itself: under symbolic make_fx /
-    # torch.export it is a SymInt (``atype.shape[0]``); ``int(SymInt)`` would
-    # SPECIALIZE the node axis to the trace-time sample size, baking a constant
-    # ``N`` into the scatter and breaking dynamic-``N`` inference.
+    # A supplied capacity remains symbolic under export; converting it to int
+    # would specialize the dynamic node axis to the trace sample.
     n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
     nf = n_node.shape[0]
-    # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
-    # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
+    if isinstance(n_out, int) and n_out == 0:
+        device = array_api_compat.device(g_e)
+        return (
+            xp.zeros((0, 3), dtype=g_e.dtype, device=device),
+            xp.zeros((0, 3, 3), dtype=g_e.dtype, device=device),
+            xp.zeros((nf, 3, 3), dtype=g_e.dtype, device=device),
+        )
+    # Padding edges carry no force or virial contribution.
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    # Wrap node indices into ``[0, n_out)`` so every scatter address is provably
-    # in-bounds. For a well-formed graph every real edge already has
-    # ``index < n_out`` (== ``atype.shape[0]``), so this modulo is the IDENTITY on
-    # real edges (pinned by test_modulo_clamp_leaves_real_edges_unchanged) -- a
-    # correctness-preserving guard, not a value fixup.
-    #
-    # Why it is needed (root cause, GPU-confirmed): under the dynamic-edge graph
-    # ``torch.export`` path the node count is traced as several equal-but-distinct
-    # symbols (``atype.shape[0]``, ``fit_ret.shape[0]``, ...), tied only by
-    # ``aten._assert_scalar(Eq(...))`` nodes. ``_strip_shape_assertions``
-    # (pt_expt/utils/serialization.py) neutralises ALL such asserts so export can
-    # trace -- which also drops those node-count equalities, so inductor can no
-    # longer prove the scatter index and its bound ``ks0 == n_out`` share a symbol
-    # and emits ``tl.device_assert(idx < ks0)`` (fatal on CUDA; unchecked on CPU,
-    # which is why all CPU dev/CI was green). ``% n_out`` discharges that guard
-    # unconditionally. This is the PERMANENT fix: the upstream alternative --
-    # making the SHARED, spin-export-critical ``_strip_shape_assertions``
-    # selective -- risks re-triggering the torch.export bugs it exists to bypass
-    # and the spin ``.pt2`` path, so it is deliberately NOT taken.
-    #
-    # Pure arithmetic => torch.export-safe, unlike ``xp.clip`` (SymInt bound
-    # breaks array_api_compat's clip) and unlike a mask-multiply (which misses the
-    # ``edge_mask == 1`` indices the stripped guard mis-bounds).
+    # Real endpoints are already in range. Modulo leaves them unchanged while
+    # bounding masked sentinel endpoints after export removes symbolic shape
+    # equalities between the endpoint and output node axes.
     src = edge_index[0] % n_out
     dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
@@ -122,14 +107,14 @@ def edge_force_virial(
     w_edge = -(g[:, :, None] * edge_vec[:, None, :])  # (E, 3, 3)
     # atom virial: full-to-src
     atom_virial = segment_sum(w_edge, src, n_out)  # (N, 3, 3)
-    # per-frame virial: assign each edge to the frame of its dst node. Node
-    # ``k`` belongs to frame ``searchsorted(cumsum(n_node), k, "right")`` because
-    # real nodes are compact frame-major (frame f owns a contiguous block).
-    boundaries = xp.cumulative_sum(n_node)  # (nf,) per-frame node upper bounds
-    edge_frame = xp.astype(
-        xp.searchsorted(boundaries, dst, side="right"), xp.int64
-    )  # (E,) in [0, nf]
-    # wrap into [0, nf) for the same CUDA-bounds reason (export-safe modulo)
-    edge_frame = edge_frame % nf
-    virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
+    # Per-frame virial: reduce the PER-ATOM virial by its node frame (N -> nf)
+    # rather than the per-edge virial by its edge frame (E -> nf). Real edges
+    # never cross frames (``src`` and ``dst`` share a frame), so summing the
+    # full-to-``src`` atom virial over a frame's nodes equals summing ``w_edge``
+    # over that frame's edges. Reducing the N nodes instead of the E >> N edges
+    # avoids serializing ~E scatter-adds into a single per-frame accumulator --
+    # the single-frame (inference) worst case, where every edge targets one slot
+    # and the scatter degenerates into a fully contended atomic reduction.
+    node_frame = frame_id_from_n_node(n_node, n_total=n_out)  # (N,) frame per node
+    virial = segment_sum(atom_virial, node_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial

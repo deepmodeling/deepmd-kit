@@ -271,7 +271,7 @@ if TRITON_ROTATION_AVAILABLE:
         coeff_rows = tl.load(idx_ptr + row, mask=row_mask, other=0).to(tl.int64)
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(dim_full, BLOCK_K)):
+        for k0 in range(tl.cdiv(dim_full, BLOCK_K)):
             kk = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over D
             k_mask = kk < dim_full
             w_tile = tl.load(
@@ -333,7 +333,7 @@ if TRITON_ROTATION_AVAILABLE:
         src_idx = tl.load(src_ptr + edge).to(tl.int64)
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(reduced_dim, BLOCK_K)):
+        for k0 in range(tl.cdiv(reduced_dim, BLOCK_K)):
             mm = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over Dm
             m_mask = mm < reduced_dim
             coeff = tl.load(idx_ptr + mm, mask=m_mask, other=0).to(tl.int64)
@@ -395,7 +395,7 @@ if TRITON_ROTATION_AVAILABLE:
         src_idx = tl.load(src_ptr + edge).to(tl.int64)
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(channels, BLOCK_K)):
+        for k0 in range(tl.cdiv(channels, BLOCK_K)):
             cc = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over C
             c_mask = cc < channels
             go_tile = tl.load(
@@ -454,7 +454,7 @@ if TRITON_ROTATION_AVAILABLE:
         chan_mask = chan < channels
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(dim_full, BLOCK_K)):
+        for k0 in range(tl.cdiv(dim_full, BLOCK_K)):
             kk = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over D (contraction)
             k_mask = kk < dim_full
             inv_k = tl.load(inv_ptr + kk, mask=k_mask, other=-1).to(tl.int64)
@@ -517,7 +517,7 @@ if TRITON_ROTATION_AVAILABLE:
         keep = inv_k >= 0
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(dim_full, BLOCK_K)):
+        for k0 in range(tl.cdiv(dim_full, BLOCK_K)):
             dd = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over D (contraction)
             d_mask = dd < dim_full
             w_tile = tl.load(
@@ -578,7 +578,7 @@ if TRITON_ROTATION_AVAILABLE:
         keep = inv_k >= 0
 
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-        for k0 in range(0, tl.cdiv(channels, BLOCK_K)):
+        for k0 in range(tl.cdiv(channels, BLOCK_K)):
             cc = k0 * BLOCK_K + tl.arange(0, BLOCK_K)  # over C (contraction)
             c_mask = cc < channels
             go_tile = tl.load(

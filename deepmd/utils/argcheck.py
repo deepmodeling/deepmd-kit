@@ -416,6 +416,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_edge_norm = "Whether to apply standard channel RMSNorm on cutoff-vanishing feature branches. Setting to `false` removes RMSNorm from the radial network, environment-seed FiLM, and cross-focus competition, and uses unit-floor residual scaling for post-SO(2) messages. Setting to `false` is recommended."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
@@ -733,6 +734,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             optional=True,
             default=[0],
             doc=doc_radial_mlp,
+        ),
+        Argument(
+            "edge_norm",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_edge_norm,
         ),
         Argument(
             "use_env_seed",
@@ -5296,6 +5304,13 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
+    doc_stat_file_mode = (
+        doc_only_pt_supported + "The access mode for `stat_file`. "
+        "`update` creates the cache when needed and writes any missing statistics; "
+        "this is the behavior used when the option is omitted. "
+        "`read` requires a complete existing cache and opens it read-only, allowing "
+        "multiple training processes to share an HDF5 statistics file safely."
+    )
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
@@ -5331,6 +5346,15 @@ def training_args(
         arg_training_data,
         arg_validation_data,
         Argument("stat_file", str, optional=True, doc=doc_stat_file),
+        Argument(
+            "stat_file_mode",
+            str,
+            optional=True,
+            default="update",
+            extra_check=lambda x: x in {"read", "update"},
+            extra_check_errmsg="must be either 'read' or 'update'",
+            doc=doc_stat_file_mode,
+        ),
     ]
     args = (
         data_args
@@ -5509,9 +5533,23 @@ def training_args(
         ),
     ]
 
+    def _validate_stat_file_mode(data: dict[str, Any], scope: str) -> None:
+        if data.get("stat_file_mode") == "read" and not data.get("stat_file"):
+            raise ValueError(
+                f"{scope}.stat_file_mode='read' requires {scope}.stat_file."
+            )
+
     def training_extra_check(data: dict | None) -> bool:
         if data is None:
             return True
+        if multi_task:
+            for model_key, data_dict in data.get("data_dict", {}).items():
+                _validate_stat_file_mode(
+                    data_dict,
+                    f"training.data_dict[{model_key!r}]",
+                )
+        else:
+            _validate_stat_file_mode(data, "training")
         num_steps = data.get("numb_steps")
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})

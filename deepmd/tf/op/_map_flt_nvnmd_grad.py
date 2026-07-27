@@ -25,7 +25,6 @@ def _MapFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor | None
     N = shx[0]
     D = shx[1]
     M = shw[1] // 4
-    #
     dydx = op_module.map_flt_nvnmd(x, table_grad, tf.zeros_like(table_grad), table_info)
     dydx = tf.ensure_shape(dydx, [N, D, M])
     # calculate

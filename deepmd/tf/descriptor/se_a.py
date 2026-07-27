@@ -794,7 +794,7 @@ class DescrptSeA(DescrptSe):
         trainable: bool = True,
     ) -> tuple[tf.Tensor, tf.Tensor]:
         if input_dict is not None:
-            type_embedding = input_dict.get("type_embedding", None)
+            type_embedding = input_dict.get("type_embedding")
             if type_embedding is not None:
                 self.use_tebd = True
         else:

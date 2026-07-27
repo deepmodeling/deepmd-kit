@@ -1,8 +1,7 @@
 # Fit energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
@@ -152,9 +151,8 @@ If one does not want to train with virial, then he/she may set the virial prefac
 
 ### Prefactor force loss with default atom preference
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ener]/start_pref_pf>` and {ref}`limit_pref_pf <loss[ener]/limit_pref_pf>`), the training data typically requires an `atom_pref.npy` file in each system directory to specify per-atom prefactors $q_k$. If `atom_pref.npy` is not provided, the {ref}`use_default_pf <loss[ener]/use_default_pf>` option can be set to `true` to use a default atom preference of 1.0 for all atoms:
 
