@@ -114,8 +114,8 @@ class MapFltNvnmdOp : public OpKernel {
     auto info = t_table_info.flat<FPTYPE>().data();
     auto y = t_y->flat<FPTYPE>().data();
 
-    // Values outside every configured interval intentionally map to zero.
-    // Initialize first so skipped entries never expose allocator contents.
+    // Every output element is written below, but zero first so a future edit
+    // that reintroduces a skipped entry cannot expose allocator contents.
     if (t_y->NumElements() > 0) {
       std::fill(y, y + t_y->NumElements(), FPTYPE(0));
     }
@@ -133,7 +133,7 @@ class MapFltNvnmdOp : public OpKernel {
     }
 
     int ss, ii, jj;
-    FPTYPE xi, x0, x1, dx;
+    FPTYPE xi, x0, dx;
     FPTYPE xx, id;
     int idx;
     int N0, N1, dN;
@@ -141,46 +141,60 @@ class MapFltNvnmdOp : public OpKernel {
     U_Flt64_Int64 ufi;
 
     FPTYPE ytmp;
-    FPTYPE ytmp2;
-    for (ss = S - 1; ss >= 0; ss--) {
+    for (ii = 0; ii < N * D; ii++) {
+      xi = x[ii];
+      // Pick the first interval that contains xi, mirroring
+      // MapTable.mapping() in deepmd/tf/nvnmd/entrypoints/mapt.py. Intervals
+      // are ordered fine-to-coarse and share a left edge, so the first match
+      // is the most accurate one. A value outside every interval falls through
+      // to the widest (last) one and is clamped to its nearest edge below,
+      // which keeps y continuous exactly as the numpy twin does. This matters
+      // because NvnmdConfig.get_s_range() only warns when the s range exceeds
+      // the s2g table, so the closest neighbor pairs can land outside it.
+      for (ss = 0; ss < S - 1; ss++) {
+        if ((xi >= info[ss * 5 + 0]) && (xi <= info[ss * 5 + 1])) {
+          break;
+        }
+      }
       x0 = info[ss * 5 + 0];
-      x1 = info[ss * 5 + 1];
       dx = info[ss * 5 + 2];
       N0 = int(info[ss * 5 + 3]);
       N1 = int(info[ss * 5 + 4]);
       dN = N1 - N0;
-      for (ii = 0; ii < N * D; ii++) {
-        // cal idx and xx
-        xi = x[ii];
-        if ((xi < x0) || (xi > x1)) {
-          continue;
-        }
-        //
-        xx = xi - x0;
-        id = floor(xx / dx);
-        id = (id < 0) ? 0 : id;
-        id = (id >= dN) ? (dN - 1) : id;
+      // cal idx and xx
+      xx = xi - x0;
+      id = floor(xx / dx);
+      if (id < 0) {
+        // Below the table: evaluate at the left edge of the first interval.
+        id = 0;
+        xx = FPTYPE(0);
+      } else if (id >= dN) {
+        // Above the table: evaluate at the right edge of the last row, which
+        // is what mapt.py does via idx_k = N1 - 1 with dxx_k = dx.
+        id = dN - 1;
+        xx = dx;
+      } else {
         xx -= id * dx;
-        idx = id + N0;
-        //
-        ufi.nflt = xx;
-        ufi.nint &= 0xfffffff000000000;  // 52 - 16 = 36 = 9 * 4
-        xx = ufi.nflt;
-        for (jj = 0; jj < M; jj++) {
-          FPTYPE a = table[idx * M * 4 + jj * 4 + 0];
-          FPTYPE b = table[idx * M * 4 + jj * 4 + 1];
-          FPTYPE c = table[idx * M * 4 + jj * 4 + 2];
-          FPTYPE d = table[idx * M * 4 + jj * 4 + 3];
-          mul_flt_nvnmd(ytmp, a, xx);
-          add_flt_nvnmd(ytmp, b, ytmp);
-          mul_flt_nvnmd(ytmp, ytmp, xx);
-          add_flt_nvnmd(ytmp, c, ytmp);
-          mul_flt_nvnmd(ytmp, ytmp, xx);
-          add_flt_nvnmd(ytmp, d, ytmp);
-          y[ii * M + jj] = ytmp;
-        }  // jj
-      }  // ii
-    }  // ss
+      }
+      idx = int(id) + N0;
+      //
+      ufi.nflt = xx;
+      ufi.nint &= 0xfffffff000000000;  // 52 - 16 = 36 = 9 * 4
+      xx = ufi.nflt;
+      for (jj = 0; jj < M; jj++) {
+        FPTYPE a = table[idx * M * 4 + jj * 4 + 0];
+        FPTYPE b = table[idx * M * 4 + jj * 4 + 1];
+        FPTYPE c = table[idx * M * 4 + jj * 4 + 2];
+        FPTYPE d = table[idx * M * 4 + jj * 4 + 3];
+        mul_flt_nvnmd(ytmp, a, xx);
+        add_flt_nvnmd(ytmp, b, ytmp);
+        mul_flt_nvnmd(ytmp, ytmp, xx);
+        add_flt_nvnmd(ytmp, c, ytmp);
+        mul_flt_nvnmd(ytmp, ytmp, xx);
+        add_flt_nvnmd(ytmp, d, ytmp);
+        y[ii * M + jj] = ytmp;
+      }  // jj
+    }  // ii
   }  // Compute
 };  // MapFltNvnmdOp
 

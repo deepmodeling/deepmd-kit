@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import unittest
+from typing import (
+    ClassVar,
+)
 
 import numpy as np
 
@@ -422,68 +425,157 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
 
 
 class TestOpMapFltNvnmd(tf.test.TestCase):
-    """Verify the mapping op's four-input contract and range behavior."""
+    """Verify the mapping op's input contract and out-of-range behavior."""
 
-    def test_out_of_range_values_map_to_zero(self) -> None:
+    # Two rows of two output channels; every polynomial is the constant d, so
+    # the mapped value identifies the selected table row.
+    table_values: ClassVar[list[list[float]]] = [
+        [0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 11.0],
+        [0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 21.0],
+    ]
+    table_grad_values: ClassVar[list[list[float]]] = [
+        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0],
+        [0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0],
+    ]
+
+    def test_out_of_range_values_clamp_to_the_table_edge(self) -> None:
+        """Below/above the table evaluates the first/last row, as mapt.py does."""
         sample_count = 4096
         x = tf.placeholder(tf.float64, [sample_count, 1])
-        table = tf.constant(
-            [
-                [0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 11.0],
-                [0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 21.0],
-            ],
-            dtype=tf.float64,
-        )
-        table_grad = tf.constant(
-            [
-                [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0],
-                [0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0],
-            ],
-            dtype=tf.float64,
-        )
+        table = tf.constant(self.table_values, dtype=tf.float64)
+        table_grad = tf.constant(self.table_grad_values, dtype=tf.float64)
         table_info = tf.constant([0.0, 2.0, 1.0, 0.0, 2.0], dtype=tf.float64)
 
         mapped = op_module.map_flt_nvnmd(x, table, table_grad, table_info)
         gradient = tf.gradients(tf.reduce_sum(mapped), x)[0]
 
         warm_x = np.tile([[0.25], [1.25]], (sample_count // 2, 1))
-        test_x = np.full((sample_count, 1), -1.0)
+        test_x = np.full((sample_count, 1), 0.25)
         test_x[:5, 0] = [-1.0, 0.25, 1.25, 2.0, 3.0]
         with self.cached_session() as sess:
-            # Reuse a nonzero, same-sized allocation so the old skipped-write
-            # behavior cannot pass merely because fresh pages happen to be zero.
+            # Reuse a nonzero, same-sized allocation so a skipped write cannot
+            # pass merely because fresh pages happen to be zero.
             sess.run(mapped, feed_dict={x: warm_x})
             actual, actual_gradient = sess.run(
                 [mapped, gradient], feed_dict={x: test_x}
             )
 
-        expected = np.zeros((sample_count, 1, 2))
+        # -1 clamps to row 0, 2.0 and 3.0 clamp to row 1; nothing maps to zero.
+        expected = np.tile([[[10.0, 11.0]]], (sample_count, 1, 1))
         expected[:5, 0] = [
-            [0.0, 0.0],
+            [10.0, 11.0],
             [10.0, 11.0],
             [20.0, 21.0],
             [20.0, 21.0],
-            [0.0, 0.0],
+            [20.0, 21.0],
         ]
-        expected_gradient = np.zeros((sample_count, 1))
-        expected_gradient[:5, 0] = [0.0, 3.0, 7.0, 7.0, 0.0]
+        expected_gradient = np.full((sample_count, 1), 3.0)
+        expected_gradient[:5, 0] = [3.0, 3.0, 7.0, 7.0, 7.0]
 
         np.testing.assert_array_equal(actual, expected)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
 
-    def test_rejects_mismatched_table_gradient(self) -> None:
+    def test_first_matching_interval_wins(self) -> None:
+        """Nested fine/coarse intervals resolve like MapTable.mapping()."""
+        # Fine interval [0, 1] over row 0 only; coarse interval [0, 4] over
+        # row 1 only. 0.5 is inside both and must take the fine one.
+        table_info = tf.constant(
+            [0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 4.0, 4.0, 1.0, 2.0],
+            dtype=tf.float64,
+        )
+        x = tf.constant([[0.5], [2.0], [9.0]], dtype=tf.float64)
+        mapped = op_module.map_flt_nvnmd(
+            x,
+            tf.constant(self.table_values, dtype=tf.float64),
+            tf.constant(self.table_grad_values, dtype=tf.float64),
+            table_info,
+        )
+        with self.cached_session() as sess:
+            actual = sess.run(mapped)
+
+        np.testing.assert_array_equal(
+            actual,
+            [[[10.0, 11.0]], [[20.0, 21.0]], [[20.0, 21.0]]],
+        )
+
+    def _run_invalid(self, message: str, **overrides: tf.Tensor) -> None:
+        """Run the op with one input replaced and require it to be rejected."""
+        inputs = {
+            "x": tf.zeros([1, 1], dtype=tf.float64),
+            "table": tf.zeros([1, 4], dtype=tf.float64),
+            "table_grad": tf.zeros([1, 4], dtype=tf.float64),
+            "table_info": tf.constant([0.0, 1.0, 1.0, 0.0, 1.0], dtype=tf.float64),
+        }
+        inputs.update(overrides)
+        mapped = op_module.map_flt_nvnmd(**inputs)
+        with self.cached_session() as sess:
+            with self.assertRaisesRegex(tf.errors.InvalidArgumentError, message):
+                sess.run(mapped)
+
+    def test_accepts_the_minimal_valid_inputs(self) -> None:
+        """The shared fixture must pass, so each rejection isolates one cause."""
         mapped = op_module.map_flt_nvnmd(
             tf.zeros([1, 1], dtype=tf.float64),
             tf.zeros([1, 4], dtype=tf.float64),
-            tf.zeros([2, 4], dtype=tf.float64),
+            tf.zeros([1, 4], dtype=tf.float64),
             tf.constant([0.0, 1.0, 1.0, 0.0, 1.0], dtype=tf.float64),
         )
         with self.cached_session() as sess:
-            with self.assertRaisesRegex(
-                tf.errors.InvalidArgumentError,
-                "table_grad shape should match table",
-            ):
-                sess.run(mapped)
+            np.testing.assert_array_equal(sess.run(mapped), np.zeros([1, 1, 1]))
+
+    def test_rejects_wrong_x_rank(self) -> None:
+        self._run_invalid("Dim of x should be 2", x=tf.zeros([1], dtype=tf.float64))
+
+    def test_rejects_wrong_table_rank(self) -> None:
+        self._run_invalid(
+            "Dim of table should be 2",
+            table=tf.zeros([1, 1, 4], dtype=tf.float64),
+            table_grad=tf.zeros([1, 1, 4], dtype=tf.float64),
+        )
+
+    def test_rejects_mismatched_table_gradient(self) -> None:
+        self._run_invalid(
+            "table_grad shape should match table",
+            table_grad=tf.zeros([2, 4], dtype=tf.float64),
+        )
+
+    def test_rejects_wrong_table_info_rank(self) -> None:
+        self._run_invalid(
+            "Dim of table_info should be 1",
+            table_info=tf.constant([[0.0, 1.0, 1.0, 0.0, 1.0]], dtype=tf.float64),
+        )
+
+    def test_rejects_table_width_not_multiple_of_four(self) -> None:
+        self._run_invalid(
+            "table width should be a positive multiple of 4",
+            table=tf.zeros([1, 5], dtype=tf.float64),
+            table_grad=tf.zeros([1, 5], dtype=tf.float64),
+        )
+
+    def test_rejects_table_info_length_not_multiple_of_five(self) -> None:
+        self._run_invalid(
+            "table_info length should be a positive multiple of 5",
+            table_info=tf.constant([0.0, 1.0, 1.0, 0.0], dtype=tf.float64),
+        )
+
+    def test_rejects_each_invalid_interval_field(self) -> None:
+        """Cover every sub-condition of the per-interval table_info check."""
+        # x0 x1 dx N0 N1, one broken field per case.
+        cases = {
+            "x0 > x1": [1.0, 0.0, 1.0, 0.0, 1.0],
+            "dx == 0": [0.0, 1.0, 0.0, 0.0, 1.0],
+            "dx < 0": [0.0, 1.0, -1.0, 0.0, 1.0],
+            "N0 < 0": [0.0, 1.0, 1.0, -1.0, 1.0],
+            "N1 == N0": [0.0, 1.0, 1.0, 0.0, 0.0],
+            "N1 < N0": [0.0, 1.0, 1.0, 1.0, 0.0],
+            "N1 > rows": [0.0, 1.0, 1.0, 0.0, 2.0],
+        }
+        for name, info in cases.items():
+            with self.subTest(case=name):
+                self._run_invalid(
+                    "invalid interval in table_info",
+                    table_info=tf.constant(info, dtype=tf.float64),
+                )
 
 
 if __name__ == "__main__":
