@@ -237,13 +237,24 @@ remove_from_toctrees = ["autoapi/**/*", "API_CC/*", "api_c/*", "api_core/*"]
 # deeper than that are left unnumbered. Only the listed pages are affected.
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
+from dargs.sphinx import (
+    DargsDomain,
+)
 from docutils import (
     nodes,
 )
+from sphinx.domains import (
+    Domain,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Iterable,
+    )
+
     from sphinx.application import (
         Sphinx,
     )
@@ -276,6 +287,26 @@ def _cap_cli_secnumbers(app: Sphinx, doctree: nodes.document, docname: str) -> N
             break
 
 
+def _merge_dargs_domaindata(
+    self: Domain, docnames: Iterable[str], otherdata: dict[str, Any]
+) -> None:
+    """Merge ``dargs`` argument entries collected by a parallel read worker.
+
+    ``dargs.sphinx.DargsDomain`` advertises ``parallel_read_safe`` but does not
+    implement ``merge_domaindata``, so Sphinx refuses to combine the per-worker
+    inventories and ``-j`` aborts the build.  The domain's only state is a flat
+    ``targetid -> (docname, objtype)`` map, so merging is a plain dict update
+    restricted to the documents this worker actually read.
+    """
+    docnames = set(docnames)
+    arguments = self.data["arguments"]
+    for targetid, entry in otherdata["arguments"].items():
+        if entry[0] in docnames:
+            arguments[targetid] = entry
+
+
 def setup(app: Sphinx) -> dict[str, bool]:
+    if DargsDomain.merge_domaindata is Domain.merge_domaindata:
+        DargsDomain.merge_domaindata = _merge_dargs_domaindata
     app.connect("doctree-resolved", _cap_cli_secnumbers)
     return {"parallel_read_safe": True, "parallel_write_safe": True}
