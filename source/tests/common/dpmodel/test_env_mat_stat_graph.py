@@ -82,3 +82,22 @@ def test_dpa1_block_graph_equals_dense() -> None:
         m_graph, s_graph = _dpa1_block_stats(pair_exclude_types, use_graph=True)
         np.testing.assert_allclose(m_graph, m_dense, rtol=1e-15, atol=1e-15)
         np.testing.assert_allclose(s_graph, s_dense, rtol=1e-15, atol=1e-15)
+
+
+def test_dpa1_block_accepts_missing_box_for_nonperiodic_sample() -> None:
+    """A missing box key and an explicit None both denote a nonperiodic system."""
+    descriptor = DescrptDPA1(6.0, 0.5, 20, ntypes=2, attn_layer=0).se_atten
+    sample_without_box = _sample()
+    sample_without_box.pop("box")
+    sample_with_none = {**sample_without_box, "box": None}
+
+    missing_box_stat = EnvMatStatSe(descriptor, use_graph=False)
+    missing_box_stat.load_or_compute_stats([sample_without_box], None)
+    missing_box_mean, missing_box_stddev = missing_box_stat()
+
+    explicit_none_stat = EnvMatStatSe(descriptor, use_graph=False)
+    explicit_none_stat.load_or_compute_stats([sample_with_none], None)
+    explicit_none_mean, explicit_none_stddev = explicit_none_stat()
+
+    np.testing.assert_array_equal(missing_box_mean, explicit_none_mean)
+    np.testing.assert_array_equal(missing_box_stddev, explicit_none_stddev)

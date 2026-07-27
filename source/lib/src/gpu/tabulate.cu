@@ -398,8 +398,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
-  int breakpoint = nnei - 1;
-  bool unloop = false;
+  __shared__ int breakpoint;
   FPTYPE* iteratorA = (FPTYPE*)&_data[0];  // dy
   for (int ii = 0; ii < MTILE; ii++) {
     for (int jj = thread_idx; jj < last_layer_size; jj += blockDim.x) {
@@ -408,71 +407,93 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     }
   }
   __syncthreads();
-  FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
-  for (int ii = warp_idx; ii < nnei; ii += KTILE) {
-    FPTYPE xx = em_x[block_idx * nnei + ii];
-    if (ago == xx && em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
-        em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
-        em[block_idx * nnei * 4 + ii * 4 + 3] == 0. && is_sorted) {
-      unloop = true;
-      breakpoint = ii;
-    }
 
-    int table_idx = 0;
-    FPTYPE reg_em[MTILE] = {em[block_idx * nnei * MTILE + ii * 4 + 0],
-                            em[block_idx * nnei * MTILE + ii * 4 + 1],
-                            em[block_idx * nnei * MTILE + ii * 4 + 2],
-                            em[block_idx * nnei * MTILE + ii * 4 + 3]};
+  // Sorted padding must be folded at the first sentinel for the whole atom,
+  // exactly as in the sequential CPU implementation. A warp-local search can
+  // select several later sentinels because neighbor indices are striped over
+  // KTILE warps, producing duplicate tail contributions and overlapping
+  // dy_dtwo writes.
+  if (thread_idx == 0) {
+    breakpoint = nnei;  // nnei means that no padding sentinel was found.
+    if (is_sorted) {
+      const FPTYPE ago = em_x[block_idx * nnei + nnei - 1];
+      for (int ii = 0; ii < nnei; ++ii) {
+        if (ago == em_x[block_idx * nnei + ii] &&
+            em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
+            em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
+            em[block_idx * nnei * 4 + ii * 4 + 3] == 0.) {
+          breakpoint = ii;
+          break;
+        }
+      }
+    }
+  }
+  __syncthreads();
+
+  // Keep the tile loop uniform across the block. GpuSyncThreads is a warp
+  // barrier on CUDA but a block barrier on ROCm, so warp-specific early exits
+  // would deadlock HIP when the shared breakpoint falls inside a tile.
+  for (int tile = 0; tile < nnei && tile <= breakpoint; tile += KTILE) {
+    const int ii = tile + warp_idx;
+    const bool active = ii < nnei && ii <= breakpoint;
     FPTYPE Csub = (FPTYPE)0.;
     FPTYPE sum[MTILE] = {(FPTYPE)0.};
-    FPTYPE extrapolate_delta = (FPTYPE)0.;
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
-                   extrapolate_delta);
+    if (active) {
+      const int repeat_count = ii == breakpoint ? nnei - breakpoint : 1;
+      FPTYPE xx = em_x[block_idx * nnei + ii];
+      int table_idx = 0;
+      FPTYPE reg_em[MTILE] = {em[block_idx * nnei * MTILE + ii * MTILE + 0],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 1],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 2],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 3]};
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                     extrapolate_delta);
 
-    FPTYPE var[6];
-    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
-      load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      FPTYPE res_grad = polynomial5_grad(var, xx);
-      FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
-      FPTYPE oldres = res;
-      FPTYPE t;
-      if (enable_se_atten) {
-        t = two_embed[block_idx * nnei * last_layer_size +
-                      ii * last_layer_size + jj];
-        res = res * t + res;
-      }
+      FPTYPE var[6];
+      for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+        load_polynomial_params(var, table, table_idx, jj, last_layer_size);
+        FPTYPE res_grad = polynomial5_grad(var, xx);
+        FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
+        FPTYPE oldres = res;
+        FPTYPE t;
+        if (enable_se_atten) {
+          t = two_embed[block_idx * nnei * last_layer_size +
+                        ii * last_layer_size + jj];
+          res = res * t + res;
+        }
 
-      for (int kk = 0; kk < MTILE; kk++) {
-        sum[kk] +=
-            (nnei - breakpoint) * iteratorA[kk * last_layer_size + jj] * res;
-      }
-      res = reg_em[0] * iteratorA[0 * last_layer_size + jj];
-      res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
-      res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
-      res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
-      Csub += (nnei - breakpoint) * res_grad *
-              (enable_se_atten ? res * t + res : res);
-      if (enable_se_atten) {
-        // from ii to ii + (nnei - breakpoint)
-        for (int ii2 = ii; ii2 < ii + nnei - breakpoint; ii2++) {
-          dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
-                  jj] = oldres * res;
+        for (int kk = 0; kk < MTILE; kk++) {
+          sum[kk] += repeat_count * iteratorA[kk * last_layer_size + jj] * res;
+        }
+        res = reg_em[0] * iteratorA[0 * last_layer_size + jj];
+        res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
+        res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
+        res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
+        Csub +=
+            repeat_count * res_grad * (enable_se_atten ? res * t + res : res);
+        if (enable_se_atten) {
+          // A real neighbor owns one entry; the first sentinel owns the full
+          // padding tail. No other warp writes these dy_dtwo positions.
+          for (int ii2 = ii; ii2 < ii + repeat_count; ii2++) {
+            dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
+                    jj] = oldres * res;
+          }
         }
       }
     }
     GpuSyncThreads();
-    for (int kk = 0; kk < MTILE; kk++) {
-      warp_reduce(sum[kk]);
-    }
-    warp_reduce(Csub);
-    if (lane_idx == 0) {
+    if (active) {
       for (int kk = 0; kk < MTILE; kk++) {
-        dy_dem[block_idx * nnei * MTILE + ii * 4 + kk] = sum[kk];
+        warp_reduce(sum[kk]);
       }
-      dy_dem_x[block_idx * nnei + ii] = Csub;
-    }
-    if (unloop) {
-      break;
+      warp_reduce(Csub);
+      if (lane_idx == 0) {
+        for (int kk = 0; kk < MTILE; kk++) {
+          dy_dem[block_idx * nnei * MTILE + ii * MTILE + kk] = sum[kk];
+        }
+        dy_dem_x[block_idx * nnei + ii] = Csub;
+      }
     }
   }
 }

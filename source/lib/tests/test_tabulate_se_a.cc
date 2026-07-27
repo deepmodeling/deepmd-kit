@@ -856,4 +856,117 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
   deepmd::delete_device_memory(dy_dev);
   deepmd::delete_device_memory(two_embed_dev);
 }
+
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_padding_modes) {
+  constexpr int test_nloc = 1;
+  constexpr int test_nnei = 12;
+  constexpr int padding_begin = 4;
+  std::vector<double> test_em_x = {0.04, 0.07, 0.11, 0.14};
+  test_em_x.resize(test_nnei, 0.19);
+  std::vector<double> test_em(test_nnei * 4, 0.0);
+  for (int ii = 0; ii < padding_begin; ++ii) {
+    test_em[ii * 4 + 0] = test_em_x[ii];
+    test_em[ii * 4 + 1] = 0.1 * (ii + 1);
+    test_em[ii * 4 + 2] = -0.05 * (ii + 1);
+    test_em[ii * 4 + 3] = 0.025 * (ii + 1);
+  }
+  for (int ii = padding_begin; ii < test_nnei; ++ii) {
+    test_em[ii * 4] = test_em_x[ii];
+  }
+  std::vector<double> test_dy(4 * last_layer_size);
+  for (int ii = 0; ii < test_dy.size(); ++ii) {
+    test_dy[ii] = 0.01 * (ii + 1);
+  }
+  std::vector<double> test_two_embed(test_nnei * last_layer_size);
+  for (int ii = 0; ii < test_two_embed.size(); ++ii) {
+    test_two_embed[ii] = 0.001 * (ii + 1);
+  }
+
+  auto compare_cpu_gpu = [&](const std::vector<double>* two_embed_host,
+                             const bool is_sorted) {
+    std::vector<double> expected_dy_dem_x(test_nnei);
+    std::vector<double> expected_dy_dem(test_nnei * 4);
+    std::vector<double> expected_dy_dtwo(test_nnei * last_layer_size);
+    deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+        expected_dy_dem_x.data(), expected_dy_dem.data(),
+        two_embed_host == nullptr ? nullptr : expected_dy_dtwo.data(),
+        table.data(), info.data(), test_em_x.data(), test_em.data(),
+        two_embed_host == nullptr ? nullptr : two_embed_host->data(),
+        test_dy.data(), test_nloc, test_nnei, last_layer_size, is_sorted);
+
+    std::vector<double> actual_dy_dem_x(test_nnei);
+    std::vector<double> actual_dy_dem(test_nnei * 4);
+    std::vector<double> actual_dy_dtwo(test_nnei * last_layer_size);
+    double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr,
+           *dy_dtwo_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr, *dy_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::malloc_device_memory_sync(dy_dem_dev, actual_dy_dem);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, test_em_x);
+    deepmd::malloc_device_memory_sync(em_dev, test_em);
+    deepmd::malloc_device_memory_sync(dy_dev, test_dy);
+    if (two_embed_host != nullptr) {
+      deepmd::malloc_device_memory_sync(dy_dtwo_dev, actual_dy_dtwo);
+      deepmd::malloc_device_memory_sync(two_embed_dev, *two_embed_host);
+    }
+
+    deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+        dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(), em_x_dev,
+        em_dev, two_embed_dev, dy_dev, test_nloc, test_nnei, last_layer_size,
+        is_sorted);
+    deepmd::memcpy_device_to_host(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
+    if (two_embed_host != nullptr) {
+      deepmd::memcpy_device_to_host(dy_dtwo_dev, actual_dy_dtwo);
+    }
+
+    for (int ii = 0; ii < actual_dy_dem_x.size(); ++ii) {
+      EXPECT_NEAR(actual_dy_dem_x[ii], expected_dy_dem_x[ii], 1e-10);
+    }
+    for (int ii = 0; ii < actual_dy_dem.size(); ++ii) {
+      EXPECT_NEAR(actual_dy_dem[ii], expected_dy_dem[ii], 1e-10);
+    }
+    if (two_embed_host != nullptr) {
+      for (int ii = 0; ii < actual_dy_dtwo.size(); ++ii) {
+        EXPECT_NEAR(actual_dy_dtwo[ii], expected_dy_dtwo[ii], 1e-10);
+      }
+      // The CPU contract copies the first sentinel's two-embedding gradient
+      // across the complete sorted-padding tail.
+      if (is_sorted) {
+        for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+          for (int jj = 0; jj < last_layer_size; ++jj) {
+            EXPECT_NEAR(actual_dy_dtwo[ii * last_layer_size + jj],
+                        actual_dy_dtwo[padding_begin * last_layer_size + jj],
+                        1e-10);
+          }
+        }
+      }
+    }
+    // Later sentinels are padding, not independent neighbors owned by other
+    // warps, and therefore must retain zero descriptor gradients.
+    if (is_sorted) {
+      for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+        EXPECT_DOUBLE_EQ(actual_dy_dem_x[ii], 0.0);
+        for (int jj = 0; jj < 4; ++jj) {
+          EXPECT_DOUBLE_EQ(actual_dy_dem[ii * 4 + jj], 0.0);
+        }
+      }
+    }
+
+    deepmd::delete_device_memory(dy_dem_x_dev);
+    deepmd::delete_device_memory(dy_dem_dev);
+    deepmd::delete_device_memory(dy_dtwo_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    deepmd::delete_device_memory(dy_dev);
+  };
+
+  for (const bool is_sorted : {false, true}) {
+    compare_cpu_gpu(nullptr, is_sorted);
+    compare_cpu_gpu(&test_two_embed, is_sorted);
+  }
+}
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

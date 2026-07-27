@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 
 # Re-export from dpmodel (backend-agnostic implementations)
 from deepmd.dpmodel.utils.stat import (
+    _require_stat_file_items,
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
@@ -113,6 +114,10 @@ def _restore_from_file(
 ) -> dict | None:
     if stat_file_path is None:
         return None, None
+    _require_stat_file_items(
+        stat_file_path,
+        [item for key in keys for item in (f"bias_atom_{key}", f"std_atom_{key}")],
+    )
     stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
     if all(not (ii.is_file()) for ii in stat_files):
         return None, None
