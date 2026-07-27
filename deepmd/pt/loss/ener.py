@@ -207,6 +207,8 @@ class EnergyStdLoss(TaskLoss):
             raise RuntimeError(
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian. ")
 
     def forward(
         self,
@@ -806,15 +808,24 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["l2_hessian_loss"] = self.display_if_exist(
                     l2_hessian_loss.detach(), find_hessian
                 )
-            loss += pref_h * l2_hessian_loss
-            more_loss["rmse_h"] = self.display_if_exist(
-                l2_hessian_loss.sqrt().detach(), find_hessian
-            )
-            if mae:
+            mae_h = None
+            if self.loss_func == "mae" or mae:
                 if maskf is not None:
                     mae_h = masked_pair_mean(torch.abs(diff_h), maskf, ncomp=3)
                 else:
                     mae_h = torch.mean(torch.abs(diff_h))
+            if self.loss_func == "mse":
+                loss += pref_h * l2_hessian_loss
+            elif self.loss_func == "mae":
+                loss += pref_h * mae_h
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for hessian loss."
+                )
+            more_loss["rmse_h"] = self.display_if_exist(
+                l2_hessian_loss.sqrt().detach(), find_hessian
+            )
+            if mae:
                 more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
 
         if not self.inference:

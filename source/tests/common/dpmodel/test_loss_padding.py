@@ -924,6 +924,124 @@ class TestDPModelEnergyLossHessianGradAccum:
         np.testing.assert_allclose(metrics_mask["rmse_h"], metrics_plain["rmse_h"])
         np.testing.assert_allclose(metrics_mask["mae_h"], metrics_plain["mae_h"])
 
+    def _make_mae_loss(self):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+            loss_func="mae",
+        )
+
+    def _constant_residual_dicts(self, residual):
+        """One frame whose Hessian residual is *residual* everywhere."""
+        pred, label = _full_ener_dicts(
+            1, NP, np.zeros((1, 1)), np.zeros((1, 1)), mask=np.ones((1, NP))
+        )
+        pred_h = np.zeros((1, 3 * NP, 3 * NP), dtype=np.float64)
+        label_h = np.full_like(pred_h, residual)
+        return self._set_hessian(pred, label, pred_h, label_h)
+
+    def test_mae_loss_func_uses_l1_for_the_hessian(self):
+        """``loss_func='mae'`` must not train the Hessian term on squared error."""
+        residual = 10.0
+        pred, label = self._constant_residual_dicts(residual)
+
+        loss, more_loss = self._make_mae_loss().call(1.0, NP, pred, label, mae=True)
+
+        # L2 would give residual ** 2; the displays stay MSE-derived.
+        np.testing.assert_allclose(loss, residual)
+        np.testing.assert_allclose(more_loss["mae_h"], residual)
+        np.testing.assert_allclose(more_loss["rmse_h"], residual)
+
+        mse_pred, mse_label = self._constant_residual_dicts(residual)
+        mse_loss, _ = self._make_loss().call(1.0, NP, mse_pred, mse_label)
+        np.testing.assert_allclose(mse_loss, residual**2)
+
+    def test_unknown_loss_func_is_rejected_for_the_hessian(self):
+        """Any other loss_func must fail rather than silently train on MSE."""
+        import pytest
+
+        loss_obj = self._make_loss()
+        # loss_func is validated in __init__, so set it directly to reach the
+        # Hessian branch's dispatch.
+        loss_obj.loss_func = "huber"
+        pred, label = self._constant_residual_dicts(1.0)
+        with pytest.raises(NotImplementedError, match="hessian loss"):
+            loss_obj.call(1.0, NP, pred, label)
+
+    def test_huber_rejects_hessian_supervision(self):
+        """use_huber must not silently fall back to a raw MSE Hessian term."""
+        import pytest
+
+        with pytest.raises(RuntimeError, match="Huber loss is not implemented"):
+            EnergyLoss(
+                starter_learning_rate=1.0,
+                start_pref_h=1.0,
+                limit_pref_h=1.0,
+                use_huber=True,
+            )
+
+    def test_pt_mae_loss_func_uses_l1_for_the_hessian(self):
+        """The PyTorch loss must dispatch on loss_func for the Hessian too."""
+        import pytest
+
+        torch = pytest.importorskip("torch")
+        from deepmd.pt.loss.ener import EnergyStdLoss as PTEnergyStdLoss
+
+        residual = 10.0
+        pred, label = self._constant_residual_dicts(residual)
+        pt_pred = {
+            key: torch.as_tensor(value, device="cpu")
+            if isinstance(value, np.ndarray)
+            else value
+            for key, value in pred.items()
+        }
+        pt_label = {
+            key: torch.as_tensor(value, device="cpu")
+            if isinstance(value, np.ndarray)
+            else value
+            for key, value in label.items()
+        }
+
+        def make_loss(loss_func):
+            return PTEnergyStdLoss(
+                starter_learning_rate=1.0,
+                start_pref_e=0.0,
+                limit_pref_e=0.0,
+                start_pref_f=0.0,
+                limit_pref_f=0.0,
+                start_pref_h=1.0,
+                limit_pref_h=1.0,
+                loss_func=loss_func,
+            )
+
+        _, mae_loss, more_loss = make_loss("mae")(
+            {}, lambda: pt_pred, pt_label, NP, 1.0, mae=True
+        )
+        _, mse_loss, _ = make_loss("mse")({}, lambda: pt_pred, pt_label, NP, 1.0)
+
+        torch.testing.assert_close(mae_loss, mae_loss.new_tensor(residual))
+        torch.testing.assert_close(mse_loss, mse_loss.new_tensor(residual**2))
+        torch.testing.assert_close(more_loss["mae_h"], mae_loss.new_tensor(residual))
+
+        with pytest.raises(RuntimeError, match="Huber loss is not implemented"):
+            PTEnergyStdLoss(
+                starter_learning_rate=1.0,
+                start_pref_h=1.0,
+                limit_pref_h=1.0,
+                use_huber=True,
+            )
+
 
 class TestDPModelEnergyLossVirialGradAccum:
     """Idiom 2 (extensive, k=9) for the virial (has_v) term.

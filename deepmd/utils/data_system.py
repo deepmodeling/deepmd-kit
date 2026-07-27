@@ -554,7 +554,25 @@ class DeepmdDataSystem:
             if kk not in batch_data[0]:
                 continue
             b_data["find_" + kk] = batch_data[0]["find_" + kk]
-            if not vv["atomic"]:
+            if vv.get("special_shape") == "hessian" or kk == "hessian":
+                # A Hessian is a (3 * natoms, 3 * natoms) matrix, so neither
+                # branch below pads it correctly: concatenating raises on
+                # ragged systems and copying a flat prefix would scatter the
+                # rows. Embed each frame's block in the top-left corner of the
+                # padded square instead; the padded rows and columns stay zero
+                # and are dropped by the loss mask.
+                padded_dof = max_natoms * 3
+                merged = np.zeros(
+                    (len(batch_data), padded_dof, padded_dof),
+                    dtype=batch_data[0][kk].dtype,
+                )
+                for ii, bb in enumerate(batch_data):
+                    frame_dof = bb["natoms_vec"][0] * 3
+                    merged[ii, :frame_dof, :frame_dof] = bb[kk][0].reshape(
+                        frame_dof, frame_dof
+                    )
+                b_data[kk] = merged.reshape(len(batch_data), -1)
+            elif not vv["atomic"]:
                 b_data[kk] = np.concatenate([bb[kk] for bb in batch_data], axis=0)
             else:
                 b_data[kk] = np.zeros(

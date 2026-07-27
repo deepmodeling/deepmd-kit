@@ -231,6 +231,8 @@ class EnergyLoss(Loss):
             raise RuntimeError(
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian. ")
 
     def call(
         self,
@@ -769,15 +771,24 @@ class EnergyLoss(Loss):
                     (-1,),
                 )
                 l2_hessian_loss = xp.mean(xp.square(diff_h))
-            loss += pref_h * find_hessian * l2_hessian_loss
-            more_loss["rmse_h"] = self.display_if_exist(
-                xp.sqrt(l2_hessian_loss), find_hessian
-            )
-            if mae:
+            mae_h = None
+            if self.loss_func == "mae" or mae:
                 if maskf is not None:
                     mae_h = masked_pair_mean(xp.abs(diff_h), maskf, ncomp=3)
                 else:
                     mae_h = xp.mean(xp.abs(diff_h))
+            if self.loss_func == "mse":
+                loss += pref_h * find_hessian * l2_hessian_loss
+            elif self.loss_func == "mae":
+                loss += pref_h * find_hessian * mae_h
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for hessian loss."
+                )
+            more_loss["rmse_h"] = self.display_if_exist(
+                xp.sqrt(l2_hessian_loss), find_hessian
+            )
+            if mae:
                 more_loss["mae_h"] = self.display_if_exist(mae_h, find_hessian)
 
         self.l2_l = loss
