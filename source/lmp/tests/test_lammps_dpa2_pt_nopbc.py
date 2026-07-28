@@ -2,9 +2,6 @@
 import importlib
 import os
 import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -18,11 +15,15 @@ from expected_ref import (
 from lammps import (
     PyLammps,
 )
+from lammps_test_utils import (
+    make_atomic_lammps,
+    remove_test_files,
+    require_backend,
+    run_mpi_model_deviation,
+    write_water_data_variants,
+)
 from model_convert import (
     ensure_converted_pb,
-)
-from write_lmp_data import (
-    write_lmp_data,
 )
 
 pbtxt_file2 = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
@@ -148,59 +149,20 @@ type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
 def setup_module() -> None:
-    if os.environ.get("ENABLE_PYTORCH", "1") != "1":
-        pytest.skip(
-            "Skip test because PyTorch support is not enabled.",
-        )
+    require_backend("ENABLE_PYTORCH", "PyTorch")
     if os.environ.get("ENABLE_TENSORFLOW", "1") == "1":
         ensure_converted_pb(pbtxt_file2, pb_file2)
-
-    write_lmp_data(box, coord, type_OH, data_file)
-    write_lmp_data(box, coord, type_HO, data_type_map_file)
-    write_lmp_data(
-        box * constants.dist_metal2si,
-        coord * constants.dist_metal2si,
-        type_OH,
-        data_file_si,
+    write_water_data_variants(
+        box, coord, type_OH, type_HO, data_file, data_type_map_file, data_file_si
     )
 
 
 def teardown_module() -> None:
-    os.remove(data_file)
-    os.remove(data_type_map_file)
+    remove_test_files(data_file, data_type_map_file, data_file_si, md_file)
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("f f f")
-    lammps.atom_style("atomic")
-    if units == "metal" or units == "real":
-        lammps.neighbor("2.0 bin")
-    elif units == "si":
-        lammps.neighbor("2.0e-10 bin")
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal" or units == "real":
-        lammps.mass("1 16")
-        lammps.mass("2 2")
-    elif units == "si":
-        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
-        lammps.mass("2 %.10e" % (2 * constants.mass_metal2si))
-    else:
-        raise ValueError("units should be metal, real, or si")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    elif units == "si":
-        lammps.timestep(5e-16)
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, boundary="f f f")
 
 
 @pytest.fixture
@@ -648,25 +610,14 @@ def test_pair_deepmd_si(lammps_si) -> None:
     reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
-    with tempfile.NamedTemporaryFile() as f:
-        sp.check_call(
-            [
-                "mpirun",
-                "-n",
-                "2",
-                sys.executable,
-                Path(__file__).parent / "run_mpi_pair_deepmd.py",
-                data_file,
-                pb_file,
-                pb_file2,
-                md_file,
-                f.name,
-                *balance_args,
-                "--nopbc",
-            ]
-        )
-        arr = np.loadtxt(f.name, ndmin=1)
-    pe = arr[0]
+    pe = run_mpi_model_deviation(
+        Path(__file__).parent / "run_mpi_pair_deepmd.py",
+        data_file,
+        pb_file,
+        pb_file2,
+        md_file,
+        extra_args=[*balance_args, "--nopbc"],
+    )
 
     relative = 1.0
     assert pe == pytest.approx(expected_e)

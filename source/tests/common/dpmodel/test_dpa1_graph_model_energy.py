@@ -227,8 +227,8 @@ def test_neighbor_list_takes_dense_route() -> None:
 def test_graph_lower_invariant_to_charge_spin() -> None:
     """dpa1 does NOT consume charge_spin (``get_dim_chg_spin() == 0``); the dense
     atomic model passes ``None`` to the dpa1 descriptor regardless. The graph
-    lower accepts ``charge_spin`` only for ABI stability with charge/spin
-    descriptors (dpa3/dpa4, PR-G), so its output must be INVARIANT to it.
+    lower accepts ``charge_spin`` for descriptors with charge/spin
+    conditioning, so dpa1 output must be invariant to it.
 
     Combined with the graph==dense parity at non-binding sel
     (:func:`test_energy_parity_non_binding_sel`), this gives the full claim:
@@ -267,3 +267,12 @@ def test_graph_lower_invariant_to_charge_spin() -> None:
             assert with_cs[k] is None
         else:
             np.testing.assert_array_equal(with_cs[k], v)
+
+
+def test_graph_type_embedding_table_matches_type_embedding() -> None:
+    # The seam hook must return exactly the descriptor's full tebd table.
+    dd = _make_model([200]).get_descriptor()
+    np.testing.assert_array_equal(
+        np.asarray(dd.graph_type_embedding_table()),
+        np.asarray(dd.type_embedding.call()),
+    )

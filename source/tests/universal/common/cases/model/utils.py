@@ -117,6 +117,20 @@ class ModelTestCase:
                 module.has_message_passing(), self.expected_has_message_passing
             )
 
+    def test_has_spin(self) -> None:
+        """Test has_spin.
+
+        Declared on the base model with a concrete default of ``False``
+        (direct method call, never a ``getattr`` probe); spin model wrappers
+        override it to ``True`` -- which is exactly the suite's ``test_spin``
+        flag. Checked on the raw module only (not the jit-scripted copies in
+        ``modules_to_test``): the capability contract is a Python-API
+        contract, and pt's TorchScript models do not ``@torch.jit.export``
+        it.
+        """
+        expected = getattr(self, "test_spin", False)
+        self.assertEqual(self.module.has_spin(), expected)
+
     def test_forward(self) -> None:
         """Test forward and forward_lower."""
         test_spin = getattr(self, "test_spin", False)

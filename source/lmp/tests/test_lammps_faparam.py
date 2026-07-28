@@ -2,6 +2,8 @@
 """Test LAMMPS fparam and aparam input."""
 
 import os
+import subprocess as sp
+import sys
 from pathlib import (
     Path,
 )
@@ -11,6 +13,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from lammps_test_utils import (
+    make_atomic_lammps,
 )
 from model_convert import (
     ensure_converted_pb,
@@ -150,34 +155,7 @@ def teardown_module() -> None:
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("atomic")
-    if units == "metal" or units == "real":
-        lammps.neighbor("2.0 bin")
-    elif units == "si":
-        lammps.neighbor("2.0e-10 bin")
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    if units == "metal" or units == "real":
-        lammps.mass("1 16")
-    elif units == "si":
-        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
-    else:
-        raise ValueError("units should be metal, real, or si")
-    if units == "metal":
-        lammps.timestep(0.0005)
-    elif units == "real":
-        lammps.timestep(0.5)
-    elif units == "si":
-        lammps.timestep(5e-16)
-    else:
-        raise ValueError("units should be metal, real, or si")
-    lammps.fix("1 all nve")
-    return lammps
+    return make_atomic_lammps(data_file, units, masses=(16,))
 
 
 @pytest.fixture
@@ -220,3 +198,147 @@ def test_pair_deepmd_virial(lammps) -> None:
         assert np.array(
             lammps.variables[f"virial{ii}"].value
         ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
+
+
+def _run_compute_source_scenario(scenario: str) -> None:
+    """Run one compute-source scenario in an isolated LAMMPS process.
+
+    Invalid sources used to dereference missing or mismatched compute outputs,
+    which can terminate the interpreter instead of raising a LAMMPS error.
+    Keeping those scenarios in a subprocess prevents a regression from taking
+    down the pytest worker that checks the diagnostic.
+    """
+    lmp = _lammps(data_file=data_file)
+    if scenario == "missing_fparam":
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam_from_compute missing_frame_value aparam 0.25852028"
+        )
+    elif scenario == "missing_aparam":
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam 0.25852028 aparam_from_compute missing_atom_value"
+        )
+    elif scenario == "fparam_peratom":
+        lmp.compute("atom_value all property/atom x")
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam_from_compute atom_value aparam 0.25852028"
+        )
+    elif scenario == "fparam_vector":
+        lmp.compute("frame_vector all reduce sum x y")
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam_from_compute frame_vector aparam 0.25852028"
+        )
+    elif scenario == "aparam_global":
+        lmp.compute("frame_value all temp")
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam 0.25852028 aparam_from_compute frame_value"
+        )
+    elif scenario == "aparam_array":
+        lmp.compute("atom_array all property/atom x y")
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} "
+            "fparam 0.25852028 aparam_from_compute atom_array"
+        )
+    else:
+        raise ValueError(f"unknown compute-source scenario: {scenario}")
+
+    lmp.pair_coeff("* *")
+    lmp.run(0)
+    lmp.close()
+
+
+def _run_compute_source_subprocess(scenario: str) -> sp.CompletedProcess[str]:
+    """Execute a scenario through this module's isolated script entry point."""
+    return sp.run(
+        [sys.executable, str(Path(__file__).resolve()), scenario],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_compute_sources_match_explicit_parameters(lammps) -> None:
+    """Valid compute sources reproduce equivalent explicit parameters.
+
+    With no assigned velocities, ``compute temp`` supplies a zero frame
+    parameter. ``property/atom type`` supplies one for every atom in this
+    single-type system. Compare against an independent LAMMPS instance using
+    those values explicitly, so success cannot hide incorrect source data.
+    """
+    lammps.compute("frame_value all temp")
+    lammps.compute("atom_value all property/atom type")
+    lammps.pair_style(
+        f"deepmd {pb_file.resolve()} "
+        "fparam_from_compute frame_value "
+        "aparam_from_compute atom_value"
+    )
+    lammps.pair_coeff("* *")
+    lammps.run(0)
+    compute_energy = lammps.eval("pe")
+    compute_ids = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]]
+    compute_force_array = lammps.lmp.numpy.extract_atom("f")[: coord.shape[0]]
+    compute_forces = {
+        int(atom_id): np.asarray(force, dtype=np.float64).copy()
+        for atom_id, force in zip(compute_ids, compute_force_array, strict=True)
+    }
+
+    explicit = _lammps(data_file=data_file)
+    try:
+        explicit.pair_style(f"deepmd {pb_file.resolve()} fparam 0.0 aparam 1.0")
+        explicit.pair_coeff("* *")
+        explicit.run(0)
+        assert compute_energy == pytest.approx(explicit.eval("pe"))
+        explicit_ids = explicit.lmp.numpy.extract_atom("id")[: coord.shape[0]]
+        explicit_forces = explicit.lmp.numpy.extract_atom("f")[: coord.shape[0]]
+        for atom_id, force in zip(explicit_ids, explicit_forces, strict=True):
+            assert compute_forces[int(atom_id)] == pytest.approx(force)
+    finally:
+        explicit.close()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "message"),
+    [
+        (
+            "missing_fparam",
+            "compute missing_frame_value for fparam is not found",
+        ),
+        (
+            "missing_aparam",
+            "compute missing_atom_value for aparam is not found",
+        ),
+        (
+            "fparam_peratom",
+            "compute atom_value does not provide a scalar for fparam",
+        ),
+        (
+            "fparam_vector",
+            "compute frame_vector does not provide a scalar for fparam",
+        ),
+        (
+            "aparam_global",
+            "compute frame_value does not provide per-atom data for aparam",
+        ),
+        (
+            "aparam_array",
+            "compute atom_array does not provide a per-atom vector for aparam",
+        ),
+    ],
+)
+def test_invalid_compute_sources_report_controlled_error(
+    scenario: str, message: str
+) -> None:
+    """Invalid compute contracts fail with the intended DeePMD diagnostic."""
+    proc = _run_compute_source_subprocess(scenario)
+    output = proc.stdout + proc.stderr
+    assert proc.returncode != 0
+    # Match the actual LAMMPS diagnostic, not merely a nonzero status (which a
+    # segmentation fault would also satisfy) or incidental traceback text.
+    assert f"ERROR: {message} (" in output
+
+
+if __name__ == "__main__":
+    _run_compute_source_scenario(sys.argv[1])

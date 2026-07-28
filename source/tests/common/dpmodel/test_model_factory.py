@@ -118,6 +118,7 @@ class TestModelFactory(unittest.TestCase):
     def test_standard_routes(self) -> None:
         standard = _factory("standard")
         spin = _factory("spin")
+        native_spin = _factory("native_spin")
         zbl = _factory("zbl")
 
         self.assertEqual(
@@ -126,6 +127,7 @@ class TestModelFactory(unittest.TestCase):
                 base_model=_BaseModel,
                 standard_model_factory=standard,
                 spin_model_factory=spin,
+                native_spin_model_factory=native_spin,
                 zbl_model_factory=zbl,
             )[0],
             "standard",
@@ -136,9 +138,24 @@ class TestModelFactory(unittest.TestCase):
                 base_model=_BaseModel,
                 standard_model_factory=standard,
                 spin_model_factory=spin,
+                native_spin_model_factory=native_spin,
                 zbl_model_factory=zbl,
             )[0],
             "spin",
+        )
+        self.assertEqual(
+            get_model(
+                {
+                    "spin": {"scheme": "native"},
+                    "use_srtab": "table",
+                },
+                base_model=_BaseModel,
+                standard_model_factory=standard,
+                spin_model_factory=spin,
+                native_spin_model_factory=native_spin,
+                zbl_model_factory=zbl,
+            )[0],
+            "native_spin",
         )
         self.assertEqual(
             get_model(
@@ -146,6 +163,7 @@ class TestModelFactory(unittest.TestCase):
                 base_model=_BaseModel,
                 standard_model_factory=standard,
                 spin_model_factory=spin,
+                native_spin_model_factory=native_spin,
                 zbl_model_factory=zbl,
             )[0],
             "zbl",
@@ -169,6 +187,17 @@ class TestModelFactory(unittest.TestCase):
                 {"use_srtab": "table"},
                 base_model=_BaseModel,
                 standard_model_factory=_factory("standard"),
+            )
+
+    def test_unsupported_native_spin_variant(self) -> None:
+        with self.assertRaisesRegex(
+            NotImplementedError, "Native spin model is not implemented yet"
+        ):
+            get_model(
+                {"spin": {"scheme": "native"}},
+                base_model=_BaseModel,
+                standard_model_factory=_factory("standard"),
+                spin_model_factory=_factory("spin"),
             )
 
     def test_explicit_factory_precedes_registry(self) -> None:

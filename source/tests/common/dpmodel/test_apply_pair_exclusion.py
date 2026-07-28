@@ -8,6 +8,7 @@ from deepmd.dpmodel.utils.exclude_mask import (
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     apply_pair_exclusion,
+    attach_edge_csr,
 )
 
 
@@ -44,6 +45,19 @@ def test_excluded_pairs_are_masked_and_padding_stays_masked() -> None:
     np.testing.assert_array_equal(g.edge_mask, [1, 1, 1, 1, 0])
     assert out.edge_index is g.edge_index
     assert out.edge_vec is g.edge_vec
+
+
+def test_exclusion_invalidates_derived_csr_views() -> None:
+    graph = attach_edge_csr(_toy_graph(), 4)
+    atype = np.array([0, 1, 0, 1], dtype=np.int64)
+
+    out = apply_pair_exclusion(graph, atype, PairExcludeMask(2, [(0, 1)]))
+
+    assert out.destination_order is None
+    assert out.destination_row_ptr is None
+    assert out.source_order is None
+    assert out.source_row_ptr is None
+    assert out.destination_sorted is False
 
 
 def test_no_exclusion_empty_list_is_identity() -> None:

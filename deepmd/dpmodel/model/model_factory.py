@@ -158,6 +158,7 @@ def get_model(
     base_model: type,
     standard_model_factory: ModelBuilder,
     spin_model_factory: ModelBuilder | None = None,
+    native_spin_model_factory: ModelBuilder | None = None,
     zbl_model_factory: ModelBuilder | None = None,
     model_factories: Mapping[str, ModelBuilder] | None = None,
 ) -> Any:
@@ -179,6 +180,8 @@ def get_model(
         Constructor for an ordinary standard model.
     spin_model_factory : callable, optional
         Constructor for a legacy standard model containing ``spin``.
+    native_spin_model_factory : callable, optional
+        Constructor for a standard model using the native spin scheme.
     zbl_model_factory : callable, optional
         Constructor for a legacy standard model containing ``use_srtab``.
     model_factories : mapping, optional
@@ -192,6 +195,12 @@ def get_model(
     model_type = data.get("type", "standard")
     if model_type == "standard":
         if "spin" in data:
+            if str(data["spin"].get("scheme", "deepspin")) == "native":
+                if native_spin_model_factory is None:
+                    raise NotImplementedError(
+                        "Native spin model is not implemented yet."
+                    )
+                return native_spin_model_factory(data)
             if spin_model_factory is None:
                 raise NotImplementedError("Spin model is not implemented yet.")
             return spin_model_factory(data)
@@ -270,15 +279,26 @@ class BackendModelFactory:
         self,
         data: dict,
         *,
+        standard_model_factory: ModelBuilder | None = None,
         spin_model_factory: ModelBuilder | None = None,
+        native_spin_model_factory: ModelBuilder | None = None,
         model_factories: Mapping[str, ModelBuilder] | None = None,
     ) -> Any:
-        """Construct a model using this backend and the shared routing rules."""
+        """Construct a model using this backend and the shared routing rules.
+
+        Backends may override the standard builder when they need a thin
+        backend-specific wrapper, such as analytical bridging composition.
+        """
         return get_model(
             data,
             base_model=self.model_base,
-            standard_model_factory=self.get_standard_model,
+            standard_model_factory=(
+                self.get_standard_model
+                if standard_model_factory is None
+                else standard_model_factory
+            ),
             spin_model_factory=spin_model_factory,
+            native_spin_model_factory=native_spin_model_factory,
             zbl_model_factory=self.get_zbl_model,
             model_factories=model_factories,
         )

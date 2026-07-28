@@ -24,11 +24,20 @@ from .dp_model import (
 from .dp_zbl_model import (
     DPZBLModel,
 )
+from .dp_linear_model import (
+    LinearEnergyModel,
+)
+from .dpa4_model import (
+    DPA4EnergyModel,
+)
 from .ener_model import (
     EnergyModel,
 )
 from .make_model import (
     make_model,
+)
+from .native_spin_model import (
+    NativeSpinEnergyModel,
 )
 from .polar_model import (
     PolarModel,
@@ -42,10 +51,13 @@ from .spin_model import (
 
 __all__ = [
     "DOSModel",
+    "DPA4EnergyModel",
     "DPModelCommon",
     "DPZBLModel",
     "DipoleModel",
     "EnergyModel",
+    "LinearEnergyModel",
+    "NativeSpinEnergyModel",
     "PolarModel",
     "PropertyModel",
     "SpinModel",

@@ -21,6 +21,9 @@ from typing import (
 
 import numpy as np
 
+from .csr import (
+    attach_edge_csr,
+)
 from .from_ijs import (
     neighbor_graph_from_ijs,
 )
@@ -47,6 +50,8 @@ def build_neighbor_graph_ase(
     rcut: float,
     layout: GraphLayout | None = None,
     *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
     pair_excl: PairExcludeMask | None = None,
     compact: bool = False,
 ) -> NeighborGraph:
@@ -73,6 +78,12 @@ def build_neighbor_graph_ase(
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
     pair_excl
         Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
         for model-level ``pair_exclude_types``. When given,
@@ -152,7 +163,14 @@ def build_neighbor_graph_ase(
     S_all, nframe_all = S_all[keep], nframe_all[keep]
 
     graph = neighbor_graph_from_ijs(
-        i_all, j_all, S_all, coord, box, nframe_all, nloc, layout=layout
+        i_all,
+        j_all,
+        S_all,
+        coord,
+        box,
+        nframe_all,
+        nloc,
+        layout=layout,
     )
     if pair_excl is not None:
         import array_api_compat
@@ -160,4 +178,6 @@ def build_neighbor_graph_ase(
         xp = array_api_compat.array_namespace(coord)
         atype_flat = xp.reshape(xp.asarray(atype), (-1,))
         graph = apply_pair_exclusion(graph, atype_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
     return graph

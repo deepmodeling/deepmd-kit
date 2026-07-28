@@ -59,7 +59,15 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         em0.repinit.stddev = dstd
         em0.repformers.mean = davg_2
         em0.repformers.stddev = dstd_2
+        # this test exercises the legacy dense body's full 5-tuple (real
+        # g2/h2, not the thinner dense-ABI adapter's `None`/`None`); force
+        # the dense route explicitly rather than relying on the
+        # graph-eligibility of this particular config (`uses_graph_lower`
+        # would otherwise route `.call()` through `_call_graph_adapter`,
+        # see DescrptDPA2.uses_graph_lower).
+        em0.disable_graph_lower()
         em1 = DescrptDPA2.deserialize(em0.serialize())
+        em1.disable_graph_lower()
         mm0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, self.mapping)
         mm1 = em1.call(self.coord_ext, self.atype_ext, self.nlist, self.mapping)
         desired_shape = [

@@ -512,7 +512,7 @@ def do_derivative(
                 category=apply_operation(vv, OutputVariableOperation.DERV_C),
             )
             if vv.magnetic:
-                def_derv_r[rkcm] = OutputVariableDef(
+                def_derv_c[rkcm] = OutputVariableDef(
                     rkcm,
                     vv.shape + [9],  # noqa: RUF005
                     reducible=True,
