@@ -249,6 +249,10 @@ class TestHybridMuonOptimizer(unittest.TestCase):
                 self.gateBiAsScale = torch.nn.Parameter(
                     torch.ones(2, 6, dtype=torch.float32, device=device)
                 )
+                # pt_expt uses the exact leaf name "b" for affine biases.
+                self.b = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
                 # Module name contains "bias", but parameter leaf is "weight".
                 self.bias_proj = torch.nn.Linear(4, 6, bias=False, device=device)
 
@@ -258,6 +262,7 @@ class TestHybridMuonOptimizer(unittest.TestCase):
                 y = y * self.adam_stack[0].unsqueeze(0)
                 y = y * self.adamw_layer_scale.unsqueeze(0)
                 y = y * self.gateBiAsScale.unsqueeze(0)
+                y = y + self.b.unsqueeze(0)
                 y = y + self.bias_proj(x).unsqueeze(1)
                 return y.sum()
 
@@ -287,6 +292,9 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         # Contains "bias" (case-insensitive) → Adam
         self.assertIn("exp_avg", optimizer.state[model.gateBiAsScale])
         self.assertNotIn("momentum_buffer", optimizer.state[model.gateBiAsScale])
+        # Exact pt_expt leaf "b" → Adam even when matrix-shaped
+        self.assertIn("exp_avg", optimizer.state[model.b])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.b])
         # Module name "bias_proj" but leaf is "weight" → Muon
         self.assertIn("momentum_buffer", optimizer.state[model.bias_proj.weight])
         self.assertNotIn("exp_avg", optimizer.state[model.bias_proj.weight])
