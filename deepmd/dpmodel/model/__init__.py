@@ -18,14 +18,14 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .dp_linear_model import (
+    LinearEnergyModel,
+)
 from .dp_model import (
     DPModelCommon,
 )
 from .dp_zbl_model import (
     DPZBLModel,
-)
-from .dp_linear_model import (
-    LinearEnergyModel,
 )
 from .dpa4_model import (
     DPA4EnergyModel,
