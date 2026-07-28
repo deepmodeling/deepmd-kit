@@ -459,6 +459,33 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
 
+    def graph_type_embedding_table(self) -> Array:
+        """Full type-embedding table consumed by the graph-route forward.
+
+        Returns
+        -------
+        Array
+            The ``(ntypes + 1, tebd_dim)`` table from ``type_embedding``.
+        """
+        return self.type_embedding.call()
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The transformer attention lower (``attn_layer > 0``) enumerates
+        neighbor pairs via the compact ``center_edge_pairs`` realization
+        (unbacked-SymInt ``nonzero``/``repeat`` sizes, ``pairs.py``);
+        the factorizable lower (``attn_layer == 0``) traces with backed
+        symbols only.  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return self.se_atten.attn_layer > 0
+
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.
 
@@ -781,6 +808,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward.
 
@@ -817,6 +845,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (N,) flat LOCAL atom types where ``N = sum(n_node)``.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        comm_dict
+            MPI communication metadata. Accepted for ABI parity with
+            :meth:`DescrptDPA2.call_graph` (uniform ``forward_atomic_graph``
+            call site), but UNUSED: a single se_atten descriptor has no
+            cross-rank message passing (``has_message_passing_across_ranks()``
+            is ``False``), so this is always ``None`` in practice.
 
         Returns
         -------

@@ -90,21 +90,23 @@ void deepmd::dprc_pairwise_map_cpu(
   }
   int max_fragment_size = max_fragment_real_size + max_fragment_ghost_size;
   int map_size = nqm + max_fragment_real_size + max_fragment_ghost_size;
+  // Count local QM atoms independently of the MM-fragment loop. A frame may
+  // contain only its QM fragment plus ignored -1 placeholders, in which case
+  // there are no QMMM map rows to perform this count later.
+  int nqm_real = static_cast<int>(
+      std::count_if(fragments[0].begin(), fragments[0].end(),
+                    [nloc](int atom_index) { return atom_index < nloc; }));
   // (3, 4, 0, 1, 2, 10, 11),
   // (3, 4, 5, 6, 7, 10, -1),
   // (3, 4, 8, 9, -1, 10, -1)
   forward_qmmm_map.resize(static_cast<size_t>(nfragments - 1) * map_size);
   std::fill(forward_qmmm_map.begin(), forward_qmmm_map.end(), -1);
-  int nqm_real = nloc;  // init for nfragments = 1
   for (int ii = 0; ii < nfragments - 1; ++ii) {
     // real
     for (int jj = 0, kk = 0; jj < nqm; ++jj) {
       if (fragments[0][jj] < nloc) {
         forward_qmmm_map[ii * map_size + kk] = fragments[0][jj];
         kk++;
-      }
-      if (jj == nqm - 1) {
-        nqm_real = kk;
       }
     }
     for (int jj = 0, kk = 0; jj < fragments[ii + 1].size(); ++jj) {

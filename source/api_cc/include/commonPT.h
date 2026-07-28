@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -582,6 +583,94 @@ inline GraphTensorPack buildGraphTensors(
 }
 
 /**
+ * @brief Normalize a graph-route aparam tensor to the flat node axis.
+ *
+ * The NeighborGraph ABI carries atomic parameters FLAT on the node axis --
+ * shape (N, daparam) with N == n_node_count, the same axis as ``atype``
+ * (mirrors ``build_synthetic_graph_inputs`` / ``_build_graph_dynamic_shapes``
+ * on the Python export side).  The runtime aparam carries the owned (local)
+ * rows only (``aparam_nall`` is structurally false for pt_expt models, see
+ * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
+ * the ghost rows are zero-padded here.  Ghost fitting outputs are never
+ * retained -- the with-comm artifact masks non-owned energies before
+ * reduction, and the plain multi-rank remap sums energy over the owned
+ * prefix only -- so the padded values are inert.
+ *
+ * A ghost-only rank (``nlocal == 0``, ``N > 0``) synthesizes a full zero
+ * tensor: the graph still carries N nodes and the artifact requires the
+ * (N, daparam) input, while the owned-node mask keeps its contribution
+ * exactly zero.  A missing aparam on a rank that OWNS atoms, or a width
+ * mismatch, is an explicit error -- the former silently returned the empty
+ * tensor (artifact reshape failure mid-collective), and a width mismatch
+ * used to be absorbed by broadcasting ``copy_`` (silent result corruption
+ * for daparam > 1).
+ *
+ * Shared by ``DeepPotPTExpt`` and ``DeepSpinPTExpt``: both graph routes carry
+ * aparam on the same flat node axis.
+ */
+inline at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
+                                      std::int64_t n_node_count,
+                                      std::int64_t nlocal,
+                                      std::int64_t daparam) {
+  if (daparam <= 0) {
+    return aparam_tensor;  // model has no aparam input; passed through empty
+  }
+  if (aparam_tensor.numel() == 0) {
+    if (nlocal > 0) {
+      throw deepmd::deepmd_exception(
+          "aparam is required (dim_aparam=" + std::to_string(daparam) +
+          ") but no values were provided on a rank owning " +
+          std::to_string(nlocal) + " atoms.");
+    }
+    // ghost-only rank: there are no owned rows to supply; zeros are inert
+    // under the owned-node mask but the artifact needs the full node axis.
+    return torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  }
+  if (aparam_tensor.numel() != nlocal * daparam) {
+    throw deepmd::deepmd_exception(
+        "aparam holds " + std::to_string(aparam_tensor.numel()) +
+        " values but the graph route expects nlocal * dim_aparam = " +
+        std::to_string(nlocal) + " * " + std::to_string(daparam) + ".");
+  }
+  at::Tensor owned = aparam_tensor.reshape({nlocal, daparam});
+  if (nlocal == n_node_count) {
+    return owned;  // single-rank / folded graph: nothing to pad
+  }
+  at::Tensor padded =
+      torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  padded.slice(0, 0, nlocal).copy_(owned);
+  return padded;
+}
+
+/**
+ * @brief Assert the flat graph-route aparam contract at the C++ boundary.
+ *
+ * The graph artifacts consume aparam FLAT on the node axis, shape
+ * (N, daparam) -- the layout ``extend_graph_aparam`` produces.  A caller
+ * hand-rolling a rectangular (1, N, daparam) tensor (the pre-flat
+ * convention) would otherwise fail DEEP inside the artifact -- or, on a
+ * GPU-only route, only at deployment where no CPU test can catch it (the
+ * device-edge branch shipped exactly that bug).  Failing loudly here turns
+ * any future such site into an immediate, self-explanatory error.
+ */
+inline void check_graph_aparam_flat(const at::Tensor& aparam,
+                                    std::int64_t daparam,
+                                    const char* where) {
+  if (daparam <= 0) {
+    return;
+  }
+  if (aparam.dim() != 2 || aparam.size(1) != daparam) {
+    std::ostringstream oss;
+    oss << where
+        << ": graph-route aparam must be flat (N, daparam) on the node axis "
+           "(produce it with extend_graph_aparam); got a rank-"
+        << aparam.dim() << " tensor of shape " << aparam.sizes()
+        << " for daparam = " << daparam << ".";
+    throw deepmd::deepmd_exception(oss.str());
+  }
+}
+
+/**
  * @brief Graph pair-type exclusion: AND the per-edge keep-mask into
  *        ``edge_mask``.
  *
@@ -755,16 +844,67 @@ inline void remap_graph_outputs_to_dense_keys(
 }
 
 /**
+ * @brief Remap NeighborGraph (graph-schema) native-spin public outputs onto
+ *        the dense internal-key layout ``DeepSpinPTExpt::compute`` consumes.
+ *
+ * The single-rank native-spin graph forward is LOCAL-only and additionally
+ * emits ``force_mag`` (N, 3): per-node
+ * magnetic force, N == nloc, already exactly zero on non-spin-carrying atoms
+ * (the model's own type gate, not re-masked here per the project's
+ * one-owner design principle).
+ *
+ * Delegates the energy/force/virial/atom_virial remap to
+ * ``remap_graph_outputs_to_dense_keys`` and additionally zero-pads
+ * ``force_mag`` up to ``nall`` exactly like ``force`` (ghost rows already
+ * folded onto their local owners via ``edge_index``), writing it to
+ * ``energy_derv_r_mag`` -- the key ``DeepSpinPTExpt::compute`` reads for
+ * every other lower schema (dense nlist / edge_vec).
+ *
+ * **Single-rank only** (``fold_to_local=true``, so ``N == nloc``).  The
+ * multi-rank sibling is
+ * ``remap_graph_spin_outputs_to_dense_keys_extended``; calling THIS one on an
+ * extended-region result throws on the ``index_put_`` below as soon as
+ * ``nloc < nall``, because ``force_mag_pub`` then carries ``nall`` rows.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (== N, the graph node count).
+ * @param[in] nall Extended atom count to pad the per-atom outputs up to.
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_spin_outputs_to_dense_keys(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
+                                    /*single_rank=*/true);
+  const auto& force_mag_pub = output_map.at("force_mag");  // (N, 3)
+  auto force_mag_full = torch::zeros({nf, nall, 1, 3}, force_mag_pub.options());
+  force_mag_full.index_put_({0, Slice(0, nloc), 0}, force_mag_pub);
+  output_map["energy_derv_r_mag"] = force_mag_full;
+}
+
+/**
  * @brief Remap NeighborGraph public outputs onto the dense internal-key layout
- *        for the MULTI-RANK (extended-region) non-message-passing path.
+ *        for the MULTI-RANK (extended-region) path.
  *
  * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes: ghost
  * (halo) atoms are distinct nodes, so the per-node ``force`` is already the
  * EXTENDED force (one row per extended atom).  Ghost reaction forces stay on
  * their ghost rows and are folded back to their owning rank by LAMMPS
  * reverse-comm — exactly as the dense path returns its extended force.  No
- * zero-padding (unlike the single-rank helper) and no with-comm artifact (dpa1
- * is non-MP).
+ * zero-padding (unlike the single-rank helper).
+ *
+ * Shared by both multi-rank graph routes: non-message-passing models (dpa1)
+ * run this on the plain extended-region artifact (no comm), while
+ * message-passing models (DPA2/DPA3) run it on the with-comm artifact's
+ * output -- ``border_op`` inside that artifact fills ghost-node embeddings
+ * in-place before the model reduces energy/force/virial, so by the time
+ * outputs reach this function the two cases are indistinguishable: it is
+ * the ``atom_energy[0:nloc]``-only reduction below that matters either way.
  *
  * Key differences from the single-rank helper:
  *   - ``energy_redu`` = sum of the LOCAL atom energies
@@ -807,6 +947,38 @@ inline void remap_graph_outputs_to_dense_keys_extended(
         atom_energy_pub.index({Slice(0, nloc)}).reshape({nf, nloc, 1});
     output_map["energy_derv_c"] = atom_virial_pub.reshape({nf, nall, 1, 9});
   }
+}
+
+/**
+ * @brief Native-spin twin of ``remap_graph_outputs_to_dense_keys_extended``:
+ *        the MULTI-RANK (extended-region) graph-spin output remap.
+ *
+ * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes, so
+ * ``force_mag`` is already the EXTENDED magnetic force -- one row per
+ * extended atom.  Unlike the single-rank helper it must NOT zero-pad from
+ * ``nloc`` to ``nall``: the rows are already there, and padding would both
+ * truncate real ghost rows and mis-shape the tensor (the single-rank helper's
+ * ``index_put_({0, Slice(0, nloc), 0}, force_mag_pub)`` fails outright when
+ * ``force_mag_pub`` carries ``nall`` rows and ``nloc < nall``).
+ *
+ * Ghost magnetic-force rows stay distinct and are folded onto their owners by
+ * the LAMMPS spin reverse-comm, exactly as ghost conservative-force rows are.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (owned by this rank).
+ * @param[in] nall Extended atom count (== N, the graph node count).
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_spin_outputs_to_dense_keys_extended(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  const std::int64_t nf = 1;
+  remap_graph_outputs_to_dense_keys_extended(output_map, nloc, nall, atomic);
+  const auto& force_mag_pub = output_map.at("force_mag");  // (N==nall, 3)
+  output_map["energy_derv_r_mag"] = force_mag_pub.reshape({nf, nall, 1, 3});
 }
 
 }  // namespace deepmd
