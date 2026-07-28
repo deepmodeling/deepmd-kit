@@ -13,6 +13,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.backend.pt_expt import (
+    detect_pt_checkpoint_backend,
+)
 from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
 )
@@ -130,18 +133,6 @@ def _reshape_charge_spin(
             f"charge_spin must be reshape-compatible with ({nframes}, {dim_chg_spin}), "
             f"got shape {charge_spin_arr.shape}."
         ) from err
-
-
-def _is_pt_backend_dpa4_params(model_params: dict[str, Any]) -> bool:
-    """Return whether a training checkpoint should be loaded by the pt backend."""
-    model_type = str(model_params.get("type", "")).lower()
-    if model_type in {"sezm", "dpa4", "sezm_spin"}:
-        return True
-    descriptor = model_params.get("descriptor")
-    if isinstance(descriptor, dict):
-        descriptor_type = str(descriptor.get("type", "")).lower()
-        return descriptor_type in {"sezm", "dpa4"}
-    return False
 
 
 def _warn_legacy_edge_vec(metadata: dict) -> None:
@@ -556,9 +547,17 @@ class DeepEval(DeepEvalBackend):
 
         # Match the training resume path (training.py:712) — weights_only=True
         # avoids unpickling arbitrary code from untrusted checkpoints.
-        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        checkpoint = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        checkpoint_backend = detect_pt_checkpoint_backend(checkpoint)
+        state_dict = checkpoint
         if isinstance(state_dict, dict) and "model" in state_dict:
             state_dict = state_dict["model"]
+        if checkpoint_backend == "pt":
+            raise ValueError(
+                f"Checkpoint '{model_file}' uses the regular `pt` parameter "
+                "dialect. Load it with `dp --pt`, or export it to `.pt2` / "
+                "`.pte` before loading it with `pt_expt`."
+            )
         extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
         if not (isinstance(extra, dict) and "model_params" in extra):
             raise ValueError(
@@ -597,13 +596,6 @@ class DeepEval(DeepEvalBackend):
                     head_state[key.replace(prefix, "model.Default.")] = value
             state_dict = head_state
             model_params = head_params
-
-        if _is_pt_backend_dpa4_params(model_params):
-            raise ValueError(
-                "DPA4/SeZM `.pt` checkpoints belong to the regular `pt` backend. "
-                "Use the `pt` backend for eager checkpoint inference, or export "
-                "the checkpoint to `.pt2` / `.pte` before loading it with `pt_expt`."
-            )
 
         model = get_model(deepcopy(model_params)).to(DEVICE)
 

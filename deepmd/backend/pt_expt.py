@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from collections.abc import (
     Callable,
+    Mapping,
 )
 from importlib.util import (
     find_spec,
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     ClassVar,
 )
 
@@ -25,6 +27,46 @@ if TYPE_CHECKING:
     from deepmd.utils.neighbor_stat import (
         NeighborStat,
     )
+
+
+def detect_pt_checkpoint_backend(checkpoint: Any) -> str | None:
+    """Detect the backend dialect of a raw PyTorch checkpoint.
+
+    Parameters
+    ----------
+    checkpoint : Any
+        A checkpoint payload or its unwrapped model state dictionary.
+
+    Returns
+    -------
+    str or None
+        ``"pt-expt"`` or ``"pt"`` when the parameter names identify one
+        backend unambiguously, otherwise ``None``.
+    """
+    state_dict = checkpoint
+    if isinstance(state_dict, Mapping) and "model" in state_dict:
+        state_dict = state_dict["model"]
+    if not isinstance(state_dict, Mapping):
+        return None
+
+    keys = tuple(key for key in state_dict if isinstance(key, str))
+
+    # Weight names are decisive. pt_expt DPA4 also contains ordinary
+    # torch-native ``.bias`` parameters, so bias names cannot override a
+    # clear ``.w`` versus ``.matrix`` distinction.
+    has_pt_expt_weight = any(key.endswith(".w") for key in keys)
+    has_pt_weight = any(key.endswith(".matrix") for key in keys)
+    if has_pt_expt_weight or has_pt_weight:
+        if has_pt_expt_weight == has_pt_weight:
+            return None
+        return "pt-expt" if has_pt_expt_weight else "pt"
+
+    # Bias-only state dictionaries retain the original dialect fallback.
+    has_pt_expt_bias = any(key.endswith(".b") for key in keys)
+    has_pt_bias = any(key.endswith(".bias") for key in keys)
+    if has_pt_expt_bias == has_pt_bias:
+        return None
+    return "pt-expt" if has_pt_expt_bias else "pt"
 
 
 @Backend.register("pt-expt")
@@ -51,11 +93,8 @@ class PyTorchExportableBackend(Backend):
         Returns
         -------
         - 1 for the regular `.pte` / `.pt2` suffixes (default behaviour).
-        - 2 for `.pt` files whose state-dict uses pt_expt's dpmodel
-            parameter naming (`.w`/`.b`); this outranks the legacy pt
-            backend's default suffix score (1) so pt_expt-trained `.pt`
-            checkpoints route here, while genuine pt-trained `.pt` files
-            (which use `.matrix`/`.bias`) keep going to the pt backend.
+        - 2 for `.pt` files whose state dictionary uses the pt_expt parameter
+            dialect. This outranks the pt backend's default suffix score (1).
         - 0 otherwise.
         """
         score = super().match_filename(filename)
@@ -69,21 +108,14 @@ class PyTorchExportableBackend(Backend):
 
             # weights_only=True avoids unpickling arbitrary code from an
             # untrusted .pt — sniffing only needs the dict keys.
-            sd = torch.load(filename, map_location="cpu", weights_only=True)
+            checkpoint = torch.load(filename, map_location="cpu", weights_only=True)
         except Exception:
             # Not a valid torch archive (corrupt file, wrong format, or a
             # weights_only=True restriction trip).  Surrender the claim so
             # the dispatcher falls back to the default suffix match — pt's
             # default score (1) will pick up the file under `dp --pt`.
             return 0
-        if isinstance(sd, dict) and "model" in sd:
-            sd = sd["model"]
-        keys = list(sd.keys()) if hasattr(sd, "keys") else []
-        has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
-        has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
-        if has_pt_expt and not has_pt:
-            return 2
-        return 0
+        return 2 if detect_pt_checkpoint_backend(checkpoint) == "pt-expt" else 0
 
     def is_available(self) -> bool:
         """Check if the backend is available.

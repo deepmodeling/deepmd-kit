@@ -4,8 +4,9 @@
 Covers two pieces:
 
 1. ``Backend.detect_backend_by_model`` sniffs ``.pt`` content
-   (``.w``/``.b`` -> pt_expt, ``.matrix``/``.bias`` -> pt) so that
-   ``dp test -m foo.pt`` routes to the right backend.
+   (``.w`` weights -> pt_expt, ``.matrix`` weights -> pt, with bias names
+   used only as a fallback) so that ``dp test -m foo.pt`` routes to the
+   right backend.
 2. ``pt_expt.DeepEval._load_pt`` reconstructs the model from
    ``_extra_state["model_params"]``, loads ``state_dict``, and runs
    inference in eager mode, producing outputs that match a direct
@@ -708,6 +709,80 @@ def _spin_eager_reference(model, COORD, ATYPE, SPIN, BOX):
     box_t = torch.tensor(BOX.reshape(1, 9), dtype=torch.float64, device=DEVICE)
     ref = model(coord_t, atype_t, spin_t, box_t)
     return {k: v.detach().cpu().numpy() for k, v in ref.items()}
+
+
+class TestPtExptLoadPtNativeSpinDPA4(unittest.TestCase):
+    """A native-spin DPA4 checkpoint reaches the graph-spin eager runner."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from ..model.test_dpa4_native_spin import (
+            NATIVE_SPIN_CONFIG,
+            _build_native_spin_model_cpu,
+        )
+        from .test_deep_eval_spin import (
+            ATYPE,
+            BOX,
+            COORD,
+            SPIN,
+        )
+
+        cls.ATYPE = ATYPE
+        cls.BOX = BOX
+        cls.COORD = COORD
+        cls.SPIN = SPIN
+        cls.model = _build_native_spin_model_cpu().to(DEVICE).eval()
+        cls.ref = _spin_eager_reference(
+            cls.model, cls.COORD, cls.ATYPE, cls.SPIN, cls.BOX
+        )
+        cls.pt_path = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
+        _save_pt_checkpoint(
+            cls.model,
+            copy.deepcopy(NATIVE_SPIN_CONFIG),
+            cls.pt_path,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if os.path.exists(cls.pt_path):
+            os.unlink(cls.pt_path)
+
+    def test_auto_dispatch_and_eval_match_eager(self) -> None:
+        backend = Backend.detect_backend_by_model(self.pt_path)
+        self.assertIs(backend, Backend.get_backend("pt-expt"))
+
+        dp = DeepPot(
+            self.pt_path,
+            auto_batch_size=False,
+            neighbor_graph_method="dense",
+        )
+        self.assertTrue(dp.has_spin)
+        self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "graph")
+
+        energy, force, virial, force_mag, mask_mag = dp.eval(
+            self.COORD,
+            self.BOX,
+            self.ATYPE,
+            atomic=False,
+            spin=self.SPIN,
+        )
+        for name, actual in (
+            ("energy", energy),
+            ("force", force),
+            ("virial", virial),
+            ("force_mag", force_mag),
+        ):
+            np.testing.assert_allclose(
+                actual.reshape(-1),
+                self.ref[name].reshape(-1),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=name,
+            )
+        np.testing.assert_array_equal(
+            mask_mag.reshape(-1),
+            self.ref["mask_mag"].reshape(-1),
+        )
 
 
 class _SpinFilesMixin:
