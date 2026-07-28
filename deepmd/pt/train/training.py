@@ -792,20 +792,17 @@ class Trainer:
         )
         if self.has_min_pair_filter:
             if self.multi_task:
-                self._training_batch_attempts: int | dict[str, int] = {
-                    model_key: int(
-                        self._broadcast_value_from_rank0(
-                            max(1, len(self.training_dataloader[model_key]))
-                        )
-                    )
+                local_training_batch_attempts = max(
+                    max(1, len(self.training_dataloader[model_key]))
                     for model_key in self.model_keys
-                }
-            else:
-                self._training_batch_attempts = int(
-                    self._broadcast_value_from_rank0(
-                        max(1, len(self.training_dataloader))
-                    )
                 )
+            else:
+                local_training_batch_attempts = max(1, len(self.training_dataloader))
+            # Rank-specific task sampling may select loaders of different
+            # lengths, but validity collectives must use one shared retry count.
+            self._training_batch_attempts = int(
+                self._broadcast_value_from_rank0(local_training_batch_attempts)
+            )
         else:
             self._training_batch_attempts = 1
         self._discarded_training_batches = 0
@@ -2331,12 +2328,6 @@ class Trainer:
             return self.min_pair_dist[task_key]
         return self.min_pair_dist
 
-    def _get_training_batch_attempts(self, task_key: str) -> int:
-        """Return the synchronized valid-batch search budget for one task."""
-        if isinstance(self._training_batch_attempts, dict):
-            return self._training_batch_attempts[task_key]
-        return self._training_batch_attempts
-
     def _next_training_batch(
         self,
         task_key: str,
@@ -2357,9 +2348,10 @@ class Trainer:
         Raises
         ------
         RuntimeError
-            If no globally valid batch is found in one data-loader cycle.
+            If no globally valid batch is found within the synchronized retry
+            budget.
         """
-        max_attempts = self._get_training_batch_attempts(task_key)
+        max_attempts = self._training_batch_attempts
         distributed_filter = (
             self.has_min_pair_filter and dist.is_available() and dist.is_initialized()
         )
