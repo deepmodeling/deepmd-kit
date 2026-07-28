@@ -723,9 +723,54 @@ class DeepEval(DeepEvalBackend):
         # ``communicate_extended_output``, while the graph runner emits local
         # public keys consumed directly by ``_eval_model_graph``.
         #
-        # Non-spin: (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
-        # Spin:     (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
-        if use_graph_lower:
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
+        # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        if use_graph_lower and self._is_spin:
+
+            def _eager_runner_graph_spin(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_mask: torch.Tensor,
+                destination_order: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                spin: torch.Tensor,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
+            ) -> dict[str, torch.Tensor]:
+                model_ret = model.forward_common_lower_graph(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    destination_sorted=True,
+                    do_atomic_virial=True,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                    spin=spin,
+                )
+                return model._translate_eager_call(
+                    model_ret,
+                    atype,
+                    do_atomic_virial=True,
+                )
+
+            self.exported_module = _eager_runner_graph_spin
+        elif use_graph_lower:
             from deepmd.pt_expt.model.ener_model import (
                 _translate_energy_keys,
             )
