@@ -27,6 +27,9 @@ from deepmd.pt.train.training import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -43,16 +46,19 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
-# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
-# can segfault or drift, and other torch versions are similarly unstable. Skip
-# the compile-parity test off 2.11 until CI standardizes on a SeZM-compatible
-# torch, then drop this guard.
+# SeZM's ``torch.compile`` / AOT-export code paths are validated only on the
+# releases the compile pipeline supports (see ``deepmd.pt.utils.compile_compat``).
+# Other torch versions can segfault or drift, so the compile-parity tests are
+# skipped there.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
-_SKIP_OFF_TORCH_211_REASON = (
-    "SeZM's torch.compile path is only stable on torch 2.11.x; "
-    f"current torch is {torch.__version__}."
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
@@ -494,7 +500,7 @@ class TestSeZMSpinModel(unittest.TestCase):
             rtol=1.0e-12,
         )
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """Compiled SeZM spin path should match eager predictions."""
         eager = get_model(self._build_model_params(use_compile=False)).to(self.device)

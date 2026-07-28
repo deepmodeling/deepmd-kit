@@ -325,6 +325,12 @@ def _reduce_model_prediction(
     reduced = np.sum(prediction, axis=1)
     if intensive:
         atom_count = np.sum(mask, axis=1)
+        empty_frames = np.flatnonzero(atom_count == 0)
+        if empty_frames.size:
+            raise ValueError(
+                "Cannot reduce intensive model predictions for frames with no "
+                f"unmasked atoms: {empty_frames.tolist()}."
+            )
         atom_count = atom_count.reshape(
             (atom_count.shape[0],) + (1,) * (reduced.ndim - 1)
         )

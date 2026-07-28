@@ -2467,13 +2467,10 @@ def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
     bool
         ``True`` only when every rank reports a valid frame.
     """
-    sync_device = (
-        DEVICE if str(dist.get_backend()).lower() == "nccl" else torch.device("cpu")
-    )
     all_ranks_have_valid = torch.tensor(
         int(local_has_valid),
         dtype=torch.int32,
-        device=sync_device,
+        device=DEVICE,
     )
     dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN)
     return bool(all_ranks_have_valid.item())

@@ -166,15 +166,9 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
             self.assertEqual(op, torch.distributed.ReduceOp.MIN)
             valid_flag.zero_()
 
-        with (
-            patch(
-                "deepmd.pt.train.training.dist.get_backend",
-                return_value="gloo",
-            ),
-            patch(
-                "deepmd.pt.train.training.dist.all_reduce",
-                side_effect=mark_remote_rank_empty,
-            ),
+        with patch(
+            "deepmd.pt.train.training.dist.all_reduce",
+            side_effect=mark_remote_rank_empty,
         ):
             self.assertFalse(all_ranks_have_valid_frames(local_has_valid=True))
 
