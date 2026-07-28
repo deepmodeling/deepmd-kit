@@ -57,8 +57,6 @@ class PairTab:
         if filename is None:
             self.tab_info, self.tab_data = None, None
             return
-        # validate the table before committing any state to self, so that a
-        # failed reinit leaves an already-initialized object untouched.
         vdata = np.loadtxt(filename, dtype=self.data_type)
         rmin = vdata[0][0]
         rmax = vdata[-1][0]

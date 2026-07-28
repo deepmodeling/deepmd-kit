@@ -293,7 +293,6 @@ class TestPairTabGridSpacing(unittest.TestCase):
 
     @patch("numpy.loadtxt")
     def test_duplicate_distances(self, mock_loadtxt) -> None:
-        # a constant zero stride passes the uniformity check but yields hh == 0
         mock_loadtxt.return_value = np.array(
             [
                 [0.01, 1.0],
@@ -307,7 +306,6 @@ class TestPairTabGridSpacing(unittest.TestCase):
 
     @patch("numpy.loadtxt")
     def test_descending_grid(self, mock_loadtxt) -> None:
-        # a constant negative stride passes the uniformity check but yields hh < 0
         mock_loadtxt.return_value = np.array(
             [
                 [0.04, 1.0],
@@ -332,7 +330,6 @@ class TestPairTabGridSpacing(unittest.TestCase):
         )
         mock_loadtxt.return_value = uniform
         tab = PairTab(filename="dummy_path", rcut=0.04)
-        # serialize() hands back the live arrays, so snapshot them
         expected = copy.deepcopy(tab.serialize())
 
         mock_loadtxt.return_value = np.array(
