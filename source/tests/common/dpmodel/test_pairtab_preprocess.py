@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import unittest
 from unittest.mock import (
     patch,
@@ -331,7 +332,8 @@ class TestPairTabGridSpacing(unittest.TestCase):
         )
         mock_loadtxt.return_value = uniform
         tab = PairTab(filename="dummy_path", rcut=0.04)
-        expected = tab.serialize()
+        # serialize() hands back the live arrays, so snapshot them
+        expected = copy.deepcopy(tab.serialize())
 
         mock_loadtxt.return_value = np.array(
             [
@@ -349,7 +351,7 @@ class TestPairTabGridSpacing(unittest.TestCase):
         for key in ("rmin", "rmax", "hh", "ntypes", "rcut", "nspline"):
             self.assertEqual(actual[key], expected[key])
         for key in ("vdata", "tab_info", "tab_data"):
-            np.testing.assert_allclose(
+            np.testing.assert_array_equal(
                 actual["@variables"][key], expected["@variables"][key]
             )
 
