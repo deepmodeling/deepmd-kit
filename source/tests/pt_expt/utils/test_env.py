@@ -25,7 +25,12 @@ def test_lmdb_num_workers_rejects_invalid_override(monkeypatch) -> None:
 def test_lmdb_num_workers_partitions_node_budget(monkeypatch) -> None:
     monkeypatch.delenv("DP_LMDB_NUM_WORKERS", raising=False)
     monkeypatch.setenv("LOCAL_WORLD_SIZE", "4")
-    monkeypatch.setattr(common_env.os, "sched_getaffinity", lambda _pid: set(range(80)))
+    monkeypatch.setattr(
+        common_env.os,
+        "sched_getaffinity",
+        lambda _pid: set(range(80)),
+        raising=False,
+    )
     assert common_env.get_lmdb_num_workers() == 16
 
 

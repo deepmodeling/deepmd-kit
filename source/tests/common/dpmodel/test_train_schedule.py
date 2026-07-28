@@ -36,6 +36,17 @@ def test_explicit_steps_bypass_the_data() -> None:
     assert schedule.model_prob is None
 
 
+def test_single_task_rejects_steps_and_epochs() -> None:
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        resolve_step_schedule(
+            {"numb_steps": 7, "numb_epoch": 1.0},
+            multi_task=False,
+            model_keys=["Default"],
+            training_data={"Default": FakeData(1)},
+            epoch_length=_unreachable_epoch_length,
+        )
+
+
 @pytest.mark.parametrize(
     ("num_epoch", "expected"),
     [(1.0, 40), (2.5, 100), (0.25, 10), (1.0 / 3.0, 14)],

@@ -682,10 +682,10 @@ class TestDDPEpochSchedule(unittest.TestCase):
     def test_ranks_share_an_epoch(self) -> None:
         results = self._run(drifted=False)
 
-        # The system is read one frame per batch, so two ranks cover its
-        # frames in half as many steps each.
+        # DistributedSampler gives each rank ceil(nframes / 2) samples, and
+        # the system is read one frame per batch.
         nframes = np.load(os.path.join(self.data_dir, "set.000", "coord.npy")).shape[0]
-        self.assertEqual(results[0]["num_steps"], nframes // 2)
+        self.assertEqual(results[0]["num_steps"], int(np.ceil(nframes / 2)))
         self.assertEqual(results[1]["num_steps"], results[0]["num_steps"])
 
     def test_drifting_epoch_lengths_are_pinned_to_rank_zero(self) -> None:

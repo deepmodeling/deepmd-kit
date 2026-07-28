@@ -22,6 +22,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     _remap_atom_types,
     compute_block_targets,
     decode_lmdb_batch,
+    decode_lmdb_frame,
     is_lmdb,
     make_neighbor_stat_data,
 )
@@ -503,6 +504,31 @@ class TestLmdbDataReader(unittest.TestCase):
 
         self.assertEqual(frame["find_min_pair_dist"], np.float32(1.0))
         np.testing.assert_allclose(frame["min_pair_dist"], np.array([1.0]))
+
+    def test_min_pair_dist_requirement_defaults_without_atype(self):
+        raw_frame = _make_frame(natoms=6, seed=0)
+        raw_frame.pop("atom_types")
+        requirement = DataRequirementItem(
+            "min_pair_dist",
+            ndof=1,
+            default=0.25,
+        )
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={"min_pair_dist": requirement},
+        )
+
+        frame = decode_lmdb_frame(
+            msgpack.packb(raw_frame, use_bin_type=True),
+            0,
+            config,
+            copy_arrays=True,
+        )
+
+        self.assertEqual(frame["find_min_pair_dist"], np.float32(0.0))
+        np.testing.assert_allclose(frame["min_pair_dist"], np.array([0.25]))
 
 
 # ============================================================

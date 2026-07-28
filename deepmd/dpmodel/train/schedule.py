@@ -119,6 +119,10 @@ def resolve_step_schedule(
     num_epoch_dict = training_params.get("num_epoch_dict") or {}
 
     if not multi_task:
+        if num_steps is not None and num_epoch is not None:
+            raise ValueError(
+                "training.numb_steps and training.num_epoch are mutually exclusive."
+            )
         if num_steps is not None:
             return StepSchedule(num_steps=int(num_steps))
         if num_epoch is None:

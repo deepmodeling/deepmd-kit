@@ -331,7 +331,13 @@ def decode_lmdb_frame(
     frame["real_natoms_vec"] = natoms
 
     requirements = config.data_requirements
-    if "min_pair_dist" in requirements and "min_pair_dist" not in frame:
+    coord = frame.get("coord")
+    if (
+        "min_pair_dist" in requirements
+        and "min_pair_dist" not in frame
+        and isinstance(coord, np.ndarray)
+        and isinstance(atype, np.ndarray)
+    ):
         box = frame.get("box")
         if box is not None and np.allclose(box, 0.0):
             box = None
@@ -345,9 +351,9 @@ def decode_lmdb_frame(
         frame["min_pair_dist"] = np.array(
             [
                 compute_min_pair_dist_single(
-                    frame["coord"],
+                    coord,
                     box,
-                    frame["atype"],
+                    atype,
                     stop_below=float(default),
                 )
             ],
