@@ -637,6 +637,8 @@ class LmdbBatchIterator:
     selected integer frame keys and compact decoder state, so the dataset-wide
     metadata is never duplicated. Data tasks in the same rank share one
     process pool while retaining independent samplers and pending batches.
+    Before a new pass is prefetched, samplers exposing ``set_epoch`` are
+    advanced to the next deterministic shuffle state.
 
     Parameters
     ----------
@@ -658,7 +660,8 @@ class LmdbBatchIterator:
             raise ValueError(f"num_workers must be non-negative, got {num_workers}")
         self._reader = reader
         self._sampler = sampler
-        self._iterator = iter(sampler)
+        self._epoch = 0
+        self._iterator = self._iter_epoch()
         self._num_workers = num_workers
         self._executor: ProcessPoolExecutor | None = None
         self._pending: list[Future[dict[str, Any]]] | None = None
@@ -695,8 +698,16 @@ class LmdbBatchIterator:
         try:
             return next(self._iterator)
         except StopIteration:
-            self._iterator = iter(self._sampler)
+            self._epoch += 1
+            self._iterator = self._iter_epoch()
             return next(self._iterator)
+
+    def _iter_epoch(self) -> Iterator[list[int]]:
+        """Create a sampler iterator for the current epoch."""
+        set_epoch = getattr(self._sampler, "set_epoch", None)
+        if callable(set_epoch):
+            set_epoch(self._epoch)
+        return iter(self._sampler)
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks."""
@@ -1661,8 +1672,9 @@ class SameNlocBatchSampler:
 
     When auto batch_size is used, batch_size is computed per-nloc-group.
 
-    The sampler is deterministic: given the same seed, repeated calls to
-    ``__iter__`` produce the same batch sequence.
+    The sampler is deterministic for a fixed seed and epoch. Use
+    :meth:`set_epoch` to select a different reproducible sequence for each
+    training pass.
 
     Parameters
     ----------
@@ -1686,11 +1698,23 @@ class SameNlocBatchSampler:
         self._reader = reader
         self._shuffle = shuffle
         self._seed = seed
+        self._epoch = 0
         self._block_targets = block_targets
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set the epoch used to derive the deterministic shuffle state.
+
+        Parameters
+        ----------
+        epoch : int
+            Zero-based training epoch.
+        """
+        self._epoch = epoch
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield batches of frame indices, all with the same nloc."""
-        rng = np.random.default_rng(self._seed)
+        seed = None if self._seed is None else self._seed + self._epoch
+        rng = np.random.default_rng(seed)
         yield from _build_all_batches(
             self._reader, self._shuffle, rng, self._block_targets
         )

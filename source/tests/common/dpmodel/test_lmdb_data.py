@@ -12,6 +12,7 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbBatchIterator,
     LmdbDataReader,
     LmdbDecodeConfig,
     LmdbTestData,
@@ -351,6 +352,28 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(len(reader.nloc_groups), 1)
         self.assertIn(6, reader.nloc_groups)
         self.assertEqual(len(reader.nloc_groups[6]), 10)
+
+    def test_batch_iterator_advances_epoch_before_prefetch(self):
+        """The prefetched successor uses the next epoch's sampler state."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        iterator = LmdbBatchIterator(reader, sampler, num_workers=2)
+
+        expected_sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        expected_sampler.set_epoch(1)
+        expected_second = [
+            key for indices in expected_sampler for key in reader.original_keys(indices)
+        ]
+
+        try:
+            first = [key for _ in range(len(sampler)) for key in next(iterator)["fid"]]
+            second = [key for _ in range(len(sampler)) for key in next(iterator)["fid"]]
+        finally:
+            iterator.close()
+            reader.close()
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(second, expected_second)
 
     def test_close_preserves_other_reader(self):
         """Closing one shared-path reader leaves the other transaction valid."""
