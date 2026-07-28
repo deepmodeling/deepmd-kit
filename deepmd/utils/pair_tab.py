@@ -57,25 +57,40 @@ class PairTab:
         if filename is None:
             self.tab_info, self.tab_data = None, None
             return
-        self.vdata = np.loadtxt(filename, dtype=self.data_type)
-        self.rmin = self.vdata[0][0]
-        self.rmax = self.vdata[-1][0]
-        self.hh = self.vdata[1][0] - self.vdata[0][0]
-        dx = np.diff(self.vdata[:, 0])
-        if not np.allclose(dx, self.hh, rtol=1e-5, atol=1e-8):
+        # validate the table before committing any state to self, so that a
+        # failed reinit leaves an already-initialized object untouched.
+        vdata = np.loadtxt(filename, dtype=self.data_type)
+        rmin = vdata[0][0]
+        rmax = vdata[-1][0]
+        hh = vdata[1][0] - vdata[0][0]
+        dx = np.diff(vdata[:, 0])
+        if not np.all(dx > 0):
+            raise ValueError(
+                f"The distance grid in the pairwise table {filename} is not "
+                "strictly increasing. The tabulated potential must be provided "
+                "on a uniform grid with distances sorted in ascending order and "
+                "without duplicated rows. Please regrid the table."
+            )
+        if not np.allclose(dx, hh, rtol=1e-5, atol=1e-8):
             raise ValueError(
                 f"The distance grid in the pairwise table {filename} is not "
                 "evenly spaced. The tabulated potential must be provided on a "
                 "uniform grid, but the stride inferred from the first two rows "
-                f"({self.hh}) does not match all distance intervals. Please "
+                f"({hh}) does not match all distance intervals. Please "
                 "regrid the table to use a constant distance step."
             )
-        ncol = self.vdata.shape[1] - 1
+        ncol = vdata.shape[1] - 1
         n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
-        self.ntypes = int(n0 + 0.1)
-        assert self.ntypes * (self.ntypes + 1) // 2 == ncol, (
-            f"number of volumes provided in {filename} does not match guessed number of types {self.ntypes}"
+        ntypes = int(n0 + 0.1)
+        assert ntypes * (ntypes + 1) // 2 == ncol, (
+            f"number of volumes provided in {filename} does not match guessed number of types {ntypes}"
         )
+
+        self.vdata = vdata
+        self.rmin = rmin
+        self.rmax = rmax
+        self.hh = hh
+        self.ntypes = ntypes
 
         # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.
         self.rcut = rcut if rcut is not None else self.rmax

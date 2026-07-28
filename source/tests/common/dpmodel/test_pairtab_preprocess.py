@@ -291,6 +291,69 @@ class TestPairTabGridSpacing(unittest.TestCase):
             PairTab(filename="dummy_path", rcut=0.16)
 
     @patch("numpy.loadtxt")
+    def test_duplicate_distances(self, mock_loadtxt) -> None:
+        # a constant zero stride passes the uniformity check but yields hh == 0
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.01, 1.0],
+                [0.01, 0.8],
+                [0.01, 0.6],
+                [0.01, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "strictly increasing"):
+            PairTab(filename="dummy_path", rcut=0.04)
+
+    @patch("numpy.loadtxt")
+    def test_descending_grid(self, mock_loadtxt) -> None:
+        # a constant negative stride passes the uniformity check but yields hh < 0
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.04, 1.0],
+                [0.03, 0.8],
+                [0.02, 0.6],
+                [0.01, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "strictly increasing"):
+            PairTab(filename="dummy_path", rcut=0.04)
+
+    @patch("numpy.loadtxt")
+    def test_failed_reinit_keeps_state(self, mock_loadtxt) -> None:
+        uniform = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.03, 0.3],
+                [0.04, 0.0],
+            ]
+        )
+        mock_loadtxt.return_value = uniform
+        tab = PairTab(filename="dummy_path", rcut=0.04)
+        expected = tab.serialize()
+
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.09, 0.3],
+                [0.16, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            tab.reinit(filename="dummy_path", rcut=0.16)
+
+        actual = tab.serialize()
+        for key in ("rmin", "rmax", "hh", "ntypes", "rcut", "nspline"):
+            self.assertEqual(actual[key], expected[key])
+        for key in ("vdata", "tab_info", "tab_data"):
+            np.testing.assert_allclose(
+                actual["@variables"][key], expected["@variables"][key]
+            )
+
+    @patch("numpy.loadtxt")
     def test_uniform_grid(self, mock_loadtxt) -> None:
         mock_loadtxt.return_value = np.array(
             [
