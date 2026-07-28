@@ -71,7 +71,9 @@ class SpinModel(NativeOP):
         dp_atomic_model = self.backbone_model.get_dp_atomic_model()
         if dp_atomic_model is not None:
             descriptor = getattr(dp_atomic_model, "descriptor", None)
-            if descriptor is not None and hasattr(descriptor, "disable_graph_lower"):
+            if descriptor is not None:
+                # No-op on descriptors without a graph lower (BaseDescriptor
+                # concrete default).
                 descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()

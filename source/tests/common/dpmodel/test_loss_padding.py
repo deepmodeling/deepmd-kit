@@ -2238,3 +2238,94 @@ class TestDPModelEnerSpinLossForceMagMAEGradAccum:
             make_B,
             make_padded,
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 11 review fix: EnergySpinLoss flat-label reshape (data-loader shape)
+# ---------------------------------------------------------------------------
+# The data loader delivers per-atom vector labels FLAT: (nframes, natoms * 3)
+# (see ``deepmd/utils/data.py:892``), not the canonical (nframes, natoms, 3)
+# shape that ``masked_atom_mean`` requires.  ``EnergySpinLoss.call`` bridges
+# this via ``xp.reshape(model_dict["force"], (-1, natoms, 3))`` (and the same
+# for ``force_mag``).  Every test above constructs already-3D labels, so that
+# reshape is a no-op there.  This test feeds a genuinely FLAT label and pins
+# the reshape numerically.
+
+
+class TestDPModelEnerSpinLossFlatLabelReshape:
+    """Pin the flat-(nf, natoms*3) -> (nf, natoms, 3) label reshape.
+
+    Asserts the loss computed from a flat ``(nf, natoms * 3)`` force /
+    force_mag label equals the loss computed from the same data pre-reshaped
+    to ``(nf, natoms, 3)``, with a non-zero force_mag term. This fails (shape
+    error or wrong value) if the reshape in ``EnergySpinLoss.call`` is
+    removed.
+    """
+
+    def _make_loss(self):
+        return EnergySpinLossDPModel(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+        )
+
+    def test_flat_label_matches_3d_label(self):
+        nf = 2
+        force_pred = _rnd(nf, NP, 3)
+        force_label_3d = _rnd(nf, NP, 3)
+        force_mag_pred = _rnd(nf, NP, 3)
+        force_mag_label_3d = _rnd(nf, NP, 3)
+        mask_mag = _MASK_MAG_PAD_SPIN  # [2, NP, 1]
+
+        loss_obj = self._make_loss()
+
+        model_dict = {
+            "energy": np.zeros((nf, 1), dtype=np.float64),
+            "force": force_pred,
+            "force_mag": force_mag_pred,
+            "mask_mag": mask_mag,
+            "virial": np.zeros((nf, 9), dtype=np.float64),
+        }
+        label_3d = {
+            "energy": np.zeros((nf, 1), dtype=np.float64),
+            "force": force_label_3d,
+            "force_mag": force_mag_label_3d,
+            "virial": np.zeros((nf, 9), dtype=np.float64),
+            "find_energy": 0.0,
+            "find_force": 1.0,
+            "find_force_mag": 1.0,
+            "find_virial": 0.0,
+        }
+        # The real, motivating shape: the data loader delivers atomic vector
+        # labels flat -- (nf, natoms * 3) -- not (nf, natoms, 3).
+        label_flat = dict(label_3d)
+        label_flat["force"] = force_label_3d.reshape(nf, NP * 3)
+        label_flat["force_mag"] = force_mag_label_3d.reshape(nf, NP * 3)
+
+        loss_3d, more_loss_3d = loss_obj.call(1.0, NP, model_dict, label_3d)
+        loss_flat, more_loss_flat = loss_obj.call(1.0, NP, model_dict, label_flat)
+
+        assert np.isclose(float(loss_3d), float(loss_flat), rtol=1e-12, atol=1e-12), (
+            f"flat-label loss must equal 3D-label loss: {loss_flat} vs {loss_3d}"
+        )
+        assert float(more_loss_flat["rmse_fm"]) != 0.0, (
+            "force_mag loss term must be non-zero for this test to have teeth"
+        )
+        assert np.isclose(
+            float(more_loss_flat["rmse_fm"]),
+            float(more_loss_3d["rmse_fm"]),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        assert np.isclose(
+            float(more_loss_flat["rmse_fr"]),
+            float(more_loss_3d["rmse_fr"]),
+            rtol=1e-12,
+            atol=1e-12,
+        )
