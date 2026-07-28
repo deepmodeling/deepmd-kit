@@ -1016,7 +1016,9 @@ class Trainer:
                 "Model key 'data_stat_protect' must be the same in each branch when multitask!"
             )
             share_kwargs = {
-                "model_key_prob_map": dict(zip(self.model_keys, self.model_prob)),
+                "model_key_prob_map": dict(
+                    zip(self.model_keys, self.model_prob, strict=True)
+                ),
                 "data_stat_protect": _data_stat_protect[0],
             }
             if not has_initial_state or finetune_updates_statistics:

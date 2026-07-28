@@ -113,7 +113,7 @@ def make_stat_input(
 
 def _restore_from_file(
     stat_file_path: DPPath | None,
-    keys: list[str] = ["energy"],
+    keys: list[str],
 ) -> tuple[dict | None, dict | None]:
     pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
     items = load_paired_items(stat_file_path, pairs)
