@@ -5591,7 +5591,7 @@ def training_args(
             [str, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_save_dir,
+            doc=supported_backends("pt", "pt_expt") + doc_save_dir,
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
@@ -5602,7 +5602,7 @@ def training_args(
             [float, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_ckpt_keep_ratio,
+            doc=supported_backends("pt", "pt_expt") + doc_ckpt_keep_ratio,
             extra_check=lambda x: x is None or 0.0 < x < 1.0,
             extra_check_errmsg="must be a fraction in the open interval (0, 1)",
         ),
@@ -5611,14 +5611,14 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_enable_ema,
+            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt") + doc_ema_decay,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
@@ -5627,7 +5627,7 @@ def training_args(
             int,
             optional=True,
             default=3,
-            doc=supported_backends("pt") + doc_ema_ckpt_keep,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_ckpt_keep,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5936,7 +5936,9 @@ def validating_args() -> Argument:
         "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
-        "which are controlled by `model.enable_tf32`."
+        "which are controlled by `model.enable_tf32`. The PyTorch Exportable "
+        "backend always runs at full ('highest') matmul precision, so the "
+        "option has no effect there."
     )
     doc_amp_infer = (
         "Whether to enable bf16 automatic mixed precision for eval-time forwards "
@@ -5960,7 +5962,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_ema_full_validation,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -6024,7 +6026,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_compiled_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",
@@ -6038,7 +6040,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_amp_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(

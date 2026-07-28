@@ -35,19 +35,16 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
-from deepmd.pt.utils.dataset import (
-    DeepmdDataSetForLoader,
+from deepmd.pt.utils.utils import (
+    to_torch_tensor,
 )
-from deepmd.pt.utils.env import (
+from deepmd.pt_expt.train.ema import (
+    get_ema_validation_log_path,
+)
+from deepmd.pt_expt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
-)
-from deepmd.pt.utils.lmdb_dataset import (
-    LmdbDataset,
-)
-from deepmd.pt.utils.utils import (
-    to_torch_tensor,
 )
 from deepmd.utils.argcheck import (
     normalize_full_validation_metric,
@@ -83,6 +80,7 @@ STALE_FULL_VALIDATION_INFO_KEYS = (
     "full_validation_best_records",
 )
 BEST_CKPT_PREFIX = "best.ckpt"
+EMA_BEST_CKPT_PREFIX = "best_ema.ckpt"
 VAL_LOG_SIGNIFICANT_DIGITS = 5
 VAL_LOG_COLUMN_GAP = "   "
 VAL_LOG_HEADER_PREFIX = "# "
@@ -425,24 +423,22 @@ class FullValidator:
     def _iter_validation_data_systems(self) -> Iterator[Any]:
         """Yield ``DeepmdData``-like systems to evaluate in this run.
 
-        - For ``DpLoaderSet``-style validation data, each entry in
-          ``validation_data.systems`` is a :class:`DeepmdDataSetForLoader`,
-          and we forward its underlying ``DeepmdData`` instance.
-        - For ``LmdbDataset`` validation data, we lazily materialize a
-          :class:`LmdbTestData` snapshot (cached across calls) and yield one
-          :class:`LmdbTestDataNlocView` per atom-count and label-availability
-          group. This keeps scalar ``find_*`` flags valid while excluding
-          default-filled labels from metrics.
+        The validation data of each backend is recognized by the surface it
+        exposes rather than by its type, so one validator serves them all:
+
+        - An LMDB-backed dataset owns an ``_reader``. Its frames are lazily
+          materialized into a :class:`LmdbTestData` snapshot (cached across
+          calls) and yielded as one :class:`LmdbTestDataNlocView` per
+          atom-count and label-availability group. Grouping by atom count lets
+          mixed-nloc frames be stacked, and grouping by label availability
+          keeps the scalar ``find_*`` flags valid so default-filled labels stay
+          out of the metrics.
+        - A ``DeepmdDataSystem`` owns ``data_systems``, which are already
+          ``DeepmdData`` instances.
+        - A loader set owns ``systems``, each wrapping a ``DeepmdData`` in
+          ``data_system``.
         """
         validation_data = self.validation_data
-        if isinstance(validation_data, LmdbDataset):
-            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for (nloc, _signature), indices in sorted(
-                lmdb_test_data.find_signature_groups.items()
-            ):
-                yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
-            return
-
         if hasattr(validation_data, "_reader"):
             lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
             for (nloc, _signature), indices in sorted(
@@ -456,12 +452,13 @@ class FullValidator:
             return
 
         for dataset in validation_data.systems:
-            if not isinstance(dataset, DeepmdDataSetForLoader):
+            data_system = getattr(dataset, "data_system", None)
+            if data_system is None:
                 raise TypeError(
                     "Full validation expects each dataset in validation_data.systems "
-                    f"to be DeepmdDataSetForLoader, got {type(dataset)!r}."
+                    f"to expose a `data_system`, got {type(dataset)!r}."
                 )
-            yield dataset.data_system
+            yield data_system
 
     def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
@@ -896,3 +893,132 @@ class FullValidator:
                     f"{result.saved_best_path} ({metric_label} = "
                     f"{format_metric_number_for_log(metric_value)} {metric_unit})\n"
                 )
+
+
+def _flow_can_trigger(
+    validating_params: dict[str, Any],
+    num_steps: int,
+    flag: str,
+) -> bool:
+    """Whether a full validation flow is enabled and starts within the run."""
+    if not validating_params.get(flag, False):
+        return False
+    start_step = resolve_full_validation_start_step(
+        validating_params.get("full_val_start", 0.5),
+        num_steps,
+    )
+    return start_step is not None and start_step <= num_steps
+
+
+def build_full_validators(
+    *,
+    validating_params: dict[str, Any],
+    validation_data: Any,
+    model: torch.nn.Module,
+    state_store: dict[str, Any],
+    num_steps: int,
+    rank: int,
+    restart_training: bool,
+    checkpoint_dir: Path,
+    ensure_supported: Callable[[], None],
+    model_ema: Any | None = None,
+    zero_stage: int = 0,
+) -> tuple[FullValidator | None, FullValidator | None]:
+    """Build the full validators of a training run.
+
+    A run may validate the live weights, the EMA-smoothed weights, or both.
+    The two flows share the schedule, the metric and the validation data, and
+    differ only in the weights they read, the log they write and the prefix of
+    the checkpoints they select, so they are configured together here.
+
+    Parameters
+    ----------
+    validating_params : dict[str, Any]
+        The normalized ``validating`` section.
+    validation_data : Any
+        The validation data of the run, required by both flows.
+    model : torch.nn.Module
+        The single-task model to evaluate. The EMA flow evaluates the same
+        module with the shadow weights swapped in. A multi-task run passes its
+        task mapping instead, which is never read because ``ensure_supported``
+        rejects the run first.
+    state_store : dict[str, Any]
+        Where the live-weight flow records its best-checkpoint bookkeeping,
+        typically the trainer's ``train_infos``. The EMA flow keeps its own.
+    num_steps : int
+        The resolved run length.
+    rank : int
+        Process rank.
+    restart_training : bool
+        Whether the run continues an earlier one, in which case the validation
+        logs are appended to rather than truncated.
+    checkpoint_dir : Path
+        Directory receiving the best checkpoints of both flows.
+    ensure_supported : Callable[[], None]
+        Backend check raising when the run cannot be fully validated. It is
+        consulted once, and only when a flow would actually trigger.
+    model_ema : Any, optional
+        The EMA state of the run. Without it the EMA flow stays inactive, so
+        that ``ema_full_validation`` is ignored rather than rejected when EMA
+        itself is disabled.
+    zero_stage : int, optional
+        The ZeRO stage of the run, which decides whether checkpoint collection
+        is a collective operation.
+
+    Returns
+    -------
+    tuple[FullValidator | None, FullValidator | None]
+        The live-weight validator and the EMA-weight validator, each ``None``
+        when its flow is inactive.
+
+    Raises
+    ------
+    RuntimeError
+        If validation data is missing after the backend check passed.
+    """
+    live_active = _flow_can_trigger(validating_params, num_steps, "full_validation")
+    ema_active = model_ema is not None and _flow_can_trigger(
+        validating_params, num_steps, "ema_full_validation"
+    )
+    if not (live_active or ema_active):
+        return None, None
+    ensure_supported()
+    if validation_data is None:
+        raise RuntimeError(
+            "validation_data must be available after full validation checks."
+        )
+
+    def make(**overrides: Any) -> FullValidator:
+        return FullValidator(
+            validation_data=validation_data,
+            model=model,
+            num_steps=num_steps,
+            rank=rank,
+            zero_stage=zero_stage,
+            restart_training=restart_training,
+            checkpoint_dir=checkpoint_dir,
+            **overrides,
+        )
+
+    live_validator = (
+        make(validating_params=validating_params, state_store=state_store)
+        if live_active
+        else None
+    )
+    if not ema_active:
+        return live_validator, None
+    # The EMA flow runs on its own switch, so its schedule must not depend on
+    # the live-weight one being enabled as well.
+    ema_params = dict(validating_params)
+    ema_params["full_validation"] = True
+    ema_validator = make(
+        validating_params=ema_params,
+        state_store=model_ema.validation_state,
+        full_val_file=get_ema_validation_log_path(
+            validating_params.get("full_val_file", "val.log")
+        ),
+        best_checkpoint_prefix=EMA_BEST_CKPT_PREFIX,
+        emit_best_save_log=False,
+        model_eval_context=lambda: model_ema.apply_shadow(model),
+    )
+    return live_validator, ema_validator

@@ -8,7 +8,6 @@ converted to torch tensors at the boundary.
 
 import functools
 import logging
-import os
 import time
 from collections.abc import (
     Callable,
@@ -36,6 +35,7 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    build_checkpoint_stores,
     change_model_out_bias,
     change_model_out_bias_by_task,
     resolve_step_schedule,
@@ -50,15 +50,11 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
+from deepmd.loggers.training import (
+    log_parameter_counts,
+)
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
-)
-from deepmd.pt.train.utils import (
-    resolve_best_checkpoint_dir,
-)
-from deepmd.pt.train.validation import (
-    FullValidator,
-    resolve_full_validation_start_step,
 )
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
@@ -83,6 +79,21 @@ from deepmd.pt_expt.model import (
 )
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
+)
+from deepmd.pt_expt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+    ModelEMA,
+    get_ema_checkpoint_prefix,
+)
+from deepmd.pt_expt.train.utils import (
+    count_parameters,
+    infer_env_defaults,
+    resolve_best_checkpoint_dir,
+    scoped_env_defaults,
+)
+from deepmd.pt_expt.train.validation import (
+    FullValidator,
+    build_full_validators,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
@@ -328,14 +339,6 @@ def _as_task_map(
     if multi_task:
         return {model_key: value[model_key] for model_key in model_keys}
     return {DEFAULT_TASK_KEY: value}
-
-
-def _replace_latest_checkpoint_link(latest: Path, ckpt_path: Path) -> None:
-    """Point latest to ckpt_path using a target relative to latest's directory."""
-    if latest.is_symlink() or latest.exists():
-        latest.unlink()
-    latest.parent.mkdir(parents=True, exist_ok=True)
-    latest.symlink_to(os.path.relpath(ckpt_path, latest.parent))
 
 
 # ---------------------------------------------------------------------------
@@ -888,12 +891,14 @@ class _CompiledModel(torch.nn.Module):
         task_buffers: dict[str, torch.Tensor] | None = None,
         compile_opts: dict[str, Any] | None = None,
         compiled_by_structure: dict | None = None,
+        task_key: str = DEFAULT_TASK_KEY,
     ) -> None:
         super().__init__()
         self.original_model = original_model
         self.compiled_forward_lower: torch.nn.Module | None = None
         self._task_buf_order = task_buf_order
         self._structure_key = structure_key
+        self._task_key = task_key
         self._compile_opts = compile_opts
         # Stored only for the first-forward compile call; freed afterwards.
         self._task_buffers = task_buffers
@@ -906,6 +911,45 @@ class _CompiledModel(torch.nn.Module):
         # Resolved on the first forward: whether to compile the GRAPH lower
         # (graph-eligible mixed_types descriptors) or the dense forward_lower.
         self._graph_eligible: bool | None = None
+
+    def _compiled_lower_for(
+        self,
+        path: str,
+        trace: "Callable[[], tuple[torch.nn.Module, tuple[str, ...]]]",
+    ) -> tuple[torch.nn.Module, tuple[str, ...]]:
+        """Return the compiled graph of this model, tracing it at most once.
+
+        Tasks that share a model structure share one compiled graph, so a task
+        reaching this point second only reports the reuse.
+
+        Parameters
+        ----------
+        path : str
+            Name of the lowering being compiled, as it appears in the log.
+        trace : Callable[[], tuple[torch.nn.Module, tuple[str, ...]]]
+            Traces and compiles the graph, returning it together with the
+            order of the per-task buffers it expects.
+
+        Returns
+        -------
+        tuple[torch.nn.Module, tuple[str, ...]]
+            The compiled graph and its buffer order.
+        """
+        attributes = f"task={self._task_key}, path={path}"
+        cached = self._compiled_by_structure.get(self._structure_key)
+        if cached is not None:
+            log.info("Reusing the graph compiled for an earlier task (%s).", attributes)
+            return cached
+        log.info("Tracing and compiling the model (%s).", attributes)
+        started = time.perf_counter()
+        compiled = trace()
+        log.info(
+            "Finished compiling (%s) in %.1f s.",
+            attributes,
+            time.perf_counter() - started,
+        )
+        self._compiled_by_structure[self._structure_key] = compiled
+        return compiled
 
     def __getattr__(self, name: str) -> Any:
         # Delegate unknown lookups to original_model so that callers such as
@@ -1043,18 +1087,9 @@ class _CompiledModel(torch.nn.Module):
             # Tasks sharing this structure key share the same descriptor /
             # fitting net and therefore the same dims, so a single compiled
             # graph is safe to reuse across them.
-            if self._structure_key in self._compiled_by_structure:
-                compiled_lower, buf_order = self._compiled_by_structure[
-                    self._structure_key
-                ]
-                log.info("Reusing compiled graph (shared model structure, lazy).")
-            else:
-                log.info(
-                    "Lazy compile: tracing model on first forward call "
-                    "(structure_key=%s).",
-                    self._structure_key,
-                )
-                compiled_lower, buf_order = _trace_and_compile(
+            compiled_lower, buf_order = self._compiled_lower_for(
+                "neighbor-list",
+                lambda: _trace_and_compile(
                     self.original_model,
                     ext_coord,
                     ext_atype,
@@ -1065,11 +1100,8 @@ class _CompiledModel(torch.nn.Module):
                     charge_spin=charge_spin,
                     task_buffers=self._task_buffers,
                     compile_opts=self._compile_opts,
-                )
-                self._compiled_by_structure[self._structure_key] = (
-                    compiled_lower,
-                    buf_order,
-                )
+                ),
+            )
             self.compiled_forward_lower = compiled_lower
             self._task_buf_order = buf_order
             self._task_buffers = None  # free; no longer needed after compile
@@ -1231,29 +1263,17 @@ class _CompiledModel(torch.nn.Module):
 
         # Lazy compile of the GRAPH lower (cached per structure key).
         if self.compiled_forward_lower is None:
-            if self._structure_key in self._compiled_by_structure:
-                compiled_lower, buf_order = self._compiled_by_structure[
-                    self._structure_key
-                ]
-                log.info("Reusing compiled graph lower (shared structure, lazy).")
-            else:
-                log.info(
-                    "Lazy compile (graph lower): tracing on first forward call "
-                    "(structure_key=%s).",
-                    self._structure_key,
-                )
-                compiled_lower, buf_order = _trace_and_compile_graph(
+            compiled_lower, buf_order = self._compiled_lower_for(
+                "neighbor-graph",
+                lambda: _trace_and_compile_graph(
                     _model,
                     fparam,
                     aparam,
                     charge_spin,
                     task_buffers=self._task_buffers,
                     compile_opts=self._compile_opts,
-                )
-                self._compiled_by_structure[self._structure_key] = (
-                    compiled_lower,
-                    buf_order,
-                )
+                ),
+            )
             self.compiled_forward_lower = compiled_lower
             self._task_buf_order = buf_order
             self._task_buffers = None
@@ -1422,7 +1442,9 @@ class Trainer(AbstractTrainer):
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
-        self.max_ckpt_keep = int(training_params.get("max_ckpt_keep", 5))
+        self.enable_ema = bool(training_params.get("enable_ema", False))
+        self.ema_decay = float(training_params.get("ema_decay", 0.999))
+        self.ema_save_ckpt = get_ema_checkpoint_prefix(self.save_ckpt)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
         self.change_bias_after_training = bool(
@@ -1434,12 +1456,16 @@ class Trainer(AbstractTrainer):
         do_case_embd, case_embd_index = (
             _get_case_embd_config(model_params) if self.multi_task else (False, {})
         )
-        for model_key in self.model_keys:
-            self.models[model_key] = get_model(
-                deepcopy(self.model_params_by_task[model_key])
-            ).to(DEVICE)
-            if do_case_embd and not resuming:
-                self.models[model_key].set_case_embd(case_embd_index[model_key])
+        # Descriptors sample the eval-time policy variables exactly once, while
+        # they are being constructed; keep the config-derived defaults scoped to
+        # construction so they do not leak into the rest of the process.
+        with scoped_env_defaults(infer_env_defaults(validating_params)):
+            for model_key in self.model_keys:
+                self.models[model_key] = get_model(
+                    deepcopy(self.model_params_by_task[model_key])
+                ).to(DEVICE)
+                if do_case_embd and not resuming:
+                    self.models[model_key].set_case_embd(case_embd_index[model_key])
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
         # Loss ----------------------------------------------------------------
@@ -1553,6 +1579,16 @@ class Trainer(AbstractTrainer):
         )
         self.num_steps = schedule.num_steps
         self.model_prob = schedule.model_prob
+
+        # Checkpoint layout ----------------------------------------------------
+        # num_steps is final here, so a retention ratio can be converted into an
+        # absolute keep count once.
+        self.ckpt_store, self.ema_ckpt_store = build_checkpoint_stores(
+            training_params,
+            num_steps=self.num_steps,
+            ema_prefix=self.ema_save_ckpt,
+            rank=self.rank,
+        )
 
         # Learning rate -------------------------------------------------------
         self.lr_schedule = make_learning_rate_schedule(
@@ -1688,6 +1724,7 @@ class Trainer(AbstractTrainer):
         )
 
         # Resume --------------------------------------------------------------
+        ema_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -1701,10 +1738,15 @@ class Trainer(AbstractTrainer):
                     resume_model, map_location=DEVICE, weights_only=True
                 )
                 if "model" in state_dict:
+                    # Optimizer and EMA state describe the weights of the run
+                    # they were saved by; a finetune starts a new run and keeps
+                    # neither.
+                    continues_run = self.restart_training and finetune_model is None
                     optimizer_state_dict = (
-                        state_dict["optimizer"]
-                        if self.restart_training and finetune_model is None
-                        else None
+                        state_dict["optimizer"] if continues_run else None
+                    )
+                    ema_state_dict = (
+                        state_dict.get(EMA_CHECKPOINT_KEY) if continues_run else None
                     )
                     state_dict = state_dict["model"]
                 else:
@@ -1885,6 +1927,15 @@ class Trainer(AbstractTrainer):
                     last_epoch=self.start_step - 1,
                 )
 
+        # Exponential moving average -------------------------------------------
+        # The shadow tracks the raw models, whose parameter tensors the compiled
+        # graphs keep sharing, so it is unaffected by compilation below.
+        self.model_ema = (
+            ModelEMA(self.model, decay=self.ema_decay, state=ema_state_dict)
+            if self.enable_ema
+            else None
+        )
+
         self._configure_neighbor_graph_method(
             training_params.get("neighbor_graph_method", "auto")
         )
@@ -1894,7 +1945,8 @@ class Trainer(AbstractTrainer):
         if self.enable_compile:
             check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
-            log.info("Compiling model with torch.compile (%s)", compile_opts)
+            if compile_opts:
+                log.info("torch.compile options: %s", compile_opts)
             self._compile_model(compile_opts)
 
         self.training_tasks = self._make_training_tasks()
@@ -1907,52 +1959,40 @@ class Trainer(AbstractTrainer):
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
         )
-        self.full_validator = self._create_full_validator(
+        self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
             validation_data=self.validation_data if not self.multi_task else None,
         )
 
-    def _create_full_validator(
+        if self.rank == 0:
+            log_parameter_counts(
+                {key: count_parameters(self.models[key]) for key in self.model_keys},
+                multi_task=self.multi_task,
+            )
+
+    def _create_full_validators(
         self,
         *,
         validating_params: dict[str, Any],
         validation_data: Any | None,
-    ) -> FullValidator | None:
-        """Create the runtime full validator when it is active."""
-        if not self._is_validation_requested(validating_params, "full_validation"):
-            return None
-        self._raise_if_full_validation_unsupported(validation_data)
-        if validation_data is None:
-            raise RuntimeError(
-                "validation_data must be available after full validation checks."
-            )
-        return FullValidator(
+    ) -> tuple[FullValidator | None, FullValidator | None]:
+        """Create the live-weight and EMA-weight full validators."""
+        return build_full_validators(
             validating_params=validating_params,
             validation_data=validation_data,
-            model=self.models[DEFAULT_TASK_KEY],
+            model=self.model,
             state_store=self._unwrapped.train_infos,
             num_steps=self.num_steps,
             rank=self.rank,
-            zero_stage=0,
             restart_training=self.restart_training,
             checkpoint_dir=resolve_best_checkpoint_dir(
                 validating_params, self.save_ckpt
             ),
+            ensure_supported=lambda: self._raise_if_full_validation_unsupported(
+                validation_data
+            ),
+            model_ema=self.model_ema,
         )
-
-    def _is_validation_requested(
-        self,
-        validating_params: dict[str, Any],
-        flag_name: str,
-    ) -> bool:
-        """Check whether a full validation flow can trigger during this run."""
-        if not validating_params.get(flag_name, False):
-            return False
-        start_step = resolve_full_validation_start_step(
-            validating_params.get("full_val_start", 0.5),
-            self.num_steps,
-        )
-        return start_step is not None and start_step <= self.num_steps
 
     def _raise_if_full_validation_unsupported(
         self,
@@ -2120,9 +2160,11 @@ class Trainer(AbstractTrainer):
                 task_buffers=task_bufs if task_bufs else None,
                 compile_opts=compile_opts,
                 compiled_by_structure=_compiled_by_structure,
+                task_key=task_key,
             )
             log.info(
-                "Lazy compile registered (task=%s); will trace on first forward call.",
+                "Compilation enabled (task=%s); the graph is traced and compiled "
+                "on the first training step.",
                 task_key,
             )
 
@@ -2284,12 +2326,16 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
 
     def save_checkpoint(self, step: int) -> None:
-        ckpt_path = Path(f"{self.save_ckpt}-{step}.pt")
+        ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
-        latest = Path(f"{self.save_ckpt}.pt")
-        _replace_latest_checkpoint_link(latest, ckpt_path)
-        self._cleanup_old_checkpoints()
-        log.info(f"Saved checkpoint to {ckpt_path}")
+        self.ckpt_store.publish(ckpt_path)
+        self.ckpt_store.prune(ckpt_path)
+        log.info(f"Saved model to {ckpt_path}")
+        if self.model_ema is not None:
+            ema_path = self.ema_ckpt_store.path_for(step)
+            self._save_checkpoint_to_path(ema_path, step=step, use_ema_weights=True)
+            self.ema_ckpt_store.publish(ema_path)
+            self.ema_ckpt_store.prune(ema_path)
 
     def _save_full_validation_checkpoint(
         self,
@@ -2301,8 +2347,61 @@ class Trainer(AbstractTrainer):
         del lr
         self._save_checkpoint_to_path(save_path, step=step)
 
-    def _save_checkpoint_to_path(self, ckpt_path: Path, *, step: int) -> None:
-        """Serialize the current trainer state to an explicit checkpoint path."""
+    def _save_full_validation_ema_checkpoint(
+        self,
+        save_path: Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save an EMA-weight checkpoint selected by EMA full validation.
+
+        The validator restores the live weights before selecting a checkpoint,
+        so the shadow has to be applied again while writing it.
+        """
+        del lr
+        self._save_checkpoint_to_path(save_path, step=step, use_ema_weights=True)
+
+    def _save_checkpoint_to_path(
+        self,
+        ckpt_path: Path,
+        *,
+        step: int,
+        use_ema_weights: bool = False,
+    ) -> None:
+        """Serialize the current trainer state to an explicit checkpoint path.
+
+        Parameters
+        ----------
+        ckpt_path : Path
+            Destination of the checkpoint file.
+        step : int
+            Training step recorded in the checkpoint.
+        use_ema_weights : bool, optional
+            Whether to substitute the EMA-smoothed weights for the live ones.
+            Such a checkpoint is a deployment snapshot: it carries neither the
+            optimizer state nor the EMA state, both of which describe the live
+            weights it does not contain.
+        """
+        if use_ema_weights:
+            with self.model_ema.apply_shadow(self.model):
+                self._write_checkpoint(
+                    ckpt_path,
+                    step=step,
+                    include_optimizer=False,
+                    include_ema_state=False,
+                )
+            return
+        self._write_checkpoint(ckpt_path, step=step)
+
+    def _write_checkpoint(
+        self,
+        ckpt_path: Path,
+        *,
+        step: int,
+        include_optimizer: bool = True,
+        include_ema_state: bool = True,
+    ) -> None:
+        """Serialize the wrapper, and optionally optimizer and EMA state."""
         self._unwrapped.train_infos["step"] = step
         # When compiled, wrapper.model[key] is _CompiledModel whose state_dict
         # uses keys like "original_model.*".  Restart would load into a plain
@@ -2317,32 +2416,16 @@ class Trainer(AbstractTrainer):
                 compiled_backup[task_key] = m
                 wrapper.model[task_key] = m.original_model
         try:
-            state = {
-                "model": wrapper.state_dict(),
-                "optimizer": self.optimizer.state_dict(),
-            }
+            state: dict[str, Any] = {"model": wrapper.state_dict()}
+            if include_optimizer:
+                state["optimizer"] = self.optimizer.state_dict()
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
+        if include_ema_state and self.model_ema is not None:
+            state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
-
-    def _cleanup_old_checkpoints(self) -> None:
-        """Remove old step checkpoint files beyond the retention limit."""
-        if self.max_ckpt_keep <= 0:
-            return
-        ckpt_prefix_path = Path(self.save_ckpt)
-        ckpt_parent = ckpt_prefix_path.parent
-        ckpt_prefix = ckpt_prefix_path.name
-        checkpoints: list[tuple[int, Path]] = []
-        for path in ckpt_parent.glob(f"{ckpt_prefix}-*.pt"):
-            if path.is_dir() or path.is_symlink():
-                continue
-            step_text = path.name.removeprefix(f"{ckpt_prefix}-").removesuffix(".pt")
-            if step_text.isdigit():
-                checkpoints.append((int(step_text), path))
-        for _, path in sorted(checkpoints)[: -self.max_ckpt_keep]:
-            path.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
     # Training loop
@@ -2376,7 +2459,6 @@ class Trainer(AbstractTrainer):
     def run(self) -> None:
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
-        wall_start = time.time()
         try:
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:
@@ -2385,7 +2467,8 @@ class Trainer(AbstractTrainer):
                     self.save_checkpoint(self.num_steps)
         finally:
             self._close_data_systems()
-        log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+        if self.rank_context.is_chief:
+            log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
     def _close_data_systems(self) -> None:
         """Release asynchronous data pipelines owned by this trainer."""
@@ -2422,16 +2505,19 @@ class Trainer(AbstractTrainer):
         display_step: int,
         learning_rate: float,
     ) -> None:
-        """Run optional full validation for one step."""
-        if self.full_validator is None:
-            return None
-        self.full_validator.run(
-            step_id=display_step,
-            display_step=display_step,
-            lr=learning_rate,
-            save_checkpoint=self._save_full_validation_checkpoint,
-        )
-        return None
+        """Run the active full validation flows for one step."""
+        for validator, save_checkpoint in (
+            (self.full_validator, self._save_full_validation_checkpoint),
+            (self.ema_full_validator, self._save_full_validation_ema_checkpoint),
+        ):
+            if validator is None:
+                continue
+            validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=learning_rate,
+                save_checkpoint=save_checkpoint,
+            )
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task using DeePMD's seeded random helper."""
@@ -2492,6 +2578,8 @@ class Trainer(AbstractTrainer):
             )
 
         self._optimizer_step()
+        if self.model_ema is not None:
+            self.model_ema.update(self.model)
         return TrainStepResult(
             task_key=task_key,
             step=step,
