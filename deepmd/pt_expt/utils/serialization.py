@@ -191,7 +191,7 @@ def _needs_with_comm_artifact(
 
     atomic_model = getattr(model, "atomic_model", None)
     if isinstance(atomic_model, LinearEnergyAtomicModel):
-        # Compositions (e.g. analytical bridging: learned + InterPotential)
+        # Compositions (e.g. analytical bridging: learned + InnerPotential)
         # are single-rank on the graph route: per-edge analytical terms fold
         # each node's full edge set, which a single rank cannot observe for
         # ghost owners (pt's supports_edge_parallel()==False rationale).

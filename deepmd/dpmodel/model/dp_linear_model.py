@@ -35,7 +35,7 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     energies; on the NeighborGraph route every child consumes the same
     graph, so the summed energy differentiates through one shared edge
     backward. Used e.g. for analytical bridging compositions
-    (learned model + :class:`~deepmd.dpmodel.atomic_model.inter_potential.InterPotentialAtomicModel`).
+    (learned model + :class:`~deepmd.dpmodel.atomic_model.inner_potential.InnerPotentialAtomicModel`).
     """
 
     def __init__(
