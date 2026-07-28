@@ -368,6 +368,19 @@ class TestDPA1AngularMoments(unittest.TestCase):
         (gradient,) = torch.autograd.grad(output.sum(), raw_gain)
         self.assertGreater(torch.linalg.vector_norm(gradient).item(), 0.0)
 
+    def test_level_zero_shares_degree_gain_parameter(self) -> None:
+        base = self._build_descriptor(lmax=4)
+        branch = self._build_descriptor(lmax=4)
+        base_gain = base.se_atten.adam_degree_gain_raw
+        branch_gain = branch.se_atten.adam_degree_gain_raw
+        assert base_gain is not None
+        assert branch_gain is not None
+        self.assertIsNot(branch_gain, base_gain)
+
+        branch.share_params(base, shared_level=0, resume=True)
+
+        self.assertIs(branch.se_atten.adam_degree_gain_raw, base_gain)
+
     def test_lmax_two_resolves_quadrupole_collision(self) -> None:
         square = self._square_directions()
         tetrahedral = self._tetrahedral_directions()
