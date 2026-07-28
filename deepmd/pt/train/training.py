@@ -27,6 +27,7 @@ import torch
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     CheckpointStore,
+    ShardingPolicy,
     TrainingTimer,
     build_checkpoint_stores,
     change_model_out_bias,
@@ -106,9 +107,11 @@ from deepmd.pt_expt.train.ema import (
     ModelEMA,
     get_ema_checkpoint_prefix,
 )
-from deepmd.pt_expt.train.utils import (
+from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+)
+from deepmd.pt_expt.train.utils import (
     count_parameters,
     infer_env_defaults,
     resolve_best_checkpoint_dir,
@@ -229,18 +232,14 @@ class Trainer:
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )
-        self.zero_stage = int(training_params.get("zero_stage", 0))
-        if self.zero_stage not in (0, 1, 2, 3):
-            raise ValueError(
-                f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
-            )
-        if self.enable_ema and self.zero_stage >= 2:
+        self.sharding = ShardingPolicy.from_training_params(
+            training_params, is_distributed=self.is_distributed
+        )
+        if self.enable_ema and self.sharding.shards_parameters:
             raise ValueError(
                 "training.enable_ema currently only supports training.zero_stage < 2."
             )
-        if self.zero_stage > 0 and not self.is_distributed:
-            self.zero_stage = 0
-        if self.zero_stage > 0 and self.change_bias_after_training:
+        if self.sharding.enabled and self.change_bias_after_training:
             raise ValueError(
                 "training.zero_stage does not support change_bias_after_training."
             )
@@ -441,11 +440,11 @@ class Trainer:
 
         # Optimizer
         self.opt_type, self.opt_param = get_opt_param(optimizer_params)
-        if self.zero_stage > 0 and self.multi_task:
+        if self.sharding.enabled and self.multi_task:
             raise ValueError(
                 "training.zero_stage is currently only supported in single-task training."
             )
-        if self.zero_stage > 0 and self.opt_type == "LKF":
+        if self.sharding.enabled and self.opt_type == "LKF":
             raise ValueError("training.zero_stage does not support LKF optimizer.")
 
         # Loss parameters are also used to select SeZM/DeNS execution modes.
@@ -1032,7 +1031,7 @@ class Trainer:
 
         if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
-            if self.zero_stage >= 2:
+            if self.sharding.shards_parameters:
                 if fully_shard is None:
                     raise RuntimeError(
                         "training.zero_stage>=2 requires FSDP2, which is only "
@@ -1048,7 +1047,7 @@ class Trainer:
                     dist.broadcast(p.data, src=0)
                 for b in self.wrapper.buffers():
                     dist.broadcast(b.data, src=0)
-                reshard = self.zero_stage >= 3
+                reshard = self.sharding.reshards_after_forward
                 self.wrapper = fully_shard(self.wrapper, reshard_after_forward=reshard)
             else:
                 # zero_stage=0 or 1: standard DDP (ZeRO-1 will wrap the optimizer)
@@ -1103,7 +1102,7 @@ class Trainer:
                     # ops lack DTensor sharding propagation on older PyTorch, so
                     # fall back to the per-tensor path under zero_stage >= 2.
                     # DDP / ZeRO-1 keep plain tensors and use the default.
-                    "use_foreach": False if self.zero_stage >= 2 else None,
+                    "use_foreach": False if self.sharding.shards_parameters else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -1116,7 +1115,7 @@ class Trainer:
             )
             if self.opt_type == "HybridMuon":
                 target_optimizer = (
-                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                    self.optimizer.optim if self.sharding.stage == 1 else self.optimizer
                 )
                 target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
@@ -1134,16 +1133,8 @@ class Trainer:
                 state=ema_state_dict,
             )
 
-        if self.zero_stage > 0 and self.rank == 0:
-            if self.zero_stage == 1:
-                log.info("Enabled DDP + ZeRO Stage-1 Optimizer State Sharding.")
-            else:
-                stage = (
-                    "FULL_SHARD (Stage 3)"
-                    if self.zero_stage >= 3
-                    else "SHARD_GRAD_OP (Stage 2)"
-                )
-                log.info(f"Enabled FSDP2 {stage}.")
+        if self.sharding.enabled and self.rank == 0:
+            log.info(self.sharding.describe())
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
@@ -1240,7 +1231,7 @@ class Trainer:
                 validation_data
             ),
             model_ema=self.model_ema,
-            zero_stage=self.zero_stage,
+            sharding=self.sharding,
         )
 
     def _raise_if_full_validation_unsupported(
@@ -1266,7 +1257,7 @@ class Trainer:
                 "to be configured."
             )
 
-        if self.zero_stage >= 2:
+        if self.sharding.shards_parameters:
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training with training.zero_stage < 2."
@@ -1300,7 +1291,7 @@ class Trainer:
         torch.optim.Optimizer
             Constructed optimizer instance.
         """
-        if self.zero_stage == 1:
+        if self.sharding.stage == 1:
             return ZeroRedundancyOptimizer(
                 self.wrapper.parameters(),
                 optimizer_class=optimizer_class,
@@ -1310,7 +1301,7 @@ class Trainer:
 
     def _get_inner_module(self) -> ModelWrapper:
         """Unwrap DDP if needed. FSDP2 is in-place so no unwrapping required."""
-        if self.is_distributed and self.zero_stage <= 1:
+        if self.is_distributed and not self.sharding.shards_parameters:
             return self.wrapper.module
         return self.wrapper
 
@@ -1320,7 +1311,7 @@ class Trainer:
         """Load optimizer state for restart training when available."""
         if optimizer_state_dict is None or not self.restart_training:
             return
-        if self.zero_stage >= 2:
+        if self.sharding.shards_parameters:
             set_optimizer_state_dict(
                 self.wrapper,
                 self.optimizer,
@@ -1411,7 +1402,7 @@ class Trainer:
                     # norm. Skip per-param collection in this case to avoid misleading values.
                     if (
                         self.enable_tensorboard
-                        and self.zero_stage < 2
+                        and not self.sharding.shards_parameters
                         and (
                             display_step_id % self.tensorboard_freq == 0
                             or display_step_id == 1
@@ -1425,7 +1416,7 @@ class Trainer:
                     total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        stable=self.zero_stage < 2,
+                        stable=not self.sharding.shards_parameters,
                     )
                     self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
@@ -1652,7 +1643,8 @@ class Trainer:
                                     is_train=True, task_key=_key
                                 )
                                 if input_dict and not (
-                                    self.is_distributed and self.zero_stage >= 2
+                                    self.is_distributed
+                                    and self.sharding.shards_parameters
                                 ):
                                     _, loss, more_loss = self._get_inner_module()(
                                         **input_dict,
@@ -1756,7 +1748,7 @@ class Trainer:
                     self.wrapper.named_parameters
                 )
             if should_save_checkpoint and (
-                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+                self.sharding.enabled or self.rank == 0 or dist.get_rank() == 0
             ):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = self.ckpt_store.path_for(display_step_id)
@@ -1871,7 +1863,7 @@ class Trainer:
                 )
                 self.ema_ckpt_store.publish(self.latest_ema_model)
 
-        if self.num_steps == 0 and self.zero_stage > 0:
+        if self.num_steps == 0 and self.sharding.enabled:
             # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
             self.latest_model = self.ckpt_store.path_for(0)
             self.save_model(self.latest_model, lr=0, step=0)
@@ -1883,7 +1875,7 @@ class Trainer:
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
             if self.num_steps == 0:
-                if self.zero_stage == 0:
+                if not self.sharding.enabled:
                     # When num_steps is 0, the checkpoint is never saved in the loop
                     self.latest_model = self.ckpt_store.path_for(0)
                     self.save_model(self.latest_model, lr=0, step=0)
@@ -1978,7 +1970,7 @@ class Trainer:
             else nullcontext()
         )
         with ema_context:
-            if self.zero_stage >= 2:
+            if self.sharding.shards_parameters:
                 # FSDP2: collective op, all ranks participate; rank 0 gets full state
                 options = StateDictOptions(full_state_dict=True, cpu_offload=True)
                 model_state = get_model_state_dict(self.wrapper, options=options)
@@ -1989,7 +1981,7 @@ class Trainer:
                     if include_optimizer
                     else None
                 )
-            elif self.zero_stage == 1:
+            elif self.sharding.stage == 1:
                 # ZeRO-1: consolidate sharded optimizer state to rank 0.
                 model_state = module.state_dict()
                 if use_ema_weights:

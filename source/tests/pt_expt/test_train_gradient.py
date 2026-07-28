@@ -3,7 +3,7 @@ import unittest
 
 import torch
 
-from deepmd.pt_expt.train.utils import (
+from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
 )

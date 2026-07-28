@@ -583,7 +583,7 @@ class AbstractTrainer(ABC):
                 )
 
                 if (
-                    self.rank_context.is_chief
+                    self._participates_in_checkpoint()
                     and self.trainer_config.save_freq > 0
                     and display_step % self.trainer_config.save_freq == 0
                 ):
@@ -640,6 +640,17 @@ class AbstractTrainer(ABC):
         """Hook called after training resources have been closed."""
         return None
 
+    @property
+    def checkpoint_is_collective(self) -> bool:
+        """Whether every rank must enter :meth:`save_checkpoint`.
+
+        A backend that shards training state assembles a checkpoint from all
+        the shards, which is a collective operation: confining the call to the
+        chief would leave the other ranks waiting at the next barrier. Such a
+        backend gates the write itself.
+        """
+        return False
+
     def run_full_validation(
         self,
         *,
@@ -678,7 +689,12 @@ class AbstractTrainer(ABC):
 
     @abstractmethod
     def save_checkpoint(self, step: int) -> None:
-        """Persist a checkpoint for a one-based step."""
+        """Persist a checkpoint for a one-based step.
+
+        Called on the chief alone, unless :attr:`checkpoint_is_collective`
+        says otherwise; a backend that opts into being called on every rank is
+        responsible for letting only one of them write to the checkpoint path.
+        """
 
     def _open_learning_curve(self) -> TextIO | None:
         if (
@@ -700,8 +716,12 @@ class AbstractTrainer(ABC):
             and display_step % self.trainer_config.disp_freq == 0
         )
 
+    def _participates_in_checkpoint(self) -> bool:
+        """Whether this rank takes part in writing a checkpoint."""
+        return self.rank_context.is_chief or self.checkpoint_is_collective
+
     def _should_save_final_checkpoint(self) -> bool:
-        if not self.rank_context.is_chief:
+        if not self._participates_in_checkpoint():
             return False
         if self.trainer_config.num_steps <= self.trainer_config.start_step:
             return False

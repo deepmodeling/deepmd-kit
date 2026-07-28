@@ -5508,7 +5508,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
+        "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
     doc_neighbor_graph_method = (
         "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
@@ -5712,7 +5714,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt") + doc_zero_stage,
+            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",

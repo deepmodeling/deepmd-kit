@@ -291,7 +291,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
                 new_best_path = validator._update_best_state(
@@ -361,7 +360,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=True,
                 )
             finally:
@@ -394,7 +392,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     checkpoint_dir=best_dir,
                 )
@@ -430,7 +427,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
@@ -486,7 +482,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_natoms = []
@@ -547,7 +542,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_flags = []
@@ -620,7 +614,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_groups = []
@@ -660,7 +653,6 @@ class TestValidationHelpers(unittest.TestCase):
             state_store={},
             num_steps=10,
             rank=0,
-            zero_stage=0,
             restart_training=False,
         )
 
@@ -825,7 +817,6 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
                     state_store={},
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
                 self.assertIs(validator.profile, SPIN_FULL_VALIDATION_PROFILE)

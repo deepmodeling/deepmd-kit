@@ -232,6 +232,32 @@ def test_non_chief_rank_skips_user_visible_outputs(tmp_path: Path) -> None:
     assert not lcurve.exists()
 
 
+def test_collective_checkpointing_reaches_every_rank(tmp_path: Path) -> None:
+    class CollectiveTrainer(DummyTrainer):
+        @property
+        def checkpoint_is_collective(self) -> bool:
+            return True
+
+    lcurve = tmp_path / "lcurve.out"
+    trainer = CollectiveTrainer(
+        TrainerConfig(
+            num_steps=2,
+            disp_file=str(lcurve),
+            disp_freq=1,
+            save_freq=1,
+            timing_in_training=False,
+        ),
+        rank_context=RankContext(rank=1, world_size=2),
+    )
+
+    trainer.run(TrainingTaskCollection.single(DummyData([1.0, 2.0]), DummyData([10.0])))
+
+    # Assembling a checkpoint from shards is collective, so a non-chief rank
+    # takes part in it while still writing none of the chief's own output.
+    assert trainer.checkpoints == [1, 2]
+    assert not lcurve.exists()
+
+
 def test_abstract_trainer_runs_full_validation_before_checkpoint(
     tmp_path: Path,
 ) -> None:

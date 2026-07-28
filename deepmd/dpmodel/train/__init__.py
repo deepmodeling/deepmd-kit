@@ -20,6 +20,9 @@ from .schedule import (
     StepSchedule,
     resolve_step_schedule,
 )
+from .sharding import (
+    ShardingPolicy,
+)
 from .timing import (
     DisplayInterval,
     TrainingTimer,
@@ -45,6 +48,7 @@ __all__ = [
     "DisplayInterval",
     "LearningCurveWriter",
     "RankContext",
+    "ShardingPolicy",
     "StepSchedule",
     "TrainEntrypointOptions",
     "TrainStepResult",

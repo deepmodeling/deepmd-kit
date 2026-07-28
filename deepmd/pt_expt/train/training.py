@@ -26,11 +26,28 @@ from typing import (
 import numpy as np
 import torch
 import torch.distributed as dist
+from torch.distributed.checkpoint.state_dict import (
+    StateDictOptions,
+    get_model_state_dict,
+    get_optimizer_state_dict,
+    set_optimizer_state_dict,
+)
+from torch.distributed.optim import (
+    ZeroRedundancyOptimizer,
+)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None  # type: ignore[assignment]
 
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
     RankContext,
+    ShardingPolicy,
     TrainerConfig,
     TrainingTask,
     TrainingTaskCollection,
@@ -84,6 +101,10 @@ from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
     ModelEMA,
     get_ema_checkpoint_prefix,
+)
+from deepmd.pt_expt.train.gradient import (
+    NonFiniteGradGuard,
+    clip_grad_norm_,
 )
 from deepmd.pt_expt.train.utils import (
     count_parameters,
@@ -1436,6 +1457,9 @@ class Trainer(AbstractTrainer):
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
+        self.sharding = ShardingPolicy.from_training_params(
+            training_params, is_distributed=self.is_distributed
+        )
 
         # Iteration config
         self.disp_file = training_params.get("disp_file", "lcurve.out")
@@ -1450,6 +1474,8 @@ class Trainer(AbstractTrainer):
         self.change_bias_after_training = bool(
             training_params.get("change_bias_after_training", False)
         )
+        self.enable_compile = bool(training_params.get("enable_compile", False))
+        self._raise_if_sharding_unsupported()
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
@@ -1597,6 +1623,7 @@ class Trainer(AbstractTrainer):
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
 
         # Model wrapper -------------------------------------------------------
         self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)
@@ -1643,88 +1670,12 @@ class Trainer(AbstractTrainer):
                 **share_kwargs,
             )
 
-        # DDP wrapping --------------------------------------------------------
-        if self.is_distributed:
-            # Multi-task uses only one fitting_net per step, so unused
-            # parameters exist in the graph. Single-task doesn't need this.
-            _find_unused = self.multi_task
-            if DEVICE.type == "cuda":
-                from deepmd.pt_expt.utils.env import (
-                    LOCAL_RANK,
-                )
-
-                torch.cuda.set_device(LOCAL_RANK)
-                self.wrapper = torch.nn.parallel.DistributedDataParallel(
-                    self.wrapper,
-                    device_ids=[LOCAL_RANK],
-                    find_unused_parameters=_find_unused,
-                    output_device=LOCAL_RANK,
-                )
-            else:
-                # CPU (gloo backend) — no device_ids
-                self.wrapper = torch.nn.parallel.DistributedDataParallel(
-                    self.wrapper,
-                    find_unused_parameters=_find_unused,
-                )
-
-        # Optimiser -----------------------------------------------------------
-        opt_type = optimizer_params.get("type", "Adam")
-        if opt_type not in {"Adam", "AdamW", "HybridMuon"}:
-            raise ValueError(f"Unsupported optimizer type: {opt_type}")
-
-        # LambdaLR multiplies each param group's initial learning rate by the
-        # lambda value.  Warmup schedules legitimately return zero at step 0,
-        # so use the nonzero schedule base as the denominator and let the
-        # lambda initialize the optimizer to the requested warmup value.
-        initial_lr = float(self.lr_schedule.start_lr)
-        adam_betas = (
-            float(optimizer_params["adam_beta1"]),
-            float(optimizer_params["adam_beta2"]),
-        )
-        weight_decay = float(optimizer_params["weight_decay"])
-
-        if opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(
-                self.wrapper.parameters(),
-                lr=initial_lr,
-                betas=adam_betas,
-                weight_decay=weight_decay,
-            )
-        elif opt_type == "AdamW":
-            self.optimizer = torch.optim.AdamW(
-                self.wrapper.parameters(),
-                lr=initial_lr,
-                betas=adam_betas,
-                weight_decay=weight_decay,
-            )
-        else:  # HybridMuon
-            runtime_named_parameters = tuple(self.wrapper.named_parameters())
-            self.optimizer = HybridMuonOptimizer(
-                self.wrapper.parameters(),
-                lr=initial_lr,
-                momentum=float(optimizer_params["momentum"]),
-                weight_decay=weight_decay,
-                adam_betas=adam_betas,
-                lr_adjust=float(optimizer_params["lr_adjust"]),
-                lr_adjust_coeff=float(optimizer_params["lr_adjust_coeff"]),
-                muon_mode=str(optimizer_params["muon_mode"]),
-                named_parameters=runtime_named_parameters,
-                enable_gram=bool(optimizer_params["enable_gram"]),
-                flash_muon=bool(optimizer_params["flash_muon"]),
-                magma_muon=bool(optimizer_params["magma_muon"]),
-            )
-
-        for param_group in self.optimizer.param_groups:
-            param_group["initial_lr"] = initial_lr
-
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lambda step: self.lr_schedule.value(step) / initial_lr,
-            last_epoch=self.start_step - 1,
-        )
-
         # Resume --------------------------------------------------------------
+        # Weights are restored while the wrapper still owns whole tensors,
+        # because a checkpoint records the model as a whole and its tensors
+        # cannot be copied into sharded parameters.
         ema_state_dict = None
+        optimizer_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -1914,18 +1865,72 @@ class Trainer(AbstractTrainer):
                     ),
                 )
 
-            if optimizer_state_dict is not None:
-                self.optimizer.load_state_dict(optimizer_state_dict)
-                for param_group in self.optimizer.param_groups:
-                    param_group["initial_lr"] = initial_lr
-                # rebuild scheduler from the resumed step.
-                # last_epoch handles the step offset; the lambda must NOT
-                # add self.start_step again (that would double-count).
-                self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                    self.optimizer,
-                    lambda step: self.lr_schedule.value(step) / initial_lr,
-                    last_epoch=self.start_step - 1,
-                )
+        # Distribution --------------------------------------------------------
+        # The weights are in place, so a sharding strategy may cut them up.
+        if self.is_distributed:
+            self._distribute_wrapper()
+            self._log_sharding_strategy()
+
+        # Optimiser -----------------------------------------------------------
+        opt_type = optimizer_params.get("type", "Adam")
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
+        adam_betas = (
+            float(optimizer_params["adam_beta1"]),
+            float(optimizer_params["adam_beta2"]),
+        )
+        weight_decay = float(optimizer_params["weight_decay"])
+
+        if opt_type in ("Adam", "AdamW"):
+            self.optimizer = self._create_optimizer(
+                torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
+                lr=initial_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+            )
+        elif opt_type == "HybridMuon":
+            self.optimizer = self._create_optimizer(
+                HybridMuonOptimizer,
+                lr=initial_lr,
+                momentum=float(optimizer_params["momentum"]),
+                weight_decay=weight_decay,
+                adam_betas=adam_betas,
+                lr_adjust=float(optimizer_params["lr_adjust"]),
+                lr_adjust_coeff=float(optimizer_params["lr_adjust_coeff"]),
+                muon_mode=str(optimizer_params["muon_mode"]),
+                enable_gram=bool(optimizer_params["enable_gram"]),
+                flash_muon=bool(optimizer_params["flash_muon"]),
+                magma_muon=bool(optimizer_params["magma_muon"]),
+                # Sharded parameters are DTensors, and several torch._foreach_*
+                # ops lack sharding propagation, so the per-tensor path applies.
+                use_foreach=False if self.sharding.shards_parameters else None,
+            )
+            # The parameter names route each tensor to Muon or Adam. They are
+            # supplied after construction because a redundancy-sharded
+            # optimizer treats every constructor keyword as a param-group
+            # default, which would serialize the whole model into each
+            # checkpoint.
+            self._local_optimizer.set_param_names(
+                tuple(self.wrapper.named_parameters())
+            )
+        else:
+            raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
+        if optimizer_state_dict is not None:
+            self._load_optimizer_state(optimizer_state_dict)
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
+
+        # The resumed step offset is carried by last_epoch; the lambda must not
+        # add it again, which would advance the schedule twice.
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.optimizer,
+            lambda step: self.lr_schedule.value(step) / initial_lr,
+            last_epoch=self.start_step - 1,
+        )
 
         # Exponential moving average -------------------------------------------
         # The shadow tracks the raw models, whose parameter tensors the compiled
@@ -1941,7 +1946,6 @@ class Trainer(AbstractTrainer):
         )
 
         # torch.compile -------------------------------------------------------
-        self.enable_compile = training_params.get("enable_compile", False)
         if self.enable_compile:
             check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
@@ -1992,6 +1996,7 @@ class Trainer(AbstractTrainer):
                 validation_data
             ),
             model_ema=self.model_ema,
+            sharding=self.sharding,
         )
 
     def _raise_if_full_validation_unsupported(
@@ -2003,6 +2008,12 @@ class Trainer(AbstractTrainer):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training; multi-task training is not supported."
+            )
+
+        if self.sharding.shards_parameters:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training with training.zero_stage < 2."
             )
 
         if self.models[DEFAULT_TASK_KEY].has_spin() or isinstance(
@@ -2262,8 +2273,153 @@ class Trainer(AbstractTrainer):
         return int(np.ceil(total / self.world_size))
 
     # ------------------------------------------------------------------
-    # DDP helpers
+    # Distribution helpers
     # ------------------------------------------------------------------
+
+    def _raise_if_sharding_unsupported(self) -> None:
+        """Reject the run configurations that state sharding cannot serve.
+
+        Raises
+        ------
+        ValueError
+            If the requested stage conflicts with another training option.
+        """
+        if not self.sharding.enabled:
+            return
+        if self.multi_task:
+            raise ValueError(
+                "training.zero_stage is currently only supported in single-task "
+                "training."
+            )
+        if self.change_bias_after_training:
+            raise ValueError(
+                "training.zero_stage does not support change_bias_after_training."
+            )
+        if not self.sharding.shards_parameters:
+            return
+        if self.enable_ema:
+            raise ValueError(
+                "training.enable_ema currently only supports training.zero_stage < 2."
+            )
+        if self.enable_compile:
+            raise ValueError(
+                "training.enable_compile only supports training.zero_stage < 2: "
+                "the compiled graph is traced from the parameters, which FSDP2 "
+                "shards as DTensors."
+            )
+
+    def _distribute_wrapper(self) -> None:
+        """Place the wrapper under the parallel strategy of this run.
+
+        Stages below two replicate the model and keep plain tensors, so the
+        wrapper is held by ``DistributedDataParallel``. From stage two on the
+        parameters themselves are sharded by FSDP2, which mutates the wrapper
+        in place and therefore leaves no module to unwrap.
+        """
+        local_rank = None
+        if DEVICE.type == "cuda":
+            from deepmd.pt_expt.utils.env import (
+                LOCAL_RANK,
+            )
+
+            local_rank = LOCAL_RANK
+            torch.cuda.set_device(local_rank)
+
+        if not self.sharding.shards_parameters:
+            # Multi-task uses only one fitting_net per step, so unused
+            # parameters exist in the graph. Single-task doesn't need this.
+            kwargs: dict[str, Any] = {"find_unused_parameters": self.multi_task}
+            if local_rank is not None:
+                kwargs |= {"device_ids": [local_rank], "output_device": local_rank}
+            self.wrapper = torch.nn.parallel.DistributedDataParallel(
+                self.wrapper, **kwargs
+            )
+            return
+
+        if fully_shard is None:
+            raise RuntimeError(
+                "training.zero_stage>=2 requires FSDP2 "
+                "(``torch.distributed.fsdp.fully_shard``), which is missing "
+                f"from PyTorch {torch.__version__}. Set training.zero_stage "
+                "to 0 or 1 to stay on the DDP / ZeRO-1 path."
+            )
+        # Unlike the DDP constructor, FSDP2 does not broadcast: the ranks have
+        # to already agree on the weights before they are cut into shards.
+        for tensor in (*self.wrapper.parameters(), *self.wrapper.buffers()):
+            dist.broadcast(tensor.data, src=0)
+        self.wrapper = fully_shard(
+            self.wrapper,
+            reshard_after_forward=self.sharding.reshards_after_forward,
+        )
+
+    def _log_sharding_strategy(self) -> None:
+        """Report the distribution strategy once the wrapper is in place."""
+        if self.sharding.enabled and self.rank == 0:
+            log.info(self.sharding.describe())
+
+    def _load_optimizer_state(self, optimizer_state_dict: dict[str, Any]) -> None:
+        """Restore optimizer state recorded as one whole.
+
+        Unlike the weights, the optimizer is necessarily built after the model
+        is distributed, so under parameter sharding its state is already made
+        of shards and the recorded state has to be cut up to match.
+
+        Parameters
+        ----------
+        optimizer_state_dict : dict[str, Any]
+            The optimizer state as recorded in a checkpoint.
+        """
+        if not self.sharding.shards_parameters:
+            self.optimizer.load_state_dict(optimizer_state_dict)
+            return
+        set_optimizer_state_dict(
+            self.wrapper,
+            self.optimizer,
+            optim_state_dict=optimizer_state_dict,
+            options=StateDictOptions(full_state_dict=True, broadcast_from_rank0=True),
+        )
+
+    def _create_optimizer(
+        self,
+        optimizer_class: type[torch.optim.Optimizer],
+        **kwargs: Any,
+    ) -> torch.optim.Optimizer:
+        """Construct the optimizer, sharding its state when the stage asks.
+
+        Parameters
+        ----------
+        optimizer_class : type[torch.optim.Optimizer]
+            The optimizer to construct.
+        **kwargs
+            Keyword arguments forwarded to the optimizer.
+
+        Returns
+        -------
+        torch.optim.Optimizer
+            The optimizer, wrapped in a ``ZeroRedundancyOptimizer`` when the
+            stage shards optimizer state but not the parameters; from stage
+            two on FSDP2 already shards the state that the optimizer derives
+            from its sharded parameters.
+        """
+        if self.sharding.stage == 1:
+            return ZeroRedundancyOptimizer(
+                self.wrapper.parameters(),
+                optimizer_class=optimizer_class,
+                **kwargs,
+            )
+        return optimizer_class(self.wrapper.parameters(), **kwargs)
+
+    @property
+    def _local_optimizer(self) -> torch.optim.Optimizer:
+        """Return the optimizer that performs this rank's update.
+
+        A redundancy-sharded optimizer owns no update of its own: it delegates
+        to a local optimizer over this rank's share of the parameters, and it
+        is that one which holds the per-parameter state and the name routing.
+        """
+        if self.sharding.stage == 1:
+            return self.optimizer.optim
+        return self.optimizer
 
     @property
     def _unwrapped(self) -> "ModelWrapper":
@@ -2325,17 +2481,27 @@ class Trainer(AbstractTrainer):
     # Checkpointing
     # ------------------------------------------------------------------
 
+    @property
+    def checkpoint_is_collective(self) -> bool:
+        """Whether assembling a checkpoint needs every rank."""
+        return self.sharding.enabled
+
     def save_checkpoint(self, step: int) -> None:
+        # Abort before writing if any gradient norm since the previous
+        # checkpoint was non-finite, so a diverged interval is not persisted.
+        self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
         ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
-        self.ckpt_store.publish(ckpt_path)
-        self.ckpt_store.prune(ckpt_path)
-        log.info(f"Saved model to {ckpt_path}")
+        if self.rank == 0:
+            self.ckpt_store.publish(ckpt_path)
+            self.ckpt_store.prune(ckpt_path)
+            log.info(f"Saved model to {ckpt_path}")
         if self.model_ema is not None:
             ema_path = self.ema_ckpt_store.path_for(step)
             self._save_checkpoint_to_path(ema_path, step=step, use_ema_weights=True)
-            self.ema_ckpt_store.publish(ema_path)
-            self.ema_ckpt_store.prune(ema_path)
+            if self.rank == 0:
+                self.ema_ckpt_store.publish(ema_path)
+                self.ema_ckpt_store.prune(ema_path)
 
     def _save_full_validation_checkpoint(
         self,
@@ -2416,16 +2582,64 @@ class Trainer(AbstractTrainer):
                 compiled_backup[task_key] = m
                 wrapper.model[task_key] = m.original_model
         try:
-            state: dict[str, Any] = {"model": wrapper.state_dict()}
-            if include_optimizer:
-                state["optimizer"] = self.optimizer.state_dict()
+            model_state, optim_state = self._collect_checkpoint_states(
+                wrapper, include_optimizer=include_optimizer
+            )
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
+        # Sharded state is assembled on the chief; the other ranks have played
+        # their part in the collectives above and hold nothing to write.
+        if self.rank != 0:
+            return
+        state: dict[str, Any] = {"model": model_state}
+        if optim_state is not None:
+            state["optimizer"] = optim_state
         if include_ema_state and self.model_ema is not None:
             state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
+
+    def _collect_checkpoint_states(
+        self,
+        wrapper: "ModelWrapper",
+        *,
+        include_optimizer: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Gather the model and optimizer state a checkpoint records.
+
+        Parameters
+        ----------
+        wrapper : ModelWrapper
+            The unwrapped model wrapper, already stripped of compiled models.
+            Under parameter sharding it is the sharded wrapper itself, because
+            FSDP2 shards in place and compilation is rejected alongside it.
+        include_optimizer : bool
+            Whether the optimizer state belongs in the checkpoint.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any] | None]
+            The model state and the optimizer state. Under sharding both are
+            complete only on the chief; the other ranks contribute their shards
+            and receive placeholders.
+        """
+        if self.sharding.shards_parameters:
+            # FSDP2 reassembles the shards, so every rank has to take part.
+            options = StateDictOptions(full_state_dict=True, cpu_offload=True)
+            return (
+                get_model_state_dict(wrapper, options=options),
+                get_optimizer_state_dict(wrapper, self.optimizer, options=options)
+                if include_optimizer
+                else None,
+            )
+        model_state = wrapper.state_dict()
+        if not include_optimizer:
+            return model_state, None
+        if self.sharding.shards_optimizer_state:
+            self.optimizer.consolidate_state_dict(to=0)
+            return model_state, self.optimizer.state_dict() if self.rank == 0 else {}
+        return model_state, self.optimizer.state_dict()
 
     # ------------------------------------------------------------------
     # Training loop
@@ -2573,8 +2787,15 @@ class Trainer(AbstractTrainer):
         loss.backward()
 
         if self.gradient_max_norm > 0.0:
-            torch.nn.utils.clip_grad_norm_(
-                self.wrapper.parameters(), self.gradient_max_norm
+            self.nonfinite_grad_guard.update(
+                clip_grad_norm_(
+                    self.wrapper.parameters(),
+                    self.gradient_max_norm,
+                    # A sharded gradient is a DTensor: the overflow-safe
+                    # reduction would measure this rank's shard alone, so the
+                    # distributed-native norm applies instead.
+                    stable=not self.sharding.shards_parameters,
+                )
             )
 
         self._optimizer_step()
@@ -2616,8 +2837,15 @@ class Trainer(AbstractTrainer):
         step: int,
         step_result: TrainStepResult | None,
     ) -> dict[str, float] | None:
-        """Evaluate validation loss terms for one task."""
-        if task.validation_data is None:
+        """Evaluate validation loss terms for one task.
+
+        Sharded parameters are gathered by the forward itself, which makes it
+        a collective operation, while the display runs on the chief alone.
+        Validation is therefore skipped from stage two on; the metrics remain
+        available through the independent full validation flow, which every
+        rank enters together.
+        """
+        if task.validation_data is None or self.sharding.shards_parameters:
             return None
 
         valid_results: dict[str, float] = {}

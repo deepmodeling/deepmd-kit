@@ -2173,6 +2173,41 @@ class TestCheckpointRetention(unittest.TestCase):
         self.assertEqual(saved, [1, 2])
         self.assertTrue(latest.endswith(os.path.join("ckpts", "model.ckpt-2.pt")))
 
+    def test_diverged_interval_is_not_checkpointed(self) -> None:
+        """A non-finite gradient aborts the run before anything is written.
+
+        Display is switched off so the run reaches the checkpoint boundary:
+        the loss report would otherwise reject the NaN first, which leaves the
+        gradient guard untested.
+        """
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["training"]["gradient_max_norm"] = 1.0
+        config["training"]["save_freq"] = 1
+        config["training"]["disp_training"] = False
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_diverged_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(config)
+            # An infinite weight drives the forward, and therefore the whole
+            # gradient, out of the finite range on the very first step.
+            with torch.no_grad():
+                next(iter(trainer.model.parameters())).fill_(float("inf"))
+
+            with self.assertRaisesRegex(RuntimeError, "diverged"):
+                trainer.run()
+
+            self.assertEqual(
+                [name for name in os.listdir(tmpdir) if name.endswith(".pt")],
+                [],
+            )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_keep_ratio_retains_the_tail_of_the_run(self) -> None:
         config = _make_config(self.data_dir, numb_steps=6)
         config["training"]["save_freq"] = 2

@@ -28,6 +28,9 @@ import torch
 import torch.distributed as dist
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.dpmodel.train import (
+    ShardingPolicy,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
@@ -202,8 +205,8 @@ class FullValidator:
         state_store: dict[str, Any],
         num_steps: int,
         rank: int,
-        zero_stage: int,
         restart_training: bool,
+        sharding: ShardingPolicy = ShardingPolicy(),
         checkpoint_dir: Path | None = None,
         full_val_file: str | Path | None = None,
         best_checkpoint_prefix: str = BEST_CKPT_PREFIX,
@@ -219,7 +222,7 @@ class FullValidator:
         self.profile = select_metric_profile(model)
         self.state_store = state_store
         self.rank = rank
-        self.zero_stage = zero_stage
+        self.sharding = sharding
         self.checkpoint_dir = (
             Path(checkpoint_dir) if checkpoint_dir is not None else Path(".")
         )
@@ -333,9 +336,9 @@ class FullValidator:
 
         if save_path[0] is not None:
             try:
-                # ZeRO/FSDP checkpoint collection is collective, so all ranks must
-                # enter `save_checkpoint` whenever `zero_stage > 0`.
-                if (self.is_distributed and self.zero_stage != 0) or self.rank == 0:
+                # Assembling a checkpoint from shards is collective, so every
+                # rank enters it once any training state is sharded.
+                if (self.is_distributed and self.sharding.enabled) or self.rank == 0:
                     save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
                 if self.rank == 0:
                     self._reconcile_best_checkpoints()
@@ -922,7 +925,7 @@ def build_full_validators(
     checkpoint_dir: Path,
     ensure_supported: Callable[[], None],
     model_ema: Any | None = None,
-    zero_stage: int = 0,
+    sharding: ShardingPolicy | None = None,
 ) -> tuple[FullValidator | None, FullValidator | None]:
     """Build the full validators of a training run.
 
@@ -961,9 +964,9 @@ def build_full_validators(
         The EMA state of the run. Without it the EMA flow stays inactive, so
         that ``ema_full_validation`` is ignored rather than rejected when EMA
         itself is disabled.
-    zero_stage : int, optional
-        The ZeRO stage of the run, which decides whether checkpoint collection
-        is a collective operation.
+    sharding : ShardingPolicy, optional
+        The distribution strategy of the run, which decides whether checkpoint
+        collection is a collective operation. Defaults to no sharding.
 
     Returns
     -------
@@ -994,7 +997,7 @@ def build_full_validators(
             model=model,
             num_steps=num_steps,
             rank=rank,
-            zero_stage=zero_stage,
+            sharding=ShardingPolicy() if sharding is None else sharding,
             restart_training=restart_training,
             checkpoint_dir=checkpoint_dir,
             **overrides,
