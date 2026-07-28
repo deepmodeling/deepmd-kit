@@ -90,7 +90,7 @@ def mega_eligible(desc: Any) -> bool:
     where the padding channels are sliced off before the fitting.
     """
     ng = int(desc.se_atten.neuron[-1])
-    return int(desc.se_atten.lmax) == 1 and _bucket_width(ng) == ng
+    return _bucket_width(ng) == ng
 
 
 # ======================================================================

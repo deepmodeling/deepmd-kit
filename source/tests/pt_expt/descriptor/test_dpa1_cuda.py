@@ -637,8 +637,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         for output32, output64 in zip(outputs32, outputs64, strict=True):
             torch.testing.assert_close(output32, output64, atol=1e-6, rtol=1e-6)
 
-    @_HIGH_LMAX
-    def test_compact_canonical_descriptor_parity(self) -> None:
+    def _assert_compact_canonical_descriptor_parity(self, lmax: int) -> None:
         """Source-only topology matches the generic canonical operator."""
         from deepmd.dpmodel.utils.neighbor_graph import (
             canonicalize_neighbor_graph,
@@ -656,7 +655,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         des = _build_compressed_dpa1(
             self.device,
             [16, 32, 64],
-            lmax=4,
+            lmax=lmax,
         )
         graph, atype, _ = self._graph_and_dense(des)
         graph = canonicalize_neighbor_graph(
@@ -667,8 +666,11 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         type_embedding = des.type_embedding.call()
         se = des.se_atten
         inverse_stddev = torch.reciprocal(se.stddev[:, 0, :]).contiguous()
-        assert se.adam_degree_gain_raw is not None
-        degree_gain = se.adam_degree_gain_raw.to(torch.float32).contiguous()
+        degree_gain = (
+            se.adam_degree_gain_raw.to(torch.float32).contiguous()
+            if se.adam_degree_gain_raw is not None
+            else des.compress_data[0].new_empty(0)
+        )
         lower, upper, table_max, stride0, stride1 = (
             float(value) for value in des.compress_info[0].tolist()[:5]
         )
@@ -765,6 +767,13 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             compact_gradient[physical_edge_count:],
             torch.zeros_like(compact_gradient[physical_edge_count:]),
         )
+
+    def test_compact_canonical_descriptor_parity(self) -> None:
+        self._assert_compact_canonical_descriptor_parity(1)
+
+    @_HIGH_LMAX
+    def test_compact_canonical_descriptor_parity_lmax_four(self) -> None:
+        self._assert_compact_canonical_descriptor_parity(4)
 
     def test_adaptive_resource_selection_large_graph(self) -> None:
         """First-use tuning preserves the reference on a non-trivial graph."""
@@ -1220,8 +1229,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         graph = from_dense_quartet(ec, nl, mp, compact=True, canonicalize=True)
         return graph, self.atype.reshape(-1).to(self.device)
 
-    @_HIGH_LMAX
-    def test_parity_vs_separate_ops(self) -> None:
+    def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
         from deepmd.kernels.cuda.dpa1.graph_energy_force import (
             dpa1_graph_energy_force,
         )
@@ -1234,10 +1242,10 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             self.device,
             [8, 16, 32],
             act="silu",
-            lmax=2,
+            lmax=lmax,
         )
-        assert des.se_atten.adam_degree_gain_raw is not None
-        des.se_atten.adam_degree_gain_raw.data.fill_(0.7)
+        if des.se_atten.adam_degree_gain_raw is not None:
+            des.se_atten.adam_degree_gain_raw.data.fill_(0.7)
         fit = self._build_fitting(des.get_dim_out())
         graph, atype = self._graph(des)
         tebd = des.type_embedding.call()
@@ -1289,6 +1297,13 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         torch.testing.assert_close(force, r_force, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(virial, r_virial, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(atom_vir, r_atom_vir, atol=1e-4, rtol=1e-4)
+
+    def test_parity_vs_separate_ops(self) -> None:
+        self._assert_parity_vs_separate_ops(1)
+
+    @_HIGH_LMAX
+    def test_parity_vs_separate_ops_lmax_two(self) -> None:
+        self._assert_parity_vs_separate_ops(2)
 
     def test_level_two_graph_export(self) -> None:
         """The fused energy-force CPU implementation preserves its operator ABI."""
@@ -1517,8 +1532,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         graph = from_dense_quartet(ec, nl, mp, compact=True, canonicalize=True)
         return graph, self.atype.reshape(-1).to(self.device)
 
-    @_HIGH_LMAX
-    def test_parity_vs_separate_ops(self) -> None:
+    def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
         from deepmd.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
             dpa1_graph_compress_energy_force,
@@ -1540,12 +1554,15 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             act="silu",
             ntypes=4,
             axis_neuron=16,
-            lmax=4,
+            lmax=lmax,
         )
-        assert des.se_atten.adam_degree_gain_raw is not None
-        des.se_atten.adam_degree_gain_raw.data.copy_(
-            torch.tensor([0.7, -0.5, 0.9], device=self.device)
-        )
+        if des.se_atten.adam_degree_gain_raw is not None:
+            des.se_atten.adam_degree_gain_raw.data.copy_(
+                torch.tensor(
+                    [0.7, -0.5, 0.9][: lmax - 1],
+                    device=self.device,
+                )
+            )
         self.assertTrue(mega_eligible(des))
         fit = self._build_fitting(des.get_dim_out(), ntypes=4)
         graph, atype = self._graph(des)
@@ -1599,6 +1616,13 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         torch.testing.assert_close(force, r_force, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(virial, r_virial, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(atom_vir, r_atom_vir, atol=1e-4, rtol=1e-4)
+
+    def test_parity_vs_separate_ops(self) -> None:
+        self._assert_parity_vs_separate_ops(1)
+
+    @_HIGH_LMAX
+    def test_parity_vs_separate_ops_lmax_four(self) -> None:
+        self._assert_parity_vs_separate_ops(4)
 
     def test_compact_canonical_model_trace(self) -> None:
         """The eight-tensor deployment forward composes under symbolic make_fx."""

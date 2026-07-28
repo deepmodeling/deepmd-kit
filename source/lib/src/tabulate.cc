@@ -3,10 +3,25 @@
 
 #include <string.h>
 
-#include <cassert>
 #include <cmath>
 #include <iostream>
+#include <string>
 #include <vector>
+
+#include "errors.h"
+
+namespace {
+
+void check_se_a_basis_dimension(const int ndescrpt) {
+  if (!deepmd::is_supported_se_a_basis_dimension(ndescrpt)) {
+    throw deepmd::deepmd_exception(
+        "The environment basis dimension must be 4, 9, 16, or 25, got " +
+        std::to_string(ndescrpt));
+  }
+}
+
+}  // namespace
+
 /*
     This inline function was designed to get the table info and bias value for
    current input xx! lower:      indicate the lower boundary of the first table;
@@ -168,7 +183,7 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
                                       const int last_layer_size,
                                       const bool is_sorted,
                                       const int ndescrpt) {
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
+  check_se_a_basis_dimension(ndescrpt);
   bool enable_se_atten = two_embed != nullptr;
   memset(out, 0, sizeof(FPTYPE) * nloc * ndescrpt * last_layer_size);
   const FPTYPE lower = table_info[0];
@@ -239,7 +254,7 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                            const int last_layer_size,
                                            const bool is_sorted,
                                            const int ndescrpt) {
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
+  check_se_a_basis_dimension(ndescrpt);
   bool enable_se_atten = two_embed != nullptr;
   memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
   memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * ndescrpt);
@@ -343,7 +358,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const int last_layer_size,
                                                 const bool is_sorted,
                                                 const int ndescrpt) {
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
+  check_se_a_basis_dimension(ndescrpt);
   bool enable_se_atten = two_embed != nullptr;
   memset(dz_dy, 0, sizeof(FPTYPE) * nloc * ndescrpt * last_layer_size);
   const FPTYPE lower = table_info[0];

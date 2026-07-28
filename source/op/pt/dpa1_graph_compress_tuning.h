@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <torch/torch.h>
 
 #include <algorithm>
 #include <array>
@@ -29,6 +28,11 @@ enum class KernelDirection : int {
 struct LaunchConfig {
   ResourcePolicy resource;
   int threads;
+};
+
+struct DeviceProperties {
+  int major;
+  int multiprocessor_count;
 };
 
 struct TuningKey {
@@ -83,23 +87,9 @@ tuning_cache() {
   return cache;
 }
 
-inline const cudaDeviceProp& device_properties(int device) {
-  constexpr int kMaximumCachedDevices = 64;
-  TORCH_CHECK(device >= 0 && device < kMaximumCachedDevices,
-              "dpa1_graph_compress: unsupported CUDA device index ", device);
-  static std::array<std::once_flag, kMaximumCachedDevices> initialized;
-  static std::array<cudaDeviceProp, kMaximumCachedDevices> properties;
-  std::call_once(initialized[device], [device] {
-    TORCH_CHECK(
-        cudaGetDeviceProperties(&properties[device], device) == cudaSuccess,
-        "dpa1_graph_compress: cannot query CUDA device properties");
-  });
-  return properties[device];
-}
-
-inline LaunchConfig architecture_fallback(const cudaDeviceProp& properties) {
+inline LaunchConfig architecture_fallback(const DeviceProperties& properties) {
   if (properties.major >= 9) {
-    if (properties.multiProcessorCount <= 80) {
+    if (properties.multiprocessor_count <= 80) {
       return {ResourcePolicy::kOccupancy, 256};
     }
     return {ResourcePolicy::kBalanced, 256};
@@ -147,7 +137,7 @@ inline int type_count_class(int type_count) {
 
 template <typename LaunchFunction>
 LaunchConfig select_launch_config(const TuningKey& key,
-                                  const cudaDeviceProp& properties,
+                                  const DeviceProperties& properties,
                                   long node_count,
                                   cudaStream_t stream,
                                   const LaunchFunction& launch) {
@@ -174,7 +164,7 @@ LaunchConfig select_launch_config(const TuningKey& key,
 
   const long sample_node_count = std::min(
       node_count,
-      std::max(4096L, static_cast<long>(properties.multiProcessorCount) * 64));
+      std::max(4096L, static_cast<long>(properties.multiprocessor_count) * 64));
   constexpr std::array<LaunchConfig, 4> kCandidates = {{
       {ResourcePolicy::kBalanced, 128},
       {ResourcePolicy::kBalanced, 256},

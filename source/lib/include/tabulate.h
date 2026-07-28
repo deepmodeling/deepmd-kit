@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
+
 namespace deepmd {
+
+inline bool is_supported_se_a_basis_dimension(
+    const std::int64_t ndescrpt) noexcept {
+  return ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25;
+}
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_cpu(FPTYPE* out,

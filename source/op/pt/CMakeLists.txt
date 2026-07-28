@@ -25,11 +25,16 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     endif()
   endif()
   enable_language(CUDA)
+  set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
+      dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
+      dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
+      dpa1_graph_compress_c128.cu dpa1_graph_compress_c256.cu)
   list(
     APPEND
     OP_SRC
     dpa1_graph_descriptor.cu
     dpa1_graph_compress.cu
+    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC}
     graph_fitting.cu
     edge_force_virial.cu
     dpa1_graph_energy_force.cu)
@@ -63,8 +68,12 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     target_compile_definitions(deepmd_op_pt
                                PRIVATE DEEPMD_ENABLE_DPA1_HIGH_LMAX=1)
   endif()
-  set_source_files_properties(dpa1_graph_compress.cu dpa4c_graph_compress.cu
-                              PROPERTIES COMPILE_OPTIONS "--use_fast_math")
+  # The compressed DPA1 kernels are instantiated one translation unit per
+  # channel width so their topology and angular-degree variants compile in
+  # parallel.
+  set_source_files_properties(
+    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} dpa4c_graph_compress.cu
+    PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
   target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})

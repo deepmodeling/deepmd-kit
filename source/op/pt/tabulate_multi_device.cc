@@ -18,6 +18,12 @@ void GetTensorDevice(const torch::Tensor& t, std::string& str) {
   }
 }
 
+void CheckTabulateFusionSeABasisDimension(const int64_t ndescrpt) {
+  TORCH_CHECK(deepmd::is_supported_se_a_basis_dimension(ndescrpt),
+              "The environment basis dimension must be 4, 9, 16, or 25, got ",
+              ndescrpt);
+}
+
 template <typename FPTYPE>
 void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& table_info_tensor,
@@ -58,10 +64,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t ndescrpt = em_tensor.size(2);
-  TORCH_CHECK(
-      ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25,
-      "The environment basis dimension must be 4, 9, 16, or 25, got ",
-      ndescrpt);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -118,6 +121,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   const int64_t nnei = em_tensor.size(1);
   const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -179,6 +183,7 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   const int64_t nnei = em_tensor.size(1);
   const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM

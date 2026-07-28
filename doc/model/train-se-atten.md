@@ -205,9 +205,11 @@ Model compression is supported only when the descriptor attention depth {ref}`at
 
 Model compression is supported for any {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` value when {ref}`tebd_input_mode <model[standard]/descriptor[se_atten_v2]/tebd_input_mode>` is `"strip"`. When `attn_layer` is 0, both the type embedding and geometric parts are compressed. When `attn_layer` is not 0, only the type embedding is compressed while the geometric part keeps the neural network implementation (a warning is emitted during compression).
 
-In the pt_expt CUDA graph lower, `lmax` values 3 and 4 use the fused mega
-kernel only for geometrically compressed descriptors. Their uncompressed
-evaluation remains on the portable reference path.
+In the pt_expt CUDA graph lower, automatic fused routing is limited to `lmax`
+1 for both compressed and uncompressed descriptors. The `lmax` 2, 3, and 4
+CUDA specializations are retained for experimental builds enabled with
+`DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON`; the production eligibility gate continues
+to route those descriptors through the portable reference path.
 
 ## Training example
 
