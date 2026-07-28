@@ -53,6 +53,8 @@ if(ENABLE_PADDLE)
         set(DOWNLOAD_URL
             "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn897_Trt8616_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
+        set(DOWNLOAD_SHA256
+            "89963f601a3469270080cca076327da1e6c5e8f0c0ee3aa5e0e0371b2b8c2cb7")
       elseif(CUDA_MAJOR_VERSION VERSION_EQUAL "12")
         message(
           STATUS
@@ -61,6 +63,8 @@ if(ENABLE_PADDLE)
         set(DOWNLOAD_URL
             "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda126_cudnn951_Trt105018_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
+        set(DOWNLOAD_SHA256
+            "5318eb879f4930d4b08e52c5e040c0b4b96d4afae62bf57bcae031fff0396551")
       else()
         message(
           FATAL_ERROR
@@ -75,10 +79,13 @@ if(ENABLE_PADDLE)
       set(DOWNLOAD_URL
           "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
       )
+      set(DOWNLOAD_SHA256
+          "6adeccb3920e92ddea3e7f36eee770bc10f7b51bab63ed96b9bbade47951de30")
     endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
-    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE})
+    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE}
+         EXPECTED_HASH SHA256=${DOWNLOAD_SHA256})
     message(STATUS "Downloading finished, extracting...")
     execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
                     OUTPUT_QUIET)
