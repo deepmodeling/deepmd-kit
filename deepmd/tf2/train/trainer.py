@@ -871,7 +871,9 @@ class Trainer(AbstractTrainer):
             aparam: Any,
             charge_spin: Any,
         ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any, bool]:
-            cc, bb, fp, ap, cs, _input_prec = model._input_type_cast(
+            # ``_input_type_cast`` returns a ``spin`` slot (native-spin graph
+            # route); tf2 has no spin lower, so it is discarded.
+            cc, bb, fp, ap, cs, _, _input_prec = model._input_type_cast(
                 to_tensorflow_array(coord),
                 box=to_tensorflow_array(box),
                 fparam=to_tensorflow_array(fparam),

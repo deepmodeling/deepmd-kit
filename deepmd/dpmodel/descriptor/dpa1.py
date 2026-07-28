@@ -459,6 +459,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
 
+    def graph_type_embedding_table(self) -> Array:
+        """Full type-embedding table consumed by the graph-route forward.
+
+        Returns
+        -------
+        Array
+            The ``(ntypes + 1, tebd_dim)`` table from ``type_embedding``.
+        """
+        return self.type_embedding.call()
+
     def uses_compact_edge_pairs(self) -> bool:
         """Returns whether the graph lower traces compact edge pairs.
 

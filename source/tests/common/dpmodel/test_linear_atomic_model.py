@@ -37,6 +37,16 @@ class _RecordingAtomicModel:
     def get_type_map(self) -> list[str]:
         return self.type_map
 
+    def get_intensive(self) -> bool:
+        # part of the atomic-model interface the composition validates
+        return False
+
+    def get_dim_fparam(self) -> int:
+        return 0
+
+    def get_dim_aparam(self) -> int:
+        return 0
+
     def change_type_map(
         self,
         type_map: list[str],

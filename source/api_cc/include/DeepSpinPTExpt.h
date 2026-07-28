@@ -59,6 +59,7 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate without nlist (standalone — builds nlist, folds back).
@@ -76,6 +77,7 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 
  public:
@@ -99,6 +101,10 @@ class DeepSpinPTExpt : public DeepSpinBackend {
     assert(inited);
     return daparam;
   };
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const {
     assert(inited);
@@ -113,7 +119,8 @@ class DeepSpinPTExpt : public DeepSpinBackend {
     return has_default_fparam_;
   };
 
-  // forward to template class
+  // forward to template class (no charge_spin — uses default_chg_spin_
+  // fallback)
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& force_mag,
@@ -173,13 +180,77 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                 const std::vector<float>& aparam,
                 const bool atomic);
 
+  // charge_spin overloads — pass runtime charge/spin per call
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+
  private:
   bool inited;
   int ntypes;
   int ntypes_spin;
   int dfparam;
   int daparam;
-  int dim_chg_spin;
+  int dchgspin;
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
@@ -194,6 +265,13 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   // Whether the exported graph consumes the compact edge schema (native spin,
   // shared with DeepPotPTExpt) rather than the deepspin-scheme nlist contract.
   bool lower_input_is_edge_ = false;
+  // Whether the exported graph consumes the NeighborGraph schema (native
+  // spin; single-rank runs run_model_graph, multi-rank runs
+  // run_model_graph_with_comm). Mutually exclusive with lower_input_is_edge_.
+  bool lower_input_is_graph_ = false;
+  // Edge-vector precision recorded by the .pt2 artifact for the graph route
+  // (mirrors DeepPotPTExpt); read from metadata ``graph_edge_dtype``.
+  bool graph_edge_fp32_ = false;
   int nnei;  // expected nlist nnei dimension (= sum(sel))
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;         // cached mapping tensor (LAMMPS path)
@@ -206,6 +284,22 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   // Mirrors descriptor's has_message_passing(). See DeepPotPTExpt.h
   // for the full rationale and gating role.
   bool has_message_passing_ = false;
+  // Whether the collective empty-rank preflight (allreduce of the minimum
+  // owned+ghost node count over the LAMMPS communicator, native-spin graph
+  // with-comm route) has PASSED for the current neighbor topology.  Twin of
+  // ``DeepPotPTExpt::graph_comm_preflight_done_``: the preflight re-runs
+  // whenever the with-comm graph branch is entered with ``ago == 0`` (every
+  // topology rebuild) or before its first success, because the node count
+  // shares the lifetime of the cached nlist/mapping/edge topology and
+  // re-running the collective on cache-hit (``ago > 0``) force calls would
+  // add a global synchronization per MD step with no added protection.
+  bool graph_comm_preflight_done_ = false;
+  // Model-level pair-type exclusion keep table, built ONCE in ``init`` from
+  // the ``pair_exclude_types`` metadata field (see DeepPotPTExpt.h for the
+  // full rationale).  UNDEFINED => no exclusion (identity).  Applied at the
+  // neighbor-graph BUILD seam (``applyPairExclusion``), never inside the
+  // exported lower.
+  torch::Tensor pair_exclude_table_;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 
@@ -215,7 +309,8 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                                        const torch::Tensor& nlist,
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
-                                       const torch::Tensor& aparam);
+                                       const torch::Tensor& aparam,
+                                       const torch::Tensor& charge_spin);
 
   /**
    * @brief Run the native-spin edge artifact: the energy edge schema plus the
@@ -230,7 +325,60 @@ class DeepSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& edge_mask,
       const torch::Tensor& spin,
       const torch::Tensor& fparam,
-      const torch::Tensor& aparam);
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin);
+
+  /**
+   * @brief Run the native-spin NeighborGraph artifact: the 10 base graph
+   * tensors (see commonPT.h GraphTensorPack), the per-node spin leaf
+   * (always present, positional index 10), then the conditional
+   * fparam/aparam/charge_spin tail -- combined native-spin + charge-spin
+   * FiLM models carry charge_spin at slot 13, mirroring the energy graph
+   * ABI's optional charge_spin tail.  Single-rank; the multi-rank twin is
+   * ``run_model_graph_with_comm``.
+   */
+  std::vector<torch::Tensor> run_model_graph(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin);
+
+  /**
+   * @brief Run the native-spin parallel GRAPH artifact: run_model_graph's
+   * ABI (spin at positional index 10) with the 8 border_op comm tensors
+   * appended after the conditional fparam/aparam/charge_spin tail.
+   *
+   * ``spin`` is the EXTENDED per-node spin -- ghost rows carry their
+   * owner's value from the LAMMPS ``sp`` forward-comm, so spin itself needs
+   * no cross-rank exchange; only the per-block ghost FEATURE refresh rides
+   * ``border_op``.  Twin of ``DeepPotPTExpt::run_model_graph_with_comm``.
+   */
+  std::vector<torch::Tensor> run_model_graph_with_comm(
+      const torch::Tensor& atype,
+      const torch::Tensor& n_node,
+      const torch::Tensor& n_local,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& destination_order,
+      const torch::Tensor& destination_row_ptr,
+      const torch::Tensor& source_order,
+      const torch::Tensor& source_row_ptr,
+      const torch::Tensor& spin,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
 
   /**
    * @brief Run the native-spin parallel edge artifact: the energy edge
@@ -248,10 +396,11 @@ class DeepSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& spin,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
       const std::vector<at::Tensor>& comm_tensors);
 
   /**
-   * @brief Run with-comm spin artifact: 5-7 base inputs (incl.
+   * @brief Run with-comm spin artifact: 5-8 base inputs (incl.
    * extended_spin) + 8 comm tensors.
    */
   std::vector<torch::Tensor> run_model_with_comm(
@@ -262,6 +411,7 @@ class DeepSpinPTExpt : public DeepSpinBackend {
       const torch::Tensor& mapping,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
       const std::vector<at::Tensor>& comm_tensors);
 
   void extract_outputs(std::map<std::string, torch::Tensor>& output_map,

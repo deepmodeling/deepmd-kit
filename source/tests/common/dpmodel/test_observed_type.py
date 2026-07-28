@@ -65,6 +65,15 @@ class TestCollectObservedTypes(unittest.TestCase):
         result = collect_observed_types(sampled, type_map)
         self.assertEqual(result, ["O"])
 
+    def test_virtual_type_ignored(self) -> None:
+        """Negative virtual types must not alias the end of the type map."""
+        sampled = [
+            {"atype": np.array([[0, -1, 1]])},
+        ]
+        type_map = ["O", "H", "Au"]
+        result = collect_observed_types(sampled, type_map)
+        self.assertEqual(result, ["H", "O"])
+
 
 class TestObservedTypeStatFile(unittest.TestCase):
     """Test stat file save/load round-trip for observed_type (dpmodel)."""

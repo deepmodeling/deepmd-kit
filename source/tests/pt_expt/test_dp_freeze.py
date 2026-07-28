@@ -134,43 +134,62 @@ class TestDPFreezePtExpt(unittest.TestCase):
         self.assertTrue(os.path.exists(expected))
 
     def test_freeze_output_suffix_by_lower_kind(self) -> None:
-        """main() defaults a suffix-less output to .pt2 for --lower-kind graph
-        and .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
-        review). freeze() is mocked so the suffix logic is checked without the
-        AOTInductor compile cost.
+        """A suffix-less output defaults to .pt2 for lower_kind='graph' and
+        .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
+        review). The suffix follows the RESOLVED lower kind inside freeze()
+        (native-spin models force 'graph', so the CLI cannot pick it before
+        the model is built); the mapping is checked on the helper freeze()
+        defers to. End-to-end application through main()/freeze() is covered
+        by test_freeze_default_suffix (nlist) and
+        test_native_spin_default_freeze_routes_to_graph in test_dpa4_export
+        (graph).
+        """
+        from deepmd.pt_expt.entrypoints.main import (
+            _default_output_path,
+        )
+
+        cases = [
+            ("graph", "out_g", ".pt2"),  # graph, no suffix -> .pt2
+            ("nlist", "out_n", ".pte"),  # nlist, no suffix -> .pte
+            ("graph", "out_g_explicit.pte", ".pte"),  # explicit .pte kept
+            ("nlist", "out_n_explicit.pt2", ".pt2"),  # explicit .pt2 kept
+        ]
+        for lower_kind, name, expected_suffix in cases:
+            with self.subTest(lower_kind=lower_kind, name=name):
+                resolved = _default_output_path(
+                    os.path.join(self.tmpdir, name), lower_kind
+                )
+                self.assertTrue(resolved.endswith(expected_suffix))
+
+    def test_freeze_main_passes_lower_kind_through(self) -> None:
+        """main() forwards --lower-kind and the raw output path to freeze()
+        (suffix defaulting is owned by freeze(), after native-spin
+        resolution).
         """
         from unittest import (
             mock,
         )
 
-        cases = [
-            ("graph", "out_g", None, ".pt2"),  # graph, no suffix -> .pt2
-            ("nlist", "out_n", None, ".pte"),  # nlist, no suffix -> .pte
-            ("graph", "out_g_explicit", ".pte", ".pte"),  # explicit .pte kept
-            ("nlist", "out_n_explicit", ".pt2", ".pt2"),  # explicit .pt2 kept
-        ]
-        for lower_kind, stem, explicit, expected_suffix in cases:
-            with self.subTest(lower_kind=lower_kind, explicit=explicit):
-                name = stem + (explicit or "")
-                captured: dict = {}
+        captured: dict = {}
 
-                def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
-                    captured["output"] = output
-                    captured["lower_kind"] = lower_kind
+        def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+            captured["output"] = output
+            captured["lower_kind"] = lower_kind
 
-                flags = argparse.Namespace(
-                    command="freeze",
-                    checkpoint_folder=self.ckpt_file,
-                    output=os.path.join(self.tmpdir, name),
-                    head=None,
-                    lower_kind=lower_kind,
-                    log_level=2,
-                    log_path=None,
-                )
-                with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
-                    main(flags)
-                self.assertTrue(captured["output"].endswith(expected_suffix))
-                self.assertEqual(captured["lower_kind"], lower_kind)
+        raw_output = os.path.join(self.tmpdir, "out_passthrough")
+        flags = argparse.Namespace(
+            command="freeze",
+            checkpoint_folder=self.ckpt_file,
+            output=raw_output,
+            head=None,
+            lower_kind="graph",
+            log_level=2,
+            log_path=None,
+        )
+        with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
+            main(flags)
+        self.assertEqual(captured["output"], raw_output)
+        self.assertEqual(captured["lower_kind"], "graph")
 
     def test_freeze_graph_rejects_ineligible(self) -> None:
         """``--lower-kind graph`` on a non-graph-eligible model (se_e2_a,

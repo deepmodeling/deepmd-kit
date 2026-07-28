@@ -438,8 +438,11 @@ def test_tf2_dp_model_call_common_uses_tf2_helper(
             fparam: Any = None,
             aparam: Any = None,
             charge_spin: Any = None,
-        ) -> tuple[Any, Any, Any, Any, Any, Any]:
-            return coord, box, fparam, aparam, charge_spin, coord.dtype
+            spin: Any = None,
+        ) -> tuple[Any, Any, Any, Any, Any, Any, Any]:
+            # 7-tuple: matches make_model's ``_input_type_cast`` (the ``spin``
+            # slot for the native-spin graph route; tf2 discards it).
+            return coord, box, fparam, aparam, charge_spin, spin, coord.dtype
 
         def _output_type_cast(
             self,

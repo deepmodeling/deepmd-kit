@@ -84,7 +84,10 @@ def make_tf2_dp_model_from_dpmodel(
             charge_spin: xp.ndarray | None = None,
             neighbor_list: NeighborList | None = None,
         ) -> dict[str, xp.ndarray]:
-            cc, bb, fp, ap, cs, input_prec = self._input_type_cast(
+            # ``_input_type_cast`` (dpmodel make_model) returns a ``spin`` slot
+            # for the native-spin graph route; tf2 has no spin/graph lower, so
+            # it is discarded here.
+            cc, bb, fp, ap, cs, _, input_prec = self._input_type_cast(
                 to_tensorflow_array(coord),
                 box=to_tensorflow_array(box),
                 fparam=to_tensorflow_array(fparam),
@@ -183,7 +186,9 @@ def make_tf2_dp_model_from_dpmodel(
             nlist = to_tensorflow_array(nlist)
             nframes, _nall = extended_atype.shape[:2]
             extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
-            cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+            # ``_input_type_cast`` returns a ``spin`` slot (native-spin graph
+            # route); tf2 has no spin lower, so it is discarded.
+            cc_ext, _, fp, ap, cs, _, input_prec = self._input_type_cast(
                 extended_coord,
                 fparam=to_tensorflow_array(fparam),
                 aparam=to_tensorflow_array(aparam),
