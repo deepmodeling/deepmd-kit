@@ -25,6 +25,9 @@ from concurrent.futures.process import (
 from dataclasses import (
     dataclass,
 )
+from itertools import (
+    pairwise,
+)
 from pathlib import (
     Path,
 )
@@ -2318,6 +2321,7 @@ class LmdbTestData:
         lmdb_path: str,
         type_map: list[str] | None = None,
         shuffle_test: bool = True,
+        max_frames: float | None = None,
         **kwargs: Any,
     ) -> None:
         self.lmdb_path = str(lmdb_path)
@@ -2353,51 +2357,114 @@ class LmdbTestData:
                 f"model {self._type_map}, remap={remap}"
             )
 
-        # Read all frames
-        self._frames: list[dict[str, Any]] = []
-        with self._env.begin() as txn:
-            for i in range(self.nframes):
-                key = format(i, self._frame_fmt).encode()
-                raw = txn.get(key)
-                if raw is not None:
-                    frame = _remap_keys(_decode_frame(raw))
-                    # Apply type remapping to atype
-                    if (
-                        self._type_remap is not None
-                        and "atype" in frame
-                        and isinstance(frame["atype"], np.ndarray)
-                    ):
-                        frame["atype"] = _remap_atom_types(
-                            frame["atype"].reshape(-1), self._type_remap
-                        )
-                    self._frames.append(frame)
-
-        # Shuffle if requested
-        if shuffle_test:
-            rng = np.random.default_rng()
-            indices = rng.permutation(len(self._frames))
-            self._frames = [self._frames[i] for i in indices]
-
-        # Group frames by nloc
-        self._nloc_groups: dict[int, list[int]] = {}
-        for idx, frame in enumerate(self._frames):
-            atype = frame.get("atype")
-            nloc = len(atype) if isinstance(atype, np.ndarray) else self._natoms
-            self._nloc_groups.setdefault(nloc, []).append(idx)
+        # Select the frames to test, without reading any of them. Atom counts
+        # come from the metadata, so grouping, shuffling and truncation are
+        # index arithmetic; only the retained frames are ever decoded.
+        self._nloc_groups = self._select_frames(meta, shuffle_test, max_frames)
 
         # Data requirements
         self._requirements: dict[str, dict[str, Any]] = {}
 
-        # Detect PBC: if any frame has a non-zero box
+        # Detect PBC from the first retained frame.
         self.pbc = True
-        if len(self._frames) > 0:
-            f0 = self._frames[0]
-            if "box" not in f0:
-                self.pbc = False
-            elif isinstance(f0["box"], np.ndarray) and np.allclose(f0["box"], 0.0):
+        first = next(
+            (indices[0] for indices in self._nloc_groups.values() if len(indices)), None
+        )
+        probe = self._read_frames([first]) if first is not None else []
+        if probe:
+            box = probe[0].get("box")
+            if not isinstance(box, np.ndarray) or np.allclose(box, 0.0):
                 self.pbc = False
 
         self.mixed_type = True
+
+    def _select_frames(
+        self,
+        meta: dict,
+        shuffle_test: bool,
+        max_frames: float | None,
+    ) -> dict[int, list[int]]:
+        """Group the frame indices by atom count, then sample each group.
+
+        Parameters
+        ----------
+        meta : dict
+            The LMDB metadata. ``frame_nlocs`` gives the atom count of every
+            frame; without it the frames have to be scanned for it.
+        shuffle_test : bool
+            Whether the frames of a group are drawn in random order.
+        max_frames : int or float or None
+            Upper bound on the number of frames retained per group. ``None``
+            and a non-finite bound retain the whole group.
+
+        Returns
+        -------
+        dict[int, list[int]]
+            The retained LMDB frame indices of each atom count.
+        """
+        raw_nlocs = meta.get("frame_nlocs")
+        if _is_encoded_array(raw_nlocs):
+            nlocs = _decode_array(raw_nlocs).reshape(-1).astype(np.int64)
+        elif raw_nlocs is not None:
+            nlocs = np.asarray(raw_nlocs, dtype=np.int64)
+        else:
+            nlocs = np.asarray(
+                _scan_frame_nlocs(
+                    self._env, self.nframes, self._frame_fmt, self._natoms
+                ),
+                dtype=np.int64,
+            )
+
+        # Sorting once groups every atom count in a single pass, which matters
+        # for datasets whose frame count reaches into the millions.
+        order = np.argsort(nlocs, kind="stable")
+        starts = np.concatenate(
+            ([0], np.flatnonzero(np.diff(nlocs[order])) + 1, [nlocs.size])
+        )
+
+        keep = (
+            None
+            if max_frames is None or not np.isfinite(max_frames)
+            else int(max_frames)
+        )
+        rng = np.random.default_rng()
+        groups: dict[int, list[int]] = {}
+        for begin, end in pairwise(starts):
+            indices = order[begin:end]
+            if shuffle_test:
+                indices = rng.permutation(indices)
+            if keep is not None:
+                indices = indices[:keep]
+            groups[int(nlocs[order[begin]])] = indices.tolist()
+        return groups
+
+    def _read_frames(self, frame_indices: list[int]) -> list[dict[str, Any]]:
+        """Decode the given LMDB frames, applying the type remapping.
+
+        Parameters
+        ----------
+        frame_indices : list[int]
+            Indices of the frames to read, as keyed in the LMDB.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            One decoded frame per index that the LMDB holds.
+        """
+        frames: list[dict[str, Any]] = []
+        with self._env.begin() as txn:
+            for index in frame_indices:
+                raw = txn.get(format(index, self._frame_fmt).encode())
+                if raw is None:
+                    continue
+                frame = _remap_keys(_decode_frame(raw))
+                atype = frame.get("atype")
+                if self._type_remap is not None and isinstance(atype, np.ndarray):
+                    frame["atype"] = _remap_atom_types(
+                        atype.reshape(-1), self._type_remap
+                    )
+                frames.append(frame)
+        return frames
 
     def __del__(self) -> None:
         """Release the LMDB environment ref-count on garbage collection."""
@@ -2407,39 +2474,57 @@ class LmdbTestData:
 
     @property
     def nloc_groups(self) -> dict[int, list[int]]:
-        """Nloc → list of frame indices in self._frames."""
+        """Nloc → the LMDB frame indices retained for that atom count."""
         return self._nloc_groups
 
     @staticmethod
     def _frame_has_data(frame: dict[str, Any], key: str) -> bool:
-        """Resolve one frame's explicit or inferred ``find_*`` value."""
+        """Resolve one frame's explicit or inferred ``find_*`` value.
+
+        The frame may still carry its msgpack payload, so that availability
+        can be settled without decoding the arrays it describes.
+        """
         find_key = f"find_{key}"
         if find_key in frame:
-            return bool(float(np.asarray(frame[find_key]).item()))
+            return bool(float(np.asarray(_decode_value(frame[find_key])).item()))
         value = frame.get(key)
+        if _is_encoded_array(value):
+            return True
         return isinstance(value, (np.ndarray, np.generic, int, float, bool))
 
     @property
     def find_signature_groups(
         self,
     ) -> dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]]:
-        """Group frames by atom count and scalar label availability."""
+        """Group the retained frame indices by atom count and label availability.
+
+        Frames that :meth:`_stack_frames` would refuse to stack together land
+        in different groups, because both settle availability with
+        :meth:`_frame_has_data`. Only the msgpack payload of each frame is
+        read, so the grouping does not decode the arrays it separates.
+        """
         groups: dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]] = {}
-        for index, frame in enumerate(self._frames):
-            atype = frame.get("atype")
-            nloc = len(atype) if isinstance(atype, np.ndarray) else self._natoms
-            signature = tuple(
-                (f"find_{key}", self._frame_has_data(frame, key))
-                for key in _availability_signature_keys(frame, iter(self._requirements))
-            )
-            groups.setdefault((nloc, signature), []).append(index)
+        with self._env.begin() as transaction:
+            for nloc, frame_indices in self._nloc_groups.items():
+                for index in frame_indices:
+                    raw = transaction.get(format(index, self._frame_fmt).encode())
+                    if raw is None:
+                        continue
+                    frame = _remap_keys(msgpack.unpackb(raw, raw=False))
+                    signature = tuple(
+                        (f"find_{key}", self._frame_has_data(frame, key))
+                        for key in _availability_signature_keys(
+                            frame, iter(self._requirements)
+                        )
+                    )
+                    groups.setdefault((nloc, signature), []).append(index)
         return groups
 
     def get_test_by_indices(self, frame_indices: list[int]) -> dict[str, Any]:
         """Stack one homogeneous validation group selected by frame index."""
         if not frame_indices:
             raise ValueError("frame_indices must contain at least one frame")
-        frames = [self._frames[index] for index in frame_indices]
+        frames = self._read_frames(frame_indices)
         nlocs = {
             len(frame["atype"])
             for frame in frames
@@ -2519,30 +2604,81 @@ class LmdbTestData:
             If None and mixed nloc, return the largest group and log a warning.
         Returns dict matching DeepmdData.get_test() format:
         """
+        frame_indices, natoms = self._resolve_group(nloc)
+        return self._stack_frames(self._read_frames(frame_indices), natoms)
+
+    def iter_test(
+        self,
+        *,
+        chunk_atoms: int,
+        numb_test: float = float("inf"),
+        nloc: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield the test frames in chunks, reading each chunk on demand.
+
+        Only the frames of the chunk being yielded are held, which is what
+        makes a dataset larger than memory testable.
+
+        Parameters
+        ----------
+        chunk_atoms : int
+            Upper bound on the number of atoms per chunk. A chunk always
+            carries at least one frame, however many atoms it has.
+        numb_test : float, optional
+            Upper bound on the number of frames served. A non-finite bound
+            serves every frame of the group.
+        nloc : int or None, optional
+            Atom count selecting the group, resolved as in :meth:`get_test`.
+
+        Yields
+        ------
+        dict[str, Any]
+            One chunk of frames, stacked as :meth:`get_test` stacks them.
+        """
+        frame_indices, natoms = self._resolve_group(nloc)
+        if np.isfinite(numb_test):
+            frame_indices = frame_indices[: int(numb_test)]
+        step = max(1, int(chunk_atoms) // max(1, natoms))
+        for begin in range(0, len(frame_indices), step):
+            chunk = frame_indices[begin : begin + step]
+            yield self._stack_frames(self._read_frames(chunk), natoms)
+
+    def _resolve_group(self, nloc: int | None) -> tuple[list[int], int]:
+        """Return the retained frame indices and atom count of one group.
+
+        Parameters
+        ----------
+        nloc : int or None
+            The atom count to select. ``None`` selects the only group when the
+            dataset is uniform, and the largest group otherwise.
+
+        Returns
+        -------
+        tuple[list[int], int]
+            The LMDB frame indices of the group and its atom count.
+
+        Raises
+        ------
+        ValueError
+            If no frame has the requested atom count.
+        """
         if nloc is not None:
             if nloc not in self._nloc_groups:
                 raise ValueError(
                     f"No frames with nloc={nloc}. Available: {sorted(self._nloc_groups.keys())}"
                 )
-            frame_indices = self._nloc_groups[nloc]
-            natoms = nloc
-        elif len(self._nloc_groups) == 1:
-            # Uniform nloc — use all frames
+            return self._nloc_groups[nloc], nloc
+        if len(self._nloc_groups) == 1:
             natoms = next(iter(self._nloc_groups))
-            frame_indices = list(range(len(self._frames)))
-        else:
-            # Mixed nloc — use the largest group
-            natoms = max(self._nloc_groups, key=lambda k: len(self._nloc_groups[k]))
-            frame_indices = self._nloc_groups[natoms]
-            group_summary = {k: len(v) for k, v in sorted(self._nloc_groups.items())}
-            log.warning(
-                f"Mixed-nloc LMDB for dp test: using nloc={natoms} group "
-                f"({len(frame_indices)} frames). "
-                f"Available groups: {group_summary}"
-            )
-
-        frames = [self._frames[i] for i in frame_indices]
-        return self._stack_frames(frames, natoms)
+            return self._nloc_groups[natoms], natoms
+        natoms = max(self._nloc_groups, key=lambda k: len(self._nloc_groups[k]))
+        group_summary = {k: len(v) for k, v in sorted(self._nloc_groups.items())}
+        log.warning(
+            f"Mixed-nloc LMDB for dp test: using nloc={natoms} group "
+            f"({len(self._nloc_groups[natoms])} frames). "
+            f"Available groups: {group_summary}"
+        )
+        return self._nloc_groups[natoms], natoms
 
     def _stack_frames(
         self, frames: list[dict[str, Any]], natoms: int
@@ -2683,6 +2819,17 @@ class LmdbTestDataNlocView:
         if self._frame_indices is not None:
             return self._inner.get_test_by_indices(self._frame_indices)
         return self._inner.get_test(nloc=self._nloc)
+
+    def iter_test(
+        self,
+        *,
+        chunk_atoms: int,
+        numb_test: float = float("inf"),
+    ) -> Iterator[dict[str, Any]]:
+        """Yield this group's frames in chunks."""
+        return self._inner.iter_test(
+            chunk_atoms=chunk_atoms, numb_test=numb_test, nloc=self._nloc
+        )
 
 
 def _copy_lmdb_source(

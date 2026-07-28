@@ -13,7 +13,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.entrypoints.test import (
+from deepmd.infer.model_test.ener import (
     _split_optional_ener_outputs,
 )
 

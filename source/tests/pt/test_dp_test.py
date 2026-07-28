@@ -15,9 +15,11 @@ import numpy as np
 import torch
 
 from deepmd.entrypoints.test import test as dp_test
-from deepmd.entrypoints.test import test_ener as dp_test_ener
 from deepmd.infer.deep_eval import (
     DeepEval,
+)
+from deepmd.infer.model_test import (
+    build_tester,
 )
 from deepmd.pt.entrypoints.main import (
     get_trainer,
@@ -335,13 +337,11 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
             type_map=dp.get_type_map(),
             sort_atoms=False,
         )
-        err = dp_test_ener(
-            dp,
+        err = build_tester(dp, atomic=False).run(
             data,
             self.system_dir,
             numb_test=1,
             detail_file=None,
-            has_atom_ener=False,
         )
         test_data = data.get_test()
         coord = test_data["coord"].reshape([1, -1])
@@ -424,13 +424,11 @@ class TestDPTestStress(DPTest, unittest.TestCase):
             sort_atoms=False,
         )
         numb_test = 1
-        err = dp_test_ener(
-            dp,
+        err = build_tester(dp, atomic=False).run(
             data,
             self.system_dir,
             numb_test=numb_test,
             detail_file=self.detail_file,
-            has_atom_ener=False,
         )
         os.unlink(tmp_model_path)
 
