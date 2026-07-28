@@ -334,12 +334,14 @@ class TestDataLoaderIteration:
             pin_memory=False,
             num_workers=2,
         )
+        first_iterator = iter(first)
+        second_iterator = iter(second)
         try:
-            next(first)
-            next(second)
+            next(first_iterator)
+            next(second_iterator)
             assert first._batch_iterator._executor is second._batch_iterator._executor
             first.close()
-            assert next(second)["coord"].shape == (2, 6, 3)
+            assert next(second_iterator)["coord"].shape == (2, 6, 3)
         finally:
             first.close()
             second.close()
@@ -353,7 +355,7 @@ class TestDataLoaderIteration:
             num_workers=4,
         )
         try:
-            assert next(loader)["coord"].shape == (2, 6, 3)
+            assert next(iter(loader))["coord"].shape == (2, 6, 3)
             assert not loader._batch_iterator.started
             assert loader._batch_iterator._pending is None
         finally:
@@ -367,14 +369,15 @@ class TestDataLoaderIteration:
             pin_memory=False,
             num_workers=4,
         )
+        iterator = iter(loader)
         try:
-            assert next(loader)["coord"].shape[0] == 4
-            assert next(loader)["coord"].shape[0] == 4
+            assert next(iterator)["coord"].shape[0] == 4
+            assert next(iterator)["coord"].shape[0] == 4
             assert loader._batch_iterator._pending is None
             deferred = loader._batch_iterator._deferred_indices
             assert deferred is not None
             assert len(deferred) == 2
-            assert next(loader)["coord"].shape[0] == 2
+            assert next(iterator)["coord"].shape[0] == 2
         finally:
             loader.close()
 
@@ -387,7 +390,7 @@ class TestDataLoaderIteration:
             num_workers=0,
         )
         try:
-            next(loader)
+            next(iter(loader))
             with pytest.raises(RuntimeError, match="must be registered before reading"):
                 ds.add_data_requirement([DataRequirementItem("late_label", 1)])
         finally:

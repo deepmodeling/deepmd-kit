@@ -124,7 +124,7 @@ class _SameNlocBatchSamplerTorch(Sampler):
 
 
 class LmdbBatchDataLoader:
-    """DataLoader-compatible iterator backed by :class:`LmdbBatchIterator`.
+    """DataLoader-compatible iterable backed by :class:`LmdbBatchIterator`.
 
     The parent sampler determines batch order. The shared LMDB process pool
     decodes one batch and prefetches its successor, then this adapter converts
@@ -151,13 +151,10 @@ class LmdbBatchDataLoader:
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         for _ in range(len(self)):
-            yield self.__next__()
-
-    def __next__(self) -> dict[str, Any]:
-        return _lmdb_batch_to_torch(
-            next(self._batch_iterator),
-            pin_memory=self._pin_memory,
-        )
+            yield _lmdb_batch_to_torch(
+                next(self._batch_iterator),
+                pin_memory=self._pin_memory,
+            )
 
     def __len__(self) -> int:
         return len(self.batch_sampler)

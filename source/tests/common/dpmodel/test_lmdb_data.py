@@ -365,7 +365,7 @@ class TestLmdbDataReader(unittest.TestCase):
         second.close()
         self.assertTrue(second.closed)
         with self.assertRaisesRegex(RuntimeError, "closed LMDB reader"):
-            second[0]
+            _ = second[0]
 
     def test_batch_dtype_and_field_order_are_chunk_independent(self):
         """Batch promotion and schema matching do not depend on chunking."""
