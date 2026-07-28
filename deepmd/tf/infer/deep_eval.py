@@ -598,7 +598,7 @@ class DeepEval(DeepEvalBackend):
         # ASE still requires a 3x3 cell for non-periodic systems, but the cell
         # must not be used to infer periodicity or create ghost atoms.
         cell = (
-            np.zeros((3, 3), dtype=coords.dtype) if cell is None else cell.reshape(3, 3)
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
         )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True
@@ -1598,7 +1598,7 @@ class DeepEvalOld:
         # ASE still requires a 3x3 cell for non-periodic systems, but the cell
         # must not be used to infer periodicity or create ghost atoms.
         cell = (
-            np.zeros((3, 3), dtype=coords.dtype) if cell is None else cell.reshape(3, 3)
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
         )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True

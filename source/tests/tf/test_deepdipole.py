@@ -12,6 +12,9 @@ from deepmd.tf.env import (
 from deepmd.tf.infer import (
     DeepDipole,
 )
+from deepmd.tf.infer.deep_dipole import (
+    DeepDipoleOld,
+)
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
@@ -1165,8 +1168,9 @@ class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
 
     def test_nopbc_matches_native_neighbor_building(self) -> None:
         """ASE and native tensor inference must agree for an open system."""
-        with DeepDipole("deepdipole_new.pb") as native:
-            actual_tensor = self.dp.eval(self.coords, None, self.atype, atomic=True)
+
+        def assert_evaluators_match(external, native) -> None:
+            actual_tensor = external.eval(self.coords, None, self.atype, atomic=True)
             expected_tensor = native.eval(self.coords, None, self.atype, atomic=True)
             np.testing.assert_almost_equal(
                 actual_tensor,
@@ -1174,7 +1178,7 @@ class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
                 default_places,
             )
 
-            actual_full = self.dp.eval_full(
+            actual_full = external.eval_full(
                 self.coords,
                 None,
                 self.atype,
@@ -1188,3 +1192,20 @@ class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
             )
             for actual, expected in zip(actual_full, expected_full, strict=True):
                 np.testing.assert_almost_equal(actual, expected, default_places)
+
+        # The public wrapper reaches deepmd/tf/infer/deep_eval.py.
+        with DeepDipole("deepdipole_new.pb") as native:
+            assert_evaluators_match(self.dp, native)
+
+        # Exercise the legacy TF-specific deep_tensor.py path separately; the
+        # public DeepDipole wrapper does not instantiate this implementation.
+        with (
+            DeepDipoleOld(
+                "deepdipole_new.pb",
+                neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                    cutoffs=6, bothways=True
+                ),
+            ) as external_old,
+            DeepDipoleOld("deepdipole_new.pb") as native_old,
+        ):
+            assert_evaluators_match(external_old, native_old)
