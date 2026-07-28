@@ -75,10 +75,9 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# SeZM's ``torch.compile`` / AOT-export code paths are validated only on the
-# releases the compile pipeline supports (see ``deepmd.pt.utils.compile_compat``).
-# Other torch versions can segfault or drift, so the compile-parity tests are
-# skipped there.
+# Keep compile-parity test gating aligned with the runtime allowlist in
+# ``deepmd.pt.utils.compile_compat``. Membership in the allowlist does not imply
+# that every release is installed in CI.
 _TORCH_VERSION = parse_version(torch.__version__)
 _SKIP_OFF_COMPILE_TORCH = (
     _TORCH_VERSION.major,
@@ -2073,16 +2072,11 @@ class TestSeZMModelBridging(unittest.TestCase):
         self.assertEqual(model.bridging_method, "ZBL")
         self.assertIsNotNone(model.atomic_model.descriptor.inner_clamp)
 
-    def test_empty_statistics_are_a_noop(self) -> None:
-        """A fully filtered statistics sample leaves model buffers unchanged."""
+    def test_empty_statistics_raise(self) -> None:
+        """A fully filtered statistics sample cannot calibrate output bias."""
         model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
-        old_bias = model.get_out_bias().detach().clone()
-        old_std = model.atomic_model.out_std.detach().clone()
-
-        model.compute_or_load_stat(lambda: [])
-
-        torch.testing.assert_close(model.get_out_bias(), old_bias)
-        torch.testing.assert_close(model.atomic_model.out_std, old_std)
+        with self.assertRaisesRegex(ValueError, "at least one sampled system"):
+            model.compute_or_load_stat(lambda: [])
 
     def test_zbl_adds_energy(self) -> None:
         """Test that ZBL bridging adds energy to the model output."""

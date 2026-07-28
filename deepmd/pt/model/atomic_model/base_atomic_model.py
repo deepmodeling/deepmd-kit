@@ -598,7 +598,6 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
-        model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -618,20 +617,14 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
-        model_forward
-            Complete model-level atomic predictor used by
-            ``change-by-statistic``. Atomic models fall back to their own
-            standard predictor when called directly.
         """
         if bias_adjust_mode == "change-by-statistic":
-            if model_forward is None:
-                model_forward = self._get_forward_wrapper_func()
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
                 keys=self.bias_keys,
                 stat_file_path=stat_file_path,
-                model_forward=model_forward,
+                model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
                 stats_distinguish_types=self.get_compute_stats_distinguish_types(),
@@ -671,7 +664,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """
         pass
 
-    def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
+    def _get_forward_wrapper_func(
+        self,
+    ) -> Callable[..., dict[str, torch.Tensor]]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(

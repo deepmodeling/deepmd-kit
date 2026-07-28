@@ -1500,16 +1500,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor_atype = extended_atype if comm_dict is not None else atype
         if descriptor_atype is None:
             raise ValueError("`extended_atype` is required with `comm_dict`.")
-        inter_potential_edge_mask = edge_mask
-        if self.inter_potential is not None and descriptor_model.exclude_types:
-            inter_potential_edge_mask = (
-                edge_mask
-                & descriptor_model._edge_type_keep_mask(
-                    descriptor_atype.reshape(-1),
-                    edge_index[0],
-                    edge_index[1],
-                )
-            )
+        inter_potential_edge_mask = self._make_inter_potential_edge_mask(
+            descriptor_atype,
+            edge_index,
+            edge_mask,
+        )
 
         # === Step 2. Descriptor forward ===
         # ``extended_atype`` spans the extended region on the parallel path and
@@ -3208,6 +3203,54 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # =========================================================================
     # Bridging Helpers
     # =========================================================================
+
+    def _make_inter_potential_edge_mask(
+        self,
+        atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build the complete validity mask for analytical pair energies.
+
+        Parameters
+        ----------
+        atype
+            Atom types with shape (nf, nall).
+        edge_index
+            Edge source and destination indices with shape (2, E).
+        edge_mask
+            Base edge-validity mask with shape (E,).
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean analytical-potential mask with shape (E,).
+        """
+        if self.inter_potential is None:
+            return edge_mask
+
+        src = edge_index[0]
+        dst = edge_index[1]
+        atype_flat = atype.reshape(-1)
+        keep = edge_mask
+
+        descriptor = self.atomic_model.descriptor
+        if descriptor.exclude_types:
+            keep = keep & descriptor._edge_type_keep_mask(atype_flat, src, dst)
+
+        atom_excl = self.atomic_model.atom_excl
+        if atom_excl is not None:
+            atom_is_present = self.atomic_model.make_atom_mask(atype)
+            safe_atype = torch.where(atom_is_present, atype, 0)
+            atom_is_included = atom_is_present & atom_excl(safe_atype).to(torch.bool)
+            atom_is_included = atom_is_included.reshape(-1)
+            keep = (
+                keep
+                & atom_is_included.index_select(0, src)
+                & atom_is_included.index_select(0, dst)
+            )
+
+        return keep
 
     def _get_inter_potential_real_type_count(self) -> int:
         """Return the real-type count used to mask analytical pair potentials."""

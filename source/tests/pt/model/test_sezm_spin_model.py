@@ -46,10 +46,9 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# SeZM's ``torch.compile`` / AOT-export code paths are validated only on the
-# releases the compile pipeline supports (see ``deepmd.pt.utils.compile_compat``).
-# Other torch versions can segfault or drift, so the compile-parity tests are
-# skipped there.
+# Keep compile-parity test gating aligned with the runtime allowlist in
+# ``deepmd.pt.utils.compile_compat``. Membership in the allowlist does not imply
+# that every release is installed in CI.
 _TORCH_VERSION = parse_version(torch.__version__)
 _SKIP_OFF_COMPILE_TORCH = (
     _TORCH_VERSION.major,

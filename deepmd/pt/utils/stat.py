@@ -126,29 +126,50 @@ def make_stat_input(
 ) -> list[dict[str, Any]]:
     """Pack data for statistics.
 
-    Args:
-    - dataset: A list of dataset to analyze.
-    - nbatches: Batch count for collecting stats.
+    Parameters
+    ----------
+    datasets
+        Data systems to analyze.
+    dataloaders
+        One data loader for each system.
+    nbatches
+        Maximum number of valid batches collected from each system.
+    min_pair_dist
+        Minimum allowed pair distance in Å. Frames below the threshold are
+        excluded before statistics are accumulated.
 
     Returns
     -------
-    - a list of dicts, each of which contains data from a system
+    list[dict[str, Any]]
+        Packed statistics, one dictionary for each system that contributes at
+        least one valid frame.
     """
     lst = []
-    log.info(f"Packing data for statistics from {len(datasets)} systems")
-    for i in range(len(datasets)):
+    log.info("Packing data for statistics from %d systems", len(datasets))
+    for system_index in range(len(datasets)):
         sys_stat = {}
         with torch.device("cpu"):
-            iterator = iter(dataloaders[i])
-            numb_batches = min(nbatches, len(dataloaders[i]))
+            dataloader = dataloaders[system_index]
+            dataloader_size = len(dataloader)
+            target_batches = min(nbatches, dataloader_size)
+            scan_limit = dataloader_size if min_pair_dist > 0.0 else target_batches
+            iterator = iter(dataloader)
             accepted_batches = 0
-            for stat_data in iterator:
-                if accepted_batches >= numb_batches:
-                    break
+            scanned_batches = 0
+            while accepted_batches < target_batches and scanned_batches < scan_limit:
+                try:
+                    stat_data = next(iterator)
+                except StopIteration:
+                    iterator = iter(dataloader)
+                    try:
+                        stat_data = next(iterator)
+                    except StopIteration:
+                        break
+                scanned_batches += 1
                 frame_mask = min_pair_dist_frame_mask(stat_data, min_pair_dist)
+                if frame_mask is not None and not torch.any(frame_mask):
+                    continue
                 if frame_mask is not None:
-                    if not torch.any(frame_mask):
-                        continue
                     stat_data = select_batch_frames(stat_data, frame_mask)
                 accepted_batches += 1
                 if (
@@ -172,12 +193,19 @@ def make_stat_input(
                         pass
 
         if not sys_stat:
-            log.info(
-                "Skipping training system %d in statistics because no frame "
-                "satisfies min_pair_dist=%s.",
-                i,
-                min_pair_dist,
-            )
+            if min_pair_dist > 0.0:
+                log.info(
+                    "Skipping data system %d in statistics because no frame "
+                    "satisfies min_pair_dist=%s.",
+                    system_index,
+                    min_pair_dist,
+                )
+            else:
+                log.info(
+                    "Skipping data system %d in statistics because its data "
+                    "loader produced no batch.",
+                    system_index,
+                )
             continue
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
@@ -321,7 +349,7 @@ def _reduce_model_prediction(
     mask: np.ndarray,
     intensive: bool,
 ) -> np.ndarray:
-    """Reduce atomic predictions with the public model reduction semantics."""
+    """Reduce atomic predictions, rejecting undefined intensive means."""
     reduced = np.sum(prediction, axis=1)
     if intensive:
         atom_count = np.sum(mask, axis=1)
@@ -396,10 +424,10 @@ def compute_output_stats(
     stat_file_path: DPPath | None = None,
     rcond: float | None = None,
     preset_bias: dict[str, list[np.ndarray | None]] | None = None,
-    model_forward: Callable[..., torch.Tensor] | None = None,
+    model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-) -> dict[str, Any]:
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -414,6 +442,8 @@ def compute_output_stats(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
+    keys : str or list[str], optional
+        Output labels whose per-type bias and standard deviation are computed.
     stat_file_path : DPPath, optional
         The path to the stat file.
     rcond : float, optional
@@ -423,7 +453,7 @@ def compute_output_stats(
         The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descriptor should be set.
-    model_forward : Callable[..., torch.Tensor], optional
+    model_forward : Callable[..., dict[str, torch.Tensor]], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
@@ -432,6 +462,20 @@ def compute_output_stats(
         Whether to distinguish different element types in the statistics.
     intensive : bool, optional
         Whether the fitting target is intensive.
+
+    Returns
+    -------
+    tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]
+        Per-output bias and standard-deviation tensors.
+
+    Raises
+    ------
+    ValueError
+        If output statistics must be computed but no sampled system contains a
+        valid frame.
+    RuntimeError
+        If the requested statistics cannot be computed from the available
+        labels.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -441,8 +485,10 @@ def compute_output_stats(
         # only get data once, sampled is a list of dict[str, torch.Tensor]
         sampled = merged() if callable(merged) else merged
         if not sampled:
-            log.warning("Skipping output statistics because no valid frame remains.")
-            return {}, {}
+            raise ValueError(
+                "Output statistics require at least one sampled system with a "
+                "valid frame."
+            )
         if model_forward is not None:
             model_pred, model_mask = _compute_model_predict(
                 sampled,

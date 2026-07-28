@@ -790,6 +790,25 @@ class Trainer:
             if isinstance(self.min_pair_dist, dict)
             else self.min_pair_dist > 0.0
         )
+        if self.has_min_pair_filter:
+            if self.multi_task:
+                self._training_batch_attempts: int | dict[str, int] = {
+                    model_key: int(
+                        self._broadcast_value_from_rank0(
+                            max(1, len(self.training_dataloader[model_key]))
+                        )
+                    )
+                    for model_key in self.model_keys
+                }
+            else:
+                self._training_batch_attempts = int(
+                    self._broadcast_value_from_rank0(
+                        max(1, len(self.training_dataloader))
+                    )
+                )
+        else:
+            self._training_batch_attempts = 1
+        self._discarded_training_batches = 0
 
         # JIT
         if JIT:
@@ -1478,20 +1497,7 @@ class Trainer:
             cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
-            # Every rank enters this collective once per optimization step,
-            # independent of the locally selected multi-task branch.
-            if (
-                self.has_min_pair_filter
-                and dist.is_available()
-                and dist.is_initialized()
-            ):
-                if not all_ranks_have_valid_frames(bool(input_dict)):
-                    return
-            elif not input_dict:
-                return
+            input_dict, label_dict, log_dict = self._next_training_batch(task_key)
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -1947,6 +1953,7 @@ class Trainer:
         self.t0 = time.time()
         self.total_train_time = 0.0
         self.timed_steps = 0
+        self._discarded_training_batches = 0
 
         if self.disp_avg:
             # Initialize loss accumulators
@@ -1962,6 +1969,13 @@ class Trainer:
             step(step_id)
             if JIT:
                 break
+
+        if self.rank == 0 and self._discarded_training_batches:
+            log.info(
+                "Discarded %d globally invalid batches while collecting "
+                "synchronized training inputs.",
+                self._discarded_training_batches,
+            )
 
         if (
             self.change_bias_after_training
@@ -2311,6 +2325,61 @@ class Trainer:
             use_ema_weights=True,
         )
 
+    def _get_min_pair_dist(self, task_key: str) -> float:
+        """Return the minimum pair distance configured for one task."""
+        if isinstance(self.min_pair_dist, dict):
+            return self.min_pair_dist[task_key]
+        return self.min_pair_dist
+
+    def _get_training_batch_attempts(self, task_key: str) -> int:
+        """Return the synchronized valid-batch search budget for one task."""
+        if isinstance(self._training_batch_attempts, dict):
+            return self._training_batch_attempts[task_key]
+        return self._training_batch_attempts
+
+    def _next_training_batch(
+        self,
+        task_key: str,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return the next batch that can produce a synchronized optimizer step.
+
+        Parameters
+        ----------
+        task_key
+            Selected training task.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+            Model inputs, labels, and sampler metadata for a globally valid
+            batch.
+
+        Raises
+        ------
+        RuntimeError
+            If no globally valid batch is found in one data-loader cycle.
+        """
+        max_attempts = self._get_training_batch_attempts(task_key)
+        distributed_filter = (
+            self.has_min_pair_filter and dist.is_available() and dist.is_initialized()
+        )
+
+        for _ in range(max_attempts):
+            batch = self.get_data(is_train=True, task_key=task_key)
+            input_dict = batch[0]
+            globally_valid = bool(input_dict)
+            if distributed_filter:
+                globally_valid = all_ranks_have_valid_frames(globally_valid)
+            if globally_valid:
+                return batch
+            self._discarded_training_batches += 1
+
+        raise RuntimeError(
+            "Unable to collect a globally valid training batch for task "
+            f"{task_key!r} after {max_attempts} attempts with "
+            f"min_pair_dist={self._get_min_pair_dist(task_key)}."
+        )
+
     def get_data(
         self, is_train: bool = True, task_key: str = "Default"
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -2324,11 +2393,7 @@ class Trainer:
             return {}, {}, {}
         batch_data = next(iterator)
         # === Filter frames with atoms too close (training only) ===
-        min_pair_dist = (
-            self.min_pair_dist[task_key]
-            if isinstance(self.min_pair_dist, dict)
-            else self.min_pair_dist
-        )
+        min_pair_dist = self._get_min_pair_dist(task_key)
         valid_mask = (
             min_pair_dist_frame_mask(batch_data, min_pair_dist) if is_train else None
         )

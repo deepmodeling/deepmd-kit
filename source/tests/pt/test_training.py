@@ -1179,6 +1179,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
         self.config["training"]["numb_steps"] = 2
         self.config["training"]["save_freq"] = 2
         self.config["training"]["disp_training"] = False
+        self.config["training"]["training_data"]["min_pair_dist"] = 0.1
         self.config["validating"] = {
             "full_validation": False,
             "ema_full_validation": False,
@@ -1188,7 +1189,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
-    def test_skipped_batch_does_not_advance_scheduler(self) -> None:
+    def test_invalid_batch_is_retried_without_losing_a_step(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         original_get_data = trainer.get_data
         skipped = {"done": False}
@@ -1211,7 +1212,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
             trainer.run()
 
         self.assertTrue(skipped["done"])
-        self.assertEqual(trainer.scheduler.last_epoch, 1)
+        self.assertEqual(trainer.scheduler.last_epoch, 2)
 
 
 class TestEMATraining(unittest.TestCase):

@@ -53,9 +53,9 @@ __all__ = [
 ]
 
 
-#: ``(major, minor)`` releases whose ``torch.compile`` stack is exercised by the
-#: SeZM compile-parity tests. Other releases are rejected up front rather than
-#: risking silent numerical drift or a segfault deep inside Inductor.
+#: ``(major, minor)`` releases explicitly enabled for SeZM compilation after
+#: validation. This runtime allowlist is not a record of which releases happen
+#: to be installed in CI.
 SUPPORTED_COMPILE_TORCH = ((2, 11), (2, 12), (2, 13))
 
 #: Releases carrying the Inductor symbolic-divisibility regression repaired by
@@ -590,7 +590,13 @@ def patch_inductor_symbolic_divisibility() -> None:
     if getattr(SizeVarAllocator, "_dp_divisibility_patched", False):
         return
 
-    original_known_multiple_of = SizeVarAllocator.statically_known_multiple_of
+    original_known_multiple_of = getattr(
+        SizeVarAllocator,
+        "statically_known_multiple_of",
+        None,
+    )
+    if not callable(original_known_multiple_of):
+        return
 
     def statically_known_multiple_of(
         self: Any, numerator: Any, denominator: Any
