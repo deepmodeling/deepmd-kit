@@ -55,6 +55,7 @@ from deepmd.pt.train.validation import (
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
     build_inductor_compile_options,
+    check_compile_torch_version,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
@@ -1834,6 +1835,7 @@ class Trainer(AbstractTrainer):
         # torch.compile -------------------------------------------------------
         self.enable_compile = training_params.get("enable_compile", False)
         if self.enable_compile:
+            check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
             log.info("Compiling model with torch.compile (%s)", compile_opts)
             self._compile_model(compile_opts)
