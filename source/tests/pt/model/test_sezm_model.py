@@ -2201,19 +2201,8 @@ class TestSeZMModelBridging(unittest.TestCase):
             )
         )
 
-    def test_zbl_respects_pair_exclusion(self) -> None:
-        """Excluded pairs contribute neither learned interactions nor ZBL energy."""
-        plain_params = self._build_model_params(bridging_method="none")
-        zbl_params = self._build_model_params(bridging_method="ZBL")
-        for params in (plain_params, zbl_params):
-            params["pair_exclude_types"] = [[0, 1]]
-            params["descriptor"]["precision"] = "float64"
-            params["fitting_net"]["precision"] = "float64"
-
-        model_plain = get_sezm_model(plain_params).to(self.device).eval()
-        model_zbl = get_sezm_model(zbl_params).to(self.device).eval()
-        model_zbl.load_state_dict(model_plain.state_dict(), strict=False)
-
+    def test_zbl_respects_exclusions(self) -> None:
+        """Excluded atoms and pairs contribute neither learned nor ZBL energy."""
         coord = torch.tensor(
             [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0]]],
             dtype=torch.float64,
@@ -2225,12 +2214,28 @@ class TestSeZMModelBridging(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
-        torch.testing.assert_close(
-            model_zbl(coord, atype, box=box)["energy"],
-            model_plain(coord, atype, box=box)["energy"],
-            atol=1.0e-12,
-            rtol=1.0e-12,
-        )
+        for exclusion_key, exclusion_value in (
+            ("pair_exclude_types", [[0, 1]]),
+            ("atom_exclude_types", [1]),
+        ):
+            with self.subTest(exclusion_key=exclusion_key):
+                plain_params = self._build_model_params(bridging_method="none")
+                zbl_params = self._build_model_params(bridging_method="ZBL")
+                for params in (plain_params, zbl_params):
+                    params[exclusion_key] = exclusion_value
+                    params["descriptor"]["precision"] = "float64"
+                    params["fitting_net"]["precision"] = "float64"
+
+                model_plain = get_sezm_model(plain_params).to(self.device).eval()
+                model_zbl = get_sezm_model(zbl_params).to(self.device).eval()
+                model_zbl.load_state_dict(model_plain.state_dict(), strict=False)
+
+                torch.testing.assert_close(
+                    model_zbl(coord, atype, box=box)["energy"],
+                    model_plain(coord, atype, box=box)["energy"],
+                    atol=1.0e-12,
+                    rtol=1.0e-12,
+                )
 
 
 class TestSeZMModelModes(unittest.TestCase):
