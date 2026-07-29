@@ -1829,7 +1829,7 @@ class TestDecoderPoolFailure(unittest.TestCase):
         hasattr(signal, "SIGKILL"),
         "SIGKILL is not available on this platform",
     )
-    def test_killing_the_real_decoders_does_not_stop_the_run(self) -> None:
+    def test_killing_a_real_decoder_does_not_stop_the_run(self) -> None:
         """The pool reports itself broken, and the batch still arrives.
 
         A decoder that dies cleanly fails every future the pool holds, which
@@ -1838,9 +1838,12 @@ class TestDecoderPoolFailure(unittest.TestCase):
         """
         iterator = self._isolated_iterator()
         next(iterator)
-        for process in list(iterator._pool.executor._processes.values()):
-            os.kill(process.pid, signal.SIGKILL)
-            process.join(timeout=5)
+        processes = list(iterator._pool.executor._processes.values())
+        self.assertTrue(processes)
+        process = processes[0]
+        self.assertTrue(process.is_alive())
+        os.kill(process.pid, signal.SIGKILL)
+        process.join(timeout=5)
 
         batch = next(iterator)
 
