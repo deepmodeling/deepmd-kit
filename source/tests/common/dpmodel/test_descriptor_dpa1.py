@@ -53,7 +53,10 @@ class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
             attn_layer=0,
             lmax=2,
         )
-        restored = DescrptDPA1.deserialize(descriptor.serialize())
+        serialized = descriptor.serialize()
+        self.assertEqual(serialized["@version"], 4)
+        self.assertEqual(descriptor.se_atten.serialize()["@version"], 2)
+        restored = DescrptDPA1.deserialize(serialized)
 
         actual = descriptor.call(self.coord_ext, self.atype_ext, self.nlist)
         expected = restored.call(self.coord_ext, self.atype_ext, self.nlist)

@@ -71,9 +71,8 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # The compressed DPA1 kernels are instantiated one translation unit per
   # channel width so their topology and angular-degree variants compile in
   # parallel.
-  set_source_files_properties(
-    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} dpa4c_graph_compress.cu
-    PROPERTIES COMPILE_OPTIONS "--use_fast_math")
+  set_source_files_properties(${DPA1_GRAPH_COMPRESS_KERNEL_SRC}
+                              PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
   target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})

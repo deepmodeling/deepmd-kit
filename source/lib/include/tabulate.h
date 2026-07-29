@@ -2,6 +2,9 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+
+#include "errors.h"
 
 namespace deepmd {
 
@@ -9,6 +12,18 @@ inline bool is_supported_se_a_basis_dimension(
     const std::int64_t ndescrpt) noexcept {
   return ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25;
 }
+
+namespace detail {
+
+inline void check_se_a_basis_dimension(const std::int64_t ndescrpt) {
+  if (!is_supported_se_a_basis_dimension(ndescrpt)) {
+    throw deepmd_exception(
+        "The environment basis dimension must be 4, 9, 16, or 25, got " +
+        std::to_string(ndescrpt));
+  }
+}
+
+}  // namespace detail
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_cpu(FPTYPE* out,

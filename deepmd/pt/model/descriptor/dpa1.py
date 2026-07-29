@@ -512,7 +512,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 2,
+            "@version": 4 if obj.lmax != 1 else 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -569,7 +569,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -586,6 +586,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         def t_cvt(xx: Any) -> torch.Tensor:

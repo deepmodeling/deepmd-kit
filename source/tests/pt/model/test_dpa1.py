@@ -7,12 +7,17 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DPDescrptDPA1
+from deepmd.dpmodel.descriptor.dpa1 import (
+    build_dpa1_moment_basis,
+)
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
 )
 from deepmd.pt.model.descriptor.se_atten import (
     _build_degree_weights,
     _build_moment_basis,
+    _compute_angular_radial,
+    _safe_direction,
 )
 from deepmd.pt.utils import (
     env,
@@ -398,11 +403,90 @@ class TestDPA1AngularMoments(unittest.TestCase):
             1e-8,
         )
 
-        restored = DescrptDPA1.deserialize(degree_two.serialize()).to(env.DEVICE).eval()
+        serialized = degree_two.serialize()
+        self.assertEqual(serialized["@version"], 4)
+        restored = DescrptDPA1.deserialize(serialized).to(env.DEVICE).eval()
         restored_square, _ = self._evaluate(restored, square)
         torch.testing.assert_close(restored_square, square_l2)
         scripted_square, _ = self._evaluate(torch.jit.script(degree_two), square)
         torch.testing.assert_close(scripted_square, square_l2)
+
+        dp_descriptor = DPDescrptDPA1.deserialize(serialized)
+        dp_coord = np.concatenate(
+            (np.zeros((1, 3)), square.detach().cpu().numpy()),
+            axis=0,
+        ).reshape(1, -1)
+        dp_atype = np.zeros((1, 5), dtype=np.int64)
+        dp_nlist = np.array([[[1, 2, 3, 4]]], dtype=np.int64)
+        dp_square = dp_descriptor.call(dp_coord, dp_atype, dp_nlist)[0]
+        np.testing.assert_allclose(
+            square_l2.detach().cpu().numpy(),
+            dp_square,
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
+    def test_env_protection_regularizes_higher_degree_derivatives(self) -> None:
+        protection = 1e-2
+        gradient_norms = []
+        for scale in (1e-4, 1e-7):
+            diff = (
+                torch.tensor(
+                    [[[1.0, 0.4, -0.2]]],
+                    dtype=self.dtype,
+                    device=env.DEVICE,
+                )
+                * scale
+            ).requires_grad_(True)
+            direction, distance, direction_mask = _safe_direction(
+                diff,
+                protection,
+            )
+            radial = _compute_angular_radial(
+                distance,
+                direction_mask,
+                torch.ones((1, 1, 1), dtype=self.dtype, device=env.DEVICE),
+                torch.ones((1, 1, 1), dtype=self.dtype, device=env.DEVICE),
+                torch.ones((1, 1), dtype=torch.bool, device=env.DEVICE),
+                protection,
+            )
+            basis = _build_moment_basis(
+                torch.zeros((1, 1, 4), dtype=self.dtype, device=env.DEVICE),
+                direction,
+                radial,
+                2,
+            )
+            expected_basis = build_dpa1_moment_basis(
+                np.zeros((1, 1, 4)),
+                diff.detach().cpu().numpy(),
+                np.ones((1, 1, 1)),
+                np.ones((1, 1, 1)),
+                np.ones((1, 1), dtype=bool),
+                2,
+                protection,
+            )
+            np.testing.assert_allclose(
+                basis.detach().cpu().numpy(),
+                expected_basis,
+                atol=1e-12,
+                rtol=1e-12,
+            )
+            cotangent = torch.tensor(
+                [0.2, -0.7, 1.1, 0.3, -0.4],
+                dtype=self.dtype,
+                device=env.DEVICE,
+            )
+            (gradient,) = torch.autograd.grad(
+                (basis[..., 4:] * cotangent).sum(),
+                diff,
+            )
+            self.assertTrue(torch.isfinite(gradient).all())
+            gradient_norms.append(torch.linalg.vector_norm(gradient))
+
+        self.assertLess(
+            gradient_norms[1].item(),
+            gradient_norms[0].item() * 1e-2,
+        )
 
     def test_higher_degrees_are_rotation_and_permutation_invariant(self) -> None:
         neighbors = torch.tensor(

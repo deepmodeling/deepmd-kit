@@ -90,8 +90,26 @@ _DEGREE_GAIN_INIT_STD = 0.1
 
 def _safe_direction(
     diff: torch.Tensor,
+    protection: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Normalize displacements with finite first and second derivatives at zero."""
+    """Scale displacements by the protected distance denominator.
+
+    Parameters
+    ----------
+    diff
+        Neighbor displacement vectors with shape ``(..., 3)``.
+    protection
+        Distance protection added to the denominator.
+
+    Returns
+    -------
+    torch.Tensor
+        Protected displacement coordinates with shape ``(..., 3)``.
+    torch.Tensor
+        Unprotected distances with shape ``(..., 1)``.
+    torch.Tensor
+        Nonzero-distance mask with shape ``(..., 1)``.
+    """
     distance_squared = torch.sum(diff * diff, dim=-1, keepdim=True)
     direction_mask = distance_squared > 0.0
     safe_distance = torch.sqrt(
@@ -101,7 +119,12 @@ def _safe_direction(
             torch.ones_like(distance_squared),
         )
     )
-    return diff / safe_distance, safe_distance, direction_mask
+    denominator = torch.where(
+        direction_mask,
+        safe_distance + protection,
+        torch.ones_like(safe_distance),
+    )
+    return diff / denominator, safe_distance, direction_mask
 
 
 def _compute_angular_radial(
@@ -147,7 +170,7 @@ def _build_moment_basis(
     rr
         Normalized environment matrix with shape ``(ncenter, nnei, 4)``.
     direction
-        Safely normalized neighbor directions with shape
+        Protected displacement coordinates with shape
         ``(ncenter, nnei, 3)``.
     radial
         Zero-mean normalized radial amplitude with shape
@@ -782,7 +805,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         moment_radial = rr[..., :1]
         direction = diff_flat
         if self.lmax > 1:
-            direction, distance, direction_mask = _safe_direction(diff_flat)
+            direction, distance, direction_mask = _safe_direction(
+                diff_flat,
+                self.env_protection,
+            )
             radial_stddev = self.stddev[atype][..., :1].view(nfnl, nnei, 1)
             moment_radial = _compute_angular_radial(
                 distance,

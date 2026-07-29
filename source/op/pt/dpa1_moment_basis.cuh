@@ -3,7 +3,8 @@
 // Compact Cartesian real spherical harmonics for DPA1 moment aggregation.
 //
 // Rows [l^2, (l+1)^2) contain degree l in m=-l,...,l order. Degrees 2-4
-// use norm normalization, so their inner product equals P_l(u dot v).
+// use norm-normalized regular solid harmonics. On unit vectors, their inner
+// product equals P_l(u dot v).
 
 #pragma once
 
@@ -106,23 +107,11 @@ DPA1_MOMENT_INLINE void evaluate_angular_basis(const T& x,
 }
 
 template <int BasisDim>
-DPA1_MOMENT_INLINE void fill_degree_two_basis(
-    float* basis, float ux, float uy, float uz, float radial) {
-  static_assert(BasisDim == 9);
-  constexpr float sqrt3 = 1.7320508075688772935f;
-  basis[4] = radial * sqrt3 * ux * uy;
-  basis[5] = radial * sqrt3 * uy * uz;
-  basis[6] = radial * 0.5f * (3.0f * uz * uz - 1.0f);
-  basis[7] = radial * sqrt3 * ux * uz;
-  basis[8] = radial * 0.5f * sqrt3 * (ux * ux - uy * uy);
-}
-
-template <int BasisDim>
 DPA1_MOMENT_INLINE void fill_angular_basis(
-    float* basis, float ux, float uy, float uz, float radial) {
+    float* basis, float x, float y, float z, float radial) {
   if constexpr (BasisDim > 4) {
     float angular[BasisDim - 4];
-    evaluate_angular_basis<float, BasisDim>(ux, uy, uz, angular);
+    evaluate_angular_basis<float, BasisDim>(x, y, z, angular);
 #pragma unroll
     for (int row = 0; row < BasisDim - 4; ++row) {
       basis[4 + row] = radial * angular[row];
@@ -131,86 +120,28 @@ DPA1_MOMENT_INLINE void fill_angular_basis(
 }
 
 template <int BasisDim>
-DPA1_MOMENT_INLINE void add_degree_two_edge_gradient(
-    const float (&d_basis)[BasisDim],
-    float inverse_neighbors,
-    float x,
-    float y,
-    float z,
-    float radius,
-    float inverse_denominator,
-    float inverse_stddev0,
-    float switch_value,
-    float switch_gradient,
-    float& output_x,
-    float& output_y,
-    float& output_z) {
-  static_assert(BasisDim == 9);
-  if (radius <= 0.0f) {
-    return;
-  }
-  const float inverse_radius = 1.0f / radius;
-  const float ux = x * inverse_radius;
-  const float uy = y * inverse_radius;
-  const float uz = z * inverse_radius;
-  constexpr float sqrt3 = 1.7320508075688772935f;
-  const float y2[5] = {
-      sqrt3 * ux * uy,
-      sqrt3 * uy * uz,
-      0.5f * (3.0f * uz * uz - 1.0f),
-      sqrt3 * ux * uz,
-      0.5f * sqrt3 * (ux * ux - uy * uy),
-  };
-  float radial_partial = 0.0f;
-#pragma unroll
-  for (int row = 0; row < 5; ++row) {
-    radial_partial =
-        fmaf(d_basis[4 + row] * inverse_neighbors, y2[row], radial_partial);
-  }
-  const float d4 = d_basis[4] * inverse_neighbors;
-  const float d5 = d_basis[5] * inverse_neighbors;
-  const float d6 = d_basis[6] * inverse_neighbors;
-  const float d7 = d_basis[7] * inverse_neighbors;
-  const float d8 = d_basis[8] * inverse_neighbors;
-  const float grad_ux = sqrt3 * (d4 * uy + d7 * uz + d8 * ux);
-  const float grad_uy = sqrt3 * (d4 * ux + d5 * uz - d8 * uy);
-  const float grad_uz = sqrt3 * (d5 * uy + d7 * ux) + 3.0f * d6 * uz;
-  const float unit_dot = grad_ux * ux + grad_uy * uy + grad_uz * uz;
-  const float amplitude = switch_value * inverse_denominator * inverse_stddev0;
-  const float amplitude_gradient =
-      inverse_stddev0 * inverse_denominator *
-      (switch_gradient - switch_value * inverse_denominator);
-  output_x += radial_partial * amplitude_gradient * ux +
-              amplitude * inverse_radius * (grad_ux - unit_dot * ux);
-  output_y += radial_partial * amplitude_gradient * uy +
-              amplitude * inverse_radius * (grad_uy - unit_dot * uy);
-  output_z += radial_partial * amplitude_gradient * uz +
-              amplitude * inverse_radius * (grad_uz - unit_dot * uz);
-}
-
-template <int BasisDim>
 DPA1_MOMENT_INLINE void angular_basis_vjp(const float (&d_basis)[BasisDim],
                                           float inverse_neighbors,
-                                          float ux,
-                                          float uy,
-                                          float uz,
+                                          float x,
+                                          float y,
+                                          float z,
                                           float& radial_partial,
-                                          float& grad_ux,
-                                          float& grad_uy,
-                                          float& grad_uz) {
+                                          float& grad_x,
+                                          float& grad_y,
+                                          float& grad_z) {
   if constexpr (BasisDim > 4) {
-    const Jet3 x{ux, 1.0f, 0.0f, 0.0f};
-    const Jet3 y{uy, 0.0f, 1.0f, 0.0f};
-    const Jet3 z{uz, 0.0f, 0.0f, 1.0f};
+    const Jet3 x_jet{x, 1.0f, 0.0f, 0.0f};
+    const Jet3 y_jet{y, 0.0f, 1.0f, 0.0f};
+    const Jet3 z_jet{z, 0.0f, 0.0f, 1.0f};
     Jet3 angular[BasisDim - 4];
-    evaluate_angular_basis<Jet3, BasisDim>(x, y, z, angular);
+    evaluate_angular_basis<Jet3, BasisDim>(x_jet, y_jet, z_jet, angular);
 #pragma unroll
     for (int row = 0; row < BasisDim - 4; ++row) {
       const float gradient = d_basis[4 + row] * inverse_neighbors;
       radial_partial = fmaf(gradient, angular[row].value, radial_partial);
-      grad_ux = fmaf(gradient, angular[row].dx, grad_ux);
-      grad_uy = fmaf(gradient, angular[row].dy, grad_uy);
-      grad_uz = fmaf(gradient, angular[row].dz, grad_uz);
+      grad_x = fmaf(gradient, angular[row].dx, grad_x);
+      grad_y = fmaf(gradient, angular[row].dy, grad_y);
+      grad_z = fmaf(gradient, angular[row].dz, grad_z);
     }
   }
 }
@@ -235,27 +166,33 @@ DPA1_MOMENT_INLINE void add_angular_edge_gradient(
       return;
     }
     const float inverse_radius = 1.0f / radius;
-    const float ux = x * inverse_radius;
-    const float uy = y * inverse_radius;
-    const float uz = z * inverse_radius;
+    const float nx = x * inverse_radius;
+    const float ny = y * inverse_radius;
+    const float nz = z * inverse_radius;
+    const float vx = x * inverse_denominator;
+    const float vy = y * inverse_denominator;
+    const float vz = z * inverse_denominator;
     float radial_partial = 0.0f;
-    float grad_ux = 0.0f;
-    float grad_uy = 0.0f;
-    float grad_uz = 0.0f;
-    angular_basis_vjp<BasisDim>(d_basis, inverse_neighbors, ux, uy, uz,
-                                radial_partial, grad_ux, grad_uy, grad_uz);
-    const float unit_dot = grad_ux * ux + grad_uy * uy + grad_uz * uz;
+    float grad_vx = 0.0f;
+    float grad_vy = 0.0f;
+    float grad_vz = 0.0f;
+    angular_basis_vjp<BasisDim>(d_basis, inverse_neighbors, vx, vy, vz,
+                                radial_partial, grad_vx, grad_vy, grad_vz);
+    const float protected_dot = grad_vx * vx + grad_vy * vy + grad_vz * vz;
     const float amplitude =
         switch_value * inverse_denominator * inverse_stddev0;
     const float amplitude_gradient =
         inverse_stddev0 * inverse_denominator *
         (switch_gradient - switch_value * inverse_denominator);
-    output_x += radial_partial * amplitude_gradient * ux +
-                amplitude * inverse_radius * (grad_ux - unit_dot * ux);
-    output_y += radial_partial * amplitude_gradient * uy +
-                amplitude * inverse_radius * (grad_uy - unit_dot * uy);
-    output_z += radial_partial * amplitude_gradient * uz +
-                amplitude * inverse_radius * (grad_uz - unit_dot * uz);
+    output_x +=
+        radial_partial * amplitude_gradient * nx +
+        amplitude * inverse_denominator * (grad_vx - protected_dot * nx);
+    output_y +=
+        radial_partial * amplitude_gradient * ny +
+        amplitude * inverse_denominator * (grad_vy - protected_dot * ny);
+    output_z +=
+        radial_partial * amplitude_gradient * nz +
+        amplitude * inverse_denominator * (grad_vz - protected_dot * nz);
   }
 }
 

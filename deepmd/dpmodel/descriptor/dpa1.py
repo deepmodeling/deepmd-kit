@@ -142,13 +142,13 @@ def build_dpa1_moment_basis(
     safe_distance = xp.sqrt(
         xp.where(direction_mask, distance_squared, xp.ones_like(distance_squared))
     )
-    direction = diff / safe_distance
     basis_mask = valid_mask[..., None] & direction_mask
     denominator = xp.where(
         basis_mask,
         safe_distance + protection,
         xp.ones_like(safe_distance),
     )
+    direction = diff / denominator * xp.astype(basis_mask, diff.dtype)
     radial = switch / denominator / radial_stddev * xp.astype(basis_mask, switch.dtype)
 
     x, y, z = direction[..., 0], direction[..., 1], direction[..., 2]
@@ -1102,7 +1102,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 3 if self.compress else 2,
+            "@version": 4 if obj.lmax != 1 else (3 if self.compress else 2),
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -1188,7 +1188,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -1205,6 +1205,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]
@@ -2332,7 +2333,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         data = {
             "@class": "DescriptorBlock",
             "type": "dpa1",
-            "@version": 1,
+            "@version": 2 if obj.lmax != 1 else 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -2381,7 +2382,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -2393,6 +2394,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]

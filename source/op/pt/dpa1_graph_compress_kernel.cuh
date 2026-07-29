@@ -225,14 +225,14 @@ __device__ __forceinline__ EdgeEnvironment<BasisDim> load_environment(
   const float denominator = environment.radius + protection;
   environment.switch_factor =
       switch_value(environment.radius, rcut_smooth, rcut);
-  const float inverse_radius = __fdividef(1.0f, denominator);
+  const float inverse_denominator = __fdividef(1.0f, denominator);
   const float radial_scale =
-      environment.switch_factor * inverse_radius * inverse_radius;
+      environment.switch_factor * inverse_denominator * inverse_denominator;
   const float* center_average = average + static_cast<long>(center_type) * 4;
   const float* center_inverse_stddev =
       inverse_stddev + static_cast<long>(center_type) * 4;
   environment.radial =
-      (environment.switch_factor * inverse_radius - center_average[0]) *
+      (environment.switch_factor * inverse_denominator - center_average[0]) *
       center_inverse_stddev[0];
   environment.basis[0] = environment.radial * inverse_neighbors;
   environment.basis[1] = (environment.x * radial_scale - center_average[1]) *
@@ -242,22 +242,15 @@ __device__ __forceinline__ EdgeEnvironment<BasisDim> load_environment(
   environment.basis[3] = (environment.z * radial_scale - center_average[3]) *
                          center_inverse_stddev[3] * inverse_neighbors;
   if constexpr (BasisDim > 4) {
-    const float inverse_length =
-        environment.radius > 0.0f ? __fdividef(1.0f, environment.radius) : 0.0f;
-    const float ux = environment.x * inverse_length;
-    const float uy = environment.y * inverse_length;
-    const float uz = environment.z * inverse_length;
+    const float vx = environment.x * inverse_denominator;
+    const float vy = environment.y * inverse_denominator;
+    const float vz = environment.z * inverse_denominator;
     const float radial = environment.radius > 0.0f
-                             ? environment.switch_factor * inverse_radius *
+                             ? environment.switch_factor * inverse_denominator *
                                    center_inverse_stddev[0] * inverse_neighbors
                              : 0.0f;
-    if constexpr (BasisDim == 9) {
-      deepmd::dpa1::fill_degree_two_basis<BasisDim>(environment.basis, ux, uy,
-                                                    uz, radial);
-    } else {
-      deepmd::dpa1::fill_angular_basis<BasisDim>(environment.basis, ux, uy, uz,
-                                                 radial);
-    }
+    deepmd::dpa1::fill_angular_basis<BasisDim>(environment.basis, vx, vy, vz,
+                                               radial);
   }
   environment.pair_index =
       one_side ? neighbor_type : center_type * ntypes + neighbor_type;
@@ -336,13 +329,7 @@ __device__ __forceinline__ void store_edge_gradient(
   float output_x = coefficient * environment.x + vector_scale * gradient_x;
   float output_y = coefficient * environment.y + vector_scale * gradient_y;
   float output_z = coefficient * environment.z + vector_scale * gradient_z;
-  if constexpr (BasisDim == 9) {
-    deepmd::dpa1::add_degree_two_edge_gradient<BasisDim>(
-        partial_basis, inverse_neighbors, environment.x, environment.y,
-        environment.z, environment.radius, inverse_denominator, inverse_stddev0,
-        environment.switch_factor, switch_gradient, output_x, output_y,
-        output_z);
-  } else if constexpr (BasisDim > 9) {
+  if constexpr (BasisDim > 4) {
     deepmd::dpa1::add_angular_edge_gradient<BasisDim>(
         partial_basis, inverse_neighbors, environment.x, environment.y,
         environment.z, environment.radius, inverse_denominator, inverse_stddev0,

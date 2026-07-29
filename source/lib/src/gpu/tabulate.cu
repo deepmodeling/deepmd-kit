@@ -1,6 +1,9 @@
 #include <math.h>
 
-#include <cassert>
+#if GOOGLE_CUDA
+#include <mutex>
+#include <unordered_map>
+#endif
 
 #include "device.h"
 #include "tabulate.h"
@@ -1086,6 +1089,36 @@ void launch_tabulate_fusion_se_a(FPTYPE* out,
        is_sorted);
 }
 
+#if GOOGLE_CUDA
+namespace {
+
+struct CudaSharedMemoryLimits {
+  size_t standard;
+  size_t opt_in;
+};
+
+CudaSharedMemoryLimits get_cuda_shared_memory_limits(const int device) {
+  static std::mutex cache_mutex;
+  static std::unordered_map<int, CudaSharedMemoryLimits> cache;
+  std::lock_guard<std::mutex> lock(cache_mutex);
+  const auto cached = cache.find(device);
+  if (cached != cache.end()) {
+    return cached->second;
+  }
+
+  cudaDeviceProp properties;
+  DPErrcheck(cudaGetDeviceProperties(&properties, device));
+  const CudaSharedMemoryLimits limits{
+      properties.sharedMemPerBlock,
+      properties.sharedMemPerBlockOptin,
+  };
+  cache.emplace(device, limits);
+  return limits;
+}
+
+}  // namespace
+#endif
+
 template <typename FPTYPE, int MTILE>
 void launch_tabulate_fusion_se_a_grad(FPTYPE* dy_dem_x,
                                       FPTYPE* dy_dem,
@@ -1103,21 +1136,18 @@ void launch_tabulate_fusion_se_a_grad(FPTYPE* dy_dem_x,
 #if GOOGLE_CUDA
   const size_t shared_memory = sizeof(FPTYPE) * MTILE * last_layer_size;
   int device = 0;
-  cudaDeviceProp properties;
   DPErrcheck(cudaGetDevice(&device));
-  DPErrcheck(cudaGetDeviceProperties(&properties, device));
+  const CudaSharedMemoryLimits limits = get_cuda_shared_memory_limits(device);
   const size_t shared_memory_limit =
-      properties.sharedMemPerBlock > properties.sharedMemPerBlockOptin
-          ? properties.sharedMemPerBlock
-          : properties.sharedMemPerBlockOptin;
+      limits.standard > limits.opt_in ? limits.standard : limits.opt_in;
   if (shared_memory <= shared_memory_limit) {
     auto kernel =
         tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MTILE, KK,
                                                          true>;
-    if (shared_memory > properties.sharedMemPerBlock) {
+    if (shared_memory > limits.standard) {
       DPErrcheck(cudaFuncSetAttribute(
           kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-          static_cast<int>(properties.sharedMemPerBlockOptin)));
+          static_cast<int>(limits.opt_in)));
     }
     kernel<<<nloc, KK * WARP_SIZE, shared_memory>>>(
         dy_dem_x, dy_dem, dy_dtwo, table, em_x, em, two_embed, dy,
@@ -1181,10 +1211,10 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
                               const int last_layer_size,
                               const bool is_sorted,
                               const int ndescrpt) {
+  detail::check_se_a_basis_dimension(ndescrpt);
   if (nloc <= 0) {
     return;
   }
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   if (ndescrpt == 4) {
@@ -1223,10 +1253,10 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int last_layer_size,
                                    const bool is_sorted,
                                    const int ndescrpt) {
+  detail::check_se_a_basis_dimension(ndescrpt);
   if (nloc <= 0) {
     return;
   }
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
@@ -1268,10 +1298,10 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
                                         const int last_layer_size,
                                         const bool is_sorted,
                                         const int ndescrpt) {
+  detail::check_se_a_basis_dimension(ndescrpt);
   if (nloc <= 0) {
     return;
   }
-  assert(ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(

@@ -266,6 +266,8 @@ DEV_INLINE EdgeStage<BASIS_DIM> stage_edge(long e,
                                            const long* __restrict__ atype,
                                            const float* __restrict__ davg,
                                            const float* __restrict__ inv_dstd) {
+  static_assert(BASIS_DIM == 4 || BASIS_DIM == 9,
+                "Uncompressed DPA1 CUDA kernels support only lmax <= 2.");
   EdgeStage<BASIS_DIM> s;
   const long src = edge_index[e];
   const long dst = edge_index[n_edge + e];
@@ -291,17 +293,17 @@ DEV_INLINE EdgeStage<BASIS_DIM> stage_edge(long e,
   s.basis[2] = (y * iq2 - av[2]) * isd[2];
   s.basis[3] = (z * iq2 - av[3]) * isd[3];
   if constexpr (BASIS_DIM > 4) {
-    const float inv_len = s.valid && len > 0.f ? 1.f / len : 0.f;
-    const float ux = x * inv_len;
-    const float uy = y * inv_len;
-    const float uz = z * inv_len;
+    const float vx = x * rq;
+    const float vy = y * rq;
+    const float vz = z * rq;
+    const float v2 = vx * vx + vy * vy + vz * vz;
     const float radial = s.valid && len > 0.f ? t0 * isd[0] : 0.f;
     constexpr float sqrt_three = 1.7320508075688772935f;
-    s.basis[4] = radial * sqrt_three * ux * uy;
-    s.basis[5] = radial * sqrt_three * uy * uz;
-    s.basis[6] = radial * 0.5f * (3.f * uz * uz - 1.f);
-    s.basis[7] = radial * sqrt_three * ux * uz;
-    s.basis[8] = radial * 0.5f * sqrt_three * (ux * ux - uy * uy);
+    s.basis[4] = radial * sqrt_three * vx * vy;
+    s.basis[5] = radial * sqrt_three * vy * vz;
+    s.basis[6] = radial * 0.5f * (3.f * vz * vz - v2);
+    s.basis[7] = radial * sqrt_three * vx * vz;
+    s.basis[8] = radial * 0.5f * sqrt_three * (vx * vx - vy * vy);
   }
   s.sw = sw;
   s.pair_idx = one_side ? nt : ct * ntypes + nt;
@@ -322,6 +324,8 @@ DEV_INLINE void moment_basis_edge_gradient(const float (&d_basis)[BASIS_DIM],
                                            float inv_nnei,
                                            const float* __restrict__ inv_dstd,
                                            float* __restrict__ output) {
+  static_assert(BASIS_DIM == 4 || BASIS_DIM == 9,
+                "Uncompressed DPA1 CUDA kernels support only lmax <= 2.");
   const float inv_len = len > 0.f ? 1.f / len : 0.f;
   const float inv_q = 1.f / (len + protection);
   const float g0 = (d_basis[0] * inv_nnei + d_radial) * inv_dstd[0];
@@ -340,16 +344,20 @@ DEV_INLINE void moment_basis_edge_gradient(const float (&d_basis)[BASIS_DIM],
   float grad_z = coefficient * z + vector_scale * gz;
 
   if constexpr (BASIS_DIM == 9) {
-    const float ux = x * inv_len;
-    const float uy = y * inv_len;
-    const float uz = z * inv_len;
+    const float nx = x * inv_len;
+    const float ny = y * inv_len;
+    const float nz = z * inv_len;
+    const float vx = x * inv_q;
+    const float vy = y * inv_q;
+    const float vz = z * inv_q;
+    const float v2 = vx * vx + vy * vy + vz * vz;
     constexpr float sqrt_three = 1.7320508075688772935f;
     const float y2[5] = {
-        sqrt_three * ux * uy,
-        sqrt_three * uy * uz,
-        0.5f * (3.f * uz * uz - 1.f),
-        sqrt_three * ux * uz,
-        0.5f * sqrt_three * (ux * ux - uy * uy),
+        sqrt_three * vx * vy,
+        sqrt_three * vy * vz,
+        0.5f * (3.f * vz * vz - v2),
+        sqrt_three * vx * vz,
+        0.5f * sqrt_three * (vx * vx - vy * vy),
     };
     float radial_partial = 0.f;
 #pragma unroll
@@ -362,18 +370,18 @@ DEV_INLINE void moment_basis_edge_gradient(const float (&d_basis)[BASIS_DIM],
     const float d6 = d_basis[6] * inv_nnei;
     const float d7 = d_basis[7] * inv_nnei;
     const float d8 = d_basis[8] * inv_nnei;
-    const float grad_ux = sqrt_three * (d4 * uy + d7 * uz + d8 * ux);
-    const float grad_uy = sqrt_three * (d4 * ux + d5 * uz - d8 * uy);
-    const float grad_uz = sqrt_three * (d5 * uy + d7 * ux) + 3.f * d6 * uz;
-    const float unit_dot = grad_ux * ux + grad_uy * uy + grad_uz * uz;
+    const float grad_vx = sqrt_three * (d4 * vy + d7 * vz + d8 * vx) - d6 * vx;
+    const float grad_vy = sqrt_three * (d4 * vx + d5 * vz - d8 * vy) - d6 * vy;
+    const float grad_vz = sqrt_three * (d5 * vy + d7 * vx) + 2.f * d6 * vz;
+    const float protected_dot = grad_vx * vx + grad_vy * vy + grad_vz * vz;
     const float amplitude = sw * inv_q * inv_dstd[0];
     const float amplitude_grad = inv_dstd[0] * inv_q * (dsw - sw * inv_q);
-    grad_x += radial_partial * amplitude_grad * ux +
-              amplitude * inv_len * (grad_ux - unit_dot * ux);
-    grad_y += radial_partial * amplitude_grad * uy +
-              amplitude * inv_len * (grad_uy - unit_dot * uy);
-    grad_z += radial_partial * amplitude_grad * uz +
-              amplitude * inv_len * (grad_uz - unit_dot * uz);
+    grad_x += radial_partial * amplitude_grad * nx +
+              amplitude * inv_q * (grad_vx - protected_dot * nx);
+    grad_y += radial_partial * amplitude_grad * ny +
+              amplitude * inv_q * (grad_vy - protected_dot * ny);
+    grad_z += radial_partial * amplitude_grad * nz +
+              amplitude * inv_q * (grad_vz - protected_dot * nz);
   }
 
   output[0] = grad_x;

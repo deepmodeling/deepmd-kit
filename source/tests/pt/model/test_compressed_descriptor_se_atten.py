@@ -194,6 +194,50 @@ class TestDescriptorSeAtten(unittest.TestCase):
                 rtol=derivative_atol,
             )
 
+    def test_compressed_excluded_type_holes(self) -> None:
+        if (self.dtype, self.type_one_side, self.lmax) != ("float64", True, 2):
+            self.skipTest("A single representative configuration is sufficient.")
+
+        descriptor = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.ntypes,
+            self.neuron,
+            self.axis_neuron,
+            4,
+            attn=8,
+            attn_layer=0,
+            seed=self.seed,
+            precision=self.dtype,
+            type_one_side=self.type_one_side,
+            tebd_input_mode="strip",
+            exclude_types=[(0, 1)],
+            lmax=self.lmax,
+        )
+        self.assertFalse(descriptor.se_atten.is_sorted)
+        dense = eval_pt_descriptor(
+            descriptor,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+        descriptor.enable_compression(0.5)
+        compressed = eval_pt_descriptor(
+            descriptor,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+        torch.testing.assert_close(
+            compressed,
+            dense,
+            atol=self.atol,
+            rtol=self.atol,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
