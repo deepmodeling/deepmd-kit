@@ -436,13 +436,14 @@ def dpa1_canonical_compress_energy_force(
         float(se.env_protection),
         float(se.nnei),
     )
-    force, atom_virial, virial = canonical_edge_force_virial(
+    force, atom_virial, virial, _ = canonical_edge_force_virial(
         edge_gradient,
         graph.edge_vec,
         graph.destination_row_ptr,
         graph.source_row_ptr,
         graph.source_order,
         graph.n_node,
+        graph.edge_vec.new_zeros(0, 3),
         atype.shape[0],
         do_atomic_virial,
     )

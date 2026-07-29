@@ -18,10 +18,13 @@ if TYPE_CHECKING:
         Callable,
     )
 
+# Full validation reports the second-rank response as stress rather than as
+# virial, and stress is not a field of :class:`EnergyTypeEvalMetrics`: it needs
+# the cell volume. It is therefore contributed by ``_stress_weighted_errors``
+# instead of being projected here.
 FULL_VALIDATION_WEIGHTED_METRIC_KEYS = {
     "energy_per_atom": ("mae_e_per_atom", "rmse_e_per_atom"),
     "force": ("mae_f", "rmse_f"),
-    "virial_per_atom": ("mae_v_per_atom", "rmse_v_per_atom"),
 }
 DP_TEST_WEIGHTED_METRIC_KEYS = {
     "energy": ("mae_e", "rmse_e"),
@@ -193,6 +196,50 @@ def compute_energy_type_metrics(
     )
 
 
+def _stress_weighted_errors(
+    prediction: dict[str, np.ndarray],
+    test_data: dict[str, np.ndarray],
+    has_pbc: bool,
+) -> dict[str, tuple[float, float]]:
+    """Return the weighted stress errors of one system.
+
+    Stress is the negated virial divided by the cell volume, the
+    tensile-positive convention ``dp test`` reports. A frame whose cell is
+    singular carries no stress and is dropped rather than producing a
+    divergent entry.
+
+    Parameters
+    ----------
+    prediction : dict[str, np.ndarray]
+        Model predictions containing ``virial`` with shape ``(nframes, 9)``.
+    test_data : dict[str, np.ndarray]
+        Reference labels containing ``virial`` and ``box``, the latter with
+        shape ``(nframes, 9)`` in Angstrom.
+    has_pbc : bool
+        Whether the system is periodic, gating the metric.
+
+    Returns
+    -------
+    dict[str, tuple[float, float]]
+        Weighted-average-ready stress errors in eV/Angstrom^3, empty when the
+        system is aperiodic, carries no virial label, or has no frame with a
+        non-singular cell.
+    """
+    if not (has_pbc and bool(test_data.get("find_virial", 0.0))):
+        return {}
+    box = np.asarray(test_data["box"]).reshape(-1, 3, 3)
+    volume = np.abs(np.linalg.det(box))
+    finite = volume > 0.0
+    if not np.any(finite):
+        return {}
+    scale = -1.0 / volume[finite]
+    stress = compute_error_stat(
+        prediction["virial"].reshape(-1, 9)[finite] * scale[:, None],
+        test_data["virial"].reshape(-1, 9)[finite] * scale[:, None],
+    )
+    return stress.as_weighted_average_errors("mae_s", "rmse_s")
+
+
 def compute_spin_force_metrics(
     force_real_prediction: np.ndarray,
     force_real_reference: np.ndarray,
@@ -290,7 +337,9 @@ def compute_full_validation_energy_metrics(
         Weighted-average-ready ``(value, weight)`` pairs keyed by metric.
     """
     metrics = compute_energy_type_metrics(prediction, test_data, natoms, has_pbc)
-    return metrics.as_weighted_average_errors(FULL_VALIDATION_WEIGHTED_METRIC_KEYS)
+    errors = metrics.as_weighted_average_errors(FULL_VALIDATION_WEIGHTED_METRIC_KEYS)
+    errors.update(_stress_weighted_errors(prediction, test_data, has_pbc))
+    return errors
 
 
 def compute_full_validation_spin_metrics(
@@ -303,8 +352,8 @@ def compute_full_validation_spin_metrics(
 
     The energy term reuses per-atom energy errors. Forces are split into a
     real-atom term over all atoms and a magnetic term over the magnetic atoms
-    selected by ``mask_mag``. Spin models do not report virial, so no virial
-    metric is produced.
+    selected by ``mask_mag``. A periodic system additionally reports stress,
+    the virial divided by the cell volume.
 
     Parameters
     ----------
@@ -316,8 +365,7 @@ def compute_full_validation_spin_metrics(
     natoms : int
         The number of atoms per frame, used for per-atom normalization.
     has_pbc : bool
-        Unused; spin full validation never reports virial. Present to keep a
-        uniform profile signature.
+        Whether the system is periodic, gating the stress metric.
 
     Returns
     -------
@@ -341,6 +389,7 @@ def compute_full_validation_spin_metrics(
         errors.update(
             spin_metrics.as_weighted_average_errors(DP_TEST_SPIN_WEIGHTED_METRIC_KEYS)
         )
+    errors.update(_stress_weighted_errors(prediction, test_data, has_pbc))
     return errors
 
 
@@ -411,42 +460,42 @@ ENERGY_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
         ("E_RMSE", "rmse_e_per_atom"),
         ("F_MAE", "mae_f"),
         ("F_RMSE", "rmse_f"),
-        ("V_MAE", "mae_v_per_atom"),
-        ("V_RMSE", "rmse_v_per_atom"),
+        ("S_MAE", "mae_s"),
+        ("S_RMSE", "rmse_s"),
     ),
     metric_key_map={
         "e:mae": "mae_e_per_atom",
         "e:rmse": "rmse_e_per_atom",
         "f:mae": "mae_f",
         "f:rmse": "rmse_f",
-        "v:mae": "mae_v_per_atom",
-        "v:rmse": "rmse_v_per_atom",
+        "s:mae": "mae_s",
+        "s:rmse": "rmse_s",
     },
     metric_family_by_key={
         "mae_e_per_atom": "e",
         "rmse_e_per_atom": "e",
         "mae_f": "f",
         "rmse_f": "f",
-        "mae_v_per_atom": "v",
-        "rmse_v_per_atom": "v",
+        "mae_s": "s",
+        "rmse_s": "s",
     },
     unit_by_family={
         "e": ("meV/atom", 1000.0),
         "f": ("meV/Å", 1000.0),
-        "v": ("meV/atom", 1000.0),
+        "s": ("meV/Å³", 1000.0),
     },
     prefactor_by_metric={
         "e:mae": ("start_pref_e", "limit_pref_e"),
         "e:rmse": ("start_pref_e", "limit_pref_e"),
         "f:mae": ("start_pref_f", "limit_pref_f"),
         "f:rmse": ("start_pref_f", "limit_pref_f"),
-        "v:mae": ("start_pref_v", "limit_pref_v"),
-        "v:rmse": ("start_pref_v", "limit_pref_v"),
+        "s:mae": ("start_pref_v", "limit_pref_v"),
+        "s:rmse": ("start_pref_v", "limit_pref_v"),
     },
     needs_spin=False,
     log_header_note=(
         "# E uses per-atom energy, F uses component-wise force errors, "
-        "and V uses virial normalized by natoms.\n"
+        "and S uses stress, the virial divided by the cell volume.\n"
     ),
     compute_system_metrics=compute_full_validation_energy_metrics,
 )
@@ -460,6 +509,8 @@ SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
         ("FR_RMSE", "rmse_fr"),
         ("FM_MAE", "mae_fm"),
         ("FM_RMSE", "rmse_fm"),
+        ("S_MAE", "mae_s"),
+        ("S_RMSE", "rmse_s"),
     ),
     metric_key_map={
         "e:mae": "mae_e_per_atom",
@@ -468,6 +519,8 @@ SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
         "fr:rmse": "rmse_fr",
         "fm:mae": "mae_fm",
         "fm:rmse": "rmse_fm",
+        "s:mae": "mae_s",
+        "s:rmse": "rmse_s",
     },
     metric_family_by_key={
         "mae_e_per_atom": "e",
@@ -476,11 +529,14 @@ SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
         "rmse_fr": "fr",
         "mae_fm": "fm",
         "rmse_fm": "fm",
+        "mae_s": "s",
+        "rmse_s": "s",
     },
     unit_by_family={
         "e": ("meV/atom", 1000.0),
         "fr": ("meV/Å", 1000.0),
         "fm": ("meV/μB", 1000.0),
+        "s": ("meV/Å³", 1000.0),
     },
     prefactor_by_metric={
         "e:mae": ("start_pref_e", "limit_pref_e"),
@@ -489,11 +545,14 @@ SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
         "fr:rmse": ("start_pref_fr", "limit_pref_fr"),
         "fm:mae": ("start_pref_fm", "limit_pref_fm"),
         "fm:rmse": ("start_pref_fm", "limit_pref_fm"),
+        "s:mae": ("start_pref_v", "limit_pref_v"),
+        "s:rmse": ("start_pref_v", "limit_pref_v"),
     },
     needs_spin=True,
     log_header_note=(
         "# E uses per-atom energy, FR uses component-wise real-atom force "
-        "errors, and FM uses magnetic-atom force errors.\n"
+        "errors, FM uses magnetic-atom force errors, and S uses stress, the "
+        "virial divided by the cell volume.\n"
     ),
     compute_system_metrics=compute_full_validation_spin_metrics,
 )

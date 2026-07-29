@@ -1012,7 +1012,7 @@ def dpa1_graph_compress_energy_force(
         float(se.env_protection),
         float(se.nnei),
     )
-    force, atom_virial, virial = edge_force_virial(
+    force, atom_virial, virial, _ = edge_force_virial(
         edge_gradient,
         edge_vec,
         graph.edge_index,
@@ -1022,6 +1022,7 @@ def dpa1_graph_compress_energy_force(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
+        edge_vec.new_zeros(0, 3),
         node_capacity,
         do_atomic_virial,
     )

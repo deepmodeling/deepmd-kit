@@ -852,6 +852,25 @@ inline void remap_graph_outputs_to_dense_keys(
 }
 
 /**
+ * @brief Flatten the per-atom virial emitted by a compact canonical lower.
+ *
+ * The compact lower emits the per-atom virial as a three-by-three tensor,
+ * whereas the graph lower flattens it to nine components -- the layout the
+ * dense-key remap consumes. The key is absent when the artifact was traced
+ * without the per-atom virial, in which case the remap never reads it either.
+ *
+ * @param[in,out] output_map Output tensor map of a canonical forward.
+ */
+inline void flatten_canonical_atom_virial(
+    std::map<std::string, torch::Tensor>& output_map) {
+  const auto entry = output_map.find("atom_virial");
+  if (entry == output_map.end()) {
+    return;
+  }
+  entry->second = entry->second.reshape({entry->second.size(0), 9});
+}
+
+/**
  * @brief Remap NeighborGraph (graph-schema) native-spin public outputs onto
  *        the dense internal-key layout ``DeepSpinPTExpt::compute`` consumes.
  *

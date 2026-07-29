@@ -51,6 +51,7 @@ input_files = (
     p_examples / "spin" / "se_e2_a" / "input_torch.json",
     p_examples / "spin" / "dpa4" / "input.json",
     p_examples / "spin" / "dpa4" / "input-deepspin.json",
+    p_examples / "spin" / "dpa4c" / "input.json",
     p_examples / "dprc" / "normal" / "input.json",
     p_examples / "dprc" / "pairwise" / "input.json",
     p_examples / "dprc" / "generalized_force" / "input.json",

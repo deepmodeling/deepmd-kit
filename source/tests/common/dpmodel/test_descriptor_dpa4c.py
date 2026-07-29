@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import dataclasses
+import math
 from typing import (
     Any,
 )
@@ -105,8 +106,8 @@ def edge_features(
     return descriptor.build_edge_features(
         graph,
         atype_local,
-        *descriptor.pair_film.call(descriptor.type_embedding.call()),
-    )
+        descriptor.pair_film.call(descriptor.type_embedding.call()),
+    )[:3]
 
 
 def moment_blocks(
@@ -216,6 +217,8 @@ class TestDPA4C:
             amplitude,
             basis,
             envelope,
+            None,
+            None,
             dst,
             n_total,
         )
@@ -754,3 +757,607 @@ def test_automatic_profiles_and_output_dimensions(
             + 2
         )
         assert descriptor.get_dim_out() == expected_dim
+
+
+# === Native spin ===
+
+SPIN_COORD = np.array(
+    [
+        [
+            [0.0, 0.0, 0.0],
+            [1.4, 0.3, -0.2],
+            [-0.5, 1.2, 0.4],
+            [0.3, -0.7, 1.5],
+            [-0.9, -0.4, -1.0],
+            [1.1, -1.2, 0.6],
+        ]
+    ],
+    dtype=np.float64,
+)
+SPIN_ATYPE = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+
+
+def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
+    """Build a descriptor whose first atom type carries a magnetic moment."""
+    config: dict[str, Any] = {
+        "rcut": 3.0,
+        "ntypes": 2,
+        "channels": 8,
+        "lmax": 2,
+        "n_radial": 4,
+        "precision": "float64",
+        "seed": 23,
+        "use_spin": [True, False],
+    }
+    config.update(overrides)
+    return DescrptDPA4C(**config)
+
+
+def spin_reference_terms(
+    descriptor: DescrptDPA4C,
+    graph: Any,
+    atype: np.ndarray,
+    spin: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Evaluate the two-body spin sums the readout is meant to reproduce.
+
+    The reference reconstructs the edge stage from the descriptor's own
+    modules rather than from the moments, so a layout error cannot cancel
+    between the two sides of the comparison.
+    """
+    masked = descriptor.spin.conditioned_spin(spin, atype)
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    edge_vec = graph.edge_vec
+    distance = np.sqrt(
+        np.sum(edge_vec * edge_vec, axis=-1, keepdims=True) + descriptor._EPS**2
+    )
+    direction = edge_vec / distance
+    center, neighbor = atype[destination], atype[source]
+    real = (center < descriptor.ntypes) & (neighbor < descriptor.ntypes)
+    envelope = descriptor.evaluate_cutoff_envelope(distance)[:, 0] * (
+        graph.edge_mask & real
+    )
+    radial = descriptor.radial_embedding.call(descriptor.radial_basis.call(distance))
+    scale, shift, _, spin_scale, spin_shift = descriptor.pair_film.call(
+        descriptor.type_embedding.call()
+    )
+    pair = center * (descriptor.ntypes + 1) + neighbor
+    channels = descriptor.spin_channels
+    weight = (radial[:, :channels] * spin_scale[pair] + spin_shift[pair]) * (
+        envelope * envelope
+    )[:, None]
+    amplitude = (radial * scale[pair] + shift[pair]) * envelope[:, None]
+
+    center_spin = masked[destination]
+    neighbor_spin = masked[source]
+    dot = np.sum(center_spin * neighbor_spin, axis=-1)
+    projection = np.sum(center_spin * direction, axis=-1)
+    neighbor_projection = np.sum(neighbor_spin * direction, axis=-1)
+    center_norm = np.sum(center_spin * center_spin, axis=-1)
+    neighbor_norm = np.sum(neighbor_spin * neighbor_spin, axis=-1)
+
+    nodes = atype.shape[0]
+
+    def reduce(values: np.ndarray) -> np.ndarray:
+        out = np.zeros((nodes, values.shape[1]), dtype=values.dtype)
+        np.add.at(out, destination, values)
+        return out
+
+    return {
+        # Heisenberg exchange, one sum per spin channel.
+        "heisenberg": reduce(weight * dot[:, None]),
+        # Symmetric anisotropic two-ion exchange, one sum per spin channel.
+        "two_ion_anisotropy": reduce(
+            weight * (projection * neighbor_projection)[:, None]
+        ),
+        # Biquadratic exchange from the leading spin channel only, which is
+        # the one the neighbour quadrupole family reads.
+        "biquadratic": reduce(
+            weight[:, :1]
+            * (0.5 * (3.0 * dot * dot - center_norm * neighbor_norm))[:, None]
+        ),
+        # Single-ion anisotropy against every geometric degree-two channel.
+        "anisotropy": reduce(
+            amplitude[:, : descriptor.degree_channels[2]]
+            * envelope[:, None]
+            * (0.5 * (3.0 * projection * projection - center_norm))[:, None]
+        ),
+    }
+
+
+def vector_gram_selectors(descriptor: DescrptDPA4C) -> dict[str, np.ndarray]:
+    """Return boolean column selectors of the joint degree-one spin Gram.
+
+    The block holds the on-site moment, the ``spin_channels`` isotropic
+    neighbour channels and the ``spin_channels`` bond-projected ones, in that
+    order, so the entries of each physical interaction are addressed by their
+    channel coordinates rather than by a hard-coded offset.
+    """
+    channels = descriptor.spin_channels
+    row, column = np.triu_indices(descriptor.spin.vector_width)
+    return {
+        "heisenberg": (row == 0) & (column >= 1) & (column <= channels),
+        "two_ion_anisotropy": (row == 0) & (column > channels),
+        "bond": (row > channels) | (column > channels),
+    }
+
+
+class TestDPA4CSpin:
+    def setup_method(self) -> None:
+        self.descriptor = make_spin_descriptor()
+        rng = np.random.default_rng(5)
+        self.spin = rng.normal(size=(SPIN_ATYPE.size, 3))
+        self.graph = neighbor_graph.build_neighbor_graph(
+            SPIN_COORD,
+            SPIN_ATYPE,
+            None,
+            self.descriptor.get_rcut(),
+        )
+        self.atype = SPIN_ATYPE.reshape(-1)
+
+    def evaluate(self, spin: np.ndarray | None) -> np.ndarray:
+        return self.descriptor.call_graph(self.graph, self.atype, spin=spin)[0]
+
+    def spin_block(self, descriptor_output: np.ndarray) -> np.ndarray:
+        start = self.descriptor.readout.get_dim_out()
+        return descriptor_output[:, start : start + self.descriptor.spin.get_dim_out()]
+
+    def test_axial_o3_invariance_including_reflections(self) -> None:
+        # Spin is an axial vector, so an improper transformation rotates it
+        # and flips its sign. Because every emitted coordinate has even spin
+        # order the descriptor is additionally invariant under the polar
+        # convention, which this test also pins.
+        rng = np.random.default_rng(11)
+        reference = self.evaluate(self.spin)
+        for determinant in (1.0, -1.0):
+            orthogonal, triangular = np.linalg.qr(rng.normal(size=(3, 3)))
+            orthogonal = orthogonal * np.sign(np.diag(triangular))
+            if np.linalg.det(orthogonal) * determinant < 0.0:
+                orthogonal = -orthogonal
+            rotated = neighbor_graph.build_neighbor_graph(
+                SPIN_COORD @ orthogonal.T,
+                SPIN_ATYPE,
+                None,
+                self.descriptor.get_rcut(),
+            )
+            for spin in (
+                (self.spin @ orthogonal.T) * np.linalg.det(orthogonal),
+                self.spin @ orthogonal.T,
+            ):
+                output = self.descriptor.call_graph(rotated, self.atype, spin=spin)[0]
+                np.testing.assert_allclose(output, reference, atol=1e-12)
+
+    def test_time_reversal_is_exact(self) -> None:
+        # Every spin family has even spin order, so a global moment flip is a
+        # bitwise symmetry rather than an approximate one.
+        np.testing.assert_array_equal(
+            self.evaluate(self.spin),
+            self.evaluate(-self.spin),
+        )
+
+    def test_non_magnetic_types_are_ignored_bitwise(self) -> None:
+        # The per-type gate is multiplicative, so a non-magnetic atom has no
+        # spin degree of freedom at any derivative order rather than merely a
+        # vanishing one.
+        polluted = self.spin.copy()
+        polluted[self.atype == 1] += 7.0
+        np.testing.assert_array_equal(
+            self.evaluate(self.spin),
+            self.evaluate(polluted),
+        )
+
+    def test_spin_coordinates_vanish_with_the_moments(self) -> None:
+        block = self.spin_block(self.evaluate(np.zeros_like(self.spin)))
+        # Every family except the trailing magnetic coordination reads the
+        # spin value and is therefore exactly zero without moments.
+        channels = self.descriptor.spin_channels
+        np.testing.assert_array_equal(
+            block[:, :-channels],
+            np.zeros_like(block[:, :-channels]),
+        )
+        assert np.any(block[:, -channels:] != 0.0)
+
+    def test_a_missing_moment_is_rejected(self) -> None:
+        # A vanishing moment and an absent one are different states: the
+        # first is a demagnetized configuration, the second is a missing
+        # input whose magnetic force would be silently zero.
+        with pytest.raises(ValueError, match="requires a per-node magnetic"):
+            self.evaluate(None)
+
+    def moment_divisor(self, spin: np.ndarray) -> np.ndarray:
+        """Return the neighborhood divisor the spin families are scaled by."""
+        masked = self.descriptor.spin.conditioned_spin(spin, self.atype)
+        return self.descriptor.aggregate_moments(
+            *self.descriptor.build_edge_features(
+                self.graph,
+                self.atype,
+                self.descriptor.pair_film.call(self.descriptor.type_embedding.call()),
+                masked,
+            ),
+            self.descriptor.spin.onsite_payload(masked, self.atype),
+            self.graph.edge_index[1],
+            self.atype.shape[0],
+        )[1][:, 1]
+
+    def test_two_body_terms_are_exactly_representable(self) -> None:
+        # The emitted invariants are not merely correlated with the physical
+        # sums: each is that sum times a known constant.
+        spin = self.descriptor.spin
+        reference = spin_reference_terms(
+            self.descriptor,
+            self.graph,
+            self.atype,
+            self.spin,
+        )
+        block = self.spin_block(self.evaluate(self.spin))
+        divisor = self.moment_divisor(self.spin)
+        vector_weight = spin.adam_spin_vector_weight[self.atype]
+        quadrupole_weight = spin.adam_spin_quadrupole_weight[self.atype]
+
+        vector_gram = block[:, : spin.vector_gram_index.shape[0]]
+        selector = vector_gram_selectors(self.descriptor)
+        np.testing.assert_allclose(
+            vector_gram[:, selector["heisenberg"]],
+            math.sqrt(2.0)
+            * (vector_weight / divisor)[:, None]
+            * reference["heisenberg"],
+            atol=1e-12,
+        )
+
+        offset = spin.vector_gram_index.shape[0]
+        quadrupole_gram = block[
+            :, offset : offset + spin.quadrupole_gram_index.shape[0]
+        ]
+        # The on-site self-term is not emitted, so the on-site x neighbour
+        # entry leads the quadrupole block.
+        np.testing.assert_allclose(
+            quadrupole_gram[:, 0:1],
+            math.sqrt(2.0)
+            * (quadrupole_weight / divisor)[:, None]
+            * reference["biquadratic"],
+            atol=1e-12,
+        )
+
+        offset += spin.quadrupole_gram_index.shape[0]
+        degree_two = self.descriptor.degree_channels[2]
+        cross = block[:, offset : offset + spin.quadrupole_width * degree_two].reshape(
+            -1, spin.quadrupole_width, degree_two
+        )
+        np.testing.assert_allclose(
+            cross[:, 0, :],
+            (quadrupole_weight / divisor)[:, None] * reference["anisotropy"],
+            atol=1e-12,
+        )
+
+    def test_two_ion_anisotropy_is_exactly_representable(self) -> None:
+        # The pseudo-dipolar sum sum_j K(r_ij) (s_i.u_ij)(s_j.u_ij) is the
+        # interaction the bond-projected family exists for. It is emitted as
+        # an exact single sum, one entry per spin channel, so a linear
+        # readout spans an arbitrary K(r) inside the channel amplitudes.
+        spin = self.descriptor.spin
+        reference = spin_reference_terms(
+            self.descriptor,
+            self.graph,
+            self.atype,
+            self.spin,
+        )
+        block = self.spin_block(self.evaluate(self.spin))
+        divisor = self.moment_divisor(self.spin)
+        vector_weight = spin.adam_spin_vector_weight[self.atype]
+
+        vector_gram = block[:, : spin.vector_gram_index.shape[0]]
+        selector = vector_gram_selectors(self.descriptor)
+        np.testing.assert_allclose(
+            vector_gram[:, selector["two_ion_anisotropy"]],
+            math.sqrt(2.0)
+            * (vector_weight / divisor)[:, None]
+            * reference["two_ion_anisotropy"],
+            atol=1e-12,
+        )
+        # The two families are genuinely different observables and not one
+        # rescaled copy of the other.
+        assert not np.allclose(
+            reference["two_ion_anisotropy"],
+            reference["heisenberg"],
+        )
+
+    def test_output_width_matches_the_spin_layout(self) -> None:
+        spin = self.descriptor.spin
+        channels = self.descriptor.spin_channels
+        # The degree-one block carries the on-site moment plus the isotropic
+        # and bond-projected neighbour channels. The quadrupole Gram omits its
+        # on-site self-term, which the identity |B_2(s)|^2 = |s|^4 makes a
+        # function of the vector self-term.
+        width = 1 + 2 * channels
+        assert spin.vector_width == width
+        expected = (
+            width * (width + 1) // 2
+            + 2
+            + 2 * self.descriptor.degree_channels[2]
+            + 2 * channels
+        )
+        assert spin.get_dim_out() == expected
+        assert self.evaluate(self.spin).shape[1] == self.descriptor.get_dim_out()
+        assert (
+            self.descriptor.get_dim_out()
+            == make_spin_descriptor(use_spin=None).get_dim_out() + expected
+        )
+
+    def test_serialization_roundtrip_preserves_spin(self) -> None:
+        self.descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
+        restored = DescrptDPA4C.deserialize(self.descriptor.serialize())
+        assert restored.use_spin == [True, False]
+        assert restored.supports_native_spin()
+        np.testing.assert_array_equal(
+            restored.spin.spin_reference,
+            self.descriptor.spin.spin_reference,
+        )
+        np.testing.assert_allclose(
+            restored.call_graph(self.graph, self.atype, spin=self.spin)[0],
+            self.evaluate(self.spin),
+            atol=1e-14,
+        )
+
+    def test_sharing_rejects_a_different_spin_configuration(self) -> None:
+        with pytest.raises(ValueError, match="identical structural"):
+            self.descriptor.share_params(make_spin_descriptor(use_spin=None), 0)
+
+
+#: Vertices of a regular tetrahedron. Every component has the same magnitude,
+#: so the four squared norms agree bitwise and the four neighbours below share
+#: one radial amplitude exactly rather than to rounding.
+TETRAHEDRON = np.array(
+    [
+        [1.0, 1.0, 1.0],
+        [1.0, -1.0, -1.0],
+        [-1.0, 1.0, -1.0],
+        [-1.0, -1.0, 1.0],
+    ],
+    dtype=np.float64,
+)
+
+
+def test_permuting_equidistant_moments_moves_the_descriptor() -> None:
+    """Relabelling equidistant neighbours must reach the output.
+
+    Four identical neighbours sit at one distance from the centre, so every
+    radial spin family sees the same amplitude on every bond and is blind to
+    which moment sits on which bond. The physical pseudo-dipolar sum
+    ``sum_j (s_i.u_ij)(s_j.u_ij)`` is not blind to it, and the bond-projected
+    family is what carries that dependence into the readout.
+    """
+    descriptor = make_spin_descriptor(ntypes=1, use_spin=[True])
+    direction = TETRAHEDRON / np.linalg.norm(TETRAHEDRON, axis=-1, keepdims=True)
+    coord = np.concatenate([np.zeros((1, 3)), 1.5 * direction])[None]
+    atype = np.zeros((1, 5), dtype=np.int64)
+    graph = neighbor_graph.build_neighbor_graph(
+        coord,
+        atype,
+        None,
+        descriptor.get_rcut(),
+    )
+    flat_atype = atype.reshape(-1)
+
+    spin = np.random.default_rng(3).normal(size=(5, 3))
+    relabelled = spin.copy()
+    relabelled[1:] = spin[[2, 3, 4, 1]]
+
+    def pseudo_dipolar(moments: np.ndarray) -> float:
+        return float(
+            np.sum(
+                (moments[0] @ direction.T)
+                * np.einsum("jd,jd->j", moments[1:], direction)
+            )
+        )
+
+    assert abs(pseudo_dipolar(spin) - pseudo_dipolar(relabelled)) > 1.0e-2
+
+    reference = descriptor.call_graph(graph, flat_atype, spin=spin)[0]
+    permuted = descriptor.call_graph(graph, flat_atype, spin=relabelled)[0]
+
+    # The geometry is untouched, so the whole geometric block is unchanged.
+    geometry = descriptor.readout.get_dim_out()
+    np.testing.assert_allclose(
+        permuted[:, :geometry],
+        reference[:, :geometry],
+        atol=1e-13,
+    )
+
+    # Inside the spin block only the entries that touch the bond-projected
+    # channels may move: every other family reads the moments through a
+    # permutation-symmetric sum over the equidistant shell.
+    spin_width = descriptor.spin.get_dim_out()
+    before = reference[0, geometry : geometry + spin_width]
+    after = permuted[0, geometry : geometry + spin_width]
+    bond = np.zeros(spin_width, dtype=bool)
+    gram_width = descriptor.spin.vector_gram_index.shape[0]
+    bond[:gram_width] = vector_gram_selectors(descriptor)["bond"]
+    np.testing.assert_allclose(after[~bond], before[~bond], atol=1e-13)
+    assert np.abs(after[bond] - before[bond]).max() > 1.0e-2
+
+
+def test_periodic_cell_spin_matches_its_supercell() -> None:
+    """A periodic magnetic cell agrees with its own doubled cell.
+
+    The graph builder folds every periodic image onto its local owner through
+    ``src = mapping[neighbor]``, so a cell narrower than the cutoff produces
+    edges whose source is the centre itself and edges that reach one owner
+    several times. Both are exercised here and by nothing else in this file.
+    """
+    descriptor = make_spin_descriptor()
+    cell = 2.9
+    coord = np.array([[[0.0, 0.0, 0.0], [1.45, 1.45, 0.2]]])
+    atype = np.array([[0, 1]], dtype=np.int64)
+    box = np.array([[cell, 0.0, 0.0, 0.0, cell, 0.0, 0.0, 0.0, cell]])
+    spin = np.random.default_rng(13).normal(size=(2, 3))
+
+    graph = neighbor_graph.build_neighbor_graph(
+        coord,
+        atype,
+        box,
+        descriptor.get_rcut(),
+    )
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    assert np.any((source == destination) & graph.edge_mask)
+
+    super_box = box.copy()
+    super_box[0, 0] = 2.0 * cell
+    super_graph = neighbor_graph.build_neighbor_graph(
+        np.concatenate([coord, coord + np.array([cell, 0.0, 0.0])], axis=1),
+        np.concatenate([atype, atype], axis=1),
+        super_box,
+        descriptor.get_rcut(),
+    )
+
+    reference = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)[0]
+    doubled = descriptor.call_graph(
+        super_graph,
+        np.concatenate([atype, atype], axis=1).reshape(-1),
+        spin=np.concatenate([spin, spin], axis=0),
+    )[0]
+    np.testing.assert_allclose(
+        doubled,
+        np.concatenate([reference, reference], axis=0),
+        atol=1e-11,
+    )
+
+
+@pytest.mark.parametrize("channels", [8, 32, 128])
+def test_ordered_spin_tables_start_at_a_usable_scale(channels: int) -> None:
+    """Both spin tables must start near the scale of the geometric ones.
+
+    The geometric heads are structurally anchored, so they start at a
+    root-mean-square of one and one quarter respectively. The spin heads may
+    not be anchored on a constant, because an exchange amplitude is signed,
+    and the descriptor calibration freezes a preconditioner at whatever scale
+    it measures. A spin table emerging from the bias-free trunk alone would
+    fix that preconditioner orders of magnitude below the block it belongs to.
+    """
+    descriptor = make_spin_descriptor(
+        channels=channels,
+        ntypes=4,
+        n_radial=12,
+        use_spin=[True, True, False, False],
+    )
+    scale, shift, _mixing, spin_scale, spin_shift = descriptor.pair_film.call(
+        descriptor.type_embedding.call()
+    )
+    assert 0.9 <= float(np.sqrt(np.mean(np.square(scale)))) <= 1.1
+    assert float(np.sqrt(np.mean(np.square(shift)))) > 0.1
+    for table in (spin_scale, spin_shift):
+        assert 0.3 <= float(np.sqrt(np.mean(np.square(table)))) <= 0.7
+        # The anchor fixes the magnitude of every channel, so the scale holds
+        # entry by entry rather than only in the aggregate.
+        assert float(np.abs(table).min()) >= 0.3
+        assert float(np.abs(table).max()) <= 0.7
+
+
+def test_ordered_spin_tables_do_not_anchor_their_sign() -> None:
+    """The exchange amplitude of an ordered pair may take either sign.
+
+    The geometric scale is anchored on the constant one and is therefore
+    strictly positive by construction. The spin tables carry no such bias: a
+    ferromagnetic and an antiferromagnetic pair are equally reachable from the
+    initialization, so both signs occur across seeds.
+    """
+    signs: set[float] = set()
+    for seed in range(8):
+        descriptor = make_spin_descriptor(seed=seed)
+        _scale, _shift, _mixing, spin_scale, spin_shift = descriptor.pair_film.call(
+            descriptor.type_embedding.call()
+        )
+        signs.update(np.sign(spin_scale).reshape(-1).tolist())
+        signs.update(np.sign(spin_shift).reshape(-1).tolist())
+    assert signs == {-1.0, 1.0}
+
+
+#: Per-type moment scales of the calibration corpus. The second magnetic type
+#: is rare and carries a much larger moment than the first.
+CORPUS_MOMENT_SCALE = (1.0, 4.0, 0.0)
+
+
+def magnetic_corpus(seed: int = 47) -> tuple[list[dict], np.ndarray]:
+    """Build a magnetic calibration corpus and its per-type moment scales.
+
+    Returns
+    -------
+    corpus
+        One sampled system carrying ``coord``, ``atype``, ``box`` and
+        ``spin``, in the packing ``compute_input_stats`` consumes.
+    reference
+        Independently computed per-type root-mean-square moment with shape
+        ``(ntypes + 1,)``.
+    """
+    rng = np.random.default_rng(seed)
+    nframes, natoms, cell = 8, 12, 9.0
+    # One rare magnetic atom of the second type per frame; the rest alternate
+    # between the abundant magnetic type and the non-magnetic one.
+    atype = np.tile(np.array([0, 0, 0, 2, 0, 2, 0, 0, 2, 0, 0, 1]), (nframes, 1))
+    coord = rng.uniform(0.0, cell, size=(nframes, natoms, 3))
+    box = np.tile(np.diag([cell, cell, cell]).reshape(1, 9), (nframes, 1))
+    scale = np.take(np.asarray(CORPUS_MOMENT_SCALE), atype)[..., None]
+    spin = rng.normal(size=(nframes, natoms, 3)) * scale
+
+    reference = np.ones(len(CORPUS_MOMENT_SCALE) + 1, dtype=np.float64)
+    magnitude = np.sum(np.square(spin), axis=-1)
+    for kind in range(len(CORPUS_MOMENT_SCALE)):
+        selected = magnitude[atype == kind]
+        if np.any(selected > 0.0):
+            reference[kind] = np.sqrt(np.mean(selected))
+    corpus = [{"coord": coord, "atype": atype, "box": box, "spin": spin}]
+    return corpus, reference
+
+
+def calibrated_descriptor(corpus: list[dict]) -> DescrptDPA4C:
+    """Return a three-type magnetic descriptor calibrated on ``corpus``."""
+    descriptor = make_spin_descriptor(ntypes=3, use_spin=[True, True, False])
+    descriptor.compute_input_stats(corpus)
+    return descriptor
+
+
+def test_calibration_measures_the_per_type_reference_moment() -> None:
+    corpus, reference = magnetic_corpus()
+    descriptor = calibrated_descriptor(corpus)
+    np.testing.assert_allclose(descriptor.spin.spin_reference, reference, rtol=1e-12)
+    # The rare species keeps its own scale rather than the population one, so
+    # the conditioned moments of the two magnetic types land on one scale.
+    assert reference[1] / reference[0] > 3.0
+    # A type observed only with a vanishing moment, and the padding row, keep
+    # the unit reference that leaves the raw spin untouched.
+    assert descriptor.spin.spin_reference[2] == 1.0
+    assert descriptor.spin.spin_reference[3] == 1.0
+
+
+def test_calibration_conditions_every_spin_coordinate() -> None:
+    corpus, _reference = magnetic_corpus()
+    descriptor = calibrated_descriptor(corpus)
+    start = descriptor.readout.get_dim_out()
+    stddev = descriptor.stddev[start : start + descriptor.spin.get_dim_out()]
+    # Every spin coordinate activates on a magnetic corpus, so none of them
+    # falls back to the identity preconditioner, and none is driven to the
+    # extreme gain an unanchored spin table used to produce.
+    assert np.all(stddev > 0.0)
+    assert not np.any(stddev == 1.0)
+    assert float(stddev.max() / stddev.min()) < 1.0e4
+
+
+def test_calibration_accepts_either_moment_key() -> None:
+    corpus, _reference = magnetic_corpus()
+    renamed, _reference = magnetic_corpus()
+    renamed[0]["model_spin"] = renamed[0].pop("spin")
+    under_spin = calibrated_descriptor(corpus)
+    under_model_spin = calibrated_descriptor(renamed)
+    np.testing.assert_array_equal(
+        under_model_spin.spin.spin_reference,
+        under_spin.spin.spin_reference,
+    )
+    np.testing.assert_array_equal(under_model_spin.stddev, under_spin.stddev)
+
+
+def test_calibration_rejects_a_corpus_without_moments() -> None:
+    # A key mismatch would otherwise leave a unit reference magnitude and an
+    # identity preconditioner on most spin coordinates, with no error.
+    corpus, _reference = magnetic_corpus()
+    corpus[0].pop("spin")
+    with pytest.raises(ValueError, match="requires a per-node magnetic"):
+        calibrated_descriptor(corpus)

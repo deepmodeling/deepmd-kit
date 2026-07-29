@@ -34,6 +34,14 @@ from deepmd.pt_expt.utils.update_sel import (
 _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     "SeZMTypeEmbedding": ("adam_type_embedding",),
     "RadialBasis": ("adam_freqs",),
+    "OrderedPairFiLM": (
+        "adam_spin_scale_anchor",
+        "adam_spin_shift_anchor",
+    ),
+    "SpinChannels": (
+        "adam_spin_vector_weight",
+        "adam_spin_quadrupole_weight",
+    ),
 }
 
 
@@ -124,6 +132,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         atype: torch.Tensor,
         type_embedding: torch.Tensor | None = None,
         comm_dict: dict | None = None,
+        spin: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, None]:
         """Evaluate the graph descriptor with compressed CUDA dispatch.
 
@@ -137,6 +146,9 @@ class DescrptDPA4C(DescrptDPA4CDP):
             Optional complete DPA4 type table.
         comm_dict
             Communication metadata accepted by the common graph ABI; unused.
+        spin
+            Per-node spin with shape ``(N, 3)``, mandatory for a
+            spin-conditioned descriptor.
 
         Returns
         -------
@@ -160,10 +172,14 @@ class DescrptDPA4C(DescrptDPA4CDP):
             )
 
             if op_available() and mega_eligible(self):
+                # The operator conditions the moment on device from its frozen
+                # per-type table, so it takes the raw input rather than the
+                # output of ``SpinChannels.conditioned_spin``.
                 return dpa4c_graph_compress(
                     self,
                     graph,
                     atype,
+                    None if self.spin is None else self.require_spin(spin),
                 ), None
         if type_embedding is None:
             type_embedding = self.type_embedding.call()
@@ -172,13 +188,14 @@ class DescrptDPA4C(DescrptDPA4CDP):
             atype,
             type_embedding=type_embedding,
             comm_dict=comm_dict,
+            spin=spin,
         )
 
     def build_edge_features(
         self,
         graph: Any,
         *args: Any,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Build the edge features under the DPA4C mixed-precision policy.
 
         The per-edge stage is the only region DPA4C autocasts. It holds every
@@ -198,13 +215,20 @@ class DescrptDPA4C(DescrptDPA4CDP):
         The two are independent: mixed precision at inference is a throughput
         choice that must not require a model to have been trained with it.
 
+        A spin-conditioned descriptor never autocasts. Its scalar and
+        quadrupole families are quadratic in the magnetic moment and feed a
+        fourth-order readout, and the magnetic force differentiates them
+        twice, so the eight mantissa bits of bfloat16 are not an acceptable
+        trade for a configuration whose throughput is not the binding
+        constraint.
+
         Parameters
         ----------
         graph
             Neighbor graph in descriptor compute precision.
         *args
-            Node types and ordered pair tables forwarded unchanged to the
-            backend-neutral implementation.
+            Node types, the ordered pair cache, and the conditioned spin,
+            forwarded unchanged to the backend-neutral implementation.
 
         Returns
         -------
@@ -214,16 +238,22 @@ class DescrptDPA4C(DescrptDPA4CDP):
             Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
         envelope
             Masked C³ envelope with shape ``(E,)``.
+        spin_payload
+            Masked per-edge spin payload, or ``None``.
         """
-        autocast = graph.edge_vec.device.type == "cuda" and (
-            self.use_amp if self.training else self.use_amp_infer
+        autocast = (
+            self.spin is None
+            and graph.edge_vec.device.type == "cuda"
+            and (self.use_amp if self.training else self.use_amp_infer)
         )
         if not autocast:
             return super().build_edge_features(graph, *args)
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
             features = super().build_edge_features(graph, *args)
         dtype = graph.edge_vec.dtype
-        return tuple(feature.to(dtype) for feature in features)
+        return tuple(
+            None if feature is None else feature.to(dtype) for feature in features
+        )
 
     def _apply_autocast_policy(self) -> None:
         """Let the layers inside the autocast region emit reduced precision.
@@ -232,10 +262,10 @@ class DescrptDPA4C(DescrptDPA4CDP):
         which would undo autocast at every layer of the radial network. Only
         the radial trunk and the mode head sit inside the region, so only they
         are opted out of that restoration, and only when mixed precision can
-        actually engage. A descriptor with neither switch set keeps the
-        default behavior exactly.
+        actually engage. A descriptor with neither switch set, and every
+        spin-conditioned descriptor, keeps the default behavior exactly.
         """
-        enabled = self.use_amp or self.use_amp_infer
+        enabled = self.spin is None and (self.use_amp or self.use_amp_infer)
         for layer in self.radial_embedding.layers:
             layer.autocast_output = enabled
         if self.radial_mode_head is not None:
@@ -426,6 +456,18 @@ class DescrptDPA4C(DescrptDPA4CDP):
             )
         return super().train(mode)
 
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Return whether compression consumes the minimum neighbor distance.
+
+        Returns
+        -------
+        bool
+            Always ``False``. The radial table spans ``[0, rcut]``, a domain
+            fixed by the cutoff rather than by the training data, so the
+            caller can skip the neighbor-statistics pass.
+        """
+        return False
+
     def enable_compression(
         self,
         min_nbor_dist: float,
@@ -476,8 +518,10 @@ class DescrptDPA4C(DescrptDPA4CDP):
         ownership: torch.Tensor,
         atom_bias: torch.Tensor,
         do_atomic_virial: bool,
+        spin: torch.Tensor | None = None,
     ) -> (
         tuple[
+            torch.Tensor,
             torch.Tensor,
             torch.Tensor,
             torch.Tensor,
@@ -489,7 +533,8 @@ class DescrptDPA4C(DescrptDPA4CDP):
         """Evaluate the inference-only compressed energy-force composition.
 
         Returns ``None`` when the model or graph cannot use the level-two CUDA
-        path, allowing the caller to retain the generic autograd lower.
+        path, allowing the caller to retain the generic autograd lower. The
+        trailing output is the magnetic force, empty for a spin-free model.
         """
         if (
             self.training
@@ -526,4 +571,5 @@ class DescrptDPA4C(DescrptDPA4CDP):
             atom_bias,
             atype.shape[0],
             do_atomic_virial,
+            None if self.spin is None else self.require_spin(spin),
         )

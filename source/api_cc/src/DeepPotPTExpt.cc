@@ -1223,6 +1223,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // The graph forward emits flat-N PUBLIC keys (atom_energy/energy/force/
     // virial/atom_virial); rewrite them into the dense internal-key layout the
     // downstream extraction/fold-back expects.
+    if (lower_input_is_canonical_) {
+      deepmd::flatten_canonical_atom_virial(output_map);
+    }
     if (multi_rank) {
       // Extended region (N == nall_real): force is already per-extended-atom,
       // owned energy = sum over local atom energies, no zero-padding.  Ghost
@@ -1616,6 +1619,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // fold-back is a no-op on ghosts.
     // single_rank=true: the standalone (build_nlist) path is always
     // single-rank; there is no comm_dict / cross-rank ghost exchange here.
+    if (lower_input_is_canonical_) {
+      deepmd::flatten_canonical_atom_virial(output_map);
+    }
     deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
                                               /*single_rank=*/true);
   }

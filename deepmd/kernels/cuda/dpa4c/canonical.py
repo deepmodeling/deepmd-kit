@@ -85,6 +85,9 @@ def _forward_fake(
     coupling_value: torch.Tensor,
     output_mean: torch.Tensor,
     output_inv_std: torch.Tensor,
+    spin: torch.Tensor,
+    spin_pair: torch.Tensor,
+    spin_type: torch.Tensor,
     lmax: int,
     table_stride: float,
     table_max: float,
@@ -104,6 +107,8 @@ def _forward_fake(
         coupling_value,
         output_mean,
         output_inv_std,
+        spin_pair,
+        spin_type,
         table_stride,
         table_max,
         rcut,
@@ -114,7 +119,9 @@ def _forward_fake(
         descriptor_profile,
     )
 
-    profile = descriptor_profile(int(type_embedding.shape[1]), int(lmax))
+    profile = descriptor_profile(
+        int(type_embedding.shape[1]), int(lmax), spin.numel() != 0
+    )
     nodes = atype.shape[0]
     descriptor = edge_vec.new_empty(nodes, profile.output_width, dtype=torch.float32)
     state = edge_vec.new_empty(nodes, profile.state_width, dtype=torch.float32)
@@ -126,9 +133,9 @@ def _backward_fake(
     state: torch.Tensor,
     edge_vec: torch.Tensor,
     *args: Any,
-) -> torch.Tensor:
-    del descriptor_gradient, state, args
-    return torch.empty_like(edge_vec)
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    del descriptor_gradient, state
+    return _backward_shapes(edge_vec, args[13])
 
 
 def _backward_inplace_fake(
@@ -136,9 +143,31 @@ def _backward_inplace_fake(
     state: torch.Tensor,
     edge_vec: torch.Tensor,
     *args: Any,
-) -> torch.Tensor:
-    del descriptor_gradient, state, args
-    return torch.empty_like(edge_vec)
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    del descriptor_gradient, state
+    return _backward_shapes(edge_vec, args[13])
+
+
+def _backward_shapes(
+    edge_vec: torch.Tensor,
+    spin: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return the three backward outputs of one compact call, unpopulated.
+
+    Each absent output is allocated separately, because the schema declares
+    three unannotated results and two of them may not share storage.
+    """
+    if spin.numel() == 0:
+        return (
+            torch.empty_like(edge_vec),
+            edge_vec.new_empty((0,), dtype=torch.float32),
+            edge_vec.new_empty((0,), dtype=torch.float32),
+        )
+    return (
+        torch.empty_like(edge_vec),
+        spin.new_empty((spin.shape[0], 3)),
+        torch.empty_like(edge_vec),
+    )
 
 
 def _energy_gradient_fake(
@@ -147,11 +176,21 @@ def _energy_gradient_fake(
     destination_row_ptr: torch.Tensor,
     atype: torch.Tensor,
     *args: Any,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    del source, destination_row_ptr, args
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    del source, destination_row_ptr
+    spin = args[10]
+    has_spin = spin.numel() != 0
+    # Each absent output is allocated separately, because the schema declares
+    # four unannotated results and no two of them may share storage.
     return (
         edge_vec.new_empty(atype.shape[0], 1, dtype=torch.float64),
         torch.empty_like(edge_vec),
+        edge_vec.new_empty(atype.shape[0], 3, dtype=torch.float32)
+        if has_spin
+        else edge_vec.new_empty((0,), dtype=torch.float32),
+        torch.empty_like(edge_vec)
+        if has_spin
+        else edge_vec.new_empty((0,), dtype=torch.float32),
     )
 
 
@@ -172,8 +211,10 @@ def _cpu_energy_gradient(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
     gradient = fitting_backward(
         seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act
     )
-    edge_gradient = _cpu_backward(gradient, state, *descriptor_args)
-    return energy, edge_gradient
+    edge_gradient, spin_gradient, edge_spin_gradient = _cpu_backward(
+        gradient, state, *descriptor_args
+    )
+    return energy, edge_gradient, spin_gradient, edge_spin_gradient
 
 
 def _generic_topology(
@@ -211,7 +252,7 @@ _CANONICAL_SCALAR_COUNT = 6
 #: Leading arguments of the fused operator that describe the descriptor:
 #: ``edge_vec`` plus the compact topology, the compression artifacts and the
 #: six trailing geometry scalars.
-_DESCRIPTOR_ARGUMENT_COUNT = 20
+_DESCRIPTOR_ARGUMENT_COUNT = 23
 
 
 def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
@@ -310,7 +351,15 @@ def dpa4c_canonical_compress_energy_force(
     ownership: torch.Tensor,
     atom_bias: torch.Tensor,
     do_atomic_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    spin: torch.Tensor | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Evaluate compressed DPA4C from a compact canonical edge stream.
 
     The compact ABI carries only source indices and CSR row pointers, so the
@@ -335,6 +384,9 @@ def dpa4c_canonical_compress_energy_force(
         Combined atomic energy bias with shape ``(ntypes,)`` in eV.
     do_atomic_virial
         Whether to return per-node virials.
+    spin
+        Per-node magnetic moments with shape ``(N, 3)`` for a spin-conditioned
+        descriptor, or ``None``.
 
     Returns
     -------
@@ -348,6 +400,11 @@ def dpa4c_canonical_compress_energy_force(
         Per-frame virial with shape ``(F, 3, 3)`` in eV, fp32.
     atom_virial
         Per-node virial with shape ``(N, 3, 3)`` in eV, or an empty tensor.
+    force_mag
+        Per-node magnetic force with shape ``(N, 3)``, or an empty tensor. The
+        on-site part closes inside the fused operator; the neighbour part is
+        emitted per edge and reduced onto source nodes here, where the source
+        CSR is in scope.
 
     Raises
     ------
@@ -383,36 +440,43 @@ def dpa4c_canonical_compress_energy_force(
         raise ValueError("model is not eligible for compact canonical DPA4C inference")
 
     network = fitting_operator_arguments(fitting)
-    atom_energy_raw, edge_gradient = (
-        torch.ops.deepmd.dpa4c_canonical_compress_energy_gradient(
-            graph.edge_vec,
-            graph.source,
-            graph.destination_row_ptr,
-            atype,
-            *compressed_operator_arguments(descriptor),
-            int(descriptor.lmax),
-            *descriptor._compression_scalars,
-            network.weights,
-            network.biases,
-            network.residuals,
-            network.head_weight,
-            network.head_bias,
-            atom_bias.to(torch.float64).contiguous(),
-            network.activation,
-            ownership.to(torch.float64).reshape(-1).contiguous(),
-            node_tile(),
-        )
+    (
+        atom_energy_raw,
+        edge_gradient,
+        spin_gradient,
+        edge_spin_gradient,
+    ) = torch.ops.deepmd.dpa4c_canonical_compress_energy_gradient(
+        graph.edge_vec,
+        graph.source,
+        graph.destination_row_ptr,
+        atype,
+        *compressed_operator_arguments(descriptor, spin),
+        int(descriptor.lmax),
+        *descriptor._compression_scalars,
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.head_bias,
+        atom_bias.to(torch.float64).contiguous(),
+        network.activation,
+        ownership.to(torch.float64).reshape(-1).contiguous(),
+        node_tile(),
     )
     atom_energy = atom_energy_raw * ownership[:, None].to(atom_energy_raw.dtype)
     energy = frame_scalar_sum(atom_energy, graph.n_node)
-    force, atom_virial, virial = canonical_edge_force_virial(
+    # The magnetic cotangent is reduced onto its source nodes by the force
+    # assembly, which already walks that grouping.
+    force, atom_virial, virial, source_spin = canonical_edge_force_virial(
         edge_gradient,
         graph.edge_vec,
         graph.destination_row_ptr,
         graph.source_row_ptr,
         graph.source_order,
         graph.n_node,
+        edge_spin_gradient,
         atype.shape[0],
         do_atomic_virial,
     )
-    return energy, atom_energy, force, virial, atom_virial
+    force_mag = spin_gradient if spin is None else -(spin_gradient + source_spin)
+    return energy, atom_energy, force, virial, atom_virial, force_mag

@@ -1303,7 +1303,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             (g_e,) = torch.autograd.grad(e_atom.sum(), ev)
             # The fused operator assembles force / virial in the model compute
             # precision (fp32), so mirror that dtype in the reference scatter.
-            r_force, r_atom_vir, r_virial = edge_force_virial(
+            r_force, r_atom_vir, r_virial, _ = edge_force_virial(
                 g_e.to(force.dtype),
                 ev.detach().to(force.dtype),
                 graph.edge_index,
@@ -1313,6 +1313,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                ev.new_zeros(0, 3),
                 n,
                 True,
             )
@@ -1462,7 +1463,10 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 do_atomic_virial=True,
             )
         assert fused is not None
-        energy, atom_energy, force, virial, atom_virial = fused
+        # A spin-free composition reports an empty magnetic force in the last
+        # position, which every implementation of the fused entry point emits.
+        energy, atom_energy, force, virial, atom_virial, magnetic = fused
+        assert magnetic.numel() == 0
 
         with _CudaLevel("1"):
             edge_vec = graph.edge_vec.detach().clone().requires_grad_(True)
@@ -1477,7 +1481,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 :, None
             ]
             (edge_gradient,) = torch.autograd.grad(atom_energy_ref.sum(), edge_vec)
-            force_ref, atom_virial_ref, virial_ref = edge_force_virial(
+            force_ref, atom_virial_ref, virial_ref, _ = edge_force_virial(
                 edge_gradient.to(force.dtype),
                 edge_vec.detach().to(force.dtype),
                 graph.edge_index,
@@ -1487,6 +1491,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                edge_vec.new_zeros(0, 3),
                 n_node,
                 True,
             )
@@ -1622,7 +1627,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             grrg, _rot = dpa1_graph_compress(des, g2, atype, tebd)
             e_atom = fit.call_graph(grrg, atype)[fit.var_name]
             (g_e,) = torch.autograd.grad(e_atom.sum(), ev)
-            r_force, r_atom_vir, r_virial = edge_force_virial(
+            r_force, r_atom_vir, r_virial, _ = edge_force_virial(
                 g_e.to(force.dtype),
                 ev.detach().to(force.dtype),
                 graph.edge_index,
@@ -1632,6 +1637,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                ev.new_zeros(0, 3),
                 n,
                 True,
             )
@@ -1955,7 +1961,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             edge_force_virial,
         )
 
-        return edge_force_virial(
+        force, atom_virial, virial, _ = edge_force_virial(
             g_e,
             edge_vec,
             edge_index,
@@ -1965,9 +1971,11 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             src_order,
             src_row_ptr,
             n_node,
+            edge_vec.new_zeros(0, 3),
             total,
             True,
         )
+        return force, atom_virial, virial
 
     def _assert_device_parity(self, device) -> None:
         args = self._random_graph(torch.device(device))
@@ -2047,6 +2055,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             source_order,
             source_row_ptr,
             n_node,
+            edge_vec.new_zeros(0, 3),
             total,
             True,
         )
@@ -2057,11 +2066,84 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             compact.source_row_ptr,
             compact.source_order,
             compact.n_node,
+            edge_vec.new_zeros(0, 3),
             total,
             True,
         )
         for actual, expected in zip(canonical, generic, strict=True):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+
+    def test_magnetic_reduction_parity(self) -> None:
+        """The magnetic cotangent reduces onto its source nodes.
+
+        The reduction rides the source loop of the force assembly, so it has to
+        agree with the reference on the grouping and on which edges a mask
+        removes. Both are checked against the CPU implementation on the same
+        graph.
+        """
+        from deepmd.kernels.cuda.edge_force_virial import (
+            edge_force_virial,
+        )
+
+        args = self._random_graph(torch.device("cuda"))
+        g_e, edge_vec, edge_index, mask = args[:4]
+        dst_order, dst_row_ptr, src_order, src_row_ptr, n_node, total = args[4:]
+        spin = torch.randn_like(edge_vec)
+
+        def assemble(device: str) -> torch.Tensor:
+            move = lambda t: t.to(device)  # noqa: E731
+            return edge_force_virial(
+                move(g_e),
+                move(edge_vec),
+                move(edge_index),
+                move(mask),
+                move(dst_order),
+                move(dst_row_ptr),
+                move(src_order),
+                move(src_row_ptr),
+                move(n_node),
+                move(spin),
+                total,
+                True,
+            )[3]
+
+        device_magnetic = assemble("cuda")
+        self.assertEqual(tuple(device_magnetic.shape), (total, 3))
+        torch.testing.assert_close(
+            device_magnetic.cpu(), assemble("cpu"), atol=1e-10, rtol=1e-10
+        )
+
+        # An absent cotangent yields an empty output and leaves the force alone.
+        force, _, _, empty = edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            mask,
+            dst_order,
+            dst_row_ptr,
+            src_order,
+            src_row_ptr,
+            n_node,
+            edge_vec.new_zeros(0, 3),
+            total,
+            True,
+        )
+        self.assertEqual(empty.numel(), 0)
+        with_spin_force = edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            mask,
+            dst_order,
+            dst_row_ptr,
+            src_order,
+            src_row_ptr,
+            n_node,
+            spin,
+            total,
+            True,
+        )[0]
+        torch.testing.assert_close(force, with_spin_force)
 
     def test_many_small_frames(self) -> None:
         """Frame reduction is valid beyond the CUDA grid-y limit."""

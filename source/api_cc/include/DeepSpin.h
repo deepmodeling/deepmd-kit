@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "DeepBaseModel.h"
@@ -252,6 +253,42 @@ class DeepSpinBackend : public DeepBaseModelBackend {
    *         Empty if the backend does not provide this information.
    **/
   virtual std::vector<bool> get_use_spin() const { return {}; };
+
+  /**
+   * @brief GPU-resident compact canonical graph inference backend hook.
+   *
+   * Given a device-resident dual-CSR graph and the per-node moment, write the
+   * per-atom energy, force, magnetic force, and virial back to the device
+   * output pointers. The PyTorch Exportable backend overrides this; every
+   * other backend inherits the throwing default. The signature is torch-free
+   * so the dispatcher stays backend-agnostic and ``libdeepmd_cc`` need not
+   * link PyTorch. See DeepSpin::compute_canonical_graph_gpu for the device
+   * pointer and graph contracts.
+   */
+  virtual void compute_canonical_graph_gpu(
+      double* d_atom_energy,
+      double* d_force,
+      double* d_force_mag,
+      double* d_atom_virial,
+      const std::int64_t* d_atype,
+      const std::uint32_t* d_source,
+      const float* d_edge_vec,
+      const std::int64_t* d_destination_row_ptr,
+      const std::int64_t* d_source_row_ptr,
+      const std::uint32_t* d_source_order,
+      const float* d_spin,
+      const int nloc,
+      const int nall_nodes,
+      const std::int64_t edge_storage);
+  virtual bool uses_canonical_graph_inference() const;
+
+  /**
+   * @brief Whether the backend serves the loaded artifact under the native
+   * spin scheme, in which the magnetic moment is a per-node descriptor input
+   * and the model carries no virtual atoms. Backends of the virtual-atom
+   * scheme inherit the negative default.
+   */
+  virtual bool uses_native_spin_scheme() const;
 };
 
 /**
@@ -543,6 +580,60 @@ class DeepSpin : public DeepBaseModel {
    * @return A vector of booleans indicating which atom types have spin enabled.
    **/
   std::vector<bool> get_use_spin() const;
+
+  /**
+   * @brief Whether the loaded artifact uses the compact canonical graph ABI.
+   */
+  bool uses_canonical_graph_inference() const;
+
+  /**
+   * @brief Whether the loaded artifact is served under the native spin
+   * scheme rather than the virtual-atom scheme.
+   */
+  bool uses_native_spin_scheme() const;
+
+  /**
+   * @brief Fully device-resident inference for a compact canonical native-spin
+   *artifact.
+   *
+   * The native-spin twin of DeepPot::compute_canonical_graph_gpu: the same
+   *dual-CSR compact schema plus the per-node moment, and the magnetic force
+   *among the outputs. All pointers reference accelerator memory on the model
+   *device and every output is written device-to-device. ``edge_storage`` is
+   *the allocated edge capacity; the physical edge count is the last entry of
+   *``d_destination_row_ptr`` and the tail beyond it is ignored.
+   *
+   * @param[out] d_atom_energy Per-atom energy, [nloc].
+   * @param[out] d_force Per-node force, [nall_nodes * 3] row-major.
+   * @param[out] d_force_mag Per-node magnetic force, [nall_nodes * 3]
+   *row-major.
+   * @param[out] d_atom_virial Per-node virial, [nall_nodes * 9] row-major.
+   * @param[in] d_atype Per-node atom types, [nall_nodes].
+   * @param[in] d_source Source-node index per edge, [edge_storage].
+   * @param[in] d_edge_vec Destination-major edge vectors, [edge_storage * 3].
+   * @param[in] d_destination_row_ptr Destination CSR offsets, [nall_nodes + 1].
+   * @param[in] d_source_row_ptr Source CSR offsets, [nall_nodes + 1].
+   * @param[in] d_source_order Source-grouped edge positions, [edge_storage].
+   * @param[in] d_spin Per-node magnetic moment, [nall_nodes * 3] row-major;
+   *ghost rows carry their owner's moment.
+   * @param[in] nloc Number of local atoms.
+   * @param[in] nall_nodes Graph node count (local + ghost).
+   * @param[in] edge_storage Allocated edge capacity.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_force_mag,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const std::uint32_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::uint32_t* d_source_order,
+                                   const float* d_spin,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage);
 
  protected:
   std::shared_ptr<deepmd::DeepSpinBackend> dp;

@@ -129,7 +129,7 @@ def edge_energy_deriv(
         and source_row_ptr is not None
     ):
         n_cap = node_capacity if node_capacity is not None else int(n_node.sum())
-        force, atom_virial, virial = fused_edge_force_virial(
+        force, atom_virial, virial, _ = fused_edge_force_virial(
             g_e,
             edge_vec,
             edge_index,
@@ -139,6 +139,7 @@ def edge_energy_deriv(
             source_order,
             source_row_ptr,
             n_node,
+            edge_vec.new_zeros(0, 3),
             n_cap,
             do_atomic_virial,
         )

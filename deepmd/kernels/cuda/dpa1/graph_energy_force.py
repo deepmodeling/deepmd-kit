@@ -266,7 +266,7 @@ def _cpu(
     # ``_fake`` and the CUDA operator; the sub-operator would otherwise return
     # fp64 whenever the edge inputs are fp64.
     fprec = w1.dtype
-    force, atom_virial, virial = torch.ops.deepmd.edge_force_virial(
+    force, atom_virial, virial, _ = torch.ops.deepmd.edge_force_virial(
         g_e.to(fprec),
         edge_vec.to(fprec),
         edge_index,
@@ -276,6 +276,7 @@ def _cpu(
         source_order,
         source_row_ptr,
         n_node,
+        edge_vec.to(fprec).new_zeros(0, 3),
         node_capacity,
         do_atomic_virial,
     )

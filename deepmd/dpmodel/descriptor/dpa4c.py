@@ -75,10 +75,13 @@ from .dpa4_nn import (
 from .dpa4c_nn import (
     InvariantReadout,
     OrderedPairFiLM,
+    SpinChannels,
     build_angular_basis,
     build_moment_indices,
+    degree_offsets,
     derive_bispectrum_ranks,
     derive_degree_channels,
+    derive_spin_channels,
 )
 
 if TYPE_CHECKING:
@@ -166,8 +169,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Atom-type names.
     seed
         Random seed.
+    use_spin
+        Per-type flags marking which atom types carry a magnetic moment. When
+        given, the descriptor conditions on a per-node spin vector and
+        declares :meth:`supports_native_spin`. ``None`` reproduces the
+        spin-free descriptor exactly.
     spin
         Reserved for descriptor API compatibility; only ``None`` is supported.
+        Native spin is configured through ``use_spin``.
 
     Raises
     ------
@@ -197,6 +206,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         "info",
         "pair_film",
         "pair_mixing",
+        "spin_pair",
+        "spin_type",
         "type_embedding",
         "readout_matrices",
         "coupling_meta",
@@ -221,11 +232,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         trainable: bool = True,
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
+        use_spin: list[bool] | None = None,
         spin: None = None,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
-            raise NotImplementedError("DPA4C does not support spin inputs.")
+            raise NotImplementedError(
+                "DPA4C configures native spin through `use_spin`; the `spin` "
+                "argument of the common descriptor ABI is not supported."
+            )
         if rcut <= 0.0:
             raise ValueError(f"`rcut` must be positive, got {rcut}")
         if ntypes <= 0:
@@ -258,6 +273,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.trainable = bool(trainable)
         self.type_map = type_map
         self.seed = seed
+        self.use_spin = None if use_spin is None else [bool(flag) for flag in use_spin]
+        # The spin branch reads the leading channels of the shared radial map,
+        # so its width is derived rather than exposed.
+        self.spin_channels = (
+            0 if self.use_spin is None else derive_spin_channels(degree_channels)
+        )
         radial_hidden = resolve_swiglu_hidden_width(self.channels)
 
         # === Step 3. Build the shared DPA4 edge representation ===
@@ -310,6 +331,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.pair_film = OrderedPairFiLM(
             self.channels,
             radial_modes=self.radial_modes,
+            spin_channels=self.spin_channels,
             precision=self.precision,
             trainable=self.trainable,
             seed=child_seed(seed, 3),
@@ -321,14 +343,28 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             trainable=self.trainable,
             seed=child_seed(seed, 4),
         )
+        self.spin = (
+            None
+            if self.use_spin is None
+            else SpinChannels(
+                self.ntypes,
+                self.degree_channels,
+                self.use_spin,
+                precision=self.precision,
+                trainable=self.trainable,
+                seed=child_seed(seed, 5),
+            )
+        )
 
         # === Step 4. Lay out the flat moment payload ===
         # Degree zero owns the leading `channels` entries of the flat layout,
         # so the non-scalar block is exactly its complement and needs no
-        # separate degree index.
+        # separate degree index. The spin families, when present, are appended
+        # after the geometric degrees, leaving every geometric offset intact.
         channel_index, harmonic_index = build_moment_indices(self.degree_channels)
         self.angular_channel_index = channel_index[self.channels :]
         self.angular_harmonic_index = harmonic_index[self.channels :]
+        self.degree_offsets = degree_offsets(self.degree_channels)
 
         # === Step 5. Initialize the output calibration state ===
         mean = np.zeros(
@@ -348,6 +384,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         comm_dict: dict | None = None,
+        spin: Array | None = None,
     ) -> tuple[Array, None]:
         """Evaluate DPA4C on a flat neighbor graph.
 
@@ -368,6 +405,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Communication metadata accepted by the common graph ABI. DPA4C
             does not read source-node features, so no halo-feature exchange is
             required and this argument is unused.
+        spin
+            Per-node spin vectors with shape ``(N, 3)`` on the same flat node
+            axis as ``atype``, including ghost and padding rows. Mandatory
+            when the descriptor is configured with ``use_spin`` and ignored
+            otherwise.
 
         Returns
         -------
@@ -376,6 +418,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             ``(N, get_dim_out())`` and the same floating dtype as ``edge_vec``.
         rot_mat
             ``None``. DPA4C does not expose an equivariant fitting input.
+
+        Raises
+        ------
+        ValueError
+            If the descriptor is spin conditioned and ``spin`` is absent.
         """
         del comm_dict
         # === Step 1. Resolve type features and compute precision ===
@@ -391,12 +438,47 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
 
         # === Step 2. Evaluate the graph-native equations ===
-        descriptor, _ = self.evaluate_graph(graph, atype, type_embedding)
+        descriptor, _ = self.evaluate_graph(graph, atype, type_embedding, spin)
 
         # === Step 3. Restore the graph input dtype ===
         if descriptor.dtype != in_dtype:
             descriptor = xp.astype(descriptor, in_dtype)
         return descriptor, None
+
+    def require_spin(self, spin: Array | None) -> Array:
+        """Return the per-node moment a spin-conditioned descriptor must receive.
+
+        A missing moment is an error rather than a vanishing one. Substituting
+        zeros would report an identically zero magnetic force, which in
+        molecular dynamics is indistinguishable from frozen moments under a
+        plausible energy. A corpus that is only partially labelled is admitted
+        through ``model.spin.allow_missing_label``, which relaxes the ``spin``
+        data requirement to optional with a zero default, so the data pipeline
+        supplies an explicit zero moment and this contract still holds.
+
+        Parameters
+        ----------
+        spin
+            Per-node spin vectors with shape ``(N, 3)``, or ``None``.
+
+        Returns
+        -------
+        Array
+            The same moments, unchanged.
+
+        Raises
+        ------
+        ValueError
+            If ``spin`` is ``None``.
+        """
+        if spin is None:
+            raise ValueError(
+                "A spin-conditioned DPA4C requires a per-node magnetic "
+                "moment. Set `model.spin.allow_missing_label` to admit "
+                "systems that carry no spin label; the data pipeline then "
+                "supplies an explicit zero moment."
+            )
+        return spin
 
     @cast_precision
     def call(
@@ -489,6 +571,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         graph: Any,
         atype: Array,
         type_embedding: Array,
+        spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Evaluate the graph-native descriptor equations.
 
@@ -503,6 +586,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Flat node types with shape ``(N,)``.
         type_embedding
             Complete type table with shape ``(ntypes + 1, channels)``.
+        spin
+            Per-node spin vectors with shape ``(N, 3)``, mandatory for a
+            spin-conditioned descriptor and ignored otherwise.
 
         Returns
         -------
@@ -510,6 +596,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Invariant node features with shape ``(N, get_dim_out())``.
         envelope
             Masked per-edge C³ envelope with shape ``(E, 1)``.
+
+        Raises
+        ------
+        ValueError
+            If the descriptor is spin conditioned and ``spin`` is absent.
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
 
@@ -529,23 +620,38 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         center_type_embedding = self.gather_rows(type_embedding, atype, xp)
         pair_tables = self.pair_film.call(type_embedding)
 
-        # === Step 2. Build the masked edge amplitudes and harmonics ===
-        amplitude, basis, envelope = self.build_edge_features(
-            graph,
-            atype,
-            *pair_tables,
+        # === Step 2. Condition the per-node spin ===
+        # The mask and the reference magnitude are applied once, so every
+        # downstream spin route inherits them and the magnetic force of a
+        # non-magnetic type vanishes identically rather than numerically.
+        conditioned_spin = (
+            None
+            if self.spin is None
+            else self.spin.conditioned_spin(self.require_spin(spin), atype)
         )
 
-        # === Step 3. Reduce the degree-wise moments ===
+        # === Step 3. Build the masked edge amplitudes and harmonics ===
+        amplitude, basis, envelope, spin_payload = self.build_edge_features(
+            graph,
+            atype,
+            pair_tables,
+            conditioned_spin,
+        )
+
+        # === Step 4. Reduce the degree-wise moments ===
         moments, divisors = self.aggregate_moments(
             amplitude,
             basis,
             envelope,
+            spin_payload,
+            None
+            if conditioned_spin is None
+            else self.spin.onsite_payload(conditioned_spin, atype),
             dst,
             n_total,
         )
 
-        # === Step 4. Build calibrated invariant features ===
+        # === Step 5. Build calibrated invariant features ===
         return (
             self.build_invariant_descriptor(
                 moments,
@@ -559,11 +665,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self,
         graph: Any,
         atype: Array,
-        pair_scale: Array,
-        pair_shift: Array,
-        pair_mixing: Array | None,
-    ) -> tuple[Array, Array, Array]:
-        r"""Build the enveloped edge amplitudes and the masked harmonics.
+        pair_tables: tuple,
+        conditioned_spin: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array | None]:
+        r"""Build the enveloped edge amplitudes, harmonics, and spin payload.
 
         The ordered type pair :math:`(a,b)` rescales the one shared radial
         function :math:`g` and mixes the :math:`R` shared mode profiles
@@ -577,22 +682,27 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
              +\sum_\mu U_{ab,c\mu}q_\mu(\rho_{ij})
             \Bigr).
 
+        The spin payload reuses the radial map and the ordered pair index of
+        this same stage, so the whole per-edge computation reads the radial
+        table exactly once.
+
         Parameters
         ----------
         graph
             Neighbor graph in descriptor compute precision.
         atype
             Flat node types with shape ``(N,)``.
-        pair_scale
-            Ordered radial scales with shape
-            ``((ntypes + 1) ** 2, channels)``.
-        pair_shift
-            Ordered radial shifts with shape
-            ``((ntypes + 1) ** 2, channels)``.
-        pair_mixing
-            Ordered mode-mixing table with shape
-            ``((ntypes + 1) ** 2, channels, radial_modes)``, or ``None`` when
-            ``radial_modes`` is zero.
+        pair_tables
+            Ordered pair cache produced by
+            :meth:`~deepmd.dpmodel.descriptor.dpa4c_nn.pair_film.OrderedPairFiLM.call`:
+            radial scale and shift with shape
+            ``((ntypes + 1) ** 2, channels)``, the mode-mixing table with
+            shape ``((ntypes + 1) ** 2, channels, radial_modes)`` or ``None``,
+            and the ordered spin scale and shift with shape
+            ``((ntypes + 1) ** 2, spin_channels)`` or ``None``.
+        conditioned_spin
+            Conditioned per-node spin with shape ``(N, 3)``, or
+            ``None`` for a spin-free descriptor.
 
         Returns
         -------
@@ -602,10 +712,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
         envelope
             Masked C³ envelope with shape ``(E,)``.
+        spin_payload
+            Masked per-edge spin payload with shape
+            ``(E, spin.edge_width)``, or ``None`` for a spin-free descriptor.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             apply_pair_exclusion,
         )
+
+        pair_scale, pair_shift, pair_mixing, spin_scale, spin_shift = pair_tables
 
         # === Step 1. Merge graph and descriptor-level exclusion masks ===
         graph = apply_pair_exclusion(graph, atype, self.emask)
@@ -653,11 +768,32 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             modes = self.radial_mode_head(radial_hidden)  # (E, R)
             amplitude = amplitude + xp.sum(mixing * modes[:, None, :], axis=-1)
 
-        # === Step 5. Gate the amplitude and build the masked harmonics ===
+        # === Step 5. Build the spin payload on the same radial evaluation ===
+        # The bond-projected family reads the same regularized direction as the
+        # harmonics, so the spin branch contributes an angular term to the
+        # coordinate gradient alongside the radial one.
+        spin_payload = (
+            None
+            if conditioned_spin is None
+            else self.spin.edge_payload(
+                conditioned_spin,
+                atype,
+                src,
+                direction,
+                radial,
+                envelope[:, 0],
+                spin_scale,
+                spin_shift,
+                pair_index,
+            )
+        )
+
+        # === Step 6. Gate the amplitude and build the masked harmonics ===
         return (
             amplitude * envelope,
             self.build_angular_basis(direction) * mask,
             envelope[:, 0],
+            spin_payload,
         )
 
     def aggregate_moments(
@@ -665,6 +801,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         amplitude: Array,
         basis: Array,
         envelope: Array,
+        spin_payload: Array | None,
+        spin_onsite: Array | None,
         dst: Array,
         n_total: int,
     ) -> tuple[Array, Array]:
@@ -694,6 +832,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Masked Cartesian harmonics with shape ``(E, (lmax + 1) ** 2)``.
         envelope
             Masked C³ envelope with shape ``(E,)``.
+        spin_payload
+            Masked per-edge spin payload with shape ``(E, spin.edge_width)``,
+            or ``None``. It carries the same squared envelope as every
+            non-scalar geometric moment and therefore shares the normalizer
+            :math:`n^{(+)}`.
+        spin_onsite
+            Node-local on-site spin payload with shape
+            ``(N, spin.node_width)``, or ``None``. It is appended after the
+            division so that the invariants it enters carry exactly one
+            neighborhood normalizer, contributed by its neighbour partner.
         dst
             Destination node indices with shape ``(E,)``.
         n_total
@@ -703,7 +851,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         -------
         moments
             Flat normalized moments with shape ``(N, S)``, where
-            ``S = sum((2 * l + 1) * degree_channels[l])``.
+            ``S = sum((2 * l + 1) * degree_channels[l])`` plus the spin
+            moment width when the descriptor is spin conditioned.
         divisors
             The two divisors :math:`1/n^{(0)}` and :math:`1/n^{(+)}` with shape
             ``(N, 2)``. They are retained because normalization is otherwise
@@ -733,32 +882,28 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # single envelope, while the non-scalar block gathers an amplitude and
         # a harmonic per flat moment coordinate and carries a second envelope.
         envelope_squared = envelope * envelope
-        payload = xp.concat(
-            [
-                envelope_squared[:, None],
-                (envelope_squared * envelope_squared)[:, None],
-                amplitude,
-                xp.take(amplitude, channel_index, axis=1)
-                * xp.take(basis, harmonic_index, axis=1)
-                * envelope[:, None],
-            ],
-            axis=1,
-        )
-        reduced = segment_sum(payload, dst, n_total)
+        parts = [
+            envelope_squared[:, None],
+            (envelope_squared * envelope_squared)[:, None],
+            amplitude,
+            xp.take(amplitude, channel_index, axis=1)
+            * xp.take(basis, harmonic_index, axis=1)
+            * envelope[:, None],
+        ]
+        if spin_payload is not None:
+            parts.append(spin_payload)
+        reduced = segment_sum(xp.concat(parts, axis=1), dst, n_total)
 
         scalar_end = 2 + self.channels
         floor = self._DEGREE_NORM_FLOOR
         divisors = xp.sqrt(reduced[:, :2] + floor)
-        return (
-            xp.concat(
-                [
-                    reduced[:, 2:scalar_end] / divisors[:, :1],
-                    reduced[:, scalar_end:] / divisors[:, 1:],
-                ],
-                axis=1,
-            ),
-            divisors,
-        )
+        normalized = [
+            reduced[:, 2:scalar_end] / divisors[:, :1],
+            reduced[:, scalar_end:] / divisors[:, 1:],
+        ]
+        if spin_onsite is not None:
+            normalized.append(spin_onsite)
+        return xp.concat(normalized, axis=1), divisors
 
     def build_invariant_descriptor(
         self,
@@ -789,10 +934,22 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """
         xp = array_api_compat.array_namespace(moments)
         device = array_api_compat.device(moments)
-        descriptor = xp.concat(
-            [self.readout.call(moments), divisors, center_type_embedding],
-            axis=-1,
-        )
+        blocks = [self.readout.call(moments)]
+        if self.spin is not None:
+            geometric_width = self.degree_offsets[-1]
+            blocks.append(
+                self.spin.call(
+                    moments[:, geometric_width:],
+                    xp.reshape(
+                        moments[:, self.degree_offsets[2] : self.degree_offsets[3]],
+                        (moments.shape[0], 5, self.degree_channels[2]),
+                    ),
+                )
+            )
+        # The two divisors close the geometric block, so the spin invariants
+        # precede them and the center-type tail keeps its trailing position.
+        blocks.extend([divisors, center_type_embedding])
+        descriptor = xp.concat(blocks, axis=-1)
         mean = xp_asarray_nodetach(xp, self.mean, device=device)
         stddev = xp_asarray_nodetach(xp, self.stddev, device=device)
         return (descriptor - mean[None, :]) / stddev[None, :]
@@ -900,6 +1057,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "radial_mode_head",
             "pair_film",
             "readout",
+            "spin",
         ):
             setattr(self, name, getattr(base_class, name))
         self.mean = base_class.mean
@@ -915,13 +1073,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         of a shared module. ``rcut``, ``basis_type``, and ``n_radial`` define
         the radial basis; ``ntypes`` defines the type table and the ordered
         pair index space; ``channels``, ``lmax``, and ``radial_modes`` define
-        every remaining width; ``use_amp`` selects the precision policy that a
+        every remaining width;         ``use_amp`` selects the precision policy that a
         backend attaches to the shared layers, so a replica that autocasts
         against layers configured without it would silently lose the effect;
         ``trainable`` decides whether
         those layers carry gradients at all; ``type_map`` fixes what the rows
-        of the shared type table mean. Precision itself enters through its
-        resolved dtype so that equivalent spellings agree.
+        of the shared type table mean; ``use_spin`` fixes both the presence
+        and the row meaning of the shared spin tables. Precision itself enters
+        through its resolved dtype so that equivalent spellings agree.
 
         Branch-local state is deliberately absent. ``exclude_types`` is the
         only such field: it configures the pair-exclusion mask, which each
@@ -943,6 +1102,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             self.use_amp,
             self.trainable,
             None if self.type_map is None else tuple(self.type_map),
+            None if self.use_spin is None else tuple(self.use_spin),
             np.dtype(PRECISION_DICT[self.precision]).name,
         )
 
@@ -1012,10 +1172,19 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Parameters
         ----------
         merged
-            Sampled training systems or a callable returning them.
+            Sampled training systems or a callable returning them. A
+            spin-conditioned descriptor additionally requires the per-atom
+            moment on every system, under either ``model_spin`` or ``spin``.
         path
             Optional statistics path. Model-dependent calibration is always
             recomputed and therefore does not consume this path.
+
+        Raises
+        ------
+        ValueError
+            If a geometric coordinate is degenerate over the sample, or if a
+            spin-conditioned descriptor is calibrated on a system that carries
+            no moment.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_neighbor_graph,
@@ -1026,6 +1195,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         if not sampled:
             return
 
+        # The reference magnitudes rescale the spin before it reaches the
+        # descriptor, so they have to be fixed before the output coordinates
+        # are measured.
+        if self.spin is not None:
+            self.spin.set_spin_reference(self._measure_spin_reference(sampled))
+
         xp = array_api_compat.array_namespace(self.stddev)
         device = array_api_compat.device(self.stddev)
         dtype = self.stddev.dtype
@@ -1035,48 +1210,35 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         geometry_dim = self.get_dim_out() - self.channels
         square_sum = np.zeros(geometry_dim, dtype=np.float64)
         value_sum = np.zeros(geometry_dim, dtype=np.float64)
-        value_count = 0
+        # A spin coordinate is exactly zero on every node that carries no
+        # magnetic information, so pooling it over all nodes would scale the
+        # preconditioner with the magnetic fraction of the sample, that is
+        # with the stoichiometry rather than with the physics. The spin block
+        # is therefore averaged over the nodes on which it is active.
+        #
+        # Activity is a property of the coordinate block, not of the value. A
+        # geometric coordinate is legitimately zero on an atom with no
+        # neighbour inside the cutoff, and counting only nonzero values would
+        # scale the geometric preconditioner with the vacuum fraction of the
+        # sample -- the same bias, transposed. The geometric block therefore
+        # keeps the plain node count.
+        spin_block = slice(self.readout.get_dim_out(), geometry_dim - 2)
+        active_count = np.zeros(geometry_dim, dtype=np.float64)
 
         try:
             for system in sampled:
-                coord_np = to_numpy_array(system["coord"])
-                nframes = coord_np.shape[0]
-                coord_np = np.reshape(coord_np, (nframes, -1, 3))
-                atype_np = np.reshape(
-                    to_numpy_array(system["atype"]),
-                    (nframes, -1),
-                )
-                box_value = system.get("box", None)
-                box_np = (
-                    None
-                    if box_value is None
-                    else np.reshape(to_numpy_array(box_value), (nframes, -1))
-                )
-                nstat_frames = min(nframes, self._STAT_FRAMES_PER_SAMPLE)
-                frame_indices = np.linspace(
-                    0,
-                    nframes - 1,
-                    num=nstat_frames,
-                    dtype=np.int64,
-                )
-                for frame_index in frame_indices:
-                    coord = xp.asarray(
-                        coord_np[frame_index : frame_index + 1],
-                        dtype=dtype,
-                        device=device,
-                    )
-                    atype = xp.asarray(
-                        atype_np[frame_index : frame_index + 1],
-                        device=device,
-                    )
+                for frame in self._calibration_frames(system):
+                    coord = xp.asarray(frame["coord"], dtype=dtype, device=device)
+                    atype = xp.asarray(frame["atype"], device=device)
                     box = (
                         None
-                        if box_np is None
-                        else xp.asarray(
-                            box_np[frame_index : frame_index + 1],
-                            dtype=dtype,
-                            device=device,
-                        )
+                        if frame["box"] is None
+                        else xp.asarray(frame["box"], dtype=dtype, device=device)
+                    )
+                    spin = (
+                        None
+                        if frame["spin"] is None
+                        else xp.asarray(frame["spin"], dtype=dtype, device=device)
                     )
                     graph = build_neighbor_graph(
                         coord,
@@ -1084,37 +1246,50 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                         box,
                         self.get_rcut(),
                     )
-                    output, _ = self.call_graph(graph, xp.reshape(atype, (-1,)))
+                    output, _ = self.call_graph(
+                        graph,
+                        xp.reshape(atype, (-1,)),
+                        spin=None if spin is None else xp.reshape(spin, (-1, 3)),
+                    )
                     output_np = to_numpy_array(output).reshape(
                         -1,
                         self.get_dim_out(),
                     )
                     if output_np.shape[0] == 0:
                         continue
-                    square_sum += np.sum(
-                        np.square(
-                            output_np[:, :geometry_dim],
-                            dtype=np.float64,
-                        ),
-                        axis=0,
-                        dtype=np.float64,
+                    geometry = output_np[:, :geometry_dim]
+                    square_sum += np.sum(np.square(geometry, dtype=np.float64), axis=0)
+                    value_sum += np.sum(geometry, axis=0, dtype=np.float64)
+                    active_count += geometry.shape[0]
+                    active_count[spin_block] += (
+                        np.count_nonzero(geometry[:, spin_block], axis=0)
+                        - geometry.shape[0]
                     )
-                    value_sum += np.sum(
-                        output_np[:, :geometry_dim],
-                        axis=0,
-                        dtype=np.float64,
-                    )
-                    value_count += output_np.shape[0]
         finally:
             self.mean, self.stddev = mean_backup, stddev_backup
 
-        if value_count == 0:
+        if not np.any(active_count > 0.0):
             return
-        feature_rms = np.sqrt(square_sum / float(value_count))
-        if np.any(~np.isfinite(feature_rms)) or np.any(feature_rms <= self._STAT_EPS):
+        # A coordinate that never activates carries no information to
+        # precondition. That is the normal state of every spin coordinate on a
+        # demagnetized calibration corpus, which is exactly the corpus used to
+        # pretrain a model that is later fine-tuned on magnetic data, so it
+        # takes the identity preconditioner rather than an error.
+        measured = active_count > 0.0
+        feature_rms = np.ones(geometry_dim, dtype=np.float64)
+        feature_rms[measured] = np.sqrt(
+            square_sum[measured] / active_count[measured],
+        )
+        geometric = np.zeros(geometry_dim, dtype=bool)
+        geometric[: self.readout.get_dim_out()] = True
+        geometric[geometry_dim - 2 :] = True
+        degenerate = geometric & (
+            ~np.isfinite(feature_rms) | (feature_rms <= self._STAT_EPS)
+        )
+        if np.any(degenerate):
             raise ValueError(
                 "DPA4C output calibration requires non-degenerate finite "
-                f"features, got RMS values {feature_rms.tolist()}"
+                f"geometric features, got RMS values {feature_rms.tolist()}"
             )
         type_table = to_numpy_array(self.type_embedding.call())[: self.ntypes]
         target_rms = float(np.sqrt(np.mean(np.square(type_table, dtype=np.float64))))
@@ -1122,7 +1297,17 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             raise ValueError(
                 f"DPA4C type embedding has a degenerate calibration RMS {target_rms}"
             )
-        geometry_stddev = feature_rms / target_rms
+        # A coordinate earns a preconditioner only where its measured scale is
+        # meaningful. The geometric block is already required to be
+        # non-degenerate above; the spin block is not, because a corpus whose
+        # moments are uniformly weak drives the quartic spin coordinates to a
+        # vanishing root mean square, and dividing by it would hand them an
+        # unbounded gain. Those coordinates keep the identity instead, which is
+        # the same treatment a coordinate that never activates receives.
+        conditioned = measured & np.isfinite(feature_rms)
+        conditioned &= feature_rms > self._STAT_EPS
+        geometry_stddev = np.ones(geometry_dim, dtype=np.float64)
+        geometry_stddev[conditioned] = feature_rms[conditioned] / target_rms
         geometry_mean = np.zeros(geometry_dim, dtype=np.float64)
 
         # The two moment divisors are the only outputs carrying their
@@ -1132,11 +1317,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # standardized; every other coordinate keeps the shared RMS
         # preconditioner, whose zero mean the readout construction justifies.
         mass = slice(geometry_dim - 2, geometry_dim)
-        mass_mean = value_sum[mass] / float(value_count)
+        mass_count = active_count[mass]
+        mass_mean = value_sum[mass] / mass_count
         mass_stddev = np.sqrt(
-            np.maximum(
-                square_sum[mass] / float(value_count) - np.square(mass_mean), 0.0
-            )
+            np.maximum(square_sum[mass] / mass_count - np.square(mass_mean), 0.0)
         )
         if np.any(mass_stddev <= self._STAT_EPS):
             raise ValueError(
@@ -1153,6 +1337,105 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.stddev = np.concatenate([geometry_stddev, tail + 1.0]).astype(
             PRECISION_DICT[self.precision]
         )
+
+    def _calibration_frames(self, system: dict) -> list[dict]:
+        """Draw the calibration frames of one sampled system.
+
+        The frames are taken on a linear index grid, so the draw is
+        deterministic and spreads over the whole system rather than over its
+        leading frames.
+
+        Parameters
+        ----------
+        system
+            Sampled system carrying ``coord``, ``atype``, an optional ``box``,
+            and, for a spin-conditioned descriptor, the per-atom moment under
+            either ``model_spin`` or ``spin``.
+
+        Returns
+        -------
+        list[dict]
+            One entry per drawn frame, each with a leading frame axis of
+            length one and a ``spin`` entry that is ``None`` for a spin-free
+            descriptor.
+
+        Raises
+        ------
+        ValueError
+            If a spin-conditioned descriptor is calibrated on a system that
+            carries no moment under either key.
+        """
+        coord = to_numpy_array(system["coord"])
+        nframes = coord.shape[0]
+        coord = np.reshape(coord, (nframes, -1, 3))
+        atype = np.reshape(to_numpy_array(system["atype"]), (nframes, -1))
+        box = system.get("box")
+        box = None if box is None else np.reshape(to_numpy_array(box), (nframes, -1))
+        # The two keys are the two packings the training pipelines use: the
+        # native-spin route hands the moment through as ``spin``, while the
+        # virtual-atom route packs the model-facing arrays under a ``model_``
+        # prefix so they survive next to the physical ones.
+        spin = (
+            None
+            if self.spin is None
+            else self.require_spin(system.get("model_spin", system.get("spin")))
+        )
+        spin = (
+            None if spin is None else np.reshape(to_numpy_array(spin), (nframes, -1, 3))
+        )
+        indices = np.linspace(
+            0,
+            nframes - 1,
+            num=min(nframes, self._STAT_FRAMES_PER_SAMPLE),
+            dtype=np.int64,
+        )
+        return [
+            {
+                "coord": coord[index : index + 1],
+                "atype": atype[index : index + 1],
+                "box": None if box is None else box[index : index + 1],
+                "spin": None if spin is None else spin[index : index + 1],
+            }
+            for index in indices
+        ]
+
+    def _measure_spin_reference(self, sampled: list[dict]) -> np.ndarray:
+        """Measure the per-type root-mean-square magnetic moment.
+
+        The spin invariants are quadratic and quartic in the spin, so a
+        chemistry whose moments differ by a factor of three spreads the
+        quartic coordinates by two orders of magnitude. Rescaling the spin by
+        a per-type reference collapses that spread before the fixed diagonal
+        preconditioner sees it. The reference is a constant of the type, so
+        the rescaled spin stays linear in the input and every smoothness
+        property is preserved.
+
+        Parameters
+        ----------
+        sampled
+            Sampled training systems, each carrying a per-atom moment.
+
+        Returns
+        -------
+        numpy.ndarray
+            Strictly positive reference magnitudes with shape
+            ``(ntypes + 1,)``. A type that the sample never observes with a
+            finite moment keeps a unit reference, which leaves its spin
+            untouched; the estimator therefore never emits a zero.
+        """
+        square_sum = np.zeros(self.ntypes + 1, dtype=np.float64)
+        count = np.zeros(self.ntypes + 1, dtype=np.float64)
+        for system in sampled:
+            for frame in self._calibration_frames(system):
+                atype = np.reshape(frame["atype"], (-1,))
+                spin = np.reshape(frame["spin"], (-1, 3))
+                magnitude = np.sum(np.square(spin, dtype=np.float64), axis=-1)
+                np.add.at(square_sum, atype, magnitude)
+                np.add.at(count, atype, 1.0)
+        reference = np.ones(self.ntypes + 1, dtype=np.float64)
+        observed = (count > 0.0) & (square_sum > count * self._STAT_EPS)
+        reference[observed] = np.sqrt(square_sum[observed] / count[observed])
+        return reference
 
     # === Serialization and neighbor statistics ===
 
@@ -1186,7 +1469,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "type_map": self.type_map,
             "seed": self.seed,
+            "use_spin": self.use_spin,
             "spin": None,
+            "spin_channels": (None if self.spin is None else self.spin.serialize()),
             "type_embedding": self.type_embedding.serialize(),
             "radial_basis": self.radial_basis.serialize(),
             "radial_embedding": self.radial_embedding.serialize(),
@@ -1237,6 +1522,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         radial_mode_head = data.pop("radial_mode_head")
         pair_film = data.pop("pair_film")
         readout = data.pop("readout")
+        spin_channels = data.pop("spin_channels")
 
         obj = cls(**data)
         obj.type_embedding = SeZMTypeEmbedding.deserialize(type_embedding)
@@ -1249,6 +1535,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         )
         obj.pair_film = OrderedPairFiLM.deserialize(pair_film)
         obj.readout = InvariantReadout.deserialize(readout)
+        obj.spin = (
+            None if spin_channels is None else SpinChannels.deserialize(spin_channels)
+        )
         obj.set_stat_mean_and_stddev(
             variables["mean"],
             variables["stddev"],
@@ -1368,12 +1657,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
           ``K * (K + 1) // 2`` times the remaining rank;
         - three equal degrees contribute ``K * (K + 1) * (K + 2) // 6``.
 
+        A spin-conditioned descriptor appends the invariants of the spin
+        channels to the geometric block, ahead of the two divisors.
+
         Returns
         -------
         int
             Width of the invariant descriptor consumed by the fitting network.
         """
-        return self.readout.get_dim_out() + self.channels + 2
+        spin_dim = 0 if self.spin is None else self.spin.get_dim_out()
+        return self.readout.get_dim_out() + spin_dim + self.channels + 2
 
     def get_dim_emb(self) -> int:
         """Return zero because fitting receives no equivariant channels."""
@@ -1384,8 +1677,17 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         return True
 
     def has_message_passing(self) -> bool:
-        """Return whether source-node features are exchanged."""
+        """Return whether source-node features are exchanged.
+
+        The spin branch reads the raw source spin, which is a node input
+        rather than a derived feature, so a spin-conditioned descriptor
+        remains message-passing free.
+        """
         return False
+
+    def supports_native_spin(self) -> bool:
+        """Return whether ``call_graph`` conditions on a per-node spin."""
+        return self.spin is not None
 
     def has_message_passing_across_ranks(self) -> bool:
         """Return whether intermediate halo communication is required."""

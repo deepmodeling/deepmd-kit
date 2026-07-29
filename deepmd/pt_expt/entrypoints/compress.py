@@ -45,10 +45,18 @@ def enable_compression(
     model_dict = serialize_from_file(input_file)
     model = BaseModel.deserialize(model_dict["model"])
 
-    # 2. Get or compute min_nbor_dist
+    # 2. Get or compute min_nbor_dist. Measuring it is a dense all-pairs pass
+    #    over the training data, so it is only run for models that tabulate
+    #    from the shortest observed distance.
     min_nbor_dist = model.get_min_nbor_dist()
     if min_nbor_dist is None:
         min_nbor_dist = model_dict.get("min_nbor_dist")
+    if min_nbor_dist is None and not model.compression_needs_min_nbor_dist():
+        log.info(
+            "The model tabulates over an analytically bounded domain; "
+            "skipping the neighbor statistics."
+        )
+        min_nbor_dist = 0.0
     if min_nbor_dist is None:
         log.info(
             "Minimal neighbor distance is not saved in the model, "

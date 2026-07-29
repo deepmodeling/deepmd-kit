@@ -48,6 +48,7 @@ from deepmd.dpmodel.descriptor.dpa4c_nn import (
     build_bispectrum_layout,
     derive_bispectrum_ranks,
     derive_degree_channels,
+    derive_spin_channels,
     packed_l2_to_stf,
 )
 
@@ -63,6 +64,7 @@ __all__ = [
     "fitting_energy_and_gradient",
     "mega_eligible",
     "op_available",
+    "reduce_edge_spin_gradient",
 ]
 
 SUPPORTED_CHANNELS = (8, 16, 32, 64, 128)
@@ -106,6 +108,12 @@ def ef_op_available() -> bool:
 
 def mega_eligible(descriptor: Any) -> bool:
     """Return whether the descriptor has a compiled fp32 specialization.
+
+    Native spin is a compiled variant of the same kernels rather than a
+    separate operator, and every spin width follows from the channel count, so
+    a spin-conditioned descriptor is eligible on exactly the conditions a
+    spin-free one is. Each condition below is a width the compiled operator
+    specializes on.
 
     Parameters
     ----------
@@ -160,15 +168,29 @@ class DescriptorProfile:
     output_width: int
     gram_base: int
     bispectrum_base: int
+    spin_channels: int
 
     @property
     def state_width(self) -> int:
         """Return the saved-state width: the moments plus both normalizers."""
         return self.moment_width + 2
 
+    @property
+    def has_spin(self) -> bool:
+        """Return whether the compiled profile carries the spin families."""
+        return self.spin_channels > 0
 
-def descriptor_profile(channels: int, lmax: int) -> DescriptorProfile:
-    """Derive every compiled width from the two structural parameters.
+
+def descriptor_profile(
+    channels: int,
+    lmax: int,
+    has_spin: bool = False,
+) -> DescriptorProfile:
+    """Derive every compiled width from the structural parameters.
+
+    The widths mirror ``Profile<Channels, Lmax, HasSpin>`` on the device side,
+    so a mismatch is caught by the operator's own shape validation rather than
+    producing a silently misread buffer.
 
     Parameters
     ----------
@@ -176,6 +198,9 @@ def descriptor_profile(channels: int, lmax: int) -> DescriptorProfile:
         Scalar degree-zero width.
     lmax
         Maximum angular degree.
+    has_spin
+        Whether the native spin families are present. Their width is derived
+        from the degree profile, so presence is the whole choice.
 
     Returns
     -------
@@ -192,9 +217,32 @@ def descriptor_profile(channels: int, lmax: int) -> DescriptorProfile:
     bispectrum_dim = int(layout.probe_index.shape[0])
     gram_base = degree_channels[0]
     bispectrum_base = gram_base + gram_total
-    # Geometric block, the two moment divisors, then the center type tail.
+    spin_channels = derive_spin_channels(degree_channels) if has_spin else 0
+    if has_spin:
+        # Reduced families, then the node-local on-site vector and quadrupole.
+        moment_width += 8 * spin_channels + 5 + 8
+        # The joint degree-one spin block holds the on-site moment beside the
+        # isotropic and the bond-projected neighbor channels, so its Gram is
+        # the upper triangle of a ``1 + 2 C_s`` block. The quadrupole Gram
+        # drops only its on-site self-term.
+        vector_width = 1 + 2 * spin_channels
+        spin_dim = (
+            vector_width * (vector_width + 1) // 2
+            + 2
+            + 2 * degree_channels[2]
+            + 2 * spin_channels
+        )
+    else:
+        spin_dim = 0
+    # Geometric block, the spin invariants, the two moment divisors, then the
+    # center type tail.
     output_width = (
-        bispectrum_base + bispectrum_dim + ranks[0] * ranks[1] + 2 + degree_channels[0]
+        bispectrum_base
+        + bispectrum_dim
+        + ranks[0] * ranks[1]
+        + spin_dim
+        + 2
+        + degree_channels[0]
     )
     return DescriptorProfile(
         channels=int(channels),
@@ -205,6 +253,7 @@ def descriptor_profile(channels: int, lmax: int) -> DescriptorProfile:
         output_width=output_width,
         gram_base=gram_base,
         bispectrum_base=bispectrum_base,
+        spin_channels=spin_channels,
     )
 
 
@@ -538,14 +587,18 @@ def build_compression_artifacts(
         )
     if not mega_eligible(descriptor):
         raise ValueError(
-            "DPA4C compressed CUDA supports channels "
-            f"{SUPPORTED_CHANNELS} with lmax {SUPPORTED_LMAX} and "
+            "DPA4C compressed CUDA supports "
+            f"channels {SUPPORTED_CHANNELS}, lmax {SUPPORTED_LMAX} and "
             f"radial_modes {SUPPORTED_RADIAL_MODES}, got "
             f"channels={descriptor.channels}, lmax={descriptor.lmax}, "
             f"radial_modes={descriptor.radial_modes}"
         )
     device = sample_parameter.device
-    profile = descriptor_profile(descriptor.channels, descriptor.lmax)
+    profile = descriptor_profile(
+        descriptor.channels,
+        descriptor.lmax,
+        descriptor.spin is not None,
+    )
     table, info = build_radial_table(descriptor, stride)
 
     with torch.no_grad():
@@ -553,8 +606,20 @@ def build_compression_artifacts(
             device=device,
             dtype=torch.float32,
         )
-        pair_scale, pair_shift, pair_mixing = descriptor.pair_film.call(type_embedding)
+        (
+            pair_scale,
+            pair_shift,
+            pair_mixing,
+            spin_scale,
+            spin_shift,
+        ) = descriptor.pair_film.call(type_embedding)
         pair_film = torch.stack((pair_scale, pair_shift), dim=-1)
+        spin_pair, spin_type = _build_spin_caches(
+            descriptor,
+            spin_scale,
+            spin_shift,
+            device,
+        )
         # The mode axis is innermost so that the coefficients a lane needs for
         # one channel arrive in one or two vector loads.
         mixing = (
@@ -578,6 +643,8 @@ def build_compression_artifacts(
         "info": info,
         "pair_film": pair_film.detach().contiguous(),
         "pair_mixing": mixing.detach().contiguous(),
+        "spin_pair": spin_pair,
+        "spin_type": spin_type,
         "type_embedding": type_embedding.detach().contiguous(),
         "readout_matrices": readout_matrices,
         "coupling_meta": torch.as_tensor(
@@ -598,6 +665,64 @@ def build_compression_artifacts(
         "output_mean": output_mean.detach().contiguous(),
         "output_inv_std": output_inv_std.detach().contiguous(),
     }
+
+
+def _build_spin_caches(
+    descriptor: Any,
+    spin_scale: torch.Tensor | None,
+    spin_shift: torch.Tensor | None,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Freeze the two finite tables the native spin branch reads.
+
+    ``spin_pair`` interleaves the ordered scale and shift so that one channel
+    arrives in a single 64-bit load, matching the geometric PairFiLM cache.
+    ``spin_type`` packs the four per-type scalars a node needs into one
+    128-bit row: the gate divided by the reference magnitude, which conditions
+    the moment; the bare gate, which the magnetic-coordination family reads
+    because it counts neighbours that carry a moment rather than the moments
+    themselves; and the two on-site weights.
+
+    Parameters
+    ----------
+    descriptor
+        Evaluated pt_expt DPA4C descriptor.
+    spin_scale, spin_shift
+        Ordered spin tables, or ``None`` for a spin-free descriptor.
+    device
+        Device that receives the packed tables.
+
+    Returns
+    -------
+    spin_pair
+        Ordered cache with shape ``((T + 1) ** 2, spin_channels, 2)``, or an
+        empty tensor.
+    spin_type
+        Per-type table with shape ``(T + 1, 4)``, or an empty tensor.
+    """
+    empty = torch.zeros(0, dtype=torch.float32, device=device)
+    if descriptor.spin is None:
+        return empty, empty
+    spin = descriptor.spin
+    gate = spin.spin_mask.to(device=device, dtype=torch.float32)
+    reference = spin.spin_reference.to(device=device, dtype=torch.float32)
+    return (
+        torch.stack((spin_scale, spin_shift), dim=-1)
+        .to(device=device, dtype=torch.float32)
+        .detach()
+        .contiguous(),
+        torch.stack(
+            (
+                gate / reference,
+                gate,
+                spin.adam_spin_vector_weight.to(device=device, dtype=torch.float32),
+                spin.adam_spin_quadrupole_weight.to(device=device, dtype=torch.float32),
+            ),
+            dim=-1,
+        )
+        .detach()
+        .contiguous(),
+    )
 
 
 def _build_readout_matrices(
@@ -788,15 +913,27 @@ def _cpu_descriptor(
     rcut: float,
     eps: float,
     degree_floor: float,
+    *,
+    spin: torch.Tensor | None = None,
+    spin_pair: torch.Tensor | None = None,
+    spin_type: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Reference implementation of the compressed DPA4C descriptor."""
+    """Reference implementation of the compressed DPA4C descriptor.
+
+    The native spin block is optional. It comprises the raw per-node moment
+    ``spin`` with shape ``(N, 3)``, the ordered scale and shift cache
+    ``spin_pair`` with shape ``((T + 1) ** 2, C_s, 2)``, and the per-type
+    scalars ``spin_type`` with shape ``(T + 1, 4)``. A spin-free descriptor
+    omits it and reproduces the geometric descriptor exactly.
+    """
     del destination_order, destination_row_ptr, canonical, coupling_meta
     compute = edge_vec.to(torch.float32)
     source, destination = edge_index[0].to(torch.long), edge_index[1].to(torch.long)
     node_count = atype.shape[0]
     channels = type_embedding.shape[1]
     type_count = type_embedding.shape[0]
-    profile = descriptor_profile(int(channels), int(lmax))
+    has_spin = spin is not None and spin.numel() != 0
+    profile = descriptor_profile(int(channels), int(lmax), has_spin)
     radial_modes = 0 if pair_mixing.numel() == 0 else int(pair_mixing.shape[2])
 
     # === Step 1. Build the masked edge geometry ===
@@ -928,7 +1065,40 @@ def _cpu_descriptor(
     )
     parts[_closed_form_222_coordinate(profile)] = _closed_form_222(tensors)
 
-    # === Step 5. Assemble and calibrate the invariant output ===
+    # === Step 5. Reduce and contract the native spin families ===
+    spin_blocks: list[torch.Tensor] = []
+    if has_spin:
+        magnitude, coordination, spin_vector, spin_tensor = _cpu_spin_moments(
+            spin,
+            spin_pair,
+            spin_type,
+            atype,
+            source,
+            destination,
+            pair_index,
+            direction,
+            tabulated,
+            envelope,
+            angular_norm,
+            node_count,
+        )
+        spin_blocks = [
+            _half_gram(spin_vector),
+            # The quadrupole Gram omits its leading diagonal entry, the
+            # on-site self-term: the harmonic block is homogeneous, so
+            # |B_2(s)|^2 = |s|^4 makes that entry a per-type constant times
+            # the square of the vector block's own on-site self-term.
+            _half_gram(spin_tensor)[:, 1:],
+            # Cross Gram against the unaligned geometric degree-two moments.
+            # Both factors carry even spin order, so the product is
+            # admissible; with a unit direction it evaluates to the
+            # single-ion anisotropy sum over neighbors.
+            (spin_tensor.transpose(1, 2) @ blocks[2]).flatten(start_dim=1),
+            magnitude,
+            coordination,
+        ]
+
+    # === Step 6. Assemble and calibrate the invariant output ===
     quartic = (tensor_vector * tensor_vector).sum(dim=-1).flatten(start_dim=1)
     descriptor = torch.cat(
         [
@@ -936,6 +1106,7 @@ def _cpu_descriptor(
             *[_half_gram(block) for block in aligned[1:]],
             *[parts[key] for key in sorted(parts)],
             quartic,
+            *spin_blocks,
             scalar_divisor,
             angular_divisor,
             type_embedding[atype],
@@ -943,6 +1114,155 @@ def _cpu_descriptor(
         dim=-1,
     )
     return (descriptor - output_mean[None, :]) * output_inv_std[None, :]
+
+
+def _cpu_spin_moments(
+    spin: torch.Tensor,
+    spin_pair: torch.Tensor,
+    spin_type: torch.Tensor,
+    atype: torch.Tensor,
+    source: torch.Tensor,
+    destination: torch.Tensor,
+    pair_index: torch.Tensor,
+    direction: torch.Tensor,
+    radial: torch.Tensor,
+    envelope: torch.Tensor,
+    angular_norm: torch.Tensor,
+    node_count: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    r"""Reduce the native spin families into their four moment blocks.
+
+    The moment enters through the conditioned node quantity
+    :math:`\hat{\mathbf s}_i=w_{a_i}\mathbf s_i`, where :math:`w` is the
+    per-type gate divided by the per-type reference magnitude. Every
+    neighbor family then shares one edge weight, the spin counterpart of the
+    geometric amplitude,
+
+    .. math::
+
+       \phi^{s}_{ij,c}=\chi_{ij}^2\bigl(
+         \gamma^{s}_{ab,c}g_c(\rho_{ij})+\beta^{s}_{ab,c}\bigr),
+
+    whose squared envelope matches the weight of every non-scalar geometric
+    moment. The reduced families therefore share the angular normalizer and
+    need no neighborhood mass of their own. The bond-projected family is the
+    one that reads the edge direction, and through it the spin branch
+    contributes to the coordinate gradient angularly as well as radially.
+
+    The on-site channel leads each non-scalar block and is node local: it is
+    written outside the division, so an invariant pairing it with a neighbor
+    channel carries exactly one neighborhood normalizer.
+
+    Parameters
+    ----------
+    spin
+        Raw per-node magnetic moments with shape ``(N, 3)``.
+    spin_pair
+        Ordered spin scale and shift with shape ``((T + 1) ** 2, C_s, 2)``.
+    spin_type
+        Per-type gate over reference, bare gate, on-site vector weight and
+        on-site quadrupole weight with shape ``(T + 1, 4)``.
+    atype
+        Flat node types with shape ``(N,)``.
+    source
+        Source node index of each edge with shape ``(E,)``.
+    destination
+        Destination node index of each edge with shape ``(E,)``.
+    pair_index
+        Ordered type-pair index of each edge with shape ``(E,)``.
+    direction
+        Regularized unit edge directions with shape ``(E, 3)``.
+    radial
+        Tabulated distance maps with shape ``(E, channels + radial_modes)``;
+        the leading ``C_s`` columns are read.
+    envelope
+        Masked C³ envelope with shape ``(E,)``.
+    angular_norm
+        Reciprocal angular divisor with shape ``(N, 1, 1)``.
+    node_count
+        Number of nodes ``N``.
+
+    Returns
+    -------
+    magnitude
+        Neighbor moment magnitudes with shape ``(N, C_s)``.
+    coordination
+        Magnetic effective coordination with shape ``(N, C_s)``.
+    vector
+        Joint degree-one spin block with shape ``(N, 3, 1 + 2 C_s)``, holding
+        the on-site moment, the isotropic neighbor channels and the
+        bond-projected neighbor channels in that order.
+    tensor
+        Degree-two spin block with shape ``(N, 5, 2)``.
+    """
+    spin_channels = int(spin_pair.shape[1])
+    weights = spin_type[atype]
+    conditioned = spin.to(envelope.dtype) * weights[:, 0:1]
+    neighbor = conditioned[source]
+    film = spin_pair[pair_index]
+    weight = (radial[:, :spin_channels] * film[..., 0] + film[..., 1]) * (
+        envelope * envelope
+    )[:, None]
+    # Component of the neighbor moment along the bond, carried back as a
+    # vector so that the block Gram turns it into the bond-resolved
+    # invariants. The masked envelope already zeroes excluded edges, so the
+    # unmasked direction cannot leak through the amplitude.
+    bond = direction * (neighbor * direction).sum(dim=-1, keepdim=True)
+
+    # Payload layout: [M0, Mw, V_neighbor, P_neighbor, Q_neighbor] with the
+    # harmonic component as the outer axis of each non-scalar family, matching
+    # the geometric moment convention. The magnetic coordination reads the bare
+    # neighbor gate because it counts neighbors that carry a moment rather
+    # than the moments themselves, and is therefore nonzero at vanishing spin.
+    payload = torch.cat(
+        [
+            weight * (neighbor * neighbor).sum(dim=-1, keepdim=True),
+            weight * weights[source, 1:2],
+            (neighbor[:, :, None] * weight[:, None, :]).flatten(start_dim=1),
+            (bond[:, :, None] * weight[:, None, :]).flatten(start_dim=1),
+            build_angular_basis(neighbor, 2)[:, 4:9] * weight[:, :1],
+        ],
+        dim=-1,
+    )
+    reduced = (
+        torch.zeros(
+            node_count,
+            payload.shape[1],
+            dtype=payload.dtype,
+            device=payload.device,
+        ).index_add_(0, destination, payload)
+        * angular_norm[:, :, 0]
+    )
+
+    onsite_vector = conditioned * weights[:, 2:3]
+    onsite_tensor = build_angular_basis(conditioned, 2)[:, 4:9] * weights[:, 3:4]
+    return (
+        reduced[:, :spin_channels],
+        reduced[:, spin_channels : 2 * spin_channels],
+        torch.cat(
+            [
+                onsite_vector[:, :, None],
+                reduced[:, 2 * spin_channels : 5 * spin_channels].reshape(
+                    -1,
+                    3,
+                    spin_channels,
+                ),
+                reduced[:, 5 * spin_channels : 8 * spin_channels].reshape(
+                    -1,
+                    3,
+                    spin_channels,
+                ),
+            ],
+            dim=-1,
+        ),
+        torch.cat(
+            [
+                onsite_tensor[:, :, None],
+                reduced[:, 8 * spin_channels :, None],
+            ],
+            dim=-1,
+        ),
+    )
 
 
 def _closed_form_112(
@@ -999,8 +1319,18 @@ def _closed_form_222_coordinate(profile: DescriptorProfile) -> int:
 
 def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
     """CPU custom-op implementation returning descriptor and opaque state."""
-    descriptor = _cpu_descriptor(*args)
-    profile = descriptor_profile(int(args[9].shape[1]), int(args[17]))
+    descriptor = _cpu_descriptor(
+        *args[:16],
+        *args[19:],
+        spin=args[16],
+        spin_pair=args[17],
+        spin_type=args[18],
+    )
+    profile = descriptor_profile(
+        int(args[9].shape[1]),
+        int(args[20]),
+        args[16].numel() != 0,
+    )
     state = torch.zeros(
         descriptor.shape[0],
         profile.state_width,
@@ -1027,6 +1357,9 @@ def _forward_fake(
     coupling_value: torch.Tensor,
     output_mean: torch.Tensor,
     output_inv_std: torch.Tensor,
+    spin: torch.Tensor,
+    spin_pair: torch.Tensor,
+    spin_type: torch.Tensor,
     canonical: bool,
     lmax: int,
     table_stride: float,
@@ -1049,6 +1382,8 @@ def _forward_fake(
         coupling_value,
         output_mean,
         output_inv_std,
+        spin_pair,
+        spin_type,
         canonical,
         table_stride,
         table_max,
@@ -1056,7 +1391,9 @@ def _forward_fake(
         eps,
         degree_floor,
     )
-    profile = descriptor_profile(int(type_embedding.shape[1]), int(lmax))
+    profile = descriptor_profile(
+        int(type_embedding.shape[1]), int(lmax), spin.numel() != 0
+    )
     descriptor = torch.empty(
         atype.shape[0],
         profile.output_width,
@@ -1077,9 +1414,21 @@ def _backward_fake(
     state: torch.Tensor,
     edge_vec: torch.Tensor,
     *args: Any,
-) -> torch.Tensor:
-    del descriptor_gradient, state, args
-    return torch.empty_like(edge_vec)
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    del descriptor_gradient, state
+    spin = args[15]
+    has_spin = spin.numel() != 0
+    # Each absent output is allocated separately: the schema declares three
+    # unannotated results, so two of them may not share storage.
+    return (
+        torch.empty_like(edge_vec),
+        spin.new_empty((spin.shape[0], 3))
+        if has_spin
+        else edge_vec.new_empty((0,), dtype=torch.float32),
+        torch.empty_like(edge_vec)
+        if has_spin
+        else edge_vec.new_empty((0,), dtype=torch.float32),
+    )
 
 
 def _cpu_backward(
@@ -1087,23 +1436,53 @@ def _cpu_backward(
     state: torch.Tensor,
     edge_vec: torch.Tensor,
     *args: Any,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """CPU custom-op backward returning the coordinate and magnetic cotangents.
+
+    The device operator splits the magnetic cotangent because a
+    destination-major scan does not own the source of an edge, and the caller
+    closes it by reducing the per-edge part onto source nodes. The reference
+    differentiates the whole node axis at once, so it returns the complete
+    cotangent on the node axis and leaves the per-edge part at zero, which the
+    same reduction carries through unchanged.
+    """
     del state
-    if edge_vec.shape[0] == 0:
-        return torch.zeros_like(edge_vec)
+    spin = args[15]
+    has_spin = spin.numel() != 0
     value = edge_vec.detach().clone().requires_grad_(True)
+    moment = spin.detach().clone().requires_grad_(has_spin)
     with torch.enable_grad():
-        descriptor = _cpu_descriptor(value, *args)
-        (gradient,) = torch.autograd.grad(
-            (descriptor * descriptor_gradient.to(descriptor.dtype)).sum(),
+        descriptor = _cpu_descriptor(
             value,
+            *args[:15],
+            *args[18:],
+            spin=moment,
+            spin_pair=args[16],
+            spin_type=args[17],
         )
-    return gradient.to(edge_vec.dtype)
+        gradients = torch.autograd.grad(
+            (descriptor * descriptor_gradient.to(descriptor.dtype)).sum(),
+            (value, moment) if has_spin else (value,),
+        )
+    return (
+        gradients[0].to(edge_vec.dtype),
+        gradients[1] if has_spin else edge_vec.new_empty((0,), dtype=torch.float32),
+        torch.zeros_like(edge_vec)
+        if has_spin
+        else edge_vec.new_empty((0,), dtype=torch.float32),
+    )
+
+
+#: Position of the per-node magnetic moment among the operator inputs, and its
+#: position among the tensors :func:`_setup_context` saves, which lead with the
+#: opaque state.
+_SPIN_INPUT_SLOT = 16
+_SPIN_SAVED_SLOT = 1 + _SPIN_INPUT_SLOT
 
 
 def _setup_context(ctx: Any, inputs: tuple, output: tuple) -> None:
-    ctx.save_for_backward(output[1], *inputs[:16])
-    ctx.scalars = inputs[16:]
+    ctx.save_for_backward(output[1], *inputs[:19])
+    ctx.scalars = inputs[19:]
     ctx.mark_non_differentiable(output[1])
     ctx.set_materialize_grads(False)
 
@@ -1113,15 +1492,35 @@ def _backward(
     descriptor_gradient: torch.Tensor,
     state_gradient: torch.Tensor | None,
 ) -> tuple:
+    """Return the coordinate cotangent of one compressed descriptor call.
+
+    Raises
+    ------
+    RuntimeError
+        If the magnetic moment requires a gradient. The operator emits that
+        cotangent in two pieces and the per-edge piece is reduced onto source
+        nodes through the source CSR, which the operator schema does not carry;
+        this registration therefore cannot close the magnetic force and
+        refuses rather than reporting a vanishing one.
+    """
     del state_gradient
     tensors = ctx.saved_tensors
+    if tensors[_SPIN_SAVED_SLOT].requires_grad:
+        raise RuntimeError(
+            "deepmd::dpa4c_graph_compress cannot differentiate its magnetic "
+            "moment through the registered autograd: closing the magnetic "
+            "force needs the source CSR, which the operator schema does not "
+            "carry. Call "
+            "`deepmd.kernels.cuda.dpa4c.graph_compress.dpa4c_graph_compress`, "
+            "which supplies it."
+        )
     edge_gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
         descriptor_gradient,
         tensors[0],
         *tensors[1:],
         *ctx.scalars,
-    )
-    return (edge_gradient,) + (None,) * 22
+    )[0]
+    return (edge_gradient,) + (None,) * 25
 
 
 _cpu_library: torch.library.Library | None = None
@@ -1148,20 +1547,28 @@ def ensure_registered() -> None:
     )
 
 
-def compressed_operator_arguments(descriptor: Any) -> tuple:
+def compressed_operator_arguments(
+    descriptor: Any,
+    spin: torch.Tensor | None = None,
+) -> tuple:
     """Return the immutable operator arguments of a compressed descriptor.
 
     Parameters
     ----------
     descriptor
         Compressed pt_expt DPA4C descriptor.
+    spin
+        Per-node magnetic moments with shape ``(N_all, 3)`` for a
+        spin-conditioned descriptor. The moment is a runtime input rather than
+        an artifact; the two tables that condition it are frozen.
 
     Returns
     -------
     tuple
         Radial table, ordered caches, readout projections, coupling tables,
-        output calibration, and the trailing scalar configuration.
+        output calibration, and the native spin block.
     """
+    empty = descriptor.compress_spin_type[:0]
     return (
         descriptor.compress_data,
         descriptor.compress_pair_film,
@@ -1173,13 +1580,110 @@ def compressed_operator_arguments(descriptor: Any) -> tuple:
         descriptor.compress_coupling_value,
         descriptor.compress_output_mean,
         descriptor.compress_output_inv_std,
+        empty if spin is None else spin.to(torch.float32).contiguous(),
+        descriptor.compress_spin_pair,
+        descriptor.compress_spin_type,
     )
+
+
+def reduce_edge_spin_gradient(
+    edge_spin_gradient: torch.Tensor,
+    source_order: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+) -> torch.Tensor:
+    """Reduce a per-edge magnetic cotangent onto its source nodes.
+
+    The source CSR groups the outgoing edges of a node contiguously, so the
+    reduction is a segment sum over a gathered edge axis. That fixes the
+    summation order from the topology rather than from arrival order, which an
+    atomic scatter would not.
+
+    The permutation is gathered in full rather than sliced to the physical
+    edge count. The segments consume only the leading rows, which the source
+    grouping already reserves for the physical edges, and reading the count
+    off the row pointers would turn a device value into a Python integer that
+    symbolic tracing cannot resolve.
+
+    Parameters
+    ----------
+    edge_spin_gradient
+        Per-edge magnetic cotangent with shape ``(E, 3)``.
+    source_order
+        Source-grouped edge permutation with shape ``(E,)``.
+    source_row_ptr
+        Source CSR offsets with shape ``(N + 1,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Per-node magnetic cotangent with shape ``(N, 3)``.
+    """
+    ordered = torch.index_select(
+        edge_spin_gradient,
+        0,
+        source_order.to(torch.int64),
+    )
+    return torch.segment_reduce(
+        ordered,
+        "sum",
+        lengths=(source_row_ptr[1:] - source_row_ptr[:-1]).to(torch.int64),
+        axis=0,
+        unsafe=True,
+    )
+
+
+class _CompressedDescriptor(torch.autograd.Function):
+    """Autograd wrapper that closes the magnetic force of the level-one path.
+
+    The operator emits the on-site magnetic gradient per node and the
+    neighbour part per edge, because a destination-major scan does not own the
+    source of an edge. Reducing the second onto source nodes needs the source
+    CSR, which the operator schema does not carry, so the reduction lives here
+    where the graph is in scope.
+    """
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        edge_vec: torch.Tensor,
+        spin: torch.Tensor,
+        source_order: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        operator_args: tuple,
+    ) -> torch.Tensor:
+        descriptor, state = torch.ops.deepmd.dpa4c_graph_compress(
+            edge_vec, *operator_args
+        )
+        ctx.save_for_backward(state, edge_vec, source_order, source_row_ptr)
+        ctx.operator_args = operator_args
+        return descriptor
+
+    @staticmethod
+    def backward(ctx: Any, descriptor_gradient: torch.Tensor) -> tuple:
+        state, edge_vec, source_order, source_row_ptr = ctx.saved_tensors
+        (
+            edge_gradient,
+            spin_gradient,
+            edge_spin_gradient,
+        ) = torch.ops.deepmd.dpa4c_graph_compress_backward(
+            descriptor_gradient.contiguous(),
+            state,
+            edge_vec,
+            *ctx.operator_args,
+        )
+        spin_gradient = spin_gradient + reduce_edge_spin_gradient(
+            edge_spin_gradient,
+            source_order,
+            source_row_ptr,
+        )
+        return edge_gradient, spin_gradient, None, None, None
 
 
 def dpa4c_graph_compress(
     descriptor: Any,
     graph: Any,
     atype: torch.Tensor,
+    spin: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Evaluate the compressed DPA4C graph descriptor.
 
@@ -1191,6 +1695,8 @@ def dpa4c_graph_compress(
         NeighborGraph with destination CSR topology.
     atype
         Flat node types with shape ``(N,)``.
+    spin
+        Per-node magnetic moments with shape ``(N, 3)``, or ``None``.
 
     Returns
     -------
@@ -1206,18 +1712,35 @@ def dpa4c_graph_compress(
     ensure_registered()
     if graph.destination_order is None or graph.destination_row_ptr is None:
         raise ValueError("DPA4C compressed CUDA requires destination CSR topology")
-    descriptor_output, _state = torch.ops.deepmd.dpa4c_graph_compress(
-        graph.edge_vec.contiguous(),
+    operator_args = (
         graph.edge_index.contiguous(),
         graph.edge_mask.contiguous(),
         graph.destination_order.contiguous(),
         graph.destination_row_ptr.contiguous(),
         atype.contiguous(),
-        *compressed_operator_arguments(descriptor),
+        *compressed_operator_arguments(descriptor, spin),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *descriptor._compression_scalars,
     )
+    if spin is not None and spin.requires_grad:
+        if graph.source_order is None or graph.source_row_ptr is None:
+            raise ValueError(
+                "DPA4C compressed CUDA requires source CSR topology to close "
+                "the magnetic force"
+            )
+        descriptor_output = _CompressedDescriptor.apply(
+            graph.edge_vec.contiguous(),
+            spin,
+            graph.source_order.contiguous(),
+            graph.source_row_ptr.contiguous(),
+            operator_args,
+        )
+    else:
+        descriptor_output, _state = torch.ops.deepmd.dpa4c_graph_compress(
+            graph.edge_vec.contiguous(),
+            *operator_args,
+        )
     return descriptor_output.to(graph.edge_vec.dtype)
 
 
@@ -1230,8 +1753,16 @@ def dpa4c_graph_compress_energy_force(
     atom_bias: torch.Tensor,
     node_capacity: int,
     do_atomic_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Evaluate compressed DPA4C energy, force, and virial without a tape.
+    spin: torch.Tensor | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    """Evaluate compressed DPA4C energy, force, virial and magnetic force.
 
     Parameters
     ----------
@@ -1251,6 +1782,8 @@ def dpa4c_graph_compress_energy_force(
         Force-scatter node capacity.
     do_atomic_virial
         Whether to return per-node virials.
+    spin
+        Per-node magnetic moments with shape ``(N, 3)``, or ``None``.
 
     Returns
     -------
@@ -1264,6 +1797,8 @@ def dpa4c_graph_compress_energy_force(
         Per-frame virial with shape ``(F, 3, 3)``, fp32.
     atom_virial
         Per-node virial with shape ``(N, 3, 3)`` or an empty tensor.
+    force_mag
+        Per-node magnetic force with shape ``(N, 3)``, or an empty tensor.
 
     Raises
     ------
@@ -1300,7 +1835,7 @@ def dpa4c_graph_compress_energy_force(
         graph.destination_order.contiguous(),
         graph.destination_row_ptr.contiguous(),
         atype.contiguous(),
-        *compressed_operator_arguments(descriptor),
+        *compressed_operator_arguments(descriptor, spin),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *descriptor._compression_scalars,
@@ -1320,13 +1855,20 @@ def dpa4c_graph_compress_energy_force(
         graph.n_node,
     )
     del node_descriptor
-    edge_gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
+    (
+        edge_gradient,
+        spin_gradient,
+        edge_spin_gradient,
+    ) = torch.ops.deepmd.dpa4c_graph_compress_backward(
         descriptor_gradient,
         state,
         edge_vec,
         *operator_args,
     )
-    force, atom_virial, virial = edge_force_virial(
+    # The on-site magnetic gradient closes in the node kernel; the neighbour
+    # part belongs to source nodes, and the force assembly already walks that
+    # grouping, so it is reduced there rather than in a pass of its own.
+    force, atom_virial, virial, source_spin = edge_force_virial(
         edge_gradient,
         edge_vec,
         graph.edge_index,
@@ -1336,10 +1878,12 @@ def dpa4c_graph_compress_energy_force(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
+        edge_spin_gradient,
         node_capacity,
         do_atomic_virial,
     )
-    return energy, atom_energy, force, virial, atom_virial
+    force_mag = spin_gradient if spin is None else -(spin_gradient + source_spin)
+    return energy, atom_energy, force, virial, atom_virial, force_mag
 
 
 def fitting_energy_and_gradient(

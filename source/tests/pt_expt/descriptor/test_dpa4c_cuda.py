@@ -3,6 +3,7 @@
 
 import dataclasses
 
+import numpy as np
 import pytest
 import torch
 
@@ -19,6 +20,7 @@ from deepmd.kernels.cuda.dpa4c.graph_compress import (
     descriptor_profile,
     dpa4c_graph_compress_energy_force,
     ensure_registered,
+    mega_eligible,
     op_available,
 )
 from deepmd.pt.utils.nlist import (
@@ -116,9 +118,37 @@ def _arguments(
         artifacts["coupling_value"],
         artifacts["output_mean"],
         artifacts["output_inv_std"],
+        artifacts["spin_type"][:0],
+        artifacts["spin_pair"],
+        artifacts["spin_type"],
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
+    )
+
+
+def _spin_free(arguments: tuple) -> tuple:
+    """Drop the native spin block for the spin-free CPU reference."""
+    return (*arguments[:15], *arguments[18:])
+
+
+def _with_spin(arguments: tuple, spin: torch.Tensor) -> tuple:
+    """Place per-node magnetic moments in the operator's spin slot."""
+    return (*arguments[:15], spin, *arguments[16:])
+
+
+def _assert_dispatched(actual: torch.Tensor, portable: torch.Tensor) -> None:
+    """Assert that a descriptor came from the compiled operator.
+
+    The compressed path evaluates the radial embedding from a table, which
+    never reproduces the portable evaluation bit for bit. A run that fell back
+    to the portable code -- because the compression gate closed, or because
+    ``DP_CUDA_INFER`` left the operator disabled -- reproduces it exactly, and
+    would otherwise be compared with itself and pass every tolerance.
+    """
+    assert not torch.equal(actual, portable), (
+        "the compressed descriptor is bitwise identical to the portable one, "
+        "so the compiled operator did not run"
     )
 
 
@@ -150,7 +180,7 @@ def test_forward_backward_parity(channels: int, canonical: bool) -> None:
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
 
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference = _cpu_descriptor(reference_edge, *arguments)
+    reference = _cpu_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference * cotangent).sum(),
         reference_edge,
@@ -170,11 +200,15 @@ def test_backward_tail_node_groups(channels: int) -> None:
     descriptor = _build_descriptor(channels)
     graph, atype = _build_graph(descriptor, canonical=True, node_count=23)
     arguments = _arguments(descriptor, graph, atype)
+    # The cotangent fixes which element sits closest to the tolerance, so
+    # drawing it from the unseeded global stream would make the outcome vary
+    # between processes.
     cotangent = torch.randn(
         atype.shape[0],
         descriptor.get_dim_out(),
         dtype=torch.float32,
         device="cuda",
+        generator=torch.Generator(device="cuda").manual_seed(37),
     )
 
     edge_vec = graph.edge_vec.detach().clone().requires_grad_(True)
@@ -185,7 +219,7 @@ def test_backward_tail_node_groups(channels: int) -> None:
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
 
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference = _cpu_descriptor(reference_edge, *arguments)
+    reference = _cpu_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference * cotangent).sum(),
         reference_edge,
@@ -435,7 +469,7 @@ def test_supported_surface_parity(
     ).reshape_as(output)
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference_value = _cpu_descriptor(reference_edge, *arguments)
+    reference_value = _cpu_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference_value * cotangent).sum(),
         reference_edge,
@@ -780,8 +814,8 @@ def test_compact_canonical_parity(
         graph.edge_index[0].to(index_dtype),
         graph.destination_row_ptr,
         atype,
-        *arguments[5:15],
-        *arguments[16:],
+        *arguments[5:18],
+        *arguments[19:],
     )
     compact_output, compact_state = torch.ops.deepmd.dpa4c_canonical_compress(
         graph.edge_vec,
@@ -825,8 +859,8 @@ def test_compact_inplace_backward_reuses_state(channels: int) -> None:
         graph.edge_index[0].to(torch.uint32),
         graph.destination_row_ptr,
         atype,
-        *arguments[5:15],
-        *arguments[16:],
+        *arguments[5:18],
+        *arguments[19:],
     )
     ensure_canonical_registered()
     output, state = torch.ops.deepmd.dpa4c_canonical_compress(
@@ -909,7 +943,7 @@ def test_fused_energy_force_parity(
     )
     atom_energy = fitting.call_graph(node_descriptor, atype)[fitting.var_name]
     (edge_gradient,) = torch.autograd.grad(atom_energy.sum(), edge_vec)
-    force, atom_virial, virial = edge_force_virial(
+    force, atom_virial, virial, _ = edge_force_virial(
         edge_gradient,
         edge_vec.detach(),
         graph.edge_index,
@@ -919,6 +953,7 @@ def test_fused_energy_force_parity(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
+        edge_vec.new_zeros(0, 3),
         atype.shape[0],
         True,
     )
@@ -1057,3 +1092,265 @@ def test_compact_canonical_tiling_is_equivalent(
         monkeypatch.setenv("DP_NODE_TILE", tile)
         for actual, expected in zip(run(), reference, strict=True):
             torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
+
+
+def _build_spin_descriptor(
+    channels: int,
+    lmax: int = 2,
+    radial_modes: int = 0,
+) -> DescrptDPA4C:
+    """Return a spin-conditioned descriptor with a non-unit reference moment.
+
+    A reference magnitude other than one makes the conditioning factor visible
+    in the magnetic gradient, so a missing chain factor shows up as a constant
+    ratio rather than cancelling.
+    """
+    descriptor = (
+        DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=channels,
+            lmax=lmax,
+            n_radial=8,
+            radial_modes=radial_modes,
+            precision="float32",
+            seed=17,
+            use_spin=[True, False],
+        )
+        .cuda()
+        .eval()
+    )
+    descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
+    return descriptor
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("channels", "lmax", "radial_modes"),
+    [(8, 2, 0), (16, 2, 0), (32, 2, 4), (64, 3, 0), (128, 3, 8), (32, 4, 0)],
+)
+def test_spin_compressed_matches_portable(
+    monkeypatch: pytest.MonkeyPatch,
+    channels: int,
+    lmax: int,
+    radial_modes: int,
+) -> None:
+    """Descriptor, coordinate gradient and magnetic force all match.
+
+    The portable path is the oracle for the spin families. Probing every
+    output column at once keeps the geometric and the spin blocks in the same
+    comparison, because the two are coupled through the shared normalizer and
+    through the cross Gram. The cotangent stays bounded: weighting columns by
+    their index inflates the gradient magnitude at the widest profile until
+    fp32 tabulation noise alone exceeds the tolerance.
+    """
+    descriptor = _build_spin_descriptor(channels, lmax, radial_modes)
+    assert mega_eligible(descriptor)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    spin = torch.randn(
+        atype.shape[0],
+        3,
+        dtype=torch.float32,
+        device="cuda",
+        generator=generator,
+    )
+
+    def run() -> tuple[torch.Tensor, ...]:
+        moment = spin.detach().clone().requires_grad_(True)
+        edge_vec = graph.edge_vec.detach().clone().requires_grad_(True)
+        output, _ = descriptor.call_graph(
+            dataclasses.replace(graph, edge_vec=edge_vec),
+            atype,
+            spin=moment,
+        )
+        cotangent = torch.linspace(
+            -0.7,
+            1.3,
+            output.numel(),
+            dtype=output.dtype,
+            device=output.device,
+        ).reshape_as(output)
+        gradients = torch.autograd.grad(
+            (output * cotangent).sum(),
+            [edge_vec, moment],
+        )
+        return (output, *gradients)
+
+    reference = run()
+    descriptor.enable_compression(0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    assert descriptor.compress
+    actual = run()
+    _assert_dispatched(actual[0], reference[0])
+    # Tabulation error reaches the gradients through the table derivative, so
+    # they carry the wider tolerance the geometric backward already uses.
+    tolerances = ((3e-5, 3e-5), (8e-6, 1e-4), (8e-6, 1e-4))
+    for (atol, rtol), value, expected in zip(
+        tolerances, actual, reference, strict=True
+    ):
+        torch.testing.assert_close(value, expected, atol=atol, rtol=rtol)
+
+
+@_GPU
+@pytest.mark.parametrize("family", ["neighbour", "onsite"])
+def test_spin_magnetic_force_splits_into_onsite_and_neighbour(
+    monkeypatch: pytest.MonkeyPatch,
+    family: str,
+) -> None:
+    """Each half of the magnetic force is correct on its own.
+
+    The on-site half closes inside the node kernel while the neighbour half is
+    emitted per edge and reduced onto source nodes, so they fail
+    independently. Silencing one at a time keeps a fault in either from being
+    masked by the other's magnitude.
+    """
+    descriptor = _build_spin_descriptor(16)
+    with torch.no_grad():
+        if family == "neighbour":
+            descriptor.spin.adam_spin_vector_weight.zero_()
+            descriptor.spin.adam_spin_quadrupole_weight.zero_()
+        else:
+            geometric = descriptor.channels * (2 + descriptor.radial_modes)
+            for parameter in descriptor.pair_film.parameters():
+                if parameter.dim() == 2 and parameter.shape[1] > geometric:
+                    parameter[:, geometric:] = 0.0
+                elif parameter.dim() == 1 and parameter.shape[0] > geometric:
+                    parameter[geometric:] = 0.0
+    graph, atype = _build_graph(descriptor, canonical=True)
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    spin = torch.randn(
+        atype.shape[0],
+        3,
+        dtype=torch.float32,
+        device="cuda",
+        generator=generator,
+    )
+
+    def run() -> tuple[torch.Tensor, torch.Tensor]:
+        moment = spin.detach().clone().requires_grad_(True)
+        output, _ = descriptor.call_graph(graph, atype, spin=moment)
+        cotangent = torch.linspace(
+            -0.7,
+            1.3,
+            output.numel(),
+            dtype=output.dtype,
+            device=output.device,
+        ).reshape_as(output)
+        gradient = torch.autograd.grad((output * cotangent).sum(), moment)[0]
+        return output, gradient
+
+    reference_output, reference_gradient = run()
+    descriptor.enable_compression(0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    output, gradient = run()
+    _assert_dispatched(output, reference_output)
+    assert torch.count_nonzero(gradient).item() > 0
+    torch.testing.assert_close(gradient, reference_gradient, atol=8e-6, rtol=1e-4)
+
+
+@_GPU
+def test_spin_bond_family_couples_the_kernel_to_the_edge_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The compiled spin path reads the edge direction, and only through it.
+
+    Rotating the neighbourhood while holding the moments fixed leaves every
+    spin family except the bond-projected one invariant, so a kernel that
+    omitted that family would return an unchanged readout. Rotating the
+    moments alongside the geometry restores the invariance, which is what
+    separates a genuine bond coupling from a defect in the geometric block.
+    """
+    descriptor = _build_spin_descriptor(16)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    spin = torch.randn(
+        atype.shape[0],
+        3,
+        dtype=torch.float32,
+        device="cuda",
+        generator=generator,
+    )
+    angle = 0.4
+    rotation = torch.tensor(
+        [
+            [float(np.cos(angle)), -float(np.sin(angle)), 0.0],
+            [float(np.sin(angle)), float(np.cos(angle)), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+        device="cuda",
+    )
+
+    def run(edge_vec: torch.Tensor, moment: torch.Tensor) -> torch.Tensor:
+        output, _ = descriptor.call_graph(
+            dataclasses.replace(graph, edge_vec=edge_vec),
+            atype,
+            spin=moment,
+        )
+        return output
+
+    portable = run(graph.edge_vec, spin)
+    descriptor.enable_compression(0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    upright = run(graph.edge_vec, spin)
+    _assert_dispatched(upright, portable)
+    rotated = run(graph.edge_vec @ rotation.T, spin)
+    assert not torch.allclose(rotated, upright, atol=1e-4)
+    covariant = run(graph.edge_vec @ rotation.T, spin @ rotation.T)
+    torch.testing.assert_close(covariant, upright, atol=3e-5, rtol=3e-5)
+
+
+@_GPU
+@pytest.mark.parametrize("spin_conditioned", [False, True])
+def test_backward_operator_satisfies_its_schema(spin_conditioned: bool) -> None:
+    """The backward operator declares three independent results.
+
+    All three are unannotated, so any two of them sharing storage would be an
+    alias the schema does not describe, which is undefined under
+    functionalization. ``opcheck`` decides that mechanically, including on the
+    spin-free path where two of the three are absent and an allocation shared
+    between them would otherwise go unnoticed.
+    """
+    descriptor = _build_spin_descriptor(8) if spin_conditioned else _build_descriptor(8)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    arguments = _arguments(descriptor, graph, atype)
+    if spin_conditioned:
+        arguments = _with_spin(
+            arguments,
+            torch.randn(atype.shape[0], 3, dtype=torch.float32, device="cuda"),
+        )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *arguments,
+    )
+    torch.library.opcheck(
+        torch.ops.deepmd.dpa4c_graph_compress_backward.default,
+        (torch.ones_like(output), state, graph.edge_vec, *arguments),
+    )
+
+
+@_GPU
+def test_registered_autograd_refuses_the_magnetic_moment() -> None:
+    """A direct operator call cannot silently lose the magnetic force.
+
+    The operator emits that cotangent in two pieces and the per-edge piece is
+    reduced onto source nodes through the source CSR, which the schema does
+    not carry. The registration therefore cannot close the magnetic force, and
+    refusing is the only alternative to reporting a vanishing one.
+    """
+    descriptor = _build_spin_descriptor(8)
+    graph, atype = _build_graph(descriptor, canonical=True)
+    spin = torch.randn(
+        atype.shape[0],
+        3,
+        dtype=torch.float32,
+        device="cuda",
+        requires_grad=True,
+    )
+    output, _state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *_with_spin(_arguments(descriptor, graph, atype), spin),
+    )
+    with pytest.raises(RuntimeError, match="cannot differentiate its magnetic"):
+        output.sum().backward()

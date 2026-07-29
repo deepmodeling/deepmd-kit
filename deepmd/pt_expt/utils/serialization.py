@@ -614,8 +614,14 @@ def build_synthetic_canonical_graph_inputs(
     e_max: int,
     *,
     device: torch.device,
+    want_spin: bool = False,
 ) -> tuple[torch.Tensor, ...]:
-    """Build compact canonical trace inputs for compressed CUDA descriptors."""
+    """Build compact canonical trace inputs for compressed CUDA descriptors.
+
+    ``want_spin`` appends the per-node moment at slot 8, the last slot of the
+    compact ABI, matching
+    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
+    """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -632,6 +638,7 @@ def build_synthetic_canonical_graph_inputs(
         want_fparam=False,
         want_aparam=False,
         want_charge_spin=False,
+        want_spin=want_spin,
     )
     (
         atype,
@@ -644,10 +651,9 @@ def build_synthetic_canonical_graph_inputs(
         destination_row_ptr,
         source_order,
         source_row_ptr,
-        _fparam,
-        _aparam,
-        _charge_spin,
+        *tail,
     ) = sample
+    spin = tail[0] if want_spin else None
     graph = NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
@@ -661,7 +667,7 @@ def build_synthetic_canonical_graph_inputs(
         destination_sorted=True,
     )
     compact = canonical_graph_from_neighbor_graph(graph)
-    return (
+    compact_sample = (
         atype,
         compact.n_node,
         compact.n_local,
@@ -671,13 +677,17 @@ def build_synthetic_canonical_graph_inputs(
         compact.source_row_ptr,
         compact.source_order,
     )
+    return compact_sample if spin is None else (*compact_sample, spin)
 
 
 def _build_canonical_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor,
 ) -> tuple:
-    """Build dynamic shapes for the eight-tensor compact deployment ABI."""
-    del sample_inputs
+    """Build dynamic shapes for the compact deployment ABI.
+
+    The trailing spin slot is present only for a native-spin model, so the
+    sample length selects the shape tuple.
+    """
     from deepmd.pt_expt.utils.canonical_graph import (
         UINT32_MAX,
     )
@@ -689,7 +699,7 @@ def _build_canonical_graph_dynamic_shapes(
         min=2,
         max=UINT32_MAX,
     )
-    return (
+    shapes = (
         {0: node_dim},
         {0: nframes_dim},
         {0: nframes_dim},
@@ -699,6 +709,7 @@ def _build_canonical_graph_dynamic_shapes(
         {0: node_dim + 1},
         {0: edge_storage_dim},
     )
+    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
 
 
 def count_synthetic_graph_edges(
@@ -1019,9 +1030,34 @@ def _supports_graph_export(model: torch.nn.Module) -> bool:
     return bool(model.atomic_model.supports_graph_export())
 
 
+def _spin_scheme(model_type: str | None) -> str | None:
+    """Return the spin scheme a model wire type implements.
+
+    ``"native"`` treats the magnetic moment as an equivariant descriptor input
+    and keeps one node per atom; ``"deepspin"`` is the virtual-atom scheme.
+    The scheme selects the C++ backend class that serves the artifact and is
+    independent of the lower-forward schema it was frozen with.
+
+    Parameters
+    ----------
+    model_type : str or None
+        The serialized model wire type.
+
+    Returns
+    -------
+    str or None
+        ``"native"``, ``"deepspin"``, or ``None`` for a spin-free model.
+    """
+    if model_type == "native_spin":
+        return "native"
+    if model_type == "spin_ener":
+        return "deepspin"
+    return None
+
+
 def _collect_metadata(
     model: torch.nn.Module,
-    is_spin: bool = False,
+    spin_scheme: str | None = None,
     lower_kind: str = "nlist",
 ) -> dict:
     """Collect metadata from the model for C++ inference.
@@ -1034,7 +1070,13 @@ def _collect_metadata(
 
     The ``fitting_output_defs`` list is also included so that
     ``ModelOutputDef`` can be reconstructed without loading the full model.
+
+    ``spin_scheme`` (see :func:`_spin_scheme`) is the model's spin scheme, or
+    ``None`` for a spin-free model; it drives both the ``is_spin`` gate on the
+    spin-only fields and the ``spin_scheme`` field the C++ backend factory
+    dispatches on.
     """
+    is_spin = spin_scheme is not None
     if is_spin:
         fitting_output_def = model.model_output_def().def_outp
     else:
@@ -1082,6 +1124,11 @@ def _collect_metadata(
         "is_spin": is_spin,
     }
     if is_spin:
+        # The scheme is what selects the serving backend class in C++
+        # (``deepmd_create_deepspin_backend_v1``): "native" is served by
+        # NativeSpinPTExpt, "deepspin" by DeepSpinPTExpt. It is a property of
+        # the model alone, orthogonal to ``lower_input_kind`` below.
+        meta["spin_scheme"] = spin_scheme
         meta["ntypes_spin"] = model.spin.get_ntypes_spin()
         meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
     # Whether multi-rank LAMMPS needs a second "with-comm" AOTI artifact
@@ -1343,17 +1390,21 @@ def deserialize_to_file(
         ``metadata.json``.
     """
     lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
-    if data["model"].get("type") == "native_spin" and lower_kind != "graph":
-        # Native-spin models implement ONLY the NeighborGraph lower; the
-        # dense/nlist trace branch does not exist for them. The public freeze
-        # layer resolves this before calling here (see
+    if data["model"].get("type") == "native_spin" and lower_kind not in (
+        "graph",
+        "dpa4c_canonical",
+    ):
+        # Native-spin models implement the NeighborGraph lower and, for an
+        # eligible compressed DPA4C, the compact canonical one; the dense/nlist
+        # trace branch does not exist for them. The public freeze layer
+        # resolves this before calling here (see
         # deepmd.pt_expt.entrypoints.main.freeze); this guard pins the
         # contract for direct programmatic callers with a clear error instead
         # of an opaque trace-time failure.
         raise ValueError(
-            "native-spin models implement only the NeighborGraph lower "
-            f"(got lower_kind={lower_kind!r}); use lower_kind='graph' with a "
-            ".pt2 output."
+            "native-spin models implement only the NeighborGraph and compact "
+            f"canonical lowers (got lower_kind={lower_kind!r}); use "
+            "lower_kind='graph' with a .pt2 output."
         )
     # A graph lower deploys the fused inference pipeline. The trace runs at
     # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
@@ -1435,17 +1486,18 @@ def _trace_and_export(
 
     target_device = _env.DEVICE
 
-    # Detect spin model. Two flavors share the ``is_spin`` gate below (both
+    # Detect spin model. Two schemes share the ``is_spin`` gate below (both
     # need the spin-only metadata fields — ``ntypes_spin``/``use_spin`` —
-    # and the nlist-lower spin ABI probes), but only the NATIVE flavor
+    # and the nlist-lower spin ABI probes), but only the NATIVE scheme
     # (``native_spin``, ``NativeSpinEnergyModel``)
-    # rides the graph lower: the virtual-atom flavor (``spin_ener``,
+    # rides the graph lower: the virtual-atom scheme (``spin_ener``,
     # ``SpinModel``) doubles the atom count and has no graph-lower
     # implementation. ``is_native_spin`` distinguishes them at every seam
     # below (model rebuild, graph rejection, graph sample-input/dynamic-shape
     # ABI, trace call site).
-    is_native_spin = data["model"].get("type") == "native_spin"
-    is_spin = is_native_spin or data["model"].get("type") == "spin_ener"
+    spin_scheme = _spin_scheme(data["model"].get("type"))
+    is_native_spin = spin_scheme == "native"
+    is_spin = spin_scheme is not None
 
     # 1. Deserialize model on CPU for make_fx tracing.
     # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
@@ -1481,7 +1533,7 @@ def _trace_and_export(
     # 2. Collect metadata
     metadata = _collect_metadata(
         model,
-        is_spin=is_spin,
+        spin_scheme=spin_scheme,
         lower_kind=lower_kind,
     )
 
@@ -1603,6 +1655,7 @@ def _trace_and_export(
                 model,
                 e_sample,
                 device=torch.device("cpu"),
+                want_spin=is_native_spin,
             )
             traced = model.forward_lower_canonical_graph_exportable(
                 *sample_inputs,

@@ -1496,6 +1496,13 @@ class _CompiledModel(torch.nn.Module):
         ``(N, 3)`` with ``N == nframes * nloc`` for a single-rank carry-all graph,
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
+
+        A native-spin model additionally passes the per-node moment, which the
+        compiled lower turns into ``force_mag`` (and the type gate ``mask_mag``)
+        alongside the energy keys.  Presence of the moment is a property of the
+        model, not of the batch, and it is part of the structure key
+        (:func:`_get_model_structure_key`), so a cached graph is never shared
+        between a spin and a spin-free task.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             compact_nodes,
@@ -1610,6 +1617,8 @@ class _CompiledModel(torch.nn.Module):
         # Feed a detached, grad-enabled edge_vec leaf: the traced graph's internal
         # ``edge_vec.detach()`` is stripped by ``_strip_saved_tensor_detach`` (as
         # for the dense ext_coord leaf), so the force backward roots at this input.
+        # ``spin`` is the graph lower's second leaf and gets the same treatment,
+        # rooting the magnetic-force backward at the moment input.
         edge_vec = ng.edge_vec.detach().requires_grad_(True)
         if spin is not None:
             spin = spin.detach().requires_grad_(True)
@@ -2364,17 +2373,10 @@ class Trainer(AbstractTrainer):
                 "training with training.zero_stage < 2."
             )
 
-        if self.models[DEFAULT_TASK_KEY].has_spin() or isinstance(
-            self.loss, EnergySpinLoss
-        ):
+        if not isinstance(self.loss, (EnergyLoss, EnergySpinLoss)):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
-                "training; spin-energy training is not supported."
-            )
-
-        if not isinstance(self.loss, EnergyLoss):
-            raise ValueError(
-                "validating.full_validation only supports single-task energy training."
+                "or spin-energy training."
             )
 
         if validation_data is None:

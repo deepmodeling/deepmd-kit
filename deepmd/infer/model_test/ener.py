@@ -268,7 +268,7 @@ def _write_energy_test_details(
         save_txt_file(
             detail_path.with_suffix(".s.out"),
             ps,
-            header=f"{system} (eV/Å^3): data_sxx data_sxy data_sxz data_syx "
+            header=f"{system} (eV/Å³): data_sxx data_sxy data_sxz data_syx "
             "data_syy data_syz data_szx data_szy data_szz pred_sxx pred_sxy pred_sxz "
             "pred_syx pred_syy pred_syz pred_szx pred_szy pred_szz",
             append=append_detail,
@@ -360,8 +360,8 @@ class EnerTester(ModelTester):
         ("rmse_v", "Virial RMSE        : {} eV"),
         ("mae_va", "Virial MAE/Natoms  : {} eV"),
         ("rmse_va", "Virial RMSE/Natoms : {} eV"),
-        ("mae_s", "Stress MAE         : {} eV/Å^3"),
-        ("rmse_s", "Stress RMSE        : {} eV/Å^3"),
+        ("mae_s", "Stress MAE         : {} eV/Å³"),
+        ("rmse_s", "Stress RMSE        : {} eV/Å³"),
         ("mae_ae", "Atomic ener MAE    : {} eV"),
         ("rmse_ae", "Atomic ener RMSE   : {} eV"),
         ("mae_h", "Hessian MAE        : {} eV/Å^2"),
@@ -513,7 +513,7 @@ class EnerTester(ModelTester):
         if reports_virial:
             if shared_metrics.virial is None or shared_metrics.virial_per_atom is None:
                 raise RuntimeError("Virial metrics are unavailable for dp test.")
-            # Stress sigma = -virial / volume, in eV/Å^3 (tensile-positive
+            # Stress sigma = -virial / volume, in eV/Å³ (tensile-positive
             # convention).
             volume = np.abs(np.linalg.det(box.reshape([nframes, 3, 3]))).reshape(
                 [nframes, 1]

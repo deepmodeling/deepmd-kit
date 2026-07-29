@@ -217,17 +217,18 @@ def spin_args() -> list[Argument]:
         "Required for the `deepspin` scheme; ignored by the `native` scheme."
     )
     doc_scheme = (
-        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "The spin implementation scheme, only effective for descriptors that declare "
+        "native spin support (currently DPA4/SeZM and DPA4C). "
         "`native` injects the per-atom spin vector as an equivariant feature "
-        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
         "representation and is the default. Other models always use the `deepspin` scheme."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
-        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
-        "spin model; defaults to false."
+        "per-atom spin with zeros instead of raising. Supported only by the native "
+        "spin models (SeZM/DPA4 and DPA4C); defaults to false."
     )
 
     return [

@@ -101,8 +101,8 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   const torch::Tensor& g_saved = std::get<6>(desc);
 
   // === Step 2. Fitting forward: descriptor -> per-atom energy. ===
-  auto fit = graph_fitting(grrg, atype, fit_ws, fit_bs, fit_resnets,
-                           w_head, b_head, bias_atom_e, fit_act);
+  auto fit = graph_fitting(grrg, atype, fit_ws, fit_bs, fit_resnets, w_head,
+                           b_head, bias_atom_e, fit_act);
   const torch::Tensor& atom_energy_raw = std::get<0>(fit);  // (N, 1) fp64
   const torch::Tensor& fit_saved = std::get<1>(fit);
   auto owned = ownership.reshape({-1, 1}).to(atom_energy_raw.scalar_type());
@@ -130,10 +130,11 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   // === Step 5. Scatter dE/d(edge_vec) into force / virial / atom virial. ===
   // g_e and edge_vec_f are already in the compute precision; the per-node force
   // is a short neighbor sum and the per-frame virial reduces hierarchically.
-  auto fv = edge_force_virial(g_e, edge_vec_f, edge_index, edge_mask,
-                              destination_order, destination_row_ptr,
-                              source_order, source_row_ptr, n_node,
-                              node_capacity, do_atomic_virial);
+  // DPA1 has no magnetic degree of freedom, so the spin cotangent is absent.
+  auto fv = edge_force_virial(
+      g_e, edge_vec_f, edge_index, edge_mask, destination_order,
+      destination_row_ptr, source_order, source_row_ptr, n_node,
+      torch::empty({0}, edge_vec_f.options()), node_capacity, do_atomic_virial);
   return {energy, atom_energy, std::get<0>(fv), std::get<2>(fv),
           std::get<1>(fv)};
 }
@@ -151,7 +152,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "int act, int type_one_side, int concat_tebd, int smooth, int axis, int "
       "resnet2, int resnet3, float rcut, float rcut_smth, float protection, "
       "float nnei, int basis_dim, Tensor[] fit_ws, Tensor[] fit_bs, "
-      "int[] fit_resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, int "
+      "int[] fit_resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, "
+      "int "
       "fit_act, SymInt node_capacity, bool do_atomic_virial) -> (Tensor, "
       "Tensor, Tensor, Tensor, Tensor)");
   m.impl("dpa1_graph_energy_force", torch::kCUDA, &dpa1_graph_energy_force);

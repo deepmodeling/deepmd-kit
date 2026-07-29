@@ -5,15 +5,27 @@ from __future__ import (
     annotations,
 )
 
+import math
 from typing import (
     Any,
 )
 
 import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -35,16 +47,37 @@ class OrderedPairFiLM(NativeOP):
 
        z_{ab}&=[T_a\Vert T_b],\\
        h_{ab}&=\operatorname{SwiGLU}(z_{ab}W_{\rm in}),\\
-       [s_{ab},d_{ab},u_{ab}]&=0.1\,h_{ab}W_{\rm out},\\
+       [s_{ab},d_{ab},u_{ab},p_{ab},q_{ab}]&=0.1\,h_{ab}W_{\rm out},\\
        \gamma_{ab}&=1+\tanh(s_{ab}),\\
        \beta_{ab}&=T_a+T_b+\tanh(d_{ab}),\\
-       U_{ab}&=\tanh(u_{ab}).
+       U_{ab}&=\tanh(u_{ab}),\\
+       \gamma^{s}_{ab}&=\tanh(a^{\gamma}+p_{ab}),\qquad
+       \beta^{s}_{ab}=\tanh(a^{\beta}+q_{ab}).
 
     The network is evaluated over the finite type table rather than over graph
-    edges, so compressed inference stores only the three resulting tables.
-    Bounding every output keeps the cache well conditioned in ``float32``:
+    edges, so compressed inference stores only the resulting tables. Bounding
+    every output keeps the cache well conditioned in ``float32``:
     :math:`\gamma` stays in :math:`(0,2)`, and the residual parts of
-    :math:`\beta` and :math:`U` stay in :math:`(-1,1)`.
+    :math:`\beta`, :math:`U`, :math:`\gamma^{s}` and :math:`\beta^{s}` stay in
+    :math:`(-1,1)`.
+
+    The spin scale :math:`\gamma^{s}` is signed, unlike its geometric
+    counterpart. The exchange interaction of an ordered pair may be either
+    ferromagnetic or antiferromagnetic, and the radial map is shared across
+    pairs, so the sign has to be available in the pair cache.
+
+    That sign freedom rules out the structural anchor the geometric heads use
+    -- the constant one for :math:`\gamma`, the type embedding for
+    :math:`\beta` -- and the SwiGLU trunk is bias free, so without an anchor
+    of their own the two spin heads would emerge from a small centred product
+    and start several orders of magnitude below the geometric tables. The
+    descriptor calibration would then freeze a preconditioner at a scale the
+    first optimizer steps immediately leave. Both heads are therefore anchored
+    on a learned per-channel offset :math:`a`, initialized to
+    :math:`\pm\operatorname{artanh}` of :attr:`_SPIN_ANCHOR_MAGNITUDE` with an
+    independent random sign per channel. Every spin channel therefore starts
+    at that magnitude exactly, for any channel width and any seed, with its
+    sign left free.
 
     Parameters
     ----------
@@ -53,6 +86,9 @@ class OrderedPairFiLM(NativeOP):
     radial_modes
         Number :math:`R` of shared radial mode profiles each ordered pair
         mixes. Zero omits the mixing table.
+    spin_channels
+        Number :math:`C_s` of ordered spin scale and shift channels. Zero
+        omits the spin tables.
     precision
         Parameter precision.
     trainable
@@ -63,15 +99,22 @@ class OrderedPairFiLM(NativeOP):
     Raises
     ------
     ValueError
-        If ``channels`` is not positive or ``radial_modes`` is negative.
+        If ``channels`` is not positive, or if ``radial_modes`` or
+        ``spin_channels`` is negative.
     """
 
     _OUTPUT_SCALE = 0.1
+
+    #: Initial magnitude of both ordered spin tables. It is the same order as
+    #: the geometric scale and shift and stays well clear of the saturated
+    #: region of the bounding nonlinearity, whose derivative there is 0.75.
+    _SPIN_ANCHOR_MAGNITUDE = 0.5
 
     def __init__(
         self,
         channels: int,
         radial_modes: int = 0,
+        spin_channels: int = 0,
         *,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
@@ -81,23 +124,41 @@ class OrderedPairFiLM(NativeOP):
             raise ValueError(f"`channels` must be positive, got {channels}")
         if radial_modes < 0:
             raise ValueError(f"`radial_modes` must be non-negative, got {radial_modes}")
+        if spin_channels < 0:
+            raise ValueError(
+                f"`spin_channels` must be non-negative, got {spin_channels}"
+            )
         self.channels = int(channels)
         self.radial_modes = int(radial_modes)
+        self.spin_channels = int(spin_channels)
         self.precision = str(precision)
         self.trainable = bool(trainable)
         input_dim = 2 * self.channels
         self.hidden_dim = resolve_swiglu_hidden_width(input_dim)
-        output_dim = self.channels * (2 + self.radial_modes)
+        output_dim = self.channels * (2 + self.radial_modes) + 2 * self.spin_channels
         self.network = SwiGLUMLP(
             [input_dim, self.hidden_dim, output_dim],
             output_scale=self._OUTPUT_SCALE,
             precision=self.precision,
             trainable=self.trainable,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
+        if self.spin_channels == 0:
+            # The anchors exist only alongside the spin head they bias.
+            self.adam_spin_scale_anchor = None
+            self.adam_spin_shift_anchor = None
+        else:
+            rng = np.random.default_rng(child_seed(seed, 1))
+            precision_dtype = PRECISION_DICT[self.precision.lower()]
+            offset = math.atanh(self._SPIN_ANCHOR_MAGNITUDE)
+            signs = rng.integers(0, 2, size=(2, self.spin_channels)) * 2.0 - 1.0
+            self.adam_spin_scale_anchor = (offset * signs[0]).astype(precision_dtype)
+            self.adam_spin_shift_anchor = (offset * signs[1]).astype(precision_dtype)
 
-    def call(self, type_embedding: Any) -> tuple[Any, Any, Any | None]:
-        """Build the ordered scale, shift, and mixing tables.
+    def call(
+        self, type_embedding: Any
+    ) -> tuple[Any, Any, Any | None, Any | None, Any | None]:
+        """Build the ordered scale, shift, mixing, and spin tables.
 
         Parameters
         ----------
@@ -115,8 +176,15 @@ class OrderedPairFiLM(NativeOP):
             Ordered mode-mixing matrices with shape
             ``((T + 1) ** 2, channels, radial_modes)``, or ``None`` when
             ``radial_modes`` is zero.
+        spin_scale
+            Ordered spin scales with shape
+            ``((T + 1) ** 2, spin_channels)``, or ``None`` when
+            ``spin_channels`` is zero.
+        spin_shift
+            Ordered spin shifts with the same shape as ``spin_scale``.
         """
         xp = array_api_compat.array_namespace(type_embedding)
+        device = array_api_compat.device(type_embedding)
         ntypes = type_embedding.shape[0]
         pair_shape = (ntypes, ntypes, self.channels)
         pair_input = xp.reshape(
@@ -131,22 +199,46 @@ class OrderedPairFiLM(NativeOP):
         )
         logits = self.network.call(pair_input)
 
-        # The output splits into the scale, the shift residual, and the
-        # flattened mixing matrix, in that order.
+        # The output splits into the scale, the shift residual, the flattened
+        # mixing matrix, and the two spin tables, in that order.
         shift_end = 2 * self.channels
+        mixing_end = shift_end + self.channels * self.radial_modes
+        spin_scale_end = mixing_end + self.spin_channels
         base_shift = xp.reshape(
             type_embedding[:, None, :] + type_embedding[None, :, :],
             (-1, self.channels),
         )
+
+        def anchored(anchor: Any, block: Any) -> Any:
+            """Bound one spin head around its learned per-channel offset."""
+            return xp.tanh(
+                block
+                + xp_asarray_nodetach(
+                    xp,
+                    anchor,
+                    dtype=block.dtype,
+                    device=device,
+                )[None, :]
+            )
+
         return (
             1.0 + xp.tanh(logits[:, : self.channels]),
             base_shift + xp.tanh(logits[:, self.channels : shift_end]),
             None
             if self.radial_modes == 0
             else xp.reshape(
-                xp.tanh(logits[:, shift_end:]),
+                xp.tanh(logits[:, shift_end:mixing_end]),
                 (-1, self.channels, self.radial_modes),
             ),
+            None
+            if self.spin_channels == 0
+            else anchored(
+                self.adam_spin_scale_anchor,
+                logits[:, mixing_end:spin_scale_end],
+            ),
+            None
+            if self.spin_channels == 0
+            else anchored(self.adam_spin_shift_anchor, logits[:, spin_scale_end:]),
         )
 
     def serialize(self) -> dict[str, Any]:
@@ -155,16 +247,24 @@ class OrderedPairFiLM(NativeOP):
         Returns
         -------
         dict[str, Any]
-            Versioned configuration and pair-encoder parameters.
+            Versioned configuration, pair-encoder parameters, and the two spin
+            anchors, which are present only for a spin-conditioned cache.
         """
         return {
             "@class": "OrderedPairFiLM",
             "@version": 1,
             "channels": self.channels,
             "radial_modes": self.radial_modes,
+            "spin_channels": self.spin_channels,
             "precision": self.precision,
             "trainable": self.trainable,
             "network": self.network.serialize(),
+            "@variables": {}
+            if self.spin_channels == 0
+            else {
+                "adam_spin_scale_anchor": to_numpy_array(self.adam_spin_scale_anchor),
+                "adam_spin_shift_anchor": to_numpy_array(self.adam_spin_shift_anchor),
+            },
         }
 
     @classmethod
@@ -191,6 +291,10 @@ class OrderedPairFiLM(NativeOP):
         if data.pop("@class") != "OrderedPairFiLM":
             raise ValueError("Invalid serialized class for OrderedPairFiLM")
         network = data.pop("network")
+        variables = data.pop("@variables")
         obj = cls(**data)
         obj.network = SwiGLUMLP.deserialize(network)
+        precision_dtype = PRECISION_DICT[obj.precision.lower()]
+        for name, value in variables.items():
+            setattr(obj, name, np.asarray(value, dtype=precision_dtype))
         return obj

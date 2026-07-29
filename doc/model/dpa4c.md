@@ -215,6 +215,133 @@ Compression requires:
 `dp --pt-expt compress` reports an explicit error when the configuration falls
 outside these sets.
 
+## Native spin
+
+DPA4C accepts a per-atom magnetic moment as an equivariant descriptor input.
+The moment is not represented by a virtual atom: the atom count of the model
+equals the number of physical atoms, and the magnetic force is the negative
+spin gradient of the same energy that yields the conservative force,
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+\qquad
+\mathbf{F}^{m}_i = -\frac{\partial E}{\partial \mathbf{s}_i} .
+```
+
+### Symmetry
+
+The magnetic moment is an axial vector: it is even under spatial inversion and
+odd under time reversal, whereas a displacement is odd under inversion and even
+under time reversal. The descriptor therefore emits only invariants of even
+total spin order, which leaves it invariant under the full orthogonal group
+acting jointly on positions and moments, including improper operations, and
+invariant under time reversal. Reversing every moment leaves the energy
+unchanged and reverses the magnetic force.
+
+Four families of spin channels are accumulated over the neighbor shell and
+contracted against one another and against the geometric moments:
+
+| Family                              | Content                                                                                           | Interaction it represents                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Isotropic vector                    | $\sum_j \varphi_c(r_{ij})\,\hat{\mathbf{s}}_j$                                                    | Heisenberg exchange                         |
+| Bond-projected vector               | $\sum_j \varphi_c(r_{ij})\,(\hat{\mathbf{s}}_j\cdot\hat{\mathbf{u}}_{ij})\,\hat{\mathbf{u}}_{ij}$ | Symmetric anisotropic exchange              |
+| Quadrupole                          | $\sum_j \varphi_c(r_{ij})\,B_2(\hat{\mathbf{s}}_j)$                                               | Biquadratic exchange, single-ion anisotropy |
+| Magnitude and magnetic coordination | $\sum_j \varphi_c(r_{ij})\,\lvert\mathbf{s}_j\rvert^2$ and the gated neighbor count               | Longitudinal and stoichiometric terms       |
+
+The width of the spin block follows the degree-two width of the geometric
+descriptor, so it is set by {ref}`channels <model[standard]/descriptor[dpa4c]/channels>`
+and has no knob of its own.
+
+Two-body Heisenberg exchange, biquadratic exchange and single-ion anisotropy
+are represented exactly rather than approximately: each corresponds to a single
+emitted invariant times a learned radial profile. The Dzyaloshinskii-Moriya
+interaction is not representable at any order, because the invariant read-out
+contains no antisymmetric contraction.
+
+### Configuration
+
+Native spin is requested at the model level, not on the descriptor. The
+`use_spin` list marks the magnetic types, either as booleans over the type map
+or by element name:
+
+```json
+{
+  "model": {
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "scheme": "native",
+      "use_spin": [
+        true,
+        false
+      ]
+    },
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0,
+      "channels": 32,
+      "lmax": 2,
+      "precision": "float32"
+    }
+  }
+}
+```
+
+The `native` scheme is required; the virtual-atom `deepspin` scheme is not
+supported by this descriptor. Training uses the `ener_spin` loss, whose
+`start_pref_fm` and `limit_pref_fm` weight the magnetic force. A complete
+example is provided in `examples/spin/dpa4c/input.json`.
+
+A moment is conditioned by a per-type gate and a reference magnitude measured
+from the training corpus, so a non-magnetic type contributes exactly zero to
+every spin channel and the magnitude of a magnetic type is normalized to order
+unity. A model that declares a magnetic type but receives no moment is
+rejected rather than evaluated at zero, since the latter is indistinguishable
+from a broken data pipeline and reports a vanishing magnetic force.
+
+### Running in LAMMPS
+
+A native-spin model is served by the `dpa4spin` pair style, and by
+`dpa4spin/kk` under Kokkos. Both require `atom_style spin` and a model frozen
+with the compact canonical graph lower, which compression selects on its own
+for an eligible DPA4C. Freeze first and compress the frozen artifact, as for
+any other DPA4C model:
+
+```bash
+dp --pt-expt freeze -c model.ckpt.pt -o frozen_model
+dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2
+```
+
+The `lower_input_kind` of `compressed_model.pt2` reads `dpa4c_canonical`, which
+is what the pair styles require; `frozen_model.pt2` alone carries the plain
+graph lower and is refused.
+
+```lammps
+atom_style        spin
+pair_style        dpa4spin compressed_model.pt2
+pair_coeff        * * Ni O
+```
+
+The Kokkos style keeps the graph and the moment in device memory for the whole
+step. Ghost moments are supplied by the forward communication that
+`atom_style spin` already performs, and the magnetic force is reduced back onto
+owning atoms alongside the conservative force, so domain decomposition needs no
+additional exchange:
+
+```bash
+lmp -k on g 1 -sf kk -in in.lammps
+```
+
+A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
+is provided in `examples/spin/dpa4c/lmp/`.
+
+`min_style spin` reads the magnetic force from the pair style and relaxes the
+moment directions. Spin dynamics through `fix nve/spin` requires a LAMMPS build
+whose fix recognizes this pair style, because the stock fix accumulates the
+magnetic force only from pair styles matching its own name pattern.
+
 ## Export and running in LAMMPS
 
 DPA4C uses the PyTorch `.pt2` (AOTInductor) export path. Freeze with the graph
@@ -332,3 +459,6 @@ positions and types.
 - The descriptor is one-hop local by construction. Interactions beyond `rcut`
   are not represented, and unlike a message-passing model the effective range
   cannot be extended by adding layers.
+- Native spin requires the `native` scheme; the virtual-atom `deepspin` scheme
+  is not supported. The Dzyaloshinskii-Moriya interaction is not representable,
+  as explained under [Native spin](#native-spin).

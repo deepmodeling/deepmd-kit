@@ -365,8 +365,8 @@ class TestDPA4C:
             features = descriptor.build_edge_features(
                 graph,
                 atype_local,
-                *descriptor.pair_film.call(descriptor.type_embedding.call()),
-            )
+                descriptor.pair_film.call(descriptor.type_embedding.call()),
+            )[:3]
         finally:
             for handle in handles:
                 handle.remove()
@@ -426,3 +426,149 @@ class TestDPA4C:
                 atol=1e-12,
                 rtol=0.0,
             )
+
+
+class TestDPA4CSpin:
+    """Torch-side contracts of the native spin branch."""
+
+    def setup_method(self) -> None:
+        self.descriptor = DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float64",
+            seed=23,
+            use_spin=[True, False],
+        ).to(env.DEVICE)
+        self.descriptor.eval()
+        generator = torch.Generator(device="cpu").manual_seed(5)
+        self.coord = (
+            torch.randn(1, 6, 3, dtype=torch.float64, generator=generator).to(
+                env.DEVICE
+            )
+            * 1.4
+        )
+        self.atype = torch.tensor(
+            [[0, 1, 0, 1, 0, 1]], dtype=torch.long, device=env.DEVICE
+        )
+        self.spin = torch.randn(6, 3, dtype=torch.float64, generator=generator).to(
+            env.DEVICE
+        )
+        from deepmd.dpmodel.utils.neighbor_graph import build_neighbor_graph
+
+        self.graph = build_neighbor_graph(self.coord, self.atype, None, 3.0)
+        self.flat_atype = self.atype.reshape(-1)
+
+    def probe(self, spin: torch.Tensor) -> torch.Tensor:
+        """Reduce the descriptor with fixed weights into a scalar probe."""
+        output, _ = self.descriptor.call_graph(self.graph, self.flat_atype, spin=spin)
+        weights = torch.arange(
+            1, output.shape[1] + 1, dtype=output.dtype, device=output.device
+        )
+        return (output * weights).sum()
+
+    def test_spin_arrays_are_optimizer_visible(self) -> None:
+        names = {name for name, _ in self.descriptor.named_parameters()}
+        assert "spin.adam_spin_vector_weight" in names
+        assert "spin.adam_spin_quadrupole_weight" in names
+        # The gate and the reference are state, not learned quantities.
+        buffers = {name for name, _ in self.descriptor.named_buffers()}
+        assert {"spin.spin_mask", "spin.spin_reference"} <= buffers
+
+    def test_magnetic_force_matches_finite_differences(self) -> None:
+        # The magnetic force is the spin gradient of the energy, so the whole
+        # spin branch is validated against numerical differentiation rather
+        # than against stored values.
+        def descriptor_of_spin(spin: torch.Tensor) -> torch.Tensor:
+            return self.descriptor.call_graph(self.graph, self.flat_atype, spin=spin)[0]
+
+        assert torch.autograd.gradcheck(
+            descriptor_of_spin,
+            (self.spin.clone().requires_grad_(True),),
+        )
+
+    def onsite_weights(self) -> list[torch.Tensor]:
+        """Return the two per-type on-site spin weights.
+
+        These are the only parameters indexed by atom type that read the
+        moment value; the ordered spin tables are shared across types and are
+        also weighted by the moment-independent magnetic coordination family.
+        """
+        return [
+            self.descriptor.spin.adam_spin_vector_weight,
+            self.descriptor.spin.adam_spin_quadrupole_weight,
+        ]
+
+    def test_non_magnetic_types_carry_no_magnetic_degree_of_freedom(self) -> None:
+        spin = self.spin.clone().requires_grad_(True)
+        (gradient,) = torch.autograd.grad(self.probe(spin), spin, create_graph=True)
+        assert torch.equal(
+            gradient[self.flat_atype == 1],
+            torch.zeros_like(gradient[self.flat_atype == 1]),
+        )
+        # The force loss differentiates the magnetic force again, which probes
+        # the spin direction even where the value vanishes. A multiplicative
+        # gate is what keeps that second derivative exactly zero as well.
+        self.descriptor.zero_grad()
+        gradient.pow(2).sum().backward()
+        for weight in self.onsite_weights():
+            assert weight.grad is not None
+            assert float(weight.grad[1].abs().max()) == 0.0
+
+    def test_zero_spin_leaves_no_magnetic_force(self) -> None:
+        spin = torch.zeros_like(self.spin).requires_grad_(True)
+        (gradient,) = torch.autograd.grad(self.probe(spin), spin)
+        assert torch.equal(gradient, torch.zeros_like(gradient))
+        # Every route that reads the moment value is even in it, so the
+        # on-site weights stay dormant in the demagnetized limit.
+        self.descriptor.zero_grad()
+        self.probe(torch.zeros_like(self.spin)).backward()
+        for weight in self.onsite_weights():
+            assert weight.grad is None or float(weight.grad.abs().max()) == 0.0
+
+    def test_a_missing_moment_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires a per-node magnetic"):
+            self.descriptor.call_graph(self.graph, self.flat_atype)
+
+    def test_mixed_precision_never_engages(self) -> None:
+        # Spin families are quadratic in the moment and feed a fourth-order
+        # readout, so the branch stays in compute precision unconditionally.
+        for layer in self.descriptor.radial_embedding.layers:
+            assert layer.autocast_output is False
+        self.descriptor.use_amp = True
+        self.descriptor.use_amp_infer = True
+        self.descriptor._apply_autocast_policy()
+        for layer in self.descriptor.radial_embedding.layers:
+            assert layer.autocast_output is False
+
+    def test_compression_covers_the_spin_families(self) -> None:
+        """The compiled operator carries spin, so eligibility ignores it.
+
+        Every spin width follows the degree profile rather than a parameter of
+        its own, so a spin-conditioned descriptor is covered by the same
+        structural set as a spin-free one and its frozen tables are built
+        alongside the geometric caches.
+        """
+        from deepmd.kernels.cuda.dpa4c.graph_compress import mega_eligible
+
+        single = DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float32",
+            seed=23,
+            use_spin=[True, False],
+        ).to(env.DEVICE)
+        assert mega_eligible(single)
+        single.enable_compression(0.5)
+        assert single.compress
+        assert single.compress_spin_pair.shape == (
+            (single.ntypes + 1) ** 2,
+            single.spin_channels,
+            2,
+        )
+        assert single.compress_spin_type.shape == (single.ntypes + 1, 4)

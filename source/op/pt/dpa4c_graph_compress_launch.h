@@ -50,6 +50,9 @@ struct Arguments {
   float eps = 0.0f;
   float degree_floor = 0.0f;
   bool canonical = false;
+  // Whether the native spin branch is active. The neighbour spin width is
+  // derived from the degree profile, so presence is the whole runtime choice.
+  bool has_spin = false;
   IndexKind index_kind = IndexKind::Bits64;
 
   const void* edge_index = nullptr;
@@ -71,10 +74,26 @@ struct Arguments {
   const float* descriptor_gradient = nullptr;
   const float* state = nullptr;
 
+  // === Native spin ===
+  // Present together or not at all. ``spin`` is indexed by absolute node id,
+  // like ``atype``, because neighbour lookups address it with source indices.
+  // ``spin_type`` packs the four per-type scalars a node needs -- the fused
+  // gate over reference magnitude, the bare gate that the magnetic
+  // coordination family counts, and the two on-site weights -- so one node
+  // reads them in a single 128-bit load.
+  const float* spin = nullptr;
+  const float* spin_pair = nullptr;
+  const float* spin_type = nullptr;
+
   float* descriptor = nullptr;
   float* state_out = nullptr;
   float* moment_gradient = nullptr;
   float* edge_gradient = nullptr;
+  // Per-node on-site magnetic gradient and the per-edge contribution to the
+  // source node's magnetic gradient. The latter is reduced onto source nodes
+  // by the shared edge force assembly, which already walks the source CSR.
+  float* spin_gradient = nullptr;
+  float* edge_spin_gradient = nullptr;
 };
 
 // === Compile-time descriptor profile ===
@@ -168,6 +187,23 @@ constexpr int coupling_record_count(int lmax) {
 // measured optimum of that trade-off on a diamond neighborhood; forward and
 // backward differ because the backward carries the additional angular
 // cotangents.
+//
+// The native spin branch carries its own pair of widths, because its channel
+// count is tied to the degree-two width rather than to the scalar width and
+// its five families add accumulators that the geometric optimum does not
+// account for. Both were measured on the same diamond neighborhood as the
+// geometric pair, independently of each other, since one governs the forward
+// kernel and the other the backward kernel.
+//
+// The measured spin optima differ from the geometric ones in exactly two
+// places. At the narrowest profile the spin forward wants one step wider,
+// because the eight-fold spin payload of a two-lane group tiles into more
+// accumulators than the recovered edge concurrency is worth. At ``Channels ==
+// 64`` the spin backward wants one step narrower, because the bond-projected
+// family adds an angular cotangent whose per-lane cost outweighs the geometry
+// recompute that a wider group amortizes. A group wider than the scalar width
+// leaves a tile empty and does not compile, which bounds the narrow profiles
+// from above.
 template <int Channels>
 struct EdgeMap;
 
@@ -175,29 +211,42 @@ template <>
 struct EdgeMap<8> {
   static constexpr int Forward = 2;
   static constexpr int Backward = 2;
+  static constexpr int SpinForward = 4;
+  static constexpr int SpinBackward = 2;
 };
 template <>
 struct EdgeMap<16> {
   static constexpr int Forward = 4;
   static constexpr int Backward = 4;
+  static constexpr int SpinForward = 4;
+  static constexpr int SpinBackward = 4;
 };
 template <>
 struct EdgeMap<32> {
   static constexpr int Forward = 8;
   static constexpr int Backward = 4;
+  static constexpr int SpinForward = 8;
+  static constexpr int SpinBackward = 4;
 };
 template <>
 struct EdgeMap<64> {
   static constexpr int Forward = 8;
   static constexpr int Backward = 8;
+  static constexpr int SpinForward = 8;
+  static constexpr int SpinBackward = 4;
 };
 template <>
 struct EdgeMap<128> {
   static constexpr int Forward = 16;
   static constexpr int Backward = 8;
+  static constexpr int SpinForward = 16;
+  static constexpr int SpinBackward = 8;
 };
 
-template <int Channels, int Lmax>
+// ``HasSpin`` is deliberately without a default. It changes the moment
+// layout and the descriptor width, so an instantiation that omits it would
+// silently read a spin-free layout out of a spin-conditioned buffer.
+template <int Channels, int Lmax, bool HasSpin>
 struct Profile {
   static constexpr int C0 = Channels;
   static constexpr int C1 = degree_one_width(Channels);
@@ -205,8 +254,26 @@ struct Profile {
   static constexpr int K1 = C2;
   static constexpr int K2 = 2;
 
-  // Flat moment layout: degree zero, degree one, degree two, then the
-  // single-channel high degrees in increasing order.
+  // === Native spin widths ===
+  // The neighbour spin width is derived from the degree-two width, so the
+  // presence of the branch is the only new compile-time degree of freedom and
+  // the instantiation matrix doubles rather than growing by a factor of four.
+  static constexpr int Cs = HasSpin ? C2 : 0;
+  // Reduced families: neighbour moment magnitude, magnetic coordination, the
+  // isotropic neighbour spin vector, the bond-projected neighbour spin vector,
+  // and the single neighbour spin quadrupole.
+  static constexpr int SpinEdgeWidth = HasSpin ? 8 * Cs + 5 : 0;
+  // Node-local on-site vector and quadrupole, written outside the division.
+  static constexpr int SpinNodeWidth = HasSpin ? 8 : 0;
+  static constexpr int SpinMomentWidth = SpinEdgeWidth + SpinNodeWidth;
+  // Channel width of the joint degree-one spin block: the on-site moment, the
+  // isotropic neighbour channels and the bond-projected neighbour channels.
+  // The two neighbour families share one grading, so one Gram over the joint
+  // block emits every admissible degree-one spin invariant.
+  static constexpr int SpinVectorWidth = HasSpin ? 1 + 2 * Cs : 0;
+
+  // Flat moment layout: degree zero, degree one, degree two, the
+  // single-channel high degrees in increasing order, then the spin families.
   static constexpr int ScalarOffset = 0;
   static constexpr int VectorOffset = C0;
   static constexpr int TensorOffset = C0 + 3 * C1;
@@ -214,7 +281,15 @@ struct Profile {
   static constexpr int High3 = Lmax >= 3 ? 7 : 0;
   static constexpr int High4 = Lmax >= 4 ? 9 : 0;
   static constexpr int HighCount = High3 + High4;
-  static constexpr int MomentWidth = HighOffset + HighCount;
+  static constexpr int SpinOffset = HighOffset + HighCount;
+  static constexpr int SpinMagnitude = SpinOffset;               // Cs
+  static constexpr int SpinCoordination = SpinMagnitude + Cs;    // Cs
+  static constexpr int SpinVector = SpinCoordination + Cs;       // 3 * Cs
+  static constexpr int SpinBond = SpinVector + 3 * Cs;           // 3 * Cs
+  static constexpr int SpinTensor = SpinBond + 3 * Cs;           // 5
+  static constexpr int SpinOnsiteVector = SpinTensor + 5;        // 3
+  static constexpr int SpinOnsiteTensor = SpinOnsiteVector + 3;  // 5
+  static constexpr int MomentWidth = SpinOffset + SpinMomentWidth;
   static constexpr int StateWidth = MomentWidth + 2;
 
   // Cached intermediates of the invariant readout.
@@ -239,10 +314,25 @@ struct Profile {
       BispectrumBase + bispectrum_prefix(Lmax, K1, K2, 2, 2, 2);
   static constexpr int OutputQuartic =
       BispectrumBase + bispectrum_prefix(Lmax, K1, K2, 0, 0, 0);
+  // Spin invariants of even spin order. The quadrupole Gram omits its
+  // on-site self-term, which the identity |B_2(s)|^2 = |s|^4 makes a per-type
+  // constant times the square of the vector block's on-site self-term.
+  static constexpr int SpinGramVector =
+      HasSpin ? triangular(SpinVectorWidth) : 0;
+  static constexpr int SpinGramTensor = HasSpin ? 2 : 0;
+  static constexpr int SpinCross = HasSpin ? 2 * C2 : 0;
+  static constexpr int SpinDim =
+      SpinGramVector + SpinGramTensor + SpinCross + 2 * Cs;
+  static constexpr int OutputSpinGramVector = OutputQuartic + Quartic;
+  static constexpr int OutputSpinGramTensor =
+      OutputSpinGramVector + SpinGramVector;
+  static constexpr int OutputSpinCross = OutputSpinGramTensor + SpinGramTensor;
+  static constexpr int OutputSpinMagnitude = OutputSpinCross + SpinCross;
+  static constexpr int OutputSpinCoordination = OutputSpinMagnitude + Cs;
   // The two moment divisors close the geometric block. Normalization is
   // otherwise irreversible, so without them neither the readout nor the
   // fitting network can see the effective coordination they encode.
-  static constexpr int OutputDivisor = OutputQuartic + Quartic;
+  static constexpr int OutputDivisor = OutputQuartic + Quartic + SpinDim;
   static constexpr int OutputType = OutputDivisor + 2;
   static constexpr int OutputWidth = OutputType + C0;
 
@@ -250,11 +340,28 @@ struct Profile {
   // single-channel components add one accumulator per lane and tile, but every
   // measured widening lost more to the reduced edge concurrency than it
   // recovered in register pressure.
-  static constexpr int ForwardEdgeWidth = EdgeMap<Channels>::Forward;
-  static constexpr int BackwardEdgeWidth = EdgeMap<Channels>::Backward;
+  static constexpr int ForwardEdgeWidth =
+      HasSpin ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
+  static constexpr int BackwardEdgeWidth =
+      HasSpin ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
   static constexpr int NodeWidth = 8;
   static constexpr int NodeGroups = kWarpSize / NodeWidth;
   static constexpr int Threads = kWarpSize;
+
+  // Resident blocks the edge kernels are compiled for. A block is one warp, so
+  // thirty-two of them exhaust the 65,536-register file at sixty-four
+  // registers per thread, and a lower target raises the per-thread budget in
+  // proportion at the cost of occupancy.
+  //
+  // Degree two holds its geometric working set in that budget and spills only
+  // what the five spin families add, so twenty-four blocks buy eighty
+  // registers, remove the spill outright and are worth 2.0% to 4.5% of the
+  // step. Degree three overflows the budget on geometry alone -- it spills
+  // without the spin branch and still spills at eighty and at ninety-six
+  // registers -- so the occupancy it would give up buys an incomplete fix and
+  // costs 7.4% to 9.6%. The relief is therefore taken only where it is
+  // complete.
+  static constexpr int MinBlocksPerSm = (HasSpin && Lmax == 2) ? 24 : 32;
 };
 
 /// Scalar widths that own a compiled specialization.

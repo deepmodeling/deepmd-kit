@@ -88,7 +88,7 @@ STALE_FULL_VALIDATION_INFO_KEYS = (
 BEST_CKPT_PREFIX = "best.ckpt"
 EMA_BEST_CKPT_PREFIX = "best_ema.ckpt"
 VAL_LOG_SIGNIFICANT_DIGITS = 5
-VAL_LOG_COLUMN_GAP = "   "
+VAL_LOG_COLUMN_GAP = " "
 VAL_LOG_HEADER_PREFIX = "# "
 VAL_LOG_DATA_PREFIX = "  "
 
@@ -285,7 +285,7 @@ class FullValidator:
             )
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(
-                (metric_key, header_label, max(len(header_label), 18))
+                (metric_key, header_label, max(len(header_label), 10))
             )
 
         self.topk_records = self._load_topk_records()
@@ -525,9 +525,7 @@ class FullValidator:
         natoms = int(test_data["type"].shape[1])
         nframes = int(test_data["coord"].shape[0])
         include_virial = (
-            not self.profile.needs_spin
-            and data_system.pbc
-            and bool(test_data.get("find_virial", 0.0))
+            data_system.pbc and bool(test_data.get("find_virial", 0.0))
         )
         spin = (
             test_data["spin"].reshape(nframes, -1) if self.profile.needs_spin else None

@@ -66,6 +66,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         source_order: torch.Tensor,
         *,
         do_atomic_virial: bool,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate an eligible compressed canonical deployment graph.
 
@@ -90,6 +91,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             dtype as ``source``.
         do_atomic_virial
             Whether to return the per-node virial.
+        spin
+            Per-node magnetic moments with shape ``(N, 3)`` for a native-spin
+            model, or ``None``. Ghost rows carry their owner's moment.
 
         Returns
         -------
@@ -136,7 +140,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fitting = self.atomic_model.fitting_net
         atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
         if use_dpa4c:
-            energy, atom_energy, force, virial, atom_virial = (
+            energy, atom_energy, force, virial, atom_virial, force_mag = (
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
                     fitting,
@@ -145,9 +149,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     output_mask,
                     atom_bias,
                     do_atomic_virial,
+                    spin,
                 )
             )
         else:
+            force_mag = None
             energy, atom_energy, force, virial, atom_virial = (
                 dpa1_canonical_compress_energy_force(
                     descriptor,
@@ -169,6 +175,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             "virial": virial,
             "mask": output_mask.to(torch.int32),
         }
+        if force_mag is not None and force_mag.numel() != 0:
+            result["force_mag"] = force_mag
         if do_atomic_virial:
             result["atom_virial"] = atom_virial
         return result

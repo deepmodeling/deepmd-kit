@@ -144,7 +144,8 @@ __device__ __forceinline__ float2 evaluate_table_with_derivative(
   const float4 low = __ldg(row.quartet + channel);
   const float2 high = __ldg(row.pair + channel);
   const float value =
-      low.x + (low.y + (low.z + (low.w + (high.x + high.y * x) * x) * x) * x) * x;
+      low.x +
+      (low.y + (low.z + (low.w + (high.x + high.y * x) * x) * x) * x) * x;
   const float derivative =
       low.y + (2.0f * low.z +
                (3.0f * low.w + (4.0f * high.x + 5.0f * high.y * x) * x) * x) *
@@ -249,6 +250,8 @@ struct EdgeGeometry {
   float inverse_radius;
   float envelope;
   int source_type;
+  // Retained for the native spin branch, which gathers the source moment.
+  long source;
 };
 
 template <bool Canonical, typename index_t>
@@ -260,6 +263,7 @@ __device__ __forceinline__ EdgeGeometry load_geometry(long edge,
                                                       const long* atype) {
   EdgeGeometry geometry;
   const long source = static_cast<long>(edge_index[edge]);
+  geometry.source = source;
   geometry.source_type = static_cast<int>(atype[source]);
   const float x = edge_vec[edge * 3 + 0];
   const float y = edge_vec[edge * 3 + 1];
@@ -465,6 +469,93 @@ __device__ __forceinline__ void high_basis_gradient(
   du[2] = fmaf(weight, dz, du[2]);
 }
 
+// === Native spin ===
+
+/// Per-type scalars a spin-conditioned node reads, in one 128-bit load.
+///
+/// ``scale`` is the spin gate divided by the per-type reference magnitude and
+/// conditions the moment itself; ``gate`` is the bare zero-or-one flag, which
+/// the magnetic-coordination family reads because that family counts
+/// neighbours that carry a moment rather than the moments themselves.
+struct SpinTypeWeights {
+  float scale;
+  float gate;
+  float vector;
+  float quadrupole;
+};
+
+__device__ __forceinline__ SpinTypeWeights load_spin_type(const float* table,
+                                                          int type) {
+  const float4 packed = __ldg(reinterpret_cast<const float4*>(table) + type);
+  return {packed.x, packed.y, packed.z, packed.w};
+}
+
+/// Conditioned moment of one node, exactly zero for a non-magnetic type.
+__device__ __forceinline__ void load_conditioned_spin(const float* spin,
+                                                      float scale,
+                                                      long node,
+                                                      float (&output)[3]) {
+#pragma unroll
+  for (int component = 0; component < 3; ++component) {
+    output[component] = scale * spin[node * 3 + component];
+  }
+}
+
+/// Gradient of ``B_2(s) . z`` with respect to ``s``, scaled by ``factor``.
+///
+/// Writing ``Z = STF(z)``, the contraction equals ``sqrt(3/2) s^T Z s``
+/// because ``Z`` is symmetric and traceless, so the gradient is
+/// ``sqrt(6) Z s``. This is the only route by which a degree-two spin
+/// cotangent reaches the magnetic force.
+///
+/// The six distinct entries of ``Z`` are formed as scalars rather than
+/// through a ``Matrix3`` temporary: the caller sits in the innermost edge
+/// loop of a kernel pinned at 64 registers, where a nine-element array is
+/// enough to spill the widest profiles. ``packed`` may address shared memory.
+__device__ __forceinline__ void spin_quadrupole_vjp(const float* packed,
+                                                    float factor,
+                                                    const float (&spin)[3],
+                                                    float (&output)[3]) {
+  constexpr float kSqrtSix = 2.4494897427831780982f;
+  const float offdiagonal = factor * kSqrtSix * kInvSqrtTwo;
+  const float xy = offdiagonal * packed[0];
+  const float yz = offdiagonal * packed[1];
+  const float xz = offdiagonal * packed[3];
+  const float trace = factor * kSqrtSix * kInvSqrtSix * packed[2];
+  const float split = offdiagonal * packed[4];
+  const float xx = split - trace;
+  const float yy = -split - trace;
+  const float zz = 2.0f * trace;
+  output[0] = fmaf(xx, spin[0], fmaf(xy, spin[1], xz * spin[2]));
+  output[1] = fmaf(xy, spin[0], fmaf(yy, spin[1], yz * spin[2]));
+  output[2] = fmaf(xz, spin[0], fmaf(yz, spin[1], zz * spin[2]));
+}
+
+/// One packed degree-two component of a Cartesian vector.
+///
+/// This is the same real Cartesian harmonic block the geometry uses, applied
+/// to the conditioned magnetic moment. The block is a homogeneous quadratic
+/// polynomial, so it is smooth at a vanishing moment and no magnitude ever
+/// enters through a square root. Components are evaluated one at a time so a
+/// lane that owns a single component holds no other.
+__device__ __forceinline__ float spin_quadrupole_component(float x,
+                                                           float y,
+                                                           float z,
+                                                           int component) {
+  switch (component) {
+    case 0:
+      return kSqrtThree * x * y;
+    case 1:
+      return kSqrtThree * y * z;
+    case 2:
+      return 0.5f * (3.0f * z * z - (x * x + y * y + z * z));
+    case 3:
+      return kSqrtThree * x * z;
+    default:
+      return 0.5f * kSqrtThree * (x * x - y * y);
+  }
+}
+
 // === Symmetric traceless degree-two algebra ===
 
 struct Matrix3 {
@@ -579,7 +670,8 @@ __device__ __forceinline__ float readout_weight(const float* matrices,
                                                 int matrix,
                                                 int row,
                                                 int column) {
-  using P = Profile<Channels, Lmax>;
+  // Geometric widths only: the readout table has no spin block.
+  using P = Profile<Channels, Lmax, false>;
   return __ldg(matrices + (static_cast<long>(matrix) * P::C1 + row) * P::C1 +
                column);
 }
@@ -593,7 +685,8 @@ __device__ __forceinline__ float probe_value(const float* probes,
                                              int degree,
                                              int component,
                                              int rank_index) {
-  using P = Profile<Channels, Lmax>;
+  // Geometric widths only: the probe layout has no spin block.
+  using P = Profile<Channels, Lmax, false>;
   if (degree == 1) {
     return probes[component * P::K1 + rank_index];
   }
@@ -606,21 +699,30 @@ __device__ __forceinline__ float probe_value(const float* probes,
 // The Cartesian basis VJP maps angular cotangents to a coordinate gradient.
 // Applying it per lane reduces three Cartesian components instead of the full
 // set of angular components across the edge group.
+//
+// Two kinds of angular cotangent arrive here. `d_basis` holds the cotangents
+// of the degree-zero through degree-two harmonic components, whose chain rule
+// to the direction is applied below in closed form. `direction_gradient` holds
+// the direction cotangent of every family that evaluates its own chain rule
+// beforehand -- the single-channel high degrees and the bond-projected spin
+// channels -- and therefore enters as a plain sum. Both are then carried
+// through the same transverse projection, which is what makes one edge produce
+// one coordinate gradient rather than one per family.
 __device__ __forceinline__ void basis_vjp(const EdgeGeometry& geometry,
                                           const float (&d_basis)[9],
-                                          const float (&high_du)[3],
+                                          const float (&direction_gradient)[3],
                                           float radial_gradient,
                                           float (&output)[3]) {
   const float dux =
-      high_du[0] + d_basis[1] +
+      direction_gradient[0] + d_basis[1] +
       kSqrtThree * (d_basis[4] * geometry.uy + d_basis[7] * geometry.uz +
                     d_basis[8] * geometry.ux);
   const float duy =
-      high_du[1] + d_basis[2] +
+      direction_gradient[1] + d_basis[2] +
       kSqrtThree * (d_basis[4] * geometry.ux + d_basis[5] * geometry.uz -
                     d_basis[8] * geometry.uy);
   const float duz =
-      high_du[2] + d_basis[3] +
+      direction_gradient[2] + d_basis[3] +
       kSqrtThree * (d_basis[5] * geometry.uy + d_basis[7] * geometry.ux) +
       3.0f * d_basis[6] * geometry.uz;
   const float dot = geometry.ux * dux + geometry.uy * duy + geometry.uz * duz;

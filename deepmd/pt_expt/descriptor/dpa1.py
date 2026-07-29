@@ -309,6 +309,29 @@ def _type_pair_table(desc: Any, type_embedding: torch.Tensor) -> torch.Tensor:
     return se.cal_g_strip(two_side, 0)
 
 
+def _without_magnetic_force(
+    output: tuple[torch.Tensor, ...],
+) -> tuple[torch.Tensor, ...]:
+    """Append the empty magnetic force of a spin-free fused composition.
+
+    Every implementation of ``fused_energy_force_graph`` returns the same six
+    outputs, so the caller reads the magnetic force by position rather than by
+    probing the arity of the result.
+
+    Parameters
+    ----------
+    output
+        The five spin-free outputs: energy, atom energy, force, virial and
+        atom virial.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        The same outputs followed by an empty magnetic force.
+    """
+    return (*output, output[2].new_empty((0, 3)))
+
+
 @BaseDescriptor.register("se_atten")
 @BaseDescriptor.register("dpa1")
 @torch_module
@@ -1068,6 +1091,7 @@ class DescrptDPA1(DescrptDPA1DP):
         ownership: torch.Tensor,
         atom_bias: torch.Tensor,
         do_atomic_virial: bool,
+        spin: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, ...] | None:
         """End-to-end fused energy / force / virial from the edge stream.
 
@@ -1123,7 +1147,28 @@ class DescrptDPA1(DescrptDPA1DP):
 
             if not (ef_op_available() and mega_eligible(self)):
                 return None
-            return dpa1_graph_compress_energy_force(
+            return _without_magnetic_force(
+                dpa1_graph_compress_energy_force(
+                    self,
+                    fit,
+                    graph,
+                    atype,
+                    type_embedding,
+                    ownership,
+                    atom_bias,
+                    node_capacity=node_capacity,
+                    do_atomic_virial=do_atomic_virial,
+                )
+            )
+        from deepmd.kernels.cuda.dpa1.graph_energy_force import (
+            dpa1_graph_energy_force,
+            op_available,
+        )
+
+        if not op_available():
+            return None
+        return _without_magnetic_force(
+            dpa1_graph_energy_force(
                 self,
                 fit,
                 graph,
@@ -1134,23 +1179,6 @@ class DescrptDPA1(DescrptDPA1DP):
                 node_capacity=node_capacity,
                 do_atomic_virial=do_atomic_virial,
             )
-        from deepmd.kernels.cuda.dpa1.graph_energy_force import (
-            dpa1_graph_energy_force,
-            op_available,
-        )
-
-        if not op_available():
-            return None
-        return dpa1_graph_energy_force(
-            self,
-            fit,
-            graph,
-            atype,
-            type_embedding,
-            ownership,
-            atom_bias,
-            node_capacity=node_capacity,
-            do_atomic_virial=do_atomic_virial,
         )
 
     def _call_graph_triton(

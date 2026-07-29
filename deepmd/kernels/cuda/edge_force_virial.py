@@ -121,14 +121,16 @@ def _fake(
     source_order: torch.Tensor,
     source_row_ptr: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     n_frame = n_node_per_frame.shape[0]
     return (
         g_e.new_empty(node_capacity, 3),
         g_e.new_empty(node_capacity if want_atom_virial else 0, 3, 3),
         g_e.new_empty(n_frame, 3, 3),
+        g_e.new_empty(node_capacity if edge_spin_gradient.numel() else 0, 3),
     )
 
 
@@ -139,15 +141,17 @@ def _canonical_fake(
     source_row_ptr: torch.Tensor,
     source_order: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     del edge_vec, destination_row_ptr, source_row_ptr, source_order
     n_frame = n_node_per_frame.shape[0]
     return (
         g_e.new_empty(node_capacity, 3),
         g_e.new_empty(node_capacity if want_atom_virial else 0, 3, 3),
         g_e.new_empty(n_frame, 3, 3),
+        g_e.new_empty(node_capacity if edge_spin_gradient.numel() else 0, 3),
     )
 
 
@@ -161,9 +165,10 @@ def _cpu(
     source_order: torch.Tensor,
     source_row_ptr: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     from deepmd.dpmodel.utils.neighbor_graph import edge_force_virial as reference
 
     force, atom_virial, virial = reference(
@@ -176,7 +181,18 @@ def _cpu(
     )
     if not want_atom_virial:
         atom_virial = atom_virial.new_zeros(0, 3, 3)
-    return force, atom_virial, virial
+    if edge_spin_gradient.numel():
+        # A masked edge carries no force and no moment, so the two reductions
+        # must agree on which edges exist.
+        contribution = edge_spin_gradient
+        if edge_mask.numel():
+            contribution = contribution * edge_mask[:, None].to(contribution.dtype)
+        magnetic_force = torch.zeros(
+            node_capacity, 3, dtype=g_e.dtype, device=g_e.device
+        ).index_add_(0, edge_index[0], contribution)
+    else:
+        magnetic_force = g_e.new_zeros(0, 3)
+    return force, atom_virial, virial, magnetic_force
 
 
 def _canonical_cpu(
@@ -186,9 +202,10 @@ def _canonical_cpu(
     source_row_ptr: torch.Tensor,
     source_order: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     physical_edge_count = int(destination_row_ptr[-1].item())
     node_count = destination_row_ptr.shape[0] - 1
     destination = torch.repeat_interleave(
@@ -232,6 +249,7 @@ def _canonical_cpu(
         source_order,
         source_row_ptr,
         n_node_per_frame,
+        edge_spin_gradient,
         node_capacity,
         want_atom_virial,
     )
@@ -277,9 +295,10 @@ def edge_force_virial(
     source_order: torch.Tensor,
     source_row_ptr: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Assemble force and virial from the per-edge energy gradient.
 
     Matches the array-API reference up to floating summation order:
@@ -304,6 +323,9 @@ def edge_force_virial(
         Destination/source CSR offsets with shape (N + 1,), int64.
     n_node_per_frame : torch.Tensor
         Per-frame node counts with shape (nf,), int64.
+    edge_spin_gradient : torch.Tensor
+        Per-edge magnetic cotangent with shape (E, 3), or an empty tensor when
+        the model carries no magnetic degree of freedom.
     node_capacity : int
         Padded node-axis size ``N`` (may be a ``SymInt`` under tracing).
     want_atom_virial : bool
@@ -318,6 +340,9 @@ def edge_force_virial(
         when not requested.
     virial : torch.Tensor
         Per-frame virial with shape (nf, 3, 3).
+    magnetic_force : torch.Tensor
+        Per-source total of the magnetic cotangent with shape (N, 3), or an
+        empty (0, 3) tensor when no spin cotangent was supplied.
     """
     ensure_registered()
     return torch.ops.deepmd.edge_force_virial(
@@ -330,6 +355,7 @@ def edge_force_virial(
         source_order.contiguous(),
         source_row_ptr.contiguous(),
         n_node_per_frame,
+        edge_spin_gradient.contiguous(),
         node_capacity,
         want_atom_virial,
     )
@@ -342,9 +368,10 @@ def canonical_edge_force_virial(
     source_row_ptr: torch.Tensor,
     source_order: torch.Tensor,
     n_node_per_frame: torch.Tensor,
+    edge_spin_gradient: torch.Tensor,
     node_capacity: int,
     want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Assemble force and virial from a compact canonical edge stream.
 
     Parameters
@@ -359,6 +386,8 @@ def canonical_edge_force_virial(
         Edge storage positions grouped by source with shape ``(S,)``.
     n_node_per_frame
         Per-frame node counts with shape ``(nf,)``.
+    edge_spin_gradient
+        Per-edge magnetic cotangent with shape ``(E, 3)``, or empty.
     node_capacity
         Flat node count ``N``.
     want_atom_virial
@@ -367,7 +396,9 @@ def canonical_edge_force_virial(
     Returns
     -------
     tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        Force, optional atom virial, and frame virial.
+        Force, optional atom virial, frame virial, and the per-source total of
+        the magnetic cotangent, the last empty when no spin cotangent was
+        supplied.
     """
     ensure_registered()
     return torch.ops.deepmd.canonical_edge_force_virial(
@@ -377,6 +408,7 @@ def canonical_edge_force_virial(
         source_row_ptr.contiguous(),
         source_order.contiguous(),
         n_node_per_frame,
+        edge_spin_gradient.contiguous(),
         node_capacity,
         want_atom_virial,
     )

@@ -166,17 +166,20 @@ void fitting_backward_range(cudaStream_t stream,
                             float* d_x);
 
 // Scatter dE/d(edge_vec) into per-node force, per-frame virial and (optional)
-// per-node virial. Returns (force (N, 3), atom_virial (N, 3, 3) or empty,
-// virial (nf, 3, 3)).
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
-    torch::Tensor g_e,
-    torch::Tensor edge_vec,
-    torch::Tensor edge_index,
-    torch::Tensor edge_mask,
-    torch::Tensor destination_order,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor source_order,
-    torch::Tensor source_row_ptr,
-    torch::Tensor n_node_per_frame,
-    c10::SymInt node_capacity,
-    bool want_atom_virial);
+// per-node virial. A non-empty ``edge_spin_gradient`` adds the per-source total
+// of the magnetic cotangent, which shares the source grouping the force
+// reduction already walks. Returns (force (N, 3), atom_virial (N, 3, 3) or
+// empty, virial (nf, 3, 3), magnetic_force (N, 3) or empty).
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+edge_force_virial(torch::Tensor g_e,
+                  torch::Tensor edge_vec,
+                  torch::Tensor edge_index,
+                  torch::Tensor edge_mask,
+                  torch::Tensor destination_order,
+                  torch::Tensor destination_row_ptr,
+                  torch::Tensor source_order,
+                  torch::Tensor source_row_ptr,
+                  torch::Tensor n_node_per_frame,
+                  torch::Tensor edge_spin_gradient,
+                  c10::SymInt node_capacity,
+                  bool want_atom_virial);

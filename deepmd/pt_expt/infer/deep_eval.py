@@ -1823,7 +1823,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        if self.metadata.get("lower_input_kind") == "graph":
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa4c_canonical"):
             # Native-spin (NeighborGraph route): no virtual atoms and no
             # extended/nlist ABI at all -- dispatch to the graph-native fast
             # path (mirrors _eval_model's dispatch to _eval_model_graph for
@@ -2102,22 +2102,70 @@ class DeepEval(DeepEvalBackend):
             # the same axis as ``atype``/``spin`` (mirrors _eval_model_graph).
             aparam_t = aparam_t.reshape(nframes * natoms, -1)
 
-        model_inputs = (
-            atype_t,
-            n_node_t,
-            n_node_t,
-            edge_index_t,
-            edge_vec_t,
-            edge_mask_t,
-            destination_order_t,
-            destination_row_ptr_t,
-            source_order_t,
-            source_row_ptr_t,
-            spin_t,
-            fparam_t,
-            aparam_t,
-            self._make_charge_spin_input(nframes, charge_spin),
-        )
+        if self.metadata.get("lower_input_kind") == "dpa4c_canonical":
+            # The compact canonical ABI has no conditional tail, so the moment
+            # is the last slot rather than the eleventh, and any conditioning
+            # input the artifact cannot receive is an error rather than a
+            # silently dropped argument.
+            if (
+                self.get_dim_fparam() > 0
+                or self.get_dim_aparam() > 0
+                or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
+            ):
+                raise NotImplementedError(
+                    "compact canonical artifacts carry no fparam/aparam/"
+                    "charge_spin inputs; a model requiring them must not be "
+                    "frozen with a canonical lower kind."
+                )
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
+            from deepmd.pt_expt.utils.canonical_graph import (
+                canonical_graph_from_neighbor_graph,
+            )
+
+            compact = canonical_graph_from_neighbor_graph(
+                NeighborGraph(
+                    n_node=n_node_t,
+                    edge_index=edge_index_t,
+                    edge_vec=edge_vec_t,
+                    edge_mask=edge_mask_t,
+                    n_local=n_node_t,
+                    destination_order=destination_order_t,
+                    destination_row_ptr=destination_row_ptr_t,
+                    source_order=source_order_t,
+                    source_row_ptr=source_row_ptr_t,
+                    destination_sorted=bool(graph.destination_sorted),
+                )
+            )
+            model_inputs = (
+                atype_t,
+                compact.n_node,
+                compact.n_local,
+                compact.source,
+                compact.edge_vec,
+                compact.destination_row_ptr,
+                compact.source_row_ptr,
+                compact.source_order,
+                spin_t.to(torch.float32),
+            )
+        else:
+            model_inputs = (
+                atype_t,
+                n_node_t,
+                n_node_t,
+                edge_index_t,
+                edge_vec_t,
+                edge_mask_t,
+                destination_order_t,
+                destination_row_ptr_t,
+                source_order_t,
+                source_row_ptr_t,
+                spin_t,
+                fparam_t,
+                aparam_t,
+                self._make_charge_spin_input(nframes, charge_spin),
+            )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

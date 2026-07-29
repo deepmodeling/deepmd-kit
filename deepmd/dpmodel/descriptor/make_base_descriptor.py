@@ -344,6 +344,21 @@ def make_base_descriptor(
             """
             raise NotImplementedError("This descriptor doesn't support compression!")
 
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``: a tabulated embedding starts its
+                table at the shortest distance the training data contains, so
+                the caller must measure it first. ``False`` for descriptors
+                whose table domain is fixed analytically; the caller may then
+                skip the neighbor-statistics pass, which is a dense all-pairs
+                computation over the training data.
+            """
+            return True
+
         @abstractmethod
         def fwd(
             self,

@@ -38,33 +38,35 @@ struct Dimensions {
   int output_width;
   int degree_one;
   int coupling_records;
+  int spin_channels;
 };
 
-template <int Channels, int Lmax>
+template <int Channels, int Lmax, bool HasSpin>
 Dimensions dimensions_of() {
-  using P = Profile<Channels, Lmax>;
+  using P = Profile<Channels, Lmax, HasSpin>;
   return {P::MomentWidth, P::OutputWidth, P::C1,
-          deepmd_dpa4c::coupling_record_count(Lmax)};
+          deepmd_dpa4c::coupling_record_count(Lmax), P::Cs};
 }
 
-template <int Channels>
+template <int Channels, bool HasSpin>
 Dimensions dimensions_for(int lmax) {
   switch (lmax) {
     case 2:
-      return dimensions_of<Channels, 2>();
+      return dimensions_of<Channels, 2, HasSpin>();
     case 3:
-      return dimensions_of<Channels, 3>();
+      return dimensions_of<Channels, 3, HasSpin>();
     case 4:
-      return dimensions_of<Channels, 4>();
+      return dimensions_of<Channels, 4, HasSpin>();
     default:
       TORCH_CHECK(false, "dpa4c_graph_compress: unsupported lmax ", lmax);
   }
 }
 
-Dimensions profile_dimensions(int channels, int lmax) {
-#define DPA4C_DIMENSIONS(width)         \
-  if (channels == width) {              \
-    return dimensions_for<width>(lmax); \
+Dimensions profile_dimensions(int channels, int lmax, bool has_spin) {
+#define DPA4C_DIMENSIONS(width)                           \
+  if (channels == width) {                                \
+    return has_spin ? dimensions_for<width, true>(lmax)   \
+                    : dimensions_for<width, false>(lmax); \
   }
   DPA4C_FOR_EACH_CHANNEL(DPA4C_DIMENSIONS)
 #undef DPA4C_DIMENSIONS
@@ -107,6 +109,10 @@ struct Payload {
   torch::Tensor coupling_value;
   torch::Tensor output_mean;
   torch::Tensor output_inv_std;
+  // Native spin inputs. Empty together when the descriptor is spin free.
+  torch::Tensor spin;
+  torch::Tensor spin_pair;
+  torch::Tensor spin_type;
   bool canonical;
   int64_t lmax;
   double table_stride;
@@ -229,7 +235,44 @@ Arguments build_arguments(const Payload& payload,
               "dpa4c_graph_compress: destination_row_ptr must have N + 1 "
               "entries");
 
+  // === Native spin ===
+  // The three inputs are present together or not at all. ``spin`` spans the
+  // absolute node axis because neighbour lookups address it with source
+  // indices, and ``spin_type`` packs the four per-type scalars a node reads.
+  const bool has_spin = payload.spin.numel() != 0;
+  if (has_spin) {
+    for (const torch::Tensor* tensor :
+         {&payload.spin, &payload.spin_pair, &payload.spin_type}) {
+      TORCH_CHECK(tensor->is_cuda() && tensor->device() == device &&
+                      tensor->is_contiguous() &&
+                      tensor->scalar_type() == torch::kFloat32,
+                  "dpa4c_graph_compress: spin inputs must be contiguous fp32 "
+                  "CUDA tensors on the device of edge_vec");
+    }
+    TORCH_CHECK(payload.spin.dim() == 2 && payload.spin.size(1) == 3 &&
+                    payload.spin.size(0) == payload.atype.size(0),
+                "dpa4c_graph_compress: spin must have shape (N_all, 3)");
+    TORCH_CHECK(
+        payload.spin_pair.sizes() ==
+            torch::IntArrayRef({static_cast<long>(type_count) * type_count,
+                                widths.spin_channels, 2}),
+        "dpa4c_graph_compress: invalid ordered spin cache shape");
+    TORCH_CHECK(payload.spin_type.sizes() ==
+                    torch::IntArrayRef({static_cast<long>(type_count), 4}),
+                "dpa4c_graph_compress: invalid per-type spin table shape");
+  } else {
+    TORCH_CHECK(
+        payload.spin_pair.numel() == 0 && payload.spin_type.numel() == 0,
+        "dpa4c_graph_compress: spin tables require a spin input");
+  }
+
   Arguments arguments;
+  arguments.has_spin = has_spin;
+  arguments.spin = has_spin ? payload.spin.data_ptr<float>() : nullptr;
+  arguments.spin_pair =
+      has_spin ? payload.spin_pair.data_ptr<float>() : nullptr;
+  arguments.spin_type =
+      has_spin ? payload.spin_type.data_ptr<float>() : nullptr;
   arguments.node_count = node_count;
   arguments.edge_count = edge_vec.size(0);
   arguments.lmax = static_cast<int>(payload.lmax);
@@ -289,6 +332,9 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
     torch::Tensor coupling_value,
     torch::Tensor output_mean,
     torch::Tensor output_inv_std,
+    torch::Tensor spin,
+    torch::Tensor spin_pair,
+    torch::Tensor spin_type,
     bool canonical,
     int64_t lmax,
     double table_stride,
@@ -296,13 +342,30 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
     double rcut,
     double eps,
     double degree_floor) {
-  const Payload payload{edge_index,          edge_mask,     destination_order,
-                        destination_row_ptr, atype,         table,
-                        pair_film,           pair_mixing,   type_embedding,
-                        readout_matrices,    coupling_meta, coupling_entry,
-                        coupling_value,      output_mean,   output_inv_std,
-                        canonical,           lmax,          table_stride,
-                        table_max,           rcut,          eps,
+  const Payload payload{edge_index,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        atype,
+                        table,
+                        pair_film,
+                        pair_mixing,
+                        type_embedding,
+                        readout_matrices,
+                        coupling_meta,
+                        coupling_entry,
+                        coupling_value,
+                        output_mean,
+                        output_inv_std,
+                        spin,
+                        spin_pair,
+                        spin_type,
+                        canonical,
+                        lmax,
+                        table_stride,
+                        table_max,
+                        rcut,
+                        eps,
                         degree_floor};
   const long node_count = destination_row_ptr.numel() - 1;
   // The destination row pointer defines the node axis; the type table must
@@ -312,7 +375,7 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
               "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax));
+      profile_dimensions(channels, static_cast<int>(lmax), spin.numel() != 0);
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -331,41 +394,62 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
   return {descriptor, state};
 }
 
-torch::Tensor dpa4c_graph_compress_backward_impl(
-    torch::Tensor descriptor_gradient,
-    torch::Tensor state,
-    torch::Tensor edge_vec,
-    torch::Tensor edge_index,
-    torch::Tensor edge_mask,
-    torch::Tensor destination_order,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor atype,
-    torch::Tensor table,
-    torch::Tensor pair_film,
-    torch::Tensor pair_mixing,
-    torch::Tensor type_embedding,
-    torch::Tensor readout_matrices,
-    torch::Tensor coupling_meta,
-    torch::Tensor coupling_entry,
-    torch::Tensor coupling_value,
-    torch::Tensor output_mean,
-    torch::Tensor output_inv_std,
-    bool canonical,
-    int64_t lmax,
-    double table_stride,
-    double table_max,
-    double rcut,
-    double eps,
-    double degree_floor,
-    bool reuse_state) {
-  const Payload payload{edge_index,          edge_mask,     destination_order,
-                        destination_row_ptr, atype,         table,
-                        pair_film,           pair_mixing,   type_embedding,
-                        readout_matrices,    coupling_meta, coupling_entry,
-                        coupling_value,      output_mean,   output_inv_std,
-                        canonical,           lmax,          table_stride,
-                        table_max,           rcut,          eps,
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
+                                   torch::Tensor state,
+                                   torch::Tensor edge_vec,
+                                   torch::Tensor edge_index,
+                                   torch::Tensor edge_mask,
+                                   torch::Tensor destination_order,
+                                   torch::Tensor destination_row_ptr,
+                                   torch::Tensor atype,
+                                   torch::Tensor table,
+                                   torch::Tensor pair_film,
+                                   torch::Tensor pair_mixing,
+                                   torch::Tensor type_embedding,
+                                   torch::Tensor readout_matrices,
+                                   torch::Tensor coupling_meta,
+                                   torch::Tensor coupling_entry,
+                                   torch::Tensor coupling_value,
+                                   torch::Tensor output_mean,
+                                   torch::Tensor output_inv_std,
+                                   torch::Tensor spin,
+                                   torch::Tensor spin_pair,
+                                   torch::Tensor spin_type,
+                                   bool canonical,
+                                   int64_t lmax,
+                                   double table_stride,
+                                   double table_max,
+                                   double rcut,
+                                   double eps,
+                                   double degree_floor,
+                                   bool reuse_state) {
+  const Payload payload{edge_index,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        atype,
+                        table,
+                        pair_film,
+                        pair_mixing,
+                        type_embedding,
+                        readout_matrices,
+                        coupling_meta,
+                        coupling_entry,
+                        coupling_value,
+                        output_mean,
+                        output_inv_std,
+                        spin,
+                        spin_pair,
+                        spin_type,
+                        canonical,
+                        lmax,
+                        table_stride,
+                        table_max,
+                        rcut,
+                        eps,
                         degree_floor};
+  const bool has_spin = spin.numel() != 0;
   const long node_count = destination_row_ptr.numel() - 1;
   // The destination row pointer defines the node axis; the type table must
   // describe exactly that axis, or the two disagree on how many nodes exist.
@@ -375,7 +459,7 @@ torch::Tensor dpa4c_graph_compress_backward_impl(
       "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax));
+      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress_backward: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -390,8 +474,16 @@ torch::Tensor dpa4c_graph_compress_backward_impl(
           descriptor_gradient.device() == edge_vec.device() &&
           descriptor_gradient.numel() == node_count * widths.output_width,
       "dpa4c_graph_compress_backward: invalid descriptor gradient");
+  auto float_options = edge_vec.options().dtype(torch::kFloat32);
+  // Every absent output receives its own allocation. The schema declares three
+  // unannotated results, so returning one empty tensor in two slots would
+  // introduce an alias the schema does not describe, which is undefined under
+  // functionalization for all three inputs rather than only for spin.
+  const auto absent = [&float_options] {
+    return torch::empty({0}, float_options);
+  };
   if (node_count == 0) {
-    return torch::zeros_like(edge_vec);
+    return {torch::zeros_like(edge_vec), absent(), absent()};
   }
   auto descriptor_gradient_float =
       descriptor_gradient.to(torch::kFloat32).contiguous();
@@ -400,47 +492,64 @@ torch::Tensor dpa4c_graph_compress_backward_impl(
   // The moment cotangent has exactly the layout of the saved state, so an
   // inference caller that no longer needs the state can reuse its storage.
   auto moment_gradient = reuse_state ? state : torch::empty_like(state);
+  // The on-site magnetic gradient closes in the node kernel; the neighbour
+  // part is emitted per edge and reduced onto source nodes by the shared edge
+  // assembly, which already walks the source CSR for the conservative force.
+  auto spin_gradient =
+      has_spin ? torch::empty({node_count, 3}, float_options) : absent();
+  auto edge_spin_gradient =
+      has_spin ? torch::empty_like(edge_vec_float) : absent();
   Arguments arguments =
       build_arguments(payload, edge_vec_float, channels, widths);
   arguments.descriptor_gradient = descriptor_gradient_float.data_ptr<float>();
   arguments.state = state.data_ptr<float>();
   arguments.moment_gradient = moment_gradient.data_ptr<float>();
   arguments.edge_gradient = edge_gradient.data_ptr<float>();
+  if (has_spin) {
+    arguments.spin_gradient = spin_gradient.data_ptr<float>();
+    arguments.edge_spin_gradient = edge_spin_gradient.data_ptr<float>();
+  }
   dispatch(channels, true, arguments, at::cuda::getCurrentCUDAStream());
-  return edge_gradient.to(edge_vec.scalar_type());
+  return {edge_gradient.to(edge_vec.scalar_type()), spin_gradient,
+          edge_spin_gradient};
 }
 
-torch::Tensor dpa4c_graph_compress_backward(torch::Tensor descriptor_gradient,
-                                            torch::Tensor state,
-                                            torch::Tensor edge_vec,
-                                            torch::Tensor edge_index,
-                                            torch::Tensor edge_mask,
-                                            torch::Tensor destination_order,
-                                            torch::Tensor destination_row_ptr,
-                                            torch::Tensor atype,
-                                            torch::Tensor table,
-                                            torch::Tensor pair_film,
-                                            torch::Tensor pair_mixing,
-                                            torch::Tensor type_embedding,
-                                            torch::Tensor readout_matrices,
-                                            torch::Tensor coupling_meta,
-                                            torch::Tensor coupling_entry,
-                                            torch::Tensor coupling_value,
-                                            torch::Tensor output_mean,
-                                            torch::Tensor output_inv_std,
-                                            bool canonical,
-                                            int64_t lmax,
-                                            double table_stride,
-                                            double table_max,
-                                            double rcut,
-                                            double eps,
-                                            double degree_floor) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dpa4c_graph_compress_backward(torch::Tensor descriptor_gradient,
+                              torch::Tensor state,
+                              torch::Tensor edge_vec,
+                              torch::Tensor edge_index,
+                              torch::Tensor edge_mask,
+                              torch::Tensor destination_order,
+                              torch::Tensor destination_row_ptr,
+                              torch::Tensor atype,
+                              torch::Tensor table,
+                              torch::Tensor pair_film,
+                              torch::Tensor pair_mixing,
+                              torch::Tensor type_embedding,
+                              torch::Tensor readout_matrices,
+                              torch::Tensor coupling_meta,
+                              torch::Tensor coupling_entry,
+                              torch::Tensor coupling_value,
+                              torch::Tensor output_mean,
+                              torch::Tensor output_inv_std,
+                              torch::Tensor spin,
+                              torch::Tensor spin_pair,
+                              torch::Tensor spin_type,
+                              bool canonical,
+                              int64_t lmax,
+                              double table_stride,
+                              double table_max,
+                              double rcut,
+                              double eps,
+                              double degree_floor) {
   return dpa4c_graph_compress_backward_impl(
       descriptor_gradient, state, edge_vec, edge_index, edge_mask,
       destination_order, destination_row_ptr, atype, table, pair_film,
       pair_mixing, type_embedding, readout_matrices, coupling_meta,
-      coupling_entry, coupling_value, output_mean, output_inv_std, canonical,
-      lmax, table_stride, table_max, rcut, eps, degree_floor, false);
+      coupling_entry, coupling_value, output_mean, output_inv_std, spin,
+      spin_pair, spin_type, canonical, lmax, table_stride, table_max, rcut, eps,
+      degree_floor, false);
 }
 
 std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
@@ -458,6 +567,9 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
     torch::Tensor coupling_value,
     torch::Tensor output_mean,
     torch::Tensor output_inv_std,
+    torch::Tensor spin,
+    torch::Tensor spin_pair,
+    torch::Tensor spin_type,
     int64_t lmax,
     double table_stride,
     double table_max,
@@ -469,38 +581,41 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
               "edge axis");
   auto edge_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
   auto destination_order = torch::empty({0}, source.options());
-  return dpa4c_graph_compress(edge_vec, source, edge_mask, destination_order,
-                              destination_row_ptr, atype, table, pair_film,
-                              pair_mixing, type_embedding, readout_matrices,
-                              coupling_meta, coupling_entry, coupling_value,
-                              output_mean, output_inv_std, true, lmax,
-                              table_stride, table_max, rcut, eps, degree_floor);
+  return dpa4c_graph_compress(
+      edge_vec, source, edge_mask, destination_order, destination_row_ptr,
+      atype, table, pair_film, pair_mixing, type_embedding, readout_matrices,
+      coupling_meta, coupling_entry, coupling_value, output_mean,
+      output_inv_std, spin, spin_pair, spin_type, true, lmax, table_stride,
+      table_max, rcut, eps, degree_floor);
 }
 
-torch::Tensor dpa4c_canonical_compress_backward_common(
-    torch::Tensor descriptor_gradient,
-    torch::Tensor state,
-    torch::Tensor edge_vec,
-    torch::Tensor source,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor atype,
-    torch::Tensor table,
-    torch::Tensor pair_film,
-    torch::Tensor pair_mixing,
-    torch::Tensor type_embedding,
-    torch::Tensor readout_matrices,
-    torch::Tensor coupling_meta,
-    torch::Tensor coupling_entry,
-    torch::Tensor coupling_value,
-    torch::Tensor output_mean,
-    torch::Tensor output_inv_std,
-    int64_t lmax,
-    double table_stride,
-    double table_max,
-    double rcut,
-    double eps,
-    double degree_floor,
-    bool reuse_state) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dpa4c_canonical_compress_backward_common(torch::Tensor descriptor_gradient,
+                                         torch::Tensor state,
+                                         torch::Tensor edge_vec,
+                                         torch::Tensor source,
+                                         torch::Tensor destination_row_ptr,
+                                         torch::Tensor atype,
+                                         torch::Tensor table,
+                                         torch::Tensor pair_film,
+                                         torch::Tensor pair_mixing,
+                                         torch::Tensor type_embedding,
+                                         torch::Tensor readout_matrices,
+                                         torch::Tensor coupling_meta,
+                                         torch::Tensor coupling_entry,
+                                         torch::Tensor coupling_value,
+                                         torch::Tensor output_mean,
+                                         torch::Tensor output_inv_std,
+                                         torch::Tensor spin,
+                                         torch::Tensor spin_pair,
+                                         torch::Tensor spin_type,
+                                         int64_t lmax,
+                                         double table_stride,
+                                         double table_max,
+                                         double rcut,
+                                         double eps,
+                                         double degree_floor,
+                                         bool reuse_state) {
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa4c_canonical_compress_backward: source and edge_vec must "
               "share the edge axis");
@@ -510,70 +625,77 @@ torch::Tensor dpa4c_canonical_compress_backward_common(
       descriptor_gradient, state, edge_vec, source, edge_mask,
       destination_order, destination_row_ptr, atype, table, pair_film,
       pair_mixing, type_embedding, readout_matrices, coupling_meta,
-      coupling_entry, coupling_value, output_mean, output_inv_std, true, lmax,
-      table_stride, table_max, rcut, eps, degree_floor, reuse_state);
+      coupling_entry, coupling_value, output_mean, output_inv_std, spin,
+      spin_pair, spin_type, true, lmax, table_stride, table_max, rcut, eps,
+      degree_floor, reuse_state);
 }
 
-torch::Tensor dpa4c_canonical_compress_backward(
-    torch::Tensor descriptor_gradient,
-    torch::Tensor state,
-    torch::Tensor edge_vec,
-    torch::Tensor source,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor atype,
-    torch::Tensor table,
-    torch::Tensor pair_film,
-    torch::Tensor pair_mixing,
-    torch::Tensor type_embedding,
-    torch::Tensor readout_matrices,
-    torch::Tensor coupling_meta,
-    torch::Tensor coupling_entry,
-    torch::Tensor coupling_value,
-    torch::Tensor output_mean,
-    torch::Tensor output_inv_std,
-    int64_t lmax,
-    double table_stride,
-    double table_max,
-    double rcut,
-    double eps,
-    double degree_floor) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dpa4c_canonical_compress_backward(torch::Tensor descriptor_gradient,
+                                  torch::Tensor state,
+                                  torch::Tensor edge_vec,
+                                  torch::Tensor source,
+                                  torch::Tensor destination_row_ptr,
+                                  torch::Tensor atype,
+                                  torch::Tensor table,
+                                  torch::Tensor pair_film,
+                                  torch::Tensor pair_mixing,
+                                  torch::Tensor type_embedding,
+                                  torch::Tensor readout_matrices,
+                                  torch::Tensor coupling_meta,
+                                  torch::Tensor coupling_entry,
+                                  torch::Tensor coupling_value,
+                                  torch::Tensor output_mean,
+                                  torch::Tensor output_inv_std,
+                                  torch::Tensor spin,
+                                  torch::Tensor spin_pair,
+                                  torch::Tensor spin_type,
+                                  int64_t lmax,
+                                  double table_stride,
+                                  double table_max,
+                                  double rcut,
+                                  double eps,
+                                  double degree_floor) {
   return dpa4c_canonical_compress_backward_common(
       descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype,
       table, pair_film, pair_mixing, type_embedding, readout_matrices,
       coupling_meta, coupling_entry, coupling_value, output_mean,
-      output_inv_std, lmax, table_stride, table_max, rcut, eps, degree_floor,
-      false);
+      output_inv_std, spin, spin_pair, spin_type, lmax, table_stride, table_max,
+      rcut, eps, degree_floor, false);
 }
 
-torch::Tensor dpa4c_canonical_compress_backward_inplace(
-    torch::Tensor descriptor_gradient,
-    torch::Tensor state,
-    torch::Tensor edge_vec,
-    torch::Tensor source,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor atype,
-    torch::Tensor table,
-    torch::Tensor pair_film,
-    torch::Tensor pair_mixing,
-    torch::Tensor type_embedding,
-    torch::Tensor readout_matrices,
-    torch::Tensor coupling_meta,
-    torch::Tensor coupling_entry,
-    torch::Tensor coupling_value,
-    torch::Tensor output_mean,
-    torch::Tensor output_inv_std,
-    int64_t lmax,
-    double table_stride,
-    double table_max,
-    double rcut,
-    double eps,
-    double degree_floor) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dpa4c_canonical_compress_backward_inplace(torch::Tensor descriptor_gradient,
+                                          torch::Tensor state,
+                                          torch::Tensor edge_vec,
+                                          torch::Tensor source,
+                                          torch::Tensor destination_row_ptr,
+                                          torch::Tensor atype,
+                                          torch::Tensor table,
+                                          torch::Tensor pair_film,
+                                          torch::Tensor pair_mixing,
+                                          torch::Tensor type_embedding,
+                                          torch::Tensor readout_matrices,
+                                          torch::Tensor coupling_meta,
+                                          torch::Tensor coupling_entry,
+                                          torch::Tensor coupling_value,
+                                          torch::Tensor output_mean,
+                                          torch::Tensor output_inv_std,
+                                          torch::Tensor spin,
+                                          torch::Tensor spin_pair,
+                                          torch::Tensor spin_type,
+                                          int64_t lmax,
+                                          double table_stride,
+                                          double table_max,
+                                          double rcut,
+                                          double eps,
+                                          double degree_floor) {
   return dpa4c_canonical_compress_backward_common(
       descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype,
       table, pair_film, pair_mixing, type_embedding, readout_matrices,
       coupling_meta, coupling_entry, coupling_value, output_mean,
-      output_inv_std, lmax, table_stride, table_max, rcut, eps, degree_floor,
-      true);
+      output_inv_std, spin, spin_pair, spin_type, lmax, table_stride, table_max,
+      rcut, eps, degree_floor, true);
 }
 
 // Energy and edge cotangent of one compressed inference step, evaluated over
@@ -589,7 +711,7 @@ torch::Tensor dpa4c_canonical_compress_backward_inplace(
 //
 // The loop lives here rather than in Python because its trip count follows a
 // dynamic node count, which export cannot trace.
-std::tuple<torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
                                          torch::Tensor source,
                                          torch::Tensor destination_row_ptr,
@@ -604,6 +726,9 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
                                          torch::Tensor coupling_value,
                                          torch::Tensor output_mean,
                                          torch::Tensor output_inv_std,
+                                         torch::Tensor spin,
+                                         torch::Tensor spin_pair,
+                                         torch::Tensor spin_type,
                                          int64_t lmax,
                                          double table_stride,
                                          double table_max,
@@ -631,8 +756,9 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
               "dpa4c_canonical_compress_energy_gradient: atype and "
               "destination_row_ptr describe different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
+  const bool has_spin = spin.numel() != 0;
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax));
+      profile_dimensions(channels, static_cast<int>(lmax), has_spin);
   auto f32 = edge_vec.options().dtype(torch::kFloat32);
   auto edge_vec_float = edge_vec.to(torch::kFloat32).contiguous();
   auto energy =
@@ -641,8 +767,21 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
   // would clear it never runs.
   auto edge_gradient = node_count == 0 ? torch::zeros_like(edge_vec_float)
                                        : torch::empty_like(edge_vec_float);
+  // Every absent output receives its own allocation, so that no two of the
+  // four unannotated results share storage.
+  const auto absent = [&f32] { return torch::empty({0}, f32); };
+  // The on-site magnetic gradient is node local, so a run writes only its own
+  // rows. The neighbour part belongs to source nodes that other runs own, so
+  // it is materialized over the whole edge axis and reduced once afterwards,
+  // exactly like the conservative edge cotangent.
+  auto spin_gradient = has_spin ? torch::empty({node_count, 3}, f32) : absent();
+  auto edge_spin_gradient =
+      has_spin ? (node_count == 0 ? torch::zeros_like(edge_vec_float)
+                                  : torch::empty_like(edge_vec_float))
+               : absent();
   if (node_count == 0) {
-    return {energy, edge_gradient.to(edge_vec.scalar_type())};
+    return {energy, edge_gradient.to(edge_vec.scalar_type()), spin_gradient,
+            edge_spin_gradient};
   }
   auto seed_c = seed.contiguous();
   TORCH_CHECK(
@@ -672,29 +811,19 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
   for (long begin = 0; begin < node_count; begin += run) {
     const long count = std::min(run, node_count - begin);
     const Payload payload{
-        source,
-        empty_mask,
-        empty_index,
-        destination_row_ptr.slice(0, begin, begin + count + 1),
-        atype,
-        table,
-        pair_film,
-        pair_mixing,
-        type_embedding,
-        readout_matrices,
-        coupling_meta,
-        coupling_entry,
-        coupling_value,
-        output_mean,
-        output_inv_std,
-        true,
-        lmax,
-        table_stride,
-        table_max,
-        rcut,
-        eps,
-        degree_floor,
-        begin};
+        source,         empty_mask,
+        empty_index,    destination_row_ptr.slice(0, begin, begin + count + 1),
+        atype,          table,
+        pair_film,      pair_mixing,
+        type_embedding, readout_matrices,
+        coupling_meta,  coupling_entry,
+        coupling_value, output_mean,
+        output_inv_std, spin,
+        spin_pair,      spin_type,
+        true,           lmax,
+        table_stride,   table_max,
+        rcut,           eps,
+        degree_floor,   begin};
     Arguments arguments =
         build_arguments(payload, edge_vec_float, channels, widths);
     arguments.descriptor = descriptor.data_ptr<float>();
@@ -716,12 +845,18 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
     arguments.state = state.data_ptr<float>();
     arguments.moment_gradient = state.data_ptr<float>();
     arguments.edge_gradient = edge_gradient.data_ptr<float>();
+    if (has_spin) {
+      // Node-indexed like the energy, so the run addresses its own slice.
+      arguments.spin_gradient = spin_gradient.data_ptr<float>() + begin * 3;
+      arguments.edge_spin_gradient = edge_spin_gradient.data_ptr<float>();
+    }
     // Only the final run reaches the reserved edge slots; its row pointer ends
     // at the last physical edge, which is exactly where the padding begins.
     arguments.clear_padding = begin + count == node_count;
     dispatch(channels, true, arguments, stream);
   }
-  return {energy, edge_gradient.to(edge_vec.scalar_type())};
+  return {energy, edge_gradient.to(edge_vec.scalar_type()), spin_gradient,
+          edge_spin_gradient};
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
@@ -732,6 +867,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, "
       "bool canonical, int lmax, float table_stride, float table_max, "
       "float rcut, float eps, float degree_floor) "
       "-> (Tensor descriptor, Tensor state)");
@@ -743,8 +879,11 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor table, Tensor pair_film, Tensor pair_mixing, "
       "Tensor type_embedding, Tensor readout_matrices, Tensor coupling_meta, "
       "Tensor coupling_entry, Tensor coupling_value, Tensor output_mean, "
-      "Tensor output_inv_std, bool canonical, int lmax, float table_stride, "
-      "float table_max, float rcut, float eps, float degree_floor) -> Tensor");
+      "Tensor output_inv_std, Tensor spin, Tensor spin_pair, "
+      "Tensor spin_type, bool canonical, int lmax, float table_stride, "
+      "float table_max, float rcut, float eps, float degree_floor) "
+      "-> (Tensor edge_gradient, Tensor spin_gradient, "
+      "Tensor edge_spin_gradient)");
   library.impl("dpa4c_graph_compress_backward", torch::kCUDA,
                &dpa4c_graph_compress_backward);
   library.def(
@@ -753,6 +892,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
       "float degree_floor) -> (Tensor descriptor, Tensor state)");
   library.impl("dpa4c_canonical_compress", torch::kCUDA,
@@ -764,8 +904,11 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor) -> Tensor");
+      "float degree_floor) "
+      "-> (Tensor edge_gradient, Tensor spin_gradient, "
+      "Tensor edge_spin_gradient)");
   library.impl("dpa4c_canonical_compress_backward", torch::kCUDA,
                &dpa4c_canonical_compress_backward);
   library.def(
@@ -775,8 +918,11 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
-      "float degree_floor) -> Tensor");
+      "float degree_floor) "
+      "-> (Tensor edge_gradient, Tensor spin_gradient, "
+      "Tensor edge_spin_gradient)");
   library.impl("dpa4c_canonical_compress_backward_inplace", torch::kCUDA,
                &dpa4c_canonical_compress_backward_inplace);
   library.def(
@@ -785,10 +931,13 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, "
       "int lmax, float table_stride, float table_max, float rcut, float eps, "
       "float degree_floor, Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, "
-      "Tensor seed, int tile) -> (Tensor energy, Tensor edge_gradient)");
+      "Tensor seed, int tile) "
+      "-> (Tensor energy, Tensor edge_gradient, Tensor spin_gradient, "
+      "Tensor edge_spin_gradient)");
   library.impl("dpa4c_canonical_compress_energy_gradient", torch::kCUDA,
                &dpa4c_canonical_compress_energy_gradient);
 }

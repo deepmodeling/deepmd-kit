@@ -2173,6 +2173,46 @@ void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
       charge_spin);
 }
 
+void DP_DeepSpinComputeCanonicalGraphGPU(DP_DeepSpin* dp,
+                                         double* d_atom_energy,
+                                         double* d_force,
+                                         double* d_force_mag,
+                                         double* d_atom_virial,
+                                         const int64_t* d_atype,
+                                         const uint32_t* d_source,
+                                         const float* d_edge_vec,
+                                         const int64_t* d_destination_row_ptr,
+                                         const int64_t* d_source_row_ptr,
+                                         const uint32_t* d_source_order,
+                                         const float* d_spin,
+                                         const int nloc,
+                                         const int nall_nodes,
+                                         const int64_t edge_storage) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.compute_canonical_graph_gpu(
+              d_atom_energy, d_force, d_force_mag, d_atom_virial, d_atype,
+              d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+              d_source_order, d_spin, nloc, nall_nodes, edge_storage));
+}
+
+bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp) {
+  try {
+    return dp->dp.uses_canonical_graph_inference();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
+bool DP_DeepSpinUsesNativeSpinScheme(DP_DeepSpin* dp) {
+  try {
+    return dp->dp.uses_native_spin_scheme();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
 // end multiple frames
 
 void DP_DeepPotComputeMixedType(DP_DeepPot* dp,

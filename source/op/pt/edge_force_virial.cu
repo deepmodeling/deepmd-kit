@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <tuple>
+#include <type_traits>
 
 namespace {
 
@@ -50,7 +51,7 @@ __global__ void build_source_order_kernel(long valid_edge_count,
   }
 }
 
-template <typename scalar_t, typename index_t>
+template <typename scalar_t, typename index_t, bool HasSpin>
 __global__ void edge_force_virial_kernel(
     long node_count,
     const scalar_t* __restrict__ edge_gradient,
@@ -60,8 +61,10 @@ __global__ void edge_force_virial_kernel(
     const long* __restrict__ destination_row_ptr,
     const index_t* __restrict__ source_order,
     const long* __restrict__ source_row_ptr,
+    const scalar_t* __restrict__ edge_spin_gradient,
     scalar_t* __restrict__ force,
-    scalar_t* __restrict__ node_virial) {
+    scalar_t* __restrict__ node_virial,
+    scalar_t* __restrict__ magnetic_force) {
   constexpr unsigned kWarpMask = 0xffffffffu;
   const int lane = threadIdx.x & 31;
   const int warp = threadIdx.x >> 5;
@@ -73,6 +76,13 @@ __global__ void edge_force_virial_kernel(
   scalar_t source_x = 0;
   scalar_t source_y = 0;
   scalar_t source_z = 0;
+  // The magnetic cotangent of an edge belongs to the node that sources it, the
+  // same grouping the force reduction already walks, so it rides the source
+  // loop and the warp fold rather than a second pass over the edge axis. The
+  // geometric instantiation carries neither the accumulators nor the fold.
+  scalar_t spin_x = 0;
+  scalar_t spin_y = 0;
+  scalar_t spin_z = 0;
   scalar_t virial[9] = {};
 
   if (node < node_count) {
@@ -108,6 +118,11 @@ __global__ void edge_force_virial_kernel(
       source_x += gx;
       source_y += gy;
       source_z += gz;
+      if constexpr (HasSpin) {
+        spin_x += edge_spin_gradient[edge * 3 + 0];
+        spin_y += edge_spin_gradient[edge * 3 + 1];
+        spin_z += edge_spin_gradient[edge * 3 + 2];
+      }
       virial[0] = fma(-gx, x, virial[0]);
       virial[1] = fma(-gx, y, virial[1]);
       virial[2] = fma(-gx, z, virial[2]);
@@ -128,6 +143,11 @@ __global__ void edge_force_virial_kernel(
     source_x += __shfl_down_sync(kWarpMask, source_x, offset);
     source_y += __shfl_down_sync(kWarpMask, source_y, offset);
     source_z += __shfl_down_sync(kWarpMask, source_z, offset);
+    if constexpr (HasSpin) {
+      spin_x += __shfl_down_sync(kWarpMask, spin_x, offset);
+      spin_y += __shfl_down_sync(kWarpMask, spin_y, offset);
+      spin_z += __shfl_down_sync(kWarpMask, spin_z, offset);
+    }
 #pragma unroll
     for (int component = 0; component < 9; ++component) {
       virial[component] +=
@@ -143,6 +163,11 @@ __global__ void edge_force_virial_kernel(
 #pragma unroll
     for (int component = 0; component < 9; ++component) {
       output[component] = virial[component];
+    }
+    if constexpr (HasSpin) {
+      magnetic_force[node * 3 + 0] = spin_x;
+      magnetic_force[node * 3 + 1] = spin_y;
+      magnetic_force[node * 3 + 2] = spin_z;
     }
   }
 }
@@ -275,23 +300,37 @@ void launch_force_virial(long node_count,
                          const torch::Tensor& source_order,
                          const torch::Tensor& source_row_ptr,
                          const torch::Tensor& frame_row_ptr,
+                         const torch::Tensor& edge_spin_gradient,
                          torch::Tensor& force,
                          torch::Tensor& node_virial,
+                         torch::Tensor& magnetic_force,
                          torch::Tensor& virial_partial,
                          torch::Tensor& virial,
                          cudaStream_t stream) {
   const int node_blocks =
       static_cast<int>((node_count + kWarpsPerBlock - 1) / kWarpsPerBlock);
-  edge_force_virial_kernel<scalar_t, index_t>
-      <<<node_blocks, kThreads, 0, stream>>>(
-          node_count, edge_gradient.data_ptr<scalar_t>(),
-          edge_vec.data_ptr<scalar_t>(),
-          edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
-          destination_order.numel() ? destination_order.data_ptr<index_t>()
-                                    : nullptr,
-          destination_row_ptr.data_ptr<long>(),
-          source_order.data_ptr<index_t>(), source_row_ptr.data_ptr<long>(),
-          force.data_ptr<scalar_t>(), node_virial.data_ptr<scalar_t>());
+  const bool has_spin = edge_spin_gradient.numel() != 0;
+  auto assemble = [&](auto spin_tag) {
+    edge_force_virial_kernel<scalar_t, index_t, decltype(spin_tag)::value>
+        <<<node_blocks, kThreads, 0, stream>>>(
+            node_count, edge_gradient.data_ptr<scalar_t>(),
+            edge_vec.data_ptr<scalar_t>(),
+            edge_mask.numel() ? edge_mask.data_ptr<bool>() : nullptr,
+            destination_order.numel() ? destination_order.data_ptr<index_t>()
+                                      : nullptr,
+            destination_row_ptr.data_ptr<long>(),
+            source_order.data_ptr<index_t>(), source_row_ptr.data_ptr<long>(),
+            edge_spin_gradient.numel() ? edge_spin_gradient.data_ptr<scalar_t>()
+                                       : nullptr,
+            force.data_ptr<scalar_t>(), node_virial.data_ptr<scalar_t>(),
+            magnetic_force.numel() ? magnetic_force.data_ptr<scalar_t>()
+                                   : nullptr);
+  };
+  if (has_spin) {
+    assemble(std::true_type{});
+  } else {
+    assemble(std::false_type{});
+  }
   FORCE_CHECK_LAUNCH("edge_force_virial node reduction");
 
   launch_frame_segment_sum<scalar_t, 9>(
@@ -299,17 +338,18 @@ void launch_force_virial(long node_count,
       virial_partial, virial.data_ptr<scalar_t>(), stream);
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
-    long node_count,
-    const torch::Tensor& edge_gradient,
-    const torch::Tensor& edge_vec,
-    const torch::Tensor& edge_mask,
-    const torch::Tensor& destination_order,
-    const torch::Tensor& destination_row_ptr,
-    const torch::Tensor& source_order,
-    const torch::Tensor& source_row_ptr,
-    const torch::Tensor& n_node_per_frame,
-    bool want_atom_virial) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+assemble_force_virial(long node_count,
+                      const torch::Tensor& edge_gradient,
+                      const torch::Tensor& edge_vec,
+                      const torch::Tensor& edge_mask,
+                      const torch::Tensor& destination_order,
+                      const torch::Tensor& destination_row_ptr,
+                      const torch::Tensor& source_order,
+                      const torch::Tensor& source_row_ptr,
+                      const torch::Tensor& n_node_per_frame,
+                      const torch::Tensor& edge_spin_gradient,
+                      bool want_atom_virial) {
   const long frame_count = n_node_per_frame.size(0);
   auto options = edge_gradient.options();
   auto force = torch::empty({node_count, 3}, options);
@@ -319,8 +359,10 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
                          ? atom_virial
                          : torch::empty({node_count, 3, 3}, options);
   auto virial = torch::zeros({frame_count, 3, 3}, options);
+  auto magnetic_force =
+      torch::empty({edge_spin_gradient.numel() ? node_count : 0, 3}, options);
   if (node_count == 0 || frame_count == 0) {
-    return {force, atom_virial, virial};
+    return {force, atom_virial, virial, magnetic_force};
   }
 
   auto frame_row_ptr = frame_row_pointer(n_node_per_frame);
@@ -335,23 +377,23 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> assemble_force_virial(
           launch_force_virial<scalar_t, int>(
               node_count, frame_count, edge_gradient, edge_vec, edge_mask,
               destination_order, destination_row_ptr, source_order,
-              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
-              virial, stream);
+              source_row_ptr, frame_row_ptr, edge_spin_gradient, force,
+              node_virial, magnetic_force, virial_partial, virial, stream);
         } else if (source_order.scalar_type() == torch::kUInt32) {
           launch_force_virial<scalar_t, std::uint32_t>(
               node_count, frame_count, edge_gradient, edge_vec, edge_mask,
               destination_order, destination_row_ptr, source_order,
-              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
-              virial, stream);
+              source_row_ptr, frame_row_ptr, edge_spin_gradient, force,
+              node_virial, magnetic_force, virial_partial, virial, stream);
         } else {
           launch_force_virial<scalar_t, long>(
               node_count, frame_count, edge_gradient, edge_vec, edge_mask,
               destination_order, destination_row_ptr, source_order,
-              source_row_ptr, frame_row_ptr, force, node_virial, virial_partial,
-              virial, stream);
+              source_row_ptr, frame_row_ptr, edge_spin_gradient, force,
+              node_virial, magnetic_force, virial_partial, virial, stream);
         }
       });
-  return {force, atom_virial, virial};
+  return {force, atom_virial, virial, magnetic_force};
 }
 
 }  // namespace
@@ -402,18 +444,19 @@ build_graph_csr(torch::Tensor edge_index,
   return {destination_order, destination_row_ptr, source_order, source_row_ptr};
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
-    torch::Tensor edge_gradient,
-    torch::Tensor edge_vec,
-    torch::Tensor edge_index,
-    torch::Tensor edge_mask,
-    torch::Tensor destination_order,
-    torch::Tensor destination_row_ptr,
-    torch::Tensor source_order,
-    torch::Tensor source_row_ptr,
-    torch::Tensor n_node_per_frame,
-    c10::SymInt node_capacity,
-    bool want_atom_virial) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+edge_force_virial(torch::Tensor edge_gradient,
+                  torch::Tensor edge_vec,
+                  torch::Tensor edge_index,
+                  torch::Tensor edge_mask,
+                  torch::Tensor destination_order,
+                  torch::Tensor destination_row_ptr,
+                  torch::Tensor source_order,
+                  torch::Tensor source_row_ptr,
+                  torch::Tensor n_node_per_frame,
+                  torch::Tensor edge_spin_gradient,
+                  c10::SymInt node_capacity,
+                  bool want_atom_virial) {
   const long node_count = node_capacity.expect_int();
   TORCH_CHECK(edge_gradient.is_cuda() && edge_vec.is_cuda() &&
                   edge_mask.is_cuda() && destination_order.is_cuda() &&
@@ -442,19 +485,28 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> edge_force_virial(
           destination_order.scalar_type() == source_order.scalar_type(),
       "edge_force_virial: destination_order and source_order must have the "
       "same int32, uint32, or int64 dtype");
+  TORCH_CHECK(
+      edge_spin_gradient.numel() == 0 ||
+          (edge_spin_gradient.is_cuda() && edge_spin_gradient.is_contiguous() &&
+           edge_spin_gradient.device() == edge_gradient.device() &&
+           edge_spin_gradient.sizes() == edge_gradient.sizes() &&
+           edge_spin_gradient.scalar_type() == edge_gradient.scalar_type()),
+      "edge_force_virial: edge_spin_gradient must be empty or match "
+      "the gradient in device, layout, shape and dtype");
   return assemble_force_virial(node_count, edge_gradient, edge_vec, edge_mask,
                                destination_order, destination_row_ptr,
                                source_order, source_row_ptr, n_node_per_frame,
-                               want_atom_virial);
+                               edge_spin_gradient, want_atom_virial);
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 canonical_edge_force_virial(torch::Tensor edge_gradient,
                             torch::Tensor edge_vec,
                             torch::Tensor destination_row_ptr,
                             torch::Tensor source_row_ptr,
                             torch::Tensor source_order,
                             torch::Tensor n_node_per_frame,
+                            torch::Tensor edge_spin_gradient,
                             c10::SymInt node_capacity,
                             bool want_atom_virial) {
   const long node_count = node_capacity.expect_int();
@@ -483,13 +535,21 @@ canonical_edge_force_virial(torch::Tensor edge_gradient,
                   source_row_ptr.numel() == node_count + 1,
               "canonical_edge_force_virial: row pointers must have N + 1 "
               "entries");
+  TORCH_CHECK(
+      edge_spin_gradient.numel() == 0 ||
+          (edge_spin_gradient.is_cuda() && edge_spin_gradient.is_contiguous() &&
+           edge_spin_gradient.device() == edge_gradient.device() &&
+           edge_spin_gradient.sizes() == edge_gradient.sizes() &&
+           edge_spin_gradient.scalar_type() == edge_gradient.scalar_type()),
+      "canonical_edge_force_virial: edge_spin_gradient must be empty "
+      "or match the gradient in device, layout, shape and dtype");
 
   auto edge_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
   auto destination_order = torch::empty({0}, source_order.options());
   return assemble_force_virial(node_count, edge_gradient, edge_vec, edge_mask,
                                destination_order, destination_row_ptr,
                                source_order, source_row_ptr, n_node_per_frame,
-                               want_atom_virial);
+                               edge_spin_gradient, want_atom_virial);
 }
 
 // Per-frame total of a scalar carried on the node axis, the energy being the
@@ -546,16 +606,19 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "edge_force_virial(Tensor edge_gradient, Tensor edge_vec, "
       "Tensor edge_index, Tensor edge_mask, Tensor destination_order, "
       "Tensor destination_row_ptr, Tensor source_order, Tensor source_row_ptr, "
-      "Tensor n_node_per_frame, SymInt node_capacity, "
-      "bool want_atom_virial) -> "
-      "(Tensor force, Tensor atom_virial, Tensor virial)");
+      "Tensor n_node_per_frame, Tensor edge_spin_gradient, "
+      "SymInt node_capacity, bool want_atom_virial) -> "
+      "(Tensor force, Tensor atom_virial, Tensor virial, "
+      "Tensor magnetic_force)");
   library.impl("edge_force_virial", torch::kCUDA, &edge_force_virial);
   library.def(
       "canonical_edge_force_virial(Tensor edge_gradient, Tensor edge_vec, "
       "Tensor destination_row_ptr, Tensor source_row_ptr, "
-      "Tensor source_order, Tensor n_node_per_frame, SymInt node_capacity, "
+      "Tensor source_order, Tensor n_node_per_frame, "
+      "Tensor edge_spin_gradient, SymInt node_capacity, "
       "bool want_atom_virial) -> "
-      "(Tensor force, Tensor atom_virial, Tensor virial)");
+      "(Tensor force, Tensor atom_virial, Tensor virial, "
+      "Tensor magnetic_force)");
   library.impl("canonical_edge_force_virial", torch::kCUDA,
                &canonical_edge_force_virial);
   library.def(

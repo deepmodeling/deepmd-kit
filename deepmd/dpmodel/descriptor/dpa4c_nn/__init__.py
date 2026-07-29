@@ -21,18 +21,26 @@ from .pair_film import (
 from .readout import (
     InvariantReadout,
 )
+from .spin import (
+    NEIGHBOR_QUADRUPOLE_CHANNELS,
+    SpinChannels,
+    derive_spin_channels,
+)
 
 __all__ = [
     "MAX_ANGULAR_DEGREE",
+    "NEIGHBOR_QUADRUPOLE_CHANNELS",
     "BispectrumLayout",
     "InvariantReadout",
     "OrderedPairFiLM",
+    "SpinChannels",
     "build_angular_basis",
     "build_bispectrum_layout",
     "build_moment_indices",
     "degree_offsets",
     "derive_bispectrum_ranks",
     "derive_degree_channels",
+    "derive_spin_channels",
     "enumerate_degree_triples",
     "packed_l2_to_stf",
 ]
