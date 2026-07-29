@@ -17,10 +17,24 @@ $ dp --tf train input.json
 ```
 :::
 
+:::{tab-item} TensorFlow 2 {{ tensorflow_icon }}
+
+```bash
+$ dp --tf2 train input.json
+```
+:::
+
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 $ dp --pt train input.json
+```
+:::
+
+:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
+
+```bash
+$ dp --pt-expt train input.json
 ```
 :::
 

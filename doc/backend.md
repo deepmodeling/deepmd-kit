@@ -2,10 +2,13 @@
 
 ## Supported backends
 
-DeePMD-kit supports multiple backends: TensorFlow and PyTorch.
+DeePMD-kit supports seven backends: TensorFlow, TensorFlow 2, PyTorch,
+PyTorch-Exportable, JAX, Paddle, and the NumPy-based DP reference backend.
 To use DeePMD-kit, you must install at least one backend.
 Each backend does not support all features.
-In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, and Paddle {{ paddle_icon }} icons are used to mark whether a backend supports a feature.
+In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch
+{{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, and DP
+{{ dpmodel_icon }} icons are used to mark whether a backend supports a feature.
 
 ### TensorFlow {{ tensorflow_icon }}
 
@@ -15,6 +18,20 @@ In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon 
 [TensorFlow](https://tensorflow.org) 2.8 is the first version to support Python 3.10.
 DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`tf.compat.v1`) in the graph mode.
 
+### TensorFlow 2 {{ tensorflow_icon }}
+
+- Model filename extension: `.savedmodeltf`
+- Checkpoint directory extension: `.tf2`
+
+The TensorFlow 2 backend uses the TensorFlow v2 eager API. Select it with
+`dp --tf2` (alias `dp --tensorflow2`). It supports training, including
+multi-task training and fine-tuning, freezing, compression, and testing.
+Training stores checkpoints in a directory named after the `save_ckpt` prefix
+with `.tf2` appended, such as `model.ckpt.tf2`.
+
+Setting [`DP_JIT`](env.md#envvar-DP_JIT) enables optional `tf.function` JIT
+compilation; depending on the workload, this may improve or reduce performance.
+
 ### PyTorch {{ pytorch_icon }}
 
 - Model filename extension: `.pth`
@@ -22,6 +39,25 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 
 [PyTorch](https://pytorch.org/) 2.1 or above is required.
 While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
+
+### PyTorch-Exportable {{ pytorch_icon }}
+
+- Model filename extensions: `.pte`, `.pt2`
+- Checkpoint filename extension: `.pt`
+
+Select this backend with `dp --pt-expt` (alias
+`dp --pytorch-exportable`). It uses PyTorch with the backend-independent model
+implementation and supports training, including multi-task training and
+fine-tuning, freezing, compression, change-bias, and testing. Training can read
+LMDB datasets, and Python inference can use the optional vesin neighbor-list
+implementation.
+
+Freezing exports a `torch.export` model. The dense neighbor-list lower form
+normally uses `.pte`, while the graph lower form uses an AOTInductor `.pt2`
+package. Use `--lower-kind graph` to request graph-native export for an eligible
+model; graph-capable DPA models may select that form automatically. The `.pt`
+checkpoint format uses DP-model parameter names ending in `.w` and `.b`, which
+allows DeePMD-kit to distinguish it from a regular PyTorch checkpoint.
 
 ### JAX {{ jax_icon }}
 
@@ -64,12 +100,16 @@ NumPy 1.21 or above is required.
 
 ### Training
 
-When training and freezing a model, you can use `dp --tf`, `dp --pt` or `dp --pd` in the command line to switch the backend.
+When training and freezing a model, use `dp --tf`, `dp --tf2`, `dp --pt`,
+`dp --pt-expt`, `dp --jax`, or `dp --pd` in the command line to switch the
+backend.
 
 ### Inference
 
 When doing inference, DeePMD-kit detects the backend from the model filename.
 For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD-kit will consider it using the TensorFlow backend.
+The same detection covers TensorFlow 2 `.savedmodeltf` models and
+PyTorch-Exportable `.pte` and `.pt2` models.
 
 ## Convert model files between backends
 

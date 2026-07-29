@@ -1,7 +1,8 @@
 # Compress a model {{ tensorflow_icon }} {{ pytorch_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+> **Supported backends**: TensorFlow and TensorFlow 2 {{ tensorflow_icon }},
+> PyTorch and PyTorch-Exportable {{ pytorch_icon }}
 
 ## Theory
 
@@ -70,11 +71,30 @@ dp compress -i graph.pb -o graph-compress.pb
 ```
 :::
 
+:::{tab-item} TensorFlow 2 {{ tensorflow_icon }}
+
+```bash
+dp --tf2 compress -i model.ckpt.tf2 -o model-compress.savedmodeltf
+```
+
+TensorFlow 2 compression reads a `.tf2` training checkpoint directory or a
+checkpoint prefix and writes a compressed `.savedmodeltf` model.
+:::
+
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 dp --pt compress -i model.pth -o model-compress.pth
 ```
+:::
+
+:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
+
+```bash
+dp --pt-expt compress -i model.pte -o model-compress.pte
+```
+
+Use matching `.pte` or `.pt2` suffixes to preserve the exported model form.
 :::
 
 ::::
