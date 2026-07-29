@@ -2,6 +2,7 @@
 import importlib
 import logging
 
+import pytest
 import torch
 
 import deepmd.env as common_env
@@ -12,14 +13,44 @@ def test_lmdb_num_workers_override(monkeypatch) -> None:
     assert common_env.get_lmdb_num_workers() == 12
 
 
-def test_lmdb_num_workers_rejects_invalid_override(monkeypatch) -> None:
-    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "-1")
-    try:
+@pytest.mark.parametrize(
+    ("configured", "expected_error"),
+    [
+        ("many", "must be a non-negative integer"),
+        ("-1", "must be non-negative"),
+    ],
+)
+def test_lmdb_num_workers_rejects_invalid_override(
+    monkeypatch,
+    configured: str,
+    expected_error: str,
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", configured)
+    with pytest.raises(ValueError, match=expected_error):
         common_env.get_lmdb_num_workers()
-    except ValueError as error:
-        assert "must be non-negative" in str(error)
-    else:
-        raise AssertionError("negative DP_LMDB_NUM_WORKERS was accepted")
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected_error"),
+    [("many", "positive integer"), ("0", "must be positive")],
+)
+def test_lmdb_num_workers_rejects_invalid_local_world_size(
+    monkeypatch,
+    configured: str,
+    expected_error: str,
+) -> None:
+    monkeypatch.delenv("DP_LMDB_NUM_WORKERS", raising=False)
+    monkeypatch.setenv("LOCAL_WORLD_SIZE", configured)
+    with pytest.raises(ValueError, match=expected_error):
+        common_env.get_lmdb_num_workers()
+
+
+def test_lmdb_num_workers_falls_back_without_affinity(monkeypatch) -> None:
+    monkeypatch.delenv("DP_LMDB_NUM_WORKERS", raising=False)
+    monkeypatch.delenv("LOCAL_WORLD_SIZE", raising=False)
+    monkeypatch.delattr(common_env.os, "sched_getaffinity", raising=False)
+    monkeypatch.setattr(common_env.os, "cpu_count", lambda: 12)
+    assert common_env.get_lmdb_num_workers() == 12
 
 
 def test_lmdb_num_workers_partitions_node_budget(monkeypatch) -> None:

@@ -747,7 +747,7 @@ class TestDistributedSameNlocBatchSampler:
     """Test DistributedSameNlocBatchSampler (pure logic, no torch.distributed)."""
 
     def test_disjoint_batches(self, multi_nloc_lmdb):
-        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=1)
         s0 = DistributedSameNlocBatchSampler(
             reader, rank=0, world_size=2, shuffle=True, seed=42
         )
@@ -776,10 +776,14 @@ class TestDistributedSameNlocBatchSampler:
 
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
         total = len(SameNlocBatchSampler(reader, shuffle=False))
-        dist_s = DistributedSameNlocBatchSampler(
-            reader, rank=0, world_size=2, shuffle=False, seed=0
-        )
-        assert len(dist_s) == math.ceil(total / 2)
+        samplers = [
+            DistributedSameNlocBatchSampler(
+                reader, rank=rank, world_size=4, shuffle=False, seed=0
+            )
+            for rank in range(4)
+        ]
+        assert {len(sampler) for sampler in samplers} == {math.ceil(total / 4)}
+        assert all(len(list(sampler)) == len(sampler) for sampler in samplers)
 
     def test_deterministic(self, multi_nloc_lmdb):
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
@@ -947,7 +951,7 @@ class TestAutoProbDataset:
             block_targets=ds._block_targets,
         )
         assert len(dist_sampler_rank0) == math.ceil(global_batches / 2)
-        assert len(dist_sampler_rank1) == global_batches // 2
+        assert len(dist_sampler_rank1) == math.ceil(global_batches / 2)
         assert len(dist_sampler_rank0) == len(list(dist_sampler_rank0))
         assert len(dist_sampler_rank1) == len(list(dist_sampler_rank1))
 
@@ -981,7 +985,7 @@ class TestAutoProbDataset:
         )
 
         assert calls == 1
-        expected_len = len(ds._batch_sampler) // 2
+        expected_len = (len(ds._batch_sampler) + 1) // 2
         assert len(dist_sampler) == expected_len
         assert calls == 1
 

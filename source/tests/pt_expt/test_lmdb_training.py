@@ -275,6 +275,40 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             batch = ds.get_batch()
             self.assertEqual(batch["coord"].shape, (2, 6, 3))
 
+    def test_distributed_batches_are_sharded_with_equal_epoch_lengths(self) -> None:
+        """Ranks cover the global pass without advancing epochs at different steps."""
+        systems = [
+            LmdbDataSystem(
+                lmdb_path=self.lmdb_path,
+                type_map=["O", "H"],
+                batch_size=3,
+                seed=7,
+                num_workers=0,
+                rank=rank,
+                world_size=2,
+            )
+            for rank in range(2)
+        ]
+        try:
+            self.assertEqual([system.nbatches for system in systems], [[3], [3]])
+            self.assertEqual([len(system._sampler) for system in systems], [2, 2])
+            batches = [
+                [system.get_batch()["fid"] for _ in range(len(system._sampler))]
+                for system in systems
+            ]
+        finally:
+            for system in systems:
+                system.close()
+
+        self.assertFalse(set(batches[0][0]) & set(batches[1][0]))
+        observed = {
+            frame_id
+            for rank_batches in batches
+            for batch in rank_batches
+            for frame_id in batch
+        }
+        self.assertEqual(observed, set(range(8)))
+
     def test_add_data_requirements_passthrough(self) -> None:
         ds = LmdbDataSystem(
             lmdb_path=self.lmdb_path,

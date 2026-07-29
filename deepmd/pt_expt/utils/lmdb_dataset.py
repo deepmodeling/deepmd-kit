@@ -14,6 +14,7 @@ from typing import (
 )
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    DistributedSameNlocBatchSampler,
     LmdbBatchIterator,
     LmdbDataReader,
     SameNlocBatchSampler,
@@ -37,10 +38,11 @@ class LmdbDataSystem:
     ``get_nsystems()``, and the ``nbatches``/``sys_probs`` pair from which the
     trainer derives an epoch length. The whole LMDB counts as one logical
     system. Internally uses :class:`LmdbDataReader` for I/O and
-    :class:`SameNlocBatchSampler` to draw same-nloc batches. Statistics use a
-    separate logical-system view in which every ``nloc`` group is sampled
-    independently, matching the PyTorch DataLoader adapter without changing
-    the identity of the LMDB as one training dataset.
+    :class:`SameNlocBatchSampler`, or its distributed wrapper, to draw
+    same-nloc batches. Statistics use a separate logical-system view in which
+    every ``nloc`` group is sampled independently, matching the PyTorch
+    DataLoader adapter without changing the identity of the LMDB as one
+    training dataset.
 
     Parameters
     ----------
@@ -58,6 +60,11 @@ class LmdbDataSystem:
     num_workers
         Number of LMDB decoder worker processes. ``None`` selects the
         hardware-aware default; zero or one disables multiprocessing.
+    rank
+        Rank of this process in distributed training.
+    world_size
+        Number of distributed training processes. Values greater than one
+        select :class:`DistributedSameNlocBatchSampler`.
     """
 
     def __init__(
@@ -68,6 +75,8 @@ class LmdbDataSystem:
         auto_prob_style: str | None = None,
         seed: int | None = None,
         num_workers: int | None = None,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> None:
         self._reader = LmdbDataReader(
             lmdb_path, type_map, batch_size, mixed_batch=False
@@ -81,12 +90,24 @@ class LmdbDataSystem:
                 self._reader.system_nframes,
             )
 
-        self._sampler = SameNlocBatchSampler(
-            self._reader,
-            shuffle=True,
-            seed=seed,
-            block_targets=block_targets,
-        )
+        if world_size > 1:
+            distributed_sampler = DistributedSameNlocBatchSampler(
+                self._reader,
+                rank=rank,
+                world_size=world_size,
+                shuffle=True,
+                seed=seed,
+                block_targets=block_targets,
+            )
+            self._sampler = distributed_sampler
+        else:
+            sampler = SameNlocBatchSampler(
+                self._reader,
+                shuffle=True,
+                seed=seed,
+                block_targets=block_targets,
+            )
+            self._sampler = sampler
         self._stat_nlocs = tuple(sorted(self._reader.nloc_groups))
         self._stat_offsets = [0] * len(self._stat_nlocs)
         num_workers = (
@@ -164,11 +185,12 @@ class LmdbDataSystem:
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
-        # Batches are partitioned by label availability, so the partition must
-        # not predate the requirements. The reader rejects a registration that
-        # follows any decode, and the sampler derives the partition when the
-        # first batch is drawn, so no batch state can precede this call.
+        # Batches are partitioned by label availability. The sampler derives
+        # the partition on its first draw; only the distributed batch count is
+        # cached, so it is refreshed after the requirements change.
         self._reader.add_data_requirement(data_requirement)
+        if isinstance(self._sampler, DistributedSameNlocBatchSampler):
+            self._sampler.refresh_batch_count()
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
@@ -189,7 +211,9 @@ class LmdbDataSystem:
 
     @property
     def nbatches(self) -> list[int]:
-        """Return the batch count of one full pass, per logical system."""
+        """Return the global batch count of one full pass."""
+        if isinstance(self._sampler, DistributedSameNlocBatchSampler):
+            return [self._sampler.total_batches]
         return [len(self._sampler)]
 
     @property

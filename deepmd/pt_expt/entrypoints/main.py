@@ -132,12 +132,16 @@ def _build_data_system(
     dataset_params: dict[str, Any],
     type_map: list[str],
     seed: int | None = None,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> DeepmdDataSystem | LmdbDataSystem:
     """Build a data system from dataset config, routing LMDB paths to LmdbDataSystem.
 
     A scalar ``systems`` value pointing at an LMDB directory triggers the
     LMDB adapter; otherwise we fall through to the legacy
-    :class:`DeepmdDataSystem` path with system expansion.
+    :class:`DeepmdDataSystem` path with system expansion. ``rank`` and
+    ``world_size`` shard LMDB training batches without changing legacy data
+    systems.
     """
     systems_raw = dataset_params["systems"]
     lmdb_path = _detect_lmdb_path(systems_raw)
@@ -148,6 +152,8 @@ def _build_data_system(
             batch_size=dataset_params["batch_size"],
             auto_prob_style=dataset_params.get("auto_prob"),
             seed=seed,
+            rank=rank,
+            world_size=world_size,
         )
     systems = process_systems(
         systems_raw,
@@ -188,17 +194,26 @@ def get_trainer(
     shared_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
+    import torch.distributed as dist
+
     training_params = config["training"]
     multi_task = "model_dict" in config["model"]
 
     data_seed = training_params.get("seed", None)
+    is_distributed = dist.is_available() and dist.is_initialized()
+    rank = dist.get_rank() if is_distributed else 0
+    world_size = dist.get_world_size() if is_distributed else 1
 
     def factory(
         task_config: TrainingTaskConfig,
     ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, DPPath | None]:
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
-            dict(task_config.training_data_params), type_map, seed=data_seed
+            dict(task_config.training_data_params),
+            type_map,
+            seed=data_seed,
+            rank=rank,
+            world_size=world_size,
         )
         validation_data = None
         if task_config.validation_data_params is not None:

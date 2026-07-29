@@ -2100,10 +2100,10 @@ class Trainer(AbstractTrainer):
         A data system reports ``nbatches[i]``, the batch count of system ``i``,
         and ``sys_probs[i]``, the probability of drawing from that system, from
         which ``compute_total_numb_batch`` derives the dataset-wide epoch
-        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``.  Unlike the pt
-        backend, whose loader shards the systems, every rank here holds the
-        complete data system and samples it independently, so the ranks jointly
-        cover one epoch after ``total / world_size`` steps each.
+        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``. LMDB data reports
+        that global count while its sampler shards batches evenly across ranks;
+        legacy data systems remain replicated. In both cases one rank takes
+        ``ceil(total / world_size)`` steps per epoch.
         """
         data = self.training_data_by_task[model_key]
         total = compute_total_numb_batch(data.nbatches, data.sys_probs)

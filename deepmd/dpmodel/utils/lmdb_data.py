@@ -847,7 +847,8 @@ class LmdbBatchIterator:
                     [future.result() for future in pending.futures]
                 )
         except BrokenProcessPool:
-            pass
+            self._lose_the_pool(pending.futures)
+            return self._reader.decode_batch(pending.indices)
         self._lose_the_pool(pending.futures)
         return self._reader.decode_batch(pending.indices)
 
@@ -2105,8 +2106,10 @@ class DistributedSameNlocBatchSampler:
     """Distributed wrapper for same-nloc batch sampling.
 
     All ranks build the same deterministic global batch list (using
-    ``seed + epoch``), then each rank takes a disjoint subset via
-    :meth:`_partition_batches`.
+    ``seed + epoch``). The list is padded deterministically when its length is
+    not divisible by the number of ranks, then each rank takes a strided
+    subset via :meth:`_partition_batches`. This keeps every rank on the same
+    sampler epoch while duplicating at most ``world_size - 1`` batches.
 
     Override :meth:`_partition_batches` for custom load-balancing strategies.
     The default uses strided partitioning which gives good nloc diversity per
@@ -2145,6 +2148,10 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self.refresh_batch_count()
+
+    def refresh_batch_count(self) -> None:
+        """Refresh the cached global count after sampling groups change."""
         self._total_batches = len(
             SameNlocBatchSampler(
                 self._reader,
@@ -2174,24 +2181,38 @@ class DistributedSameNlocBatchSampler:
     def _partition_batches(self, all_batches: list[list[int]]) -> list[list[int]]:
         """Partition global batches to this rank.
 
-        Default: strided partition ``all_batches[rank::world_size]``.
-        This gives good nloc diversity per rank since batches are
-        interleaved across nloc groups before shuffling.
+        The default pads the global list to a multiple of ``world_size`` and
+        then takes ``all_batches[rank::world_size]``. This gives good nloc
+        diversity per rank since batches are interleaved across nloc groups
+        before shuffling, while ensuring that every rank yields the same
+        number of batches.
 
         Override this method for custom load-balancing. For example, a
         greedy algorithm could assign batches to ranks based on estimated
         compute cost (``reader.frame_nlocs[batch[0]]`` gives the nloc of
         each batch).
         """
+        if not all_batches:
+            return []
+        batches_per_rank = (len(all_batches) + self._world_size - 1) // self._world_size
+        total_size = batches_per_rank * self._world_size
+        padding_size = total_size - len(all_batches)
+        if padding_size:
+            repetitions = (padding_size + len(all_batches) - 1) // len(all_batches)
+            all_batches = [
+                *all_batches,
+                *(all_batches * repetitions)[:padding_size],
+            ]
         return all_batches[self._rank :: self._world_size]
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        return max(
-            0,
-            (self._total_batches + self._world_size - 1 - self._rank)
-            // self._world_size,
-        )
+        return (self._total_batches + self._world_size - 1) // self._world_size
+
+    @property
+    def total_batches(self) -> int:
+        """Return the global batch count before distributed padding."""
+        return self._total_batches
 
     @property
     def rank(self) -> int:

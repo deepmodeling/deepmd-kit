@@ -489,6 +489,70 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(serial["custom"].dtype, np.float64)
         np.testing.assert_array_equal(serial["custom"], chunked["custom"])
 
+    def test_parallel_batch_consistency_guards(self):
+        """Parallel batch decoding validates schemas, shapes, and availability."""
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={},
+        )
+        transaction = mock.Mock()
+        transaction.get.return_value = b"frame"
+        first_frame = {
+            "coord": np.zeros((6, 3)),
+            "find_energy": np.float32(1.0),
+            "fid": 0,
+        }
+        frame_cases = (
+            (
+                "fields",
+                {**first_frame, "energy": np.zeros(1), "fid": 1},
+                "inconsistent fields",
+            ),
+            (
+                "shape",
+                {**first_frame, "coord": np.zeros((7, 3)), "fid": 1},
+                "changes shape within one batch",
+            ),
+        )
+        for guard, second_frame, expected_error in frame_cases:
+            with (
+                self.subTest(guard=f"frame {guard}"),
+                mock.patch.object(
+                    lmdb_data_module,
+                    "decode_lmdb_frame",
+                    side_effect=(first_frame, second_frame),
+                ),
+                self.assertRaisesRegex(ValueError, expected_error),
+            ):
+                decode_lmdb_batch(transaction, [0, 1], "012d", config)
+
+        first_chunk = {
+            "find_energy": np.float32(1.0),
+            "coord": np.zeros((1, 6, 3)),
+            "fid": [0],
+            "sid": np.array([0], dtype=np.int64),
+        }
+        chunk_cases = (
+            (
+                "fields",
+                {key: value for key, value in first_chunk.items() if key != "coord"},
+                "inconsistent fields",
+            ),
+            (
+                "availability",
+                {**first_chunk, "find_energy": np.float32(0.0), "fid": [1]},
+                "availability changes across worker chunks",
+            ),
+        )
+        for guard, second_chunk, expected_error in chunk_cases:
+            with (
+                self.subTest(guard=f"chunk {guard}"),
+                self.assertRaisesRegex(ValueError, expected_error),
+            ):
+                _merge_lmdb_chunks([first_chunk, second_chunk])
+
     def test_batch_rejects_mixed_label_availability(self):
         """A scalar find flag cannot represent mixed availability in one batch."""
         path = _create_lmdb(
@@ -1684,6 +1748,10 @@ class TestDecoderPoolFailure(unittest.TestCase):
         self._assert_same_batch(batch, self._reader.decode_batch([0, 1, 2, 3]))
         self.assertEqual(pool.submissions, submissions)
 
+    @unittest.skipUnless(
+        os.name == "posix" and sys.implementation.name == "cpython",
+        "requires CPython's POSIX process-pool pipe",
+    )
     def test_a_run_that_lost_its_pool_still_exits(self) -> None:
         """Losing a decoder must not leave the interpreter unable to exit.
 
@@ -1730,6 +1798,10 @@ class TestDecoderPoolFailure(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
 
+    @unittest.skipUnless(
+        hasattr(signal, "SIGHUP"),
+        "SIGHUP is not available on this platform",
+    )
     def test_decoders_survive_the_hangup_of_their_launching_session(self) -> None:
         """A decoder outlives the session that started the run.
 
@@ -1753,6 +1825,10 @@ class TestDecoderPoolFailure(unittest.TestCase):
         self.assertTrue(iterator._pool.healthy)
         self.assertTrue(all(process.is_alive() for process in processes))
 
+    @unittest.skipUnless(
+        hasattr(signal, "SIGKILL"),
+        "SIGKILL is not available on this platform",
+    )
     def test_killing_the_real_decoders_does_not_stop_the_run(self) -> None:
         """The pool reports itself broken, and the batch still arrives.
 
