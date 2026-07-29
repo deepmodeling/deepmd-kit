@@ -393,6 +393,29 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(second, expected_second)
 
+    def test_requirements_are_rejected_after_the_first_decode(self):
+        """Late requirements are refused so no partition can predate them.
+
+        Batches are grouped by label availability, and both the sampler
+        partition and the worker decoders capture the requirements in force
+        when they start, so a later registration would silently disagree with
+        the batches already produced.
+        """
+        requirement = [DataRequirementItem("custom", ndof=1, default=0.0)]
+
+        for label, consume in (
+            ("frame", lambda reader: reader[0]),
+            ("batch", lambda reader: reader.decode_batch([0, 1])),
+            ("worker config", lambda reader: reader.worker_decode_config()),
+        ):
+            with self.subTest(consumed=label):
+                reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+                reader.add_data_requirement(requirement)
+                consume(reader)
+                with self.assertRaisesRegex(RuntimeError, "before reading any frame"):
+                    reader.add_data_requirement(requirement)
+                reader.close()
+
     def test_close_preserves_other_reader(self):
         """Closing one shared-path reader leaves the other transaction valid."""
         first = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)

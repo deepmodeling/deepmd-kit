@@ -306,10 +306,6 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             batch_size=2,
             seed=0,
         )
-        old_iter = ds._iter
-        # Realize the old iterator before requirements change so this checks
-        # replacement rather than two independently-created lazy generators.
-        next(old_iter)
         ds.add_data_requirements(
             [
                 DataRequirementItem(
@@ -320,7 +316,6 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                 ),
             ]
         )
-        self.assertIsNot(ds._iter, old_iter)
 
         batches = [ds.get_batch(), ds.get_batch()]
         observed = {

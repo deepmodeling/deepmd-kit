@@ -164,10 +164,11 @@ class LmdbDataSystem:
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
+        # Batches are partitioned by label availability, so the partition must
+        # not predate the requirements. The reader rejects a registration that
+        # follows any decode, and the sampler derives the partition when the
+        # first batch is drawn, so no batch state can precede this call.
         self._reader.add_data_requirement(data_requirement)
-        # Discard any iterator created under the previous availability
-        # signature so the next batch uses the newly registered labels.
-        self._iter = iter(self._sampler)
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""

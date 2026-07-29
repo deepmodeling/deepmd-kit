@@ -1563,6 +1563,10 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
     ``fid`` is collected as a list; ``type`` is dropped (callers should
     already use ``atype``); other arrays are stacked along axis 0. A ``sid``
     placeholder is appended.
+
+    The batch keeps the key order of its frames, which is the order
+    :func:`decode_lmdb_batch` also produces, so a batch is the same mapping
+    whichever of the two decode paths built it.
     """
     import array_api_compat
 
@@ -1571,7 +1575,10 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
 
     xp = array_api_compat.array_namespace(frames[0]["coord"])
     dev = array_api_compat.device(frames[0]["coord"])
-    out: dict[str, Any] = {}
+
+    # Availability must agree across the batch before the flags can collapse
+    # to one scalar per key. Frames are checked ahead of collation so a mixed
+    # batch is reported rather than silently reduced to its first frame.
     find_keys = sorted(
         {key for frame in frames for key in frame if key.startswith("find_")}
     )
@@ -1586,11 +1593,11 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
                 f"LMDB batch mixes {key!r} values {values}; "
                 "SameNlocBatchSampler must group frames by label availability"
             )
-        out[key] = frames[0][key]
 
+    out: dict[str, Any] = {}
     for key in frames[0]:
         if key.startswith("find_"):
-            continue
+            out[key] = frames[0][key]
         elif key == "fid":
             out[key] = [f[key] for f in frames]
         elif key == "type":
