@@ -8,9 +8,6 @@ from collections.abc import (
 from dataclasses import (
     dataclass,
 )
-from functools import (
-    cache,
-)
 from typing import (
     Any,
 )
@@ -61,9 +58,16 @@ class BackendDocumentation:
 
 
 # Keys deliberately match the backend package directories. To document a new
-# backend, add it here and use the same key in ``supported_backends`` calls. To
-# retire a backend without rewriting every support declaration, set ``visible``
-# to ``False``; the backend then disappears from all generated support labels.
+# backend, add it here and use the same key in ``supported_backends`` calls.
+# ``visible`` is source configuration evaluated while this module is imported;
+# changing the registry at runtime cannot update labels already attached to
+# arguments. To retire a backend, set ``visible`` to ``False`` in this mapping
+# and regenerate the documentation from a fresh process.
+#
+# Support means that a user can configure the documented feature on the named
+# backend. Descriptor variants generally follow backend registration, while
+# fitting, loss, and training options can be narrower when a backend registers
+# a component for inference but cannot train or otherwise consume that option.
 BACKEND_DOCUMENTATION: dict[str, BackendDocumentation] = {
     "tf": BackendDocumentation("TensorFlow"),
     "pt": BackendDocumentation("PyTorch"),
@@ -74,7 +78,6 @@ BACKEND_DOCUMENTATION: dict[str, BackendDocumentation] = {
 }
 
 
-@cache
 def supported_backends(*backends: str) -> str:
     """Build the standard support label for visible backend directory keys.
 
@@ -3075,7 +3078,7 @@ def fitting_polar() -> list[Argument]:
             [list[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type,
+            doc=supported_backends("tf") + doc_sel_type,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -3150,7 +3153,7 @@ def fitting_dipole() -> list[Argument]:
             [list[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type,
+            doc=supported_backends("tf") + doc_sel_type,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -3922,7 +3925,7 @@ def learning_rate_exp() -> list[Argument]:
 
 
 @lr_args_plugin.register(
-    "cosine", doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+    "cosine", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
 )
 def learning_rate_cosine() -> list[Argument]:
     """
@@ -3937,7 +3940,7 @@ def learning_rate_cosine() -> list[Argument]:
 
 
 @lr_args_plugin.register(
-    "wsd", doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+    "wsd", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
 )
 def learning_rate_wsd() -> list[Argument]:
     """
@@ -4081,7 +4084,9 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 opt_args_plugin = ArgsPlugin()
 
 
-@opt_args_plugin.register("Adam", doc=supported_backends("tf", "pt", "pd", "tf2"))
+@opt_args_plugin.register(
+    "Adam", doc=supported_backends("tf", "pt", "pd", "pt_expt", "tf2")
+)
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
@@ -4113,7 +4118,7 @@ def optimizer_adam() -> list[Argument]:
     ]
 
 
-@opt_args_plugin.register("AdamW", doc=supported_backends("pt", "pd", "tf2"))
+@opt_args_plugin.register("AdamW", doc=supported_backends("pt", "pd", "pt_expt", "tf2"))
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
@@ -4138,7 +4143,7 @@ def optimizer_adamw() -> list[Argument]:
             float,
             optional=True,
             default=0.001,
-            doc=supported_backends("pt", "pd", "tf2") + doc_weight_decay,
+            doc=supported_backends("pt", "pd", "pt_expt", "tf2") + doc_weight_decay,
         ),
     ]
 
