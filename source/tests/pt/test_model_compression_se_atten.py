@@ -84,10 +84,13 @@ def _init_models_exclude_types():
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
 
-    # Configure se_atten descriptor with exclude_types
+    # Plain se_atten defaults to a zero average, so excluded rows share the
+    # padding sentinel and exercise the unsorted path in the compressed op.
     jdata["model"]["descriptor"] = {
-        "type": "se_atten_v2",
+        "type": "se_atten",
         "exclude_types": [[0, 1]],
+        "set_davg_zero": True,
+        "tebd_input_mode": "strip",
         "sel": 120,
         "rcut_smth": 0.50,
         "rcut": 6.00,

@@ -1665,7 +1665,9 @@ class TestTabulateFusionSeAttenUnsortedOp(unittest.TestCase):
             device=env.DEVICE,
         )
         table[0, :, 0] = coefficients
+        table[0, :, 1] = coefficients
         table[1, :, 0] = 2.0 * coefficients
+        table[1, :, 1] = 2.0 * coefficients
         self.table_tensor = table.reshape(self.last_layer_size, -1)
         self.table_info_tensor = torch.tensor(
             [0.0, 1.0, 2.0, 1.0, 1.0, -1.0],
@@ -1722,10 +1724,10 @@ class TestTabulateFusionSeAttenUnsortedOp(unittest.TestCase):
             dtype=self.dtype,
             device=env.DEVICE,
         )
-        expected_unsorted[0, 0] = 1.4 * coefficients
-        expected_unsorted[0, 1] = 0.3 * coefficients
+        expected_unsorted[0, 0] = 2.1 * coefficients
+        expected_unsorted[0, 1] = 0.45 * coefficients
         expected_sorted = torch.zeros_like(expected_unsorted)
-        expected_sorted[0, 0] = 0.6 * coefficients
+        expected_sorted[0, 0] = 0.9 * coefficients
 
         torch.testing.assert_close(self._forward(False), expected_unsorted)
         torch.testing.assert_close(self._forward(True), expected_sorted)
@@ -1748,17 +1750,20 @@ class TestTabulateFusionSeAttenUnsortedOp(unittest.TestCase):
             device=env.DEVICE,
         )
         expected_dem = torch.tensor(
-            [[[36.0] * 4, [108.0] * 4, [27.0] * 4]],
+            [[[54.0] * 4, [162.0] * 4, [40.5] * 4]],
             dtype=self.dtype,
             device=env.DEVICE,
         )
         expected_dtwo = torch.stack(
-            (0.2 * coefficients, 0.8 * coefficients, 0.4 * coefficients)
+            (0.3 * coefficients, 1.2 * coefficients, 0.6 * coefficients)
+        )
+        expected_dem_x = torch.tensor(
+            [[7.2, 43.2, 10.8]],
+            dtype=self.dtype,
+            device=env.DEVICE,
         )
 
-        torch.testing.assert_close(
-            unsorted_grads[0], torch.zeros_like(unsorted_grads[0])
-        )
+        torch.testing.assert_close(unsorted_grads[0], expected_dem_x)
         torch.testing.assert_close(unsorted_grads[1], expected_dem)
         torch.testing.assert_close(unsorted_grads[2], expected_dtwo)
         self.assertFalse(torch.equal(unsorted_grads[1], sorted_dem))
