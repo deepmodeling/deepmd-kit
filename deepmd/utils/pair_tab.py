@@ -69,7 +69,7 @@ class PairTab:
                 "on a uniform grid with distances sorted in ascending order and "
                 "without duplicated rows. Please regrid the table."
             )
-        if not np.allclose(dx, hh, rtol=1e-5, atol=1e-8):
+        if not np.allclose(dx, hh, rtol=1e-5, atol=0):
             raise ValueError(
                 f"The distance grid in the pairwise table {filename} is not "
                 "evenly spaced. The tabulated potential must be provided on a "

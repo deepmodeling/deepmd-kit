@@ -318,6 +318,34 @@ class TestPairTabGridSpacing(unittest.TestCase):
             PairTab(filename="dummy_path", rcut=0.04)
 
     @patch("numpy.loadtxt")
+    def test_non_uniform_fine_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.0, 1.0],
+                [1e-10, 0.8],
+                [1.1e-9, 0.6],
+                [2.1e-9, 0.3],
+                [3.1e-9, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            PairTab(filename="dummy_path", rcut=3.1e-9)
+
+    @patch("numpy.loadtxt")
+    def test_uniform_fine_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.0, 1.0],
+                [1e-9, 0.8],
+                [2e-9, 0.6],
+                [3e-9, 0.3],
+                [4e-9, 0.0],
+            ]
+        )
+        tab = PairTab(filename="dummy_path", rcut=4e-9)
+        self.assertAlmostEqual(tab.hh, 1e-9)
+
+    @patch("numpy.loadtxt")
     def test_failed_reinit_keeps_state(self, mock_loadtxt) -> None:
         uniform = np.array(
             [
