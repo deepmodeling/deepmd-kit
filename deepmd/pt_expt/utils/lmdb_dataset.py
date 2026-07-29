@@ -165,6 +165,9 @@ class LmdbDataSystem:
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
         self._reader.add_data_requirement(data_requirement)
+        # Discard any iterator created under the previous availability
+        # signature so the next batch uses the newly registered labels.
+        self._iter = iter(self._sampler)
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
