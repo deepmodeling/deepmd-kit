@@ -61,6 +61,16 @@ model; graph-capable DPA models may select that form automatically. The `.pt`
 checkpoint format uses DP-model parameter names ending in `.w` and `.b`, which
 allows DeePMD-kit to distinguish it from a regular PyTorch checkpoint.
 
+The `.pt2` suffix identifies an AOTInductor package, but not its lower-input
+ABI. A DPA4/SeZM model frozen with `dp --pt freeze` uses the legacy `edge_vec`
+ABI (`lower_input_kind: edge_vec`), whereas a graph model frozen with
+`dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph ABI
+(`lower_input_kind: graph`). Both variants are loaded for inference by the
+PyTorch-Exportable runtime, which reads this metadata to select the correct
+input path. The `--lower-kind` option controls only the PyTorch-Exportable
+freeze route; see the [DPA4 export documentation](model/dpa4.md#freeze-to-pt2)
+for the separate PyTorch route.
+
 ### JAX {{ jax_icon }}
 
 - Model filename extensions: `.hlo`, `.jax`, `.savedmodel`
@@ -114,7 +124,10 @@ backend.
 When doing inference, DeePMD-kit detects the backend from the model filename.
 For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD-kit will consider it using the TensorFlow backend.
 The same detection covers TensorFlow 2 `.savedmodeltf` models and
-PyTorch-Exportable `.pte` and `.pt2` models.
+PyTorch-Exportable `.pte` and `.pt2` runtime formats. In particular, `.pt2`
+selects the PyTorch-Exportable inference loader even when the file was produced
+by the DPA4/SeZM `dp --pt freeze` route described above; the archive metadata
+then selects its `edge_vec` or NeighborGraph ABI.
 
 ## Convert model files between backends
 
