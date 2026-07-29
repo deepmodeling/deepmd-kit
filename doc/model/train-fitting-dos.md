@@ -1,7 +1,14 @@
 # Fit electronic density of states (DOS) {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, DP {{ dpmodel_icon }}
+>
+> These icons report fitting/model implementation availability. JAX provides
+> the DOS implementation for model conversion and inference, but
+> `dp --jax train` currently accepts only the energy loss and cannot train a DOS
+> model.
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 

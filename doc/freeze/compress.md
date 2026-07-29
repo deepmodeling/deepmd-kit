@@ -1,8 +1,9 @@
-# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }}
+# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow and TensorFlow 2 {{ tensorflow_icon }},
-> PyTorch and PyTorch-Exportable {{ pytorch_icon }}
+> **Backends covered below**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, and DP {{ dpmodel_icon }}.
 
 ## Theory
 
@@ -97,12 +98,40 @@ dp --pt-expt compress -i model.pte -o model-compress.pte
 Use matching `.pte` or `.pt2` suffixes to preserve the exported model form.
 :::
 
-::::
-
-where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
+:::{tab-item} JAX {{ jax_icon }}
 
 ```bash
-$ dp compress --help
+dp --jax compress -i frozen_model.hlo -o compressed_model.hlo
+```
+
+JAX compression accepts `.jax` and `.hlo` models. Use the same suffix for the
+input and output to preserve the serialized model format.
+:::
+
+:::{tab-item} DP {{ dpmodel_icon }}
+
+```bash
+dp --dp compress -i model.dp -o model-compress.dp
+```
+
+DP compression accepts native `.dp` and `.yaml` models.
+:::
+
+::::
+
+where `-i` gives the original frozen model, `-o` gives the compressed model.
+The DP, JAX, and TensorFlow 2 entrypoints share the native-model compression
+helpers for resolving the minimum neighbor distance and tabulating the
+descriptor's embedding networks. PyTorch-Exportable implements the same table
+strides and minimum-neighbor-distance fallback in its export-specific
+entrypoint. If the model does not contain a minimum neighbor distance, pass the
+training script with `-t` or `--training-script` so it can be computed from the
+training data.
+
+Several other command line options can be passed to `dp compress`, which can be checked with
+
+```bash
+dp compress --help
 ```
 
 An explanation will be provided

@@ -1,7 +1,9 @@
-# Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+# Descriptor DPA3 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch and
+> PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
+> {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 DPA3 is an advanced interatomic potential based on message passing.
 As a large atomic model (LAM), it is designed to integrate and jointly train on datasets from different domains,

@@ -6,9 +6,11 @@ DeePMD-kit supports seven backends: TensorFlow, TensorFlow 2, PyTorch,
 PyTorch-Exportable, JAX, Paddle, and the NumPy-based DP reference backend.
 To use DeePMD-kit, you must install at least one backend.
 Each backend does not support all features.
-In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch
-{{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, and DP
-{{ dpmodel_icon }} icons are used to mark whether a backend supports a feature.
+In the documentation, TensorFlow and TensorFlow 2 share
+{{ tensorflow_icon }}, while PyTorch and PyTorch-Exportable share
+{{ pytorch_icon }}. JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, and DP
+{{ dpmodel_icon }} use separate icons. Support notes spell out the exact backend
+variant when the two implementations in a framework family differ.
 
 ### TensorFlow {{ tensorflow_icon }}
 
@@ -61,7 +63,7 @@ allows DeePMD-kit to distinguish it from a regular PyTorch checkpoint.
 
 ### JAX {{ jax_icon }}
 
-- Model filename extension: `.hlo`, `.savedmodel`
+- Model filename extensions: `.hlo`, `.jax`, `.savedmodel`
 - Checkpoint filename extension: `.jax`
 
 [JAX](https://jax.readthedocs.io/) 0.4.33 or above is required.

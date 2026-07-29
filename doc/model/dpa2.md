@@ -1,7 +1,9 @@
-# Descriptor DPA-2 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+# Descriptor DPA-2 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch and
+> PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
+> {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 The DPA-2 model implementation. See [DPA-2 paper](https://doi.org/10.1038/s41524-024-01493-2) for more details.
 
@@ -96,7 +98,7 @@ The performance improvement will be limited if other parts are more expensive.
 In the pt_expt backend, a graph-eligible DPA-2 descriptor (`repinit/use_three_body` `false` -- the three-body sub-block is not graph-eligible -- and not compressed) can be frozen through a NeighborGraph-native inference path instead of the legacy dense neighbor-list path:
 
 ```bash
-dp --pt_expt freeze -o model.pt2 --lower-kind graph
+dp --pt-expt freeze -o model.pt2 --lower-kind graph
 ```
 
 As with DPA-1's graph path (see [Difference among different backends](train-se-atten.md#difference-among-different-backends)), the graph route considers all neighbors within the cutoff rather than a fixed, padded selection, so its numeric result can differ slightly (down to the AOTInductor floating-point noise floor at non-binding `sel`, larger if `sel` is binding) from the dense/`nlist` path.

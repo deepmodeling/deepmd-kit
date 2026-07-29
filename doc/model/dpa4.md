@@ -1,7 +1,12 @@
-# Descriptor DPA4 {{ pytorch_icon }}
+# Descriptor DPA4 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}
+> **Descriptor backends**: PyTorch and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+>
+> The end-to-end `model.type: dpa4` scaffold is supported by PyTorch and
+> PyTorch-Exportable only. JAX support is descriptor-only and does not provide
+> the dedicated DPA4 fitting/model/trainer workflow documented on this page.
 
 DPA4 is the DeePMD-kit implementation of the SeZM (Smooth Equivariant
 Zone-bridging Model) architecture: an SO(3)-equivariant message-passing model
@@ -444,7 +449,7 @@ Two different export routes produce one:
   energy model reports `supports_edge_parallel() == True`, so the archive
   carries the with-comm artifact (`has_comm_artifact=true`) and **supports
   multi-rank LAMMPS out of the box** — no extra freeze options.
-- **pt_expt (`dp --pt_expt freeze`).** Graph-capable models export through the
+- **pt_expt (`dp --pt-expt freeze`).** Graph-capable models export through the
   **NeighborGraph** ABI (see [Graph-native inference route
   (pt_expt)](#graph-native-inference-route-pt_expt) below), which likewise
   embeds a with-comm artifact and supports multi-rank LAMMPS.
@@ -507,7 +512,7 @@ neighbor-list path. Frame-level charge/spin conditioning
 `deepspin` virtual-atom spin scheme remains dense-only:
 
 ```bash
-dp --pt_expt freeze -o model.pt2 --lower-kind graph
+dp --pt-expt freeze -o model.pt2 --lower-kind graph
 ```
 
 As with DPA-1's and DPA-2's graph paths (see [Difference among different
@@ -565,7 +570,7 @@ inference](#multi-gpu-mpi-inference).
 
 - **Native scheme only.** `deepspin`-scheme spin (and the general `spin`
   virtual-atom model outside DPA4/SeZM) is dense-only; only `scheme: native`
-  is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
+  is graph-eligible. `dp --pt-expt freeze --lower-kind graph` on a
   `deepspin`-scheme model raises an error at freeze time, per the dense/graph
   eligibility rule above.
 - **Graph route only, no dense fallback.** Unlike a plain-energy DPA4/SeZM
@@ -720,7 +725,9 @@ closed over the one-hop neighbor shell.
 
 ## Limitations
 
-- DPA4/SeZM is implemented for the PyTorch backend only.
+- The end-to-end DPA4/SeZM model and training workflow is implemented for the
+  PyTorch and PyTorch-Exportable backends. JAX provides the descriptor only;
+  the DP implementation is a reference component and does not train models.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
 - Multi-rank (multi-GPU/MPI) LAMMPS inference works for a plain energy model
