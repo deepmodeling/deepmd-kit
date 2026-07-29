@@ -132,6 +132,36 @@ class TestBackendDocumentation(unittest.TestCase):
             )
         )
 
+        dpa4_fitting_variant = argcheck.sezm_model_args()["fitting_net"].sub_variants[
+            "type"
+        ]
+        dpa4_property = dpa4_fitting_variant.choice_dict["property"]
+        self.assertEqual(dpa4_property.doc, "(Supported Backend: PyTorch) ")
+
+    def test_embedded_labels_have_single_spacing(self) -> None:
+        smooth_type_embedding = argcheck.descrpt_args_plugin.get_argument("se_atten")[
+            "smooth_type_embedding"
+        ].doc
+        self.assertIn(") When using stripped type embedding", smooth_type_embedding)
+        self.assertNotIn(")  When using stripped type embedding", smooth_type_embedding)
+
+        energy_trainable = argcheck.fitting_args_plugin.get_argument("ener")[
+            "trainable"
+        ].doc
+        self.assertIn(
+            "list of bool (Supported Backend: TensorFlow, JAX, "
+            "PyTorch Exportable, TensorFlow 2): Specifies",
+            energy_trainable,
+        )
+        dpa4_energy_trainable = argcheck.fitting_args_plugin.get_argument("dpa4_ener")[
+            "trainable"
+        ].doc
+        self.assertIn(
+            "list of bool (Supported Backend: PyTorch, PyTorch Exportable): "
+            "The DPA4/SeZM fitting net",
+            dpa4_energy_trainable,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

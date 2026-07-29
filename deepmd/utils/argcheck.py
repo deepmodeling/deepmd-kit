@@ -1372,7 +1372,7 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_se_atten,
 )
 def descrpt_se_atten_args() -> list[Argument]:
-    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {supported_backends('tf')} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {supported_backends('tf')}When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
         "Whether to use trainable shift and scale weights in layer normalization."
@@ -1399,7 +1399,7 @@ def descrpt_se_atten_args() -> list[Argument]:
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
         "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
         "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
-        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')}When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_stripped_type_embedding = (
@@ -1810,7 +1810,7 @@ def dpa2_repinit_args() -> list[Argument]:
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
         "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
         "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
-        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')}When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used."
@@ -2629,8 +2629,8 @@ def fitting_ener() -> list[Argument]:
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool{supported_backends('tf', 'jax', 'pt_expt', 'tf2')}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1.\n\n\
-- list of bool{supported_backends('pt', 'pd')}: The fitting net is trainable only when all values in the list are True."
+- list of bool {supported_backends('tf', 'jax', 'pt_expt', 'tf2').strip()}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1.\n\n\
+- list of bool {supported_backends('pt', 'pd').strip()}: The fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -2728,7 +2728,7 @@ def fitting_sezm_ener() -> list[Argument]:
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool{supported_backends('pt', 'pt_expt')}: The DPA4/SeZM fitting net is trainable only when all values in the list are True."
+- list of bool {supported_backends('pt', 'pt_expt').strip()}: The DPA4/SeZM fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -3523,6 +3523,11 @@ def sezm_model_args() -> Argument:
         "fitting in PyTorch."
     )
 
+    # ``get_argument`` constructs a fresh Argument, so narrowing this label does
+    # not change the generic property fitting used by standard models.
+    dpa4_property_fitting = fitting_args_plugin.get_argument("property")
+    dpa4_property_fitting.doc = supported_backends("pt")
+
     ca = Argument(
         "dpa4",
         dict,
@@ -3551,7 +3556,7 @@ def sezm_model_args() -> Argument:
                         "type",
                         [
                             fitting_args_plugin.get_argument("dpa4_ener"),
-                            fitting_args_plugin.get_argument("property"),
+                            dpa4_property_fitting,
                         ],
                         optional=True,
                         default_tag="dpa4_ener",
