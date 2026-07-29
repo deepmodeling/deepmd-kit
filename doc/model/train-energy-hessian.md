@@ -91,9 +91,12 @@ The detailed loss can be found in `lcurve.out`:
 ## Test the Model
 
 > [!WARNING]
-> A model trained with Hessian cannot be frozen. If freezing is enforced, the model will be treated as a standard energy model, and the frozen one will no longer be able to output Hessian predictions.
+> The PyTorch TorchScript freeze route does not preserve Hessian output. A
+> PyTorch model frozen with `dp --pt freeze` is treated as a standard energy
+> model. The JAX backend can preserve Hessian output in a frozen model with
+> `dp --jax freeze --hessian`.
 
-If one do freeze and test a Hessian model using the commands:
+If one freezes and tests a Hessian model through the PyTorch route:
 
 ::::{tab-set}
 
@@ -116,7 +119,8 @@ ${output_prefix}.e.out   ${output_prefix}.e_peratom.out  ${output_prefix}.f.out
 ${output_prefix}.v.out   ${output_prefix}.v_peratom.out
 ```
 
-If one intends to use the trained model for Hessian predictions, then he/she is supposed to test the model directly without performing a freezing operation:
+For PyTorch Hessian predictions, test the training checkpoint directly without
+freezing:
 
 ::::{tab-set}
 

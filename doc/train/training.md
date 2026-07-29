@@ -39,6 +39,17 @@ $ CINN=1 CINN_ALLOW_DYNAMIC_SHAPE=0 dp --pd train input.json
 ```
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+$ dp --jax train input.json
+```
+
+JAX training, introduced after DeePMD-kit v3.1.3, writes checkpoints with the
+`.jax` extension. It supports fine-tuning and multi-task configurations, but
+does not currently support `--init-frz-model`.
+:::
+
 ::::
 
 where `input.json` is the name of the input script.

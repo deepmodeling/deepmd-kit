@@ -51,4 +51,27 @@ $ dp --pd freeze -o model_branch1 --head CHOSEN_BRANCH
 The output model is called `model_branch1.json`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+$ dp --jax freeze -c model.ckpt.jax -o model.hlo
+```
+
+The JAX backend can write a StableHLO `.hlo` model, a lossless `.jax` model, or
+a JAX2TF `.savedmodel` model. The `.savedmodel` format requires TensorFlow and
+is the JAX format that supports the C++ inference interface.
+:::
+
 ::::
+
+## Freeze a JAX model with Hessian output {{ jax_icon }}
+
+Use `--hessian` to add coordinate-Hessian output to a frozen JAX energy model:
+
+```bash
+$ dp --jax freeze -c model.ckpt.jax -o model-hessian.hlo --hessian
+```
+
+The option applies to JAX `.hlo`, `.jax`, and `.savedmodel` outputs. A model
+whose serialized definition already enables Hessian mode retains that mode even
+when `--hessian` is omitted.
