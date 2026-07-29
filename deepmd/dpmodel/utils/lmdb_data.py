@@ -8,6 +8,7 @@ Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 import logging
 import math
 import multiprocessing
+import signal
 import threading
 from collections.abc import (
     Iterator,
@@ -16,6 +17,10 @@ from collections.abc import (
 from concurrent.futures import (
     Future,
     ProcessPoolExecutor,
+)
+from concurrent.futures import wait as futures_wait
+from concurrent.futures.process import (
+    BrokenProcessPool,
 )
 from dataclasses import (
     dataclass,
@@ -615,27 +620,63 @@ def _merge_lmdb_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
 
 @dataclass
 class _LmdbPoolEntry:
-    """Reference-counted process pool shared by data tasks in one rank."""
+    """Reference-counted process pool shared by data tasks in one rank.
+
+    Attributes
+    ----------
+    executor : ProcessPoolExecutor
+        The pool itself.
+    users : int
+        Number of iterators holding the pool, which is retired by its last one.
+    healthy : bool
+        Whether the pool still decodes. Losing a decoder disables the pool for
+        every iterator sharing it, and marks it as one that must not be waited
+        on: a pool stuck reading the partial result of a decoder killed
+        mid-write never finishes shutting down.
+    """
 
     executor: ProcessPoolExecutor
     users: int
+    healthy: bool = True
 
 
 _LMDB_POOL_LOCK = threading.Lock()
 _LMDB_POOLS: dict[int, _LmdbPoolEntry] = {}
 
 
+def _detach_decoder_from_session() -> None:
+    """Shield a decoder from the hangup that ends its launching session.
+
+    A decoder is a background helper of the training process and owns no
+    terminal, so the ``SIGHUP`` delivered when the session a run was launched
+    from goes away carries no meaning for it, while the default disposition
+    makes it fatal. The signals by which a run is actually stopped, ``SIGINT``
+    and ``SIGTERM``, keep their disposition.
+
+    This protects the decoders alone. It is effective because the pool is
+    built on the ``spawn`` start method, whose workers are direct children of
+    the training process with no intermediary of their own to lose.
+    """
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+
 def _create_lmdb_executor(num_workers: int) -> ProcessPoolExecutor:
-    """Create a CUDA-safe LMDB decoder process pool."""
-    start_methods = multiprocessing.get_all_start_methods()
-    start_method = "forkserver" if "forkserver" in start_methods else "spawn"
+    """Create a CUDA-safe LMDB decoder process pool.
+
+    The ``spawn`` start method is chosen over ``forkserver`` for the sake of
+    the shielding above: a fork server is an unshielded intermediary whose own
+    death is reported as the death of every decoder it started, which breaks
+    the pool however well the decoders themselves are protected.
+    """
     return ProcessPoolExecutor(
         max_workers=num_workers,
-        mp_context=multiprocessing.get_context(start_method),
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=_detach_decoder_from_session,
     )
 
 
-def _acquire_lmdb_executor(num_workers: int) -> ProcessPoolExecutor:
+def _acquire_lmdb_executor(num_workers: int) -> _LmdbPoolEntry:
     """Acquire the process-wide pool for one worker count."""
     with _LMDB_POOL_LOCK:
         entry = _LMDB_POOLS.get(num_workers)
@@ -646,22 +687,62 @@ def _acquire_lmdb_executor(num_workers: int) -> ProcessPoolExecutor:
             )
             _LMDB_POOLS[num_workers] = entry
         entry.users += 1
-        return entry.executor
+        return entry
 
 
 def _release_lmdb_executor(num_workers: int) -> None:
     """Release one pool user and stop the pool after its final user."""
-    executor: ProcessPoolExecutor | None = None
+    retired: _LmdbPoolEntry | None = None
     with _LMDB_POOL_LOCK:
         entry = _LMDB_POOLS.get(num_workers)
         if entry is None:
             return
         entry.users -= 1
         if entry.users == 0:
-            executor = entry.executor
+            retired = entry
             del _LMDB_POOLS[num_workers]
-    if executor is not None:
-        executor.shutdown(wait=True, cancel_futures=True)
+    if retired is not None:
+        if not retired.healthy:
+            _dismantle_lmdb_executor(retired.executor)
+        retired.executor.shutdown(wait=retired.healthy, cancel_futures=True)
+
+
+def _dismantle_lmdb_executor(executor: ProcessPoolExecutor) -> None:
+    """Force a pool that stopped delivering to finish shutting down.
+
+    A pool reading the partial result of a decoder killed mid-write waits for
+    bytes that never arrive, because the training process itself holds the
+    last write end of that queue. The interpreter joins every pool manager
+    thread before it exits, so a run would complete its training and then
+    never terminate. Closing the write end delivers the awaited end of file;
+    the surviving decoders are stopped first so that none of them writes into
+    a queue about to close. The pool offers no public way to release a manager
+    thread already committed to a read.
+    """
+    for process in list(getattr(executor, "_processes", {}).values()):
+        if process.exitcode is None:
+            process.kill()
+    writer = getattr(getattr(executor, "_result_queue", None), "_writer", None)
+    if writer is not None:
+        writer.close()
+
+
+#: Seconds between two liveness checks while waiting on the decoder pool. The
+#: wait ends as soon as the chunks arrive, so this bounds only how long a pool
+#: that has stopped delivering goes unnoticed.
+_DECODER_LIVENESS_INTERVAL = 5.0
+
+
+@dataclass
+class _PendingBatch:
+    """A batch handed to the decoder pool, and the indices that produced it.
+
+    The indices are retained so that the batch can still be decoded in this
+    process should the pool fail to deliver it.
+    """
+
+    indices: list[int]
+    futures: list[Future[dict[str, Any]]]
 
 
 class LmdbBatchIterator:
@@ -697,8 +778,8 @@ class LmdbBatchIterator:
         self._epoch = 0
         self._iterator = self._iter_epoch()
         self._num_workers = num_workers
-        self._executor: ProcessPoolExecutor | None = None
-        self._pending: list[Future[dict[str, Any]]] | None = None
+        self._pool: _LmdbPoolEntry | None = None
+        self._pending: _PendingBatch | None = None
         self._deferred_indices: list[int] | None = None
         self._closed = False
 
@@ -710,22 +791,85 @@ class LmdbBatchIterator:
             raise RuntimeError("cannot read from a closed LMDB batch iterator")
 
         if self._pending is not None:
-            chunks = [future.result() for future in self._pending]
-            batch = _merge_lmdb_chunks(chunks)
+            pending, self._pending = self._pending, None
+            batch = self._collect(pending)
         elif self._deferred_indices is not None:
-            indices = self._deferred_indices
-            self._deferred_indices = None
+            indices, self._deferred_indices = self._deferred_indices, None
             batch = self._reader.decode_batch(indices)
         else:
-            indices = self._next_indices()
-            if self._parallel_eligible(indices):
-                chunks = [future.result() for future in self._submit(indices)]
-                batch = _merge_lmdb_chunks(chunks)
-            else:
-                batch = self._reader.decode_batch(indices)
+            batch = self._decode(self._next_indices())
 
         self._schedule(self._next_indices())
         return batch
+
+    def _decode(self, indices: list[int]) -> dict[str, Any]:
+        """Decode one batch, in the pool when that is worthwhile and possible."""
+        futures = self._offer(indices)
+        if futures is None:
+            return self._reader.decode_batch(indices)
+        return self._collect(_PendingBatch(indices, futures))
+
+    def _offer(self, indices: list[int]) -> list[Future[dict[str, Any]]] | None:
+        """Hand a batch to the pool, or ``None`` if it will not take it."""
+        if not self._worth_decoding_in_parallel(indices):
+            return None
+        if self._pool is None:
+            self._pool = _acquire_lmdb_executor(self._num_workers)
+        if not self._pool.healthy:
+            return None
+        try:
+            return self._submit(indices)
+        except BrokenProcessPool:
+            self._lose_the_pool()
+            return None
+
+    def _collect(self, pending: _PendingBatch) -> dict[str, Any]:
+        """Return a batch from the pool, decoding it here if the pool cannot.
+
+        A decoder killed from outside -- by the kernel under memory pressure,
+        or by a signal aimed at the session the run was launched from -- ends
+        the batch one of two ways. Usually the pool notices and fails every
+        future it holds. Should the decoder die midway through writing a
+        result, however, the pool reads that partial result forever instead of
+        reporting itself broken, and the run stops with no diagnosis and no
+        error; punctuating the wait with a liveness check covers that case.
+        """
+        remaining = set(pending.futures)
+        try:
+            while remaining:
+                _, remaining = futures_wait(
+                    remaining, timeout=_DECODER_LIVENESS_INTERVAL
+                )
+                if remaining and self._decoder_exited():
+                    break
+            else:
+                return _merge_lmdb_chunks(
+                    [future.result() for future in pending.futures]
+                )
+        except BrokenProcessPool:
+            pass
+        self._lose_the_pool(pending.futures)
+        return self._reader.decode_batch(pending.indices)
+
+    def _decoder_exited(self) -> bool:
+        """Whether any decoder has exited, which the pool reports nowhere else."""
+        processes = getattr(self._pool.executor, "_processes", None) or {}
+        return any(process.exitcode is not None for process in processes.values())
+
+    def _lose_the_pool(self, futures: "Sequence[Future[dict[str, Any]]]" = ()) -> None:
+        """Disable the pool for every iterator sharing it, reporting it once."""
+        for future in futures:
+            future.cancel()
+        if self._pool is None or not self._pool.healthy:
+            return
+        self._pool.healthy = False
+        log.warning(
+            "An LMDB decoder process exited unexpectedly; decoding continues "
+            "in the training process. Throughput may drop. Set "
+            "DP_LMDB_NUM_WORKERS=1 to select in-process decoding from the "
+            "start, and launch the run under nohup or setsid so that the "
+            "decoders outlive the session that started it."
+        )
 
     def _next_indices(self) -> list[int]:
         """Return the next sampler batch and restart after exhaustion."""
@@ -755,11 +899,9 @@ class LmdbBatchIterator:
             stop = start + chunk_size
             chunks.append(original_keys[start:stop])
             start = stop
-        if self._executor is None:
-            self._executor = _acquire_lmdb_executor(self._num_workers)
         decode_config = self._reader.worker_decode_config()
         return [
-            self._executor.submit(
+            self._pool.executor.submit(
                 _decode_lmdb_worker_chunk,
                 self._reader.lmdb_path,
                 self._reader.frame_format,
@@ -769,23 +911,20 @@ class LmdbBatchIterator:
             for chunk in chunks
         ]
 
-    def _parallel_eligible(self, indices: list[int]) -> bool:
+    def _worth_decoding_in_parallel(self, indices: list[int]) -> bool:
         """Whether process decoding amortizes its scheduling and IPC cost."""
         return self._num_workers > 1 and len(indices) >= self._num_workers
 
     def _schedule(self, indices: list[int]) -> None:
-        """Schedule a large successor or defer a small one to the caller."""
-        if self._parallel_eligible(indices):
-            self._pending = self._submit(indices)
-            self._deferred_indices = None
-        else:
-            self._pending = None
-            self._deferred_indices = indices
+        """Prefetch the next batch in the pool, or leave it to the caller."""
+        futures = self._offer(indices)
+        self._pending = _PendingBatch(indices, futures) if futures else None
+        self._deferred_indices = None if futures else indices
 
     @property
     def started(self) -> bool:
         """Whether this iterator has acquired the shared process pool."""
-        return self._executor is not None
+        return self._pool is not None
 
     @property
     def closed(self) -> bool:
@@ -798,12 +937,12 @@ class LmdbBatchIterator:
             return
         self._closed = True
         if self._pending is not None:
-            for future in self._pending:
+            for future in self._pending.futures:
                 future.cancel()
             self._pending = None
         self._deferred_indices = None
-        if self._executor is not None:
-            self._executor = None
+        if self._pool is not None:
+            self._pool = None
             _release_lmdb_executor(self._num_workers)
 
 

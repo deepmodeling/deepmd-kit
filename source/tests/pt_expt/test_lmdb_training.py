@@ -242,7 +242,7 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                         self.assertEqual(actual_value, expected_value)
                 pending = parallel._batch_iterator._pending
                 self.assertIsNotNone(pending)
-                self.assertLessEqual(len(pending), 2)
+                self.assertLessEqual(len(pending.futures), 2)
         finally:
             parallel.close()
 
@@ -501,7 +501,7 @@ class TestLmdbTrainingLoop(unittest.TestCase):
                 trainer = get_trainer(config)
                 trainer.run()
             self.assertTrue(trainer.training_data._batch_iterator.closed)
-            self.assertIsNone(trainer.training_data._batch_iterator._executor)
+            self.assertIsNone(trainer.training_data._batch_iterator._pool)
             self.assertTrue(trainer.training_data._reader.closed)
         finally:
             os.chdir(cwd)

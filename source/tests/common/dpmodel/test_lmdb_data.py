@@ -4,13 +4,31 @@
 Pure dpmodel (NumPy/lmdb) tests — no PyTorch dependency.
 """
 
+import os
+import signal
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
+from concurrent.futures import (
+    Future,
+)
+from pathlib import (
+    Path,
+)
+from types import (
+    SimpleNamespace,
+)
+from unittest import (
+    mock,
+)
 
 import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchIterator,
     LmdbDataReader,
@@ -1527,6 +1545,208 @@ class TestDynamicKeysAndRepeat(unittest.TestCase):
         # atom_pref is not in the plain LMDB
         self.assertEqual(result.get("find_atom_pref", 0.0), 0.0)
         tmpdir.cleanup()
+
+
+class _StalledPool:
+    """A pool whose decoder exited, leaving its submissions unfinished.
+
+    This is what a decoder killed mid-result looks like from the parent: the
+    futures never resolve and the pool never reports itself broken.
+    """
+
+    def __init__(self) -> None:
+        self._processes = {1: SimpleNamespace(exitcode=-1)}
+        self.submissions = 0
+
+    def submit(self, *args: object, **kwargs: object) -> Future:
+        self.submissions += 1
+        return Future()
+
+
+class TestDecoderPoolFailure(unittest.TestCase):
+    """A dead decoder must not strand the run waiting for it."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self._path = _create_lmdb(
+            f"{self._tmpdir.name}/pool.lmdb", nframes=12, natoms=6
+        )
+        self._reader = LmdbDataReader(self._path, ["O", "H"], batch_size=4)
+        self.addCleanup(self._reader.close)
+        # Keep the liveness check from pacing the test.
+        patcher = mock.patch.object(
+            lmdb_data_module, "_DECODER_LIVENESS_INTERVAL", 0.01
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._entries: dict[int, object] = {}
+
+    def _iterator(self, pool: object) -> LmdbBatchIterator:
+        """Return an iterator over two four-frame batches served by ``pool``.
+
+        Every iterator built on one stand-in pool receives the same entry, as
+        the iterators of a rank share the pool registered for their worker
+        count.
+        """
+        entry = self._entries.setdefault(
+            id(pool), lmdb_data_module._LmdbPoolEntry(executor=pool, users=0)
+        )
+        entry.users += 1
+        patcher = mock.patch.object(
+            lmdb_data_module, "_acquire_lmdb_executor", return_value=entry
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # The stand-in pool was never registered, so releasing it is a no-op.
+        return LmdbBatchIterator(
+            self._reader, [[0, 1, 2, 3], [4, 5, 6, 7]], num_workers=2
+        )
+
+    def _isolated_iterator(self) -> LmdbBatchIterator:
+        """Return an iterator over a real pool that no other test shares.
+
+        The decoder pool is process-wide, so a test that kills or signals its
+        decoders is given one of its own rather than leaving the damage behind
+        for its neighbours.
+        """
+        registry: dict = {}
+        patcher = mock.patch.object(lmdb_data_module, "_LMDB_POOLS", registry)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(
+            lambda: [
+                entry.executor.shutdown(wait=False, cancel_futures=True)
+                for entry in registry.values()
+            ]
+        )
+        iterator = LmdbBatchIterator(
+            self._reader, [[0, 1, 2, 3], [4, 5, 6, 7]], num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        return iterator
+
+    def _assert_same_batch(self, batch: dict, expected: dict) -> None:
+        self.assertEqual(sorted(batch), sorted(expected))
+        for key, value in expected.items():
+            if isinstance(value, np.ndarray):
+                np.testing.assert_array_equal(batch[key], value)
+
+    def test_a_stalled_decoder_falls_back_and_is_not_retried(self) -> None:
+        pool = _StalledPool()
+        iterator = self._iterator(pool)
+
+        with self.assertLogs(lmdb_data_module.log, level="WARNING") as captured:
+            first = next(iterator)
+        submissions = pool.submissions
+        second = next(iterator)
+
+        # Each batch is the one the pool was asked for, decoded here instead,
+        # and the pool is not offered any more work.
+        self._assert_same_batch(first, self._reader.decode_batch([0, 1, 2, 3]))
+        self._assert_same_batch(second, self._reader.decode_batch([4, 5, 6, 7]))
+        self.assertIn("decoder process exited", "\n".join(captured.output))
+        self.assertEqual(pool.submissions, submissions)
+
+    def test_a_second_iterator_does_not_retry_a_lost_pool(self) -> None:
+        """Pool health is shared, so the loss is discovered once for all."""
+        pool = _StalledPool()
+        first = self._iterator(pool)
+        next(first)
+        submissions = pool.submissions
+
+        second = self._iterator(pool)
+        batch = next(second)
+
+        self._assert_same_batch(batch, self._reader.decode_batch([0, 1, 2, 3]))
+        self.assertEqual(pool.submissions, submissions)
+
+    def test_a_run_that_lost_its_pool_still_exits(self) -> None:
+        """Losing a decoder must not leave the interpreter unable to exit.
+
+        A pool reading the partial result of a decoder killed mid-write is
+        joined by the interpreter on the way out, so a run could complete its
+        training and then hang forever instead of terminating.
+        """
+        # Spawned decoders re-import the main module, so the scenario has to
+        # live in a file rather than be passed on the command line.
+        script = Path(self._tmpdir.name) / "lose_the_pool.py"
+        script.write_text(
+            textwrap.dedent("""
+            import os
+            import struct
+
+            from deepmd.dpmodel.utils.lmdb_data import (
+                _acquire_lmdb_executor,
+                _release_lmdb_executor,
+            )
+
+
+            def idle():
+                return os.getpid()
+
+
+            if __name__ == "__main__":
+                entry = _acquire_lmdb_executor(2)
+                entry.executor.submit(idle).result()
+                # A frame header promising more bytes than ever arrive, which
+                # is what a decoder killed mid-write leaves behind.
+                os.write(
+                    entry.executor._result_queue._writer.fileno(),
+                    struct.pack("!i", 4096) + b"partial",
+                )
+                entry.healthy = False
+                _release_lmdb_executor(2)
+            """)
+        )
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+
+    def test_decoders_survive_the_hangup_of_their_launching_session(self) -> None:
+        """A decoder outlives the session that started the run.
+
+        The hangup delivered when that session goes away reaches every
+        background helper of the run. A decoder that died of it would break
+        the pool of an otherwise healthy run.
+        """
+        iterator = self._isolated_iterator()
+        first = next(iterator)
+        processes = list(iterator._pool.executor._processes.values())
+        self.assertTrue(processes)
+
+        for process in processes:
+            os.kill(process.pid, signal.SIGHUP)
+
+        # Delivering the next batch is what proves the decoders lived through
+        # it: a pool that lost one degrades instead. That is both a stronger
+        # statement than reading their liveness and free of any timing.
+        self._assert_same_batch(first, self._reader.decode_batch([0, 1, 2, 3]))
+        self._assert_same_batch(next(iterator), self._reader.decode_batch([4, 5, 6, 7]))
+        self.assertTrue(iterator._pool.healthy)
+        self.assertTrue(all(process.is_alive() for process in processes))
+
+    def test_killing_the_real_decoders_does_not_stop_the_run(self) -> None:
+        """The pool reports itself broken, and the batch still arrives.
+
+        A decoder that dies cleanly fails every future the pool holds, which
+        is the other way the loss of a decoder reaches the iterator. Only a
+        signal it cannot ignore gets it there.
+        """
+        iterator = self._isolated_iterator()
+        next(iterator)
+        for process in list(iterator._pool.executor._processes.values()):
+            os.kill(process.pid, signal.SIGKILL)
+            process.join(timeout=5)
+
+        batch = next(iterator)
+
+        self._assert_same_batch(batch, self._reader.decode_batch([4, 5, 6, 7]))
+        self.assertFalse(iterator._pool.healthy)
 
 
 if __name__ == "__main__":

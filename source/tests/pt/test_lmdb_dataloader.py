@@ -404,7 +404,7 @@ class TestDataLoaderIteration:
         try:
             next(first_iterator)
             next(second_iterator)
-            assert first._batch_iterator._executor is second._batch_iterator._executor
+            assert first._batch_iterator._pool is second._batch_iterator._pool
             first.close()
             assert next(second_iterator)["coord"].shape == (2, 6, 3)
         finally:
@@ -1253,8 +1253,8 @@ class TestMultitaskLmdbTraining:
             assert "coord" in input_dict
             assert "sid" in log_dict
         assert (
-            trainer.training_dataloader["model_1"]._batch_iterator._executor
-            is trainer.training_dataloader["model_2"]._batch_iterator._executor
+            trainer.training_dataloader["model_1"]._batch_iterator._pool
+            is trainer.training_dataloader["model_2"]._batch_iterator._pool
         )
 
         # -- training run assertions --
