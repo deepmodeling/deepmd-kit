@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Runtime selection and dispatch for pt_expt carry-all graph builders."""
 
+import logging
 from typing import (
     TYPE_CHECKING,
 )
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
+
+log = logging.getLogger(__name__)
 
 
 def resolve_neighbor_graph_method(
@@ -55,7 +58,17 @@ def resolve_neighbor_graph_method(
     )
 
     if requested == "auto":
-        return "nv" if device.type == "cuda" and is_nv_available() else "dense"
+        if device.type != "cuda":
+            return "dense"
+        if is_nv_available():
+            return "nv"
+        log.warning(
+            "nvalchemi-toolkit-ops is unavailable; falling back from "
+            "neighbor_graph_method='auto' to the dense graph builder. "
+            "Install it with `pip install nvalchemi-toolkit-ops` to enable "
+            "the NV graph builder."
+        )
+        return "dense"
     if device.type != "cuda":
         raise ValueError(
             "neighbor_graph_method='nv' requires a CUDA training device, "

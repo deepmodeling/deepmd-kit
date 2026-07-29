@@ -48,6 +48,10 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
+)
+
 # Paths to the water data used by PT tests
 _PT_DATA = str(Path(__file__).parent.parent / "pt" / "water" / "data" / "data_0")
 
@@ -1479,6 +1483,7 @@ def _worker_multitask_compile_train(rank, world_size, port, data_dir, result_dic
         dist.destroy_process_group()
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestDDPCompileSingleTask(unittest.TestCase):
     """DDP + torch.compile: single-task training with 2 ranks.
 
@@ -1524,6 +1529,7 @@ class TestDDPCompileSingleTask(unittest.TestCase):
             )
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestDDPCompileMultiTask(unittest.TestCase):
     """DDP + torch.compile: multi-task training with 2 ranks.
 

@@ -123,6 +123,16 @@ def test_auto_graph_method_uses_nv_only_on_cuda():
         assert resolve_neighbor_graph_method("auto", torch.device("cpu")) == "dense"
 
 
+def test_auto_graph_method_warns_when_nv_is_unavailable(caplog):
+    with (
+        patch("deepmd.pt.utils.nv_nlist.is_nv_available", return_value=False),
+        caplog.at_level("WARNING", logger="deepmd.pt_expt.utils.graph_builder"),
+    ):
+        assert resolve_neighbor_graph_method("auto", torch.device("cuda")) == "dense"
+
+    assert "pip install nvalchemi-toolkit-ops" in caplog.text
+
+
 def test_explicit_nv_rejects_cpu():
     with pytest.raises(ValueError, match="requires a CUDA"):
         resolve_neighbor_graph_method("nv", torch.device("cpu"))

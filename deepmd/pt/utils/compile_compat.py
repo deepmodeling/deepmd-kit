@@ -57,11 +57,11 @@ __all__ = [
 def apply_global_compile_patches() -> None:
     """Apply every process-global PyTorch adjustment the compile path needs.
 
-    The adjustments are mutually independent and individually idempotent. The
-    function is intended to run exactly once, when the model module is
-    imported, so that the global state is established before the first
-    compilation. The symbolic-divisibility repair is applied only on PyTorch
-    2.12, where the regression exists.
+    The adjustments are mutually independent and individually idempotent. Call
+    this function at an explicit compile boundary before Dynamo or Inductor is
+    invoked; repeated calls from independent compile paths are safe. The
+    symbolic-divisibility repair is applied only on PyTorch 2.12, where the
+    regression exists.
     """
     # Silence Inductor / Triton autotune console dumps.  ``torch.compile``
     # reads these environment variables once, when its backend is first

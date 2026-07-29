@@ -295,6 +295,18 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         # Exact pt_expt leaf "b" → Adam even when matrix-shaped
         self.assertIn("exp_avg", optimizer.state[model.b])
         self.assertNotIn("momentum_buffer", optimizer.state[model.b])
+        self.assertTrue(
+            any(
+                entry["param"] is model.b
+                for entry in optimizer._routing[0]["adam_no_decay"]
+            )
+        )
+        self.assertFalse(
+            any(
+                entry["param"] is model.b
+                for entry in optimizer._routing[0]["adam_decay"]
+            )
+        )
         # Module name "bias_proj" but leaf is "weight" → Muon
         self.assertIn("momentum_buffer", optimizer.state[model.bias_proj.weight])
         self.assertNotIn("exp_avg", optimizer.state[model.bias_proj.weight])

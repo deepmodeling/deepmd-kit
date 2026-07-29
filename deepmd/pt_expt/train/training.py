@@ -101,10 +101,6 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-# Apply the shared process-global compiler workarounds before any pt_expt
-# training graph reaches Dynamo or Inductor.
-apply_global_compile_patches()
-
 # Buffer names in atomic_model that are per-task (energy/output statistics).
 # These live one level above the fitting net and are not reached by
 # fitting-net share_params.  They are always promoted to FX placeholders
@@ -583,6 +579,12 @@ def _finalize_compiled_lower(
 
     if not was_training:
         model.eval()
+
+    # This is the common boundary immediately before every pt_expt
+    # ``torch.compile`` call. Applying the idempotent process-global patches
+    # here leaves eager-only imports untouched while still preceding all
+    # Dynamo and Inductor configuration reads.
+    apply_global_compile_patches()
 
     # Keep pt_expt training on the same compiler contract as the PT SeZM path.
     inductor_options = build_inductor_compile_options(inference=False)
@@ -1586,6 +1588,9 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = optimizer_params.get("type", "Adam")
+        if opt_type not in {"Adam", "AdamW", "HybridMuon"}:
+            raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
@@ -1611,7 +1616,7 @@ class Trainer(AbstractTrainer):
                 betas=adam_betas,
                 weight_decay=weight_decay,
             )
-        elif opt_type == "HybridMuon":
+        else:  # HybridMuon
             runtime_named_parameters = tuple(self.wrapper.named_parameters())
             self.optimizer = HybridMuonOptimizer(
                 self.wrapper.parameters(),
@@ -1627,8 +1632,6 @@ class Trainer(AbstractTrainer):
                 flash_muon=bool(optimizer_params["flash_muon"]),
                 magma_muon=bool(optimizer_params["magma_muon"]),
             )
-        else:
-            raise ValueError(f"Unsupported optimizer type: {opt_type}")
 
         for param_group in self.optimizer.param_groups:
             param_group["initial_lr"] = initial_lr
@@ -1969,14 +1972,6 @@ class Trainer(AbstractTrainer):
         needed.  The coord extension + nlist build (data-dependent
         control flow) are kept outside the compiled region.
         """
-        # Disable DDPOptimizer: our compile region wraps only the inner
-        # compute function, not the whole DDP model.  DDPOptimizer assumes
-        # it owns the full model graph and splits at bucket boundaries,
-        # producing subgraphs whose outputs include symbolic integers.
-        # AOT Autograd then crashes with ``'int' object has no attribute
-        # 'meta'`` (pytorch/pytorch#134182).
-        torch._dynamo.config.optimize_ddp = False
-
         # Under DDP, self.wrapper is a DistributedDataParallel wrapper;
         # access the underlying ModelWrapper via .module.
         wrapper_mod = (
