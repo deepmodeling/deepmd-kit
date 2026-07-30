@@ -12,6 +12,9 @@ if os.environ.get("DP_TEST_TF2_ONLY") != "1":
         allow_module_level=True,
     )
 
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+)
 from deepmd.tf2.common import (
     to_tf_tensor,
     wrap_tensor,
@@ -231,34 +234,32 @@ def _make_edge_descriptor() -> DescrptDPA4:
     )
 
 
-def test_call_with_edges_supports_an_empty_edge_list() -> None:
-    """A frame whose atoms have no neighbors must reduce without scattering."""
+def test_call_graph_supports_an_empty_edge_list() -> None:
+    """A graph whose atom has no neighbors must reduce without scattering."""
     descriptor = _make_edge_descriptor()
-    coord_ext = np.zeros((1, 1, 3), dtype=np.float64)
-    atype_ext = np.zeros((1, 1), dtype=np.int64)
 
-    def run(coord, atype, edge_index, edge_vec, edge_mask):
-        descrpt, force_embedding = descriptor.call_with_edges(
-            coord_ext=wrap_tensor(coord),
-            atype_ext=wrap_tensor(atype),
+    def run(n_node, atype, edge_index, edge_vec, edge_mask):
+        graph = NeighborGraph(
+            n_node=wrap_tensor(n_node),
             edge_index=wrap_tensor(edge_index),
             edge_vec=wrap_tensor(edge_vec),
             edge_mask=wrap_tensor(edge_mask),
         )
-        return to_tf_tensor(descrpt), to_tf_tensor(force_embedding)
+        descrpt, _ = descriptor.call_graph(graph, wrap_tensor(atype))
+        return to_tf_tensor(descrpt)
 
     args = (
-        to_tf_tensor(coord_ext),
-        to_tf_tensor(atype_ext),
+        to_tf_tensor(np.ones((1,), dtype=np.int64)),
+        to_tf_tensor(np.zeros((1,), dtype=np.int64)),
         to_tf_tensor(np.zeros((2, 0), dtype=np.int64)),
         to_tf_tensor(np.zeros((0, 3), dtype=np.float64)),
         to_tf_tensor(np.zeros((0,), dtype=bool)),
     )
-    eager_descrpt, _ = run(*args)
-    assert tuple(eager_descrpt.shape) == (1, 1, descriptor.channels)
+    eager_descrpt = run(*args)
+    assert tuple(eager_descrpt.shape) == (1, descriptor.channels)
     assert np.all(np.isfinite(eager_descrpt.numpy()))
 
-    traced_descrpt, _ = tf.function(run, reduce_retracing=True)(*args)
+    traced_descrpt = tf.function(run, reduce_retracing=True)(*args)
     np.testing.assert_allclose(traced_descrpt.numpy(), eager_descrpt.numpy())
 
 

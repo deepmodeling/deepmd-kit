@@ -126,7 +126,16 @@ class TypeEmbedNet(NativeOP):
                 )
             )
         else:
-            embed = self.embedding_net(self.econf_tebd)
+            # Electronic configurations are stored as NumPy for portable
+            # serialization. Materialize them beside the network parameters
+            # at call time so NativeLayer selects the active array backend
+            # instead of accidentally pulling device-backed weights to NumPy.
+            backend_econf_tebd = xp.asarray(
+                self.econf_tebd,
+                dtype=sample_array.dtype,
+                device=_array_device_or_none(sample_array),
+            )
+            embed = self.embedding_net(backend_econf_tebd)
         if self.padding:
             embed_pad = xp.zeros(
                 (1, embed.shape[-1]),

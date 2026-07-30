@@ -15,6 +15,9 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.model.edge_transform_output import (
     node_ownership_mask,
 )
+from deepmd.dpmodel.output_def import (
+    get_deriv_name_mag,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     edge_force_virial,
@@ -156,6 +159,7 @@ def fit_output_to_model_output_graph(
     node_capacity: int | None = None,
     n_local: torch.Tensor | None = None,
     force_precision: torch.dtype | None = None,
+    spin_leaf: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
 
@@ -216,6 +220,17 @@ def fit_output_to_model_output_graph(
         Compute precision (model dtype) in which to assemble the force / virial
         during inference, decoupled from the fp64 ``edge_vec`` leaf; see
         :func:`edge_energy_deriv`. ``None`` keeps the leaf dtype.
+    spin_leaf
+        Per-node native spin autograd leaf, flat ``(N, 3)``, or ``None``. When
+        given, every ``r_differentiable`` reducible output additionally emits
+        ``<var>_derv_r_mag = -d<var>_redu/dspin`` (``(N, *shape, 3)``), via a
+        SECOND ``torch.autograd.grad`` call on the SAME reduced scalar that
+        the force grad differentiates (same energy, same backward family).
+        This deliberately differs from the pt backend
+        (``deepmd/pt/model/model/transform_output.py:288``), which computes
+        ``grad(E, [edge_vec, spin])`` jointly in one call; here the two grads
+        are separate so :func:`edge_energy_deriv`'s signature stays
+        untouched. ``None`` (default): unchanged, no mag output.
 
     Returns
     -------
@@ -295,6 +310,7 @@ def fit_output_to_model_output_graph(
         ff_list: list[torch.Tensor] = []
         av_list: list[torch.Tensor] = []
         vir_list: list[torch.Tensor] = []
+        mag_list: list[torch.Tensor] = []
         for c in range(size):
             force, atom_vir, vir = edge_energy_deriv(
                 svv[:, c],
@@ -320,8 +336,26 @@ def fit_output_to_model_output_graph(
                     assert atom_vir is not None
                     # atom_virial (N, 3, 3) -> (N, 1, 9)  [flat]
                     av_list.append(atom_vir.reshape(N, 1, 9))
+            if spin_leaf is not None:
+                # Second, separate backward on the SAME reduced scalar
+                # ``svv[:, c]`` the force grad above just differentiated --
+                # same energy, same backward family, different leaf. See the
+                # ``spin_leaf`` docstring entry for the pt-parity note.
+                (g_s,) = torch.autograd.grad(
+                    svv[:, c].sum(),
+                    spin_leaf,
+                    create_graph=create_graph,
+                    retain_graph=True,
+                )
+                # force_mag (N, 3) -> (N, 1, 3)  [flat; caller unravels]
+                mag_list.append((-g_s).reshape(N, 1, 3))
         # (N, size, 3) -> (N, *shape, 3)
         model_ret[kk_derv_r] = torch.cat(ff_list, dim=-2).reshape([N, *shap, 3])
+        if spin_leaf is not None:
+            kk_derv_r_mag, _ = get_deriv_name_mag(kk)
+            model_ret[kk_derv_r_mag] = torch.cat(mag_list, dim=-2).reshape(
+                [N, *shap, 3]
+            )
         if vdef.c_differentiable:
             # (nf, size, 9) -> (nf, *shape, 9)
             model_ret[kk_derv_c + "_redu"] = torch.cat(vir_list, dim=-2).reshape(
