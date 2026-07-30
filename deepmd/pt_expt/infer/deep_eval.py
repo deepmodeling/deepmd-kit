@@ -621,7 +621,9 @@ class DeepEval(DeepEvalBackend):
         # `_collect_metadata` writes into metadata.json.
         self.metadata = {
             "type_map": model.get_type_map(),
-            "ntypes": model.get_descriptor().get_ntypes(),
+            # via the model API, not the descriptor: compositions
+            # (LinearEnergyAtomicModel) have no single descriptor to reach for
+            "ntypes": len(model.get_type_map()),
             "rcut": model.get_rcut(),
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),

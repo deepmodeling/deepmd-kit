@@ -8,6 +8,9 @@ constructed objects are ``torch.nn.Module`` subclasses.
 
 import copy
 import logging
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -65,7 +68,6 @@ _model_factory = BackendModelFactory(
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
 )
-get_standard_model = _model_factory.get_standard_model
 get_zbl_model = _model_factory.get_zbl_model
 
 
@@ -164,36 +166,91 @@ def get_sezm_model(data: dict) -> EnergyModel:
         pair_exclude_types=pair_exclude_types,
     )
     if bridging_enabled:
-        # Composition, not a flag (first-principles design): the analytical
-        # bridging term is its own atomic model, summed with the learned one
-        # by the existing linear composition machinery.
-        from deepmd.dpmodel.atomic_model.inter_potential import (
-            InterPotentialAtomicModel,
-        )
-        from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-            LinearEnergyAtomicModel,
-        )
-        from deepmd.pt_expt.model.dp_linear_model import (
-            LinearEnergyModel,
-        )
-
-        zbl_atomic = InterPotentialAtomicModel(
-            type_map=data["type_map"],
-            mode=bridging_method,
-            rcut=descriptor.get_rcut(),
-            sel=descriptor.get_sel(),
-        )
-        composed = LinearEnergyAtomicModel(
-            models=[model.atomic_model, zbl_atomic],
-            type_map=data["type_map"],
-            weights="sum",
-            # Both exclusions belong to the composition: its children share one
-            # graph, so "excluded" must cover the analytical term too.
-            atom_exclude_types=data.get("atom_exclude_types", []),
-            pair_exclude_types=pair_exclude_types,
-        )
-        return LinearEnergyModel(atomic_model_=composed)
+        return _compose_bridging(model, data, bridging_method)
     return model
+
+
+def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
+    """Compose the learned model with its analytical bridging term.
+
+    Composition, not a flag (first-principles design): the analytical
+    bridging term is its own atomic model, summed with the learned one by
+    the existing linear composition machinery. The ONE owner of the
+    composition build for this backend -- both :func:`get_sezm_model`
+    (``type: "dpa4"``) and :func:`get_standard_model` (``type:
+    "standard"``) route through here, mirroring the dpmodel twin
+    (``deepmd/dpmodel/model/model.py``).
+
+    Parameters
+    ----------
+    model
+        The learned backbone model (its descriptor already carries the
+        bridging radii injected by the caller).
+    data
+        The model config (``type_map`` and the exclusion lists are read).
+    bridging_method
+        The analytical bridging mode (e.g. ``"ZBL"``).
+
+    Returns
+    -------
+    Any
+        A :class:`LinearEnergyModel` over ``[learned, InterPotential]``.
+    """
+    from deepmd.dpmodel.atomic_model.inter_potential import (
+        InterPotentialAtomicModel,
+    )
+    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+        LinearEnergyAtomicModel,
+    )
+    from deepmd.pt_expt.model.dp_linear_model import (
+        LinearEnergyModel,
+    )
+
+    descriptor = model.atomic_model.descriptor
+    zbl_atomic = InterPotentialAtomicModel(
+        type_map=data["type_map"],
+        mode=bridging_method,
+        rcut=descriptor.get_rcut(),
+        sel=descriptor.get_sel(),
+    )
+    composed = LinearEnergyAtomicModel(
+        models=[model.atomic_model, zbl_atomic],
+        type_map=data["type_map"],
+        weights="sum",
+        # Both exclusions belong to the composition: its children share one
+        # graph, so "excluded" must cover the analytical term too.
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=data.get("pair_exclude_types", []),
+    )
+    return LinearEnergyModel(atomic_model_=composed)
+
+
+def get_standard_model(data: dict) -> Any:
+    """Build a pt_expt standard model, honoring ``bridging_method``.
+
+    pt_expt twin of :func:`deepmd.dpmodel.model.model.get_standard_model`:
+    the analytical-bridging radii feed the DESCRIPTOR's
+    InnerClamp/BridgingSwitch and the method composes the atomic model with
+    its InterPotential term. Without this wrapper a ``type: "standard"``
+    config with ``bridging_method`` silently dropped the bridging term
+    (backend divergence from dpmodel -- issue #5906 Task 4 audit).
+
+    Parameters
+    ----------
+    data : dict
+        The data to construct the model.
+    """
+    data = copy.deepcopy(data)
+    bridging_method = str(data.get("bridging_method", "none"))
+    bridging_enabled = bridging_method.lower() not in ("none", "")
+    if bridging_enabled:
+        data.setdefault("descriptor", {})
+        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
+        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
+    model = _model_factory.get_standard_model(data)
+    if not bridging_enabled:
+        return model
+    return _compose_bridging(model, data, bridging_method)
 
 
 def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
@@ -335,6 +392,7 @@ def get_model(data: dict) -> BaseModel:
     """
     return _model_factory.get_model(
         data,
+        standard_model_factory=get_standard_model,
         spin_model_factory=get_spin_model,
         native_spin_model_factory=get_native_spin_model,
         model_factories={
