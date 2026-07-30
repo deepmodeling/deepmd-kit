@@ -529,6 +529,32 @@ class TestLmdbTrainingLoop(unittest.TestCase):
         # train.lmdb holds eight frames, read one frame per batch.
         self.assertEqual(trainer.num_steps, 2 * 8)
 
+    def test_numb_epoch_counts_mixed_nloc_batches(self) -> None:
+        """One epoch of a ``mix:N`` dataset is one pass over its padded batches.
+
+        The batch count of a mixed-nloc pass depends on how the shuffle groups
+        atom counts, so an epoch can only be measured on the sampler the
+        trainer will actually draw from, not on a nominal batch size.
+        """
+        config = self._make_lmdb_config()
+        del config["training"]["numb_steps"]
+        config["training"]["numb_epoch"] = 3.0
+        config["training"]["training_data"]["systems"] = self.mixed_lmdb_path
+        config["training"]["training_data"]["batch_size"] = "mix:27"
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+        finally:
+            os.chdir(cwd)
+
+        data = trainer.training_data
+        self.assertTrue(data._reader.mixed_nloc)
+        self.assertEqual(trainer.num_steps, 3 * data.nbatches[0])
+
     def test_training_closes_parallel_lmdb_pipeline(self) -> None:
         """Trainer shutdown releases spawned decoder processes."""
         config = self._make_lmdb_config(numb_steps=2)
@@ -566,6 +592,168 @@ class TestLmdbTrainingLoop(unittest.TestCase):
                 trainer.run()
             finally:
                 os.chdir(cwd)
+
+    def test_mix_batch_size_trains_on_padded_batches(self) -> None:
+        """``mix:N`` reaches the trainer and its padded batches train."""
+        config = self._make_lmdb_config(numb_steps=2)
+        config["model"]["data_stat_nbatch"] = 10
+        config["training"]["training_data"]["systems"] = self.mixed_lmdb_path
+        # The fixture holds five 6-atom and five 9-atom frames; this budget
+        # puts a batch boundary inside the atom-count-sorted run, so at least
+        # one batch spans both sizes and is padded.
+        config["training"]["training_data"]["batch_size"] = "mix:27"
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        with tempfile.TemporaryDirectory(dir=self.tmpdir) as run_dir:
+            cwd = os.getcwd()
+            os.chdir(run_dir)
+            try:
+                trainer = get_trainer(config)
+                data = trainer.training_data
+                self.assertTrue(data._reader.mixed_nloc)
+                # Statistics keep their own fixed-nloc view, so padding never
+                # reaches the per-type accumulators.
+                self.assertEqual(data.get_stat_nsystems(), 2)
+                for sys_idx in range(data.get_stat_nsystems()):
+                    stat = data.get_stat_batch(sys_idx)
+                    self.assertTrue((stat["atype"] >= 0).all())
+                padded = next(
+                    batch
+                    for batch in (data.get_batch() for _ in range(10))
+                    if (batch["atype"] < 0).any()
+                )
+                self.assertEqual(padded["atype"].shape[1], 9)
+                self.assertEqual(padded["coord"].shape[1], 9)
+                self.assertEqual(padded["force"].shape[1], 9)
+                np.testing.assert_array_equal(padded["force"][padded["atype"] < 0], 0.0)
+                # Per-frame atom counts stay real, not padded.
+                self.assertEqual(sorted(set(padded["natoms"][:, 0].tolist())), [6, 9])
+                trainer.run()
+            finally:
+                os.chdir(cwd)
+
+
+class TestRaggedTrainingBatches(unittest.TestCase):
+    """A model reading a flat node axis is fed one, with nothing padded."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+        self.lmdb_path = os.path.join(self.tmpdir, "mixed.lmdb")
+        _create_mixed_nloc_test_lmdb(self.lmdb_path)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _config(self, descriptor: dict) -> dict:
+        config = {
+            "model": {
+                "type_map": ["O", "H"],
+                "descriptor": descriptor,
+                "fitting_net": {"neuron": [8, 8], "precision": "float64", "seed": 1},
+                "data_stat_nbatch": 1,
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 1e-3,
+                "stop_lr": 3.5e-8,
+            },
+            "loss": {
+                "type": "ener",
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+                "start_pref_v": 0,
+                "limit_pref_v": 0,
+            },
+            "training": {
+                "training_data": {
+                    "systems": self.lmdb_path,
+                    "batch_size": "mix:27",
+                },
+                "numb_steps": 2,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 1,
+                "save_freq": 100,
+            },
+        }
+        return normalize(update_deepmd_input(config, warning=False))
+
+    @staticmethod
+    def _dpa1() -> dict:
+        return {
+            "type": "dpa1",
+            "sel": 12,
+            "rcut_smth": 0.5,
+            "rcut": 3.0,
+            "neuron": [8, 16],
+            "axis_neuron": 4,
+            "attn_layer": 0,
+            "precision": "float64",
+            "seed": 1,
+        }
+
+    @staticmethod
+    def _se_e2_a() -> dict:
+        return {
+            "type": "se_e2_a",
+            "sel": [6, 12],
+            "rcut_smth": 0.5,
+            "rcut": 3.0,
+            "neuron": [8, 16],
+            "axis_neuron": 4,
+            "seed": 1,
+        }
+
+    def _run(self, descriptor: dict, *, compile: bool = False):
+        """Train two steps and return the trainer plus one drawn batch."""
+        config = self._config(descriptor)
+        config["training"]["enable_compile"] = compile
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            batch = trainer.training_data.get_batch()
+            trainer.run()
+            return trainer, batch
+        finally:
+            os.chdir(cwd)
+
+    def test_graph_model_trains_on_a_flat_node_axis(self) -> None:
+        """DPA1 reads a graph lower, so its batches carry no padded row."""
+        trainer, batch = self._run(self._dpa1())
+        self.assertTrue(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 2)
+        self.assertEqual(batch["atype"].ndim, 1)
+        self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
+        self.assertTrue((batch["atype"] >= 0).all(), "nothing is padded")
+        # Frame-level fields keep their frame axis.
+        self.assertEqual(batch["energy"].shape[0], batch["n_node"].shape[0])
+
+    def test_compiled_graph_model_trains_on_a_flat_node_axis(self) -> None:
+        """The compiled lower reads the flat axis too, so compiling changes nothing.
+
+        Its trace is taken on a rectangular system, which would bake in
+        ``N == nframes * nloc`` were the frame, node and edge counts not kept
+        as independent symbols.
+        """
+        trainer, batch = self._run(self._dpa1(), compile=True)
+        self.assertEqual(
+            type(trainer.wrapper.model["Default"]).__name__, "_CompiledModel"
+        )
+        self.assertTrue((batch["atype"] >= 0).all())
+        self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
+
+    def test_dense_model_keeps_padded_batches(self) -> None:
+        """se_e2_a reads a rectangular node axis and must still be padded."""
+        trainer, batch = self._run(self._se_e2_a())
+        self.assertFalse(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 3)
+        self.assertEqual(batch["atype"].ndim, 2)
+        self.assertNotIn("n_node", batch)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,10 @@ from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    compact_nodes,
+    expand_node_values,
+)
 from deepmd.kernels.utils import (
     cuda_infer_level,
 )
@@ -28,6 +32,8 @@ from deepmd.pt_expt.common import (
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
+    build_ragged_neighbor_graph,
+    resolve_neighbor_graph_method,
 )
 from deepmd.pt_expt.utils.graph_csr import (
     validate_graph_csr_for_export,
@@ -710,6 +716,102 @@ def make_model(
                 return getattr(self, "neighbor_graph_method", "dense")
             return None
 
+        def call_common_ragged(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Model forward over a batch whose node axis is already flat.
+
+            The rectangular :meth:`call_common` pads frames of unequal atom
+            count to a common width and unpads its output again. A caller that
+            holds the frames concatenated skips both: the node axis it passes
+            in is the one the graph lower works on, and the per-atom outputs
+            come back on it.
+
+            Parameters
+            ----------
+            coord : torch.Tensor
+                Local coordinates with shape ``(N, 3)``, frame-major over
+                ``n_node``.
+            atype : torch.Tensor
+                Local atom types with shape ``(N,)``.
+            n_node : torch.Tensor
+                Atoms per frame with shape ``(nf,)``.
+            box : torch.Tensor or None, optional
+                Simulation cell with shape ``(nf, 3, 3)``, or ``None`` for
+                non-periodic.
+            fparam : torch.Tensor or None, optional
+                Frame parameter with shape ``(nf, ndf)``.
+            aparam : torch.Tensor or None, optional
+                Atomic parameter with shape ``(N, nda)``.
+            do_atomic_virial : bool, default: False
+                Whether to compute the atomic virial.
+            charge_spin : torch.Tensor or None, optional
+                Frame-level charge/spin conditioning with shape ``(nf, 2)``.
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                The standard model dict. Per-atom keys keep the flat ``(N, *)``
+                axis; per-frame keys have leading dimension ``nf``.
+
+            Raises
+            ------
+            NotImplementedError
+                If the model has no graph lower to read a flat node axis with.
+            """
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
+                raise NotImplementedError(
+                    "a flat node axis requires a mixed_types descriptor with a "
+                    "graph lower; this model reads a rectangular one, so its "
+                    "batches must be padded to a common atom count"
+                )
+            # The trainer resolves ``auto`` once and installs the concrete
+            # builder on the model. A model reached outside it has none, and
+            # resolving against its own device is what keeps that case from
+            # silently taking the CPU builder on a GPU.
+            method = getattr(self, "neighbor_graph_method", None)
+            if method is None:
+                method = resolve_neighbor_graph_method("auto", coord.device)
+            graph = build_ragged_neighbor_graph(
+                method,
+                coord,
+                atype,
+                n_node,
+                box,
+                self.get_rcut(),
+                getattr(self.atomic_model, "pair_excl", None),
+            )
+            predict = self.forward_common_lower_graph(
+                atype,
+                graph.n_node,
+                graph.n_node,
+                graph.edge_index,
+                graph.edge_vec,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                graph.source_order,
+                graph.source_row_ptr,
+                destination_sorted=graph.destination_sorted,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+            # The per-atom mask a rectangular batch carries is what tells the
+            # loss each frame's real atom count. Nothing here is padded, so the
+            # counts are stated outright instead.
+            predict["n_node"] = graph.n_node
+            return predict
+
         def _call_common_graph(
             self,
             cc: torch.Tensor,
@@ -787,10 +889,25 @@ def make_model(
                 method, cc, atype, bb, rcut, pair_excl, with_csr=with_csr
             )
             nf, nloc = atype.shape[:2]
-            atype_flat = atype.reshape(nf * nloc)
+            n_padded = nf * nloc
+            atype_flat = atype.reshape(n_padded)
+            # A batch of unequal atom counts arrives padded to a common width
+            # with phantom atoms (atype < 0). The builders leave them out of
+            # every edge, so dropping them from the node axis costs nothing and
+            # spares the network from evaluating them. On a batch of uniform
+            # atom count the mask is all true and this is a renumbering by the
+            # identity.
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_flat = atype_flat[node_index]
             # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
-            ap_flat = ap.reshape(nf * nloc, ap.shape[-1]) if ap is not None else None
-            spin_flat = spin.reshape(nf * nloc, 3) if spin is not None else None
+            ap_flat = (
+                ap.reshape(n_padded, ap.shape[-1])[node_index]
+                if ap is not None
+                else None
+            )
+            spin_flat = (
+                spin.reshape(n_padded, 3)[node_index] if spin is not None else None
+            )
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
@@ -810,11 +927,14 @@ def make_model(
                 charge_spin=charge_spin,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
-            # outputs (N = nf * nloc for a carry-all rectangular graph).
-            # Unravel to rectangular ``(nf, nloc, *)`` at the public I/O boundary
-            # so that callers receive the same shape as the dense ``call_common``.
-            N = nf * nloc
-            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
+            # outputs over the real atoms. Scatter them back onto the padded
+            # width and unravel to rectangular ``(nf, nloc, *)`` at the public
+            # I/O boundary, so that callers receive the same shape as the dense
+            # ``call_common``. A phantom slot reads zero, which is what a
+            # masked-out atom contributed there before.
+            N = node_index.shape[0]
+            # Only the rectangular entry reaches this scatter; the ragged
+            # one keeps the flat axis its caller handed over.
             for k in list(model_predict.keys()):
                 v = model_predict[k]
                 # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
@@ -823,7 +943,9 @@ def make_model(
                     and not k.endswith("_redu")
                     and v.shape[:1] == torch.Size([N])
                 ):
-                    model_predict[k] = v.reshape(nf, nloc, *v.shape[1:])
+                    model_predict[k] = expand_node_values(
+                        v, node_index, n_padded
+                    ).reshape(nf, nloc, *v.shape[1:])
             # Graph-native Hessian (parallel to the dense ``forward_common_atomic``
             # loop): differentiate the reduced output w.r.t. the LOCAL coords by
             # rebuilding the graph inside the wrapper. Added AFTER the unravel so

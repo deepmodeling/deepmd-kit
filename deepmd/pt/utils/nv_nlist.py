@@ -353,6 +353,21 @@ def _matrix_to_extended_inputs(
     slot_idx = edge_idx % max_neighbors
     zero_shift = torch.all(shift == 0, dim=1)
 
+    # Phantom atoms (atype < 0) pad a mixed-nloc batch and have no physical
+    # site, but the geometric search still pairs them with real atoms near
+    # their placeholder coordinates. Edges touching one are neutralized here,
+    # ahead of the ``sum(sel)`` truncation applied by the caller, so that a
+    # phantom can never displace a genuine neighbor from a real atom's list.
+    # Rather than compacting the edge arrays, which would cost a device sync,
+    # such an edge is rewritten to carry the empty marker and routed through
+    # the direct branch below: it then writes -1 into its own matrix slot,
+    # which is what that slot already holds, and is excluded from the ghost
+    # materialization of Step 3.
+    atype_flat = atype.reshape(-1)
+    real_pair = (atype_flat[dst] >= 0) & (atype_flat[src] >= 0)
+    src_local = torch.where(real_pair, src_local, -1)
+    zero_shift = zero_shift | ~real_pair
+
     # === Step 2. Direct neighbors keep their local extended indices ===
     # Zero-shift neighbors already live in the leading local block of
     # `extended_coord`, so their DeePMD nlist value is simply `src_local`.

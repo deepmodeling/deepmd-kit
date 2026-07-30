@@ -5,6 +5,7 @@ All code here is pure Python/NumPy/lmdb/msgpack — no framework dependency.
 Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 """
 
+import dataclasses
 import logging
 import math
 import multiprocessing
@@ -81,6 +82,38 @@ _STRUCTURAL_KEYS = frozenset(
 )
 _LMDB_METADATA_KEYS = frozenset({"atom_numbs", "atom_names", "orig"})
 _OPTIONAL_MODEL_INPUT_KEYS = frozenset({"fparam", "aparam", "spin", "charge_spin"})
+
+# Atom type written into the padded slots of a mixed-nloc batch. A phantom
+# atom occupies a tensor slot but no physical site: the neighbor list gives it
+# no neighbors, the atomic model zeroes its output, and the loss masks it out.
+PHANTOM_ATOM_TYPE = -1
+
+# Fields whose leading axis is the atom axis, and which a mixed-nloc batch must
+# therefore pad to the batch-wide atom count. Membership cannot be inferred
+# from array shapes: a frame with ``nloc == 9`` makes ``virial`` (shape ``(9,)``)
+# indistinguishable from a per-atom field, and ``nloc == 2`` does the same for
+# a two-component ``fparam``. The registered data requirements carry the
+# authoritative ``atomic`` flag; these two sets cover the fields that exist
+# without one.
+_STRUCTURAL_PER_ATOM_KEYS = frozenset({"coord", "atype"})
+_OPTIONAL_PER_ATOM_KEYS = frozenset({"aparam", "spin"})
+
+# Frame-level fields that a decoded frame may carry without a registered
+# requirement. They anchor the shape-based fallback below, which classifies any
+# remaining unrecognized field by comparing its leading axis to the frame's
+# atom count.
+_FRAME_LEVEL_KEYS = frozenset(
+    {
+        "box",
+        "energy",
+        "virial",
+        "fparam",
+        "charge_spin",
+        "natoms",
+        "real_natoms_vec",
+        "min_pair_dist",
+    }
+)
 
 # Process-level cache: python-lmdb does not allow opening the same path twice
 # in one process.  We ref-count so the Environment is closed (and freed from
@@ -276,6 +309,62 @@ def _resolve_frame_dtype(config: LmdbDecodeConfig, key: str) -> np.dtype:
     return np.dtype(GLOBAL_NP_FLOAT_PRECISION)
 
 
+def _requirement_is_atomic(requirement: Any) -> bool:
+    """Whether a data requirement describes a per-atom quantity."""
+    if isinstance(requirement, dict):
+        return bool(requirement.get("atomic", False))
+    return bool(getattr(requirement, "atomic", False))
+
+
+def resolve_per_atom_keys(
+    frame: dict[str, Any],
+    config: LmdbDecodeConfig,
+) -> frozenset[str]:
+    """Return the fields of one frame whose leading axis is the atom axis.
+
+    Classification is authoritative wherever possible: coordinates and atom
+    types are per-atom by construction, and every registered data requirement
+    declares whether it is ``atomic``. Only fields the loader has never been
+    told about fall back to comparing their leading axis against the atom
+    count, and the frame-level fields that DeePMD itself produces are excluded
+    from that fallback so a coincidental shape match cannot misclassify them.
+
+    Parameters
+    ----------
+    frame : dict[str, Any]
+        One decoded frame in DeePMD data-system convention. ``coord`` anchors
+        the atom axis: it is the one field present in every frame whose
+        leading axis is the atom count.
+    config : LmdbDecodeConfig
+        Decoder state holding the registered data requirements.
+
+    Returns
+    -------
+    frozenset[str]
+        Names of the fields to pad along their leading axis.
+    """
+    nloc = frame["coord"].shape[0]
+    keys = set(_STRUCTURAL_PER_ATOM_KEYS)
+    keys |= {
+        key
+        for key, requirement in config.data_requirements.items()
+        if _requirement_is_atomic(requirement)
+    }
+    keys |= _OPTIONAL_PER_ATOM_KEYS
+    for key, value in frame.items():
+        if (
+            key in keys
+            or key in _FRAME_LEVEL_KEYS
+            or key in config.data_requirements
+            or key.startswith("find_")
+            or key == "fid"
+        ):
+            continue
+        if isinstance(value, np.ndarray) and value.ndim >= 1 and value.shape[0] == nloc:
+            keys.add(key)
+    return frozenset(keys & frame.keys())
+
+
 def _compute_frame_natoms(atype: np.ndarray, ntypes: int) -> np.ndarray:
     """Build ``[nloc, nloc, count(type_0), ...]`` for one frame.
 
@@ -460,11 +549,147 @@ def decode_lmdb_frame(
     return frame
 
 
+def _pad_fill_value(key: str) -> int:
+    """Return the value written into the padded tail of one per-atom field.
+
+    Atom types use the phantom sentinel so that downstream code recognizes the
+    slot as unoccupied; every other per-atom field is zeroed, which keeps
+    padded rows neutral in the sums and masked reductions that consume them.
+    """
+    return PHANTOM_ATOM_TYPE if key == "atype" else 0
+
+
+def per_atom_strides(
+    frame: dict[str, Any],
+    per_atom_keys: frozenset[str],
+) -> dict[str, int]:
+    """Return how many leading-axis entries each per-atom field spends per atom.
+
+    Most per-atom fields carry one row per atom, so their leading axis is the
+    atom count itself. A data requirement declared with ``repeat != 1`` is
+    instead stored flat and atom-major, giving a leading axis of
+    ``nloc * repeat``. Padding widens that axis by whole atoms either way, so
+    the factor is all the padding logic needs to tell the two layouts apart.
+
+    Parameters
+    ----------
+    frame : dict[str, Any]
+        One decoded frame; ``coord`` anchors the atom count.
+    per_atom_keys : frozenset[str]
+        Fields to measure, as resolved by :func:`resolve_per_atom_keys`.
+
+    Returns
+    -------
+    dict[str, int]
+        Leading-axis entries per atom, keyed by field name.
+
+    Raises
+    ------
+    ValueError
+        If a field's leading axis is not a whole multiple of the atom count.
+    """
+    nloc = frame["coord"].shape[0]
+    strides: dict[str, int] = {}
+    for key in per_atom_keys:
+        length = np.asarray(frame[key]).shape[0]
+        if nloc == 0 or length % nloc:
+            raise ValueError(
+                f"LMDB field {key!r} has a leading axis of {length}, which is "
+                f"not a whole number of entries per atom in a {nloc}-atom frame"
+            )
+        strides[key] = length // nloc
+    return strides
+
+
+@dataclass(frozen=True)
+class BatchLayout:
+    """Where each frame's per-atom rows sit on a decoded batch's leading axis.
+
+    Two layouts serve the two shapes a model's node axis can take.
+
+    The **rectangular** layout gives every frame a row of the batch-wide atom
+    count and pads the tail of the shorter ones with phantom atoms, which is
+    what a model reading an ``(nf, nloc, ...)`` node axis requires. The
+    **ragged** layout concatenates the frames instead, so nothing is padded and
+    the leading axis is the batch's real atom count; a model reading a flat
+    node axis consumes that directly, paired with ``n_node``. Frame-level
+    fields are stacked on the frame axis either way.
+
+    Attributes
+    ----------
+    n_node : numpy.ndarray
+        Real atom count of each frame of this decode, with shape ``(nf,)``.
+    strides : dict[str, int]
+        Leading-axis entries per atom of each per-atom field, as resolved by
+        :func:`per_atom_strides`.
+    ragged : bool
+        Whether frames are concatenated rather than padded to a common width.
+    width : int
+        Atoms each frame occupies under the rectangular layout. It stays the
+        width of the whole batch even where ``n_node`` covers one chunk of it,
+        since chunks that padded to their own widths would not concatenate.
+    """
+
+    n_node: np.ndarray
+    strides: dict[str, int]
+    ragged: bool
+    width: int
+
+    def __post_init__(self) -> None:
+        # Frame offsets on the ragged axis, in atoms. Held rather than summed
+        # per lookup, since every field of every frame asks for one.
+        object.__setattr__(
+            self, "_offset", np.concatenate([[0], np.cumsum(self.n_node)])
+        )
+
+    @classmethod
+    def over(
+        cls, n_node: np.ndarray, strides: dict[str, int], *, ragged: bool
+    ) -> "BatchLayout":
+        """Return the layout of a batch holding the given per-frame counts."""
+        return cls(
+            n_node=n_node,
+            strides=strides,
+            ragged=ragged,
+            width=int(n_node.max()) if n_node.size else 0,
+        )
+
+    def chunk(self, start: int, stop: int) -> "BatchLayout":
+        """Return the layout of a contiguous run of this batch's frames."""
+        return dataclasses.replace(self, n_node=self.n_node[start:stop])
+
+    def field_length(self, key: str) -> int:
+        """Return the leading-axis length one per-atom field is allocated."""
+        stride = self.strides[key]
+        if self.ragged:
+            return int(self.n_node.sum()) * stride
+        return self.width * stride
+
+    def frame_index(self, row: int, key: str) -> Any:
+        """Return the index selecting one frame's rows of a per-atom field.
+
+        Rectangular batches carry a frame axis, so the rows of frame ``row``
+        are the head of its own row; ragged batches carry none, and the rows
+        are a run at the frame's offset.
+        """
+        stride = self.strides[key]
+        length = int(self.n_node[row]) * stride
+        if not self.ragged:
+            return (row, slice(0, length))
+        start = int(self._offset[row]) * stride
+        return slice(start, start + length)
+
+
 def _allocate_lmdb_batch(
     frame: dict[str, Any],
     batch_size: int,
+    layout: BatchLayout,
 ) -> dict[str, Any]:
-    """Allocate a contiguous NumPy batch from the first decoded frame."""
+    """Allocate a contiguous NumPy batch from the first decoded frame.
+
+    Per-atom fields are allocated at the length :class:`BatchLayout` gives
+    them: one padded row per frame, or one concatenated run over the batch.
+    """
     batch: dict[str, Any] = {}
     for key, value in frame.items():
         if key.startswith("find_"):
@@ -476,6 +701,20 @@ def _allocate_lmdb_batch(
             continue
         elif value is None:
             batch[key] = None
+        elif key in layout.strides:
+            array = np.asarray(value)
+            head = (
+                (layout.field_length(key),)
+                if layout.ragged
+                else (batch_size, layout.field_length(key))
+            )
+            destination = np.full(
+                (*head, *array.shape[1:]),
+                _pad_fill_value(key),
+                dtype=array.dtype,
+            )
+            destination[layout.frame_index(0, key)] = array
+            batch[key] = destination
         else:
             array = np.asarray(value)
             destination = np.empty((batch_size, *array.shape), dtype=array.dtype)
@@ -484,17 +723,72 @@ def _allocate_lmdb_batch(
     return batch
 
 
+def _promote_batch_field(
+    batch: dict[str, Any],
+    field: str,
+    layout: BatchLayout,
+    frames_written: int,
+    dtype: np.dtype,
+) -> np.ndarray:
+    """Widen one batch field's dtype in place, preserving what was written.
+
+    The replacement is prefilled with the field's padding value rather than
+    zeroed, so that entries not yet written keep the marker the allocation gave
+    them; for ``atype`` under the rectangular layout that marker is what
+    identifies a phantom atom.
+    """
+    destination = batch[field]
+    promoted = np.full(destination.shape, _pad_fill_value(field), dtype=dtype)
+    # The leading axis counts frames, except for a per-atom field of a ragged
+    # batch, where it counts the atom rows those frames have filled.
+    if field in layout.strides and layout.ragged:
+        written = int(layout._offset[frames_written]) * layout.strides[field]
+    else:
+        written = frames_written
+    promoted[:written] = destination[:written]
+    batch[field] = promoted
+    return promoted
+
+
 def decode_lmdb_batch(
     transaction: lmdb.Transaction,
     original_keys: Sequence[int],
     frame_format: str,
     config: LmdbDecodeConfig,
+    layout: BatchLayout | None = None,
 ) -> dict[str, Any]:
     """Decode LMDB records directly into preallocated contiguous arrays.
 
     The function keeps at most one temporary frame alive. It avoids the
     decode-copy, dtype-copy, Python frame-list, and final ``numpy.stack``
     sequence used by generic collation.
+
+    Parameters
+    ----------
+    transaction : lmdb.Transaction
+        Open read transaction on the LMDB environment.
+    original_keys : Sequence[int]
+        Integer LMDB frame keys in batch order.
+    frame_format : str
+        Format specification for integer LMDB frame keys.
+    config : LmdbDecodeConfig
+        Decoder state independent of the LMDB environment.
+    layout : BatchLayout, optional
+        Where each frame's per-atom rows belong. Defaults to a rectangular
+        layout at the atom count of the first frame, which leaves a batch of
+        uniform atom count untouched.
+
+    Returns
+    -------
+    dict[str, Any]
+        One collated batch of contiguous NumPy arrays. A ragged layout adds
+        ``n_node``, the per-frame atom count its flat axis is read with.
+
+    Notes
+    -----
+    The layout fixes the shape of every field of the result, so a chunked
+    decode must pass each chunk the layout of its own frames, cut from the
+    batch-wide one; :meth:`LmdbDataReader.batch_layout` resolves that once.
     """
     if not original_keys:
         raise ValueError("decode_lmdb_batch requires at least one frame key")
@@ -513,15 +807,27 @@ def decode_lmdb_batch(
             config,
             copy_arrays=False,
         )
+        frame_nloc = frame["coord"].shape[0]
+        if layout is None:
+            layout = BatchLayout.over(
+                np.full(batch_size, frame_nloc, dtype=np.int64),
+                per_atom_strides(frame, resolve_per_atom_keys(frame, config)),
+                ragged=False,
+            )
+        if int(layout.n_node[row]) != frame_nloc:
+            raise ValueError(
+                f"the batch layout gives frame {original_key} "
+                f"{int(layout.n_node[row])} atoms, but it holds {frame_nloc}"
+            )
         if batch is None:
-            batch = _allocate_lmdb_batch(frame, batch_size)
+            batch = _allocate_lmdb_batch(frame, batch_size, layout)
             expected_fields = frozenset(frame)
             continue
 
         frame_fields = frozenset(frame)
         if frame_fields != expected_fields:
             raise ValueError(
-                "LMDB frames in one same-nloc batch expose inconsistent fields: "
+                "LMDB frames in one batch expose inconsistent fields: "
                 f"frame {original_keys[0]} has {sorted(expected_fields)}, while "
                 f"frame {original_key} has {sorted(frame_fields)}"
             )
@@ -537,23 +843,45 @@ def decode_lmdb_batch(
                 continue
             if field == "fid":
                 batch[field][row] = value
-            else:
-                destination = batch[field]
-                array = np.asarray(value)
-                if destination.shape[1:] != array.shape:
+                continue
+            destination = batch[field]
+            array = np.asarray(value)
+            stride = layout.strides.get(field)
+            # A per-atom field may differ in its leading axis, which the layout
+            # absorbs as long as the axis stays a whole number of atoms; every
+            # remaining axis must match exactly.
+            if stride is not None:
+                lead_axes = 1 if layout.ragged else 2
+                expected_tail: tuple[int, ...] = destination.shape[lead_axes:]
+                actual_tail = array.shape[1:]
+                if array.shape[0] != frame_nloc * stride:
                     raise ValueError(
-                        f"LMDB field {field!r} changes shape within one batch: "
-                        f"expected {destination.shape[1:]}, got {array.shape} "
-                        f"for frame {original_key}"
+                        f"LMDB field {field!r} spends {array.shape[0]} leading "
+                        f"entries on {frame_nloc} atoms in frame {original_key}, "
+                        f"against {stride} per atom in frame {original_keys[0]}"
                     )
-                result_dtype = np.result_type(destination.dtype, array.dtype)
-                if result_dtype != destination.dtype:
-                    promoted = np.empty(destination.shape, dtype=result_dtype)
-                    promoted[:row] = destination[:row]
-                    batch[field] = destination = promoted
+            else:
+                expected_tail = destination.shape[1:]
+                actual_tail = array.shape
+            if expected_tail != actual_tail:
+                raise ValueError(
+                    f"LMDB field {field!r} changes shape within one batch: "
+                    f"expected {expected_tail}, got {actual_tail} "
+                    f"for frame {original_key}"
+                )
+            result_dtype = np.result_type(destination.dtype, array.dtype)
+            if result_dtype != destination.dtype:
+                destination = _promote_batch_field(
+                    batch, field, layout, row, result_dtype
+                )
+            if stride is not None:
+                destination[layout.frame_index(row, field)] = array
+            else:
                 destination[row] = array
 
-    assert batch is not None
+    assert batch is not None and layout is not None
+    if layout.ragged:
+        batch["n_node"] = layout.n_node
     batch["sid"] = np.asarray([0], dtype=np.int64)
     return batch
 
@@ -569,8 +897,14 @@ def _decode_lmdb_worker_chunk(
     frame_format: str,
     config: LmdbDecodeConfig,
     original_keys: list[int],
+    layout: BatchLayout,
 ) -> dict[str, Any]:
-    """Decode one chunk using process-local LMDB state."""
+    """Decode one chunk using process-local LMDB state.
+
+    ``layout`` is this chunk's slice of the batch layout decided by the parent
+    process. Deriving it there rather than per chunk is what lets
+    :func:`_merge_lmdb_chunks` concatenate the results.
+    """
     reader = _WORKER_LMDB_READERS.get(lmdb_path)
     if reader is None:
         environment = lmdb.open(
@@ -587,6 +921,7 @@ def _decode_lmdb_worker_chunk(
         original_keys,
         frame_format,
         config,
+        layout,
     )
 
 
@@ -904,16 +1239,20 @@ class LmdbBatchIterator:
         return iter(self._sampler)
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
-        """Submit one batch as balanced contiguous chunks."""
+        """Submit one batch as balanced contiguous chunks.
+
+        The batch layout is resolved here rather than per chunk, so that every
+        chunk decodes to the same field shapes and the results concatenate.
+        """
         original_keys = self._reader.original_keys(indices)
+        layout = self._reader.batch_layout(indices)
         workers = min(self._num_workers, len(original_keys))
         base_size, remainder = divmod(len(original_keys), workers)
-        chunks: list[list[int]] = []
+        chunks: list[tuple[list[int], BatchLayout]] = []
         start = 0
         for worker_index in range(workers):
-            chunk_size = base_size + int(worker_index < remainder)
-            stop = start + chunk_size
-            chunks.append(original_keys[start:stop])
+            stop = start + base_size + int(worker_index < remainder)
+            chunks.append((original_keys[start:stop], layout.chunk(start, stop)))
             start = stop
         decode_config = self._reader.worker_decode_config()
         return [
@@ -923,8 +1262,9 @@ class LmdbBatchIterator:
                 self._reader.frame_format,
                 decode_config,
                 chunk,
+                chunk_layout,
             )
-            for chunk in chunks
+            for chunk, chunk_layout in chunks
         ]
 
     def _worth_decoding_in_parallel(self, indices: list[int]) -> bool:
@@ -1027,6 +1367,11 @@ def _compute_batch_size(nloc: int, rule: int) -> int:
     return max(bsi, 1)
 
 
+#: Seed of the representative shuffle behind :attr:`LmdbDataReader.total_batch`.
+#: Fixed so that the reported count is reproducible across calls and processes.
+_TOTAL_BATCH_SEED = 0
+
+
 def _parse_positive_rule(spec: str, prefix: str) -> int:
     """Parse the ``N`` in ``<prefix>N`` and require ``N > 0``.
 
@@ -1056,16 +1401,17 @@ class LmdbDataReader:
     Reads LMDB frames and returns dicts of numpy arrays.
     Backend-specific Dataset classes (PyTorch, JAX, etc.) wrap this.
 
-    Datasets are typically mixed-nloc (frames with different atom counts).
-    The ``mixed_batch`` flag controls batching strategy:
+    An LMDB typically holds frames of many different atom counts. The
+    ``batch_size`` rule decides how those frames are grouped:
 
-    - ``mixed_batch=False`` (default, old format): each batch contains only
-      frames with the same nloc. A ``SameNlocBatchSampler`` groups frames
-      by nloc and yields same-nloc batches. Auto batch_size is computed
-      per-nloc-group.
-    - ``mixed_batch=True`` (new format): frames with different nloc can
-      coexist in one batch (requires padding + mask in collate_fn).
-      Currently raises ``NotImplementedError`` at collation time.
+    - Every rule except ``"mix:N"`` keeps a batch homogeneous in atom count,
+      so no padding is ever needed, whichever layout it is decoded in.
+    - ``"mix:N"`` allows one batch to span several atom counts. A consumer
+      reading a flat node axis takes such a batch concatenated; one reading
+      an ``(nf, nloc, ...)`` axis takes it padded to the batch-wide maximum,
+      the padded rows carrying ``atype = -1`` so that the neighbor list, the
+      atomic model and the loss all skip them. The choice is
+      :meth:`use_ragged_batches`.
 
     Parameters
     ----------
@@ -1090,9 +1436,16 @@ class LmdbDataReader:
         - ``"filter:N"``: same per-nloc formula as ``"max:N"`` **and**
           drops every frame whose ``nloc > N`` from the dataset. By
           construction every retained batch has at most ``N`` atoms.
-    mixed_batch : bool
-        If True, allow different nloc in the same batch (future).
-        If False (default), enforce same-nloc-per-batch.
+        - ``"mix:N"``: mixed-nloc batching with an atom-axis budget of
+          ``N``. Frames of different atom counts share a batch, whose atom
+          axis holds at most ``N`` entries: the total atom count under the
+          ragged layout, the padded ``nframes * max_nloc`` under the
+          rectangular one. This is the natural extension of ``"max:N"``:
+          the bound is on the decoded batch, and a lone frame with
+          ``nloc > N`` still forms a batch of its own. Filling batches
+          rather than cutting them at atom-count boundaries also keeps the
+          frame-level loss terms closer to the weighting an atom budget asks
+          for than ``"max:N"`` manages; see :func:`_chop_mixed_nloc`.
     """
 
     def __init__(
@@ -1100,12 +1453,10 @@ class LmdbDataReader:
         lmdb_path: str,
         type_map: list[str],
         batch_size: int | str = "auto",
-        mixed_batch: bool = False,
     ) -> None:
         self.lmdb_path = str(Path(lmdb_path).resolve())
         self._type_map = type_map
         self._env = _open_lmdb(self.lmdb_path)
-        self.mixed_batch = mixed_batch
 
         with self._env.begin() as txn:
             meta = _read_metadata(txn)
@@ -1139,25 +1490,22 @@ class LmdbDataReader:
         self._txn = self._env.begin()
         self._closed = False
 
-        # Scan per-frame nloc only when needed for same-nloc batching.
-        # For mixed_batch=True, skip the scan entirely (future: padding handles it).
+        # Per-frame atom counts drive every batching rule: same-nloc grouping,
+        # the ``filter:N`` drop, and the atom-axis layout of a ``mix:N`` batch.
         # ``orig_frame_nlocs`` / ``orig_frame_system_ids`` are indexed by the
         # *original* LMDB frame index. After a potential ``filter:N`` drop we
         # rebuild ``self._frame_nlocs`` / ``self._frame_system_ids`` so they
         # are parallel arrays over the *dataset* index space (0..len(self));
         # the dataset-to-original mapping lives in ``self._retained_keys``.
-        if not mixed_batch:
-            # Fast path: use pre-computed frame_nlocs from metadata if available.
-            # Falls back to scanning each frame's atom_types shape (~10 us/frame).
-            meta_nlocs = meta.get("frame_nlocs")
-            if meta_nlocs is not None:
-                orig_frame_nlocs = [int(n) for n in meta_nlocs]
-            else:
-                orig_frame_nlocs = _scan_frame_nlocs(
-                    self._env, self.nframes, self._frame_fmt, self._natoms
-                )
+        # Metadata carries the counts when the writer recorded them; otherwise
+        # each frame's atom_types shape is scanned (~10 us/frame).
+        meta_nlocs = meta.get("frame_nlocs")
+        if meta_nlocs is not None:
+            orig_frame_nlocs = [int(n) for n in meta_nlocs]
         else:
-            orig_frame_nlocs = []
+            orig_frame_nlocs = _scan_frame_nlocs(
+                self._env, self.nframes, self._frame_fmt, self._natoms
+            )
 
         # Parse frame_system_ids for auto_prob support. ``_nsystems`` must stay
         # at ``max(original_sid) + 1`` even after filter:N so that user-facing
@@ -1171,12 +1519,13 @@ class LmdbDataReader:
             orig_frame_system_ids = None
             self._nsystems = 1
 
-        # Parse batch_size spec. ``auto_rule`` and ``max_rule`` are mutually
-        # exclusive; ``filter_rule`` implies ``max_rule`` plus dropping frames
-        # whose nloc exceeds the threshold.
+        # Parse batch_size spec. ``auto_rule``, ``max_rule`` and ``mix_rule``
+        # are mutually exclusive; ``filter_rule`` implies ``max_rule`` plus
+        # dropping frames whose nloc exceeds the threshold.
         self._auto_rule: int | None = None
         self._max_rule: int | None = None
         self._filter_rule: int | None = None
+        self._mix_rule: int | None = None
         if isinstance(batch_size, str):
             if batch_size == "auto":
                 self._auto_rule = 32
@@ -1187,22 +1536,13 @@ class LmdbDataReader:
             elif batch_size.startswith("filter:"):
                 self._filter_rule = _parse_positive_rule(batch_size, "filter:")
                 self._max_rule = self._filter_rule
+            elif batch_size.startswith("mix:"):
+                self._mix_rule = _parse_positive_rule(batch_size, "mix:")
             else:
                 raise ValueError(
-                    f"Unsupported batch_size {batch_size!r}. "
-                    "Expected int, 'auto', 'auto:N', 'max:N', or 'filter:N'."
+                    f"Unsupported batch_size {batch_size!r}. Expected int, "
+                    "'auto', 'auto:N', 'max:N', 'filter:N', or 'mix:N'."
                 )
-
-        # ``filter:N`` needs per-frame nloc to drop oversized frames; the
-        # ``mixed_batch=True`` fast path skips the nloc scan entirely, so the
-        # two options are incompatible. Fail fast rather than silently
-        # retaining every frame and breaking the documented contract.
-        if self._filter_rule is not None and mixed_batch:
-            raise ValueError(
-                "batch_size='filter:N' is incompatible with mixed_batch=True: "
-                "per-frame nloc is unavailable in the mixed-batch fast path. "
-                "Use mixed_batch=False, or switch to 'max:N' / a fixed int."
-            )
 
         # Determine which original-index frames survive the filter. Without
         # ``filter:N`` every frame is retained.
@@ -1227,12 +1567,9 @@ class LmdbDataReader:
 
         # Re-key _frame_nlocs / _frame_system_ids into the dataset-index
         # space so that every downstream consumer (nloc_groups, system_groups,
-        # SameNlocBatchSampler, _expand_indices_by_blocks) operates in a
-        # single, self-consistent indexing scheme.
-        if not mixed_batch:
-            self._frame_nlocs = [orig_frame_nlocs[k] for k in retained_keys]
-        else:
-            self._frame_nlocs = []
+        # LmdbBatchSampler, _expand_indices_by_blocks) operates in a single,
+        # self-consistent indexing scheme.
+        self._frame_nlocs = [orig_frame_nlocs[k] for k in retained_keys]
 
         if orig_frame_system_ids is not None:
             self._frame_system_ids: list[int] | None = [
@@ -1242,12 +1579,12 @@ class LmdbDataReader:
             self._frame_system_ids = None
 
         # Group retained frames by nloc using dataset indices (0..len-1).
-        if not mixed_batch:
-            self._nloc_groups: dict[int, list[int]] = {}
-            for ds_idx, nloc in enumerate(self._frame_nlocs):
-                self._nloc_groups.setdefault(nloc, []).append(ds_idx)
-        else:
-            self._nloc_groups = {}
+        # Statistics collection consumes these groups in every batching mode,
+        # because per-nloc groups are the largest units that stack without
+        # padding.
+        self._nloc_groups: dict[int, list[int]] = {}
+        for ds_idx, nloc in enumerate(self._frame_nlocs):
+            self._nloc_groups.setdefault(nloc, []).append(ds_idx)
 
         # Group retained frames by original system id; the sid numbering is
         # preserved (no compression) so user-facing auto_prob slices stay
@@ -1268,12 +1605,20 @@ class LmdbDataReader:
         # valid index domain for __getitem__ is [0, self.nframes).
         self.nframes = len(retained_keys)
 
-        # Default batch_size used only by the index/total_batch estimate. The
-        # sampler always goes through get_batch_size_for_nloc for real batches.
+        # Nominal batch size, reported to callers that want a single number.
+        # The sampler never uses it: same-nloc modes go through
+        # get_batch_size_for_nloc, and ``mix:N`` sizes each batch by budget.
+        mean_nloc = (
+            sum(self._frame_nlocs) / len(self._frame_nlocs)
+            if self._frame_nlocs
+            else self._natoms
+        )
         if self._auto_rule is not None:
             self.batch_size = _compute_batch_size(self._natoms, self._auto_rule)
         elif self._max_rule is not None:
             self.batch_size = max(1, self._max_rule // max(self._natoms, 1))
+        elif self._mix_rule is not None:
+            self.batch_size = max(1, int(self._mix_rule / max(mean_nloc, 1.0)))
         else:
             self.batch_size = int(batch_size)
 
@@ -1289,6 +1634,12 @@ class LmdbDataReader:
         # Availability signatures are decoded lazily and reused by every
         # sampler epoch. Registering new requirements invalidates the cache.
         self._find_signature_cache: dict[int, tuple[tuple[str, bool], ...]] = {}
+        # Which fields carry an atom axis follows from the requirements, so
+        # this cache is invalidated alongside the signature cache.
+        self._per_atom_strides: dict[str, int] | None = None
+        # Batches are rectangular until a consumer that reads a flat node axis
+        # asks otherwise; see :meth:`use_ragged_batches`.
+        self._ragged_batches = False
 
     def _resolve_dtype(self, key: str) -> np.dtype:
         """Resolve the target numpy dtype for a given key.
@@ -1335,12 +1686,18 @@ class LmdbDataReader:
         - ``filter:N``: same per-nloc formula as ``max:N``; by
           construction every retained group satisfies ``nloc <= N`` so
           no overshoot occurs.
+        - ``mix:N``: ``max(1, floor(N / nloc))``, the count a batch would
+          hold were every one of its frames this size. Training batches are
+          sized by budget instead; this value serves the per-nloc statistics
+          groups, which stack without padding and therefore batch like
+          ``max:N``.
         - fixed int: the same value for every nloc group.
         """
         if self._auto_rule is not None:
             return _compute_batch_size(nloc, self._auto_rule)
-        if self._max_rule is not None:
-            return max(1, self._max_rule // max(nloc, 1))
+        atom_budget = self._max_rule if self._max_rule is not None else self._mix_rule
+        if atom_budget is not None:
+            return max(1, atom_budget // max(nloc, 1))
         return self.batch_size
 
     def __len__(self) -> int:
@@ -1382,20 +1739,144 @@ class LmdbDataReader:
             keys.append(self._retained_keys[index])
         return keys
 
-    def decode_batch(self, indices: Sequence[int]) -> dict[str, Any]:
-        """Decode a same-nloc batch directly into contiguous NumPy arrays."""
+    def batch_pad_nloc(self, indices: Sequence[int]) -> int:
+        """Return the atom count every frame of one batch is padded to.
+
+        Parameters
+        ----------
+        indices : Sequence[int]
+            Dataset indices forming one batch.
+
+        Returns
+        -------
+        int
+            The largest atom count in the batch. Batches drawn from a single
+            nloc group return that group's atom count, so padding is a no-op.
+        """
+        return max(self._frame_nlocs[int(index)] for index in indices)
+
+    def batch_layout(
+        self, indices: Sequence[int], *, ragged: bool | None = None
+    ) -> BatchLayout:
+        """Return where one batch's per-atom rows belong once decoded.
+
+        The layout fixes the shape of every field of the decoded batch, so a
+        decode split across worker processes resolves it here once and cuts a
+        chunk's share from it. Resolving it per chunk would let two chunks
+        disagree, both on the padded width and on the field classification,
+        which falls back to comparing a leading axis against the atom count of
+        whichever frame the chunk happens to start with.
+
+        Parameters
+        ----------
+        indices : Sequence[int]
+            Dataset indices forming one batch.
+        ragged : bool, optional
+            Layout to use, overriding the one configured for training batches.
+            Consumers with a layout of their own, such as statistics, name it
+            rather than inherit it.
+
+        Returns
+        -------
+        BatchLayout
+            The per-frame atom counts, the per-atom strides, and whether the
+            frames are concatenated or padded to a common width.
+        """
+        return BatchLayout.over(
+            np.asarray(
+                [self._frame_nlocs[int(index)] for index in indices], dtype=np.int64
+            ),
+            self.per_atom_strides(),
+            ragged=self._ragged_batches if ragged is None else ragged,
+        )
+
+    @property
+    def ragged_batches(self) -> bool:
+        """Whether decoded batches concatenate their frames rather than pad."""
+        return self._ragged_batches
+
+    def use_ragged_batches(self, ragged: bool) -> None:
+        """Select the layout training batches are delivered in.
+
+        The choice belongs to whichever model will consume them: one reading a
+        flat node axis takes the frames concatenated, one reading an
+        ``(nf, nloc, ...)`` axis needs them padded to a common width. Only the
+        trainer sees both the model and the data, so it makes the call, once,
+        before training starts. Consumers with a layout of their own --
+        statistics, validation -- name theirs at the point of use and are
+        unaffected.
+
+        The layout also decides how the sampler packs frames, since padding is
+        what makes a batch's cost depend on its widest frame.
+
+        Parameters
+        ----------
+        ragged : bool
+            Whether to concatenate frames instead of padding them.
+        """
+        self._ragged_batches = ragged
+
+    def per_atom_strides(self) -> dict[str, int]:
+        """Return the leading-axis entries per atom of each per-atom field.
+
+        Every frame of one LMDB exposes the same fields, so the classification
+        is a property of the dataset and its registered requirements rather
+        than of a batch, and is resolved from the first frame once.
+
+        Returns
+        -------
+        dict[str, int]
+            Entries per atom, keyed by field name.
+        """
+        if self._per_atom_strides is None:
+            frame = self[0]
+            self._per_atom_strides = per_atom_strides(
+                frame, resolve_per_atom_keys(frame, self._decode_config)
+            )
+        return self._per_atom_strides
+
+    def decode_batch(
+        self, indices: Sequence[int], *, ragged: bool | None = None
+    ) -> dict[str, Any]:
+        """Decode one batch directly into contiguous NumPy arrays.
+
+        Parameters
+        ----------
+        indices : Sequence[int]
+            Dataset indices forming one batch.
+        ragged : bool, optional
+            Layout to decode into, overriding the one configured for training
+            batches. See :meth:`batch_layout`.
+
+        Returns
+        -------
+        dict[str, Any]
+            One collated batch of contiguous NumPy arrays.
+        """
         self._data_requirements_frozen = True
         return decode_lmdb_batch(
             self._transaction(),
             self.original_keys(indices),
             self._frame_fmt,
             self._decode_config,
+            self.batch_layout(indices, ragged=ragged),
         )
 
     @property
     def frame_format(self) -> str:
         """Format specification used for integer LMDB frame keys."""
         return self._frame_fmt
+
+    @property
+    def decode_config(self) -> LmdbDecodeConfig:
+        """Decoder state for in-process consumers.
+
+        The returned object shares the reader's live requirement mapping and
+        reading it does not freeze registration, unlike
+        :meth:`worker_decode_config`, which hands the state to another process
+        and so must fix it first.
+        """
+        return self._decode_config
 
     def worker_decode_config(self) -> LmdbDecodeConfig:
         """Freeze and return decoder state for worker serialization."""
@@ -1418,6 +1899,7 @@ class LmdbDataReader:
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
         self._find_signature_cache.clear()
+        self._per_atom_strides = None
 
     def get_find_signature(self, index: int) -> tuple[tuple[str, bool], ...]:
         """Return the scalar availability signature for one retained frame.
@@ -1485,6 +1967,8 @@ class LmdbDataReader:
             bs_str = f"filter:{self._filter_rule}"
         elif self._max_rule is not None:
             bs_str = f"max:{self._max_rule}"
+        elif self._mix_rule is not None:
+            bs_str = f"mix:{self._mix_rule}"
         else:
             bs_str = str(self.batch_size)
 
@@ -1492,7 +1976,7 @@ class LmdbDataReader:
             f"LMDB {name}: {self.lmdb_path}, "
             f"{self.nframes} frames, {n_groups} nloc groups, "
             f"batch_size={bs_str}, "
-            f"mixed_batch={self.mixed_batch}"
+            f"mixed_nloc={self.mixed_nloc}"
         )
         # Print nloc groups in rows of ~10 for readability
         items = [
@@ -1515,17 +1999,38 @@ class LmdbDataReader:
 
     @property
     def total_batch(self) -> int:
-        if self.mixed_batch:
-            return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
-        total = 0
-        for nloc, indices in collect_lmdb_sampling_groups(self):
-            bs = self.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
-        return total
+        """Number of batches in one pass over the dataset.
+
+        Every batching rule but ``mix:N`` fixes the count independently of the
+        order frames are visited in. ``mix:N`` fills batches to an atom budget
+        instead, so its count follows the shuffle: a pass in dataset order
+        groups frames of one original system together, which are already close
+        in atom count, and needs measurably fewer batches than the shuffled
+        pass training actually performs. The count is therefore taken from a
+        shuffled pass under a fixed seed, which is drawn from the same
+        distribution as a training pass while staying reproducible. It remains
+        an estimate: consult the sampler that will actually be iterated when
+        the exact count matters, as the trainers do to derive an epoch length.
+        """
+        return len(LmdbBatchSampler(self, shuffle=True, seed=_TOTAL_BATCH_SEED))
 
     @property
     def batch_sizes(self) -> list[int]:
         return [self.batch_size]
+
+    @property
+    def mixed_nloc(self) -> bool:
+        """Whether one batch may span several atom counts."""
+        return self._mix_rule is not None
+
+    @property
+    def atom_budget(self) -> int | None:
+        """Atom-axis budget of a ``mix:N`` batch, or ``None`` in other modes.
+
+        The axis is measured in the layout the batch will be decoded in: real
+        atoms when the frames are concatenated, padded slots when they are not.
+        """
+        return self._mix_rule
 
     @property
     def mixed_type(self) -> bool:
@@ -1568,7 +2073,23 @@ class LmdbDataReader:
         return self._system_nframes
 
 
-def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
+def _pad_atom_axis(xp: Any, array: Any, length: int, fill: int, device: Any) -> Any:
+    """Widen one per-atom array's leading axis to ``length``."""
+    if array.shape[0] == length:
+        return array
+    tail = xp.full(
+        (length - array.shape[0], *array.shape[1:]),
+        fill,
+        dtype=array.dtype,
+        device=device,
+    )
+    return xp.concat([array, tail], axis=0)
+
+
+def collate_lmdb_frames(
+    frames: list[dict[str, Any]],
+    per_atom_keys: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     """Stack a list of per-frame dicts into a single batch dict.
 
     Backend-agnostic via ``array_api_compat``: works for numpy, torch, jax,
@@ -1583,6 +2104,23 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
     The batch keeps the key order of its frames, which is the order
     :func:`decode_lmdb_batch` also produces, so a batch is the same mapping
     whichever of the two decode paths built it.
+
+    Parameters
+    ----------
+    frames : list[dict[str, Any]]
+        Per-frame dicts to stack, all sharing one label-availability
+        signature.
+    per_atom_keys : frozenset[str], optional
+        Fields whose leading axis is the atom axis. When the frames differ in
+        atom count these are padded to the batch maximum, with ``atype``
+        filled by :data:`PHANTOM_ATOM_TYPE` and the rest zeroed. Leave empty
+        for uniform batches, where padding would be a no-op anyway. Resolve
+        the set with :func:`resolve_per_atom_keys`.
+
+    Returns
+    -------
+    dict[str, Any]
+        One collated batch.
     """
     import array_api_compat
 
@@ -1607,8 +2145,11 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
         if any(value != values[0] for value in values[1:]):
             raise ValueError(
                 f"LMDB batch mixes {key!r} values {values}; "
-                "SameNlocBatchSampler must group frames by label availability"
+                "LmdbBatchSampler must group frames by label availability"
             )
+
+    strides = per_atom_strides(frames[0], per_atom_keys) if per_atom_keys else {}
+    pad_nloc = max(frame["coord"].shape[0] for frame in frames) if strides else 0
 
     out: dict[str, Any] = {}
     for key in frames[0]:
@@ -1620,6 +2161,12 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         elif frames[0][key] is None:
             out[key] = None
+        elif key in strides:
+            length = pad_nloc * strides[key]
+            fill = _pad_fill_value(key)
+            out[key] = xp.stack(
+                [_pad_atom_axis(xp, f[key], length, fill, dev) for f in frames]
+            )
         else:
             out[key] = xp.stack([f[key] for f in frames])
     out["sid"] = xp.asarray([0], dtype=xp.int64, device=dev)
@@ -1664,6 +2211,12 @@ def compute_block_targets(
         stt, end, weight = part.split(":")
         blocks.append((int(stt), int(end), float(weight)))
 
+    # A bare ``prob_sys_size`` names no blocks: it asks for a probability
+    # proportional to system size, which is what sampling the merged frames
+    # uniformly already gives. There is nothing to reweight.
+    if not blocks:
+        return []
+
     # Drop blocks that retain zero frames (can happen when ``filter:N``
     # eliminates every system in a block). prob_sys_size_ext's per-block
     # ``nbatch_block / sum(nbatch_block)`` would otherwise propagate NaN
@@ -1676,8 +2229,9 @@ def compute_block_targets(
     ]
     if not nonempty:
         log.info(
-            "compute_block_targets: all blocks are empty in "
-            f"{auto_prob_style!r}; dataset has no retained frames."
+            "compute_block_targets: every block of "
+            f"{auto_prob_style!r} is empty; the dataset retains no frames in "
+            "any of them, so no reweighting is applied."
         )
         return []
     if len(nonempty) < len(blocks):
@@ -1886,8 +2440,36 @@ def collect_lmdb_sampling_groups(
     return groups
 
 
+def _collect_batch_groups(reader: "LmdbDataReader") -> list[list[int]]:
+    """Collect the groups a training batch may be drawn from.
+
+    A group is the largest set of frames one batch may span. Label
+    availability always partitions it, because ``find_*`` flags collapse to a
+    single scalar per batch. Atom count partitions it as well in every mode
+    but ``mix:N``, whose decoded batch accommodates unequal counts and so
+    needs only the availability split.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        Reader providing the frame grouping and the batching rule.
+
+    Returns
+    -------
+    list[list[int]]
+        Frame indices per group, in the stable order shared by iteration and
+        length.
+    """
+    if reader.mixed_nloc:
+        signature_groups = reader.group_indices_by_find_signature(
+            list(range(len(reader)))
+        )
+        return [list(signature_groups[key]) for key in sorted(signature_groups)]
+    return [indices for _nloc, indices in collect_lmdb_sampling_groups(reader)]
+
+
 def _allocate_group_block_targets(
-    groups: list[tuple[int, list[int]]],
+    groups: list[list[int]],
     frame_system_ids: list[int] | np.ndarray,
     block_targets: list[tuple[list[int], int]],
 ) -> list[list[int]]:
@@ -1904,7 +2486,7 @@ def _allocate_group_block_targets(
         for block_index, (system_ids, _target) in enumerate(block_targets)
         for system_id in system_ids
     }
-    for group_index, (_nloc, indices) in enumerate(groups):
+    for group_index, indices in enumerate(groups):
         for index in indices:
             block_index = system_to_block.get(int(frame_system_ids[index]))
             if block_index is not None:
@@ -1947,24 +2529,120 @@ def _allocate_group_block_targets(
     return group_targets
 
 
+def _chop_same_nloc(reader: "LmdbDataReader", indices: list[int]) -> list[list[int]]:
+    """Split one homogeneous group into fixed-size batches."""
+    batch_size = reader.get_batch_size_for_nloc(reader.frame_nlocs[indices[0]])
+    return [
+        indices[start : start + batch_size]
+        for start in range(0, len(indices), batch_size)
+    ]
+
+
+def _chop_mixed_nloc(reader: "LmdbDataReader", indices: list[int]) -> list[list[int]]:
+    """Split one availability group into batches under an atom-axis budget.
+
+    ``mix:N`` budgets the length of a batch's atom axis, and the layout the
+    batch will be decoded in decides both how that length is measured and the
+    order the frames are visited in.
+
+    **Ragged.** The frames are concatenated, so the axis is simply their total
+    atom count and nothing is padded. No frame's cost depends on its
+    neighbours, so the group is taken in the caller's order, which training has
+    already shuffled. Sorting would only make each batch homogeneous in system
+    size, correlating the frames of an optimizer step for no gain.
+
+    **Rectangular.** Every frame is padded to the widest one, so the axis is
+    ``nframes * max_nloc`` and a batch pays for atoms it does not hold. Sorting
+    by atom count is what keeps that overhead small: a batch is then a run of
+    frames adjacent in the sorted order, so its padding is bounded by the
+    atom-count spread across that run alone. Ties fall back to the caller's
+    order, so frames of equal atom count still mix freely across epochs.
+
+    Either way the group is cut only where the next frame would push the axis
+    past the budget, which is the fewest batches obtainable **without
+    reordering**: a batch's cost does not fall when frames are dropped from its
+    front, so a batch that starts later can always extend at least as far as
+    one that starts earlier, and by induction on the batch count, cutting as
+    late as possible covers the longest prefix for every count.
+
+    Under the rectangular layout the sort is part of the algorithm and the
+    result is optimal outright, since an exchange argument turns any packing
+    into contiguous runs of the sorted order. Under the ragged layout the order
+    is the caller's, so the count is optimal only for that order; reordering
+    could pack tighter -- the general problem is bin packing -- and is declined
+    to keep the frames of an optimizer step decorrelated in system size.
+    Padding, where it exists, is not separately minimized either.
+
+    That the batches are full is what keeps the gradient weighting faithful. A
+    batch is one optimizer step; its per-atom loss terms pool over the real
+    labels, so a frame's weight there follows its atom count whatever the
+    packing, while its frame-level terms (energy, virial) weigh frames equally,
+    giving a frame the weight ``1 / k_b``. An atom budget makes ``k_b`` follow
+    the atom count, exactly so under the ragged layout and up to the padding
+    under the rectangular one, and an under-filled batch raises the weight of
+    every frame it holds.
+
+    A frame larger than the budget forms a batch of its own, matching how
+    ``max:N`` treats an oversized nloc group.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        Provides the per-frame atom counts, the atom budget and the layout.
+    indices : list[int]
+        Dataset indices of one label-availability group.
+
+    Returns
+    -------
+    list[list[int]]
+        Batches whose union is ``indices``.
+    """
+    budget = reader.atom_budget
+    if budget is None:
+        raise ValueError("mixed-nloc batching requires a batch_size of 'mix:N'")
+
+    index_array = np.asarray(indices, dtype=np.int64)
+    nloc_array = np.asarray(reader.frame_nlocs, dtype=np.int64)[index_array]
+    if not reader.ragged_batches:
+        order = np.argsort(nloc_array, kind="stable")
+        index_array, nloc_array = index_array[order], nloc_array[order]
+
+    batches: list[list[int]] = []
+    batch_start = 0
+    real_atoms = 0
+    for position, nloc in enumerate(nloc_array.tolist()):
+        count = position - batch_start + 1
+        # Length of the atom axis this run would occupy once decoded. Under the
+        # rectangular layout the ascending sort makes the current frame the
+        # widest, so it alone sets the padded width.
+        axis = real_atoms + nloc if reader.ragged_batches else count * nloc
+        if count > 1 and axis > budget:
+            batches.append(index_array[batch_start:position].tolist())
+            batch_start, real_atoms = position, 0
+        real_atoms += nloc
+    batches.append(index_array[batch_start:].tolist())
+    return batches
+
+
 def _build_all_batches(
     reader: "LmdbDataReader",
     shuffle: bool,
     rng: np.random.Generator,
     block_targets: list[tuple[list[int], int]] | None = None,
 ) -> list[list[int]]:
-    """Build batches homogeneous in atom count and label availability.
+    """Build batches homogeneous in label availability.
 
-    This is the shared batch-construction logic used by both
-    SameNlocBatchSampler (single-GPU) and DistributedSameNlocBatchSampler.
+    Groups are chopped into batches, then interleaved round-robin so that
+    consecutive batches come from different groups. Under ``mix:N`` a batch
+    also spans several atom counts; every other mode keeps it uniform.
 
     Parameters
     ----------
     reader : LmdbDataReader
-        Provides nloc_groups and get_batch_size_for_nloc.
+        Provides the frame grouping and the batching rule.
     shuffle : bool
-        Whether to shuffle indices within each nloc group and
-        shuffle the final batch order.
+        Whether to shuffle indices within each group and shuffle the final
+        batch order.
     rng : np.random.Generator
         Random number generator (deterministic for reproducibility).
     block_targets : list[tuple[list[int], int]] or None
@@ -1974,9 +2652,10 @@ def _build_all_batches(
     Returns
     -------
     list[list[int]]
-        Each inner list has one nloc and one scalar ``find_*`` signature.
+        Each inner list has one scalar ``find_*`` signature.
     """
-    groups = collect_lmdb_sampling_groups(reader)
+    groups = _collect_batch_groups(reader)
+    chop = _chop_mixed_nloc if reader.mixed_nloc else _chop_same_nloc
 
     # Build per-group batches
     group_batches: list[list[list[int]]] = []
@@ -2001,7 +2680,7 @@ def _build_all_batches(
         for sid, blk in sys_to_block.items():
             sid_to_blk_arr[sid] = blk
 
-    for group_index, (nloc, original_indices) in enumerate(groups):
+    for group_index, original_indices in enumerate(groups):
         indices = original_indices
         # Expand each availability group independently using targets that
         # were allocated globally, preserving both scalar flags and totals.
@@ -2016,11 +2695,7 @@ def _build_all_batches(
             )
         if shuffle:
             rng.shuffle(indices)
-        bs = reader.get_batch_size_for_nloc(nloc)
-        batches = []
-        for start in range(0, len(indices), bs):
-            batches.append(indices[start : start + bs])
-        group_batches.append(batches)
+        group_batches.append(chop(reader, indices) if indices else [])
 
     # Interleave groups round-robin
     all_batches: list[list[int]] = []
@@ -2037,26 +2712,31 @@ def _build_all_batches(
     return all_batches
 
 
-class SameNlocBatchSampler:
-    """Batch sampler that groups frames by nloc and ``find_*`` signature.
+class LmdbBatchSampler:
+    """Batch sampler over an LMDB, grouped by ``find_*`` signature.
 
-    For mixed-nloc datasets with mixed_batch=False: each batch contains only
-    frames with the same nloc and label availability. Within each group,
-    frames are shuffled. Groups are interleaved round-robin so training sees
-    diverse nloc and label combinations.
+    Every batch carries one label-availability signature, because ``find_*``
+    flags collapse to a single scalar per batch. Atom count is handled by the
+    reader's batching rule: all rules but ``mix:N`` additionally keep a batch
+    uniform in atom count, while ``mix:N`` fills batches to the atom budget
+    its decoded layout is measured against. Groups are interleaved round-robin
+    and the batch order is then shuffled, so training sees a varied mix.
 
-    When auto batch_size is used, batch_size is computed per-nloc-group.
-
-    The sampler is deterministic for a fixed seed and epoch. Use
-    :meth:`set_epoch` to select a different reproducible sequence for each
-    training pass.
+    The sampler serves one pass at a time, drawn from ``seed + epoch``. The
+    pending pass is materialized before it is served, which is what lets
+    ``__len__`` report exactly what ``__iter__`` will yield: under ``mix:N``
+    the batch count follows the shuffle, because batches are filled to an atom
+    budget rather than to a fixed frame count. Serving a pass advances the
+    epoch, so a caller that just re-iterates sees a different shuffle every
+    time, and :meth:`set_epoch` repositions that progression for a caller --
+    a distributed run, a resumed one -- that needs to name the pass instead.
 
     Parameters
     ----------
     reader : LmdbDataReader
-        The dataset reader (provides nloc_groups, get_batch_size_for_nloc).
+        The dataset reader providing the frame grouping and batching rule.
     shuffle : bool
-        Whether to shuffle within each nloc group each epoch.
+        Whether to shuffle within each group and shuffle the batch order.
     seed : int or None
         Random seed for reproducibility.
     block_targets : list[tuple[list[int], int]] or None
@@ -2075,61 +2755,71 @@ class SameNlocBatchSampler:
         self._seed = seed
         self._epoch = 0
         self._block_targets = block_targets
+        self._batches: list[list[int]] | None = None
+
+    def batches(self) -> list[list[int]]:
+        """Return the batch list of the pending pass, building it if needed.
+
+        Returns
+        -------
+        list[list[int]]
+            Dataset indices grouped into batches, one scalar ``find_*``
+            signature each.
+        """
+        if self._batches is None:
+            seed = None if self._seed is None else self._seed + self._epoch
+            self._batches = _build_all_batches(
+                self._reader,
+                self._shuffle,
+                np.random.default_rng(seed),
+                self._block_targets,
+            )
+        return self._batches
 
     def set_epoch(self, epoch: int) -> None:
-        """Set the epoch used to derive the deterministic shuffle state.
+        """Select the pass to serve, discarding any pass still pending.
 
         Parameters
         ----------
         epoch : int
             Zero-based training epoch.
         """
-        self._epoch = epoch
+        if epoch != self._epoch:
+            self._epoch = epoch
+            self._batches = None
+
+    def refresh_batch_count(self) -> None:
+        """Discard the pending pass after the frame grouping changed.
+
+        The pass is materialized ahead of iteration so that ``__len__`` can
+        report it exactly, which leaves it stale once new data requirements
+        repartition the frames by label availability.
+        """
+        self._batches = None
 
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches of frame indices, all with the same nloc."""
-        seed = None if self._seed is None else self._seed + self._epoch
-        rng = np.random.default_rng(seed)
-        yield from _build_all_batches(
-            self._reader, self._shuffle, rng, self._block_targets
-        )
+        """Yield the pending pass, and move the epoch on to its successor."""
+        batches = self.batches()
+        self.set_epoch(self._epoch + 1)
+        yield from batches
 
     def __len__(self) -> int:
-        """Total batches across nloc and label-availability groups."""
-        groups = collect_lmdb_sampling_groups(self._reader)
-        group_block_targets = None
-        assigned_system_ids: set[int] = set()
-        if self._block_targets and self._reader.frame_system_ids is not None:
-            group_block_targets = _allocate_group_block_targets(
-                groups,
-                self._reader.frame_system_ids,
-                self._block_targets,
-            )
-            assigned_system_ids = {
-                system_id
-                for system_ids, _target in self._block_targets
-                for system_id in system_ids
-            }
+        """Number of batches the pending pass holds."""
+        return len(self.batches())
 
-        total = 0
-        for group_index, (nloc, indices) in enumerate(groups):
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            n = len(indices)
-            if (
-                group_block_targets is not None
-                and self._reader.frame_system_ids is not None
-            ):
-                unassigned = sum(
-                    int(self._reader.frame_system_ids[index]) not in assigned_system_ids
-                    for index in indices
-                )
-                n = unassigned + sum(group_block_targets[group_index])
-            total += (n + bs - 1) // bs
-        return total
+    @property
+    def total_batches(self) -> int:
+        """Number of batches the pending pass holds over the whole dataset.
+
+        The same count as ``len(self)`` here, and the two part company only in
+        the distributed sampler, so a caller after a global figure need not
+        know which of the two it holds.
+        """
+        return len(self)
 
 
-class DistributedSameNlocBatchSampler:
-    """Distributed wrapper for same-nloc batch sampling.
+class DistributedLmdbBatchSampler:
+    """Distributed wrapper for LMDB batch sampling.
 
     All ranks build the same deterministic global batch list (using
     ``seed + epoch``). The list is padded deterministically when its length is
@@ -2144,8 +2834,7 @@ class DistributedSameNlocBatchSampler:
     Parameters
     ----------
     reader : LmdbDataReader
-        The dataset reader (provides nloc_groups, get_batch_size_for_nloc,
-        frame_nlocs).
+        The dataset reader providing the frame grouping and batching rule.
     rank : int
         Rank of the current process.
     world_size : int
@@ -2174,17 +2863,11 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
-        self.refresh_batch_count()
+        self._global: LmdbBatchSampler | None = None
 
     def refresh_batch_count(self) -> None:
-        """Refresh the cached global count after sampling groups change."""
-        self._total_batches = len(
-            SameNlocBatchSampler(
-                self._reader,
-                shuffle=False,
-                block_targets=self._block_targets,
-            )
-        )
+        """Discard the pending global pass after the frame grouping changed."""
+        self._global = None
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -2192,31 +2875,38 @@ class DistributedSameNlocBatchSampler:
         Call this before each training epoch/cycle to get different but
         reproducible batch orderings across epochs.
         """
-        self._epoch = epoch
+        if epoch != self._epoch:
+            self._epoch = epoch
+            self._global = None
+
+    def _global_batches(self) -> list[list[int]]:
+        """Return the batch list every rank builds identically."""
+        if self._global is None:
+            self._global = LmdbBatchSampler(
+                self._reader,
+                shuffle=self._shuffle,
+                seed=self._seed + self._epoch,
+                block_targets=self._block_targets,
+            )
+        return self._global.batches()
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield this rank's partition of the global batch list."""
-        # All ranks build the same global batch list deterministically
-        rng = np.random.default_rng(self._seed + self._epoch)
-        all_batches = _build_all_batches(
-            self._reader, self._shuffle, rng, self._block_targets
-        )
-        # Partition to this rank
-        yield from self._partition_batches(all_batches)
+        yield from self._partition_batches(self._global_batches())
 
     def _partition_batches(self, all_batches: list[list[int]]) -> list[list[int]]:
         """Partition global batches to this rank.
 
         The default pads the global list to a multiple of ``world_size`` and
         then takes ``all_batches[rank::world_size]``. This gives good nloc
-        diversity per rank since batches are interleaved across nloc groups
-        before shuffling, while ensuring that every rank yields the same
-        number of batches.
+        diversity per rank since batches are interleaved across groups before
+        shuffling, while ensuring that every rank yields the same number of
+        batches.
 
         Override this method for custom load-balancing. For example, a
         greedy algorithm could assign batches to ranks based on estimated
-        compute cost (``reader.frame_nlocs[batch[0]]`` gives the nloc of
-        each batch).
+        compute cost (``reader.batch_pad_nloc(batch) * len(batch)`` gives the
+        padded cost of each batch).
         """
         if not all_batches:
             return []
@@ -2233,12 +2923,12 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        return (self._total_batches + self._world_size - 1) // self._world_size
+        return len(self._partition_batches(self._global_batches()))
 
     @property
     def total_batches(self) -> int:
-        """Return the global batch count before distributed padding."""
-        return self._total_batches
+        """Number of batches one full pass holds, before the per-rank split."""
+        return len(self._global_batches())
 
     @property
     def rank(self) -> int:

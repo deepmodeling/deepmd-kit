@@ -157,7 +157,7 @@ class DOSLoss(TaskLoss):
                 local_tensor_pred_dos - local_tensor_label_dos
             )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
                 l2_local_loss_dos = masked_atom_mean(
                     torch.square(diff), maskf, self.numb_dos
@@ -186,7 +186,7 @@ class DOSLoss(TaskLoss):
                 local_tensor_pred_cdf - local_tensor_label_cdf
             )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
                 l2_local_loss_cdf = masked_atom_mean(
                     torch.square(diff), maskf, self.numb_dos

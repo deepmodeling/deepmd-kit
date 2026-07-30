@@ -1026,6 +1026,76 @@ class _CompiledModel(torch.nn.Module):
         except AttributeError:
             return getattr(self.original_model, name)
 
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compiled forward over a batch whose node axis is already flat.
+
+        The compiled lower works on that axis in either case -- its trace keeps
+        the frame count, the node count and the edge count as independent
+        symbols -- so a ragged batch simply skips the padding round trip the
+        rectangular :meth:`forward` performs around it.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
+        atype : torch.Tensor
+            Local atom types with shape ``(N,)``.
+        n_node : torch.Tensor
+            Atoms per frame with shape ``(nf,)``.
+        box : torch.Tensor or None, optional
+            Simulation cell, ``(nf, 3, 3)`` or ``(nf, 9)``.
+        fparam : torch.Tensor or None, optional
+            Frame parameters with shape ``(nf, ndf)``.
+        aparam : torch.Tensor or None, optional
+            Atomic parameters with shape ``(N, nda)``.
+        do_atomic_virial : bool, default: False
+            Whether to return per-atom virials.
+        charge_spin : torch.Tensor or None, optional
+            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model keys; per-atom entries keep the flat axis.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model reads a rectangular node axis, which cannot represent
+            frames of unequal atom count without padding.
+        """
+        del do_atomic_virial
+        if self._graph_eligible is None:
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
+        if not self._graph_eligible:
+            raise NotImplementedError(
+                "a flat node axis requires a model whose descriptor reads one; "
+                "this model compiles the dense (nlist) lower, whose batches "
+                "must be padded to a common atom count"
+            )
+        return self._forward_graph(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+            charge_spin,
+            int(n_node.shape[0]),
+            0,
+            self.original_model.get_rcut(),
+            n_node=n_node,
+        )
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -1252,6 +1322,7 @@ class _CompiledModel(torch.nn.Module):
         nframes: int,
         nloc: int,
         rcut: float,
+        n_node: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Carry-all GRAPH forward -> compiled ``forward_common_lower_graph``.
 
@@ -1262,20 +1333,38 @@ class _CompiledModel(torch.nn.Module):
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
         """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            compact_nodes,
+            expand_node_values,
+        )
         from deepmd.pt_expt.utils.graph_builder import (
             build_neighbor_graph_for_method,
+            build_ragged_neighbor_graph,
         )
 
         _model = self.original_model
 
-        coord_3d = coord.detach().reshape(nframes, nloc, 3)
+        # A ragged batch already holds the node axis the lower works on; a
+        # rectangular one is unravelled to it, and its per-atom outputs are
+        # folded back at the end.
+        ragged = n_node is not None
+        n_padded = nframes * nloc
+        # The builders take the shape the layout hands over: a flat node axis,
+        # or the rectangular one a padded batch carries.
+        coord_3d = (
+            coord.detach().reshape(-1, 3)
+            if ragged
+            else coord.detach().reshape(nframes, nloc, 3)
+        )
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
         # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
         # every per-node tensor of the graph schema (the trace sample from
         # build_synthetic_graph_inputs is flat too, so the compiled lower's
-        # input spec expects it).
-        if aparam is not None:
-            aparam = aparam.reshape(nframes * nloc, -1)
+        # input spec expects it). A ragged batch already carries it that way;
+        # a rectangular one may fold the component axis into its frame rows,
+        # so its node count is what unravels it.
+        if aparam is not None and not ragged:
+            aparam = aparam.reshape(n_padded, -1)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
@@ -1314,15 +1403,26 @@ class _CompiledModel(torch.nn.Module):
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
         pair_excl = getattr(_model.atomic_model, "pair_excl", None)
-        ng = build_neighbor_graph_for_method(
-            getattr(_model, "neighbor_graph_method", "dense"),
-            coord_3d,
-            atype,
-            box_flat,
-            rcut,
-            pair_excl,
-        )
-        atype_flat = atype.reshape(nframes * nloc)
+        method = getattr(_model, "neighbor_graph_method", "dense")
+        if ragged:
+            ng = build_ragged_neighbor_graph(
+                method, coord_3d, atype, n_node, box_flat, rcut, pair_excl
+            )
+            atype_flat, node_index = atype, None
+        else:
+            ng = build_neighbor_graph_for_method(
+                method, coord_3d, atype, box_flat, rcut, pair_excl
+            )
+            # A rectangular batch of unequal atom counts is padded to a common
+            # width with phantom atoms (atype < 0). The builders leave them out
+            # of every edge, so dropping them from the node axis costs nothing
+            # and spares the network from evaluating them. On a batch of
+            # uniform atom count this is a renumbering by the identity.
+            atype_flat = atype.reshape(n_padded)
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_flat = atype_flat[node_index]
+            if aparam is not None:
+                aparam = aparam[node_index]
 
         # Lazy compile of the GRAPH lower (cached per structure key).
         if self.compiled_forward_lower is None:
@@ -1386,9 +1486,14 @@ class _CompiledModel(torch.nn.Module):
 
         # The compiled graph lower emits PUBLIC keys on the FLAT node axis
         # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are
-        # (nf, *)).  Unravel the node-level keys to rectangular (nf, nloc, *) so
-        # callers receive the same shapes as the dense path.
-        N = nframes * nloc
+        # (nf, *)). A ragged caller reads that axis directly. A rectangular one
+        # has its node-level keys scattered back onto the padded width and
+        # unravelled to (nf, nloc, *), where a phantom slot reads zero -- what
+        # a masked-out atom contributed there before.
+        if ragged:
+            result["n_node"] = ng.n_node
+            return result
+        N = node_index.shape[0]
         # Node-level (per-atom, lead dim N) public keys emitted by the graph
         # lower; the remaining keys are frame-level (lead dim nf) and must NOT
         # be unravelled. Keying on the NAME rather than the ``N != nframes``
@@ -1403,7 +1508,9 @@ class _CompiledModel(torch.nn.Module):
                 and val is not None
                 and val.shape[:1] == torch.Size([N])
             ):
-                out[key] = val.reshape(nframes, nloc, *val.shape[1:])
+                out[key] = expand_node_values(val, node_index, n_padded).reshape(
+                    nframes, nloc, *val.shape[1:]
+                )
             else:
                 out[key] = val
         return out
@@ -1986,6 +2093,7 @@ class Trainer(AbstractTrainer):
         self._configure_neighbor_graph_method(
             training_params.get("neighbor_graph_method", "auto")
         )
+        self._configure_batch_layout(training_data, validation_data)
 
         # torch.compile -------------------------------------------------------
         if self.enable_compile:
@@ -2080,6 +2188,47 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
     # torch.compile helpers
     # ------------------------------------------------------------------
+
+    def _configure_batch_layout(self, *data_maps: Any) -> None:
+        """Ask each LMDB data system for the layout its own model can consume.
+
+        A model whose descriptor reads a flat node axis takes the frames of a
+        batch concatenated, which spares it the padding that frames of unequal
+        atom count would otherwise need. Every other model reads an
+        ``(nf, nloc, ...)`` axis and needs them padded to a common width. Only
+        the trainer sees both sides, and it settles the question here, once,
+        before any batch is drawn.
+
+        A graph lower is necessary but not sufficient: the model must also
+        expose an entry that takes the flat axis, which the composed models
+        (linear, ZBL bridging) do not. Native-spin models also stay rectangular:
+        their public output translation needs the spin-specific force and mask,
+        while this generic ragged entry translates energy-model outputs only.
+        Requiring these capabilities keeps each model on the layout it can read.
+
+        Each task has its own data system and its own model, so the answer is
+        each task's own: a multi-task run pairing a graph model with a dense
+        one gives the first concatenated batches and the second padded ones.
+
+        Parameters
+        ----------
+        *data_maps : Any
+            The training and validation data systems, either bare or as the
+            per-task mappings a multi-task run builds.
+        """
+        for task_key in self.model_keys:
+            model = self.models[task_key]
+            ragged = (
+                not model.has_spin()
+                and model_uses_graph_lower(model)
+                and hasattr(model, "forward_ragged")
+            )
+            for data_map in data_maps:
+                data = (
+                    data_map.get(task_key) if isinstance(data_map, dict) else data_map
+                )
+                if hasattr(data, "use_ragged_batches"):
+                    data.use_ragged_batches(ragged)
 
     def _configure_neighbor_graph_method(self, requested: str) -> None:
         """Resolve and install the training graph builder on eligible models."""
@@ -2880,7 +3029,10 @@ class Trainer(AbstractTrainer):
                 label=val_label,
                 task_key=task.key,
             )
-            natoms = int(val_input["atype"].shape[-1])
+            # The metrics are per-atom quantities, so each batch weighs by the
+            # real atoms it holds summed over its frames. Phantom atoms
+            # (atype < 0), which pad a mixed-nloc batch, contribute to none.
+            natoms = int((val_input["atype"] >= 0).sum())
             sum_natoms += natoms
             for key, value in vmore.items():
                 if "l2_" not in key:

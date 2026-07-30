@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """PyTorch LMDB dataset — thin wrapper around framework-agnostic LmdbDataReader."""
 
+import functools
 import logging
 from collections.abc import (
     Iterator,
@@ -18,12 +19,14 @@ from torch.utils.data import (
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchIterator,
+    LmdbBatchSampler,
     LmdbDataReader,
+    LmdbDecodeConfig,
     LmdbTestData,
-    SameNlocBatchSampler,
     collate_lmdb_frames,
     compute_block_targets,
     is_lmdb,
+    resolve_per_atom_keys,
 )
 from deepmd.env import (
     get_lmdb_num_workers,
@@ -44,7 +47,10 @@ __all__ = [
 ]
 
 
-def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+def _collate_lmdb_batch(
+    batch: list[dict[str, Any]],
+    config: LmdbDecodeConfig,
+) -> dict[str, Any]:
     """Collate a list of frame dicts into a torch batch dict.
 
     Pre-converts per-frame numpy arrays to CPU torch tensors (zero-copy when
@@ -53,19 +59,23 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     collate yields a torch dict (``sid`` becomes a torch tensor automatically
     via ``array_api_compat``).
 
-    All frames in the batch must have the same nloc (enforced by
-    SameNlocBatchSampler when mixed_batch=False). For mixed_batch=True,
-    raises NotImplementedError.
-    """
-    if len(batch) > 1:
-        atypes = [d.get("atype") for d in batch if d.get("atype") is not None]
-        if atypes and any(len(a) != len(atypes[0]) for a in atypes):
-            raise NotImplementedError(
-                "mixed_batch collation (frames with different atom counts "
-                "in the same batch) is not yet supported. "
-                "Padding + mask in collate_fn needed."
-            )
+    Frames of different atom counts are padded to the batch maximum; the
+    padded slots carry the phantom atom type. Frames must still agree on
+    label availability, which :class:`LmdbBatchSampler` guarantees.
 
+    Parameters
+    ----------
+    batch : list[dict[str, Any]]
+        Decoded frames to collate.
+    config : LmdbDecodeConfig
+        Decoder state whose data requirements identify the per-atom fields.
+
+    Returns
+    -------
+    dict[str, Any]
+        One collated batch of CPU tensors.
+    """
+    per_atom_keys = resolve_per_atom_keys(batch[0], config)
     with torch.device("cpu"):
         torch_frames: list[dict[str, Any]] = []
         for f in batch:
@@ -78,7 +88,7 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                 else:
                     tf[key] = torch.as_tensor(val)
             torch_frames.append(tf)
-        return collate_lmdb_frames(torch_frames)
+        return collate_lmdb_frames(torch_frames, per_atom_keys)
 
 
 def _lmdb_batch_to_torch(
@@ -100,15 +110,15 @@ def _lmdb_batch_to_torch(
     return converted
 
 
-class _SameNlocBatchSamplerTorch(Sampler):
-    """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
+class _LmdbBatchSamplerTorch(Sampler):
+    """Torch Sampler adapter around the framework-agnostic LmdbBatchSampler.
 
     PyTorch DataLoader with batch_sampler expects a Sampler that yields
-    lists of indices. This wraps SameNlocBatchSampler (or
-    DistributedSameNlocBatchSampler) to satisfy that.
+    lists of indices. This wraps LmdbBatchSampler (or
+    DistributedLmdbBatchSampler) to satisfy that.
     """
 
-    def __init__(self, inner: SameNlocBatchSampler) -> None:
+    def __init__(self, inner: LmdbBatchSampler) -> None:
         self._inner = inner
 
     def __iter__(self) -> Iterator[list[int]]:
@@ -140,7 +150,7 @@ class LmdbBatchDataLoader:
         num_workers: int | None = None,
     ) -> None:
         self.dataset = dataset
-        self.batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self.batch_sampler = _LmdbBatchSamplerTorch(sampler)
         self.sampler = sampler
         self._pin_memory = pin_memory
         self._batch_iterator = LmdbBatchIterator(
@@ -188,9 +198,11 @@ class LmdbDataset(Dataset):
         - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
         - ``"filter:N"``: same per-nloc formula as ``"max:N"`` and drops
           every frame whose ``nloc > N`` from the dataset.
-    mixed_batch : bool
-        If True, allow different nloc in the same batch (future).
-        If False (default), use SameNlocBatchSampler.
+        - ``"mix:N"``: mixed-nloc batching to a padded-slot budget of ``N``;
+          frames of different atom counts share a batch and the shorter ones
+          are padded with phantom atoms.
+    auto_prob_style : str, optional
+        ``auto_prob`` string used to reweight the original systems.
     """
 
     def __init__(
@@ -198,21 +210,16 @@ class LmdbDataset(Dataset):
         lmdb_path: str,
         type_map: list[str],
         batch_size: int | str = "auto",
-        mixed_batch: bool = False,
         auto_prob_style: str | None = None,
     ) -> None:
-        self._reader = LmdbDataReader(
-            lmdb_path, type_map, batch_size, mixed_batch=mixed_batch
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        self._collate = functools.partial(
+            _collate_lmdb_batch, config=self._reader.decode_config
         )
 
-        if mixed_batch:
-            # Future: DataLoader with padding collate_fn
-            raise NotImplementedError(
-                "mixed_batch=True is not yet supported. "
-                "Requires padding + mask in collate_fn."
-            )
-
-        # Compute block_targets from auto_prob_style if provided
+        # Compute block_targets from auto_prob_style if provided. An empty
+        # result means the configured probabilities need no reweighting, which
+        # is the common case and worth no log line of its own.
         self._block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:
             self._block_targets = compute_block_targets(
@@ -220,26 +227,25 @@ class LmdbDataset(Dataset):
                 self._reader.nsystems,
                 self._reader.system_nframes,
             )
-            if self._block_targets is not None:
+            if self._block_targets:
                 log.info(
                     f"LMDB auto_prob: {len(self._block_targets)} blocks, "
                     f"nsystems={self._reader.nsystems}"
                 )
 
-        # Same-nloc batching: use SameNlocBatchSampler
-        sampler = SameNlocBatchSampler(
+        sampler = LmdbBatchSampler(
             self._reader,
             shuffle=True,
             block_targets=self._block_targets,
         )
-        self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self._batch_sampler = _LmdbBatchSamplerTorch(sampler)
 
         with torch.device("cpu"):
             self._inner_dataloader = DataLoader(
                 self,
                 batch_sampler=self._batch_sampler,
                 num_workers=0,
-                collate_fn=_collate_lmdb_batch,
+                collate_fn=self._collate,
             )
 
         # Per-nloc and label-availability dataloaders for make_stat_input.
@@ -264,7 +270,7 @@ class LmdbDataset(Dataset):
                         shuffle=False,
                         num_workers=0,
                         drop_last=False,
-                        collate_fn=_collate_lmdb_batch,
+                        collate_fn=self._collate,
                     )
                 dataloaders.append(dl)
         self._nloc_dataloaders = dataloaders
@@ -295,8 +301,9 @@ class LmdbDataset(Dataset):
         return self._reader.nframes
 
     @property
-    def mixed_batch(self) -> bool:
-        return self._reader.mixed_batch
+    def mixed_nloc(self) -> bool:
+        """Whether one batch may span several atom counts."""
+        return self._reader.mixed_nloc
 
     @property
     def mixed_type(self) -> bool:
@@ -411,8 +418,6 @@ class LmdbDataset(Dataset):
     @property
     def index(self) -> list[int]:
         """Number of batches per logical LMDB dataset."""
-        if not self._block_targets:
-            return self._reader.index
         return [self.total_batch]
 
     @property

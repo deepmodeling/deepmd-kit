@@ -3,7 +3,7 @@
 
 ``neighbor_graph_from_ijs`` is the canonical sparse converter: it takes an
 already-built sparse edge list -- per-edge center ``i``, neighbor ``j`` (both
-per-frame LOCAL indices in ``[0, nloc)``) and integer periodic-image shift ``S``
+indices within their own frame) and integer periodic-image shift ``S``
 -- and emits a :class:`NeighborGraph` whose ``edge_vec`` is recomputed
 DIFFERENTIABLY from ``coord``/``box`` (it never trusts the builder's distance
 vectors). It is the format-conversion step shared by every O(N) search backend
@@ -46,7 +46,7 @@ def neighbor_graph_from_ijs(
     coord: Array,
     box: Array | None,
     nframe_id: Array,
-    nloc: int,
+    n_node: Array,
     layout: GraphLayout | None = None,
     *,
     with_csr: bool = False,
@@ -61,19 +61,22 @@ def neighbor_graph_from_ijs(
     Parameters
     ----------
     i
-        (E,) int per-edge center, per-frame LOCAL index in ``[0, nloc)``.
+        (E,) int per-edge center, index within its own frame.
     j
-        (E,) int per-edge neighbor, per-frame LOCAL index in ``[0, nloc)``.
+        (E,) int per-edge neighbor, index within its own frame.
     S
         (E, 3) int periodic-image shift: the neighbor sits at ``coord[j] + S @ box``.
     coord
-        (nf, nloc, 3) local coordinates.
+        (N, 3) local coordinates, frame-major over ``n_node``.
     box
         (nf, 3, 3) simulation cell, or ``None`` for non-periodic (``S`` ignored).
     nframe_id
         (E,) int frame index of each edge.
-    nloc
-        number of local atoms per frame (used for the frame-major node offset).
+    n_node
+        (nf,) int atoms per frame. Frames occupy contiguous blocks of the node
+        axis in order, so the prefix sums of this vector are the frame offsets
+        that turn a within-frame index into a node index. A batch padded to a
+        common width is the special case where every entry is that width.
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
     with_csr
@@ -86,24 +89,24 @@ def neighbor_graph_from_ijs(
     Returns
     -------
     NeighborGraph
-        ``edge_index = [j + nframe_id*nloc, i + nframe_id*nloc]`` (src=neighbor,
-        dst=center); ``edge_vec = coord[j] + S@box - coord[i]``; ``n_node`` is
-        ``nloc`` per frame.
+        ``edge_index`` holds node indices (src=neighbor, dst=center) and
+        ``edge_vec = coord[j] + S@box - coord[i]``.
     """
     if layout is None:
         layout = GraphLayout()
     with_csr = with_csr or canonicalize
     xp = array_api_compat.array_namespace(coord)
     dev = array_api_compat.device(coord)
-    nf = coord.shape[0]
-    coord = xp.reshape(coord, (nf, nloc, 3))
+    n_node = xp.astype(xp.asarray(n_node, device=dev), xp.int64)
+    nf = n_node.shape[0]
+    coord_flat = xp.reshape(coord, (-1, 3))
     i = xp.astype(xp.asarray(i, device=dev), xp.int64)
     j = xp.astype(xp.asarray(j, device=dev), xp.int64)
     nframe_id = xp.astype(xp.asarray(nframe_id, device=dev), xp.int64)
-    # flat frame-major node indices
-    i_flat = i + nframe_id * nloc
-    j_flat = j + nframe_id * nloc
-    coord_flat = xp.reshape(coord, (nf * nloc, 3))
+    # Within-frame indices become node indices through the frame offsets.
+    offset = xp.take(xp.cumulative_sum(n_node) - n_node, nframe_id, axis=0)
+    i_flat = i + offset
+    j_flat = j + offset
     r_i = xp.take(coord_flat, i_flat, axis=0)
     r_j = xp.take(coord_flat, j_flat, axis=0)
     edge_vec = r_j - r_i
@@ -120,7 +123,6 @@ def neighbor_graph_from_ijs(
     edge_index, edge_vec, edge_mask = pad_and_guard_edges(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
-    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
     if not with_csr:
         return NeighborGraph(
             n_node=n_node,
@@ -140,7 +142,7 @@ def neighbor_graph_from_ijs(
         edge_index,
         edge_vec,
         edge_mask,
-        nf * nloc,
+        int(coord_flat.shape[0]),
         canonicalize=canonicalize,
     )
     return NeighborGraph(

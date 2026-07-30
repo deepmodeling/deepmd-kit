@@ -1692,6 +1692,20 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         )
         return coord, atype, spin, box
 
+    def _mixed_padded_batch(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build two frames whose shorter member carries phantom padding."""
+        coord, atype, spin, box = self._frame()
+        coord = coord.repeat(2, 1, 1)
+        atype = atype.repeat(2, 1)
+        spin = spin.repeat(2, 1, 1)
+        box = box.repeat(2, 1)
+        atype[1, -2:] = -1
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
+        return coord, atype, spin, box
+
     def test_zbl_change_out_bias_is_invariant_for_self_labels(self) -> None:
         """Native-spin statistics consume spin and the complete ZBL energy."""
         model = self._build_model(bridging_method="ZBL")
@@ -1795,6 +1809,33 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             atol=1e-8,
             rtol=1e-6,
         )
+
+    def test_phantom_atoms_are_excluded_from_magnetic_mask(self) -> None:
+        """Mixed-nloc padding never enters the per-type spin lookup."""
+        model = self._build_model()
+        coord, atype, spin, box = self._mixed_padded_batch()
+
+        out = model(coord, atype, spin, box=box)
+        expected_mask = ((atype == 0) & (atype >= 0)).unsqueeze(-1)
+        torch.testing.assert_close(out["mask_mag"], expected_mask)
+        self.assertTrue(torch.all(out["force"][1, -2:] == 0.0))
+        self.assertTrue(torch.all(out["force_mag"][1, -2:] == 0.0))
+
+        lower = model._attach_spin_masks(
+            {
+                "energy_derv_r_mag": torch.zeros(
+                    2,
+                    atype.shape[1],
+                    1,
+                    3,
+                    dtype=coord.dtype,
+                    device=coord.device,
+                )
+            },
+            atype=atype,
+            nall=atype.shape[1],
+        )
+        torch.testing.assert_close(lower["mask_mag"], expected_mask)
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_export_matches_forward(self) -> None:
@@ -1904,7 +1945,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """The compiled native-spin path matches eager force and magnetic force."""
-        coord, atype, spin, box = self._frame()
+        coord, atype, spin, box = self._mixed_padded_batch()
         model_eager = self._build_model(use_compile=False)
         model_cmp = self._build_model(use_compile=True)
         model_cmp.load_state_dict(model_eager.state_dict())
@@ -1922,6 +1963,8 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
                 rtol=1.0e-6,
                 msg=f"native-spin compile mismatch on {key}",
             )
+        torch.testing.assert_close(out_c["mask_mag"], out_e["mask_mag"])
+        self.assertTrue(torch.all(~out_c["mask_mag"][1, -2:]))
 
     @staticmethod
     def _extended_spin_inputs(
@@ -2236,6 +2279,147 @@ class TestSeZMModelBridging(unittest.TestCase):
                     atol=1.0e-12,
                     rtol=1.0e-12,
                 )
+
+
+class TestSeZMPhantomAtoms(unittest.TestCase):
+    """SeZM must ignore the phantom atoms that pad a mixed-nloc batch.
+
+    A mixed-nloc LMDB batch is rectangular: frames shorter than the batch-wide
+    atom count are padded with slots carrying ``atype = -1`` and zero
+    coordinates. Those slots stand for no physical site, so the padded batch
+    has to reproduce, frame by frame, what the unpadded frames give on their
+    own.
+    """
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+        torch.manual_seed(2024)
+
+    def _build_model(self) -> SeZMModel:
+        params = {
+            "type": "SeZM",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "SeZM",
+                "sel": [20, 20],
+                "rcut": 4.0,
+                "channels": 4,
+                "n_focus": 1,
+                "focus_compete": False,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "use_env_seed": False,
+                "l_schedule": [1, 0],
+                "mmax": 1,
+                "so2_norm": False,
+                "so2_layers": 1,
+                "n_atten_head": 0,
+                "sandwich_norm": [True, False, True, False],
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "mlp_bias": True,
+                "layer_scale": True,
+                "use_amp": False,
+                "activation_function": "silu",
+                "glu_activation": True,
+                "precision": "float64",
+                "seed": 7,
+            },
+            "fitting_net": {
+                "neuron": [8],
+                "activation_function": "silu",
+                "precision": "float64",
+                "seed": 7,
+            },
+            "use_compile": False,
+        }
+        model = get_sezm_model(params).to(self.device)
+        torch.manual_seed(1234)
+        with torch.no_grad():
+            for param in model.parameters():
+                param.copy_(torch.randn_like(param) * 0.1)
+        return model.eval()
+
+    @staticmethod
+    def _make_frames() -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray]:
+        """Three frames of unequal atom count sharing one cubic cell."""
+        rng = np.random.default_rng(0)
+        nlocs = (4, 7, 3)
+        coords = [rng.uniform(0.0, 6.0, (nloc, 3)) for nloc in nlocs]
+        atypes = [rng.integers(0, 2, nloc) for nloc in nlocs]
+        return coords, atypes, (np.eye(3) * 10.0).reshape(9)
+
+    def _pad(
+        self, coords: list[np.ndarray], atypes: list[np.ndarray]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        pad_nloc = max(len(a) for a in atypes)
+        coord = np.zeros((len(atypes), pad_nloc, 3))
+        atype = np.full((len(atypes), pad_nloc), -1, dtype=np.int64)
+        for index, (frame_coord, frame_atype) in enumerate(
+            zip(coords, atypes, strict=True)
+        ):
+            coord[index, : len(frame_atype)] = frame_coord
+            atype[index, : len(frame_atype)] = frame_atype
+        return (
+            torch.tensor(coord, dtype=torch.float64, device=self.device),
+            torch.tensor(atype, device=self.device),
+        )
+
+    def test_padded_batch_matches_unpadded_frames(self) -> None:
+        """Energy and real-atom forces are unchanged by the padding."""
+        model = self._build_model()
+        coords, atypes, box = self._make_frames()
+        coord, atype = self._pad(coords, atypes)
+        batched = model(
+            coord,
+            atype,
+            box=torch.tensor(
+                np.tile(box, (len(atypes), 1)),
+                dtype=torch.float64,
+                device=self.device,
+            ),
+        )
+
+        for index, (frame_coord, frame_atype) in enumerate(
+            zip(coords, atypes, strict=True)
+        ):
+            alone = model(
+                torch.tensor(
+                    frame_coord[None], dtype=torch.float64, device=self.device
+                ),
+                torch.tensor(frame_atype[None], device=self.device),
+                box=torch.tensor(box[None], dtype=torch.float64, device=self.device),
+            )
+            torch.testing.assert_close(
+                batched["energy"].reshape(-1)[index],
+                alone["energy"].reshape(-1)[0],
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+            torch.testing.assert_close(
+                batched["force"][index, : len(frame_atype)],
+                alone["force"][0],
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+
+    def test_phantom_atoms_carry_no_force(self) -> None:
+        """Padded slots stay at exactly zero force, so no gradient reaches them."""
+        model = self._build_model()
+        coords, atypes, box = self._make_frames()
+        coord, atype = self._pad(coords, atypes)
+        force = model(
+            coord,
+            atype,
+            box=torch.tensor(
+                np.tile(box, (len(atypes), 1)),
+                dtype=torch.float64,
+                device=self.device,
+            ),
+        )["force"]
+        phantom = atype < 0
+        self.assertTrue(bool(phantom.any()), "fixture must exercise padding")
+        self.assertTrue(bool(torch.all(force[phantom] == 0.0)))
 
 
 class TestSeZMModelModes(unittest.TestCase):
