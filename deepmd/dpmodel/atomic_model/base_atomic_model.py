@@ -190,6 +190,54 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Whether multi-rank inference needs a cross-rank ghost exchange.
+
+        Generic capability (concrete default ``False``): the export layer
+        consults it instead of reaching for a descriptor, so the answer
+        stays correct for descriptor-less models and compositions.
+        """
+        return False
+
+    def supports_edge_parallel(self) -> bool:
+        """Whether this atomic model can run under MPI domain decomposition.
+
+        Default ``True``; a model folding state no single rank observes
+        (e.g. SFPG bridging before its exchange lands) overrides to False.
+        """
+        return True
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Whether the DENSE (nlist) lower implements comm_dict exchange.
+
+        Default ``True`` — dense comm is the production multi-rank path for
+        dpa2/dpa3; DPA4's dense adapter raises on comm_dict and overrides
+        via its descriptor.
+        """
+        return True
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Whether the graph lower emits compact ``center_edge_pairs``
+        (drives the torch>=2.6 unbacked-SymInt export guard).
+        """
+        return False
+
+    def graph_edge_dtype(self) -> str:
+        """Edge-geometry dtype the graph deployment artifact accepts.
+
+        ``"float64"`` is the model-agnostic ABI; geometrically compressed
+        float32 descriptors override to ``"float32"``.
+        """
+        return "float64"
+
+    def supports_graph_export(self) -> bool:
+        """Whether an exportable graph-lower implementation exists.
+
+        A compressed descriptor without its fused opaque operator cannot be
+        traced through the reference tabulation kernel.
+        """
+        return True
+
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return None

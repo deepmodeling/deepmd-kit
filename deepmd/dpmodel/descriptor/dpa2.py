@@ -603,6 +603,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
         self.compress = False
+        self.geo_compress = False
         # graph-native lower opt-out flag (mirrors DescrptDPA1); not
         # serialized, re-derived structurally at construction/deserialization.
         self._graph_lower_disabled = False
