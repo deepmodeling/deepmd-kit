@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <torch/torch.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "tabulate.h"
+#include "tabulate_validation.h"
 
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #include "device.h"
@@ -16,6 +18,109 @@ void GetTensorDevice(const torch::Tensor& t, std::string& str) {
   } else {
     str = "CPU";
   }
+}
+
+void CheckTabulateDataTensor(const torch::Tensor& tensor,
+                             const torch::Tensor& table_tensor,
+                             const char* name) {
+  TORCH_CHECK(tensor.scalar_type() == table_tensor.scalar_type(), name,
+              " must have the same dtype as table");
+  TORCH_CHECK(tensor.device() == table_tensor.device(), name,
+              " must be on the same device as table");
+  TORCH_CHECK(tensor.is_contiguous(), name, " must be contiguous");
+}
+
+template <typename FPTYPE>
+void CheckTabulateTable(const torch::Tensor& table_tensor,
+                        const torch::Tensor& table_info_tensor,
+                        const int64_t last_layer_size,
+                        const bool symmetric_range) {
+  TORCH_CHECK(table_tensor.dim() == 2, "table must be rank 2");
+  TORCH_CHECK(table_tensor.scalar_type() == torch::kFloat ||
+                  table_tensor.scalar_type() == torch::kDouble,
+              "table must use float32 or float64");
+  TORCH_CHECK(table_tensor.device().is_cpu() || table_tensor.device().is_cuda(),
+              "table must be on a CPU or CUDA/ROCm device");
+  TORCH_CHECK(table_tensor.is_contiguous(), "table must be contiguous");
+  TORCH_CHECK(last_layer_size > 0, "last_layer_size must be positive");
+  TORCH_CHECK(table_info_tensor.device().is_cpu(),
+              "table_info must be on the CPU");
+  TORCH_CHECK(table_info_tensor.scalar_type() == table_tensor.scalar_type(),
+              "table_info must have the same dtype as table");
+  TORCH_CHECK(table_info_tensor.is_contiguous(),
+              "table_info must be contiguous");
+  TORCH_CHECK(table_info_tensor.numel() >= 5,
+              "table_info must contain at least 5 values");
+
+  int64_t required_rows = 0;
+  std::string error;
+  TORCH_CHECK(deepmd::tabulate_required_table_rows<FPTYPE>(
+                  table_info_tensor.data_ptr<FPTYPE>(), symmetric_range,
+                  required_rows, error),
+              error);
+  int64_t required_elements = 0;
+  TORCH_CHECK(deepmd::tabulate_required_table_elements(
+                  required_rows, last_layer_size, required_elements, error),
+              error);
+  TORCH_CHECK(table_tensor.numel() >= required_elements,
+              "table does not contain enough coefficients for table_info and "
+              "last_layer_size");
+}
+
+template <typename FPTYPE>
+void CheckTabulateSeAInputs(const torch::Tensor& table_tensor,
+                            const torch::Tensor& table_info_tensor,
+                            const torch::Tensor& em_x_tensor,
+                            const torch::Tensor& em_tensor,
+                            const torch::Tensor& two_embed_tensor,
+                            const int64_t last_layer_size) {
+  CheckTabulateTable<FPTYPE>(table_tensor, table_info_tensor, last_layer_size,
+                             false);
+  TORCH_CHECK(em_tensor.dim() == 3 && em_tensor.size(2) == 4,
+              "em must have shape [nloc, nnei, 4]");
+  const int64_t neighbor_count = em_tensor.numel() / 4;
+  TORCH_CHECK(em_x_tensor.dim() == 2 && em_x_tensor.numel() == neighbor_count,
+              "em_x must be rank 2 and contain nloc * nnei values");
+  CheckTabulateDataTensor(em_x_tensor, table_tensor, "em_x");
+  CheckTabulateDataTensor(em_tensor, table_tensor, "em");
+  if (two_embed_tensor.defined()) {
+    TORCH_CHECK(two_embed_tensor.dim() == 2, "two_embed must be rank 2");
+    int64_t expected_two_embed_elements = 0;
+    TORCH_CHECK(
+        deepmd::tabulate_checked_product(neighbor_count, last_layer_size,
+                                         expected_two_embed_elements),
+        "two_embed element count exceeds the supported integer range");
+    TORCH_CHECK(two_embed_tensor.numel() == expected_two_embed_elements,
+                "two_embed must contain nloc * nnei * last_layer_size values");
+    CheckTabulateDataTensor(two_embed_tensor, table_tensor, "two_embed");
+  }
+}
+
+template <typename FPTYPE>
+void CheckTabulateSeTInputs(const torch::Tensor& table_tensor,
+                            const torch::Tensor& table_info_tensor,
+                            const torch::Tensor& em_x_tensor,
+                            const torch::Tensor& em_tensor,
+                            const int64_t last_layer_size) {
+  CheckTabulateTable<FPTYPE>(table_tensor, table_info_tensor, last_layer_size,
+                             true);
+  TORCH_CHECK(em_tensor.dim() == 3, "em must be rank 3");
+  TORCH_CHECK(
+      em_x_tensor.dim() == 2 && em_x_tensor.numel() == em_tensor.numel(),
+      "em_x must be rank 2 and contain the same number of values as em");
+  CheckTabulateDataTensor(em_x_tensor, table_tensor, "em_x");
+  CheckTabulateDataTensor(em_tensor, table_tensor, "em");
+}
+
+template <typename FPTYPE>
+void CheckTabulateSeRInputs(const torch::Tensor& table_tensor,
+                            const torch::Tensor& table_info_tensor,
+                            const torch::Tensor& em_tensor,
+                            const int64_t last_layer_size) {
+  CheckTabulateTable<FPTYPE>(table_tensor, table_info_tensor, last_layer_size,
+                             false);
+  TORCH_CHECK(em_tensor.dim() == 2, "em must be rank 2");
+  CheckTabulateDataTensor(em_tensor, table_tensor, "em");
 }
 
 template <typename FPTYPE>
@@ -776,6 +881,8 @@ class TabulateFusionSeAOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    CheckTabulateSeAInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                   em_tensor, at::Tensor(), last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -962,6 +1069,9 @@ class TabulateFusionSeAttenOp
       const torch::Tensor& two_embed_tensor,
       int64_t last_layer_size,
       bool is_sorted) {
+    CheckTabulateSeAInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                   em_tensor, two_embed_tensor,
+                                   last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1130,6 +1240,8 @@ class TabulateFusionSeTOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                   em_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1283,6 +1395,8 @@ class TabulateFusionSeROp
       const torch::Tensor& table_info_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    CheckTabulateSeRInputs<FPTYPE>(table_tensor, table_info_tensor, em_tensor,
+                                   last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1441,6 +1555,8 @@ class TabulateFusionSeTTebdOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    CheckTabulateSeTInputs<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                   em_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
