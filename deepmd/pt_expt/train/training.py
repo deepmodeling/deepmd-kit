@@ -645,7 +645,7 @@ def _trace_and_compile_graph(
         make_fx,
     )
 
-    from deepmd.pt_expt.model.ener_model import (
+    from deepmd.pt_expt.model.make_model import (
         _translate_energy_keys,
     )
 
