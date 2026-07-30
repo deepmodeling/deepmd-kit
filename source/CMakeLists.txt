@@ -84,11 +84,33 @@ if(ENABLE_PADDLE)
     endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
-    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE}
-         EXPECTED_HASH SHA256=${DOWNLOAD_SHA256})
+    file(
+      DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE}
+      EXPECTED_HASH SHA256=${DOWNLOAD_SHA256}
+      STATUS PADDLE_DOWNLOAD_STATUS)
+    list(GET PADDLE_DOWNLOAD_STATUS 0 PADDLE_DOWNLOAD_STATUS_CODE)
+    list(GET PADDLE_DOWNLOAD_STATUS 1 PADDLE_DOWNLOAD_STATUS_MESSAGE)
+    if(NOT PADDLE_DOWNLOAD_STATUS_CODE EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Failed to download Paddle inference library from ${DOWNLOAD_URL} (status ${PADDLE_DOWNLOAD_STATUS_CODE}): ${PADDLE_DOWNLOAD_STATUS_MESSAGE}"
+      )
+    endif()
     message(STATUS "Downloading finished, extracting...")
-    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
-                    OUTPUT_QUIET)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
+      OUTPUT_QUIET
+      ERROR_VARIABLE PADDLE_EXTRACT_ERROR
+      RESULT_VARIABLE PADDLE_EXTRACT_STATUS
+      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    if(NOT PADDLE_EXTRACT_STATUS STREQUAL "0")
+      message(
+        FATAL_ERROR
+          "Failed to extract ${TGZ_FILE} (status ${PADDLE_EXTRACT_STATUS}): ${PADDLE_EXTRACT_ERROR}"
+      )
+    endif()
+    # Cache the inferred location only after both steps succeed. Otherwise a
+    # failed configure would cause retries to skip this download block.
     file(REMOVE ${TGZ_FILE})
     set(PADDLE_INFERENCE_DIR
         ${EXTRACTED_DIR}
