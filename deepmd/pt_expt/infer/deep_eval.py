@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import logging
 import warnings
 from collections.abc import (
     Callable,
@@ -13,9 +14,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.backend.pt_expt import (
-    detect_pt_checkpoint_backend,
-)
 from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
 )
@@ -68,6 +66,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
 )
+from deepmd.utils.pt_checkpoint import (
+    detect_pt_checkpoint_backend,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -78,6 +79,8 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
+
+log = logging.getLogger(__name__)
 
 
 # Public output keys emitted by graph-lower forwards, keyed by the
@@ -178,18 +181,21 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class for nlist-routed artifacts. If None, the
         neighbor list will be built natively. Explicit neighbor lists are
-        rejected for graph-routed artifacts.
+        rejected for graph-routed artifacts because switching those models to
+        the nlist lower can change their predictions. Use
+        ``neighbor_graph_method="ase"`` for ASE-based graph construction.
     nlist_backend : str, default: "auto"
         Neighbor-list builder for the NLIST/extended lower path (``.pte``,
         nlist-form ``.pt2``, and dense-routed ``.pt`` checkpoints):
         ``"auto"`` / ``"vesin"`` / ``"native"``. Explicit non-default values
-        are ignored with a warning for graph-routed artifacts.
+        are rejected for graph-routed artifacts.
     neighbor_graph_method : str, default: "auto"
         Carry-all graph builder for graph-form ``.pt2`` artifacts and
         graph-routed ``.pt`` checkpoints
         (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects
-        ``"nv"`` on CUDA when nvalchemiops is available, then ``"vesin"`` when
-        available, and finally falls back to ``"dense"``. Explicit
+        ``"nv"`` on CUDA when nvalchemiops is available and otherwise falls
+        back to ``"dense"``. ``"vesin"`` remains explicit opt-in because it
+        loops over frames in Python. Explicit
         ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
         A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
@@ -240,9 +246,9 @@ class DeepEval(DeepEvalBackend):
         # ``neighbor_graph_method`` is consumed only by graph-lower evaluation.
         # Fail fast instead of silently ignoring it on nlist-form artifacts,
         # where the corresponding builder knob is ``nlist_backend``.
-        if neighbor_graph_method not in ("auto", "dense") and getattr(
-            self, "metadata", {}
-        ).get("lower_input_kind") not in ("graph", "dpa1_canonical"):
+        if neighbor_graph_method != "auto" and getattr(self, "metadata", {}).get(
+            "lower_input_kind"
+        ) not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-routed artifacts (lower_input_kind == 'graph'); this "
@@ -282,10 +288,15 @@ class DeepEval(DeepEvalBackend):
             DEVICE,
         )
 
-        if DEVICE.type == "cuda" and is_nv_available():
-            return "nv"
-        if is_vesin_torch_available():
-            return "vesin"
+        if DEVICE.type == "cuda":
+            if is_nv_available():
+                return "nv"
+            log.warning(
+                "nvalchemi-toolkit-ops is unavailable; falling back from "
+                "neighbor_graph_method='auto' to the dense graph builder. "
+                "Install it with `pip install nvalchemi-toolkit-ops` to enable "
+                "the NV graph builder."
+            )
         return "dense"
 
     def _setup_neighbor_backend(self, nlist_backend: str) -> None:
@@ -295,8 +306,8 @@ class DeepEval(DeepEvalBackend):
         O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
         model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
         silently falls back to the native builder otherwise. Graph-routed
-        artifacts use ``neighbor_graph_method`` instead, reject an explicit ASE
-        neighbor list, and warn when an explicit nlist backend is ignored.
+        artifacts use ``neighbor_graph_method`` instead and reject nlist-specific
+        controls rather than silently changing or ignoring the requested lower.
         Results are unchanged either way; only the neighbor-search cost differs.
         """
         if nlist_backend not in ("auto", "vesin", "native"):
@@ -307,16 +318,18 @@ class DeepEval(DeepEvalBackend):
         if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
             if self.neighbor_list is not None:
                 raise ValueError(
-                    "neighbor_list only applies to nlist-routed artifacts; use "
-                    "neighbor_graph_method for this graph-routed model."
+                    "neighbor_list cannot be used with this graph-routed model: "
+                    "switching to the nlist lower would change its inference "
+                    "semantics. Use neighbor_graph_method='ase' for ASE-based "
+                    "graph construction, or load an explicitly exported "
+                    "nlist-form artifact."
                 )
             if nlist_backend != "auto":
-                warnings.warn(
-                    f"nlist_backend={nlist_backend!r} is ignored for graph-routed "
-                    "artifacts; use neighbor_graph_method to select the graph "
-                    "builder.",
-                    UserWarning,
-                    stacklevel=2,
+                raise ValueError(
+                    f"nlist_backend={nlist_backend!r} only applies to "
+                    "nlist-routed artifacts and cannot be used with this "
+                    "graph-routed model. Use neighbor_graph_method to select "
+                    "the graph builder."
                 )
             self._neighbor_graph_method = self._resolve_neighbor_graph_method(
                 self._neighbor_graph_method
@@ -325,17 +338,11 @@ class DeepEval(DeepEvalBackend):
             self._nlist_builder = None
             return
         is_spin = bool(getattr(self, "_is_spin", False))
-        # Native-spin (NeighborGraph route) graph-form artifacts never touch
-        # this NLIST builder at all -- graph-form eval uses
-        # ``neighbor_graph_method`` instead (see ``_eval_model_graph_spin``).
-        # Only the virtual-atom (dense/nlist) spin scheme actually needs the
-        # vesin restriction below.
-        is_native_spin_graph = is_spin and (
-            getattr(self, "metadata", {}).get("lower_input_kind") == "graph"
-        )
+        # Graph-routed artifacts returned above. Any remaining spin model uses
+        # the virtual-atom nlist scheme, which vesin does not support.
         ase_provided = self.neighbor_list is not None
         # reason vesin cannot be used (None means it can)
-        unsupported = "spin models" if is_spin and not is_native_spin_graph else None
+        unsupported = "spin models" if is_spin else None
         if nlist_backend == "native":
             self._use_vesin = False
         elif nlist_backend == "vesin":
@@ -558,6 +565,14 @@ class DeepEval(DeepEvalBackend):
                 "dialect. Load it with `dp --pt`, or export it to `.pt2` / "
                 "`.pte` before loading it with `pt_expt`."
             )
+        if checkpoint_backend is None:
+            raise ValueError(
+                f"Cannot determine the parameter dialect of checkpoint "
+                f"'{model_file}': its state dictionary is ambiguous or does "
+                "not contain backend-specific parameter names. Load it with "
+                "the backend that produced it, or use an unambiguous "
+                "pt_expt training checkpoint."
+            )
         extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
         if not (isinstance(extra, dict) and "model_params" in extra):
             raise ValueError(
@@ -699,11 +714,11 @@ class DeepEval(DeepEvalBackend):
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
         if use_graph_lower:
-            from deepmd.pt_expt.utils.serialization import (
-                _graph_edge_dtype,
+            from deepmd.pt_expt.model.graph_lower import (
+                graph_edge_dtype,
             )
 
-            self.metadata["graph_edge_dtype"] = _graph_edge_dtype(model, "graph")
+            self.metadata["graph_edge_dtype"] = graph_edge_dtype(model, "graph")
         if self._is_spin:
             self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
             self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
@@ -719,148 +734,150 @@ class DeepEval(DeepEvalBackend):
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
         # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
-        if use_graph_lower and self._is_spin:
+        if use_graph_lower:
+            if self._is_spin:
 
-            def _eager_runner_graph_spin(
-                atype: torch.Tensor,
-                n_node: torch.Tensor,
-                n_local: torch.Tensor,
-                edge_index: torch.Tensor,
-                edge_vec: torch.Tensor,
-                edge_mask: torch.Tensor,
-                destination_order: torch.Tensor,
-                destination_row_ptr: torch.Tensor,
-                source_order: torch.Tensor,
-                source_row_ptr: torch.Tensor,
-                spin: torch.Tensor,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                model_ret = model.forward_common_lower_graph(
-                    atype,
-                    n_node,
-                    n_local,
-                    edge_index,
-                    edge_vec,
-                    edge_mask,
-                    destination_order,
-                    destination_row_ptr,
-                    source_order,
-                    source_row_ptr,
-                    destination_sorted=True,
-                    do_atomic_virial=True,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                    spin=spin,
-                )
-                return model._translate_eager_call(
-                    model_ret,
-                    atype,
-                    do_atomic_virial=True,
-                )
+                def _eager_runner_graph_spin(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    spin: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    model_ret = model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=True,
+                        do_atomic_virial=True,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        spin=spin,
+                    )
+                    return model._translate_eager_call(
+                        model_ret,
+                        atype,
+                        do_atomic_virial=True,
+                    )
 
-            self.exported_module = _eager_runner_graph_spin
-        elif use_graph_lower:
-            from deepmd.pt_expt.model.ener_model import (
-                _translate_energy_keys,
-            )
-
-            do_grad_r = model.do_grad_r("energy")
-            do_grad_c = model.do_grad_c("energy")
-
-            def _eager_runner_graph(
-                atype: torch.Tensor,
-                n_node: torch.Tensor,
-                n_local: torch.Tensor,
-                edge_index: torch.Tensor,
-                edge_vec: torch.Tensor,
-                edge_mask: torch.Tensor,
-                destination_order: torch.Tensor,
-                destination_row_ptr: torch.Tensor,
-                source_order: torch.Tensor,
-                source_row_ptr: torch.Tensor,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                model_ret = model.forward_common_lower_graph(
-                    atype,
-                    n_node,
-                    n_local,
-                    edge_index,
-                    edge_vec,
-                    edge_mask,
-                    destination_order,
-                    destination_row_ptr,
-                    source_order,
-                    source_row_ptr,
-                    destination_sorted=True,
-                    do_atomic_virial=True,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                )
-                return _translate_energy_keys(
-                    model_ret,
-                    do_grad_r=do_grad_r,
-                    do_grad_c=do_grad_c,
-                    do_atomic_virial=True,
-                    local=True,
+                self.exported_module = _eager_runner_graph_spin
+            else:
+                from deepmd.pt_expt.model.ener_model import (
+                    _translate_energy_keys,
                 )
 
-            self.exported_module = _eager_runner_graph
-        elif self._is_spin:
+                do_grad_r = model.do_grad_r("energy")
+                do_grad_c = model.do_grad_c("energy")
 
-            def _eager_runner_spin(
-                ext_coord: torch.Tensor,
-                ext_atype: torch.Tensor,
-                ext_spin: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor | None,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                ext_coord = ext_coord.detach().requires_grad_(True)
-                return model.forward_common_lower(
-                    ext_coord,
-                    ext_atype,
-                    ext_spin,
-                    nlist,
-                    mapping,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=True,
-                )
+                def _eager_runner_graph(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    model_ret = model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=True,
+                        do_atomic_virial=True,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                    )
+                    return _translate_energy_keys(
+                        model_ret,
+                        do_grad_r=do_grad_r,
+                        do_grad_c=do_grad_c,
+                        do_atomic_virial=True,
+                        local=True,
+                    )
 
-            self.exported_module = _eager_runner_spin
+                self.exported_module = _eager_runner_graph
         else:
+            if self._is_spin:
 
-            def _eager_runner(
-                ext_coord: torch.Tensor,
-                ext_atype: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor | None,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                ext_coord = ext_coord.detach().requires_grad_(True)
-                return model.forward_common_lower(
-                    ext_coord,
-                    ext_atype,
-                    nlist,
-                    mapping,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=True,
-                )
+                def _eager_runner_spin(
+                    ext_coord: torch.Tensor,
+                    ext_atype: torch.Tensor,
+                    ext_spin: torch.Tensor,
+                    nlist: torch.Tensor,
+                    mapping: torch.Tensor | None,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    ext_coord = ext_coord.detach().requires_grad_(True)
+                    return model.forward_common_lower(
+                        ext_coord,
+                        ext_atype,
+                        ext_spin,
+                        nlist,
+                        mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=True,
+                    )
 
-            self.exported_module = _eager_runner
+                self.exported_module = _eager_runner_spin
+            else:
+
+                def _eager_runner(
+                    ext_coord: torch.Tensor,
+                    ext_atype: torch.Tensor,
+                    nlist: torch.Tensor,
+                    mapping: torch.Tensor | None,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    ext_coord = ext_coord.detach().requires_grad_(True)
+                    return model.forward_common_lower(
+                        ext_coord,
+                        ext_atype,
+                        nlist,
+                        mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=True,
+                    )
+
+                self.exported_module = _eager_runner
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from collections.abc import (
     Callable,
-    Mapping,
 )
 from importlib.util import (
     find_spec,
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
 )
 
 from deepmd.backend.backend import (
     Backend,
+)
+from deepmd.utils.pt_checkpoint import (
+    detect_pt_checkpoint_backend,
 )
 
 if TYPE_CHECKING:
@@ -27,46 +28,6 @@ if TYPE_CHECKING:
     from deepmd.utils.neighbor_stat import (
         NeighborStat,
     )
-
-
-def detect_pt_checkpoint_backend(checkpoint: Any) -> str | None:
-    """Detect the backend dialect of a raw PyTorch checkpoint.
-
-    Parameters
-    ----------
-    checkpoint : Any
-        A checkpoint payload or its unwrapped model state dictionary.
-
-    Returns
-    -------
-    str or None
-        ``"pt-expt"`` or ``"pt"`` when the parameter names identify one
-        backend unambiguously, otherwise ``None``.
-    """
-    state_dict = checkpoint
-    if isinstance(state_dict, Mapping) and "model" in state_dict:
-        state_dict = state_dict["model"]
-    if not isinstance(state_dict, Mapping):
-        return None
-
-    keys = tuple(key for key in state_dict if isinstance(key, str))
-
-    # Weight names are decisive. pt_expt DPA4 also contains ordinary
-    # torch-native ``.bias`` parameters, so bias names cannot override a
-    # clear ``.w`` versus ``.matrix`` distinction.
-    has_pt_expt_weight = any(key.endswith(".w") for key in keys)
-    has_pt_weight = any(key.endswith(".matrix") for key in keys)
-    if has_pt_expt_weight or has_pt_weight:
-        if has_pt_expt_weight == has_pt_weight:
-            return None
-        return "pt-expt" if has_pt_expt_weight else "pt"
-
-    # Bias-only state dictionaries retain the original dialect fallback.
-    has_pt_expt_bias = any(key.endswith(".b") for key in keys)
-    has_pt_bias = any(key.endswith(".bias") for key in keys)
-    if has_pt_expt_bias == has_pt_bias:
-        return None
-    return "pt-expt" if has_pt_expt_bias else "pt"
 
 
 @Backend.register("pt-expt")
