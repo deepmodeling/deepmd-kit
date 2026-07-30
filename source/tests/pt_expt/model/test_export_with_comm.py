@@ -424,10 +424,11 @@ def test_two_dpa2_linear_composition_gets_with_comm_artifact() -> None:
     assert _needs_with_comm_artifact(model, lower_kind="nlist") is True
 
 
-def test_bridged_composition_still_denied_until_sfpg_exchange() -> None:
-    """Negative contract: bridged DPA4+ZBL stays single-rank in Phase 1 --
-    the veto now comes from supports_edge_parallel aggregation, not from
-    the wrapper's type.
+def test_bridged_composition_gets_with_comm_artifact() -> None:
+    """Bridged DPA4+ZBL is multi-rank once the SFPG exchange lands
+    (issue #5906 Task 2): supports_edge_parallel aggregation admits it,
+    so the graph with-comm artifact is requested. The dense (nlist) kind
+    stays denied -- DPA4's dense lower has no comm implementation.
     """
     import copy
 
@@ -443,4 +444,5 @@ def test_bridged_composition_still_denied_until_sfpg_exchange() -> None:
     model = get_pt_expt_model(copy.deepcopy(ZBL_CONFIG))
     model.to("cpu")
     model.eval()
-    assert _needs_with_comm_artifact(model, lower_kind="graph") is False
+    assert _needs_with_comm_artifact(model, lower_kind="graph") is True
+    assert _needs_with_comm_artifact(model, lower_kind="nlist") is False

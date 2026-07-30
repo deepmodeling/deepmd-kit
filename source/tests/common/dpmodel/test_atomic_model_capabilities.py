@@ -100,7 +100,10 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     plain = _dp_atomic_model(_dpa4_descriptor(bridging=False))
     local_only = _dp_atomic_model(DescrptSeA(rcut=4.0, rcut_smth=3.5, sel=[8, 8]))
     assert bridged.has_message_passing_across_ranks() is True
-    assert bridged.supports_edge_parallel() is False
+    # bridged is True too since the SFPG cross-rank completion (issue
+    # #5906); the ALL-aggregation's False branch is pinned by the stub
+    # children in test_linear_aggregation_mixed_children.
+    assert bridged.supports_edge_parallel() is True
     assert plain.has_message_passing_across_ranks() is True
     assert plain.supports_edge_parallel() is True
     assert local_only.has_message_passing_across_ranks() is False
@@ -161,13 +164,14 @@ def _stub_linear(**child_kwargs_pair) -> LinearEnergyAtomicModel:
 
 
 def test_linear_aggregation_any_all() -> None:
-    """Real ZBL composition: the bridged DP child sets needs=True (any) and
-    vetoes edge-parallel (all).
+    """Real ZBL composition: the bridged DP child sets needs=True (any);
+    edge-parallel aggregates to True since the SFPG cross-rank completion
+    (issue #5906).
     """
     am = get_model(copy.deepcopy(ZBL_CONFIG)).atomic_model
     assert isinstance(am, LinearEnergyAtomicModel)
     assert am.has_message_passing_across_ranks() is True
-    assert am.supports_edge_parallel() is False
+    assert am.supports_edge_parallel() is True
     # ZBL rides the graph route with the learned child
     assert am.supports_graph_export() is True
     assert am.graph_edge_dtype() == "float64"

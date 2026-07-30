@@ -220,15 +220,15 @@ class TestZBLBridgingPtExpt:
             out["energy"], out2["energy"], rtol=1e-12, atol=1e-12
         )
 
-    def test_with_comm_gate_off_for_composition(self) -> None:
-        """Compositions never compile a with-comm artifact (single-rank)."""
+    def test_with_comm_gate_on_for_composition(self) -> None:
+        """The SFPG exchange makes bridged compositions multi-rank
+        (issue #5906 Task 2): the graph with-comm artifact is compiled.
+        """
         from deepmd.pt_expt.utils.serialization import (
             _needs_with_comm_artifact,
         )
 
-        assert (
-            _needs_with_comm_artifact(self.pt_expt_model, lower_kind="graph") is False
-        )
+        assert _needs_with_comm_artifact(self.pt_expt_model, lower_kind="graph") is True
 
     def test_pt_bridging_checkpoint_rejected(self) -> None:
         """Reject pt's flag-serialized bridging checkpoints.

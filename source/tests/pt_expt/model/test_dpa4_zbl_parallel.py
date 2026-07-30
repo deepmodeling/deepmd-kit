@@ -251,3 +251,61 @@ class TestBridgedGraphSelfComm:
         e_ref, _ = self._run_folded(coord)
         e_par, _ = self._run_self_comm(coord)
         assert np.abs(e_par - e_ref).max() > 1e-6
+
+
+class TestBridgedGraphWithCommExport:
+    """Issue #5906 Task 2: the bridged composition's with-comm export rungs."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        ensure_comm_registered()
+        self.model = _make_bridged_model()
+
+    def test_make_fx_traces_with_comm(self) -> None:
+        """The exchange (border_op_backward + border_op) traces symbolically
+        into the with-comm graph forward.
+        """
+        from deepmd.pt_expt.utils.serialization import (
+            _trace_and_export,
+        )
+
+        data = {"model": self.model.serialize()}
+        exported, _meta, _dj, _keys = _trace_and_export(
+            copy.deepcopy(data),
+            model_json_override=None,
+            with_comm_dict=True,
+            lower_kind="graph",
+        )
+        loaded = exported.module()
+        placeholders = loaded.graph.find_nodes(op="placeholder")
+        assert len(placeholders) == 21, (
+            f"graph with-comm program must accept 21 positional inputs "
+            f"(13 graph-base incl. n_local + 8 comm); got {len(placeholders)}"
+        )
+        gm_code = str(loaded.code)
+        assert "deepmd_export.border_op_backward" in gm_code
+        assert (
+            "deepmd_export.border_op." in gm_code
+            or "deepmd_export.border_op(" in gm_code
+        )
+
+    def test_freeze_embeds_with_comm_artifact(self, tmp_path) -> None:
+        """Freezing the bridged model to a graph ``.pt2`` embeds the nested
+        with-comm artifact (mirrors the plain-DPA4 embed test).
+        """
+        import json
+        import zipfile
+
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        data = {"model": self.model.serialize()}
+        p = str(tmp_path / "m_dpa4_zbl_graph.pt2")
+        deserialize_to_file(p, copy.deepcopy(data), lower_kind="graph")
+        with zipfile.ZipFile(p, "r") as zf:
+            names = zf.namelist()
+            meta = json.loads(zf.read("model/extra/metadata.json"))
+        assert "model/extra/forward_lower_with_comm.pt2" in names
+        assert meta["has_comm_artifact"] is True
+        assert meta["lower_input_kind"] == "graph"

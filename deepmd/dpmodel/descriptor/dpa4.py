@@ -2327,7 +2327,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         The GRAPH lower implements the exchange via per-block ``border_op``
         (pt_expt ``exchange_ghost_features``), so multi-rank inference always
         needs the with-comm artifact. Whether multi-rank is POSSIBLE at all
-        is :meth:`supports_edge_parallel` (bridging vetoes it there).
+        is :meth:`supports_edge_parallel`.
 
         The DENSE (nlist) lower remains comm-less — see
         :meth:`dense_lower_supports_comm`; the freeze machinery consults both
@@ -2336,12 +2336,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return True
 
     def supports_edge_parallel(self) -> bool:
-        """Bridging vetoes multi-rank until the SFPG exchange lands.
+        """Bridging included: multi-rank is supported for every SeZM config.
 
-        The Source Freeze Propagation Gate folds each node's full
-        outgoing-edge set, which no single rank observes (issue #5906).
+        The SFPG per-node partials are completed across ranks by
+        ``_gate_partial_exchange`` (reverse-accumulate + broadcast) before
+        the gate is applied (issue #5906).
         """
-        return self.bridging_switch is None
+        return True
 
     def dense_lower_supports_comm(self) -> bool:
         """The DPA4 dense (nlist) lower has no comm_dict implementation.

@@ -112,15 +112,15 @@ class TestDescrptDPA4:
 
     def test_capability_split_needs_vs_supports(self) -> None:
         """has_message_passing_across_ranks = NEEDS exchange (always True for
-        SeZM); supports_edge_parallel = CAN run multi-rank (bridging vetoes,
-        until the SFPG exchange lands -- issue #5906).
+        SeZM); supports_edge_parallel = CAN run multi-rank (True for bridged
+        models too since the SFPG cross-rank completion -- issue #5906).
         """
         dd_plain = make_descriptor()
         dd_bridged = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
         assert dd_plain.has_message_passing_across_ranks() is True
         assert dd_bridged.has_message_passing_across_ranks() is True
         assert dd_plain.supports_edge_parallel() is True
-        assert dd_bridged.supports_edge_parallel() is False
+        assert dd_bridged.supports_edge_parallel() is True
 
     def test_gate_partial_exchange_dpmodel_raises(self) -> None:
         """The dpmodel backend is the single-process reference; comm on a
