@@ -98,6 +98,12 @@ class TestBackendDocumentation(unittest.TestCase):
                 "(Supported Backend: PyTorch Exportable, TensorFlow 2) "
             )
         )
+        stat_file_mode = argcheck.training_args()["stat_file_mode"]
+        self.assertTrue(
+            stat_file_mode.doc.startswith(
+                "(Supported Backend: PyTorch, JAX, PyTorch Exportable, TensorFlow 2) "
+            )
+        )
 
     def test_corrected_support_labels(self) -> None:
         all_backends = (

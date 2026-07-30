@@ -14,6 +14,11 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.stat_file import (
+    StatFileMode,
+    StatFileSpec,
+)
+
 from .trainer import (
     DEFAULT_TASK_KEY,
 )
@@ -36,6 +41,23 @@ class TrainingTaskConfig:
     validation_data_params: Mapping[str, Any] | None
     stat_file: str | None
     valid_numb_batch: int
+    stat_file_mode: StatFileMode = "update"
+
+    @property
+    def stat_file_spec(self) -> StatFileSpec:
+        """Return the unopened statistics-cache configuration.
+
+        Returns
+        -------
+        StatFileSpec
+            Validated cache path and access mode for this task.
+
+        Raises
+        ------
+        ValueError
+            If the cache configuration is invalid.
+        """
+        return StatFileSpec(self.stat_file, self.stat_file_mode)
 
 
 def iter_training_task_configs(
@@ -53,6 +75,7 @@ def iter_training_task_configs(
             validation_data_params=validation_data_params,
             stat_file=training_params.get("stat_file"),
             valid_numb_batch=_valid_numb_batch(validation_data_params),
+            stat_file_mode=training_params.get("stat_file_mode", "update"),
         )
         return
 
@@ -67,6 +90,7 @@ def iter_training_task_configs(
             validation_data_params=validation_data_params,
             stat_file=task_data_params.get("stat_file"),
             valid_numb_batch=_valid_numb_batch(validation_data_params),
+            stat_file_mode=task_data_params.get("stat_file_mode", "update"),
         )
 
 

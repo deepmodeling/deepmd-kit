@@ -6,6 +6,9 @@ import os
 from contextlib import (
     nullcontext,
 )
+from pathlib import (
+    Path,
+)
 from types import (
     SimpleNamespace,
 )
@@ -49,11 +52,18 @@ from deepmd.tf2.env import (
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
 )
+from deepmd.tf2.model.model import (
+    get_model,
+)
 from deepmd.tf2.train.trainer import (
     Trainer,
 )
 from deepmd.tf2.utils.jit import (
     default_jit_compile,
+)
+from source.tests.common.stat_file import (
+    assert_energy_stat_cache_round_trip,
+    energy_model_params,
 )
 
 pytestmark = [
@@ -167,6 +177,15 @@ def _make_minimal_trainer() -> tuple[Trainer, _LinearModel]:
     trainer._compiled_train_steps = {}
     trainer._compiled_eval_steps = {}
     return trainer, model
+
+
+def test_tf2_energy_cache_round_trip_uses_fitting_outputs_only(
+    tmp_path: Path,
+) -> None:
+    assert_energy_stat_cache_round_trip(
+        lambda: get_model(energy_model_params()),
+        tmp_path / "stat.hdf5",
+    )
 
 
 def test_forward_common_atomic_reuses_taped_atomic_forward() -> None:

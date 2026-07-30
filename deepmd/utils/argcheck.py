@@ -5469,7 +5469,8 @@ def training_args(
         "otherwise, a directory containing NumPy binary files are used."
     )
     doc_stat_file_mode = (
-        supported_backends("pt") + "The access mode for `stat_file`. "
+        supported_backends("pt", "jax", "pt_expt", "tf2")
+        + "The access mode for `stat_file`. "
         "`update` creates the cache when needed and writes any missing statistics; "
         "this is the behavior used when the option is omitted. "
         "`read` requires a complete existing cache and opens it read-only, allowing "
