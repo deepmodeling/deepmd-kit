@@ -1330,10 +1330,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += aparam_requirement_items
-    has_spin = getattr(_model, "has_spin", False)
-    if callable(has_spin):
-        has_spin = has_spin()
-    if has_spin:
+    if _model.has_spin():
         spin_requirement_items = [
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]

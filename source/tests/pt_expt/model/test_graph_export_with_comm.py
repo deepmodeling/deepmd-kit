@@ -16,11 +16,16 @@ import zipfile
 
 import pytest
 
+from deepmd.pt_expt.model.get_model import get_model as _get_pt_expt_model
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
+)
+
+from .test_dpa4_export import (
+    _DPA4_CONFIG,
 )
 
 # Small graph-eligible dpa2 descriptor: tebd_input_mode defaults to
@@ -123,6 +128,49 @@ def test_dpa2_graph_pt2_embeds_with_comm_artifact(dpa2_dpmodel_data, tmp_path) -
         p,
         copy.deepcopy(dpa2_dpmodel_data),
         do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    with zipfile.ZipFile(p, "r") as zf:
+        names = zf.namelist()
+    assert "model/extra/forward_lower_with_comm.pt2" in names
+
+    meta = _read_metadata(p)
+    assert meta["lower_input_kind"] == "graph"
+    assert meta["has_comm_artifact"] is True
+    assert meta["has_message_passing"] is True
+
+
+@pytest.fixture(scope="module")
+def dpa4_pt_expt_data() -> dict:
+    """Build a serialized pt_expt DPA4/SeZM model dict (same shape as
+    ``dp freeze`` input) -- mirrors ``test_dpa4_export.py``'s construction.
+
+    DPA4/SeZM's ``"type": "dpa4"`` model key is only special-cased by the
+    pt_expt model factory (``get_sezm_model``), not the plain dpmodel one
+    ``_build_data`` above uses for dpa1/dpa2, so this fixture builds the
+    model directly via ``deepmd.pt_expt.model.get_model.get_model``
+    instead.
+    """
+    model = _get_pt_expt_model(copy.deepcopy(_DPA4_CONFIG))
+    model.to("cpu")
+    model.eval()
+    return {"model": model.serialize()}
+
+
+def test_dpa4_graph_pt2_embeds_with_comm_artifact(dpa4_pt_expt_data, tmp_path) -> None:
+    # DPA4 (graph-only comm family): the graph freeze embeds the nested
+    # with-comm artifact; regression companion to the dpa1 no-artifact test.
+    #
+    # DPA4's cross-rank ghost exchange is implemented ONLY on the graph
+    # lower (``has_message_passing_across_ranks()`` is True, but
+    # ``dense_lower_supports_comm()`` is False -- see the dpa4 descriptor
+    # and ``test_dpa4_export.py``'s module docstring); freezing with
+    # ``lower_kind="graph"`` must therefore embed the nested with-comm
+    # artifact, unlike the dpa1 (non-message-passing) graph freeze above.
+    p = str(tmp_path / "m_dpa4_graph.pt2")
+    deserialize_to_file(
+        p,
+        copy.deepcopy(dpa4_pt_expt_data),
         lower_kind="graph",
     )
     with zipfile.ZipFile(p, "r") as zf:
@@ -310,3 +358,96 @@ def test_graph_with_comm_n_local_is_separate_device_input(
     # keepalive: the raw pointer in ``comm`` must reference a live buffer
     # through both ``run`` calls above (a real use, not a bare ``del``)
     assert sendlist_indices.ctypes.data_as(ctypes.c_void_p).value == addr
+
+
+# --- native spin: multi-rank on the graph lower --------------------------
+# pt's ``SeZMModel.supports_edge_parallel`` is NOT overridden by
+# ``SeZMNativeSpinModel``, so native spin participates in the with-comm
+# artifact there; pt_expt used to exclude every ``NativeSpinModelKind``
+# unconditionally, which silently made native spin single-rank only.  The
+# spin input is per-node and its ghost rows arrive via the LAMMPS ``sp``
+# forward-comm, so spin itself needs no cross-rank exchange -- the per-block
+# ghost FEATURE refresh is the same ``border_op`` the energy model drives.
+_NATIVE_SPIN_CONFIG = {
+    **copy.deepcopy(_DPA4_CONFIG),
+    "spin": {"use_spin": [True, False], "scheme": "native"},
+}
+
+
+def _native_spin_model():
+    model = _get_pt_expt_model(copy.deepcopy(_NATIVE_SPIN_CONFIG))
+    return model.to("cpu").eval()
+
+
+def test_native_spin_needs_with_comm_on_the_graph_lower_only() -> None:
+    """The gate admits native spin on graph, still refuses it on nlist.
+
+    Native spin has no dense with-comm wrapper at all, so the nlist branch
+    must stay ``False`` -- otherwise the freeze would try to trace a lower
+    that does not exist.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        _needs_with_comm_artifact,
+    )
+
+    model = _native_spin_model()
+    assert _needs_with_comm_artifact(model, "graph") is True
+    assert _needs_with_comm_artifact(model, "nlist") is False
+
+
+def test_native_spin_graph_with_comm_abi() -> None:
+    """The with-comm graph-spin ABI is the non-comm one plus the comm block.
+
+    22 positional inputs: the 14-slot spin graph base (10 CSR + ``spin`` at
+    slot 10 + the None-valued fparam/aparam/charge_spin tail) followed by
+    the 8 comm tensors -- i.e. ``spin`` keeps slot 10 and the comm block
+    starts at 14.  Pinning the count is what keeps the C++ feeder and this
+    trace from drifting apart.
+    """
+    from deepmd.dpmodel.model.model import get_model as _get_dp_model
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export,
+    )
+
+    dp_cfg = copy.deepcopy(_NATIVE_SPIN_CONFIG)
+    dp_cfg.pop("type", None)  # generic builder; the dpa4 alias routes alike
+    data = {
+        "model": _get_dp_model(dp_cfg).serialize(),
+        "model_def_script": copy.deepcopy(_NATIVE_SPIN_CONFIG),
+    }
+    exported, _meta, _dj, keys = _trace_and_export(
+        data,
+        model_json_override=None,
+        with_comm_dict=True,
+        lower_kind="graph",
+    )
+    placeholders = exported.module().graph.find_nodes(op="placeholder")
+    assert len(placeholders) == 22, (
+        f"graph-spin with-comm program must accept 22 positional inputs "
+        f"(14 spin-graph base incl. spin at slot 10 + 8 comm); got "
+        f"{len(placeholders)}"
+    )
+    # the spin-specific outputs must survive the with-comm trace
+    for key in ("energy", "force", "force_mag", "mask_mag"):
+        assert key in keys, f"{key} missing from the with-comm graph outputs"
+
+
+def test_graph_eligibility_guard_is_stated_exactly_once() -> None:
+    """The innermost ``lower_kind="graph"`` guard must not be duplicated.
+
+    It was once present as two verbatim copies from separate commits; the
+    second could never fire yet invited the two to drift. Asserted on the
+    source text -- behavior cannot distinguish one guard from two. Read from
+    the file, not ``inspect.getsource``: conftest wraps ``_trace_and_export``.
+    """
+    from pathlib import (
+        Path,
+    )
+
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
+
+    source = Path(serialization.__file__).read_text()
+    assert source.count("graph-lower eligible (model_uses_graph_lower() is False") == 1
+    assert source.count("if not model_uses_graph_lower(model):") == 1

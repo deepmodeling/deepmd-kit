@@ -232,8 +232,13 @@ class EnergySpinLoss(Loss):
         if self.has_fr:
             find_force = label_dict.get("find_force", 0.0)
             pref_fr = pref_fr * find_force
-            force_pred = model_dict["force"]
-            force_label = label_dict["force"]
+            # Reshape to the canonical (nf, natoms, 3) atomic shape: the raw
+            # data-loader label is flat (nf, natoms * 3), matching the
+            # ``xp.reshape(label_dict[...], (-1, natoms, ncomp))`` idiom used
+            # by every other atomic-label loss (see ``dpmodel/loss/dos.py``
+            # and ``dpmodel/loss/tensor.py``).
+            force_pred = xp.reshape(model_dict["force"], (-1, natoms, 3))
+            force_label = xp.reshape(label_dict["force"], (-1, natoms, 3))
             if self.loss_func == "mse":
                 diff_fr = force_label - force_pred  # [nf, nloc, 3]
                 if maskf is not None:
@@ -276,8 +281,9 @@ class EnergySpinLoss(Loss):
         if self.has_fm:
             find_force_mag = label_dict.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_mag
-            force_mag_pred = model_dict["force_mag"]
-            force_mag_label = label_dict["force_mag"]
+            # Same flat -> (nf, natoms, 3) reshape as the real-force branch above.
+            force_mag_pred = xp.reshape(model_dict["force_mag"], (-1, natoms, 3))
+            force_mag_label = xp.reshape(label_dict["force_mag"], (-1, natoms, 3))
             mask_mag = model_dict["mask_mag"]
             # mask_mag: [nframes, natoms, 1], bool -> use mask multiplication
             mask_float = xp.astype(mask_mag, force_mag_pred.dtype)

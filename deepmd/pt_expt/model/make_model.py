@@ -16,9 +16,6 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
-from deepmd.dpmodel.common import (
-    get_xp_precision,
-)
 from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.dpmodel.output_def import (
     OutputVariableDef,
@@ -519,6 +516,7 @@ def make_model(
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
             comm_dict: dict | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
@@ -583,8 +581,20 @@ def make_model(
                 multi-rank graphs the ghost rows are included; their values
                 are inert under the owned-node mask).
             charge_spin
-                charge/spin conditioning. Ignored in PR-A; accepted for ABI
-                stability with charge/spin-conditioned descriptors.
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``, forwarded to the atomic model's
+                ``forward_common_atomic_graph`` (and, from there, the
+                descriptor's ``call_graph`` for descriptors that declare
+                ``supports_charge_spin``; currently DPA4 only).
+            spin
+                Per-node native spin, flat ``(N, 3)``, or ``None``. When given,
+                a SECOND autograd leaf is created next to ``edge_vec`` and
+                forwarded through the atomic-model chain to the descriptor
+                (native spin conditioning, e.g. DPA4/SeZM); the returned dict
+                additionally carries ``<var>_derv_r_mag = -d<var>_redu/dspin``
+                for every ``r_differentiable`` reducible output. ``None``
+                (default) is the existing, unconditioned graph lower with no
+                mag output.
             comm_dict
                 MPI communication metadata for parallel inference. ``None``
                 (default) for non-parallel inference/training. Forwarded to
@@ -612,6 +622,14 @@ def make_model(
 
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)
+            if spin is not None:
+                # second autograd leaf: force_mag = -dE/dspin (native spin).
+                # Deliberately a SEPARATE leaf/backward from edge_vec rather
+                # than a joint grad([edge_vec, spin]) call (as pt does in
+                # deepmd/pt/model/model/transform_output.py:288) -- this keeps
+                # edge_energy_deriv's signature untouched; see the second
+                # torch.autograd.grad call in fit_output_to_model_output_graph.
+                spin = spin.detach().requires_grad_(True)
             graph = NeighborGraph(
                 n_node=n_node,
                 edge_index=edge_index,
@@ -626,7 +644,9 @@ def make_model(
             )
             # Level 2 emits force as a value through the inference-only custom
             # operator pipeline. Ineligible models use the autograd lower.
-            if not self.training and cuda_infer_level() >= 2:
+            # The fused pipeline has no mag output, so spin-conditioned models
+            # always take the autograd lower below.
+            if not self.training and cuda_infer_level() >= 2 and spin is None:
                 fused = _fused_energy_force_graph(self, graph, atype, do_atomic_virial)
                 if fused is not None:
                     return fused
@@ -636,6 +656,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
+                spin=spin,
                 comm_dict=comm_dict,
             )
             # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output.
@@ -647,13 +668,11 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
-                # Assemble force / virial in the descriptor compute precision
-                # (fp32 for an fp32 model) rather than the fp64 edge_vec leaf;
-                # the gradient content is only that precision, so the coarser
-                # scatter halves the atomic traffic at no accuracy cost.
-                force_precision=get_xp_precision(
-                    torch, self.atomic_model.descriptor.precision
-                ),
+                spin_leaf=spin,
+                # Assemble force / virial in the INPUT (edge leaf) precision,
+                # consistent with the dpmodel backend's graph path and free
+                # of any assumption about the atomic model's internals.
+                force_precision=edge_vec.dtype,
                 # Bound the per-node scatter by the INPUT node axis (the symbol
                 # ``edge_index`` indexes into), not the re-derived fitting-output
                 # shape -- avoids a CUDA out-of-bounds device-assert under
@@ -699,10 +718,7 @@ def make_model(
             # for non-energy models (eager-only, output-agnostic).
             if "energy" not in self.atomic_output_def().keys():
                 return None
-            # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
-            descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if self.mixed_types() and uses_graph_lower():
+            if self.mixed_types() and self.atomic_model.uses_graph_lower():
                 return "dense"
             return None
 
@@ -715,6 +731,8 @@ def make_model(
             ap: torch.Tensor | None,
             method: str,
             do_atomic_virial: bool = False,
+            spin: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Carry-all graph forward with autograd force/virial (pt_expt override).
 
@@ -739,6 +757,15 @@ def make_model(
                 the carry-all builder, ``"dense"`` or ``"ase"``.
             do_atomic_virial
                 whether to calculate the atomic virial.
+            spin
+                Per-local-atom native spin, ``(nf, nloc, 3)``, or ``None``.
+                Flattened to ``(N, 3)`` and forwarded into
+                :meth:`forward_common_lower_graph`, completing the seam
+                ``call_common`` (dpmodel, shared) opens for the graph route.
+            charge_spin
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``. Unflattened (per-frame) and forwarded unchanged into
+                :meth:`forward_common_lower_graph`.
 
             Returns
             -------
@@ -752,18 +779,20 @@ def make_model(
             # check only protects the default (None) path; an EXPLICIT
             # neighbor_graph_method would otherwise reach the builders for
             # descriptors without a graph lower.
-            descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if not (self.mixed_types() and uses_graph_lower()):
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             rcut = self.get_rcut()
+            # CSR pre-sort serves the compressed-DPA1 fused kernels only;
+            # probe via the atomic model's own descriptor when it has one
+            # (compositions have none and never take the fused path).
+            _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training
                 and cuda_infer_level() >= 1
-                and bool(getattr(descriptor, "geo_compress", False))
+                and bool(getattr(_desc, "geo_compress", False))
             )
             pair_excl = getattr(self.atomic_model, "pair_excl", None)
             ng = _build_graph_for_method(
@@ -771,8 +800,9 @@ def make_model(
             )
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
-            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
+            # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
             ap_flat = ap.reshape(nf * nloc, ap.shape[-1]) if ap is not None else None
+            spin_flat = spin.reshape(nf * nloc, 3) if spin is not None else None
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
@@ -788,6 +818,8 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap_flat,
+                spin=spin_flat,
+                charge_spin=charge_spin,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
             # outputs (N = nf * nloc for a carry-all rectangular graph).
@@ -987,6 +1019,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
             destination_sorted: bool = False,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
@@ -1019,6 +1052,15 @@ def make_model(
                 destination-major and ``destination_order`` is identity.
             fparam, aparam, do_atomic_virial, charge_spin
                 As in ``forward_common_lower_graph``.
+            spin
+                Per-node native spin, flat ``(N, 3)``, or ``None``. Threaded
+                through to ``forward_common_lower_graph`` the same way as
+                ``charge_spin``; when given, the trace additionally carries a
+                SECOND autograd leaf so the returned dict carries
+                ``<var>_derv_r_mag`` for every ``r_differentiable`` reducible
+                output. ``None`` (default) is the existing, unconditioned
+                trace with no mag output -- used by every non-spin caller of
+                this generic (descriptor-agnostic) exportable.
             **make_fx_kwargs
                 Extra keyword arguments forwarded to ``make_fx``
                 (e.g. ``tracing_mode="symbolic"``).
@@ -1029,8 +1071,8 @@ def make_model(
                 A traced module whose ``forward`` accepts
                 ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
                 destination_order, destination_row_ptr, source_order,
-                source_row_ptr, fparam, aparam, charge_spin)`` and returns a
-                dict with the same internal keys as
+                source_row_ptr, fparam, aparam, charge_spin, spin)`` and
+                returns a dict with the same internal keys as
                 ``forward_common_lower_graph``.
             """
             validate_graph_csr_for_export(
@@ -1045,7 +1087,70 @@ def make_model(
             )
             model = self
 
-            def fn(
+            # ``spin`` is a traced INPUT only when a real spin tensor is
+            # given (native-spin models). For every non-spin caller
+            # (``spin is None``) the traced ``fn`` must have the SAME arity as
+            # before native spin existed -- otherwise the outer energy trace,
+            # which threads ``charge_spin`` but no ``spin``, would call this
+            # traced module missing a ``spin`` argument. So the ``spin=None``
+            # branch traces the original 13-input closure (spin captured as a
+            # ``None`` constant), and the spin branch traces a 14-input
+            # closure with ``spin`` at the tail.
+            if spin is None:
+
+                def fn(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None,
+                ) -> dict[str, torch.Tensor]:
+                    # forward_common_lower_graph creates the autograd leaf from
+                    # edge_vec internally, so no outer detach/requires_grad_
+                    # here (it would only add spurious ops to the traced graph).
+                    return model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=destination_sorted,
+                        do_atomic_virial=do_atomic_virial,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                    )
+
+                return make_fx(fn, **make_fx_kwargs)(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                )
+
+            def fn_spin(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
                 n_local: torch.Tensor,
@@ -1059,10 +1164,12 @@ def make_model(
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
+                spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
-                # forward_common_lower_graph creates the autograd leaf from
-                # edge_vec internally, so no outer detach/requires_grad_ here
-                # (it would only add spurious ops to the traced graph).
+                # forward_common_lower_graph creates the autograd leaf(s) from
+                # edge_vec AND spin internally, so no outer
+                # detach/requires_grad_ here (it would only add spurious ops
+                # to the traced graph).
                 return model.forward_common_lower_graph(
                     atype,
                     n_node,
@@ -1079,9 +1186,10 @@ def make_model(
                     fparam=fparam,
                     aparam=aparam,
                     charge_spin=charge_spin,
+                    spin=spin,
                 )
 
-            return make_fx(fn, **make_fx_kwargs)(
+            return make_fx(fn_spin, **make_fx_kwargs)(
                 atype,
                 n_node,
                 n_local,
@@ -1095,6 +1203,7 @@ def make_model(
                 fparam,
                 aparam,
                 charge_spin,
+                spin,
             )
 
         def forward_common_lower_exportable_with_comm(

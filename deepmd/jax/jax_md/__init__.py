@@ -81,10 +81,10 @@ def energy_fn(
         *,
         neighbor: Any | None = None,
         atom_types: Sequence[int | str] | Array | None = None,
-        box: Array | Sequence[float] | None | object = _JAX_MD_SENTINEL,
-        fparam: Array | Sequence[float] | None | object = _JAX_MD_SENTINEL,
-        aparam: Array | Sequence[float] | None | object = _JAX_MD_SENTINEL,
-        charge_spin: Array | Sequence[float] | None | object = _JAX_MD_SENTINEL,
+        box: Array | Sequence[float] | object | None = _JAX_MD_SENTINEL,
+        fparam: Array | Sequence[float] | object | None = _JAX_MD_SENTINEL,
+        aparam: Array | Sequence[float] | object | None = _JAX_MD_SENTINEL,
+        charge_spin: Array | Sequence[float] | object | None = _JAX_MD_SENTINEL,
         **kwargs: Any,
     ) -> Array:
         """Evaluate a single-frame total energy in the JAX-MD call convention."""
@@ -267,7 +267,7 @@ def _normalize_fparam(
     if dim_fparam == 0:
         return None
     if fparam is None:
-        if getattr(model, "has_default_fparam", lambda: False)():
+        if model.has_default_fparam():
             default_fparam = model.get_default_fparam()
             if default_fparam is not None:
                 return jnp.asarray(default_fparam, dtype=dtype).reshape(1, dim_fparam)

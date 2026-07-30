@@ -3,7 +3,6 @@
 #include "DeepPotPD.h"
 
 #include <cstdint>
-#include <numeric>
 
 #include "common.h"
 #include "device.h"
@@ -441,21 +440,15 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       }
 
       assert(sizeof(std::intptr_t) == 8);
-      int total_send = std::accumulate(eff_sendnum, eff_sendnum + nswap, 0);
-      sendlist_tensor->Reshape({total_send});
 
       /**
       ** NOTE: paddle do not support construct a Tensor with from_blob(T**, ...)
-      ** from a double pointer, so we convert int* pointer to indptr_t for each
-      ** entry and wrap it into int64 Tensor as a workaround.
+      ** from a double pointer, so we convert each int* pointer to an intptr_t
+      ** entry and wrap the addresses in an int64 Tensor as a workaround.
       */
-      std::vector<std::intptr_t> pointer_addresses;
-      pointer_addresses.reserve(nswap);
-      for (int iswap = 0; iswap < nswap; ++iswap) {
-        std::intptr_t addr =
-            reinterpret_cast<std::intptr_t>(eff_sendlist[iswap]);
-        pointer_addresses.push_back(addr);
-      }
+      std::vector<std::intptr_t> pointer_addresses =
+          pack_comm_sendlist_pointers(eff_sendlist, nswap);
+      sendlist_tensor->Reshape({static_cast<int>(pointer_addresses.size())});
       sendlist_tensor->CopyFromCpu(pointer_addresses.data());
     }
     if (lmp_list.mapping) {
