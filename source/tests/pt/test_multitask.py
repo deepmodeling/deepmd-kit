@@ -9,6 +9,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import torch
 
@@ -251,6 +254,34 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
+
+    def test_disp_avg_handles_unsampled_interval(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 2
+        config["training"]["disp_freq"] = 1
+        config["training"]["disp_avg"] = True
+        config = update_deepmd_input(config, warning=True)
+        config = normalize(config, multi_task=True)
+        trainer = get_trainer(config, shared_links=self.shared_links)
+
+        with patch(
+            "deepmd.pt.train.training.dp_random.choice",
+            side_effect=[0, 1],
+        ):
+            trainer.run()
+
+        with open("lcurve.out") as f:
+            lines = f.readlines()
+        header_lines = [line.split() for line in lines if line.startswith("#")]
+        data_lines = [line.split() for line in lines if not line.startswith("#")]
+        self.assertTrue(header_lines)
+        header_columns = header_lines[0][1:]
+        self.assertTrue(any("_val_" in column for column in header_columns))
+        for columns in data_lines:
+            self.assertEqual(len(columns), len(header_columns))
+        displayed_steps = [int(columns[0]) for columns in data_lines]
+        self.assertEqual(displayed_steps, [1, 2])
+        self.assertIn("nan", data_lines[1])
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
