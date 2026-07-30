@@ -834,23 +834,29 @@ class LmdbBatchIterator:
         reporting itself broken, and the run stops with no diagnosis and no
         error; punctuating the wait with a liveness check covers that case.
         """
-        remaining = set(pending.futures)
         try:
-            while remaining:
-                _, remaining = futures_wait(
-                    remaining, timeout=_DECODER_LIVENESS_INTERVAL
-                )
-                if remaining and self._decoder_exited():
-                    break
-            else:
+            if self._wait_for_decoder(pending.futures):
                 return _merge_lmdb_chunks(
                     [future.result() for future in pending.futures]
                 )
         except BrokenProcessPool:
-            self._lose_the_pool(pending.futures)
-            return self._reader.decode_batch(pending.indices)
+            pass
         self._lose_the_pool(pending.futures)
         return self._reader.decode_batch(pending.indices)
+
+    def _wait_for_decoder(
+        self,
+        futures: "Sequence[Future[dict[str, Any]]]",
+    ) -> bool:
+        """Wait for submitted work while checking that its decoder survives."""
+        remaining = set(futures)
+        while remaining:
+            _, remaining = futures_wait(remaining, timeout=_DECODER_LIVENESS_INTERVAL)
+            if remaining and self._decoder_exited():
+                return False
+        return not any(
+            isinstance(future.exception(), BrokenProcessPool) for future in futures
+        )
 
     def _decoder_exited(self) -> bool:
         """Whether any decoder has exited, which the pool reports nowhere else."""
@@ -933,13 +939,16 @@ class LmdbBatchIterator:
         return self._closed
 
     def close(self) -> None:
-        """Cancel prefetched work and release the shared decoder pool."""
+        """Finish or cancel prefetched work and release the decoder pool."""
         if self._closed:
             return
         self._closed = True
         if self._pending is not None:
-            for future in self._pending.futures:
-                future.cancel()
+            running = [
+                future for future in self._pending.futures if not future.cancel()
+            ]
+            if running and not self._wait_for_decoder(running):
+                self._lose_the_pool(running)
             self._pending = None
         self._deferred_indices = None
         if self._pool is not None:
@@ -1500,12 +1509,9 @@ class LmdbDataReader:
         if self.mixed_batch:
             return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
         total = 0
-        for nloc, indices in self._nloc_groups.items():
+        for nloc, indices in collect_lmdb_sampling_groups(self):
             bs = self.get_batch_size_for_nloc(nloc)
-            signature_groups = self.group_indices_by_find_signature(indices)
-            total += sum(
-                (len(group) + bs - 1) // bs for group in signature_groups.values()
-            )
+            total += (len(indices) + bs - 1) // bs
         return total
 
     @property
@@ -1846,10 +1852,21 @@ def _expand_indices_by_blocks(
     return []
 
 
-def _collect_sampling_groups(
+def collect_lmdb_sampling_groups(
     reader: "LmdbDataReader",
 ) -> list[tuple[int, list[int]]]:
-    """Collect batch groups in the stable order shared by iteration and len."""
+    """Collect homogeneous LMDB groups shared by training and statistics.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        Reader whose frames are grouped by atom count and label availability.
+
+    Returns
+    -------
+    list[tuple[int, list[int]]]
+        Stable ``(nloc, frame indices)`` groups compatible with collation.
+    """
     groups: list[tuple[int, list[int]]] = []
     for nloc in sorted(reader.nloc_groups):
         signature_groups = reader.group_indices_by_find_signature(
@@ -1950,7 +1967,7 @@ def _build_all_batches(
     list[list[int]]
         Each inner list has one nloc and one scalar ``find_*`` signature.
     """
-    groups = _collect_sampling_groups(reader)
+    groups = collect_lmdb_sampling_groups(reader)
 
     # Build per-group batches
     group_batches: list[list[list[int]]] = []
@@ -2070,7 +2087,7 @@ class SameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Total batches across nloc and label-availability groups."""
-        groups = _collect_sampling_groups(self._reader)
+        groups = collect_lmdb_sampling_groups(self._reader)
         group_block_targets = None
         assigned_system_ids: set[int] = set()
         if self._block_targets and self._reader.frame_system_ids is not None:

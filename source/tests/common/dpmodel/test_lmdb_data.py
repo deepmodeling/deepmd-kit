@@ -1735,6 +1735,21 @@ class TestDecoderPoolFailure(unittest.TestCase):
         self.assertIn("decoder process exited", "\n".join(captured.output))
         self.assertEqual(pool.submissions, submissions)
 
+    def test_close_detects_a_stalled_prefetch(self) -> None:
+        """Closing an in-flight prefetch marks a lost decoder pool unhealthy."""
+        pool = _StalledPool()
+        iterator = self._iterator(pool)
+        entry = self._entries[id(pool)]
+        iterator._pool = entry
+        running = Future()
+        self.assertTrue(running.set_running_or_notify_cancel())
+        iterator._pending = lmdb_data_module._PendingBatch([0, 1], [running])
+
+        with self.assertLogs(lmdb_data_module.log, level="WARNING"):
+            iterator.close()
+
+        self.assertFalse(entry.healthy)
+
     def test_a_second_iterator_does_not_retry_a_lost_pool(self) -> None:
         """Pool health is shared, so the loss is discovered once for all."""
         pool = _StalledPool()

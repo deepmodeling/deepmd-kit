@@ -351,13 +351,26 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             ]
         )
 
-        batches = [ds.get_batch(), ds.get_batch()]
-        observed = {
-            (float(batch["find_energy"]), float(batch["find_force"]))
-            for batch in batches
-        }
-        self.assertEqual(observed, {(1.0, 0.0), (0.0, 1.0)})
-        self.assertTrue(all(batch["coord"].shape[0] == 2 for batch in batches))
+        try:
+            batches = [ds.get_batch(), ds.get_batch()]
+            observed = {
+                (float(batch["find_energy"]), float(batch["find_force"]))
+                for batch in batches
+            }
+            self.assertEqual(observed, {(1.0, 0.0), (0.0, 1.0)})
+            self.assertTrue(all(batch["coord"].shape[0] == 2 for batch in batches))
+
+            stat_samples = make_stat_input(ds, nbatches=10)
+            stat_availability = {
+                (float(sample["find_energy"]), float(sample["find_force"]))
+                for sample in stat_samples
+            }
+            self.assertEqual(stat_availability, observed)
+            self.assertTrue(
+                all(sample["coord"].shape[0] == 2 for sample in stat_samples)
+            )
+        finally:
+            ds.close()
 
     def test_stat_input_partitions_mixed_nloc_batches(self) -> None:
         """Statistics expose each atom-count group as one logical system."""

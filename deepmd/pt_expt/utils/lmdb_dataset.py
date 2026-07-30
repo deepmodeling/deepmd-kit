@@ -18,6 +18,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchIterator,
     LmdbDataReader,
     SameNlocBatchSampler,
+    collect_lmdb_sampling_groups,
     compute_block_targets,
 )
 from deepmd.env import (
@@ -40,9 +41,9 @@ class LmdbDataSystem:
     system. Internally uses :class:`LmdbDataReader` for I/O and
     :class:`SameNlocBatchSampler`, or its distributed wrapper, to draw
     same-nloc batches. Statistics use a separate logical-system view in which
-    every ``nloc`` group is sampled independently, matching the PyTorch
-    DataLoader adapter without changing the identity of the LMDB as one
-    training dataset.
+    every ``(nloc, label-availability)`` group is sampled independently,
+    matching the training sampler without changing the identity of the LMDB as
+    one training dataset.
 
     Parameters
     ----------
@@ -108,8 +109,7 @@ class LmdbDataSystem:
                 block_targets=block_targets,
             )
             self._sampler = sampler
-        self._stat_nlocs = tuple(sorted(self._reader.nloc_groups))
-        self._stat_offsets = [0] * len(self._stat_nlocs)
+        self._refresh_stat_groups()
         num_workers = (
             get_lmdb_num_workers() if num_workers is None else int(num_workers)
         )
@@ -118,6 +118,11 @@ class LmdbDataSystem:
             self._sampler,
             num_workers,
         )
+
+    def _refresh_stat_groups(self) -> None:
+        """Rebuild statistical systems from the training sampler's groups."""
+        self._stat_groups = collect_lmdb_sampling_groups(self._reader)
+        self._stat_offsets = [0] * len(self._stat_groups)
 
     # ------------------------------------------------------------------
     # pt_expt trainer surface
@@ -133,12 +138,12 @@ class LmdbDataSystem:
         return next(self._batch_iterator)
 
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
-        """Return one batch from a fixed-``nloc`` statistical system.
+        """Return one batch from a homogeneous statistical system.
 
         Parameters
         ----------
         sys_idx : int
-            Index into the sorted ``nloc`` groups.
+            Index into the ``(nloc, label-availability)`` groups.
 
         Returns
         -------
@@ -148,16 +153,15 @@ class LmdbDataSystem:
         Raises
         ------
         IndexError
-            If ``sys_idx`` does not identify an available ``nloc`` group.
+            If ``sys_idx`` does not identify an available statistical group.
         """
-        if not 0 <= sys_idx < len(self._stat_nlocs):
+        if not 0 <= sys_idx < len(self._stat_groups):
             raise IndexError(
                 f"Statistical system index {sys_idx} is out of range for "
-                f"{len(self._stat_nlocs)} nloc groups."
+                f"{len(self._stat_groups)} homogeneous groups."
             )
 
-        nloc = self._stat_nlocs[sys_idx]
-        group_indices = self._reader.nloc_groups[nloc]
+        nloc, group_indices = self._stat_groups[sys_idx]
         batch_size = self._reader.get_batch_size_for_nloc(nloc)
         start = self._stat_offsets[sys_idx]
         if start >= len(group_indices):
@@ -167,18 +171,18 @@ class LmdbDataSystem:
         return self._reader.decode_batch(group_indices[start:stop])
 
     def get_stat_nsystems(self) -> int:
-        """Return the number of fixed-``nloc`` statistical systems."""
-        return len(self._stat_nlocs)
+        """Return the number of homogeneous statistical systems."""
+        return len(self._stat_groups)
 
     def get_stat_numb_batches(self, sys_idx: int) -> int:
         """Return the available batch count for one statistical system."""
-        if not 0 <= sys_idx < len(self._stat_nlocs):
+        if not 0 <= sys_idx < len(self._stat_groups):
             raise IndexError(
                 f"Statistical system index {sys_idx} is out of range for "
-                f"{len(self._stat_nlocs)} nloc groups."
+                f"{len(self._stat_groups)} homogeneous groups."
             )
-        nloc = self._stat_nlocs[sys_idx]
-        nframes = len(self._reader.nloc_groups[nloc])
+        nloc, group_indices = self._stat_groups[sys_idx]
+        nframes = len(group_indices)
         batch_size = self._reader.get_batch_size_for_nloc(nloc)
         return (nframes + batch_size - 1) // batch_size
 
@@ -189,6 +193,7 @@ class LmdbDataSystem:
         # the partition on its first draw; only the distributed batch count is
         # cached, so it is refreshed after the requirements change.
         self._reader.add_data_requirement(data_requirement)
+        self._refresh_stat_groups()
         if isinstance(self._sampler, DistributedSameNlocBatchSampler):
             self._sampler.refresh_batch_count()
 
