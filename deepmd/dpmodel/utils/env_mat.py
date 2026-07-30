@@ -23,7 +23,18 @@ def compute_smooth_weight(
     rmin: float,
     rmax: float,
 ) -> Array:
-    """Compute smooth weight for descriptor elements."""
+    r"""Compute the quintic cutoff weight.
+
+    With :math:`u=(r-r_s)/(r_c-r_s)` clipped to :math:`[0,1]`, the weight is
+
+    .. math::
+
+       w(r)=1-10u^3+15u^4-6u^5.
+
+    Thus :math:`w=1` for :math:`r\le r_s`, :math:`w=0` for
+    :math:`r\ge r_c`, and the value and first two derivatives are continuous
+    at both boundaries.
+    """
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
@@ -42,7 +53,15 @@ def compute_exp_sw(
     rmin: float,
     rmax: float,
 ) -> Array:
-    """Compute the exponential switch function for neighbor update."""
+    r"""Compute the exponential switch used for neighbor updates.
+
+    For a clipped distance :math:`\bar r=\min(\max(r,0),r_c)`, this computes
+
+    .. math::
+
+       w(r)=\exp\!\left[-\exp\!\left(\frac{20}{r_s}
+       (\bar r-r_s)\right)\right].
+    """
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
@@ -105,6 +124,24 @@ def _make_env_mat(
 
 
 class EnvMat(NativeOP):
+    r"""Construct radial or full local environment matrices.
+
+    For center atom :math:`i` and neighbor :math:`j`, let
+    :math:`\mathbf r_{ji}=\mathbf r_j-\mathbf r_i` and
+    :math:`r_{ji}=\lVert\mathbf r_{ji}\rVert`.  Before optional
+    type-dependent normalization, the full row is
+
+    .. math::
+
+       \mathcal R_{ij}=w(r_{ji})\left(
+       \frac{1}{r_{ji}+p},
+       \frac{\mathbf r_{ji}}{(r_{ji}+p)^2}\right),
+
+    where :math:`p` is ``protection``.  In radial-only mode only the first
+    component is returned.  If statistics are supplied, the final matrix is
+    :math:`(\mathcal R_{ij}-\mu_{t_i j})/\sigma_{t_i j}`.
+    """
+
     def __init__(
         self,
         rcut: float,
@@ -126,7 +163,11 @@ class EnvMat(NativeOP):
         dstd: Array | None = None,
         radial_only: bool = False,
     ) -> tuple[Array, Array, Array]:
-        """Compute the environment matrix.
+        r"""Compute the environment matrix.
+
+        This evaluates the :class:`EnvMat` equation for every neighbor-list
+        entry, masks padded neighbors, and applies the optional normalization
+        :math:`(\mathcal R-\mathrm{davg})/\mathrm{dstd}`.
 
         Parameters
         ----------

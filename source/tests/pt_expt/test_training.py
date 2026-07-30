@@ -14,10 +14,15 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import (
+    Path,
+)
 from unittest.mock import (
+    Mock,
     patch,
 )
 
+import pytest
 import torch
 
 from deepmd.loggers.training import (
@@ -34,6 +39,11 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+
+from ..common.stat_file import (
+    assert_energy_stat_cache_round_trip,
+    energy_model_params,
 )
 
 EXAMPLE_DIR = os.path.join(
@@ -256,6 +266,40 @@ def _make_config(data_dir: str, numb_steps: int = 5) -> dict:
     return config
 
 
+def test_pt_expt_energy_cache_round_trip_uses_fitting_outputs_only(
+    tmp_path: Path,
+) -> None:
+    assert_energy_stat_cache_round_trip(
+        lambda: get_model(energy_model_params()),
+        tmp_path / "stat.hdf5",
+    )
+
+
+def test_pt_expt_distributed_statistics_failure_reaches_peer_rank() -> None:
+    from deepmd.pt_expt.train.training import (
+        Trainer,
+    )
+
+    trainer = Trainer.__new__(Trainer)
+    trainer.is_distributed = True
+    trainer.rank = 1
+    action = Mock()
+
+    def report_chief_failure(holder: list[bool], **_: object) -> None:
+        holder[0] = True
+
+    with (
+        patch(
+            "deepmd.pt_expt.train.training.dist.broadcast_object_list",
+            side_effect=report_chief_failure,
+        ),
+        pytest.raises(RuntimeError, match="Rank 0 failed during statistics"),
+    ):
+        trainer._run_stat_on_chief(action, operation="statistics initialization")
+
+    action.assert_not_called()
+
+
 class TestTraining(unittest.TestCase):
     """Basic smoke test for the pt_expt training loop."""
 
@@ -310,6 +354,39 @@ class TestTraining(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         self._run_training(config)
+
+    @pytest.mark.timeout(60)
+    def test_zero_start_warmup_schedulers_construct(self) -> None:
+        """Cosine and WSD warmup must initialize LambdaLR without division by zero."""
+        for schedule_type in ("cosine", "wsd"):
+            with self.subTest(schedule_type=schedule_type):
+                config = _make_config(self.data_dir, numb_steps=4)
+                config["learning_rate"] = {
+                    "type": schedule_type,
+                    "start_lr": 1e-3,
+                    "stop_lr": 1e-5,
+                    "warmup_steps": 1,
+                }
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+
+                tmpdir = tempfile.mkdtemp(prefix=f"pt_expt_{schedule_type}_warmup_")
+                old_cwd = os.getcwd()
+                try:
+                    os.chdir(tmpdir)
+                    trainer = get_trainer(config)
+
+                    self.assertEqual(trainer.lr_schedule.value(0), 0.0)
+                    self.assertEqual(trainer.scheduler.get_last_lr(), [0.0])
+                    self.assertTrue(
+                        all(
+                            group["initial_lr"] == trainer.lr_schedule.start_lr
+                            for group in trainer.optimizer.param_groups
+                        )
+                    )
+                finally:
+                    os.chdir(old_cwd)
+                    shutil.rmtree(tmpdir, ignore_errors=True)
 
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_loop(self, mocked_eval) -> None:
@@ -728,6 +805,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
             def get_default_fparam(self) -> list[float]:
                 return [0.0, 1.0]
 
+            def has_spin(self) -> bool:
+                return False
+
             def has_chg_spin_ebd(self) -> bool:
                 return False
 
@@ -762,6 +842,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
             def get_default_fparam(self) -> None:
                 return None
 
+            def has_spin(self) -> bool:
+                return False
+
             def has_chg_spin_ebd(self) -> bool:
                 return False
 
@@ -791,6 +874,54 @@ class TestRestart(unittest.TestCase):
         ckpt = os.path.join(tmpdir, "model.ckpt.pt")
         self.assertTrue(os.path.exists(ckpt), "Checkpoint not created")
         return ckpt
+
+    def test_disable_graph_lower_persists_across_restart(self) -> None:
+        """The documented training opt-out survives a REAL save/restart.
+
+        Regression (OutisLi review): ``disable_graph_lower()`` flipped only
+        a plain python bool, which a checkpoint restart silently reset --
+        the fresh model is rebuilt from config before ``load_state_dict``,
+        and neither the state-dict keys nor ``_extra_state.model_params``
+        carried the choice; on a binding-sel system the route-only switch
+        changed the training equation (energy by ~0.6) without warning.
+        The knob now lives in a persistent descriptor buffer
+        (``graph_lower_disabled``), so every state_dict round-trips it and
+        ``uses_graph_lower()`` re-syncs from the restored buffer.
+        """
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_hatch_restart_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                config = _make_config(self.data_dir, numb_steps=1)
+                config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                trainer = get_trainer(config)
+                desc = trainer.model.atomic_model.descriptor
+                self.assertTrue(desc.uses_graph_lower())
+                desc.disable_graph_lower()
+                self.assertFalse(desc.uses_graph_lower())
+                trainer.run()
+
+                ckpt_path = os.path.join(tmpdir, "model.ckpt.pt")
+                self.assertTrue(os.path.exists(ckpt_path))
+
+                config2 = _make_config(self.data_dir, numb_steps=2)
+                config2["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, restart_model=ckpt_path)
+                desc2 = trainer2.model.atomic_model.descriptor
+                self.assertFalse(
+                    desc2.uses_graph_lower(),
+                    "disable_graph_lower() must survive a checkpoint restart "
+                    "(route-only silent flip changes the training equation)",
+                )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_restart(self) -> None:
         """Train 5 steps, restart from checkpoint, train 5 more."""

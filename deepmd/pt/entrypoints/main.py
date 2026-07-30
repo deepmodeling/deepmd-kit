@@ -11,7 +11,6 @@ from typing import (
     Any,
 )
 
-import h5py
 import torch
 import torch.distributed as dist
 import torch.version
@@ -92,8 +91,8 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -150,7 +149,9 @@ def get_trainer(
         rank: int = 0,
         seed: int | None = None,
     ) -> tuple[
-        DpLoaderSet | LmdbDataset, DpLoaderSet | LmdbDataset | None, DPPath | None
+        DpLoaderSet | LmdbDataset,
+        DpLoaderSet | LmdbDataset | None,
+        StatFileSpec,
     ]:
         # get data modifier
         modifier = None
@@ -165,18 +166,10 @@ def get_trainer(
         )
         training_systems = training_dataset_params["systems"]
 
-        # stat files
-        stat_file_path_single = data_dict_single.get("stat_file")
-        if rank != 0:
-            stat_file_path_single = None
-        elif stat_file_path_single is not None:
-            if not Path(stat_file_path_single).exists():
-                if stat_file_path_single.endswith((".h5", ".hdf5")):
-                    with h5py.File(stat_file_path_single, "w") as f:
-                        pass
-                else:
-                    Path(stat_file_path_single).mkdir()
-            stat_file_path_single = DPPath(stat_file_path_single, "a")
+        stat_file_spec = StatFileSpec(
+            data_dict_single.get("stat_file"),
+            data_dict_single.get("stat_file_mode", "update"),
+        )
 
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
 
@@ -233,7 +226,7 @@ def get_trainer(
         return (
             train_data_single,
             validation_data_single,
-            stat_file_path_single,
+            stat_file_spec,
         )
 
     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
@@ -242,7 +235,7 @@ def get_trainer(
         (
             train_data,
             validation_data,
-            stat_file_path,
+            stat_file_spec,
         ) = prepare_trainer_input_single(
             config["model"],
             config["training"],
@@ -250,12 +243,12 @@ def get_trainer(
             seed=data_seed,
         )
     else:
-        train_data, validation_data, stat_file_path = {}, {}, {}
+        train_data, validation_data, stat_file_spec = {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
-                stat_file_path[model_key],
+                stat_file_spec[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
@@ -266,7 +259,7 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        stat_file_path=stat_file_path,
+        stat_file_spec=stat_file_spec,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,

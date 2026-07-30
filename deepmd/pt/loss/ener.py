@@ -6,6 +6,10 @@ from typing import (
 import torch
 import torch.nn.functional as F
 
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    per_frame_component_mean,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -282,7 +286,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization.
                     se = torch.square(energy_pred - energy_label)  # [nf, k]
-                    per_frame = torch.mean(se.reshape(_nf, -1), dim=-1)  # [nf]
+                    per_frame = per_frame_component_mean(se)  # [nf]
                     if not self.use_huber:
                         loss += pref_e * torch.mean(per_frame * inv**norm_exp)
                     else:
@@ -319,8 +323,9 @@ class EnergyStdLoss(TaskLoss):
                     reduction="mean",
                 )
                 if maskf is not None:
-                    abs_e = torch.abs(energy_pred - energy_label)
-                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        torch.abs(energy_pred - energy_label)
+                    )
                     l1_ener_masked = torch.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
                     more_loss["mae_e"] = self.display_if_exist(
@@ -339,8 +344,9 @@ class EnergyStdLoss(TaskLoss):
                 )
             if mae:
                 if maskf is not None:
-                    abs_e = torch.abs(energy_pred - energy_label)
-                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        torch.abs(energy_pred - energy_label)
+                    )
                     mae_e = torch.mean(per_frame_ae * inv)
                 else:
                     mae_e = (
@@ -382,10 +388,9 @@ class EnergyStdLoss(TaskLoss):
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         maskf_col = maskf.reshape(_nf, _nloc, 1)
                         # Masked MSE computed for rmse_f display regardless of use_huber.
-                        sq_f = torch.square(diff_f_3d) * maskf_col
-                        _pfs = sq_f.reshape(_nf, -1).sum(dim=-1)
-                        _pfd = maskf.sum(dim=-1) * 3
-                        l2_f_masked = torch.mean(_pfs / _pfd)
+                        l2_f_masked = masked_atom_mean(
+                            torch.square(diff_f_3d), maskf, 3
+                        )
                         if not self.use_huber:
                             loss += (pref_f * l2_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         else:
@@ -456,12 +461,10 @@ class EnergyStdLoss(TaskLoss):
                 elif self.loss_func == "mae":
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
                         if not self.f_use_norm:
-                            abs_f = torch.abs(diff_f_3d) * maskf_col
-                            per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
-                            per_frame_dof = maskf.sum(dim=-1) * 3
-                            l1_f_masked = torch.mean(per_frame_sum / per_frame_dof)
+                            l1_f_masked = masked_atom_mean(
+                                torch.abs(diff_f_3d), maskf, 3
+                            )
                         else:
                             diff_3 = (force_label - force_pred).reshape(_nf, _nloc, 3)
                             norm_2d = torch.linalg.vector_norm(
@@ -500,11 +503,7 @@ class EnergyStdLoss(TaskLoss):
                 if mae:
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        abs_f = torch.abs(diff_f_3d) * maskf_col
-                        per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        mae_f = torch.mean(per_frame_sum / per_frame_dof)
+                        mae_f = masked_atom_mean(torch.abs(diff_f_3d), maskf, 3)
                     else:
                         mae_f = torch.mean(torch.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
@@ -531,11 +530,9 @@ class EnergyStdLoss(TaskLoss):
                         # Idiom 1 with pref weight (ncomp=3).
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         pf_3d = atom_pref.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        sq_pf = torch.square(diff_f_3d) * pf_3d * maskf_col
-                        per_frame_sum = sq_pf.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        l2_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        l2_pf_masked = masked_atom_mean(
+                            torch.square(diff_f_3d) * pf_3d, maskf, 3
+                        )
                         loss += (pref_pf * l2_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         rmse_pf = l2_pf_masked.sqrt()
                         more_loss["rmse_pf"] = self.display_if_exist(
@@ -554,11 +551,9 @@ class EnergyStdLoss(TaskLoss):
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         pf_3d = atom_pref.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        abs_pf = torch.abs(diff_f_3d) * pf_3d * maskf_col
-                        per_frame_sum = abs_pf.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        l1_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        l1_pf_masked = masked_atom_mean(
+                            torch.abs(diff_f_3d) * pf_3d, maskf, 3
+                        )
                         loss += (pref_pf * l1_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         more_loss["mae_pf"] = self.display_if_exist(
                             l1_pf_masked.detach(), find_atom_pref
@@ -635,7 +630,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization.
                     se_v = torch.square(diff_v)  # [nf, 9]
-                    per_frame_v = torch.mean(se_v, dim=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(se_v)  # [nf]
                     if not self.use_huber:
                         loss += pref_v * torch.mean(per_frame_v * inv**norm_exp)
                     else:
@@ -671,8 +666,7 @@ class EnergyStdLoss(TaskLoss):
                     reduction="mean",
                 )
                 if maskf is not None:
-                    abs_v = torch.abs(diff_v)  # [nf, 9]
-                    per_frame_v = torch.mean(abs_v, dim=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))  # [nf]
                     l1_v_masked = torch.mean(per_frame_v * inv)
                     loss += pref_v * l1_v_masked
                     more_loss["mae_v"] = self.display_if_exist(
@@ -690,8 +684,7 @@ class EnergyStdLoss(TaskLoss):
                 )
             if mae:
                 if maskf is not None:
-                    abs_v = torch.abs(diff_v)
-                    per_frame_v = torch.mean(abs_v, dim=-1)
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))
                     mae_v = torch.mean(per_frame_v * inv)
                 else:
                     mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
@@ -717,10 +710,10 @@ class EnergyStdLoss(TaskLoss):
                     # Idiom 1 (per-atom masked mean, ncomp=1).
                     ae_2d = atom_ener.reshape(_nf, _nloc)
                     ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
-                    sq_ae = torch.square(ae_hat_2d - ae_2d) * maskf  # [nf, nloc]
-                    per_frame_sum = sq_ae.sum(dim=-1)  # [nf]
-                    per_frame_dof = maskf.sum(dim=-1)  # [nf]
-                    l2_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    per_frame_dof = maskf.sum(dim=-1)  # [nf], kept for huber branch
+                    l2_ae_masked = masked_atom_mean(
+                        torch.square(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     if not self.use_huber:
                         loss += (pref_ae * l2_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     else:
@@ -765,10 +758,9 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     ae_2d = atom_ener.reshape(_nf, _nloc)
                     ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
-                    abs_ae = torch.abs(ae_hat_2d - ae_2d) * maskf
-                    per_frame_sum = abs_ae.sum(dim=-1)
-                    per_frame_dof = maskf.sum(dim=-1)
-                    l1_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    l1_ae_masked = masked_atom_mean(
+                        torch.abs(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     loss += (pref_ae * l1_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_ae_masked.detach(), find_atom_ener

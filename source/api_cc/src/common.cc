@@ -189,6 +189,9 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
+    // Atomic parameters store ``daparam`` consecutive components per atom.
+    // Keep the allocation consistent with the stride passed to ``select_map``
+    // below so every remapped component has a valid destination element.
     aparam.resize(static_cast<size_t>(nframes) *
                   (aparam_nall ? nall_real : nloc_real) * daparam);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
@@ -272,6 +275,17 @@ void deepmd::remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
     }
     new_recvnum[s] = recv_count;
   }
+}
+
+std::vector<std::intptr_t> deepmd::pack_comm_sendlist_pointers(
+    int* const* sendlist, int nswap) {
+  std::vector<std::intptr_t> pointer_addresses;
+  pointer_addresses.reserve(nswap);
+  for (int iswap = 0; iswap < nswap; ++iswap) {
+    pointer_addresses.push_back(
+        reinterpret_cast<std::intptr_t>(sendlist[iswap]));
+  }
+  return pointer_addresses;
 }
 
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,

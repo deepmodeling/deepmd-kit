@@ -28,6 +28,9 @@ from deepmd.pt_expt.entrypoints.main import (
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
+from deepmd.pt_expt.utils.stat import (
+    make_stat_input,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -85,13 +88,69 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
     env.close()
 
 
+def _create_partially_labeled_lmdb(path: str) -> None:
+    """Write frames split between energy-only and force-only labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    metadata = {
+        "nframes": nframes,
+        "frame_idx_fmt": fmt,
+        "system_info": {"natoms": [3, 3]},
+        "frame_nlocs": [natoms] * nframes,
+    }
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms, index)
+            if index % 2 == 0:
+                frame.pop("forces")
+            else:
+                frame.pop("energies")
+            txn.put(
+                format(index, fmt).encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+
+
+def _create_mixed_nloc_test_lmdb(path: str) -> None:
+    """Write an LMDB with five six-atom and five nine-atom frames."""
+    frame_nlocs = [6] * 5 + [9] * 5
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    metadata = {
+        "nframes": len(frame_nlocs),
+        "frame_idx_fmt": fmt,
+        "frame_nlocs": frame_nlocs,
+        "type_map": ["O", "H"],
+        "system_info": {
+            "formula": "mixed",
+            "natoms": [3, 3],
+            "nframes": len(frame_nlocs),
+        },
+    }
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index, nloc in enumerate(frame_nlocs):
+            key = format(index, fmt).encode()
+            txn.put(
+                key,
+                msgpack.packb(_make_frame(nloc, index), use_bin_type=True),
+            )
+    env.close()
+
+
 class TestLmdbDataSystemGetBatch(unittest.TestCase):
     """LmdbDataSystem.get_batch produces a numpy dict that normalize_batch accepts."""
 
     def setUp(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
         self.lmdb_path = os.path.join(self.tmpdir, "test.lmdb")
+        self.mixed_lmdb_path = os.path.join(self.tmpdir, "mixed.lmdb")
         _create_test_lmdb(self.lmdb_path, nframes=8, natoms=6)
+        _create_mixed_nloc_test_lmdb(self.mixed_lmdb_path)
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -159,6 +218,95 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         self.assertIn("energy", batch)
         self.assertIn("find_energy", batch)
 
+    def test_partial_labels_are_batched_by_availability(self) -> None:
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        partial_path = os.path.join(self.tmpdir, "partial.lmdb")
+        _create_partially_labeled_lmdb(partial_path)
+        ds = LmdbDataSystem(
+            lmdb_path=partial_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+        old_iter = ds._iter
+        # Realize the old iterator before requirements change so this checks
+        # replacement rather than two independently-created lazy generators.
+        next(old_iter)
+        ds.add_data_requirements(
+            [
+                DataRequirementItem(
+                    "energy", ndof=1, atomic=False, must=False, default=7.0
+                ),
+                DataRequirementItem(
+                    "force", ndof=3, atomic=True, must=False, default=11.0
+                ),
+            ]
+        )
+        self.assertIsNot(ds._iter, old_iter)
+
+        batches = [ds.get_batch(), ds.get_batch()]
+        observed = {
+            (float(batch["find_energy"]), float(batch["find_force"]))
+            for batch in batches
+        }
+        self.assertEqual(observed, {(1.0, 0.0), (0.0, 1.0)})
+        self.assertTrue(all(batch["coord"].shape[0] == 2 for batch in batches))
+
+    def test_stat_input_partitions_mixed_nloc_batches(self) -> None:
+        """Statistics expose each atom-count group as one logical system."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.mixed_lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+
+        self.assertEqual(ds.get_nsystems(), 1)
+        self.assertEqual(ds.get_stat_nsystems(), 2)
+        sampled = make_stat_input(ds, nbatches=10)
+
+        self.assertEqual(len(sampled), 2)
+        self.assertEqual(
+            sorted(sample["atype"].shape for sample in sampled),
+            [(5, 6), (5, 9)],
+        )
+
+    def test_stat_input_limits_batches_per_nloc_group(self) -> None:
+        """Statistics honor the requested batch cap for every nloc group."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.mixed_lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+
+        sampled = make_stat_input(ds, nbatches=2)
+
+        self.assertEqual(
+            sorted(sample["atype"].shape for sample in sampled),
+            [(4, 6), (4, 9)],
+        )
+
+    def test_stat_batches_restart_after_non_divisible_pass(self) -> None:
+        """Statistical batches restart after including a partial tail batch."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.mixed_lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+
+        for sys_idx, nloc in enumerate((6, 9)):
+            self.assertEqual(ds.get_stat_numb_batches(sys_idx), 3)
+            shapes = [ds.get_stat_batch(sys_idx)["atype"].shape for _ in range(4)]
+            self.assertEqual(
+                shapes,
+                [(2, nloc), (2, nloc), (1, nloc), (2, nloc)],
+            )
+
 
 class TestLmdbTrainingLoop(unittest.TestCase):
     """End-to-end: get_trainer routes an LMDB path and runs training steps."""
@@ -167,8 +315,10 @@ class TestLmdbTrainingLoop(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tmpdir = tempfile.mkdtemp()
         cls.lmdb_path = os.path.join(cls.tmpdir, "train.lmdb")
+        cls.mixed_lmdb_path = os.path.join(cls.tmpdir, "mixed.lmdb")
         cls.val_lmdb_path = os.path.join(cls.tmpdir, "val.lmdb")
         _create_test_lmdb(cls.lmdb_path, nframes=8, natoms=6)
+        _create_mixed_nloc_test_lmdb(cls.mixed_lmdb_path)
         _create_test_lmdb(cls.val_lmdb_path, nframes=4, natoms=6)
 
     @classmethod
@@ -243,6 +393,25 @@ class TestLmdbTrainingLoop(unittest.TestCase):
             trainer.run()
         finally:
             os.chdir(cwd)
+
+    def test_mixed_nloc_statistics_and_training(self) -> None:
+        """Trainer computes statistics and trains across fixed-nloc batches."""
+        config = self._make_lmdb_config(numb_steps=2)
+        config["model"]["data_stat_nbatch"] = 10
+        config["training"]["training_data"]["systems"] = self.mixed_lmdb_path
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        with tempfile.TemporaryDirectory(dir=self.tmpdir) as run_dir:
+            cwd = os.getcwd()
+            os.chdir(run_dir)
+            try:
+                trainer = get_trainer(config)
+                self.assertEqual(trainer.training_data.get_nsystems(), 1)
+                self.assertEqual(trainer.training_data.get_stat_nsystems(), 2)
+                trainer.run()
+            finally:
+                os.chdir(cwd)
 
 
 if __name__ == "__main__":

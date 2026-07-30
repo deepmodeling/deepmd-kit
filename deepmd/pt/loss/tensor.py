@@ -5,6 +5,10 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    masked_atom_num,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -130,13 +134,13 @@ class TensorLoss(TaskLoss):
             diff = diff * atomic_weight
             if "mask" in model_pred:
                 # idiom 1: per-frame masked mean, then average over frames
-                nf = local_tensor_pred.shape[0]
                 maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
-                diff3d = diff.reshape(nf, natoms, self.tensor_size)
-                sq = torch.square(diff3d) * maskf.reshape(nf, natoms, 1)
-                per_frame_sum = sq.reshape(nf, -1).sum(dim=-1)  # [nf]
-                per_frame_dof = maskf.sum(dim=-1) * self.tensor_size  # [nf]
-                l2_local_loss = (per_frame_sum / per_frame_dof).mean()
+                diff3d = diff.reshape(
+                    local_tensor_pred.shape[0], natoms, self.tensor_size
+                )
+                l2_local_loss = masked_atom_mean(
+                    torch.square(diff3d), maskf, self.tensor_size
+                )
             else:
                 l2_local_loss = torch.mean(torch.square(diff))
             if not self.inference:
@@ -162,10 +166,7 @@ class TensorLoss(TaskLoss):
             diff = global_tensor_pred - global_tensor_label
             # idiom 3: global tensor is already padding-invariant; plain mean suffices
             l2_global_loss = torch.mean(torch.square(diff))
-            if "mask" in model_pred:
-                atom_num = model_pred["mask"].sum(-1).float().mean()
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss[f"l2_global_{self.tensor_name}_loss"] = self.display_if_exist(
                     l2_global_loss.detach(), find_global

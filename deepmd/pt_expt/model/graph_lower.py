@@ -29,11 +29,18 @@ def model_uses_graph_lower(model: Any) -> bool:
     except (AttributeError, NotImplementedError):
         return False
 
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph_lower = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph_lower is None:
-        return False
+    # ENERGY-output models only, mirroring ``_resolve_graph_method``'s
+    # default-flip gate: the compiled-training graph trace is
+    # energy-specific (``do_grad_r("energy")``, ``_translate_energy_keys``),
+    # so a non-energy model (property/dos/dipole/polar) on this path raises
+    # ``KeyError('energy')`` at its first compiled batch.
     try:
-        return bool(uses_graph_lower())
+        if "energy" not in model.atomic_output_def().keys():
+            return False
     except (AttributeError, NotImplementedError):
         return False
+
+    atomic_model = getattr(model, "atomic_model", None)
+    if atomic_model is None:
+        return False
+    return bool(atomic_model.uses_graph_lower())

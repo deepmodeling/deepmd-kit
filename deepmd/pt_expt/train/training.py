@@ -10,6 +10,10 @@ import functools
 import logging
 import os
 import time
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from copy import (
     deepcopy,
 )
@@ -40,7 +44,7 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -87,8 +91,11 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -259,6 +266,22 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
         additional_data_requirement.append(
             DataRequirementItem(
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
+            )
+        )
+    if _model.has_spin():
+        # ``model.spin.allow_missing_label`` relaxes the spin label from
+        # mandatory to optional with a zero default, so a system without a
+        # ``spin`` file is filled with zeros rather than rejected. Mirrors
+        # ``deepmd.pt.train.training.get_additional_data_requirement``.
+        # Every spin model wrapper carries a ``spin`` attribute.
+        allow_missing_spin = _model.spin.allow_missing_label
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "spin",
+                ndof=3,
+                atomic=True,
+                must=not allow_missing_spin,
+                default=0.0,
             )
         )
     if _model.has_chg_spin_ebd():
@@ -615,8 +638,6 @@ def _trace_and_compile_graph(
         Per-task buffers promoted to FX placeholders (see
         :func:`_detect_task_buffers`).
     """
-    import math
-
     from torch._decomp import (
         get_decompositions,
     )
@@ -676,10 +697,6 @@ def _trace_and_compile_graph(
     while (trace_nf * nloc_trace) in (_forbidden | {trace_nf}):
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
-    # Static edge capacity, prime-padded to stay distinct from nf and N.
-    nnei = sum(model.get_sel())
-    e_max_base = max(math.ceil(1.25 * nloc_trace * nnei), 7)
-    e_max = _next_safe_prime(e_max_base, _forbidden | {trace_nf, trace_N})
 
     # Shared with the .pt2 export trace (serialization.py) so the two graph
     # traces can never desync on the input schema.  Training uses the run-time
@@ -687,16 +704,39 @@ def _trace_and_compile_graph(
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
         check_graph_trace_torch_version,
+        count_synthetic_graph_edges,
     )
 
     check_graph_trace_torch_version(model)
+
+    # Static edge capacity: derived from the ACTUAL edge count of the
+    # synthetic trace system (the carry-all builder is sel-free; a
+    # sel-derived estimate overflows whenever the real degree exceeds sel),
+    # then prime-padded to stay distinct from nf and N.  ``+ 2`` keeps at
+    # least two masked padding rows so the padded-tail branch is traced.
+    # Trace on the MODEL's device, not the global ``DEVICE``: make_fx keeps the
+    # real model parameters (``_allow_non_fake_inputs``), so the synthetic trace
+    # inputs must live where the model does. A CUDA training run keeps the model
+    # on ``DEVICE`` (these match), but callers that trace a CPU-placed model
+    # (e.g. the graph .pt2/export path, which moves the model to CPU to dodge a
+    # CUDA autograd-stream limitation) would otherwise mix a CPU model with
+    # CUDA inputs and fail only on a GPU host.
+    _trace_device = next(model.parameters()).device
+    e_real = count_synthetic_graph_edges(
+        model,
+        nframes=trace_nf,
+        nloc=nloc_trace,
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=_trace_device,
+    )
+    e_max = _next_safe_prime(e_real + 2, _forbidden | {trace_nf, trace_N})
     sample = build_synthetic_graph_inputs(
         model,
         e_max=e_max,
         nframes=trace_nf,
         nloc=nloc_trace,
         dtype=GLOBAL_PT_FLOAT_PRECISION,
-        device=DEVICE,
+        device=_trace_device,
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
@@ -1053,14 +1093,20 @@ class _CompiledModel(torch.nn.Module):
             *task_buf_vals,
         )
 
-        # Translate forward_lower keys -> forward keys.
-        # ``extended_force`` lives on all extended atoms (nf, nall, 3).
-        # Ghost-atom forces must be scatter-summed back to local atoms
-        # via ``mapping`` — the same operation ``communicate_extended_output``
-        # performs in the uncompiled path.
+        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
+        # every key passes through unchanged (energy models emit
+        # atom_energy/energy/virial/..., property/dos/... models their own
+        # keys -- the hardcoded energy-key copy here used to KeyError on any
+        # non-energy fitting), EXCEPT the extended-region keys
+        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
+        # (nf, nall, 9): their ghost rows are scatter-summed back onto
+        # local owners via ``mapping`` -- the same fold
+        # ``communicate_extended_output`` performs in the uncompiled path
+        # (which exposes them as ``force`` / ``atom_virial``).  Folding
+        # both keeps the compiled and uncompiled outputs key-for-key
+        # consistent, including for a future atom-virial training
+        # objective.
         out: dict[str, torch.Tensor] = {}
-        out["atom_energy"] = result["atom_energy"]
-        out["energy"] = result["energy"]
         if "extended_force" in result:
             ext_force = result["extended_force"]  # (nf, nall, 3)
             idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
@@ -1069,14 +1115,21 @@ class _CompiledModel(torch.nn.Module):
             )
             force.scatter_add_(1, idx, ext_force)
             out["force"] = force
-        if "virial" in result:
-            out["virial"] = result["virial"]
         if "extended_virial" in result:
-            out["extended_virial"] = result["extended_virial"]
-        if "atom_virial" in result:
-            out["atom_virial"] = result["atom_virial"]
-        if "mask" in result:
-            out["mask"] = result["mask"]
+            ext_virial = result["extended_virial"]  # (nf, nall, 9)
+            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
+            atom_virial = torch.zeros(
+                nframes,
+                nloc,
+                ext_virial.shape[-1],
+                dtype=ext_virial.dtype,
+                device=ext_virial.device,
+            )
+            atom_virial.scatter_add_(1, idx, ext_virial)
+            out["atom_virial"] = atom_virial
+        for key, val in result.items():
+            if key not in ("extended_force", "extended_virial"):
+                out[key] = val
         return out
 
     def _forward_graph(
@@ -1108,6 +1161,12 @@ class _CompiledModel(torch.nn.Module):
 
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
+        # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
+        # every per-node tensor of the graph schema (the trace sample from
+        # build_synthetic_graph_inputs is flat too, so the compiled lower's
+        # input spec expects it).
+        if aparam is not None:
+            aparam = aparam.reshape(nframes * nloc, -1)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
@@ -1264,8 +1323,8 @@ class Trainer(AbstractTrainer):
         Full training configuration.
     training_data : DeepmdDataSystem or dict
         Training data.  Dict of ``{model_key: DeepmdDataSystem}`` for multi-task.
-    stat_file_path : DPPath or dict or None
-        Path for saving / loading statistics.
+    stat_file_spec : StatFileSpec or dict or None
+        Unopened statistics-cache configuration.
     validation_data : DeepmdDataSystem or dict or None
         Validation data.
     init_model : str or None
@@ -1280,7 +1339,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | dict,
-        stat_file_path: DPPath | dict | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem | dict | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -1326,10 +1385,9 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         # Distributed training detection
@@ -1424,7 +1482,6 @@ class Trainer(AbstractTrainer):
         for model_key in self.model_keys:
             _nbatch = self.model_params_by_task[model_key].get("data_stat_nbatch", 10)
             _data = self.training_data_by_task[model_key]
-            _stat_path = self.stat_file_path_by_task[model_key]
 
             @functools.lru_cache
             def _make_sample(
@@ -1442,14 +1499,26 @@ class Trainer(AbstractTrainer):
             )
             if _finetune_has_new_type:
                 self._finetune_update_stat = True
-            if (not resuming or _finetune_has_new_type) and self.rank == 0:
-                self.models[model_key].compute_or_load_stat(
-                    sampled_func=_make_sample,
-                    stat_file_path=_stat_path,
+            if not resuming or _finetune_has_new_type:
+
+                def initialize_statistics(
+                    _model_key: str = model_key,
+                    _sample_func: Callable[[], list[dict[str, np.ndarray]]] = (
+                        _make_sample
+                    ),
+                ) -> None:
+                    with open_stat_file(
+                        self.stat_file_specs[_model_key]
+                    ) as stat_file_path:
+                        self.models[_model_key].compute_or_load_stat(
+                            sampled_func=_sample_func,
+                            stat_file_path=stat_file_path,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation=f"statistics initialization for task {model_key!r}",
                 )
-        if self.is_distributed:
-            for model_key in self.model_keys:
-                self._broadcast_model_stat(self.models[model_key])
 
         # Model probability (multi-task) --------------------------------------
         if self.multi_task:
@@ -1466,9 +1535,9 @@ class Trainer(AbstractTrainer):
             self.model_prob = None
 
         # Learning rate -------------------------------------------------------
-        lr_params = config["learning_rate"].copy()
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
@@ -1479,6 +1548,7 @@ class Trainer(AbstractTrainer):
 
         # Shared params (multi-task) ------------------------------------------
         self._shared_links = shared_links
+        synchronize_model_state = not resuming or self._finetune_update_stat
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -1490,13 +1560,31 @@ class Trainer(AbstractTrainer):
                 raise ValueError(
                     "Model key 'data_stat_protect' must be the same in each branch when multitask!"
                 )
-            self.wrapper.share_params(
-                shared_links,
-                resume=(resuming and not self._finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(
+            share_kwargs = {
+                "model_key_prob_map": dict(
                     zip(self.model_keys, self.model_prob, strict=True)
                 ),
-                data_stat_protect=_data_stat_protect[0],
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if synchronize_model_state:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
+
+        if synchronize_model_state and self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+
+        if shared_links is not None:
+            self.wrapper.share_params(
+                shared_links,
+                resume=True,
+                **share_kwargs,
             )
 
         # DDP wrapping --------------------------------------------------------
@@ -1525,7 +1613,11 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = training_params.get("opt_type", "Adam")
-        initial_lr = float(self.lr_schedule.value(self.start_step))
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
 
         if opt_type == "Adam":
             self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
@@ -1538,6 +1630,9 @@ class Trainer(AbstractTrainer):
             )
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
@@ -1696,12 +1791,21 @@ class Trainer(AbstractTrainer):
                         if not finetune_rule.get_random_fitting()
                         else "set-by-statistic"
                     )
-                    if self.rank == 0:
-                        self.models[model_key] = model_change_out_bias(
-                            self.models[model_key],
-                            self._sample_funcs[model_key],
-                            _bias_adjust_mode=bias_mode,
+
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _bias_mode: str = bias_mode,
+                    ) -> None:
+                        self.models[_model_key] = model_change_out_bias(
+                            self.models[_model_key],
+                            self._sample_funcs[_model_key],
+                            _bias_adjust_mode=_bias_mode,
                         )
+
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
                     if self.is_distributed:
                         self._broadcast_model_stat(self.models[model_key])
                 self.model = (
@@ -1723,6 +1827,8 @@ class Trainer(AbstractTrainer):
 
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
+                for param_group in self.optimizer.param_groups:
+                    param_group["initial_lr"] = initial_lr
                 # rebuild scheduler from the resumed step.
                 # last_epoch handles the step offset; the lambda must NOT
                 # add self.start_step again (that would double-count).
@@ -1807,10 +1913,9 @@ class Trainer(AbstractTrainer):
                 "training; multi-task training is not supported."
             )
 
-        has_spin = getattr(self.models[DEFAULT_TASK_KEY], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin or isinstance(self.loss, EnergySpinLoss):
+        if self.models[DEFAULT_TASK_KEY].has_spin() or isinstance(
+            self.loss, EnergySpinLoss
+        ):
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training; spin-energy training is not supported."
@@ -2030,6 +2135,30 @@ class Trainer(AbstractTrainer):
         if hasattr(self.wrapper, "module"):
             return self.wrapper.module
         return self.wrapper
+
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
 
     @staticmethod
     def _broadcast_model_stat(model: torch.nn.Module) -> None:
