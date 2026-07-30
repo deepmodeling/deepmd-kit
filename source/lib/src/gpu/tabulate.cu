@@ -1093,7 +1093,7 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
-  if (two_embed != nullptr) {
+  if (two_embed != nullptr && is_sorted) {
     // The sorted-padding fast path writes only the first sentinel. Explicitly
     // clear the unused tail because framework output buffers are uninitialized.
     DPErrcheck(

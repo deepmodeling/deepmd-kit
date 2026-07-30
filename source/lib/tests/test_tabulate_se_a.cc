@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
@@ -984,28 +985,37 @@ class TestTabulateSeASortedPaddingTwoEmbed : public ::testing::Test {
   const std::vector<double> table = {2.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   const std::vector<double> em_x = {0.25, 0.5, 0.5, 0.5, 0.5, 0.5};
   const std::vector<double> em = {
-      1.0, 0.3, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0,
-      0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+      1.0, 0.3, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+      0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
   };
   const std::vector<double> two_embed = {0.1, 0.2, 0.3, 0.4, 0.5, 0.9};
   const std::vector<double> dy = {1.0, -0.5, 0.25, 2.0};
 
   static double dot(const std::vector<double>& lhs,
                     const std::vector<double>& rhs) {
+    EXPECT_EQ(lhs.size(), rhs.size());
+    if (lhs.size() != rhs.size()) {
+      return 0.0;
+    }
     double result = 0.0;
-    for (int ii = 0; ii < lhs.size(); ++ii) {
+    for (std::size_t ii = 0; ii < lhs.size(); ++ii) {
       result += lhs[ii] * rhs[ii];
     }
     return result;
   }
 
-  double forward_projection_cpu(
+  std::vector<double> forward_cpu(
       const std::vector<double>& test_two_embed) const {
     std::vector<double> descriptor(nloc * 4 * last_layer_size);
     deepmd::tabulate_fusion_se_a_cpu<double>(
         descriptor.data(), table.data(), info.data(), em_x.data(), em.data(),
         test_two_embed.data(), nloc, nnei, last_layer_size, true);
-    return dot(descriptor, dy);
+    return descriptor;
+  }
+
+  double forward_projection_cpu(
+      const std::vector<double>& test_two_embed) const {
+    return dot(forward_cpu(test_two_embed), dy);
   }
 
   std::vector<double> grad_two_cpu(const std::vector<double>& test_dy) const {
@@ -1037,6 +1047,30 @@ class TestTabulateSeASortedPaddingTwoEmbed : public ::testing::Test {
   }
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  std::vector<double> forward_gpu(
+      const std::vector<double>& test_two_embed) const {
+    std::vector<double> descriptor(nloc * 4 * last_layer_size);
+    double *descriptor_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr;
+    deepmd::malloc_device_memory_sync(descriptor_dev, descriptor);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+    deepmd::malloc_device_memory_sync(em_dev, em);
+    deepmd::malloc_device_memory_sync(two_embed_dev, test_two_embed);
+
+    deepmd::tabulate_fusion_se_a_gpu<double>(
+        descriptor_dev, table_dev, info.data(), em_x_dev, em_dev, two_embed_dev,
+        nloc, nnei, last_layer_size, true);
+    deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+
+    deepmd::delete_device_memory(descriptor_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    return descriptor;
+  }
+
   std::vector<double> grad_two_gpu(const std::vector<double>& test_dy) const {
     std::vector<double> dy_dem_x(nloc * nnei);
     std::vector<double> dy_dem(nloc * nnei * 4);
@@ -1117,7 +1151,7 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
        two_embed_gradient_matches_forward_cpu) {
   constexpr double step = 1e-6;
   const std::vector<double> actual = grad_two_cpu(dy);
-  for (int ii = 0; ii < two_embed.size(); ++ii) {
+  for (std::size_t ii = 0; ii < two_embed.size(); ++ii) {
     std::vector<double> plus = two_embed;
     std::vector<double> minus = two_embed;
     plus[ii] += step;
@@ -1128,7 +1162,7 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
     EXPECT_NEAR(actual[ii], expected, 1e-9);
   }
   EXPECT_NEAR(actual[1], 1.0, 1e-12);
-  for (int ii = 2; ii < two_embed.size(); ++ii) {
+  for (std::size_t ii = 2; ii < two_embed.size(); ++ii) {
     EXPECT_DOUBLE_EQ(actual[ii], 0.0);
   }
 }
@@ -1140,7 +1174,7 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
   // because the trailing padding entry is independent of forward.
   const std::vector<double> dz_dy_dtwo = {0.0, 1.0, 2.0, 4.0, 8.0, 16.0};
   const std::vector<double> actual = grad_grad_cpu(dz_dy_dtwo);
-  for (int ii = 0; ii < dy.size(); ++ii) {
+  for (std::size_t ii = 0; ii < dy.size(); ++ii) {
     std::vector<double> plus = dy;
     std::vector<double> minus = dy;
     plus[ii] += step;
@@ -1157,8 +1191,15 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
 TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
        two_embed_gradient_matches_forward_gpu) {
   constexpr double step = 1e-6;
+  const std::vector<double> expected_forward = forward_cpu(two_embed);
+  const std::vector<double> actual_forward = forward_gpu(two_embed);
+  ASSERT_EQ(actual_forward.size(), expected_forward.size());
+  for (std::size_t ii = 0; ii < actual_forward.size(); ++ii) {
+    EXPECT_NEAR(actual_forward[ii], expected_forward[ii], 1e-10);
+  }
+
   const std::vector<double> actual = grad_two_gpu(dy);
-  for (int ii = 0; ii < two_embed.size(); ++ii) {
+  for (std::size_t ii = 0; ii < two_embed.size(); ++ii) {
     std::vector<double> plus = two_embed;
     std::vector<double> minus = two_embed;
     plus[ii] += step;
@@ -1169,7 +1210,7 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
     EXPECT_NEAR(actual[ii], expected, 1e-9);
   }
   EXPECT_NEAR(actual[1], 1.0, 1e-12);
-  for (int ii = 2; ii < two_embed.size(); ++ii) {
+  for (std::size_t ii = 2; ii < two_embed.size(); ++ii) {
     EXPECT_DOUBLE_EQ(actual[ii], 0.0);
   }
 }
@@ -1179,7 +1220,7 @@ TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
   constexpr double step = 1e-6;
   const std::vector<double> dz_dy_dtwo = {0.0, 1.0, 2.0, 4.0, 8.0, 16.0};
   const std::vector<double> actual = grad_grad_gpu(dz_dy_dtwo);
-  for (int ii = 0; ii < dy.size(); ++ii) {
+  for (std::size_t ii = 0; ii < dy.size(); ++ii) {
     std::vector<double> plus = dy;
     std::vector<double> minus = dy;
     plus[ii] += step;
