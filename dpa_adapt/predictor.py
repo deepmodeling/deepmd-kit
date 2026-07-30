@@ -131,6 +131,7 @@ class DPAPredictor:
         self._pooling = bundle["pooling"]
         self._condition_manager = bundle.get("condition_manager")
         self._fparam_dim = bundle.get("fparam_dim", 0)
+        self._calibrator = bundle.get("calibrator")
         self.n_committee = n_committee
 
         # Detect estimator type from the final pipeline step.
@@ -265,6 +266,8 @@ class DPAPredictor:
         data: str | list[str],
         fmt: str | None = None,
         return_uncertainty: bool = False,
+        *,
+        calibrated: bool = True,
     ) -> DotDict:
         """
         Run inference on ``data``.
@@ -292,16 +295,66 @@ class DPAPredictor:
         features = self._extract_and_condition(data, fmt)
 
         if return_uncertainty:
-            return self._predict_with_uncertainty(features)
+            result = self._predict_with_uncertainty(features)
+            return self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
 
         if self.n_committee > 1:
             preds = np.array([e.predict(features) for e in self.estimators_])
             preds = preds.reshape(self.n_committee, -1, self._task_dim)
-            return DotDict({"predictions": np.mean(preds, axis=0)})
+            return self._apply_calibrator(
+                DotDict({"predictions": np.mean(preds, axis=0)}),
+                calibrated=calibrated,
+                data=data,
+                fmt=fmt,
+            )
 
         raw = self._predictor.predict(features)
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
-        return DotDict({"predictions": predictions})
+        return self._apply_calibrator(
+            DotDict({"predictions": predictions}),
+            calibrated=calibrated,
+            data=data,
+            fmt=fmt,
+        )
+
+    def _apply_calibrator(
+        self,
+        result: DotDict,
+        *,
+        calibrated: bool,
+        data: str | list[str] | None = None,
+        fmt: str | None = None,
+    ) -> DotDict:
+        if calibrated and self._calibrator is not None:
+            raw_predictions = np.asarray(result.predictions)
+            result["raw_predictions"] = raw_predictions
+            result["predictions"] = self._calibrator.predict_from_arrays(
+                raw_predictions,
+                data=data,
+                fmt=fmt,
+            )
+        return result
+
+    def calibrate(
+        self,
+        data: str | list[str],
+        *,
+        method: str = "ridge",
+        alpha: float = 1.0,
+        features: list[str] | tuple[str, ...] = ("prediction",),
+        fmt: str | None = None,
+    ) -> object:
+        """Fit and attach a post-training prediction calibrator."""
+        from dpa_adapt.calibrator import (
+            Calibrator,
+        )
+
+        calibrator = Calibrator(method=method, alpha=alpha, features=features)
+        calibrator.fit(self, data=data, fmt=fmt)
+        self._calibrator = calibrator
+        return calibrator
 
     def _predict_with_uncertainty(self, features: np.ndarray) -> DotDict:
         """Per-estimator uncertainty dispatch."""
@@ -343,7 +396,13 @@ class DPAPredictor:
             f"with n_committee={self.n_committee}."
         )
 
-    def evaluate(self, data: str | list[str], fmt: str | None = None) -> DotDict:
+    def evaluate(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        *,
+        calibrated: bool = True,
+    ) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -368,7 +427,7 @@ class DPAPredictor:
             _load_labels,
         )
 
-        result = self.predict(data, fmt=fmt)
+        result = self.predict(data, fmt=fmt, calibrated=calibrated)
         predictions = result.predictions
 
         systems = load_data(data, fmt=fmt)

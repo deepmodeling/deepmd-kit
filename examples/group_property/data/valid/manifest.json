@@ -1,0 +1,120 @@
+{
+  "fparam_schema": [
+    {
+      "default": 0.0,
+      "name": "mn_log"
+    },
+    {
+      "default": 0.0,
+      "name": "conc"
+    },
+    {
+      "default": 0.0,
+      "name": "mw_log"
+    },
+    {
+      "default": 0.0,
+      "name": "pH"
+    },
+    {
+      "default": 0.0,
+      "name": "pdi"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:def_type=A"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:mass_characterisation_method=SEC(DMAc)"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:mass_characterisation_standart=PMMA"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:polymer_architecture=linear"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:polymer_type=random"
+    },
+    {
+      "default": 0.0,
+      "name": "cat:polymerisation_type=FRP"
+    }
+  ],
+  "groups": [
+    {
+      "components": [
+        {
+          "block": "rep",
+          "frame": 0,
+          "pool_mask_excluded": [],
+          "weight": 0.8
+        },
+        {
+          "block": "rep",
+          "frame": 1,
+          "pool_mask_excluded": [],
+          "weight": 0.125
+        },
+        {
+          "block": "rep",
+          "frame": 2,
+          "pool_mask_excluded": [],
+          "weight": 0.075
+        },
+        {
+          "block": "end",
+          "frame": 3,
+          "pool_mask_excluded": [],
+          "weight": 0.008963771089468452
+        },
+        {
+          "block": "end",
+          "frame": 4,
+          "pool_mask_excluded": [],
+          "weight": 0.008963771089468452
+        }
+      ],
+      "fparam": {
+        "cat:def_type=A": 0.0,
+        "cat:mass_characterisation_method=SEC(DMAc)": 0.0,
+        "cat:mass_characterisation_standart=PMMA": 0.0,
+        "cat:polymer_architecture=linear": 0.0,
+        "cat:polymer_type=random": 0.0,
+        "cat:polymerisation_type=FRP": 0.0,
+        "conc": 0.0,
+        "mn_log": 3.9367929724142536,
+        "mw_log": 1.378780465918503,
+        "pH": 0.0,
+        "pdi": 0.8666666666666665
+      },
+      "group_id": 0,
+      "key": "row_2",
+      "label": [
+        44.0
+      ],
+      "metadata": {},
+      "system": "systems/row_2"
+    }
+  ],
+  "property_name": "target_property",
+  "schema": "dpa_adapt.assembly.v1",
+  "system_dir": "systems",
+  "tensor_fields": {
+    "fparam": "fparam",
+    "group_id": "group_id",
+    "label": "target_property",
+    "pool_mask": "pool_mask",
+    "weight": "weight"
+  },
+  "type_map": [
+    "C",
+    "O",
+    "N",
+    "H"
+  ]
+}

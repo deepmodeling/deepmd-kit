@@ -25,6 +25,94 @@ The strategy is the core choice. All four share the same pre-trained DPA backbon
 | `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | Maximum accuracy on large datasets                                            |
 | `mft`            | Multi-task co-training (property + force field) | Small / low-data | Mitigating representation collapse                                            |
 
+## Grouped property targets
+
+Most property datasets have one label per structure. Some scientific tasks have
+one label for a **group** of structures instead: for example, an OER catalyst
+label shared by the clean, `O*`, `OH*`, and `OOH*` slabs; or a polymer property
+defined by several repeating-unit and end-group components. DPA-ADAPT supports
+this layout with grouped markers stored in ordinary `deepmd/npy` systems.
+
+Grouped training is enabled automatically when every training and validation
+`set.*` directory contains `group_id.npy`, `weight.npy`, and `pool_mask.npy`.
+The same high-level `DPAFineTuner` API is used; grouped data switches the
+underlying DeePMD fitting net and loss to `group_property`.
+
+```python
+from dpa_adapt import DPAFineTuner, mark_groups
+
+# Existing deepmd/npy data: add grouped markers in place.
+# A common OER layout is "one system directory == one labeled group".
+mark_groups(
+    "oer/dpdata",
+    target="overpotential",
+    group_by="system",
+)
+
+model = DPAFineTuner(
+    pretrained="DPA-3.1-3M",
+    strategy="finetune",
+    property_name="overpotential",
+    task_dim=1,
+    init_branch="SPICE2",
+    max_steps=50_000,
+)
+model.fit(train_data="oer/train/*", valid_data="oer/valid/*")
+```
+
+The grouped marker API is intentionally small:
+
+```python
+mark_groups(
+    data,
+    target="property",
+    group_by="system",  # "system" | "label" | positive integer group size
+    weight=None,  # None writes explicit weight.npy = 1.0
+    overwrite=False,
+    dry_run=False,
+)
+```
+
+- `group_by="system"` assigns all frames in one system to one group.
+- `group_by="label"` groups frames with identical rows in `set.*/<target>.npy`.
+- `group_by=N` groups every consecutive `N` frames.
+- `pool_mask.npy` is always written explicitly. It is derived from
+  `real_atom_types.npy >= 0` when available; otherwise it is an all-one mask.
+- `weight.npy` is always written explicitly. `weight=None` writes `1.0` for
+  every frame; pass `weight=<float>` to set another constant value.
+- For `frozen_head` and `finetune`, every grouped `set.*` directory must contain
+  the complete marker set (`group_id.npy`, `weight.npy`, and `pool_mask.npy`).
+  Partial marker sets are rejected so grouped and ungrouped data cannot be mixed
+  silently.
+
+For converter implementations or tests that already have arrays in memory,
+`Assembly` is the low-level writer:
+
+```python
+from dpa_adapt import Assembly, PoolMask
+
+assembly = Assembly(target="cloud_point")
+group = assembly.group(key="polymer_0", label=32.1, fparam={"mn_log": 4.5})
+group.add(
+    coords=repeat_unit_xyz,
+    symbols=["C", "C", "O"],
+    weight=0.8,
+    pool_mask=PoolMask.all(),
+    role="repeat_unit",
+)
+group.add(
+    coords=end_group_xyz,
+    symbols=["C", "H", "H", "H"],
+    weight=0.2,
+    role="end_group",
+)
+assembly.write("polymer_grouped", overwrite=True)
+```
+
+`Assembly` writes each group as one DeePMD system and stores only the tensors
+needed by training in `set.*/`. Scientific provenance such as roles, source
+paths, and fparam schema is stored in `manifest.json`.
+
 ### frozen_sklearn — CPU-only, scikit-learn predictor
 
 Freezes the DPA backbone as a feature extractor and fits a scikit-learn
@@ -99,6 +187,11 @@ model.fit(train_data="/data/train", valid_data="/data/valid")
 pred = model.predict(data="/data/test")
 metrics = model.evaluate(data="/data/test")  # .mae, .rmse, .r2
 ```
+
+When `train_data` and `valid_data` contain grouped markers, `frozen_head` and
+`finetune` auto-detect grouped mode. `fitting_net_params` still works as an
+override; otherwise grouped fine-tuning uses a GELU activation by default for
+the grouped property head.
 
 | Parameter            | Type             | Default            | Description                                                                           |
 | -------------------- | ---------------- | ------------------ | ------------------------------------------------------------------------------------- |
@@ -183,6 +276,90 @@ metrics = model.evaluate(data="/data/test")  # .mae, .rmse, .r2
 | `downstream_batch_size` | `int` or `None`       | `None`                        | Batch size for downstream head; auto-selected if `None`                                                                                                                                                       |
 | `fitting_net_params`    | `dict` or `None`      | `None`                        | Overrides for the **aux** fitting net; downstream uses property defaults. `None` = auto-read from checkpoint.                                                                                                 |
 
+## Training-time regularizer
+
+`Regularizer` defines extra training-time losses on the current downstream
+training path. It is shared by ordinary property training and grouped property
+training. It does not duplicate MFT: if the regularization signal comes from an
+external auxiliary dataset and an auxiliary head, use `strategy="mft"`.
+
+```python
+from dpa_adapt import DPAFineTuner, Regularizer
+
+model = DPAFineTuner(
+    strategy="finetune",
+    target="cloud_point",
+    regularizer=Regularizer(descriptor_anchor=0.0),
+)
+```
+
+The first API term is `descriptor_anchor`, which will penalize drift between
+the current descriptor and the frozen base descriptor on the same downstream
+structures. Non-zero `descriptor_anchor` is reserved for the descriptor-anchor
+training backend and currently fails loudly instead of silently doing nothing.
+Use MFT today for auxiliary-task regularization.
+
+```text
+MFT:
+  external auxiliary task + auxiliary head
+  regularizes the shared descriptor through aux_data
+
+Regularizer:
+  extra loss on the current downstream training path
+  no auxiliary dataset or auxiliary head
+```
+
+## Post-training calibration
+
+`Calibrator` defines post-training prediction correction. It is fitted after the
+model has already been trained, and it does not participate in backward.
+
+The main user-facing API is `model.calibrate(...)`:
+
+```python
+model.calibrate(
+    data="polymer_grouped/calib",
+    method="ridge",
+    alpha=3.0,
+    features=["prediction", "fparam", "group_stats"],
+)
+
+pred = model.predict("polymer_grouped/test")
+```
+
+Conceptually:
+
+```text
+trained model prediction
+-> calibrator
+-> corrected prediction
+```
+
+Implemented feature sources are:
+
+- `"prediction"`: raw model prediction columns.
+- `"fparam"`: columns from `set.*/fparam.npy`, aligned per frame for ordinary
+  data and per group for grouped data. Grouped calibration requires fparam to be
+  constant within each group.
+- `"group_stats"`: `n_frames`, weight sum/mean/std/min/max, effective sample
+  count, and L2 weight norm from grouped `group_id.npy` and `weight.npy`.
+  Ordinary data uses the one-frame, unit-weight equivalent.
+
+`Calibrator` is useful when the finetuned model has learned a reasonable trend,
+but its absolute scale or OOD boundary behavior is biased. Unlike `Regularizer`,
+it does not change the descriptor or fitting net; it only changes the final
+prediction rule.
+
+Advanced users may construct a reusable calibrator object explicitly:
+
+```python
+from dpa_adapt import Calibrator
+
+calibrator = Calibrator(method="ridge", alpha=3.0, features=["prediction", "fparam", "group_stats"])
+calibrator.fit(model, data="polymer_grouped/calib")
+pred = calibrator.predict(model, data="polymer_grouped/test")
+```
+
 ## Data preparation
 
 DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Python
@@ -244,7 +421,7 @@ dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/
 Lower-level helpers:
 
 ```python
-from dpa_adapt import convert, attach_labels, check_data
+from dpa_adapt import convert, attach_labels, check_data, mark_groups
 
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
 convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
@@ -257,6 +434,9 @@ labels = np.load("labels.npy")  # shape (n_systems,)
 attach_labels("./npy/", head="bandgap", values=labels)
 
 check_data("/data/system")  # → list[Issue]
+
+# Add grouped markers to existing deepmd/npy systems.
+mark_groups("./npy_root", target="overpotential", group_by="system")
 ```
 
 For the full option list and supported dpdata formats, see
@@ -345,6 +525,8 @@ from dpa_adapt import (
     check_data,  # data sanity checks
     attach_labels,  # inject label arrays
     load_dataset,  # label-filtered data loading
+    Regularizer,  # training-time downstream-batch regularizer config
+    Calibrator,  # post-training prediction correction
 )
 ```
 

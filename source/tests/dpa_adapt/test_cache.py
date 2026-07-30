@@ -52,6 +52,43 @@ class TestSystemFingerprint:
         s2 = _make_system(tmp_path, "s2", elements=["Cu", "O"])
         assert _system_fingerprint(s1) != _system_fingerprint(s2)
 
+    def test_different_real_atom_types_different_fp(self, tmp_path):
+        # Grouped systems: type.raw/atom_types is a uniform placeholder, so
+        # coords/atom_types/cells alone are identical across these two
+        # systems -- only set.000/real_atom_types.npy (per-frame, with -1
+        # padding) differs. The fingerprint must still change.
+        _make_system(tmp_path, "s1", natoms=3, nframes=2)
+        _make_system(tmp_path, "s2", natoms=3, nframes=2)
+        # force identical coords/box so only real_atom_types.npy differs
+        coord = np.load(tmp_path / "s1" / "set.000" / "coord.npy")
+        np.save(tmp_path / "s2" / "set.000" / "coord.npy", coord)
+        s1, s2 = load_data(str(tmp_path / "s1"))[0], load_data(str(tmp_path / "s2"))[0]
+        assert _system_fingerprint(s1) == _system_fingerprint(s2)  # sanity
+
+        np.save(
+            tmp_path / "s1" / "set.000" / "real_atom_types.npy",
+            np.array([[0, 1, -1], [0, 1, 2]]),
+        )
+        np.save(
+            tmp_path / "s2" / "set.000" / "real_atom_types.npy",
+            np.array([[0, 1, 2], [0, 1, 2]]),
+        )
+        assert _system_fingerprint(s1) != _system_fingerprint(s2)
+
+    def test_different_pool_mask_different_fp(self, tmp_path):
+        s1 = _make_system(tmp_path, "s1", natoms=3, nframes=2)
+        s2 = _make_system(tmp_path, "s2", natoms=3, nframes=2)
+
+        np.save(
+            tmp_path / "s1" / "set.000" / "pool_mask.npy",
+            np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]]),
+        )
+        np.save(
+            tmp_path / "s2" / "set.000" / "pool_mask.npy",
+            np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]),
+        )
+        assert _system_fingerprint(s1) != _system_fingerprint(s2)
+
 
 class TestFingerprint:
     def test_identical_data_same_fp(self, tmp_path):

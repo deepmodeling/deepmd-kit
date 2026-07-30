@@ -272,3 +272,52 @@ def test_finetune_rule_builder_rejects_multitask_cli_branch():
         assert "Multi-task fine-tuning" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_finetune_rule_builder_single_task_target_auto_picks_multitask_branch():
+    """A single-task target (e.g. GroupPropertyModel) finetuning directly off a
+    multi-task foundation-model checkpoint, with no CLI ``--model-branch`` and
+    no ``finetune_head`` set, must auto-select the checkpoint's only branch and
+    randomly re-initialize the fitting net rather than erroring out.
+    """
+    pretrained = {
+        "model_dict": {
+            "Alex2D": _model_config(["O", "H"], descriptor_sel=[8, 16]),
+        }
+    }
+    target = _model_config(["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[2])
+
+    updated, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    rule = links["Default"]
+    assert rule.get_model_branch() == "Alex2D"
+    assert rule.get_random_fitting()
+    assert updated["descriptor"]["sel"] == [8, 16]
+    # fitting net stays the target's own (freshly-initialized) spec
+    assert updated["fitting_net"]["neuron"] == [2]
+
+
+def test_finetune_rule_builder_single_task_target_picks_first_of_several_branches():
+    """Documents current (non-error) behavior: with several branches and no
+    explicit selection, the builder deterministically takes the first one in
+    insertion order rather than raising an ambiguity error.
+    """
+    pretrained = {
+        "model_dict": {
+            "first": _model_config(["O", "H"], descriptor_sel=[8, 16]),
+            "second": _model_config(["O", "H"], descriptor_sel=[4, 4]),
+        }
+    }
+    target = _model_config(["O", "H"], descriptor_sel=[1, 1])
+
+    _, links = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert links["Default"].get_model_branch() == "first"
