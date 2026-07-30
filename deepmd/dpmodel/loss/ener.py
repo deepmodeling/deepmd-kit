@@ -229,10 +229,10 @@ class EnergyLoss(Loss):
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
             raise RuntimeError(
-                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force."
             )
         if self.use_huber and self.has_h:
-            raise RuntimeError("Huber loss is not implemented for hessian. ")
+            raise RuntimeError("Huber loss is not implemented for hessian.")
 
     def call(
         self,
