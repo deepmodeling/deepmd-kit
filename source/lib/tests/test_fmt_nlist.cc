@@ -444,7 +444,7 @@ TEST(FormatNlistGpu, preserves_exact_capacity_rows) {
     const int nloc = 1;
     const int nall = max_nbor_size + 1;
     const float rcut = 2.0f;
-    const std::vector<int> sec = {0, max_nbor_size};
+    const std::vector<int> sec = {0, max_nbor_size - 1, max_nbor_size};
     std::vector<double> coord(static_cast<size_t>(nall) * 3, 0.0);
     std::vector<int> type(nall, 0);
     std::vector<int> neighbors(max_nbor_size);
@@ -452,6 +452,9 @@ TEST(FormatNlistGpu, preserves_exact_capacity_rows) {
       neighbors[ii] = ii + 1;
       coord[static_cast<size_t>(ii + 1) * 3] = 1.0;
     }
+    // Put the second type boundary in the final occupied slot so the test also
+    // requires fill_nei_iter to process the last valid key.
+    type[max_nbor_size] = 1;
 
     std::vector<int> ilist = {0};
     std::vector<int> numneigh = {max_nbor_size};
