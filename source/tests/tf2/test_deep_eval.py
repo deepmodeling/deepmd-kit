@@ -1,7 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for the TensorFlow 2 SavedModel inference adapter."""
 
+import os
+
 import pytest
+
+if os.environ.get("DP_TEST_TF2_ONLY") != "1":
+    pytest.skip(
+        "TF2 tests require DP_TEST_TF2_ONLY=1",
+        allow_module_level=True,
+    )
 
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
