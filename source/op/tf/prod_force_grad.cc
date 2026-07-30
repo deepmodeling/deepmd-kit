@@ -86,10 +86,10 @@ class ProdForceGradOp : public OpKernel {
         context, (nframes == axis_shape.dim_size(0)),
         deepmd::tf_compat::InvalidArgument("number of frames should match"));
 
-    // natoms is [nloc, nall, ...]. In training nall == nloc, so these two
-    // checks are contract documentation rather than a reachable failure: the
-    // only caller is TF's registered gradient for ProdForce, which never sees
-    // ghosts. They pin the layout grad() is indexed with further down.
+    // natoms is [nloc, nall, ...]. The registered training gradient normally
+    // has nall == nloc, while callers of the public raw op can supply an
+    // extended layout. These checks enforce the layout grad() is indexed with
+    // for both entry points.
     OP_REQUIRES(
         context, (nall >= nloc),
         deepmd::tf_compat::InvalidArgument(
@@ -132,10 +132,10 @@ class ProdForceGradOp : public OpKernel {
     // those upstream gradients distinct: folding ghost indices modulo nloc
     // would differentiate a different output than the forward op produced.
     //
-    // The registered gradient only ever sees the neighbor list that ProdForce
-    // consumed, so an index past nall cannot arise there. This op is public,
-    // though, and j_idx addresses grad() directly below, so bound it once with
-    // a parallel reduction rather than a per-element check on the hot path.
+    // The registered gradient only sees the neighbor list that ProdForce
+    // consumed, but the raw op is public and j_idx addresses grad() directly
+    // below. Bound it once with a parallel reduction rather than a per-element
+    // check on the hot path.
     const int64_t nlist_size = static_cast<int64_t>(nframes) * nloc * nnei;
     int nlist_out_of_range = 0;
 #pragma omp parallel for reduction(| : nlist_out_of_range)
