@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
@@ -756,6 +757,32 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_cpu) {
   }
 }
 
+TEST_F(TestTabulateSeA, empty_neighbors_cpu) {
+  constexpr int empty_nnei = 0;
+  std::vector<double> descriptor(nloc * 4 * last_layer_size, 1.0);
+
+  deepmd::tabulate_fusion_se_a_cpu<double>(
+      descriptor.data(), table.data(), info.data(), nullptr, nullptr, nullptr,
+      nloc, empty_nnei, last_layer_size);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  // First-order outputs all carry the empty neighbor dimension, so null data
+  // pointers are valid and must not be dereferenced.
+  deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+      nullptr, nullptr, nullptr, table.data(), info.data(), nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+
+  std::fill(descriptor.begin(), descriptor.end(), 1.0);
+  deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
+      descriptor.data(), table.data(), info.data(), nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+}
+
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu) {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
@@ -855,6 +882,39 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
   deepmd::delete_device_memory(two_embed_dev);
+}
+
+TEST_F(TestTabulateSeA, empty_neighbors_gpu) {
+  constexpr int empty_nnei = 0;
+  std::vector<double> descriptor(nloc * 4 * last_layer_size, 1.0);
+  double* descriptor_dev = nullptr;
+  deepmd::malloc_device_memory_sync(descriptor_dev, descriptor);
+
+  deepmd::tabulate_fusion_se_a_gpu<double>(descriptor_dev, nullptr, info.data(),
+                                           nullptr, nullptr, nullptr, nloc,
+                                           empty_nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  // First-order outputs are all empty, and the entry point must return before
+  // launching a kernel or touching their null pointers.
+  deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+      nullptr, nullptr, nullptr, nullptr, info.data(), nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+
+  std::fill(descriptor.begin(), descriptor.end(), 1.0);
+  deepmd::memcpy_host_to_device(descriptor_dev, descriptor);
+  deepmd::tabulate_fusion_se_a_grad_grad_gpu<double>(
+      descriptor_dev, nullptr, info.data(), nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  deepmd::delete_device_memory(descriptor_dev);
 }
 
 TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_padding_modes) {
