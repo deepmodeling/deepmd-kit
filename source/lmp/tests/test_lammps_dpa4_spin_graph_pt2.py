@@ -69,6 +69,27 @@ pb_file = (
     / "deeppot_dpa4_spin_graph.pt2"
 )
 data_file = Path(__file__).parent / "data_dpa4_spin_graph_pt2.lmp"
+# Wide-box, 3-way x-split variant for the OWNED-EMPTY-rank MPI corner
+# (``processors 3 1 1``), adapted from ``test_lammps_dpa4_graph_pt2.py``'s
+# ``data_file_empty_rank`` construction to this file's 4-atom spin system
+# (issue #5906 Task 12b) -- with one load-bearing difference.  The DeepSpin
+# phantom path (PR #5485, ``DeepSpinPTExpt.cc``) engages when a rank owns
+# ZERO local atoms but still holds ghosts (``nloc_real == 0 &&
+# nall_real > 0``); a GENUINELY empty rank (zero owned AND zero ghost) is
+# instead rejected by the same collective fail-fast preflight as the energy
+# route (``DeepSpinPTExpt.cc``'s "zero owned+ghost atoms" throw), so the
+# genuinely-empty construction of the energy twin cannot exercise the
+# phantom logic.  This fixture therefore shifts the Ni pair to
+# x ~= 26.8/26.1, within DPA4's ghost cutoff (rcut(4.0)+skin(2.0)=6.0) of
+# the x=30 slab boundary of a [0, 90] box.  With 3 even x-slabs of width
+# 30: rank 0 owns [0, 30) (all 4 atoms), rank 1 ([30, 60)) owns NOTHING but
+# receives ghosts of the two Ni atoms (3.2 and 3.9 from its lower
+# boundary), and rank 2 ([60, 90)) owns nothing but receives periodic
+# ghosts of the x < 6 O atoms (x=3.51 and x=4.27, wrapped around the box's
+# x=90/x=0 seam) -- BOTH atom-less ranks carry ghosts, so both take the
+# phantom path and none trips the genuinely-empty fail-fast.  The shifted
+# coordinates (``coord_empty_rank``) are defined below, after ``coord``.
+data_file_empty_rank = Path(__file__).parent / "data_dpa4_spin_graph_pt2_empty_rank.lmp"
 # The MPI runner is graph-spin-specific (no aparam / no NULL-type
 # extras, unlike run_mpi_pair_deepmd_spin_dpa3_pt2.py's virtual-atom-scheme
 # runner): the native-spin DPA4 fixture takes no fparam/aparam.
@@ -99,6 +120,19 @@ spin = np.array(
     ]
 )
 type_NiO = np.array([1, 1, 2, 2])
+
+# Owned-empty-rank variant of ``coord`` (see the comment above
+# ``data_file_empty_rank``): the two Ni atoms shift to x ~= 26.8/26.1 so
+# rank 1 of the ``processors 3 1 1`` split owns nothing but holds their
+# ghosts; the O atoms stay at x < 6 so rank 2 holds their periodic-seam
+# ghosts.  The Ni-Ni and O-O pair geometries are internally unchanged
+# (rigid x-shift of the Ni pair only), and in the wide [0, 90] box the two
+# pairs sit far beyond rcut(4.0) of each other with or without the shift,
+# so each pair still interacts internally and the system stays
+# non-degenerate for the anti-vacuity checks below.
+_EMPTY_RANK_NI_X_SHIFT = 14.0
+coord_empty_rank = coord.copy()
+coord_empty_rank[:2, 0] += _EMPTY_RANK_NI_X_SHIFT
 
 # LAMMPS's ``fm`` (what ``compute property/atom fmx fmy fmz`` reports) is
 # NOT the raw DeepEval force_mag: pair_deepspin.cpp scales it by
@@ -223,11 +257,16 @@ def setup_module() -> None:
         pytest.skip("deeppot_dpa4_spin_graph.pt2 not found")
     _compute_expected()
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
+    box_empty_rank = np.array([0, 90, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data_spin(
+        box_empty_rank, coord_empty_rank, spin, type_NiO, data_file_empty_rank
+    )
 
 
 def teardown_module() -> None:
-    if data_file.exists():
-        os.remove(data_file)
+    for f in (data_file, data_file_empty_rank):
+        if f.exists():
+            os.remove(f)
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
@@ -478,6 +517,69 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
     """
     single = _run_mpi_subprocess(nprocs=1, processors="1 1 1")
     multi = _run_mpi_subprocess(nprocs=2, processors="2 1 1")
+
+    # anti-vacuity: a degenerate fixture (all-zero forces) would make the
+    # comparison pass for the wrong reason.
+    assert np.abs(multi["rows"][:, :3]).max() > 1e-6, "forces are trivially zero"
+    assert np.abs(multi["rows"][:, 3:6]).max() > 1e-6, "force_mag is trivially zero"
+
+    np.testing.assert_allclose(
+        multi["pe"], single["pe"], rtol=1e-10, atol=1e-10, err_msg="energy"
+    )
+    np.testing.assert_allclose(
+        multi["rows"][:, :3],
+        single["rows"][:, :3],
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force",
+    )
+    np.testing.assert_allclose(
+        multi["rows"][:, 3:6],
+        single["rows"][:, 3:6],
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg="force_mag",
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_mpi_empty_rank_phantom_pads_and_matches() -> None:
+    """A rank that owns ZERO local atoms (but holds ghosts) must SUCCEED
+    through the DeepSpin phantom path -- the first coverage of that path
+    (issue #5906 Task 12b).
+
+    This is the deliberate divergence from the energy route: where
+    ``DeepPotPTExpt`` has no owned-empty special case,
+    ``DeepSpinPTExpt::compute_inner`` phantom-pads the owned-empty rank
+    route-agnostically -- it prepends 2 phantom atoms with an empty nlist
+    row (contributing exactly zero energy/force/virial), because the
+    inductor specialization assumes ``nloc >= 2`` (PR #5485).  A crash,
+    fail-fast exit, or hang here would therefore be a real regression of
+    the phantom logic, not the expected behaviour.  (A GENUINELY empty
+    rank -- zero owned AND zero ghost -- is a different corner: it is
+    rejected by the same collective "zero owned+ghost atoms" preflight as
+    the energy route, because the phantom path requires ``nall_real > 0``;
+    see the fixture comment.)
+
+    ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
+    verified (see the module-level comment above the fixture) to put BOTH
+    non-first ranks in the owned-empty-with-ghosts state; the 1-rank run on
+    the SAME wide-box data file is the same-archive reference.  Energy,
+    conservative force AND magnetic force must all be rank-count invariant
+    at the file's MPI tolerances -- force_mag only exists on this route, so
+    comparing it is what proves the spin leaf survives phantom padding.
+    """
+    single = _run_mpi_subprocess(
+        nprocs=1, processors="1 1 1", data_path=data_file_empty_rank
+    )
+    multi = _run_mpi_subprocess(
+        nprocs=3, processors="3 1 1", data_path=data_file_empty_rank
+    )
 
     # anti-vacuity: a degenerate fixture (all-zero forces) would make the
     # comparison pass for the wrong reason.

@@ -112,6 +112,21 @@ _CLOSE_PAIR_X_SHIFT = 5.3
 coord_close_pair = coord + np.array([_CLOSE_PAIR_X_SHIFT, 0.0, 0.0])
 data_file_close_pair = Path(__file__).parent / "data_dpa4_zbl_close_pair_pt2.lmp"
 
+# Wide-box, 3-way x-split variant for the genuinely-empty-rank MPI corner
+# (``processors 3 1 1``), same construction as
+# ``test_lammps_dpa4_graph_pt2.py``'s ``data_file_empty_rank`` fixture (issue
+# #5906 Task 12b: the ZBL composition must fail-fast exactly like standard
+# DPA4).  The 6 NiO atoms stay at x in [0.4, 3.6] near the left edge of a
+# [0, 90] box.  With 3 even x-slabs of width 30, rank 0 owns [0, 30) (all
+# atoms), rank 2 owns [60, 90) (empty of local atoms but picks up periodic
+# ghosts of the x < 6 atoms wrapped around the box's x=90/x=0 seam, all
+# within DPA4's ghost cutoff rcut(4.0)+skin(2.0)=6.0), and rank 1 (the
+# MIDDLE slab, [30, 60)) borders neither the real atoms directly (nearest
+# real atom at distance 30-3.6 = 26.4 > 6) nor the periodic seam -- so
+# rank 1 is the genuinely empty rank (zero owned AND zero ghost atoms) this
+# fixture is built to produce.
+data_file_empty_rank = Path(__file__).parent / "data_dpa4_zbl_pt2_empty_rank.lmp"
+
 # Reference values, populated by ``_compute_expected`` in ``setup_module``.
 expected_e = None
 expected_ae = None
@@ -204,10 +219,12 @@ def setup_module() -> None:
     _compute_expected()
     write_lmp_data(box, coord, type_NiO, data_file)
     write_lmp_data(box, coord_close_pair, type_NiO, data_file_close_pair)
+    box_empty_rank = np.array([0, 90, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data(box_empty_rank, coord, type_NiO, data_file_empty_rank)
 
 
 def teardown_module() -> None:
-    for f in (data_file, data_file_close_pair):
+    for f in (data_file, data_file_close_pair, data_file_empty_rank):
         if f.exists():
             os.remove(f)
 
@@ -317,12 +334,20 @@ def _run_mpi_subprocess(
     processors: str,
     timeout: float = _MPI_DEFAULT_TIMEOUT,
     data_path: Path | None = None,
+    capture: bool = False,
 ) -> dict:
     """Run the (backend-agnostic) DPA3 MPI runner against the bridged archive
     and return the parsed ``{"pe", "forces", "virials"}`` output.
 
     Always bounded: on expiry the WHOLE mpirun process group is SIGKILLed
     (killing only mpirun can leave orphaned ranks blocking in a collective).
+
+    With ``capture=True`` (mirroring ``test_lammps_dpa4_graph_pt2.py``'s
+    helper), return raw subprocess info (``returncode``, ``stdout``,
+    ``stderr``, ``timed_out``) instead of parsed output -- used by the
+    fail-fast test below; a timeout there returns ``timed_out=True`` with
+    ``returncode=None`` for the caller to assert on, and a nonzero exit is
+    returned rather than raised.
     """
     if data_path is None:
         data_path = data_file
@@ -349,12 +374,26 @@ def _run_mpi_subprocess(
         except sp.TimeoutExpired:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             stdout, stderr = proc.communicate()
+            if capture:
+                return {
+                    "returncode": None,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                    "timed_out": True,
+                }
             raise RuntimeError(
                 f"mpirun timed out after {timeout}s (process group killed); "
                 "a should-succeed MPI regression is deadlocked.\n"
                 f"stdout:\n{(stdout or '')[-2000:]}\n"
                 f"stderr:\n{(stderr or '')[-2000:]}"
             ) from None
+        if capture:
+            return {
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "timed_out": False,
+            }
         if proc.returncode != 0:
             raise RuntimeError(
                 f"mpirun exited {proc.returncode}.\n"
@@ -409,3 +448,58 @@ def test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity() -> None:
     # relative component absorbs CUDA atomic-scatter ordering noise without
     # loosening the CPU-exact case.
     np.testing.assert_allclose(par["virials"], ref["virials"], atol=1e-8, rtol=1e-8)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa4_zbl_empty_rank_does_not_silently_succeed() -> None:
+    """A genuinely empty rank (zero owned AND zero ghost atoms) under the
+    message-passing with-comm graph route must NOT silently produce
+    wrong-but-plausible numbers -- for the ZBL COMPOSITION exactly as for
+    standard DPA4 (issue #5906 Task 12b: variant/standard alignment).
+
+    The bridged archive routes through the SAME model-agnostic C++ guard as
+    the plain-DPA4 twin (``test_lammps_dpa4_graph_pt2.py``'s
+    ``test_pair_deepmd_mpi_dpa4_graph_empty_rank_does_not_silently_succeed``,
+    which documents the mechanism in full): every rank preflights a
+    communicator-wide min-reduction of its node count
+    (``deepmd_export::allreduce_min_int``) BEFORE entering the per-layer
+    ``border_op`` collectives, so the non-empty peers detect the empty rank
+    and throw the documented error instead of blocking forever.  A timeout
+    is therefore a FAILURE of this test, and the documented error message
+    must appear on a nonzero exit.  What this pins for the composition
+    specifically: the linear/ZBL wrapping must not swallow or bypass the
+    guard on its way into the graph forward.
+
+    ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
+    verified (see the module-level comment above the fixture) to put the
+    MIDDLE rank in a genuinely empty state, using DPA4's own ghost cutoff
+    (rcut(4.0)+skin(2.0)=6.0).
+    """
+    out = _run_mpi_subprocess(
+        nprocs=3,
+        processors="3 1 1",
+        data_path=data_file_empty_rank,
+        capture=True,
+        timeout=120,
+    )
+    assert not out["timed_out"], (
+        "Multi-rank ZBL-bridged graph run with an empty rank timed out "
+        "instead of failing promptly: the collective empty-rank preflight "
+        "(allreduce_min_int) must make every rank throw BEFORE the "
+        "per-layer border_op collectives."
+    )
+    assert out["returncode"] != 0, (
+        "Expected the multi-rank message-passing ZBL-bridged run to fail "
+        "loudly on a genuinely empty rank, but it exited 0.\n"
+        f"stdout:\n{out['stdout'][-2000:]}\nstderr:\n{out['stderr'][-2000:]}"
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "zero owned+ghost atoms" in combined, (
+        "Expected the documented fail-loud message ('zero owned+ghost "
+        f"atoms'), got:\n{combined[-2000:]}"
+    )
