@@ -164,8 +164,10 @@ class MapFltNvnmdOp : public OpKernel {
       // cal idx and xx
       xx = xi - x0;
       id = floor(xx / dx);
-      if (id < 0) {
-        // Below the table: evaluate at the left edge of the first interval.
+      // Written as !(id >= 0) so NaN also lands on a valid table edge rather
+      // than reaching the undefined integer conversion below.
+      if (!(id >= FPTYPE(0))) {
+        // Below the table: evaluate at the left edge of the selected interval.
         id = 0;
         xx = FPTYPE(0);
       } else if (id >= dN) {

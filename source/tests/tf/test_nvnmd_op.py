@@ -451,7 +451,7 @@ class TestOpMapFltNvnmd(tf.test.TestCase):
 
         warm_x = np.tile([[0.25], [1.25]], (sample_count // 2, 1))
         test_x = np.full((sample_count, 1), 0.25)
-        test_x[:5, 0] = [-1.0, 0.25, 1.25, 2.0, 3.0]
+        test_x[:6, 0] = [np.nan, -1.0, 0.25, 1.25, 2.0, 3.0]
         with self.cached_session() as sess:
             # Reuse a nonzero, same-sized allocation so a skipped write cannot
             # pass merely because fresh pages happen to be zero.
@@ -460,9 +460,10 @@ class TestOpMapFltNvnmd(tf.test.TestCase):
                 [mapped, gradient], feed_dict={x: test_x}
             )
 
-        # -1 clamps to row 0, 2.0 and 3.0 clamp to row 1; nothing maps to zero.
+        # NaN and -1 clamp to row 0, while 2.0 and 3.0 clamp to row 1.
         expected = np.tile([[[10.0, 11.0]]], (sample_count, 1, 1))
-        expected[:5, 0] = [
+        expected[:6, 0] = [
+            [10.0, 11.0],
             [10.0, 11.0],
             [10.0, 11.0],
             [20.0, 21.0],
@@ -470,7 +471,7 @@ class TestOpMapFltNvnmd(tf.test.TestCase):
             [20.0, 21.0],
         ]
         expected_gradient = np.full((sample_count, 1), 3.0)
-        expected_gradient[:5, 0] = [3.0, 3.0, 7.0, 7.0, 7.0]
+        expected_gradient[:6, 0] = [3.0, 3.0, 3.0, 7.0, 7.0, 7.0]
 
         np.testing.assert_array_equal(actual, expected)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
