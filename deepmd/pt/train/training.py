@@ -31,11 +31,10 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.train import (
     change_model_out_bias,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
-    resolve_model_prob,
-    resolve_model_prob_from_epochs,
 )
 from deepmd.loggers.training import (
     format_training_message,
@@ -110,9 +109,8 @@ from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
-    _collate_lmdb_batch,
-    _SameNlocBatchSamplerTorch,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -217,16 +215,12 @@ class Trainer:
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
-        self.model_prob = None
         self.stat_file_specs = stat_file_specs_by_task(
             stat_file_spec,
             self.model_keys,
         )
 
         # Iteration config
-        self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("numb_epoch")
-        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
@@ -299,15 +293,15 @@ class Trainer:
             _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
-            DataLoader,
+            DataLoader | LmdbBatchDataLoader,
             Generator[Any, None, None],
-            DataLoader | None,
+            DataLoader | LmdbBatchDataLoader | None,
             Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
-            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+            ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
                 if _data.mixed_batch:
                     # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
                     # RandomSampler(replacement=False) + padding collate_fn.
@@ -350,13 +344,10 @@ class Trainer:
                         block_targets=_block_targets,
                     )
 
-                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
-                _dataloader = DataLoader(
+                _dataloader = LmdbBatchDataLoader(
                     _data,
-                    batch_sampler=_batch_sampler,
-                    num_workers=0,
-                    collate_fn=_collate_lmdb_batch,
-                    pin_memory=(DEVICE != "cpu"),
+                    _inner_sampler,
+                    pin_memory=DEVICE.type != "cpu",
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
@@ -671,91 +662,36 @@ class Trainer:
                     )
 
         # Resolve training steps
-        per_task_total = []
-        if not self.multi_task:
-            if self.num_steps is None:
-                if self.num_epoch is None:
-                    raise ValueError(
-                        "Either training.numb_steps or training.num_epoch must be set."
-                    )
-                if self.num_epoch <= 0:
-                    raise ValueError("training.num_epoch must be positive.")
-                if isinstance(training_data, LmdbDataset):
-                    total_numb_batch = len(self.training_dataloader)
-                else:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader.sampler.weights
-                    )
-                    total_numb_batch = compute_total_numb_batch(
-                        training_data.index,
-                        sampler_weights,
-                    )
-                # Sampler weights carry tiny per-rank floating-point noise, so
-                # the rounded batch count can differ by one unit across ranks.
-                # Pin it to rank 0 before deriving num_steps so every rank
-                # shares the same training and full-validation schedule.
-                total_numb_batch = self._broadcast_value_from_rank0(total_numb_batch)
-                if total_numb_batch <= 0:
-                    raise ValueError(
-                        "Total number of training batches must be positive."
-                    )
-                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
-                log.info(
-                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
-                    self.num_steps,
-                    self.num_epoch,
-                    total_numb_batch,
-                )
-        else:
-            if self.num_epoch_dict:
-                if self.num_steps is not None:
-                    raise ValueError(
-                        "training.numb_steps and training.num_epoch_dict "
-                        "are mutually exclusive."
-                    )
-                for model_key in self.model_keys:
-                    if isinstance(training_data[model_key], LmdbDataset):
-                        per_task_total.append(len(self.training_dataloader[model_key]))
-                    else:
-                        sampler_weights = to_numpy_array(
-                            self.training_dataloader[model_key].sampler.weights
-                        )
-                        per_task_total.append(
-                            compute_total_numb_batch(
-                                training_data[model_key].index,
-                                sampler_weights,
-                            )
-                        )
-                per_task_total = self._broadcast_value_from_rank0(per_task_total)
-                (
-                    self.model_prob,
-                    self.num_steps,
-                    per_task_steps,
-                ) = resolve_model_prob_from_epochs(
-                    self.model_keys,
-                    self.num_epoch_dict,
-                    np.asarray(per_task_total, dtype=np.float64),
-                )
-                log.info(
-                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
-                    "with per-task target steps: %s.",
-                    self.model_prob,
-                    self.num_steps,
-                    self.num_epoch_dict,
-                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
-                )
-            else:
-                if self.num_steps is None:
-                    raise ValueError(
-                        "Either training.numb_steps (multi-task only) or "
-                        "training.num_epoch_dict must be set."
-                    )
-                self.model_prob = resolve_model_prob(
-                    self.model_keys,
-                    training_params.get("model_prob"),
-                    training_data,
-                    rank=self.rank,
-                )
+        def epoch_length(model_key: str) -> int:
+            """Return the batches this rank consumes in one epoch of a task."""
+            _data = training_data[model_key] if self.multi_task else training_data
+            _dataloader = (
+                self.training_dataloader[model_key]
+                if self.multi_task
+                else self.training_dataloader
+            )
+            if isinstance(_data, LmdbDataset):
+                return len(_dataloader)
+            return compute_total_numb_batch(
+                _data.index,
+                to_numpy_array(_dataloader.sampler.weights),
+            )
+
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=(
+                training_data
+                if self.multi_task
+                else {self.model_keys[0]: training_data}
+            ),
+            epoch_length=epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
 
         # === Derive checkpoint retention from ckpt_keep_ratio ===
         # num_steps is final here (including when derived from num_epoch), so the
@@ -1462,6 +1398,14 @@ class Trainer:
             self.optimizer.load_state_dict(optimizer_state_dict)
 
     def run(self) -> None:
+        """Run training and release asynchronous data pipelines."""
+        try:
+            self._run()
+        finally:
+            self._close_lmdb_loaders()
+
+    def _run(self) -> None:
+        """Execute the PyTorch optimization loop."""
         fout = (
             open(
                 self.disp_file,
@@ -2090,6 +2034,24 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
+
+    def _close_lmdb_loaders(self) -> None:
+        """Release LMDB pipelines owned by training and validation loaders."""
+        closed: set[int] = set()
+        datasets: dict[int, LmdbDataset] = {}
+        for loaders in (self.training_dataloader, self.validation_dataloader):
+            values = loaders.values() if isinstance(loaders, dict) else (loaders,)
+            for loader in values:
+                if loader is None or id(loader) in closed:
+                    continue
+                closed.add(id(loader))
+                close = getattr(loader, "close", None)
+                if close is not None:
+                    close()
+                if isinstance(loader, LmdbBatchDataLoader):
+                    datasets[id(loader.dataset)] = loader.dataset
+        for dataset in datasets.values():
+            dataset.close()
 
     def _collect_checkpoint_states(
         self,
