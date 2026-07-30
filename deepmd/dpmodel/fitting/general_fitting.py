@@ -35,9 +35,6 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.dpmodel.utils.stat import (
-    _require_stat_file_items,
-)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -50,6 +47,9 @@ from deepmd.utils.finetune import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.stat_file import (
+    load_required_items,
 )
 
 from .base_fitting import (
@@ -264,14 +264,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             return
         # stat fparam
         if self.numb_fparam > 0:
-            _require_stat_file_items(stat_file_path, ["fparam"])
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "fparam").is_file()
-            ):
-                fparam_stats = self._load_param_stats_from_file(
-                    stat_file_path, "fparam", self.numb_fparam
+            cached = load_required_items(stat_file_path, ["fparam"])
+            if cached is not None:
+                fparam_stats = self._load_param_stats(
+                    cached["fparam"], "fparam", self.numb_fparam
                 )
             else:
                 sampled = merged() if callable(merged) else merged
@@ -323,14 +319,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         # stat aparam
         if self.numb_aparam > 0:
-            _require_stat_file_items(stat_file_path, ["aparam"])
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "aparam").is_file()
-            ):
-                aparam_stats = self._load_param_stats_from_file(
-                    stat_file_path, "aparam", self.numb_aparam
+            cached = load_required_items(stat_file_path, ["aparam"])
+            if cached is not None:
+                aparam_stats = self._load_param_stats(
+                    cached["aparam"], "aparam", self.numb_aparam
                 )
             else:
                 sampled = merged() if callable(merged) else merged
@@ -402,14 +394,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         fp.save_numpy(arr)
 
     @staticmethod
-    def _load_param_stats_from_file(
-        stat_file_path: DPPath,
+    def _load_param_stats(
+        arr: np.ndarray,
         name: str,
         numb: int,
     ) -> list[StatItem]:
-        fp = stat_file_path / name
-        arr = fp.load_numpy()
-        assert arr.shape == (numb, 3)
+        if arr.shape != (numb, 3):
+            raise ValueError(
+                f"Invalid {name} statistics shape {arr.shape}; expected ({numb}, 3)."
+            )
         return [
             StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
             for ii in range(numb)
