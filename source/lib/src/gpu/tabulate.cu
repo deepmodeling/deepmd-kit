@@ -670,30 +670,38 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
   __syncthreads();
 
   for (int ii = 0; ii < nnei_i; ii++) {
-    for (int jj = warp_idx; jj < nnei_j; jj += KTILE) {
-      FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE tmp = xx;
-      int table_idx = 0;
-      FPTYPE extrapolate_delta = (FPTYPE)0.;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
-                     extrapolate_delta);
+    // GpuSyncThreads is block-wide on ROCm, so every wavefront must execute
+    // the same number of tile iterations even when the last tile is partial.
+    for (int tile = 0; tile < nnei_j; tile += KTILE) {
+      const int jj = tile + warp_idx;
+      const bool active = jj < nnei_j;
       FPTYPE sum = (FPTYPE)0.;
       FPTYPE Csub = (FPTYPE)0.;
-      for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
-        FPTYPE var[6];
-        load_polynomial_params(var, table, table_idx, kk, last_layer_size);
-        FPTYPE res_grad = polynomial5_grad(var, xx);
-        FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
+      if (active) {
+        FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
+        FPTYPE tmp = xx;
+        int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
+        locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                       extrapolate_delta);
+        for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
+          FPTYPE var[6];
+          load_polynomial_params(var, table, table_idx, kk, last_layer_size);
+          FPTYPE res_grad = polynomial5_grad(var, xx);
+          FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
-        sum += iteratorA[kk] * res;
-        Csub += iteratorA[kk] * tmp * res_grad;
+          sum += iteratorA[kk] * res;
+          Csub += iteratorA[kk] * tmp * res_grad;
+        }
       }
       GpuSyncThreads();
-      warp_reduce(sum);
-      warp_reduce(Csub);
-      if (lane_idx == 0) {
-        dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
-        dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+      if (active) {
+        warp_reduce(sum);
+        warp_reduce(Csub);
+        if (lane_idx == 0) {
+          dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
+          dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+        }
       }
     }
   }
@@ -975,27 +983,32 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
   int lane_idx = thread_idx % WARP_SIZE;
   __syncthreads();
-  for (int ii = warp_idx; ii < nnei; ii += KTILE) {
-    FPTYPE xx = em[block_idx * nnei + ii];
-
-    int table_idx = 0;
+  // Keep all wavefronts on uniform control flow around the ROCm block barrier.
+  for (int tile = 0; tile < nnei; tile += KTILE) {
+    const int ii = tile + warp_idx;
+    const bool active = ii < nnei;
     FPTYPE Csub = (FPTYPE)0.;
-    FPTYPE extrapolate_delta = (FPTYPE)0.;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
-                   extrapolate_delta);
+    if (active) {
+      FPTYPE xx = em[block_idx * nnei + ii];
+      int table_idx = 0;
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                     extrapolate_delta);
 
-    FPTYPE var[6];
-    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
-      load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      Csub +=
-          polynomial5_grad(var, xx) *
-          dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      FPTYPE var[6];
+      for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+        load_polynomial_params(var, table, table_idx, jj, last_layer_size);
+        Csub +=
+            polynomial5_grad(var, xx) *
+            dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      }
     }
     GpuSyncThreads();
-
-    warp_reduce(Csub);
-    if (lane_idx == 0) {
-      dy_dem[block_idx * nnei + ii] = Csub;
+    if (active) {
+      warp_reduce(Csub);
+      if (lane_idx == 0) {
+        dy_dem[block_idx * nnei + ii] = Csub;
+      }
     }
   }
 }
