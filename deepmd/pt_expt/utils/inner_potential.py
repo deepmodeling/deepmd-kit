@@ -5,8 +5,8 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.atomic_model.inter_potential import (
-    InterPotential as InterPotentialDP,
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotential as InnerPotentialDP,
 )
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
@@ -15,16 +15,16 @@ from deepmd.pt_expt.common import (
 
 
 @torch_module
-class InterPotential(InterPotentialDP):
+class InnerPotential(InnerPotentialDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
 
 
-# InterPotential carries no trainable state (only the constant per-type
+# InnerPotential carries no trainable state (only the constant per-type
 # atomic-number table, derived from the constructor arguments), so it
 # implements no serialize()/deserialize(); rebuild it fresh from
 # (type_map, mode).
 register_dpmodel_mapping(
-    InterPotentialDP,
-    lambda v: InterPotential(type_map=v.type_map, mode=v.mode),
+    InnerPotentialDP,
+    lambda v: InnerPotential(type_map=v.type_map, mode=v.mode),
 )
