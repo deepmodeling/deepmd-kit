@@ -149,6 +149,23 @@ def test_promoted_parameters_release_public_tensor_shadows() -> None:
             assert name not in raw_attrs
 
 
+def test_promoted_optional_parameter_lists_accept_none() -> None:
+    """Disabled optional parameter lists retain their None sentinel."""
+    descriptor = _make_trainable_descriptor()
+    promoted_lists = []
+    for module in _iter_object_tree(descriptor):
+        for name in getattr(module, "_tf2_array_variable_list_attrs", ()):
+            promoted_lists.append((module, name))
+
+    assert promoted_lists
+    for module, name in promoted_lists:
+        setattr(module, name, None)
+        assert getattr(module, name) is None
+        storage_name = module._tf2_array_variable_list_storage_name(name)
+        assert object.__getattribute__(module, storage_name) is None
+        assert name not in object.__getattribute__(module, "__dict__")
+
+
 def test_random_gamma_fails_fast_until_graph_safe_rng_is_supported() -> None:
     """TF2 must not silently disable the default random-roll augmentation."""
     with pytest.raises(NotImplementedError, match="random_gamma"):

@@ -300,6 +300,10 @@ def tf2_module(module: type[T]) -> type[T]:
             trainable_by_name = object.__getattribute__(self, "__dict__").get(
                 "_tf2_array_variable_list_trainable", {}
             )
+            if value is None:
+                tf.Module.__setattr__(self, storage_name, None)
+                object.__getattribute__(self, "__dict__").pop(name, None)
+                return
             variables = []
             for idx, item in enumerate(value):
                 tensor = to_tf_tensor(item)
@@ -408,7 +412,11 @@ def tf2_module(module: type[T]) -> type[T]:
                         "_tf2_array_variable_list_storage_name",
                     )(name)
                     variables = object.__getattribute__(self, storage_name)
-                    return [to_tensorflow_array(var) for var in variables]
+                    return (
+                        None
+                        if variables is None
+                        else [to_tensorflow_array(var) for var in variables]
+                    )
             return super().__getattribute__(name)
 
         def __setattr__(self, name: str, value: Any) -> None:
