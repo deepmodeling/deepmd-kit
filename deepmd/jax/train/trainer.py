@@ -9,6 +9,7 @@ import platform
 import shutil
 import time
 from collections.abc import (
+    Callable,
     Mapping,
 )
 from copy import (
@@ -104,6 +105,12 @@ from deepmd.utils.finetune import (
 from deepmd.utils.model_stat import (
     make_stat_input,
 )
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
+)
 
 log = logging.getLogger(__name__)
 
@@ -154,6 +161,21 @@ class DPTrainer(AbstractTrainer):
             else [DEFAULT_TASK_KEY]
         )
         self.model_params_by_task = self._model_params_by_task(self.model_def_script)
+        stat_file_specs = {}
+        for model_key in self.model_keys:
+            task_training = (
+                self.training_param["data_dict"][model_key]
+                if self.multi_task
+                else self.training_param
+            )
+            stat_file_specs[model_key] = StatFileSpec(
+                task_training.get("stat_file"),
+                task_training.get("stat_file_mode", "update"),
+            )
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_specs,
+            self.model_keys,
+        )
 
         if init_model is not None or restart is not None:
             checkpoint_path = init_model if init_model is not None else restart
@@ -468,6 +490,8 @@ class DPTrainer(AbstractTrainer):
                 self.model_params_by_task[model_key].get("data_stat_nbatch", 10),
             )
 
+        synchronize_model_state = False
+        merge_shared_statistics = False
         if self.init_model is None and self.restart is None:
             for model_key in self.model_keys:
                 finetune_has_new_type = (
@@ -477,17 +501,23 @@ class DPTrainer(AbstractTrainer):
                     and self.finetune_links[model_key].get_has_new_type()
                 )
                 if self.finetune_model is None or finetune_has_new_type:
-                    self.models[model_key].atomic_model.compute_or_load_stat(
-                        self._sample_funcs[model_key]
+                    self._run_on_chief(
+                        lambda _model_key=model_key: self._initialize_stat(_model_key),
+                        operation=f"statistics initialization for task {model_key!r}",
                     )
+                    synchronize_model_state = True
+                    merge_shared_statistics = True
 
         if self.finetune_model is not None:
-            self._apply_finetune()
+            self._run_on_chief(
+                self._apply_finetune,
+                operation="fine-tuning initialization",
+            )
+            synchronize_model_state = True
 
-        self._share_model_params(
-            resume=self.init_model is not None
-            or self.restart is not None
-            or self.finetune_model is not None
+        self._synchronize_initial_model_state(
+            state_changed=synchronize_model_state,
+            merge_shared_statistics=merge_shared_statistics,
         )
 
         for model_key in self.model_keys:
@@ -573,6 +603,83 @@ class DPTrainer(AbstractTrainer):
                 self._sample_funcs[model_key],
                 bias_adjust_mode=bias_mode,
             )
+
+    def _initialize_stat(self, model_key: str) -> None:
+        """Initialize one model from its scoped statistics cache."""
+        with open_stat_file(
+            self.stat_file_specs[model_key],
+        ) as stat_file_path:
+            self.models[model_key].atomic_model.compute_or_load_stat(
+                self._sample_funcs[model_key],
+                stat_file_path=stat_file_path,
+            )
+
+    def _run_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run one statistics action on rank 0 and propagate failure status."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.rank_context.world_size > 1:
+            from jax.experimental import (
+                multihost_utils,
+            )
+
+            def broadcast_failure(failed: bool) -> bool:
+                return bool(
+                    np.asarray(
+                        multihost_utils.broadcast_one_to_all(
+                            np.asarray(failed, dtype=np.bool_),
+                            is_source=self.rank_context.is_chief,
+                        )
+                    ).item()
+                )
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank_context.is_chief,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
+
+    def _broadcast_model_states(self) -> None:
+        """Broadcast complete model states from rank 0 to every JAX process."""
+        if self.rank_context.world_size <= 1:
+            return
+        from jax.experimental import (
+            multihost_utils,
+        )
+
+        for model_key in self.model_keys:
+            _, state = nnx.split(self.models[model_key])
+            state = multihost_utils.broadcast_one_to_all(
+                state.to_pure_dict(),
+                is_source=self.rank_context.is_chief,
+            )
+            nnx.update(self.models[model_key], state)
+
+    def _synchronize_initial_model_state(
+        self,
+        *,
+        state_changed: bool,
+        merge_shared_statistics: bool,
+    ) -> None:
+        """Merge, broadcast, and bind initial multi-task model state."""
+        has_shared_parameters = self.multi_task and bool(self.shared_links)
+        if has_shared_parameters and merge_shared_statistics:
+            self._run_on_chief(
+                lambda: self._share_model_params(resume=False),
+                operation="shared statistics merge",
+            )
+            state_changed = True
+        if state_changed:
+            self._broadcast_model_states()
+        if has_shared_parameters:
+            self._share_model_params(resume=True)
 
     def _share_model_params(self, *, resume: bool = False) -> None:
         """Apply multi-task shared_dict links to JAX model branches."""
@@ -808,19 +915,7 @@ class DPTrainer(AbstractTrainer):
                 self.model_keys,
                 bias_adjust_mode="change-by-statistic",
             )
-        if self.rank_context.world_size <= 1:
-            return
-        from jax.experimental import (
-            multihost_utils,
-        )
-
-        for model_key in self.model_keys:
-            _, state = nnx.split(self.models[model_key])
-            state = multihost_utils.broadcast_one_to_all(
-                state.to_pure_dict(),
-                is_source=self.rank_context.is_chief,
-            )
-            nnx.update(self.models[model_key], state)
+        self._broadcast_model_states()
 
     def run_full_validation(
         self,
