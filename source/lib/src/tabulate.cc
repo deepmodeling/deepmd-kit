@@ -302,11 +302,12 @@ void tabulate_fusion_se_a_grad_cpu_impl(FPTYPE* dy_dem_x,
             dy_dem[em_base + mm] += res * rr[mm] * (nnei - jj);
           }
           if (enable_se_atten) {
-            // fill from jj to nnei
-            for (int jj2 = jj; jj2 < nnei; jj2++) {
-              dy_dtwo[ii * nnei * last_layer_size + jj2 * last_layer_size +
-                      kk] += resold * dotllrr;
-            }
+            // Forward folds the complete padding tail using only this first
+            // sentinel's two-embedding value. Its gradient therefore owns the
+            // full repeat count; later padding entries remain independent of
+            // the folded output and retain the zero initialized above.
+            dy_dtwo[ii * nnei * last_layer_size + jj * last_layer_size + kk] +=
+                (nnei - jj) * resold * dotllrr;
           }
         } else {
           grad += g * dotllrr;
@@ -385,8 +386,9 @@ void tabulate_fusion_se_a_grad_grad_cpu_impl(FPTYPE* dz_dy,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          // dz_dy_dtwo * var * ll
-          // var above should be used instead of var + var * t below
+          // For sorted padding, only the first sentinel has a nonzero
+          // two-embedding gradient. The repeat factor below applies its full
+          // tail multiplicity to this cotangent.
           two_grad = dz_dy_dtwo[ii * nnei * last_layer_size +
                                 jj * last_layer_size + kk] *
                      var;

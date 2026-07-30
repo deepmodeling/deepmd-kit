@@ -657,6 +657,10 @@ class TabulateFusionSeAGradOp
     torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
     torch::Tensor dy_dtwo_tensor = at::Tensor();
     // compute
+    // The non-attention se_a path invokes this op per type-pair block, so
+    // exclusions cannot interleave zero rows. Compressed forward_lower also
+    // requests a sorted nlist through the Python-side
+    // DescrptBlockSeA.need_sorted_nlist_for_lower() contract.
     TabulateFusionSeAGradForward<FPTYPE>(
         table_tensor, table_info_tensor, em_x_tensor, em_tensor, at::Tensor(),
         dy_tensor, descriptor_tensor, true, dy_dem_x_tensor, dy_dem_tensor,
@@ -799,6 +803,8 @@ class TabulateFusionSeAOp
     torch::Tensor descriptor_tensor = torch::empty(
         {em_tensor.size(0), em_tensor.size(2), last_layer_size}, options);
     // compute
+    // Keep the sorted fold enabled: exclusions are uniform within each se_a
+    // type-pair invocation, and compressed forward_lower sorts its nlist first.
     TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
                                      em_x_tensor, em_tensor, at::Tensor(),
                                      last_layer_size, true, descriptor_tensor);

@@ -10,6 +10,10 @@ import functools
 import logging
 import os
 import time
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from copy import (
     deepcopy,
 )
@@ -34,6 +38,7 @@ from deepmd.dpmodel.train import (
     TrainStepResult,
     change_model_out_bias,
     change_model_out_bias_by_task,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -41,6 +46,9 @@ from deepmd.dpmodel.utils.batch import (
 )
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
+)
+from deepmd.dpmodel.utils.training_utils import (
+    compute_total_numb_batch,
 )
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
@@ -87,8 +95,11 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -1316,8 +1327,8 @@ class Trainer(AbstractTrainer):
         Full training configuration.
     training_data : DeepmdDataSystem or dict
         Training data.  Dict of ``{model_key: DeepmdDataSystem}`` for multi-task.
-    stat_file_path : DPPath or dict or None
-        Path for saving / loading statistics.
+    stat_file_spec : StatFileSpec or dict or None
+        Unopened statistics-cache configuration.
     validation_data : DeepmdDataSystem or dict or None
         Validation data.
     init_model : str or None
@@ -1332,7 +1343,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | dict,
-        stat_file_path: DPPath | dict | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem | dict | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -1378,10 +1389,9 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         # Distributed training detection
@@ -1390,7 +1400,6 @@ class Trainer(AbstractTrainer):
         self.world_size = dist.get_world_size() if self.is_distributed else 1
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
@@ -1476,7 +1485,6 @@ class Trainer(AbstractTrainer):
         for model_key in self.model_keys:
             _nbatch = self.model_params_by_task[model_key].get("data_stat_nbatch", 10)
             _data = self.training_data_by_task[model_key]
-            _stat_path = self.stat_file_path_by_task[model_key]
 
             @functools.lru_cache
             def _make_sample(
@@ -1494,28 +1502,39 @@ class Trainer(AbstractTrainer):
             )
             if _finetune_has_new_type:
                 self._finetune_update_stat = True
-            if (not resuming or _finetune_has_new_type) and self.rank == 0:
-                self.models[model_key].compute_or_load_stat(
-                    sampled_func=_make_sample,
-                    stat_file_path=_stat_path,
+            if not resuming or _finetune_has_new_type:
+
+                def initialize_statistics(
+                    _model_key: str = model_key,
+                    _sample_func: Callable[[], list[dict[str, np.ndarray]]] = (
+                        _make_sample
+                    ),
+                ) -> None:
+                    with open_stat_file(
+                        self.stat_file_specs[_model_key]
+                    ) as stat_file_path:
+                        self.models[_model_key].compute_or_load_stat(
+                            sampled_func=_sample_func,
+                            stat_file_path=stat_file_path,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation=f"statistics initialization for task {model_key!r}",
                 )
-        if self.is_distributed:
-            for model_key in self.model_keys:
-                self._broadcast_model_stat(self.models[model_key])
 
-        # Model probability (multi-task) --------------------------------------
-        if self.multi_task:
-            from deepmd.dpmodel.utils.training_utils import (
-                resolve_model_prob,
-            )
-
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                training_params.get("model_prob"),
-                self.training_data_by_task,
-            )
-        else:
-            self.model_prob = None
+        # Training schedule ---------------------------------------------------
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=self.training_data_by_task,
+            epoch_length=self._epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
 
         # Learning rate -------------------------------------------------------
         self.lr_schedule = make_learning_rate_schedule(
@@ -1531,6 +1550,7 @@ class Trainer(AbstractTrainer):
 
         # Shared params (multi-task) ------------------------------------------
         self._shared_links = shared_links
+        synchronize_model_state = not resuming or self._finetune_update_stat
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -1542,13 +1562,31 @@ class Trainer(AbstractTrainer):
                 raise ValueError(
                     "Model key 'data_stat_protect' must be the same in each branch when multitask!"
                 )
-            self.wrapper.share_params(
-                shared_links,
-                resume=(resuming and not self._finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(
+            share_kwargs = {
+                "model_key_prob_map": dict(
                     zip(self.model_keys, self.model_prob, strict=True)
                 ),
-                data_stat_protect=_data_stat_protect[0],
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if synchronize_model_state:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
+
+        if synchronize_model_state and self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+
+        if shared_links is not None:
+            self.wrapper.share_params(
+                shared_links,
+                resume=True,
+                **share_kwargs,
             )
 
         # DDP wrapping --------------------------------------------------------
@@ -1755,12 +1793,21 @@ class Trainer(AbstractTrainer):
                         if not finetune_rule.get_random_fitting()
                         else "set-by-statistic"
                     )
-                    if self.rank == 0:
-                        self.models[model_key] = model_change_out_bias(
-                            self.models[model_key],
-                            self._sample_funcs[model_key],
-                            _bias_adjust_mode=bias_mode,
+
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _bias_mode: str = bias_mode,
+                    ) -> None:
+                        self.models[_model_key] = model_change_out_bias(
+                            self.models[_model_key],
+                            self._sample_funcs[_model_key],
+                            _bias_adjust_mode=_bias_mode,
                         )
+
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
                     if self.is_distributed:
                         self._broadcast_model_stat(self.models[model_key])
                 self.model = (
@@ -2080,6 +2127,33 @@ class Trainer(AbstractTrainer):
 
         return input_dict, label_dict
 
+    def _epoch_length(self, model_key: str) -> int:
+        """Return the steps this rank takes during one epoch of a task.
+
+        Parameters
+        ----------
+        model_key : str
+            Key of the task whose training data is measured.
+
+        Returns
+        -------
+        int
+            Number of steps covering one pass over the task's training data.
+
+        Notes
+        -----
+        A data system reports ``nbatches[i]``, the batch count of system ``i``,
+        and ``sys_probs[i]``, the probability of drawing from that system, from
+        which ``compute_total_numb_batch`` derives the dataset-wide epoch
+        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``. LMDB data reports
+        that global count while its sampler shards batches evenly across ranks;
+        legacy data systems remain replicated. In both cases one rank takes
+        ``ceil(total / world_size)`` steps per epoch.
+        """
+        data = self.training_data_by_task[model_key]
+        total = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        return int(np.ceil(total / self.world_size))
+
     # ------------------------------------------------------------------
     # DDP helpers
     # ------------------------------------------------------------------
@@ -2091,6 +2165,30 @@ class Trainer(AbstractTrainer):
             return self.wrapper.module
         return self.wrapper
 
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
+
     @staticmethod
     def _broadcast_model_stat(model: torch.nn.Module) -> None:
         """Broadcast model parameters and buffers from rank 0 to all ranks."""
@@ -2098,6 +2196,23 @@ class Trainer(AbstractTrainer):
             dist.broadcast(p.data, src=0)
         for b in model.buffers():
             dist.broadcast(b, src=0)
+
+    def _broadcast_value_from_rank0(self, value: Any) -> Any:
+        """Return rank 0's copy of ``value`` on every rank.
+
+        Epoch lengths round a quotient of sampling probabilities that is often
+        an exact integer in real arithmetic, so a last-bit difference between
+        ranks -- as reduction kernels dispatched for different CPU features
+        produce -- flips the rounded result and hence ``num_steps``. Ranks that
+        disagree on ``num_steps`` also disagree on the full-validation start
+        step and deadlock on mismatched collective calls, so the whole world
+        adopts rank 0's value.
+        """
+        if not self.is_distributed:
+            return value
+        holder = [value]
+        dist.broadcast_object_list(holder, src=0, device=DEVICE)
+        return holder[0]
 
     # ------------------------------------------------------------------
     # Checkpointing
@@ -2197,12 +2312,30 @@ class Trainer(AbstractTrainer):
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
         wall_start = time.time()
-        super().run(self.training_tasks)
-        if self.change_bias_after_training and self.num_steps > self.start_step:
-            self._change_bias_after_training()
-            if self.rank_context.is_chief:
-                self.save_checkpoint(self.num_steps)
+        try:
+            super().run(self.training_tasks)
+            if self.change_bias_after_training and self.num_steps > self.start_step:
+                self._change_bias_after_training()
+                if self.rank_context.is_chief:
+                    self.save_checkpoint(self.num_steps)
+        finally:
+            self._close_data_systems()
         log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def _close_data_systems(self) -> None:
+        """Release asynchronous data pipelines owned by this trainer."""
+        closed: set[int] = set()
+        for data_by_task in (
+            self.training_data_by_task,
+            self.validation_data_by_task,
+        ):
+            for data_system in data_by_task.values():
+                if data_system is None or id(data_system) in closed:
+                    continue
+                closed.add(id(data_system))
+                close = getattr(data_system, "close", None)
+                if close is not None:
+                    close()
 
     def _change_bias_after_training(self) -> None:
         if self.rank == 0:

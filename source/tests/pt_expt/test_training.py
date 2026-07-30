@@ -10,14 +10,20 @@ Verifies that:
 
 import copy
 import datetime
+import math
 import os
 import shutil
 import tempfile
 import unittest
+from pathlib import (
+    Path,
+)
 from unittest.mock import (
+    Mock,
     patch,
 )
 
+import numpy as np
 import pytest
 import torch
 
@@ -35,6 +41,11 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+
+from ..common.stat_file import (
+    assert_energy_stat_cache_round_trip,
+    energy_model_params,
 )
 
 EXAMPLE_DIR = os.path.join(
@@ -255,6 +266,40 @@ def _make_config(data_dir: str, numb_steps: int = 5) -> dict:
         },
     }
     return config
+
+
+def test_pt_expt_energy_cache_round_trip_uses_fitting_outputs_only(
+    tmp_path: Path,
+) -> None:
+    assert_energy_stat_cache_round_trip(
+        lambda: get_model(energy_model_params()),
+        tmp_path / "stat.hdf5",
+    )
+
+
+def test_pt_expt_distributed_statistics_failure_reaches_peer_rank() -> None:
+    from deepmd.pt_expt.train.training import (
+        Trainer,
+    )
+
+    trainer = Trainer.__new__(Trainer)
+    trainer.is_distributed = True
+    trainer.rank = 1
+    action = Mock()
+
+    def report_chief_failure(holder: list[bool], **_: object) -> None:
+        holder[0] = True
+
+    with (
+        patch(
+            "deepmd.pt_expt.train.training.dist.broadcast_object_list",
+            side_effect=report_chief_failure,
+        ),
+        pytest.raises(RuntimeError, match="Rank 0 failed during statistics"),
+    ):
+        trainer._run_stat_on_chief(action, operation="statistics initialization")
+
+    action.assert_not_called()
 
 
 class TestTraining(unittest.TestCase):
@@ -688,6 +733,42 @@ class TestCompiledConsistency(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestEpochSchedule(unittest.TestCase):
+    """Test the run length derived from training.numb_epoch."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+        # data_0 holds a single system read one frame per batch, so one epoch
+        # takes exactly one step per frame.
+        cls.nframes = np.load(
+            os.path.join(data_dir, "data_0", "set.000", "coord.npy")
+        ).shape[0]
+
+    def _num_steps_for(self, num_epoch: float) -> int:
+        config = _make_config(self.data_dir)
+        del config["training"]["numb_steps"]
+        config["training"]["numb_epoch"] = num_epoch
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_epoch_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            return get_trainer(config).num_steps
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_num_steps_covers_requested_epochs(self) -> None:
+        self.assertEqual(self._num_steps_for(1.0), self.nframes)
+        self.assertEqual(self._num_steps_for(2.5), math.ceil(2.5 * self.nframes))
 
 
 class TestGetData(unittest.TestCase):
