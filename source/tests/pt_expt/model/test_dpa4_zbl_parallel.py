@@ -309,3 +309,119 @@ class TestBridgedGraphWithCommExport:
         assert "model/extra/forward_lower_with_comm.pt2" in names
         assert meta["has_comm_artifact"] is True
         assert meta["lower_input_kind"] == "graph"
+
+
+SPIN_ZBL_CONFIG = {
+    **copy.deepcopy(ZBL_CONFIG),
+    "spin": {"use_spin": [True, False], "scheme": "native"},
+}
+
+
+def _make_bridged_spin_model():
+    """Native-spin + ZBL composition with jittered residuals (see above)."""
+    model = get_model(copy.deepcopy(SPIN_ZBL_CONFIG))
+    learned = model.atomic_model.models[0]
+    data = jitter_zero_arrays(learned.descriptor.serialize(), np.random.default_rng(99))
+    learned.descriptor = DescrptDPA4.deserialize(data)
+    return model.to(torch.float64).to("cpu").eval()
+
+
+class TestBridgedSpinGraphSelfComm:
+    """Issue #5906 Task 3: native spin + ZBL, same ladder as the non-spin
+    class. The gate exchange sits below the spin wrapper
+    (``NativeSpinEnergyModel`` re-classes the SAME composed atomic model),
+    so no spin-specific production change is expected -- these tests pin
+    that the machinery composes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        ensure_comm_registered()
+        self.model = _make_bridged_spin_model()
+
+    def _spins(self, n: int) -> np.ndarray:
+        rng = np.random.default_rng(11)
+        sp = rng.normal(size=(n, 3))
+        return sp / np.linalg.norm(sp, axis=-1, keepdims=True)
+
+    def _run_folded(self, coord: np.ndarray):
+        atype = np.array([[0, 0, 1, 1]], dtype=np.int64)
+        box = (_L * np.eye(3, dtype=np.float64)).reshape(1, 3, 3)
+        graph = build_neighbor_graph(coord, atype, box, 4.0, canonicalize=True)
+        spin = torch.tensor(self._spins(4), dtype=torch.float64)
+        out = self.model.forward_common_lower_graph(
+            torch.tensor(atype.reshape(-1), dtype=torch.int64),
+            torch.as_tensor(np.asarray(graph.n_node), dtype=torch.int64),
+            torch.as_tensor(np.asarray(graph.n_node), dtype=torch.int64),
+            torch.as_tensor(np.asarray(graph.edge_index), dtype=torch.int64),
+            torch.as_tensor(np.asarray(graph.edge_vec), dtype=torch.float64),
+            torch.as_tensor(np.asarray(graph.edge_mask), dtype=torch.bool),
+            spin=spin,
+        )
+        e = out["energy_redu"].detach().numpy().reshape(-1)
+        f = -out["energy_derv_r"].detach().numpy().reshape(-1, 3)
+        fm = -out["energy_derv_r_mag"].detach().numpy().reshape(-1, 3)
+        return e, f, fm
+
+    def _run_self_comm(self, coord: np.ndarray):
+        ext_coord, ext_atype, nlist, mapping = _extended_quartet(coord)
+        gi = _unfolded_graph_inputs(ext_coord, ext_atype, nlist)
+        nall = ext_coord.shape[1]
+        # ghost spins mirror their owners (LAMMPS forwards ``sp``)
+        spin_ext = torch.tensor(self._spins(4)[mapping[0]], dtype=torch.float64)
+        keepalive: list = []
+        comm_dict = _build_self_comm_dict(
+            nloc=4,
+            nghost=nall - 4,
+            sendlist_indices=mapping[0, 4:].astype(np.int32),
+            keepalive=keepalive,
+        )
+        out = self.model.forward_common_lower_graph(
+            gi["atype"],
+            gi["n_node"],
+            gi["n_local"],
+            gi["edge_index"],
+            gi["edge_vec"],
+            gi["edge_mask"],
+            spin=spin_ext,
+            comm_dict=comm_dict,
+        )
+        e = out["energy_redu"].detach().numpy().reshape(-1)
+        f = _fold_forces(-out["energy_derv_r"].detach().numpy().reshape(-1, 3), mapping)
+        fm = _fold_forces(
+            -out["energy_derv_r_mag"].detach().numpy().reshape(-1, 3), mapping
+        )
+        return e, f, fm
+
+    @pytest.mark.parametrize(
+        "gap",
+        [
+            0.4,  # zero_count channel across the boundary
+            1.0,  # log_eta channel across the boundary
+        ],
+    )
+    def test_self_comm_matches_folded_reference(self, gap: float) -> None:
+        coord = _close_pair_coords(gap)
+        e_ref, f_ref, fm_ref = self._run_folded(coord)
+        e_par, f_par, fm_par = self._run_self_comm(coord)
+        np.testing.assert_allclose(e_par, e_ref, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(f_par, f_ref, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(fm_par, fm_ref, rtol=1e-12, atol=1e-12)
+
+    def test_freeze_embeds_with_comm_artifact(self, tmp_path) -> None:
+        """Freezing the bridged spin model embeds the nested artifact."""
+        import json
+        import zipfile
+
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        data = {"model": self.model.serialize()}
+        p = str(tmp_path / "m_dpa4_spin_zbl_graph.pt2")
+        deserialize_to_file(p, copy.deepcopy(data), lower_kind="graph")
+        with zipfile.ZipFile(p, "r") as zf:
+            names = zf.namelist()
+            meta = json.loads(zf.read("model/extra/metadata.json"))
+        assert "model/extra/forward_lower_with_comm.pt2" in names
+        assert meta["has_comm_artifact"] is True
