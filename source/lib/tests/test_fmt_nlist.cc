@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "fmt_nlist.h"
 #include "neighbor_list.h"
 
@@ -431,6 +433,66 @@ TEST_F(TestFormatNlistShortSel, gpu) {
   // validate
   for (int ii = 0; ii < nlist.size(); ++ii) {
     EXPECT_EQ(nlist[ii], expect_nlist_cpy[ii]);
+  }
+}
+
+TEST(FormatNlistGpu, preserves_exact_capacity_rows) {
+  // Exercise every supported radix-sort size without leaving a padding slot.
+  // These exact boundaries are reachable after the caller rounds row capacity.
+  for (const int max_nbor_size : {256, 512, 1024, 2048, 4096}) {
+    SCOPED_TRACE("max_nbor_size=" + std::to_string(max_nbor_size));
+    const int nloc = 1;
+    const int nall = max_nbor_size + 1;
+    const float rcut = 2.0f;
+    const std::vector<int> sec = {0, max_nbor_size};
+    std::vector<double> coord(static_cast<size_t>(nall) * 3, 0.0);
+    std::vector<int> type(nall, 0);
+    std::vector<int> neighbors(max_nbor_size);
+    for (int ii = 0; ii < max_nbor_size; ++ii) {
+      neighbors[ii] = ii + 1;
+      coord[static_cast<size_t>(ii + 1) * 3] = 1.0;
+    }
+
+    std::vector<int> ilist = {0};
+    std::vector<int> numneigh = {max_nbor_size};
+    std::vector<int*> firstneigh = {neighbors.data()};
+    deepmd::InputNlist in_nlist(nloc, ilist.data(), numneigh.data(),
+                                firstneigh.data()),
+        gpu_inlist;
+    std::vector<int> formatted(max_nbor_size, -1);
+
+    double* coord_dev = NULL;
+    int *type_dev = NULL, *nlist_dev = NULL, *array_int_dev = NULL,
+        *memory_dev = NULL;
+    uint_64* array_longlong_dev = NULL;
+    deepmd::malloc_device_memory_sync(coord_dev, coord);
+    deepmd::malloc_device_memory_sync(type_dev, type);
+    deepmd::malloc_device_memory_sync(nlist_dev, formatted);
+    deepmd::malloc_device_memory(array_int_dev,
+                                 sec.size() + nloc * sec.size() + nloc);
+    deepmd::malloc_device_memory(array_longlong_dev,
+                                 static_cast<size_t>(nloc) * max_nbor_size * 2);
+    deepmd::malloc_device_memory(memory_dev,
+                                 static_cast<size_t>(nloc) * max_nbor_size);
+    deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev,
+                                     max_nbor_size);
+
+    format_nbor_list_gpu(nlist_dev, coord_dev, type_dev, gpu_inlist,
+                         array_int_dev, array_longlong_dev, max_nbor_size, nloc,
+                         nall, 1, rcut, sec);
+    deepmd::memcpy_device_to_host(nlist_dev, formatted);
+
+    deepmd::delete_device_memory(nlist_dev);
+    deepmd::delete_device_memory(coord_dev);
+    deepmd::delete_device_memory(type_dev);
+    deepmd::delete_device_memory(array_int_dev);
+    deepmd::delete_device_memory(array_longlong_dev);
+    deepmd::delete_device_memory(memory_dev);
+    deepmd::free_nlist_gpu_device(gpu_inlist);
+
+    for (int ii = 0; ii < max_nbor_size; ++ii) {
+      EXPECT_EQ(formatted[ii], ii + 1) << "neighbor slot " << ii;
+    }
   }
 }
 
