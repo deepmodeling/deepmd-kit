@@ -60,10 +60,12 @@ def test_nv_matches_intree_carry_all(periodic):
 
 
 def test_nv_batches_frames_without_python_loop():
-    """Multi-frame: nv searches all frames in one kernel (no per-frame loop)."""
+    """NV batches flattened training coordinates without a per-frame loop."""
     dev = torch.device("cuda")
     rng = np.random.default_rng(0)
-    coord = torch.tensor(rng.random((3, 5, 3)) * 3.0, dtype=torch.float64, device=dev)
+    coord = torch.tensor(
+        rng.random((3, 5, 3)) * 3.0, dtype=torch.float64, device=dev
+    ).reshape(3, -1)
     box = (
         (torch.eye(3, dtype=torch.float64, device=dev) * 4.0)
         .reshape(1, 3, 3)

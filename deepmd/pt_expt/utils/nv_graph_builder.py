@@ -269,9 +269,8 @@ def build_neighbor_graph_nv(
     )
 
     device = coord.device
-    nf = coord.shape[0] if coord.ndim == 3 else 1
-    coord = coord.reshape(nf, -1, 3)
-    nloc = coord.shape[1]
+    nf, nloc = atype.shape[:2]
+    coord = coord.reshape(nf, nloc, 3)
     periodic = box is not None
 
     if nloc == 0:
