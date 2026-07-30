@@ -3041,7 +3041,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self.inter_potential is not None:
             return False
         descriptor = self.atomic_model.descriptor
-        return bool(descriptor.has_message_passing_across_ranks())
+        return bool(descriptor.supports_edge_parallel())
 
     def export_lower_input_kind(self) -> str:
         """Return the ABI consumed by the exported ``.pt2`` lower graph.

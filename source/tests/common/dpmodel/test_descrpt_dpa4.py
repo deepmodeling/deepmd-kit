@@ -95,22 +95,32 @@ class TestDescrptDPA4:
     def test_message_passing_semantics(self) -> None:
         # SeZM always resolves ghost neighbours on the lower path, so it always
         # reports message passing. The GRAPH lower implements the cross-rank
-        # exchange via a real per-layer border_op, so a plain (non-bridging)
-        # descriptor reports across_ranks True; its DENSE lower has no
+        # exchange via a real per-layer border_op, so every SeZM descriptor
+        # (bridged or not) reports across_ranks True; its DENSE lower has no
         # comm_dict implementation (the dense adapter raises on it), so
         # dense_lower_supports_comm() is False and the freeze machinery
-        # skips the dead dense with-comm artifact. Source Freeze Propagation
-        # bridging is excluded from across_ranks: its per-node gate folds a
-        # node's entire outgoing-edge set, which a single rank cannot
-        # observe for ghost owners, so bridging models fail fast on
-        # multi-rank instead.
+        # skips the dead dense with-comm artifact. Whether multi-rank is
+        # POSSIBLE at all is supports_edge_parallel (see
+        # test_capability_split_needs_vs_supports).
         dd = make_descriptor()
         assert dd.has_message_passing() is True
         assert dd.has_message_passing_across_ranks() is True
         assert dd.dense_lower_supports_comm() is False
         dd_bridge = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
         assert dd_bridge.has_message_passing() is True
-        assert dd_bridge.has_message_passing_across_ranks() is False
+        assert dd_bridge.has_message_passing_across_ranks() is True
+
+    def test_capability_split_needs_vs_supports(self) -> None:
+        """has_message_passing_across_ranks = NEEDS exchange (always True for
+        SeZM); supports_edge_parallel = CAN run multi-rank (bridging vetoes,
+        until the SFPG exchange lands -- issue #5906).
+        """
+        dd_plain = make_descriptor()
+        dd_bridged = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        assert dd_plain.has_message_passing_across_ranks() is True
+        assert dd_bridged.has_message_passing_across_ranks() is True
+        assert dd_plain.supports_edge_parallel() is True
+        assert dd_bridged.supports_edge_parallel() is False
 
     def test_serialize_roundtrip_exact(self) -> None:
         dd = make_descriptor()

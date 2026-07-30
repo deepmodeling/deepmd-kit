@@ -137,6 +137,17 @@ def make_base_descriptor(
             """
             return False
 
+        def supports_edge_parallel(self) -> bool:
+            """Whether this descriptor can run under MPI domain decomposition.
+
+            Distinct from :meth:`has_message_passing_across_ranks` (whether
+            multi-rank inference NEEDS a per-block ghost exchange): this asks
+            whether any part of the computation folds state that a single
+            rank cannot observe. Default ``True``: an ordinary descriptor
+            reads only rank-local neighbourhoods.
+            """
+            return True
+
         def supports_native_spin(self) -> bool:
             """Returns whether the descriptor natively conditions on per-atom spin.
 

@@ -2278,18 +2278,24 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         return True
 
     def has_message_passing_across_ranks(self) -> bool:
-        """Whether multi-rank inference needs cross-rank ghost exchange.
+        """SeZM reads ghost-neighbour features at every interaction block.
 
-        SeZM reads ghost-neighbour features at every interaction block; the
-        GRAPH lower implements the exchange via per-block ``border_op``
-        (pt_expt ``exchange_ghost_features``). Source Freeze Propagation
-        bridging is excluded: its per-node gate folds a node's entire
-        outgoing-edge set, which a single rank cannot observe for ghost
-        owners, so bridging models fail fast on multi-rank instead.
+        The GRAPH lower implements the exchange via per-block ``border_op``
+        (pt_expt ``exchange_ghost_features``), so multi-rank inference always
+        needs the with-comm artifact. Whether multi-rank is POSSIBLE at all
+        is :meth:`supports_edge_parallel` (bridging vetoes it there).
 
         The DENSE (nlist) lower remains comm-less — see
         :meth:`dense_lower_supports_comm`; the freeze machinery consults both
         so nlist-kind artifacts carry ``has_comm_artifact=False``.
+        """
+        return True
+
+    def supports_edge_parallel(self) -> bool:
+        """Bridging vetoes multi-rank until the SFPG exchange lands.
+
+        The Source Freeze Propagation Gate folds each node's full
+        outgoing-edge set, which no single rank observes (issue #5906).
         """
         return self.bridging_switch is None
 

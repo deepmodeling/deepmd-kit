@@ -2280,14 +2280,20 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return True
 
     def has_message_passing_across_ranks(self) -> bool:
-        """Whether multi-rank inference needs cross-rank ghost-feature exchange.
+        """SeZM reads ghost-neighbour features at every interaction block.
 
-        SeZM reads ghost-neighbour features at every interaction block, so a
-        domain-decomposed run must exchange them through ``border_op``. Source
-        Freeze Propagation bridging is excluded: its per-node gate folds a
-        node's entire outgoing-edge set, which a single rank cannot observe for
-        ghost owners, so the edge-based with-comm artifact is not exported for
-        bridging models and multi-rank inference fails fast instead.
+        A domain-decomposed run must exchange them through ``border_op``, so
+        multi-rank inference always needs the with-comm exchange. Whether
+        multi-rank is POSSIBLE at all is :meth:`supports_edge_parallel`
+        (bridging vetoes it there).
+        """
+        return True
+
+    def supports_edge_parallel(self) -> bool:
+        """Bridging vetoes multi-rank until the SFPG exchange lands.
+
+        The Source Freeze Propagation Gate folds each node's full
+        outgoing-edge set, which no single rank observes (issue #5906).
         """
         return self.bridging_switch is None
 
