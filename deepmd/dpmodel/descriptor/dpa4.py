@@ -35,6 +35,7 @@ from __future__ import (
     annotations,
 )
 
+import functools
 import math
 from typing import (
     TYPE_CHECKING,
@@ -1541,6 +1542,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 type_ebed, spin, atype_flat, n_nodes=n_nodes
             )
 
+        # Cross-rank SFPG completion (issue #5906): only a bridged model
+        # under domain decomposition needs it -- the gate's src-keyed
+        # per-node partials are rank-incomplete then.
+        node_partial_exchange = None
+        if comm_dict is not None and self.bridging_switch is not None:
+            node_partial_exchange = functools.partial(
+                self._gate_partial_exchange, comm_dict=comm_dict
+            )
         # === Step 3. Build edge cache once (sparse edges) ===
         edge_cache = _edge_cache_from_arrays(
             type_ebed=type_ebed,
@@ -1562,6 +1571,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             random_gamma=self.random_gamma and self._in_training_mode(),
             wigner_calc=self.wigner_calc,
             build_wigner=self._need_full_wigner,
+            node_partial_exchange=node_partial_exchange,
         )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -2195,6 +2205,40 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         elif charge_spin.shape[0] != nf:
             raise ValueError("`charge_spin` first dimension must match nframes.")
         return charge_spin
+
+    def _gate_partial_exchange(
+        self,
+        partials: Array,
+        comm_dict: dict[str, Array],
+    ) -> Array:
+        """Complete the SFPG per-node partials across ranks.
+
+        Reverse-accumulate ghost rows into their owners, then broadcast the
+        completed owner values back — the backend-specific pt_expt subclass
+        implements it on ``border_op_backward``/``border_op``; dpmodel is
+        the single-process reference and rejects comm outright.
+
+        Parameters
+        ----------
+        partials
+            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
+        comm_dict
+            The border-exchange control tensors.
+
+        Returns
+        -------
+        Array
+            The globally completed (n_nodes, 2) tensor.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, in the dpmodel backend.
+        """
+        raise NotImplementedError(
+            "Multi-rank SFPG partial exchange (comm_dict) is not supported "
+            "in the dpmodel backend."
+        )
 
     def _block_comm(
         self,

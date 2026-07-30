@@ -122,6 +122,45 @@ class TestDescrptDPA4:
         assert dd_plain.supports_edge_parallel() is True
         assert dd_bridged.supports_edge_parallel() is False
 
+    def test_gate_partial_exchange_dpmodel_raises(self) -> None:
+        """The dpmodel backend is the single-process reference; comm on a
+        bridged model must raise, never silently compute a partial gate.
+        """
+        dd = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        with pytest.raises(NotImplementedError, match="dpmodel"):
+            dd._gate_partial_exchange(np.zeros((4, 2)), {"nlocal": 2})
+
+    def test_edge_src_gate_identity_exchange_is_noop(self) -> None:
+        """The hook seam: an identity exchange reproduces the no-hook gate
+        bit-exactly (pins the pack/unpack layout [log_eta, zero_count]).
+        """
+        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+            compute_edge_src_gate,
+        )
+
+        dd = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        sw = dd.bridging_switch
+        # 4 nodes, 5 edges; one edge inside r_inner (w=0, hard-freezes its
+        # src node), the rest spread across the transition zone and beyond.
+        el = np.array([[0.3], [0.7], [0.9], [1.5], [0.75]], dtype=np.float64)
+        src = np.array([0, 0, 1, 2, 3], dtype=np.int64)
+        gate_ref = compute_edge_src_gate(
+            edge_len=el, src=src, n_nodes=4, bridging_switch=sw
+        )
+        gate_hook = compute_edge_src_gate(
+            edge_len=el,
+            src=src,
+            n_nodes=4,
+            bridging_switch=sw,
+            node_partial_exchange=lambda p: p,
+        )
+        np.testing.assert_array_equal(gate_ref, gate_hook)
+        # geometry sanity: node 0 is hard-frozen, node 3 is inside the
+        # transition zone (0 < gate < 1) -- the test data actually
+        # exercises both gate branches.
+        assert gate_ref[0, 0] == 0.0
+        assert 0.0 < gate_ref[4, 0] < 1.0
+
     def test_serialize_roundtrip_exact(self) -> None:
         dd = make_descriptor()
         data = dd.serialize()
