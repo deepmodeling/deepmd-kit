@@ -5322,4 +5322,47 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu) {
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]), 1e-5);
   }
 }
+
+TEST_F(TestTabulateSeT, grad_grad_gpu_reuses_same_table_interval) {
+  constexpr int test_nloc = 1;
+  constexpr int test_nnei_i = 1;
+  constexpr int test_nnei_j = 3;
+  // All inputs lie in the same stride-0 interval.  The GPU cache therefore
+  // must retain the coefficients loaded for the first neighbor.
+  std::vector<double> test_em_x = {0.011, 0.012, 0.019};
+  std::vector<double> test_dz_dy_dem_x = {0.5, -0.25, 0.75};
+  std::vector<double> test_dz_dy_dem = {-0.2, 0.4, 0.1};
+  std::vector<double> expected(last_layer_size);
+  deepmd::tabulate_fusion_se_t_grad_grad_cpu<double>(
+      expected.data(), table.data(), info.data(), test_em_x.data(),
+      test_em_x.data(), test_dz_dy_dem_x.data(), test_dz_dy_dem.data(),
+      test_nloc, test_nnei_i, test_nnei_j, last_layer_size);
+
+  std::vector<double> actual(last_layer_size);
+  double *actual_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+         *em_dev = nullptr, *dz_dy_dem_x_dev = nullptr,
+         *dz_dy_dem_dev = nullptr;
+  deepmd::malloc_device_memory_sync(actual_dev, actual);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, test_em_x);
+  deepmd::malloc_device_memory_sync(em_dev, test_em_x);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_x_dev, test_dz_dy_dem_x);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_dev, test_dz_dy_dem);
+
+  deepmd::tabulate_fusion_se_t_grad_grad_gpu<double>(
+      actual_dev, table_dev, info.data(), em_x_dev, em_dev, dz_dy_dem_x_dev,
+      dz_dy_dem_dev, test_nloc, test_nnei_i, test_nnei_j, last_layer_size);
+  deepmd::memcpy_device_to_host(actual_dev, actual);
+
+  for (int ii = 0; ii < last_layer_size; ++ii) {
+    EXPECT_NEAR(actual[ii], expected[ii], 1e-10);
+  }
+
+  deepmd::delete_device_memory(actual_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dz_dy_dem_x_dev);
+  deepmd::delete_device_memory(dz_dy_dem_dev);
+}
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
