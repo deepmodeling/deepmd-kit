@@ -5,6 +5,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 import os
 import re
 import subprocess
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
 GITHUB_REPOSITORY = "deepmodeling/deepmd-kit"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _FULL_GIT_HASH = re.compile(r"[0-9a-f]{40,64}")
+_LOGGER = logging.getLogger(__name__)
 
 
 class SourceLocation(NamedTuple):
@@ -55,6 +57,7 @@ class AutoapiObject(Protocol):
 
 
 _source_locations: dict[str, SourceLocation] = {}
+_unresolved_source_objects: set[str] = set()
 
 
 @cache
@@ -66,29 +69,70 @@ def get_git_commit() -> str | None:
             commit = subprocess.check_output(
                 ["git", "rev-parse", "HEAD"],
                 cwd=REPOSITORY_ROOT,
+                stderr=subprocess.DEVNULL,
                 text=True,
             ).strip()
         except (OSError, subprocess.CalledProcessError):
+            _LOGGER.warning(
+                "Cannot determine a Git commit for permanent documentation links"
+            )
             return None
 
-    commit = commit.lower()
-    return commit if _FULL_GIT_HASH.fullmatch(commit) else None
+    commit = commit.strip().lower()
+    if not _FULL_GIT_HASH.fullmatch(commit):
+        _LOGGER.warning("Ignoring invalid documentation Git commit %r", commit)
+        return None
+    return commit
+
+
+def _original_target_name(
+    object_name: str,
+    source_object: AutoapiObject,
+    all_objects: Mapping[str, AutoapiObject],
+) -> str | None:
+    """Return the defining AutoAPI name for an object or inherited member."""
+    original_path = source_object.obj.get("original_path")
+    if original_path:
+        return original_path
+    if source_object.obj.get("from_line_no") is not None:
+        return None
+
+    # AutoAPI relocates children of a re-exported class without copying the
+    # class's original_path metadata onto those children. Walk upward to that
+    # class and append the stripped member suffix to its defining path.
+    ancestor_name = object_name
+    suffix: list[str] = []
+    while "." in ancestor_name:
+        ancestor_name, _, member_name = ancestor_name.rpartition(".")
+        suffix.insert(0, member_name)
+        ancestor = all_objects.get(ancestor_name)
+        if ancestor is None:
+            continue
+        ancestor_original_path = ancestor.obj.get("original_path")
+        if ancestor_original_path:
+            return ".".join((ancestor_original_path, *suffix))
+    return None
 
 
 def _resolve_original_object(
+    documented_name: str,
     documented_object: AutoapiObject,
     all_objects: Mapping[str, AutoapiObject],
 ) -> AutoapiObject:
     """Follow AutoAPI re-exports to the object that owns the source lines."""
+    source_name = documented_name
     source_object = documented_object
-    visited = set()
-    while original_path := source_object.obj.get("original_path"):
+    visited: set[str] = set()
+    while original_path := _original_target_name(
+        source_name, source_object, all_objects
+    ):
         if original_path in visited:
             break
         visited.add(original_path)
         original_object = all_objects.get(original_path)
         if original_object is None:
             break
+        source_name = original_path
         source_object = original_object
     return source_object
 
@@ -113,14 +157,36 @@ def collect_autoapi_source_locations(app: Sphinx) -> None:
     callback is registered at priority 600 so its object graph is available
     before Sphinx forks any parallel document-reading workers.
     """
-    all_objects = getattr(app.env, "autoapi_all_objects", {})
-    modules = {name: obj for name, obj in all_objects.items() if "file_path" in obj.obj}
-
     _source_locations.clear()
+    _unresolved_source_objects.clear()
+    try:
+        # This is stable across sphinx-autoapi 3.x but remains internal state;
+        # fail visibly if a future dependency update changes the contract.
+        all_objects = app.env.autoapi_all_objects
+    except AttributeError as exc:
+        raise RuntimeError("AutoAPI source metadata is unavailable") from exc
+    if not all_objects:
+        raise RuntimeError("AutoAPI produced an empty object graph")
+
+    modules = {name: obj for name, obj in all_objects.items() if "file_path" in obj.obj}
+    if not modules:
+        raise RuntimeError("AutoAPI object graph contains no module source paths")
+
     for documented_name, documented_object in all_objects.items():
-        source_object = _resolve_original_object(documented_object, all_objects)
+        source_object = _resolve_original_object(
+            documented_name, documented_object, all_objects
+        )
+        if (
+            source_object.id not in modules
+            and source_object.obj.get("from_line_no") is None
+        ):
+            # A known object with no trustworthy source lines must not fall
+            # back to the importing package's __init__.py.
+            _unresolved_source_objects.add(documented_name)
+            continue
         module = _containing_module(source_object.id, modules)
         if module is None:
+            _unresolved_source_objects.add(documented_name)
             continue
 
         source_path = Path(module.obj["file_path"]).resolve()
@@ -129,6 +195,7 @@ def collect_autoapi_source_locations(app: Sphinx) -> None:
         except ValueError:
             # Never create a repository URL for objects imported from outside
             # the checked-out DeePMD-kit source tree.
+            _unresolved_source_objects.add(documented_name)
             continue
 
         _source_locations[documented_name] = SourceLocation(
@@ -151,6 +218,8 @@ def linkcode_resolve(domain: str, info: dict[str, str]) -> str | None:
     object_name = (
         fullname if fullname.startswith(f"{module}.") else f"{module}.{fullname}"
     ).rstrip(".")
+    if object_name in _unresolved_source_objects:
+        return None
     location = _source_locations.get(object_name) or _source_locations.get(module)
     commit = get_git_commit()
     if location is None or commit is None:
