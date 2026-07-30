@@ -96,6 +96,15 @@ if(ENABLE_PADDLE)
           "Failed to download Paddle inference library from ${DOWNLOAD_URL} (status ${PADDLE_DOWNLOAD_STATUS_CODE}): ${PADDLE_DOWNLOAD_STATUS_MESSAGE}"
       )
     endif()
+    # Some CMake versions report an EXPECTED_HASH mismatch separately from the
+    # transport status, so verify it explicitly before changing the cache.
+    file(SHA256 "${TGZ_FILE}" PADDLE_ACTUAL_SHA256)
+    if(NOT "${PADDLE_ACTUAL_SHA256}" STREQUAL "${DOWNLOAD_SHA256}")
+      message(
+        FATAL_ERROR
+          "SHA256 mismatch for ${TGZ_FILE}: expected ${DOWNLOAD_SHA256}, got ${PADDLE_ACTUAL_SHA256}"
+      )
+    endif()
     message(STATUS "Downloading finished, extracting...")
     execute_process(
       COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
