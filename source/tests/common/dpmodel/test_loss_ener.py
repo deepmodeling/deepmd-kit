@@ -171,6 +171,7 @@ class TestEnergyLossHessian(TestEnergyLossBase):
 
         data = loss_fn.serialize()
 
+        self.assertEqual(data["@version"], 4)
         self.assertNotIn("start_pref_h", data)
         self.assertNotIn("limit_pref_h", data)
         self.assertNotIn(
@@ -261,6 +262,7 @@ class TestEnergyLossSerialize(TestEnergyLossBase):
             limit_pref_h=0.5,
         )
         data = loss_fn.serialize()
+        self.assertEqual(data["@version"], 5)
         self.assertEqual(data["start_pref_h"], 2.0)
         self.assertEqual(data["limit_pref_h"], 0.5)
         loss_fn2 = EnergyLoss.deserialize(data)
@@ -273,6 +275,16 @@ class TestEnergyLossSerialize(TestEnergyLossBase):
         np.testing.assert_allclose(loss1, loss2)
         for key in more1:
             np.testing.assert_allclose(more1[key], more2[key])
+
+    def test_version_four_defaults_to_non_hessian_loss(self) -> None:
+        """Version-4 payloads deserialize without inventing Hessian supervision."""
+        data = EnergyLoss(starter_learning_rate=1.0).serialize()
+
+        loss_fn = EnergyLoss.deserialize(data)
+
+        self.assertFalse(loss_fn.has_h)
+        self.assertEqual(loss_fn.start_pref_h, 0.0)
+        self.assertEqual(loss_fn.limit_pref_h, 0.0)
 
 
 if __name__ == "__main__":

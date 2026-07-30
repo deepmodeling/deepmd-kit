@@ -721,6 +721,7 @@ class TestEnergyHessianLossCompatibility(unittest.TestCase):
         legacy = EnergyHessianStdLoss(**kwargs)
 
         self.assertEqual(canonical.serialize(), legacy.serialize())
+        self.assertEqual(canonical.serialize()["@version"], 5)
         self.assertEqual(canonical.label_requirement, legacy.label_requirement)
         hessian_req = next(
             item for item in canonical.label_requirement if item.key == "hessian"
@@ -745,6 +746,27 @@ class TestEnergyHessianLossCompatibility(unittest.TestCase):
             self.assertTrue(
                 any(item.key == "hessian" for item in loss.label_requirement)
             )
+
+    def test_inference_only_does_not_request_hessian(self) -> None:
+        """The change-bias mock loss must not allocate unused quadratic labels."""
+        loss = EnergyStdLoss(starter_learning_rate=1.0, inference=True)
+
+        self.assertFalse(loss.has_h)
+        self.assertNotIn(
+            "hessian",
+            {item.key for item in loss.label_requirement},
+        )
+
+    def test_version_four_defaults_to_non_hessian_loss(self) -> None:
+        """Older energy-loss payloads retain their non-Hessian behavior."""
+        data = EnergyStdLoss(starter_learning_rate=1.0).serialize()
+
+        loss = EnergyStdLoss.deserialize(data)
+
+        self.assertEqual(data["@version"], 4)
+        self.assertFalse(loss.has_h)
+        self.assertEqual(loss.start_pref_h, 0.0)
+        self.assertEqual(loss.limit_pref_h, 0.0)
 
     def test_model_hessian_mode_follows_loss_data_requirement(self) -> None:
         from deepmd.pt.train.training import (

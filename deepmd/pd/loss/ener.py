@@ -649,7 +649,9 @@ class EnergyHessianStdLoss(EnergyStdLoss):
             Other keyword arguments.
         """
         super().__init__(**kwargs)
-        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
+        # A scheduled term is active when either endpoint is nonzero. Requiring
+        # both endpoints silently disabled valid ramp-up and ramp-down inputs.
+        self.has_h = (start_pref_h != 0.0 or limit_pref_h != 0.0) or self.inference
 
         self.start_pref_h = start_pref_h
         self.limit_pref_h = limit_pref_h
@@ -701,10 +703,11 @@ class EnergyHessianStdLoss(EnergyStdLoss):
             label_requirement.append(
                 DataRequirementItem(
                     "hessian",
-                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
-                    atomic=True,
+                    ndof=1,
+                    atomic=False,
                     must=False,
                     high_prec=False,
+                    special_shape="hessian",
                 )
             )
         return label_requirement

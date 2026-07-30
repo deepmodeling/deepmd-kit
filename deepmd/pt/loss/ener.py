@@ -163,7 +163,10 @@ class EnergyStdLoss(TaskLoss):
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
         self.has_gf = start_pref_gf != 0.0 and limit_pref_gf != 0.0
-        self.has_h = (start_pref_h != 0.0 or limit_pref_h != 0.0) or inference
+        # Hessian labels scale quadratically with the atom count. Unlike the
+        # linear-size labels above, do not request them merely because a mock
+        # inference loss is collecting requirements for ``dp change-bias``.
+        self.has_h = start_pref_h != 0.0 or limit_pref_h != 0.0
 
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -932,7 +935,9 @@ class EnergyStdLoss(TaskLoss):
         """
         data = {
             "@class": "EnergyLoss",
-            "@version": 4,
+            # Only Hessian-bearing payloads need the version-5 schema. Keeping
+            # ordinary energy losses at version 4 preserves existing readers.
+            "@version": 5 if self.has_h else 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -977,11 +982,16 @@ class EnergyStdLoss(TaskLoss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 3:
             data.setdefault("intensive_ener_virial", False)
+        # Version 5 introduced explicit Hessian prefactors. Version 1-4
+        # payloads therefore default to the standard non-Hessian loss.
+        if version < 5:
+            data.setdefault("start_pref_h", 0.0)
+            data.setdefault("limit_pref_h", 0.0)
         return cls(**data)
 
 

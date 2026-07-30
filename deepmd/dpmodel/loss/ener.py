@@ -891,7 +891,10 @@ class EnergyLoss(Loss):
         """
         data = {
             "@class": "EnergyLoss",
-            "@version": 4,
+            # Version 5 identifies the opt-in Hessian fields. Keep ordinary
+            # energy losses at version 4 so readers that already support the
+            # standard schema remain interoperable across backends.
+            "@version": 5 if self.has_h else 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -938,9 +941,15 @@ class EnergyLoss(Loss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         # Backward compatibility: version 1-2 used legacy normalization
         if version < 3:
             data.setdefault("intensive_ener_virial", False)
+        # Version 5 introduced explicit Hessian prefactors. Older payloads
+        # represent an ordinary energy loss unless these development fields
+        # were already present.
+        if version < 5:
+            data.setdefault("start_pref_h", 0.0)
+            data.setdefault("limit_pref_h", 0.0)
         return cls(**data)

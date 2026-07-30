@@ -12,7 +12,12 @@ from pathlib import (
 )
 
 from deepmd.pd.loss import (
+    EnergyHessianStdLoss,
     EnergyStdLoss,
+)
+from deepmd.pd.train.training import (
+    get_loss,
+    whether_hessian,
 )
 from deepmd.pd.utils.dataset import (
     DeepmdDataSetForLoader,
@@ -579,6 +584,42 @@ class TestEnerStdLossRelativeF(LossCommonTest):
                 )
             )
             self.assertTrue(np.isnan(pd_more_loss_absent[f"l2_{key}_loss"].numpy()))
+
+
+class TestEnergyHessianLossCompatibility(unittest.TestCase):
+    """Paddle uses the same Hessian activation and data-shape contract."""
+
+    def test_either_schedule_endpoint_enables_hessian(self) -> None:
+        """Ramp-up and ramp-down schedules must both activate supervision."""
+        for loss_type in ("ener", "ener_hess"):
+            for start_pref_h, limit_pref_h in ((1.0, 0.0), (0.0, 1.0)):
+                params = {
+                    "type": loss_type,
+                    "start_pref_h": start_pref_h,
+                    "limit_pref_h": limit_pref_h,
+                }
+
+                self.assertTrue(whether_hessian(params))
+                loss = get_loss(params, start_lr=1.0, _ntypes=0, _model=None)
+                self.assertIsInstance(loss, EnergyHessianStdLoss)
+                self.assertTrue(loss.has_h)
+                hessian_req = next(
+                    item for item in loss.label_requirement if item.key == "hessian"
+                )
+                self.assertFalse(hessian_req.atomic)
+                self.assertEqual(hessian_req.special_shape, "hessian")
+
+    def test_zero_schedule_keeps_standard_energy_loss(self) -> None:
+        """Two zero endpoints must leave Hessian supervision disabled."""
+        params = {
+            "type": "ener",
+            "start_pref_h": 0.0,
+            "limit_pref_h": 0.0,
+        }
+
+        self.assertFalse(whether_hessian(params))
+        loss = get_loss(params, start_lr=1.0, _ntypes=0, _model=None)
+        self.assertIs(type(loss), EnergyStdLoss)
 
 
 if __name__ == "__main__":
