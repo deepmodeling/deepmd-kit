@@ -11,6 +11,9 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
@@ -21,11 +24,13 @@ from types import (
     SimpleNamespace,
 )
 from unittest.mock import (
+    Mock,
     patch,
 )
 
 import numpy as np
 import optax
+import pytest
 
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
@@ -425,6 +430,17 @@ class _DescriptorWithStats:
         self.davg = np.asarray([0.0], dtype=np.float64)
         self.dstd = np.asarray([1.0], dtype=np.float64)
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: np.ndarray,
+        stddev: np.ndarray,
+    ) -> None:
+        self.davg = mean
+        self.dstd = stddev
+
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.davg, self.dstd
+
 
 def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
     """Shared descriptor merge recomputes weighted avg/std for nested stats."""
@@ -446,6 +462,44 @@ def test_jax_shared_descriptor_stats_merge_weighted_values() -> None:
     np.testing.assert_allclose(base.se_atten.dstd, [np.sqrt(4.5)])
     assert base.stats["env"].number == 4
     assert base.se_atten.stats["env"].number == 4
+
+
+def test_jax_shared_descriptor_stats_preserve_real_nnx_state() -> None:
+    """Shared statistics merge keeps real JAX descriptor arrays registered."""
+    trainer = DPTrainer(
+        _minimal_jax_multitask_config(_shared_jax_model_config()),
+    )
+    sampled = [
+        {
+            "coord": jnp.asarray(
+                [
+                    [
+                        [0.0, 0.0, 0.0],
+                        [0.8, 0.0, 0.0],
+                        [0.0, 0.8, 0.0],
+                    ]
+                ]
+            ),
+            "atype": jnp.asarray([[0, 1, 2]], dtype=jnp.int32),
+            "box": jnp.asarray([np.eye(3) * 8.0]),
+        }
+    ]
+    descriptors = [
+        trainer.models[model_key].get_descriptor() for model_key in ("task_a", "task_b")
+    ]
+    for descriptor in descriptors:
+        descriptor.compute_input_stats(sampled)
+        assert isinstance(descriptor.davg, nnx.Variable)
+        assert isinstance(descriptor.dstd, nnx.Variable)
+
+    base_count = descriptors[0].stats["r_0"].number
+    link_count = descriptors[1].stats["r_0"].number
+    trainer._share_model_params(resume=False)
+
+    shared_descriptor = trainer.models["task_a"].get_descriptor()
+    assert isinstance(shared_descriptor.davg, nnx.Variable)
+    assert isinstance(shared_descriptor.dstd, nnx.Variable)
+    assert shared_descriptor.stats["r_0"].number == base_count + link_count
 
 
 class _FittingWithStats:
@@ -677,6 +731,49 @@ def test_jax_change_bias_after_training_uses_broadcast_on_peer_rank() -> None:
         np.asarray(trainer.models[DEFAULT_TASK_KEY].bias.value),
         [5.0],
     )
+
+
+def test_jax_statistics_failure_reaches_peer_rank() -> None:
+    """Peer ranks fail before model-state synchronization when rank 0 fails."""
+    trainer = _bias_sync_trainer(rank=1)
+    action = Mock()
+
+    with (
+        patch(
+            "jax.experimental.multihost_utils.broadcast_one_to_all",
+            return_value=np.asarray(True),
+        ),
+        pytest.raises(RuntimeError, match="Rank 0 failed during statistics"),
+    ):
+        trainer._run_on_chief(action, operation="statistics initialization")
+
+    action.assert_not_called()
+
+
+def test_jax_shared_statistics_merge_precedes_broadcast_and_binding() -> None:
+    """The chief broadcasts merged statistics before shared parameters bind."""
+    trainer = DPTrainer.__new__(DPTrainer)
+    trainer.multi_task = True
+    trainer.shared_links = {"shared_fitting": object()}
+    events: list[str] = []
+
+    def run_on_chief(action: Callable[[], None], *, operation: str) -> None:
+        assert operation == "shared statistics merge"
+        action()
+
+    def share_model_params(*, resume: bool = False) -> None:
+        events.append("bind" if resume else "merge")
+
+    trainer._run_on_chief = run_on_chief
+    trainer._share_model_params = share_model_params
+    trainer._broadcast_model_states = lambda: events.append("broadcast")
+
+    trainer._synchronize_initial_model_state(
+        state_changed=True,
+        merge_shared_statistics=True,
+    )
+
+    assert events == ["merge", "broadcast", "bind"]
 
 
 class TestJAXTraining(unittest.TestCase):

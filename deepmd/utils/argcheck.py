@@ -5305,7 +5305,8 @@ def training_args(
         "otherwise, a directory containing NumPy binary files are used."
     )
     doc_stat_file_mode = (
-        doc_only_pt_supported + "The access mode for `stat_file`. "
+        "Supported by the PyTorch, JAX, TensorFlow 2, and experimental PyTorch "
+        "backends. The access mode for `stat_file`. "
         "`update` creates the cache when needed and writes any missing statistics; "
         "this is the behavior used when the option is omitted. "
         "`read` requires a complete existing cache and opens it read-only, allowing "
