@@ -155,8 +155,131 @@ class OrderedPairFiLM(NativeOP):
             self.adam_spin_scale_anchor = (offset * signs[0]).astype(precision_dtype)
             self.adam_spin_shift_anchor = (offset * signs[1]).astype(precision_dtype)
 
+    @property
+    def pair_hidden_width(self) -> int:
+        """Return the width of the encoder's hidden pre-activation."""
+        return 2 * self.hidden_dim
+
+    def pair_latent(self, type_embedding: Any) -> tuple[Any, Any]:
+        """Build the condition-independent ordered-pair state.
+
+        Both returned tables are functions of the ordered type pair alone.
+        Splitting them off lets a frame-level condition enter as an additive
+        pre-activation bias, which one shared projection over the finite type
+        table then serves for every frame.
+
+        Parameters
+        ----------
+        type_embedding
+            Complete type table with shape ``(T + 1, channels)``, where the
+            trailing row is the zero padding type.
+
+        Returns
+        -------
+        pre_activation
+            Hidden affine pre-activation with shape
+            ``((T + 1) ** 2, pair_hidden_width)``.
+        base_shift
+            Structural shift anchor :math:`T_a + T_b` with shape
+            ``((T + 1) ** 2, channels)``.
+        """
+        xp = array_api_compat.array_namespace(type_embedding)
+        ntypes = type_embedding.shape[0]
+        pair_shape = (ntypes, ntypes, self.channels)
+        pair_input = xp.reshape(
+            xp.concat(
+                [
+                    xp.broadcast_to(type_embedding[:, None, :], pair_shape),
+                    xp.broadcast_to(type_embedding[None, :, :], pair_shape),
+                ],
+                axis=-1,
+            ),
+            (-1, 2 * self.channels),
+        )
+        return (
+            self.network.call_hidden_affine(pair_input),
+            xp.reshape(
+                type_embedding[:, None, :] + type_embedding[None, :, :],
+                (-1, self.channels),
+            ),
+        )
+
+    def heads(
+        self, pre_activation: Any, base_shift: Any
+    ) -> tuple[Any, Any, Any | None, Any | None, Any | None]:
+        """Finish the conditioning tables from a hidden pre-activation.
+
+        Every operation acts on the trailing axis, so the same head applies
+        to the finite ordered-pair table and to a per-edge expansion of it.
+
+        Parameters
+        ----------
+        pre_activation
+            Hidden affine pre-activation with shape
+            ``(..., pair_hidden_width)``.
+        base_shift
+            Structural shift anchor with shape ``(..., channels)``.
+
+        Returns
+        -------
+        scale
+            Radial scales with shape ``(..., channels)``.
+        shift
+            Radial shifts with shape ``(..., channels)``.
+        mixing
+            Mode-mixing matrices with shape
+            ``(..., channels, radial_modes)``, or ``None`` when
+            ``radial_modes`` is zero.
+        spin_scale
+            Spin scales with shape ``(..., spin_channels)``, or ``None`` when
+            ``spin_channels`` is zero.
+        spin_shift
+            Spin shifts with the same shape as ``spin_scale``.
+        """
+        xp = array_api_compat.array_namespace(pre_activation)
+        device = array_api_compat.device(pre_activation)
+        logits = self.network.call_from_hidden_affine(pre_activation)
+
+        # The output splits into the scale, the shift residual, the flattened
+        # mixing matrix, and the two spin tables, in that order.
+        shift_end = 2 * self.channels
+        mixing_end = shift_end + self.channels * self.radial_modes
+        spin_scale_end = mixing_end + self.spin_channels
+
+        def anchored(anchor: Any, block: Any) -> Any:
+            """Bound one spin head around its learned per-channel offset."""
+            return xp.tanh(
+                block
+                + xp_asarray_nodetach(
+                    xp,
+                    anchor,
+                    dtype=block.dtype,
+                    device=device,
+                )
+            )
+
+        return (
+            1.0 + xp.tanh(logits[..., : self.channels]),
+            base_shift + xp.tanh(logits[..., self.channels : shift_end]),
+            None
+            if self.radial_modes == 0
+            else xp.reshape(
+                xp.tanh(logits[..., shift_end:mixing_end]),
+                (-1, self.channels, self.radial_modes),
+            ),
+            None
+            if self.spin_channels == 0
+            else anchored(
+                self.adam_spin_scale_anchor,
+                logits[..., mixing_end:spin_scale_end],
+            ),
+            None
+            if self.spin_channels == 0
+            else anchored(self.adam_spin_shift_anchor, logits[..., spin_scale_end:]),
+        )
+
     def call(
-        self, type_embedding: Any
+        self, type_embedding: Any, hidden_bias: Any = None
     ) -> tuple[Any, Any, Any | None, Any | None, Any | None]:
         """Build the ordered scale, shift, mixing, and spin tables.
 
@@ -165,6 +288,10 @@ class OrderedPairFiLM(NativeOP):
         type_embedding
             Complete type table with shape ``(T + 1, channels)``, where the
             trailing row is the zero padding type.
+        hidden_bias
+            Optional frame-condition bias with shape
+            ``(pair_hidden_width,)``, added to the hidden pre-activation of
+            every ordered pair. ``None`` leaves the cache unconditioned.
 
         Returns
         -------
@@ -183,63 +310,10 @@ class OrderedPairFiLM(NativeOP):
         spin_shift
             Ordered spin shifts with the same shape as ``spin_scale``.
         """
-        xp = array_api_compat.array_namespace(type_embedding)
-        device = array_api_compat.device(type_embedding)
-        ntypes = type_embedding.shape[0]
-        pair_shape = (ntypes, ntypes, self.channels)
-        pair_input = xp.reshape(
-            xp.concat(
-                [
-                    xp.broadcast_to(type_embedding[:, None, :], pair_shape),
-                    xp.broadcast_to(type_embedding[None, :, :], pair_shape),
-                ],
-                axis=-1,
-            ),
-            (-1, 2 * self.channels),
-        )
-        logits = self.network.call(pair_input)
-
-        # The output splits into the scale, the shift residual, the flattened
-        # mixing matrix, and the two spin tables, in that order.
-        shift_end = 2 * self.channels
-        mixing_end = shift_end + self.channels * self.radial_modes
-        spin_scale_end = mixing_end + self.spin_channels
-        base_shift = xp.reshape(
-            type_embedding[:, None, :] + type_embedding[None, :, :],
-            (-1, self.channels),
-        )
-
-        def anchored(anchor: Any, block: Any) -> Any:
-            """Bound one spin head around its learned per-channel offset."""
-            return xp.tanh(
-                block
-                + xp_asarray_nodetach(
-                    xp,
-                    anchor,
-                    dtype=block.dtype,
-                    device=device,
-                )[None, :]
-            )
-
-        return (
-            1.0 + xp.tanh(logits[:, : self.channels]),
-            base_shift + xp.tanh(logits[:, self.channels : shift_end]),
-            None
-            if self.radial_modes == 0
-            else xp.reshape(
-                xp.tanh(logits[:, shift_end:mixing_end]),
-                (-1, self.channels, self.radial_modes),
-            ),
-            None
-            if self.spin_channels == 0
-            else anchored(
-                self.adam_spin_scale_anchor,
-                logits[:, mixing_end:spin_scale_end],
-            ),
-            None
-            if self.spin_channels == 0
-            else anchored(self.adam_spin_shift_anchor, logits[:, spin_scale_end:]),
-        )
+        pre_activation, base_shift = self.pair_latent(type_embedding)
+        if hidden_bias is not None:
+            pre_activation = pre_activation + hidden_bias
+        return self.heads(pre_activation, base_shift)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the ordered pair encoder.

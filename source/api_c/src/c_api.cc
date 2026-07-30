@@ -771,6 +771,26 @@ bool validate_model_devi_nframes(DP_DeepBaseModelDevi* dp, const int nframes) {
   return false;
 }
 
+/**
+ * @brief Copy a charge/spin condition supplied by a C caller.
+ *
+ * The C boundary carries a bare pointer, so the element count the caller
+ * passes alongside it is the only thing standing between a short array and a
+ * read past its end, or a long one and a silent truncation. Callers invoke
+ * this inside DP_REQUIRES_OK so that a mismatch is reported through
+ * DP_*CheckOK rather than unwinding into C.
+ */
+std::vector<double> copy_charge_spin(const double* charge_spin,
+                                     const int numb_chg_spin,
+                                     const int dim_chg_spin) {
+  if (numb_chg_spin != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "the charge/spin condition carries " + std::to_string(numb_chg_spin) +
+        " values but the model expects " + std::to_string(dim_chg_spin));
+  }
+  return std::vector<double>(charge_spin, charge_spin + numb_chg_spin);
+}
+
 }  // namespace
 
 template <typename VALUETYPE>
@@ -2757,7 +2777,21 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp) {
 
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp) { return dp->dp.dim_chg_spin(); }
 
+void DP_DeepPotSetChargeSpin(DP_DeepPot* dp,
+                             const double* charge_spin,
+                             const int numb_chg_spin) {
+  DP_REQUIRES_OK(dp, dp->dp.set_charge_spin(copy_charge_spin(
+                         charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
+}
+
 int DP_DeepSpinGetDimChgSpin(DP_DeepSpin* dp) { return dp->dp.dim_chg_spin(); }
+
+void DP_DeepSpinSetChargeSpin(DP_DeepSpin* dp,
+                              const double* charge_spin,
+                              const int numb_chg_spin) {
+  DP_REQUIRES_OK(dp, dp->dp.set_charge_spin(copy_charge_spin(
+                         charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
+}
 
 bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) {
   return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
@@ -2797,6 +2831,13 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,
+                                      const double* charge_spin,
+                                      const int numb_chg_spin) {
+  DP_REQUIRES_OK(dp, dp->dp.set_charge_spin(copy_charge_spin(
+                         charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
 }
 
 bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp) {
@@ -2876,6 +2917,13 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp) {
 
 int DP_DeepSpinModelDeviGetDimChgSpin(DP_DeepSpinModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+void DP_DeepSpinModelDeviSetChargeSpin(DP_DeepSpinModelDevi* dp,
+                                       const double* charge_spin,
+                                       const int numb_chg_spin) {
+  DP_REQUIRES_OK(dp, dp->dp.set_charge_spin(copy_charge_spin(
+                         charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
 }
 
 bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp) {

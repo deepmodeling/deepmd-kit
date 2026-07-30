@@ -206,6 +206,27 @@ class DeepPotBackend : public DeepBaseModelBackend {
    **/
   virtual int dim_chg_spin() const { return 0; }
 
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   *
+   * An override is needed only where the condition has to be folded into state
+   * that is built ahead of the evaluations using it, as in a compressed model
+   * whose tables are specialized to one condition. A backend that reads the
+   * condition as an ordinary per-call input has nothing to install, so the
+   * default is a no-op rather than an error: the condition still reaches such
+   * a backend on every evaluation, through the charge_spin argument of
+   * computew(). The request is refused only by a model that carries no
+   * charge/spin conditioning at all, which no route can honour.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  virtual void set_charge_spin(const std::vector<double>& charge_spin) {
+    if (dim_chg_spin() == 0) {
+      throw deepmd::deepmd_exception(
+          "this model does not support a charge/spin condition");
+    }
+  }
+
   // charge_spin-aware computew overloads.  Default implementations call the
   // existing pure-virtual overloads (ignoring charge_spin) so that backends
   // that do not support charge/spin do not need any changes.  DeepPotPTExpt
@@ -841,6 +862,12 @@ class DeepPot : public DeepBaseModel {
 
   int dim_chg_spin() const;
 
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin);
+
  protected:
   std::shared_ptr<deepmd::DeepPotBackend> dp;
 };
@@ -883,6 +910,18 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   int dim_chg_spin() const {
     return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    for (unsigned ii = 0; ii < dps.size(); ++ii) {
+      dps[ii]->set_charge_spin(charge_spin);
+    }
   };
 
   /**

@@ -16,6 +16,12 @@
 
 #include "DeepSpin.h"
 
+// Forward-declare to keep the private header out of the public one. Defined in
+// commonPTExpt.h.
+namespace deepmd::ptexpt {
+class ChargeStateFold;
+}
+
 namespace torch::inductor {
 class AOTIModelPackageLoader;
 }
@@ -41,8 +47,9 @@ struct CanonicalGraphTensorPack;
  *
  * - ``lower_input_kind == "graph"``, the general NeighborGraph ABI
  *   (``forward_lower_graph_exportable``): the ten topology tensors, the
- *   per-node moment at positional index 10, then the conditional frame and
- *   atomic parameter tail. Any graph-lower descriptor can be frozen this way.
+ *   per-node moment at positional index 10, then the conditional tail of
+ *   frame parameter, atomic parameter and charge/spin condition. Any
+ *   graph-lower descriptor can be frozen this way.
  * - ``lower_input_kind == "dpa4c_canonical"``, the compact deployment ABI
  *   (``forward_lower_canonical_graph_exportable``): the eight dual-CSR graph
  *   tensors -- uint32 topology and float32 edge vectors -- and the moment at
@@ -100,10 +107,37 @@ class NativeSpinPTExpt : public DeepSpinBackend {
     assert(inited);
     return daparam;
   };
-  // Charge/spin conditioning is rejected when a native-spin model is built,
-  // so no archive this backend accepts carries a non-zero width; ``init``
-  // enforces it.
-  int dim_chg_spin() const override { return 0; };
+  /**
+   * @brief The width of a charge/spin condition this model accepts.
+   *
+   * This is the width a caller names a condition with, which is not in
+   * general the width of the conditioning input of the compiled forward:
+   * compression folds the condition into frozen tables and so removes it from
+   * the argument list, leaving a model that still serves a condition through
+   * the fold shipped beside the inference lower.
+   **/
+  int dim_chg_spin() const override {
+    assert(inited);
+    return settable_chgspin;
+  };
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   *
+   * The condition reaches the model by one of two routes, and this sets both
+   * so that the caller does not depend on how the model was frozen.  It
+   * becomes the condition of every later forward pass that is not given one
+   * explicitly.  A compressed descriptor additionally carries the condition
+   * inside frozen tables that the compiled lower holds as constants; when the
+   * archive ships the fold that rebuilds them, it runs here and the resulting
+   * tables are written over those constants.
+   *
+   * Intended to be called once, before inference, since overwriting the
+   * constants of a loaded module is not safe to interleave with a forward
+   * pass.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) override;
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const { return false; };
   bool has_default_fparam() const {
@@ -173,6 +207,74 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+
+  // Charge/spin-aware overloads.  This backend serves the condition in force
+  // rather than marshalling one per call, so a condition named here is
+  // checked against that state and rejected when it names another; the
+  // inherited defaults would drop it without a word.  An empty condition
+  // selects the state in force.
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
 
   /**
    * @brief Fully device-resident inference on a compact canonical graph.
@@ -279,13 +381,15 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * @brief Run the NeighborGraph native-spin forward.
    *
    * Positional order: the ten NeighborGraph tensors, the per-node moment at
-   * index 10, then the conditional tail -- the frame parameter and the atomic
-   * parameter, each present only when the model declares a non-zero width.
+   * index 10, then the conditional tail -- the frame parameter, the atomic
+   * parameter and the charge/spin condition, each present only when the model
+   * declares a non-zero width.
    */
   std::vector<torch::Tensor> run_model_graph(const GraphTensorPack& graph,
                                              const torch::Tensor& spin,
                                              const torch::Tensor& fparam,
-                                             const torch::Tensor& aparam);
+                                             const torch::Tensor& aparam,
+                                             const torch::Tensor& charge_spin);
 
   /**
    * @brief Apply model-level pair exclusion, canonicalize the payload and run.
@@ -296,6 +400,10 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * is narrowed to the compact dual-CSR form or fed to the NeighborGraph
    * forward. The returned map holds the artifact's public output keys with the
    * per-atom virial in its ``(N, 9)`` layout.
+   *
+   * The charge/spin condition is not marshalled per call: the NeighborGraph
+   * forward reads the condition currently in force, and the compact one
+   * carries it in its frozen tables.
    *
    * @param[in,out] graph Graph payload for ``node_count`` nodes; consumed in
    *   place by the canonicalization.
@@ -327,12 +435,26 @@ class NativeSpinPTExpt : public DeepSpinBackend {
   void translate_error(std::function<void()> f);
 
   bool inited;
-  int ntypes;
-  int ntypes_spin;
-  int dfparam;
-  int daparam;
+  // Every width below is a property of the loaded archive.  They read as zero
+  // until ``init`` has run, so that a query on an uninitialised backend
+  // answers "none" rather than whatever the allocation happened to hold.
+  int ntypes = 0;
+  int ntypes_spin = 0;
+  int dfparam = 0;
+  int daparam = 0;
+  // Conditioning width of the compiled forward's argument list.  Zero for a
+  // model that carries no condition, and also for a compressed one, whose
+  // condition lives in frozen tables rather than in an input.  Every gate that
+  // decides whether to hand the forward a condition tensor reads this.
+  int dchgspin = 0;
+  // Width of a charge state this model can be given; see ``dim_chg_spin()``.
+  int settable_chgspin = 0;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
+  // The condition served by every forward pass that is not given one
+  // explicitly, initialised from the archive and replaced by
+  // ``set_charge_spin``.
+  std::vector<double> default_chg_spin_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;
@@ -362,6 +484,11 @@ class NativeSpinPTExpt : public DeepSpinBackend {
   at::Tensor edge_index_tensor;      // node-space edges (folded or extended)
   at::Tensor edge_index_ext_tensor;  // extended-atom edges, for the geometry
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // The charge/spin condition a compressed descriptor folded into the
+  // constants of its lower, re-runnable so that a condition chosen at runtime
+  // can be served.  Null for an uncompressed model, which reads its condition
+  // as an ordinary input and needs no rebuild.
+  std::unique_ptr<deepmd::ptexpt::ChargeStateFold> charge_state_fold_;
 };
 
 }  // namespace deepmd

@@ -133,6 +133,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         type_embedding: torch.Tensor | None = None,
         comm_dict: dict | None = None,
         spin: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, None]:
         """Evaluate the graph descriptor with compressed CUDA dispatch.
 
@@ -149,6 +150,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         spin
             Per-node spin with shape ``(N, 3)``, mandatory for a
             spin-conditioned descriptor.
+        charge_spin
+            Frame-level charge state with shape ``(nf, 2)``. The compressed
+            branch does not read it: its frozen tables already carry the
+            charge state that compression baked in, which is why a compressed
+            descriptor reports a zero runtime condition width.
 
         Returns
         -------
@@ -189,6 +195,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
             type_embedding=type_embedding,
             comm_dict=comm_dict,
             spin=spin,
+            charge_spin=charge_spin,
         )
 
     def build_edge_features(
@@ -209,7 +216,10 @@ class DescrptDPA4C(DescrptDPA4CDP):
         accumulates over the whole neighborhood and the readout raises the
         moments to the fourth power, so both stay in the descriptor compute
         precision; the ordered pair cache is likewise evaluated outside, over
-        the finite type table.
+        the finite type table. A charge-conditioned descriptor is the
+        exception: its conditioning heads run on the edge axis and therefore
+        inside the region, producing their bounded outputs in bfloat16
+        alongside the amplitude they scale.
 
         Training follows ``use_amp`` and evaluation follows ``DP_AMP_INFER``.
         The two are independent: mixed precision at inference is a throughput
@@ -429,6 +439,56 @@ class DescrptDPA4C(DescrptDPA4CDP):
                 self.register_buffer(buffer_name, value)
         self.compress = True
 
+    def apply_charge_state(self, charge_spin: Any) -> None:
+        """Re-specialize a compressed snapshot to a frame charge state.
+
+        The condition reaches the compiled kernel only through the ordered
+        pair encoder and the centre type table, so a charge state is fully
+        described by four of the frozen artifacts. Rebuilding those four
+        moves the snapshot to a different state at the cost of one evaluation
+        over the finite type table, leaving the radial table, the readout
+        projections, the angular couplings, the per-type spin scalars and the
+        output calibration untouched.
+
+        The state is a constant of a molecular-dynamics run, so this is a
+        load-time operation. Applying it on every step would pay an
+        evaluation over ``(T + 1) ** 2`` ordered pairs for a value that never
+        changes, and that evaluation does not shrink with the system size.
+
+        Parameters
+        ----------
+        charge_spin
+            Frame condition ``[charge, multiplicity]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the descriptor is not a compressed snapshot, or carries no
+            charge conditioning.
+        """
+        if not self.compress:
+            raise RuntimeError(
+                "A charge state is applied to the frozen tables of a "
+                "compressed DPA4C snapshot; an uncompressed descriptor reads "
+                "the condition directly on every call."
+            )
+        if self.charge_spin_embedding is None:
+            raise RuntimeError(
+                "This DPA4C was not built with `add_chg_spin_ebd`, so it has "
+                "no charge state to apply."
+            )
+        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+            build_charge_state_artifacts,
+        )
+
+        artifacts = build_charge_state_artifacts(self, charge_spin)
+        device = self.compress_pair_film.device
+        for name, value in artifacts.items():
+            self._buffers[f"compress_{name}"] = value.to(
+                device=device,
+                dtype=torch.float32,
+            ).contiguous()
+
     def set_stat_mean_and_stddev(self, mean: Any, stddev: Any) -> None:
         """Update output calibration and its compressed snapshot."""
         super().set_stat_mean_and_stddev(mean, stddev)
@@ -477,6 +537,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
         check_frequency: int = -1,
     ) -> None:
         """Build immutable artifacts for the current DPA4C mega kernel.
+
+        A charge-conditioned descriptor folds ``default_chg_spin`` into the
+        frozen type and ordered pair tables. The snapshot therefore evaluates
+        that one charge state at no runtime cost, and moves to another through
+        :meth:`apply_charge_state` rather than through a second compression.
 
         Parameters
         ----------

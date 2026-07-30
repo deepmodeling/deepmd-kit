@@ -21,7 +21,9 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
+using deepmd::ptexpt::check_call_charge_spin;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
@@ -119,6 +121,35 @@ torch::Tensor make_aparam_tensor(const std::vector<double>& aparam,
   return deepmd::extend_graph_aparam(owned, node_count, nloc, dim_aparam);
 }
 
+/**
+ * @brief Build the charge/spin input of the conditional graph tail.
+ *
+ * The artifact consumes the condition in double precision, shaped
+ * ``(1, dim_chg_spin)``. A zero width means the forward has no such slot --
+ * either because the model carries no condition at all, or because
+ * compression moved it into frozen tables -- so the returned tensor is
+ * undefined and never marshalled.
+ */
+torch::Tensor make_chg_spin_tensor(const std::vector<double>& charge_spin,
+                                   const int dim_chg_spin,
+                                   const torch::Device& device) {
+  if (dim_chg_spin == 0) {
+    return torch::Tensor();
+  }
+  if (static_cast<int>(charge_spin.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "the charge/spin condition holds " +
+        std::to_string(charge_spin.size()) +
+        " values but the model expects dim_chg_spin=" +
+        std::to_string(dim_chg_spin) + ".");
+  }
+  return torch::from_blob(const_cast<double*>(charge_spin.data()),
+                          {1, dim_chg_spin},
+                          torch::TensorOptions().dtype(torch::kFloat64))
+      .clone()
+      .to(device);
+}
+
 }  // namespace
 
 void NativeSpinPTExpt::translate_error(std::function<void()> f) {
@@ -211,16 +242,14 @@ void NativeSpinPTExpt::init(const std::string& model,
   const int declared_chg_spin = metadata.obj_val.count("dim_chg_spin")
                                     ? metadata["dim_chg_spin"].as_int()
                                     : 0;
-  // Charge/spin FiLM conditioning is rejected when a native-spin model is
-  // built, so neither schema reserves a slot for it.
-  if (declared_chg_spin > 0) {
-    throw deepmd::deepmd_exception(
-        "native spin does not combine with charge/spin conditioning, but this "
-        "archive declares dim_chg_spin=" +
-        std::to_string(declared_chg_spin) + ".");
-  }
   dfparam = declared_fparam;
   daparam = declared_aparam;
+  dchgspin = declared_chg_spin;
+  // A model whose lower reads the condition as an input accepts exactly that
+  // condition; the charge-state fold, loaded below, widens this for a
+  // compressed model, whose lower has no conditioning input at all.
+  settable_chgspin = dchgspin;
+  default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
   has_default_fparam_ = metadata.obj_val.count("has_default_fparam") &&
                         metadata["has_default_fparam"].as_bool();
   default_fparam_.clear();
@@ -321,6 +350,31 @@ void NativeSpinPTExpt::init(const std::string& model,
     }
   }
 
+  // Charge-state fold.  Unlike the with-comm artifact, a failure here is not
+  // a degraded mode to defer: the metadata field is the archive's claim that
+  // the fold ships with it, so an archive that declares the constants but
+  // cannot supply the fold is malformed.
+  charge_state_fold_ = deepmd::ptexpt::ChargeStateFold::load(
+      model, metadata, gpu_enabled, gpu_id);
+  if (charge_state_fold_) {
+    // The condition of a compressed model reaches the compiled lower only
+    // through the constants the fold rebuilds, so the argument list carries
+    // none and ``dchgspin`` is zero.  What the model accepts is the state the
+    // snapshot was frozen against, which is also the layout the fold consumes.
+    settable_chgspin =
+        metadata.obj_val.count("default_chg_spin")
+            ? static_cast<int>(metadata["default_chg_spin"].as_array().size())
+            : 0;
+    if (settable_chgspin == 0) {
+      throw deepmd::deepmd_exception(
+          "the archive ships a charge-state fold but names no "
+          "default_chg_spin, so the width of a charge state is unknown");
+    }
+    // The constants were frozen against the archive's own charge state, so
+    // that is the state in force until ``set_charge_spin`` installs another.
+    default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
+  }
+
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   if (num_inter_nthreads) {
@@ -337,6 +391,33 @@ void NativeSpinPTExpt::init(const std::string& model,
   }
 
   inited = true;
+}
+
+void NativeSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
+  assert(inited);
+  if (settable_chgspin == 0) {
+    throw deepmd::deepmd_exception(
+        "this model was not frozen with a charge/spin condition");
+  }
+  if (static_cast<int>(charge_spin.size()) != settable_chgspin) {
+    throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                   std::to_string(charge_spin.size()) +
+                                   " values but the model expects " +
+                                   std::to_string(settable_chgspin));
+  }
+  // Route one: the condition of every later forward pass that is not given
+  // one explicitly.  This is the whole mechanism for an uncompressed model,
+  // which reads the condition as an ordinary input.
+  default_chg_spin_ = charge_spin;
+  // Route two: a compressed descriptor has folded the condition into frozen
+  // tables that the lower holds as constants, so serving another condition
+  // means rebuilding those tables and writing them over the constants.
+  if (charge_state_fold_) {
+    charge_state_fold_->apply(charge_spin,
+                              gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
+                                          : torch::Device(torch::kCPU),
+                              *loader);
+  }
 }
 
 void NativeSpinPTExpt::get_type_map(std::string& type_map_str) {
@@ -363,7 +444,8 @@ std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
     const GraphTensorPack& graph,
     const torch::Tensor& spin,
     const torch::Tensor& fparam,
-    const torch::Tensor& aparam) {
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin) {
   deepmd::check_graph_aparam_flat(aparam, daparam,
                                   "NativeSpinPTExpt::run_model_graph");
   std::vector<torch::Tensor> inputs = {
@@ -383,6 +465,9 @@ std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
   }
   if (daparam > 0) {
     inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
   }
   return loader->run(inputs);
 }
@@ -412,7 +497,8 @@ std::map<std::string, torch::Tensor> NativeSpinPTExpt::run_graph_payload(
         run_model_graph(
             graph, spin,
             make_fparam_tensor(fparam, default_fparam_, dfparam, device),
-            make_aparam_tensor(aparam, daparam, node_count, nloc, device)));
+            make_aparam_tensor(aparam, daparam, node_count, nloc, device),
+            make_chg_spin_tensor(default_chg_spin_, dchgspin, device)));
   }
   return output_map;
 }
@@ -954,6 +1040,92 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
     compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
             spin, atype, nghost, inlist, ago, fparam, aparam, atomic);
   });
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<double>& force,
+                                std::vector<double>& force_mag,
+                                std::vector<double>& virial,
+                                std::vector<double>& atom_energy,
+                                std::vector<double>& atom_virial,
+                                const std::vector<double>& coord,
+                                const std::vector<double>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<double>& box,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                         /*applied_per_call=*/false, default_chg_spin_);
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, fparam, aparam, atomic);
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<float>& force,
+                                std::vector<float>& force_mag,
+                                std::vector<float>& virial,
+                                std::vector<float>& atom_energy,
+                                std::vector<float>& atom_virial,
+                                const std::vector<float>& coord,
+                                const std::vector<float>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<float>& box,
+                                const std::vector<float>& fparam,
+                                const std::vector<float>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                         /*applied_per_call=*/false, default_chg_spin_);
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, fparam, aparam, atomic);
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<double>& force,
+                                std::vector<double>& force_mag,
+                                std::vector<double>& virial,
+                                std::vector<double>& atom_energy,
+                                std::vector<double>& atom_virial,
+                                const std::vector<double>& coord,
+                                const std::vector<double>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<double>& box,
+                                const int nghost,
+                                const InputNlist& inlist,
+                                const int& ago,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                         /*applied_per_call=*/false, default_chg_spin_);
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<float>& force,
+                                std::vector<float>& force_mag,
+                                std::vector<float>& virial,
+                                std::vector<float>& atom_energy,
+                                std::vector<float>& atom_virial,
+                                const std::vector<float>& coord,
+                                const std::vector<float>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<float>& box,
+                                const int nghost,
+                                const InputNlist& inlist,
+                                const int& ago,
+                                const std::vector<float>& fparam,
+                                const std::vector<float>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                         /*applied_per_call=*/false, default_chg_spin_);
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
 }
 
 void NativeSpinPTExpt::compute_canonical_graph_gpu(

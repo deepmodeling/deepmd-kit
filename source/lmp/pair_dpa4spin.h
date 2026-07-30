@@ -54,8 +54,10 @@ class CommBrickDPA4Spin : public CommBrick {
 // ghost) force and magnetic force, both of which the spin atom style folds
 // onto their owners through its reverse communication.
 //
-// The style evaluates exactly one artifact and passes no frame, atomic or
-// charge/spin parameters, so a model that requires one must carry its default.
+// The style evaluates exactly one artifact and passes no frame or atomic
+// parameters, so a model that requires one must carry its default. A charge
+// state, being fixed for the whole run, is named once on the pair_style line
+// and handed to the model there.
 //
 // The device-resident variant is ``dpa4spin/kk``; it needs the compact
 // canonical artifact and evaluates it without the per-step host marshaling.
@@ -64,7 +66,8 @@ class PairDPA4Spin : public Pair {
   PairDPA4Spin(class LAMMPS*);
   ~PairDPA4Spin() override;
 
-  // Load the artifact named by ``pair_style dpa4spin <model>``.
+  // Load the artifact named by ``pair_style dpa4spin <model> [charge_spin
+  // <v1> ... <vN>]`` and fix the charge state the keyword names.
   void settings(int, char**) override;
   // Resolve the LAMMPS atom types onto the element list of the model.
   void coeff(int, char**) override;

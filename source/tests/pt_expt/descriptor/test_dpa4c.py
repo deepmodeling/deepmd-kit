@@ -365,7 +365,7 @@ class TestDPA4C:
             features = descriptor.build_edge_features(
                 graph,
                 atype_local,
-                descriptor.pair_film.call(descriptor.type_embedding.call()),
+                descriptor.pair_film.pair_latent(descriptor.type_embedding.call()),
             )[:3]
         finally:
             for handle in handles:
@@ -456,7 +456,9 @@ class TestDPA4CSpin:
         self.spin = torch.randn(6, 3, dtype=torch.float64, generator=generator).to(
             env.DEVICE
         )
-        from deepmd.dpmodel.utils.neighbor_graph import build_neighbor_graph
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
 
         self.graph = build_neighbor_graph(self.coord, self.atype, None, 3.0)
         self.flat_atype = self.atype.reshape(-1)
@@ -551,7 +553,9 @@ class TestDPA4CSpin:
         structural set as a spin-free one and its frozen tables are built
         alongside the geometric caches.
         """
-        from deepmd.kernels.cuda.dpa4c.graph_compress import mega_eligible
+        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+            mega_eligible,
+        )
 
         single = DescrptDPA4C(
             rcut=3.0,

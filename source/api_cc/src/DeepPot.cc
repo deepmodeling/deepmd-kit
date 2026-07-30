@@ -778,6 +778,10 @@ bool DeepPot::uses_canonical_graph_inference() const {
 
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
+void DeepPot::set_charge_spin(const std::vector<double>& charge_spin) {
+  dp->set_charge_spin(charge_spin);
+}
+
 DeepPotModelDevi::DeepPotModelDevi() {
   inited = false;
   numb_models = 0;

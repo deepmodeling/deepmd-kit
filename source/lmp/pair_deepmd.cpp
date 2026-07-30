@@ -873,6 +873,22 @@ void PairDeepMD::settings(int narg, char** arg) {
                "simultaneously");
   }
 
+  // A charge/spin condition named on the pair_style line holds for the whole
+  // run, so it is handed to the model once here instead of being resupplied
+  // every step.  This is also what lets a compressed model serve it at all:
+  // there the condition lives inside frozen tables, which are rebuilt here
+  // and cannot be rebuilt per step at a sensible cost.
+  if (!charge_spin.empty()) {
+    try {
+      deep_pot.set_charge_spin(charge_spin);
+      if (numb_models > 1) {
+        deep_pot_model_devi.set_charge_spin(charge_spin);
+      }
+    } catch (deepmd_compat::deepmd_exception& e) {
+      error->one(FLERR, e.what());
+    }
+  }
+
   if (comm->me == 0) {
     if (numb_models > 1 && out_freq > 0) {
       if (!is_restart) {

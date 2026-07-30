@@ -7,6 +7,11 @@ from .bispectrum import (
     derive_bispectrum_ranks,
     enumerate_degree_triples,
 )
+from .charge_state import (
+    ChargeStateEmbedding,
+    canonicalize_charge_spin,
+    validate_charge_state,
+)
 from .geometry import (
     MAX_ANGULAR_DEGREE,
     build_angular_basis,
@@ -31,16 +36,19 @@ __all__ = [
     "MAX_ANGULAR_DEGREE",
     "NEIGHBOR_QUADRUPOLE_CHANNELS",
     "BispectrumLayout",
+    "ChargeStateEmbedding",
     "InvariantReadout",
     "OrderedPairFiLM",
     "SpinChannels",
     "build_angular_basis",
     "build_bispectrum_layout",
     "build_moment_indices",
+    "canonicalize_charge_spin",
     "degree_offsets",
     "derive_bispectrum_ranks",
     "derive_degree_channels",
     "derive_spin_channels",
     "enumerate_degree_triples",
     "packed_l2_to_stf",
+    "validate_charge_state",
 ]

@@ -155,6 +155,49 @@ class SwiGLUMLP(NativeOP):
             output = self.activation(layer(output))
         return output
 
+    def call_hidden_affine(self, inputs: Any) -> Any:
+        """Apply the first hidden affine map without its activation.
+
+        The affine map is linear and bias free, so an additive shift of the
+        input appears here as an additive shift of the pre-activation. A
+        caller that evaluates the same trunk under several such shifts can
+        therefore share this projection and add each shift afterwards,
+        instead of duplicating the input over the shift axis.
+
+        Parameters
+        ----------
+        inputs
+            Input with shape ``(..., mlp_layers[0])``.
+
+        Returns
+        -------
+        Any
+            Pre-activation with shape ``(..., 2 * mlp_layers[1])``.
+        """
+        return self.layers[0](inputs)
+
+    def call_from_hidden_affine(self, pre_activation: Any) -> Any:
+        """Complete the MLP from the first hidden affine pre-activation.
+
+        Composing this with :meth:`call_hidden_affine` reproduces
+        :meth:`call` exactly, for any number of hidden layers.
+
+        Parameters
+        ----------
+        pre_activation
+            Pre-activation with shape ``(..., 2 * mlp_layers[1])``, as
+            returned by :meth:`call_hidden_affine`.
+
+        Returns
+        -------
+        Any
+            Output with shape ``(..., mlp_layers[-1])``.
+        """
+        output = self.activation(pre_activation)
+        for layer in self.layers[1:-1]:
+            output = self.activation(layer(output))
+        return self.call_output(output)
+
     def call_output(self, hidden: Any) -> Any:
         """Apply the final scaled linear projection to a latent state.
 

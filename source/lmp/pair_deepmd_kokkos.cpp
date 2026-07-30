@@ -201,13 +201,9 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
                "yes' to the input.");
   }
   // Runtime frame (fparam) and per-atom (aparam) parameters are threaded to the
-  // device edge path in compute(); only a runtime charge/spin override is not,
-  // as compute_edges_gpu draws charge_spin from the model's stored default.
-  if (!charge_spin.empty()) {
-    error->all(FLERR,
-               "pair style deepmd/kk uses the model's stored default "
-               "charge_spin; a runtime charge_spin is not supported.");
-  }
+  // device edge path in compute().  A charge/spin condition needs no threading:
+  // compute_edges_gpu draws it from the model, and settings() has already fixed
+  // the model on the condition the pair_style line asked for.
 
   // Route the base full request to the Kokkos device neighbor build.
   auto request = neighbor->find_request(this);

@@ -13,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 29
+#define DP_C_API_VERSION 30
 
 /**
  * @brief Neighbor list.
@@ -2613,6 +2613,20 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp);
 
 /**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * It becomes the condition of every later evaluation that is not given one
+ * explicitly. Intended to be called once, before the first evaluation.
+ * @param[in] dp The DP to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepPotGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepPotSetChargeSpin(DP_DeepPot* dp,
+                                    const double* charge_spin,
+                                    const int numb_chg_spin);
+
+/**
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
@@ -2666,6 +2680,20 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @since API version 27
  */
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * Applied to every model, so that the deviation is taken between models under
+ * the same condition.
+ * @param[in] dp The DP to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepPotModelDeviGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,
+                                             const double* charge_spin,
+                                             const int numb_chg_spin);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall
@@ -2766,6 +2794,20 @@ int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
 int DP_DeepSpinGetDimChgSpin(DP_DeepSpin* dp);
 
 /**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * It becomes the condition of every later evaluation that is not given one
+ * explicitly. Intended to be called once, before the first evaluation.
+ * @param[in] dp The DP Spin Model to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepSpinGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepSpinSetChargeSpin(DP_DeepSpin* dp,
+                                     const double* charge_spin,
+                                     const int numb_chg_spin);
+
+/**
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
@@ -2825,6 +2867,20 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
  * @since API version 29
  */
 int DP_DeepSpinModelDeviGetDimChgSpin(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Fix the charge/spin condition served for the rest of the run.
+ * Applied to every model, so that the deviation is taken between models under
+ * the same condition.
+ * @param[in] dp The DP Spin Model Deviation to use.
+ * @param[in] charge_spin The condition.
+ * @param[in] numb_chg_spin The number of values in charge_spin; must equal
+ * DP_DeepSpinModelDeviGetDimChgSpin.
+ * @since API version 30
+ */
+extern void DP_DeepSpinModelDeviSetChargeSpin(DP_DeepSpinModelDevi* dp,
+                                              const double* charge_spin,
+                                              const int numb_chg_spin);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall

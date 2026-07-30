@@ -37,6 +37,7 @@ from dataclasses import (
     dataclass,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -50,9 +51,18 @@ from deepmd.dpmodel.descriptor.dpa4c_nn import (
     derive_degree_channels,
     derive_spin_channels,
     packed_l2_to_stf,
+    validate_charge_state,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
+
 __all__ = [
+    "CHARGE_STATE_ARTIFACTS",
+    "ChargeStateFold",
+    "build_charge_state_artifacts",
     "build_compression_artifacts",
     "build_radial_table",
     "coupling_records",
@@ -70,6 +80,17 @@ __all__ = [
 SUPPORTED_CHANNELS = (8, 16, 32, 64, 128)
 SUPPORTED_LMAX = (2, 3, 4)
 SUPPORTED_RADIAL_MODES = (0, 2, 4, 8)
+
+#: Compression artifacts that carry the frame charge state. They are the
+#: complete image of a charge state in a compressed snapshot: overwriting
+#: exactly these four re-specializes the snapshot to a different state, and
+#: every other artifact depends on the trained weights alone.
+CHARGE_STATE_ARTIFACTS = (
+    "pair_film",
+    "pair_mixing",
+    "spin_pair",
+    "type_embedding",
+)
 
 # Degrees one and two carry the wide channel blocks and are contracted by
 # specialized closed forms in every backend; the remaining triples run through
@@ -602,31 +623,6 @@ def build_compression_artifacts(
     table, info = build_radial_table(descriptor, stride)
 
     with torch.no_grad():
-        type_embedding = descriptor.type_embedding.call().to(
-            device=device,
-            dtype=torch.float32,
-        )
-        (
-            pair_scale,
-            pair_shift,
-            pair_mixing,
-            spin_scale,
-            spin_shift,
-        ) = descriptor.pair_film.call(type_embedding)
-        pair_film = torch.stack((pair_scale, pair_shift), dim=-1)
-        spin_pair, spin_type = _build_spin_caches(
-            descriptor,
-            spin_scale,
-            spin_shift,
-            device,
-        )
-        # The mode axis is innermost so that the coefficients a lane needs for
-        # one channel arrive in one or two vector loads.
-        mixing = (
-            torch.zeros(0, dtype=torch.float32, device=device)
-            if pair_mixing is None
-            else pair_mixing.to(torch.float32)
-        )
         readout_matrices = _build_readout_matrices(descriptor, profile, device)
         output_mean = descriptor.mean.to(device=device, dtype=torch.float32)
         output_inv_std = torch.reciprocal(
@@ -641,11 +637,7 @@ def build_compression_artifacts(
     return {
         "data": table,
         "info": info,
-        "pair_film": pair_film.detach().contiguous(),
-        "pair_mixing": mixing.detach().contiguous(),
-        "spin_pair": spin_pair,
-        "spin_type": spin_type,
-        "type_embedding": type_embedding.detach().contiguous(),
+        "spin_type": _build_spin_type_cache(descriptor, device),
         "readout_matrices": readout_matrices,
         "coupling_meta": torch.as_tensor(
             _coupling_meta(records),
@@ -664,65 +656,230 @@ def build_compression_artifacts(
         ),
         "output_mean": output_mean.detach().contiguous(),
         "output_inv_std": output_inv_std.detach().contiguous(),
+        **build_charge_state_artifacts(descriptor, descriptor.default_chg_spin),
     }
 
 
-def _build_spin_caches(
+def charge_state_artifacts(
     descriptor: Any,
-    spin_scale: torch.Tensor | None,
-    spin_shift: torch.Tensor | None,
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Freeze the two finite tables the native spin branch reads.
+    charge_spin: torch.Tensor | None,
+) -> dict[str, torch.Tensor]:
+    """Build the compression artifacts that carry one frame charge state.
 
-    ``spin_pair`` interleaves the ordered scale and shift so that one channel
-    arrives in a single 64-bit load, matching the geometric PairFiLM cache.
-    ``spin_type`` packs the four per-type scalars a node needs into one
-    128-bit row: the gate divided by the reference magnitude, which conditions
-    the moment; the bare gate, which the magnetic-coordination family reads
-    because it counts neighbours that carry a moment rather than the moments
-    themselves; and the two on-site weights.
+    The condition reaches the compiled kernel only through the ordered pair
+    encoder and the centre type table, neither of which depends on distance,
+    so these four artifacts are the complete image of a charge state in the
+    snapshot. Rebuilding them from a different state re-specializes the
+    snapshot without touching the radial table, the readout projections, the
+    angular couplings, the per-type spin scalars or the output calibration.
+
+    This is the traceable form: it takes the condition as a tensor and reads
+    no host value, so the same code both builds the snapshot and, once
+    exported, rebuilds it on the deployment device.
+    :func:`build_charge_state_artifacts` is the host-side entry that validates
+    the condition first.
 
     Parameters
     ----------
     descriptor
         Evaluated pt_expt DPA4C descriptor.
-    spin_scale, spin_shift
-        Ordered spin tables, or ``None`` for a spin-free descriptor.
-    device
-        Device that receives the packed tables.
+    charge_spin
+        Frame condition with shape ``(2,)``. Read only when the descriptor is
+        charge conditioned, and mandatory in that case.
 
     Returns
     -------
-    spin_pair
-        Ordered cache with shape ``((T + 1) ** 2, spin_channels, 2)``, or an
-        empty tensor.
-    spin_type
-        Per-type table with shape ``(T + 1, 4)``, or an empty tensor.
+    dict[str, torch.Tensor]
+        The artifacts named by :data:`CHARGE_STATE_ARTIFACTS`.
+
+    Raises
+    ------
+    ValueError
+        If a charge-conditioned descriptor is given no condition.
     """
+    device = next(descriptor.parameters()).device
+    type_embedding = descriptor.type_embedding.call().to(
+        device=device,
+        dtype=torch.float32,
+    )
+    pair_hidden_bias, type_shift = None, None
+    if descriptor.charge_spin_embedding is not None:
+        if charge_spin is None:
+            raise ValueError(
+                "A charge-conditioned DPA4C snapshot must be built against a "
+                "frame condition. Set `default_chg_spin` to supply the state "
+                "the snapshot starts from."
+            )
+        type_shift, pair_hidden_bias = descriptor.charge_spin_embedding.call(
+            charge_spin.to(dtype=torch.float32).reshape(1, 2)
+        )
+
+    # The ordered pair encoder reads the unconditioned type table and receives
+    # the condition as a pre-activation bias, while the centre type tail
+    # carries it as an additive shift on its real rows. Both mirror the
+    # portable path exactly.
+    (
+        pair_scale,
+        pair_shift,
+        pair_mixing,
+        spin_scale,
+        spin_shift,
+    ) = descriptor.pair_film.call(
+        type_embedding,
+        hidden_bias=None if pair_hidden_bias is None else pair_hidden_bias[0],
+    )
+    if type_shift is not None:
+        # The padding row keeps its zero embedding: the portable path masks
+        # the shift by atom type, so shifting it here would break the parity
+        # between the two routes on any system carrying padding or ghost
+        # nodes.
+        rows = torch.arange(type_embedding.shape[0], dtype=torch.int64, device=device)
+        real = rows < descriptor.ntypes
+        type_embedding = type_embedding + type_shift[0] * real[:, None]
+
     empty = torch.zeros(0, dtype=torch.float32, device=device)
+    return {
+        "pair_film": torch.stack((pair_scale, pair_shift), dim=-1).contiguous(),
+        # The mode axis is innermost so that the coefficients a lane needs for
+        # one channel arrive in one or two vector loads.
+        "pair_mixing": (
+            empty if pair_mixing is None else pair_mixing.to(torch.float32).contiguous()
+        ),
+        "spin_pair": (
+            empty
+            if descriptor.spin is None
+            else torch.stack((spin_scale, spin_shift), dim=-1)
+            .to(device=device, dtype=torch.float32)
+            .contiguous()
+        ),
+        "type_embedding": type_embedding.contiguous(),
+    }
+
+
+def build_charge_state_artifacts(
+    descriptor: Any,
+    charge_spin: Sequence[float] | None,
+) -> dict[str, torch.Tensor]:
+    """Validate a frame charge state and build its compression artifacts.
+
+    Parameters
+    ----------
+    descriptor
+        Evaluated pt_expt DPA4C descriptor.
+    charge_spin
+        Frame condition ``[charge, multiplicity]``. Read only when the
+        descriptor is charge conditioned, and mandatory in that case.
+
+    Returns
+    -------
+    dict[str, torch.Tensor]
+        The artifacts named by :data:`CHARGE_STATE_ARTIFACTS`, detached.
+
+    Raises
+    ------
+    ValueError
+        If a charge-conditioned descriptor is given no condition, or one that
+        does not address a row of both embedding tables.
+    """
+    state = None
+    if descriptor.charge_spin_embedding is not None and charge_spin is not None:
+        state = torch.tensor(
+            validate_charge_state(charge_spin),
+            dtype=torch.float32,
+            device=next(descriptor.parameters()).device,
+        )
+    with torch.no_grad():
+        return {
+            name: value.detach().contiguous()
+            for name, value in charge_state_artifacts(descriptor, state).items()
+        }
+
+
+class ChargeStateFold(torch.nn.Module):
+    """Rebuild the charge-state artifacts of a compressed snapshot.
+
+    Exporting this module beside the inference lower is what lets one
+    deployed artifact serve any charge state: the deployment layer runs it
+    once when the state becomes known and writes the four tensors over the
+    corresponding constants of the inference lower. The alternative, folding
+    inside the inference graph, would repeat an evaluation over
+    ``(T + 1) ** 2`` ordered pairs on every step for a value that is constant
+    over a molecular-dynamics run, and that evaluation does not shrink with
+    the system size.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed pt_expt DPA4C descriptor carrying charge conditioning.
+    """
+
+    def __init__(self, descriptor: Any) -> None:
+        super().__init__()
+        self.descriptor = descriptor
+
+    def forward(self, charge_spin: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        """Build the artifacts of one charge state.
+
+        Parameters
+        ----------
+        charge_spin
+            Frame condition with shape ``(1, 2)``, matching the tensor the
+            inference lower would receive.
+
+        Returns
+        -------
+        tuple[torch.Tensor, ...]
+            The artifacts named by :data:`CHARGE_STATE_ARTIFACTS`, in order.
+        """
+        artifacts = charge_state_artifacts(self.descriptor, charge_spin.reshape(2))
+        return tuple(artifacts[name] for name in CHARGE_STATE_ARTIFACTS)
+
+
+def _build_spin_type_cache(descriptor: Any, device: torch.device) -> torch.Tensor:
+    """Freeze the per-type table of the native spin branch.
+
+    The table packs the four per-type scalars a node needs into one 128-bit
+    row: the gate divided by the reference magnitude, which conditions the
+    moment; the bare gate, which the magnetic-coordination family reads
+    because it counts neighbours that carry a moment rather than the moments
+    themselves; and the two on-site weights. None of them passes through the
+    ordered pair encoder, so unlike ``spin_pair`` this table is independent of
+    the frame charge state.
+
+    Parameters
+    ----------
+    descriptor
+        Evaluated pt_expt DPA4C descriptor.
+    device
+        Device that receives the packed table.
+
+    Returns
+    -------
+    torch.Tensor
+        Per-type table with shape ``(T + 1, 4)``, or an empty tensor for a
+        spin-free descriptor.
+    """
     if descriptor.spin is None:
-        return empty, empty
+        return torch.zeros(0, dtype=torch.float32, device=device)
     spin = descriptor.spin
     gate = spin.spin_mask.to(device=device, dtype=torch.float32)
     reference = spin.spin_reference.to(device=device, dtype=torch.float32)
-    return (
-        torch.stack((spin_scale, spin_shift), dim=-1)
-        .to(device=device, dtype=torch.float32)
-        .detach()
-        .contiguous(),
-        torch.stack(
-            (
-                gate / reference,
-                gate,
-                spin.adam_spin_vector_weight.to(device=device, dtype=torch.float32),
-                spin.adam_spin_quadrupole_weight.to(device=device, dtype=torch.float32),
-            ),
-            dim=-1,
+    with torch.no_grad():
+        return (
+            torch.stack(
+                (
+                    gate / reference,
+                    gate,
+                    spin.adam_spin_vector_weight.to(device=device, dtype=torch.float32),
+                    spin.adam_spin_quadrupole_weight.to(
+                        device=device, dtype=torch.float32
+                    ),
+                ),
+                dim=-1,
+            )
+            .detach()
+            .contiguous()
         )
-        .detach()
-        .contiguous(),
-    )
 
 
 def _build_readout_matrices(

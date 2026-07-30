@@ -2043,6 +2043,189 @@ def _deserialize_to_file_pte(
     torch.export.save(exported, model_file, extra_files=extra_files)
 
 
+def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
+    """Return the descriptor whose charge state a deployment can rebuild.
+
+    Only a compressed charge-conditioned descriptor qualifies. An
+    uncompressed one reads its frame condition as an ordinary input, so
+    serving another condition costs nothing and needs no rebuild.
+
+    That combination is already visible in the collected metadata: a model
+    that carries a charge state embedding and yet reports a conditioning
+    width of zero has folded the condition into frozen tables. Every other
+    export answers from those two fields, and only a candidate pays for
+    rebuilding the model to reach its descriptor.
+
+    Parameters
+    ----------
+    data
+        Serialized model dictionary, as passed to the export entry point.
+        This is the dictionary the exported lower was traced from, whose
+        descriptor therefore owns the constants a fold would rewrite.
+    metadata
+        Archive metadata collected from that same model.
+
+    Returns
+    -------
+    Any or None
+        The evaluated descriptor, or ``None`` when the model carries no
+        compressed charge conditioning.
+    """
+    if not metadata["has_chg_spin_ebd"] or metadata["dim_chg_spin"] != 0:
+        return None
+
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    if (
+        descriptor is None
+        or not getattr(descriptor, "compress", False)
+        or getattr(descriptor, "charge_spin_embedding", None) is None
+    ):
+        return None
+    model.to("cpu")
+    model.eval()
+    return descriptor
+
+
+def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
+    """Name, per fold output, the constant of ``exported`` it replaces.
+
+    A compressed charge-conditioned descriptor carries its frame condition in
+    four of its frozen tables, which reach a compiled lower as lifted
+    constants. A deployment can therefore serve any charge state by rebuilding
+    those four once, when the state becomes known, and writing them over the
+    corresponding constants.
+
+    The result is positional: entry ``i`` names the constant that output ``i``
+    of the fold replaces, so a consumer writes the outputs back without
+    knowing what any of them mean. An empty entry marks an output that no
+    constant receives, which is how a disabled mechanism appears: it
+    contributes an empty artifact and carries no charge state.
+
+    ``make_fx`` traces a plain function, so it names every lifted tensor
+    positionally and the buffer names are gone by the time the program is
+    exported. The names are therefore recovered by value against the
+    descriptor's own artifacts, and an artifact matching anything other than
+    exactly one constant is an error rather than a guess.
+
+    Each exported lower lifts its constants independently, so the names hold
+    only for the lower they were resolved against. Only a compressed DPA4C
+    descriptor folds a charge state, and that family never carries message
+    passing across ranks, so an archive with a fold holds exactly one lower.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    exported
+        Exported lower whose constants are to be named.
+
+    Returns
+    -------
+    list[str]
+        Per fold output, the name of the constant it replaces.
+
+    Raises
+    ------
+    RuntimeError
+        If an artifact does not match exactly one lifted constant.
+    """
+    from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        CHARGE_STATE_ARTIFACTS,
+    )
+
+    lifted = {
+        name: tensor.detach().cpu()
+        for name, tensor in exported.state_dict.items()
+        if isinstance(tensor, torch.Tensor)
+    }
+    constants: list[str] = []
+    for name in CHARGE_STATE_ARTIFACTS:
+        artifact = getattr(descriptor, f"compress_{name}").detach().cpu()
+        if artifact.numel() == 0:
+            constants.append("")
+            continue
+        matches = [
+            key
+            for key, value in lifted.items()
+            if value.shape == artifact.shape
+            and value.dtype == artifact.dtype
+            and torch.equal(value, artifact)
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"The compressed artifact {name!r} matches {len(matches)} "
+                "constants of the exported lower; a runtime charge state "
+                "needs exactly one so that the deployment knows which "
+                "constant to overwrite."
+            )
+        constants.append(matches[0])
+    return constants
+
+
+def _compile_charge_state_fold(
+    descriptor: Any,
+    aoti_configs: dict,
+) -> bytes:
+    """Compile the rebuild of the charge-state artifacts as its own archive.
+
+    Compiling the rebuild beside the inference lower is what lets one
+    deployed artifact serve any charge state: the deployment runs it once when
+    the state becomes known, then writes its outputs over the constants named
+    by :func:`_match_charge_state_constants`.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    aoti_configs
+        Inductor options the inference lower was compiled with.
+
+    Returns
+    -------
+    bytes
+        The compiled fold archive.
+    """
+    import os
+    import tempfile
+
+    from torch._inductor import (
+        aoti_compile_and_package,
+    )
+
+    import deepmd.pt_expt.utils.env as _env
+    from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        ChargeStateFold,
+    )
+
+    log.info("Compiling the charge-state fold...")
+    # The descriptor is evaluated on the host, so the fold traces there and is
+    # moved to the target device with the rest of the program below.
+    sample = torch.tensor(
+        [descriptor.get_default_chg_spin()],
+        dtype=torch.float32,
+        device="cpu",
+    )
+    fold = torch.export.export(ChargeStateFold(descriptor), (sample,))
+    if _env.DEVICE.type != "cpu":
+        from torch.export.passes import (
+            move_to_device_pass,
+        )
+
+        fold = move_to_device_pass(fold, _env.DEVICE)
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "charge_state.pt2")
+        aoti_compile_and_package(fold, package_path=path, inductor_configs=aoti_configs)
+        with open(path, "rb") as archive:
+            return archive.read()
+
+
 def _deserialize_to_file_pt2(
     model_file: str,
     data: dict,
@@ -2145,6 +2328,19 @@ def _deserialize_to_file_pt2(
         exported, package_path=model_file, inductor_configs=aoti_configs
     )
 
+    # Charge-state fold. Present only for a compressed charge-conditioned
+    # descriptor, whose frozen tables the deployment rebuilds once when the
+    # state becomes known.
+    charge_state_descriptor = _charge_state_descriptor(data, metadata)
+    charge_state_bytes: bytes | None = None
+    if charge_state_descriptor is not None:
+        metadata["charge_state_constants"] = _match_charge_state_constants(
+            charge_state_descriptor, exported
+        )
+        charge_state_bytes = _compile_charge_state_fold(
+            charge_state_descriptor, aoti_configs
+        )
+
     # Second artifact: with-comm. Only for descriptors whose message
     # passing extends across rank boundaries. The flag was computed
     # from the model in ``_collect_metadata`` and is already in
@@ -2202,3 +2398,5 @@ def _deserialize_to_file_pt2(
             zf.writestr(
                 PT2_EXTRA_PREFIX + "forward_lower_with_comm.pt2", with_comm_bytes
             )
+        if charge_state_bytes is not None:
+            zf.writestr(PT2_EXTRA_PREFIX + "charge_state.pt2", charge_state_bytes)

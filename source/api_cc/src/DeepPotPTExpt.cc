@@ -14,6 +14,7 @@
 #include <numeric>
 #include <sstream>
 #include <type_traits>
+#include <unordered_map>
 
 #include "SimulationRegion.h"
 #include "common.h"
@@ -23,6 +24,7 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
+using deepmd::ptexpt::check_call_charge_spin;
 using deepmd::ptexpt::parse_json;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
@@ -190,6 +192,10 @@ void DeepPotPTExpt::init(const std::string& model,
   dchgspin = metadata.obj_val.count("dim_chg_spin")
                  ? metadata["dim_chg_spin"].as_int()
                  : 0;
+  // A model whose lower reads the condition as an input accepts exactly that
+  // condition; the charge-state fold, loaded below, widens this for a
+  // compressed model, whose lower has no conditioning input at all.
+  settable_chgspin = dchgspin;
   aparam_nall = false;  // pt_expt models use nloc for aparam
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
@@ -364,6 +370,31 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
 
+  // Charge-state fold.  Unlike the with-comm artifact, a failure here is not
+  // a degraded mode to defer: the metadata field is the archive's claim that
+  // the fold ships with it, so an archive that declares the constants but
+  // cannot supply the fold is malformed.
+  charge_state_fold_ = deepmd::ptexpt::ChargeStateFold::load(
+      model, metadata, gpu_enabled, gpu_id);
+  if (charge_state_fold_) {
+    // The condition of a compressed model reaches the compiled lower only
+    // through the constants the fold rebuilds, so the argument list carries
+    // none and ``dchgspin`` is zero.  What the model accepts is the state the
+    // snapshot was frozen against, which is also the layout the fold consumes.
+    settable_chgspin =
+        metadata.obj_val.count("default_chg_spin")
+            ? static_cast<int>(metadata["default_chg_spin"].as_array().size())
+            : 0;
+    if (settable_chgspin == 0) {
+      throw deepmd::deepmd_exception(
+          "the archive ships a charge-state fold but names no "
+          "default_chg_spin, so the width of a charge state is unknown");
+    }
+    // The constants were frozen against the archive's own charge state, so
+    // that is the state in force until ``set_charge_spin`` installs another.
+    default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
+  }
+
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   if (num_inter_nthreads) {
@@ -383,6 +414,33 @@ void DeepPotPTExpt::init(const std::string& model,
 }
 
 DeepPotPTExpt::~DeepPotPTExpt() {}
+
+void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
+  assert(inited);
+  if (settable_chgspin == 0) {
+    throw deepmd::deepmd_exception(
+        "this model was not frozen with a charge/spin condition");
+  }
+  if (static_cast<int>(charge_spin.size()) != settable_chgspin) {
+    throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                   std::to_string(charge_spin.size()) +
+                                   " values but the model expects " +
+                                   std::to_string(settable_chgspin));
+  }
+  // Route one: the condition of every later forward pass that is not given
+  // one explicitly.  This is the whole mechanism for an uncompressed model,
+  // which reads the condition as an ordinary input.
+  default_chg_spin_ = charge_spin;
+  // Route two: a compressed descriptor has folded the condition into frozen
+  // tables that the lower holds as constants, so serving another condition
+  // means rebuilding those tables and writing them over the constants.
+  if (charge_state_fold_) {
+    charge_state_fold_->apply(charge_spin,
+                              gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
+                                          : torch::Device(torch::kCPU),
+                              *loader);
+  }
+}
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model(
     const torch::Tensor& coord,
@@ -667,6 +725,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         "and is off by default for .pt2. To enable it, regenerate with: "
         "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
+                         dchgspin > 0, default_chg_spin_);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -725,6 +787,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // Whether the edge topology folds ghost neighbours onto their local owners,
+  // which reads an owner for every extended atom out of ``mapping_``.  The
+  // edge lower folds unless the with-comm artifact carries ghost features
+  // across ranks; the graph and canonical lowers fold on a single rank and
+  // keep the extended node set under domain decomposition, where ghost forces
+  // reverse-communicate to their owners instead.  The dense lower builds no
+  // edge topology and therefore never folds.
+  const bool fold_to_local =
+      lower_input_is_edge_
+          ? !use_with_comm
+          : ((lower_input_is_graph_ || lower_input_is_canonical_) &&
+             !multi_rank);
   // NeighborGraph multi-rank dispatch:
   //   - NON-message-passing (dpa1, se_e2_a, ...): the SAME single-rank graph
   //     .pt2 runs on the EXTENDED region (fold_to_local=false; ghosts are
@@ -766,6 +840,21 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           "callers must set inlist.mapping explicitly before compute().");
     }
   }
+  // Folding resolves every real extended atom to a local owner, so it needs
+  // the atom map for the same reason the ghost-feature gather above does, and
+  // for every lower that builds an edge topology rather than only for a
+  // message-passing one.  Without the map the owner table below degrades to
+  // the identity, whose ghost entries are not local atoms; establishing the
+  // precondition here reports it once, ahead of any tensor, instead of
+  // leaving it to the per-edge lookup inside the topology build.
+  if (fold_to_local && nghost_real > 0 && !atom_map_present) {
+    throw deepmd::deepmd_exception(
+        "This .pt2 lower folds ghost neighbours onto their local owners, "
+        "which needs an owner for each of the " +
+        std::to_string(nghost_real) +
+        " ghost atoms: add `atom_modify map yes` to the LAMMPS input, or, as "
+        "a C++ API caller, set inlist.mapping before compute().");
+  }
 
   // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
   // atom exchange between subdomains), so `ago > 0` implies the cached
@@ -791,11 +880,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else {
-      // Identity fallback.  The fail-fast above guarantees we only
+      // Identity fallback.  The fail-fasts above guarantee we only
       // reach this branch when one of these is true:
-      //   - The model is non-message-passing (mapping is unused).
-      //   - ``nghost == 0`` (no ghosts to gather, identity is trivially
-      //     correct).
+      //   - No real ghost exists, so the identity is the owner table.
+      //   - The topology keeps the extended node set (``!fold_to_local``)
+      //     and the model is non-message-passing, leaving this tensor
+      //     unread.
       //   - ``use_with_comm`` is true (the with-comm graph fills ghost
       //     features via border_op and ignores this tensor for ghost
       //     gather — see deepmd/pt_expt/descriptor/
@@ -823,7 +913,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const auto edge_tensors = createEdgeTensors(
           nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          /*fold_to_local=*/!use_with_comm);
+          fold_to_local);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else if (lower_input_is_graph_ || lower_input_is_canonical_) {
@@ -833,7 +923,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       const auto edge_tensors = createEdgeTensors(
           nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          /*fold_to_local=*/!multi_rank);
+          fold_to_local);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {
@@ -873,37 +963,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
 
   at::Tensor aparam_tensor = make_aparam_tensor(aparam_, nloc, daparam, device);
 
-  // Build charge_spin tensor: use runtime value when provided, fall back to
-  // default_chg_spin_ stored in the .pt2 metadata.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // ``use_with_comm`` was computed earlier alongside the fail-fast
@@ -1388,6 +1464,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                     coord, atype, box, fparam, aparam, charge_spin, atomic);
     return;
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
+                         dchgspin > 0, default_chg_spin_);
   // The .pt2 model only contains forward_common_lower, which requires
   // nlist as input. We must build the nlist in C++ and fold back the
   // extended-region outputs to local atoms.
@@ -1528,37 +1608,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   at::Tensor aparam_tensor =
       make_aparam_tensor(aparam, natoms, daparam, device);
 
-  // Build charge_spin tensor: use runtime value when provided, fall back to
-  // default_chg_spin_ stored in the .pt2 metadata.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // 5. Run the .pt2 model
@@ -1696,21 +1762,11 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
       static_cast<std::size_t>(natoms) * daparam, false);
   const FrameParameterLayout fparam_layout = resolve_frame_parameter_layout(
       "fparam", fparam.size(), nframes, dfparam, true);
-  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
-  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
-  // anything else up-front to avoid out-of-range slicing in the loop.
-  if (!charge_spin.empty()) {
-    size_t s_dcsp = static_cast<size_t>(dchgspin);
-    if (charge_spin.size() != s_dcsp &&
-        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
-      throw deepmd::deepmd_exception(
-          "charge_spin has " + std::to_string(charge_spin.size()) +
-          " values but the model expects dim_chg_spin=" +
-          std::to_string(dchgspin) + " (per frame) or " +
-          std::to_string(dchgspin * nframes) + " (for " +
-          std::to_string(nframes) + " frames).");
-    }
-  }
+  // charge_spin may be empty (the state in force), one charge state
+  // (broadcast to every frame), or one per frame. Reject anything else up
+  // front to avoid out-of-range slicing in the loop.
+  check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
+                         default_chg_spin_);
   ener.clear();
   force.clear();
   virial.clear();
@@ -1744,9 +1800,9 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     }
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
-      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      size_t s_dcsp = static_cast<size_t>(settable_chgspin);
       if (charge_spin.size() == s_dcsp) {
-        // single charge/spin vector broadcast to every frame
+        // one charge state broadcast to every frame
         frame_chg_spin = charge_spin;
       } else {
         frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
@@ -1910,21 +1966,11 @@ void DeepPotPTExpt::compute_mixed_type_impl(
       static_cast<std::size_t>(natoms) * daparam, false);
   const FrameParameterLayout fparam_layout = resolve_frame_parameter_layout(
       "fparam", fparam.size(), nframes, dfparam, true);
-  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
-  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
-  // anything else up-front to avoid out-of-range slicing in the loop.
-  if (!charge_spin.empty()) {
-    size_t s_dcsp = static_cast<size_t>(dchgspin);
-    if (charge_spin.size() != s_dcsp &&
-        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
-      throw deepmd::deepmd_exception(
-          "charge_spin has " + std::to_string(charge_spin.size()) +
-          " values but the model expects dim_chg_spin=" +
-          std::to_string(dchgspin) + " (per frame) or " +
-          std::to_string(dchgspin * nframes) + " (for " +
-          std::to_string(nframes) + " frames).");
-    }
-  }
+  // charge_spin may be empty (the state in force), one charge state
+  // (broadcast to every frame), or one per frame. Reject anything else up
+  // front to avoid out-of-range slicing in the loop.
+  check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
+                         default_chg_spin_);
   ener.clear();
   force.clear();
   virial.clear();
@@ -1960,9 +2006,9 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     }
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
-      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      size_t s_dcsp = static_cast<size_t>(settable_chgspin);
       if (charge_spin.size() == s_dcsp) {
-        // single charge/spin vector broadcast to every frame
+        // one charge state broadcast to every frame
         frame_chg_spin = charge_spin;
       } else {
         frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,

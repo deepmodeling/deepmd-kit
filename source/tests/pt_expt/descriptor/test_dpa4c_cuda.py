@@ -406,6 +406,119 @@ def test_post_compression_statistics_update_snapshot(
     torch.testing.assert_close(actual, reference, atol=3e-5, rtol=3e-5)
 
 
+def _build_charge_descriptor(
+    channels: int = 8,
+    radial_modes: int = 0,
+    default_chg_spin: list[float] | None = [2.0, 3.0],
+) -> DescrptDPA4C:
+    """Return a charge-conditioned descriptor with an active condition head.
+
+    The condition output projection is zero initialized, so it is replaced by
+    deterministic weights: a parity test against an inert condition would
+    pass for the wrong reason.
+    """
+    descriptor = (
+        DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=channels,
+            lmax=2,
+            n_radial=8,
+            radial_modes=radial_modes,
+            precision="float32",
+            seed=17,
+            add_chg_spin_ebd=True,
+            default_chg_spin=default_chg_spin,
+        )
+        .cuda()
+        .eval()
+    )
+    head = descriptor.charge_spin_embedding.network.layers[-1]
+    generator = torch.Generator(device="cuda").manual_seed(11)
+    with torch.no_grad():
+        head.w.copy_(
+            torch.randn(
+                head.w.shape,
+                dtype=torch.float32,
+                device="cuda",
+                generator=generator,
+            )
+            * 0.5
+        )
+    return descriptor
+
+
+@_GPU
+@pytest.mark.parametrize("channels", [8, 32, 128])
+@pytest.mark.parametrize("radial_modes", [0, 4])
+def test_charge_condition_folds_into_the_frozen_tables(
+    monkeypatch: pytest.MonkeyPatch,
+    channels: int,
+    radial_modes: int,
+) -> None:
+    """Compression must reproduce the conditioned portable descriptor.
+
+    The frame condition reaches only the finite type and ordered pair tables,
+    so folding it there leaves every artifact shape and the compiled kernel
+    untouched. Parity against the portable path is what establishes that the
+    fold is the same function the edge axis evaluates.
+    """
+    descriptor = _build_charge_descriptor(channels, radial_modes)
+    graph, atype = _build_graph(descriptor, canonical=False)
+    reference, _ = descriptor.call_graph(
+        graph,
+        atype,
+        charge_spin=torch.tensor([[2.0, 3.0]], device="cuda"),
+    )
+    descriptor.enable_compression(min_nbor_dist=0.5)
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    actual, _ = descriptor.call_graph(graph, atype)
+    torch.testing.assert_close(actual, reference, atol=3e-5, rtol=3e-5)
+
+
+@_GPU
+def test_a_baked_charge_state_differs_from_a_neutral_one() -> None:
+    """The baked state must actually reach the frozen tables.
+
+    Two snapshots of the same weights that differ only in the charge state
+    they were compressed against have to disagree; otherwise the fold is
+    writing an unconditioned table and the parity test above would hold
+    vacuously.
+    """
+    graph, atype = _build_graph(_build_charge_descriptor(), canonical=False)
+    outputs = []
+    for state in ([0.0, 1.0], [2.0, 3.0]):
+        descriptor = _build_charge_descriptor(default_chg_spin=state)
+        descriptor.enable_compression(min_nbor_dist=0.5)
+        outputs.append(
+            torch.ops.deepmd.dpa4c_graph_compress(
+                graph.edge_vec,
+                *_arguments(descriptor, graph, atype),
+            )[0]
+        )
+    assert not torch.allclose(outputs[0], outputs[1])
+
+
+@_GPU
+def test_a_compressed_snapshot_declares_no_runtime_condition() -> None:
+    # The compact canonical lower carries no conditioning slot, so a baked
+    # snapshot has to report that it consumes none.
+    descriptor = _build_charge_descriptor()
+    assert descriptor.get_dim_chg_spin() == 2
+    descriptor.enable_compression(min_nbor_dist=0.5)
+    assert descriptor.get_dim_chg_spin() == 0
+    assert descriptor.supports_charge_spin()
+
+
+@_GPU
+def test_compression_requires_a_baked_charge_state() -> None:
+    # Without a default there is no state to fold, and a snapshot that
+    # silently evaluated the unconditioned tables would be a different model.
+    descriptor = _build_charge_descriptor(default_chg_spin=None)
+    with pytest.raises(ValueError, match="`default_chg_spin`"):
+        descriptor.enable_compression(min_nbor_dist=0.5)
+
+
 @_GPU
 def test_compressed_descriptor_cannot_reenter_training() -> None:
     descriptor = _build_descriptor(8)

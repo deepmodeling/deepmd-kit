@@ -4,17 +4,21 @@
 // and helpers for the with-comm dual-artifact layout.
 #pragma once
 
+#include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 #include <torch/torch.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "common.h"  // for remap_comm_sendlist
@@ -279,6 +283,67 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
   return default_chg_spin;
 }
 
+/**
+ * @brief Validate a charge/spin condition supplied with an inference call.
+ *
+ * The condition holds either one frame's values, broadcast to every frame, or
+ * one set per frame. Whether a call may name a condition of its own depends
+ * on how the model receives it. A lower that reads the condition as an
+ * ordinary input takes a different one on every call. A model whose condition
+ * instead lives in the constants of its compiled tables, and a backend that
+ * marshals only the condition in force, both serve one state at a time; there
+ * a supplied condition can only restate the state in force, and anything else
+ * is rejected rather than silently ignored.
+ *
+ * @param[in] charge_spin The condition supplied by the caller. Empty selects
+ *   the state in force and is always accepted.
+ * @param[in] nframes Number of frames the call evaluates.
+ * @param[in] settable_chg_spin Width of a charge state the model accepts.
+ * @param[in] applied_per_call Whether the call marshals the condition into
+ *   the forward pass instead of serving the state in force.
+ * @param[in] installed The state in force, of width ``settable_chg_spin``.
+ **/
+inline void check_call_charge_spin(const std::vector<double>& charge_spin,
+                                   const int nframes,
+                                   const int settable_chg_spin,
+                                   const bool applied_per_call,
+                                   const std::vector<double>& installed) {
+  if (charge_spin.empty()) {
+    return;
+  }
+  const std::size_t width = static_cast<std::size_t>(settable_chg_spin);
+  if (charge_spin.size() != width &&
+      charge_spin.size() != width * static_cast<std::size_t>(nframes)) {
+    throw deepmd::deepmd_exception(
+        "charge_spin has " + std::to_string(charge_spin.size()) +
+        " values but the model expects dim_chg_spin=" +
+        std::to_string(settable_chg_spin) + " (per frame) or " +
+        std::to_string(settable_chg_spin * nframes) + " (for " +
+        std::to_string(nframes) + " frames).");
+  }
+  if (applied_per_call) {
+    return;
+  }
+  if (installed.size() != width) {
+    throw deepmd::deepmd_exception(
+        "the model serves one charge/spin state at a time but holds none of "
+        "the " +
+        std::to_string(settable_chg_spin) + " values it accepts.");
+  }
+  // Charge and multiplicity are integer-valued categorical indices carried as
+  // double, so a condition either is the state in force or is not.
+  for (std::size_t ii = 0; ii < charge_spin.size(); ++ii) {
+    if (charge_spin[ii] != installed[ii % width]) {
+      throw deepmd::deepmd_exception(
+          "the charge/spin condition supplied with this call differs from "
+          "the state the model serves. This model serves one state at a "
+          "time, held in the constants of its compiled tables or fixed for "
+          "the whole run, so the state must be chosen with set_charge_spin "
+          "before inference rather than named per call.");
+    }
+  }
+}
+
 // ============================================================================
 // ZIP archive reader — reads a file from a ZIP archive.
 // ============================================================================
@@ -509,14 +574,16 @@ class TempFile {
    * file and return a TempFile owning that path.
    *
    * The temp file is created via ``mkstemp(3)`` (atomic, unique,
-   * 0600 permissions) under the system tempdir (TMPDIR or /tmp).
+   * 0600 permissions) under the system tempdir (TMPDIR or /tmp), and is
+   * named after the entry it holds so that a file left behind by a crash
+   * says which artifact it came from.
    */
   static TempFile from_zip_entry(const std::string& outer_pt2_path,
                                  const std::string& entry_name) {
     std::string content = read_zip_entry(outer_pt2_path, entry_name);
     const char* tmpdir = std::getenv("TMPDIR");
-    std::string tmpl =
-        std::string(tmpdir ? tmpdir : "/tmp") + "/dp_pt2_with_comm_XXXXXX";
+    std::string tmpl = std::string(tmpdir ? tmpdir : "/tmp") + "/dp_pt2_" +
+                       entry_stem(entry_name) + "_XXXXXX";
     std::vector<char> buf(tmpl.begin(), tmpl.end());
     buf.push_back('\0');
     int fd = mkstemp(buf.data());
@@ -548,6 +615,26 @@ class TempFile {
   }
 
  private:
+  /**
+   * @brief The base name of a ZIP entry, without directories or extension
+   * and reduced to characters a file name carries safely.
+   */
+  static std::string entry_stem(const std::string& entry_name) {
+    const std::size_t slash = entry_name.find_last_of('/');
+    std::string stem =
+        slash == std::string::npos ? entry_name : entry_name.substr(slash + 1);
+    const std::size_t dot = stem.find_last_of('.');
+    if (dot != std::string::npos) {
+      stem.erase(dot);
+    }
+    for (char& c : stem) {
+      if (!std::isalnum(static_cast<unsigned char>(c))) {
+        c = '_';
+      }
+    }
+    return stem;
+  }
+
   void cleanup() {
     if (!path_.empty()) {
       ::unlink(path_.c_str());
@@ -657,6 +744,128 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
                                        remapped_sendnum.data(),
                                        remapped_recvnum.data(), nlocal, nghost);
 }
+
+// ============================================================================
+// Charge-state fold — the runtime charge/spin condition of a compressed model.
+// ============================================================================
+
+/**
+ * @brief The frozen tables through which a compressed descriptor carries its
+ * charge/spin condition, as a rebuild that can be re-run at any time.
+ *
+ * A compressed charge-conditioned descriptor evaluates its frame condition
+ * once, when the model is frozen, into a handful of tables. Those tables
+ * reach a compiled lower as module constants, so serving a different
+ * condition means rebuilding them and writing them over those constants
+ * rather than re-evaluating the condition on every step. The archive
+ * therefore ships a second compiled artifact that performs the rebuild,
+ * together with the name of the constant each of its outputs replaces.
+ *
+ * Every lower lifts its constants independently, so the names hold only for
+ * the lower they were resolved against at freeze time. Only a compressed
+ * DPA4C descriptor folds a charge state, and that family never carries
+ * message passing across ranks, so an archive with a fold holds exactly one
+ * lower and the question of a second set of names does not arise.
+ *
+ * An archive without the rebuild leaves the fold inactive. That is the
+ * ordinary case: an uncompressed model reads its condition as a plain input,
+ * so nothing needs rebuilding.
+ */
+class ChargeStateFold {
+ public:
+  /**
+   * @brief Load the rebuild an archive declares, if it declares one.
+   *
+   * The constant-name field is the archive's claim that the rebuild ships
+   * with it, so an archive that declares the names and cannot supply the
+   * rebuild is malformed and fails here rather than degrading silently.
+   *
+   * @param[in] model_path Path to the .pt2 archive.
+   * @param[in] metadata Parsed archive metadata.
+   * @param[in] gpu_enabled Whether the lower was loaded on a GPU.
+   * @param[in] gpu_id The GPU the lower was loaded on.
+   * @return The fold, or ``nullptr`` when the archive declares none.
+   **/
+  static std::unique_ptr<ChargeStateFold> load(const std::string& model_path,
+                                               const JsonValue& metadata,
+                                               const bool gpu_enabled,
+                                               const int gpu_id) {
+    if (!metadata.obj_val.count("charge_state_constants")) {
+      return nullptr;
+    }
+    if (metadata.obj_val.count("has_comm_artifact") &&
+        metadata["has_comm_artifact"].as_bool()) {
+      throw deepmd::deepmd_exception(
+          "the archive ships a charge-state fold beside a with-comm lower; "
+          "the fold names the constants of one lower only, so the second "
+          "would keep serving the condition it was frozen against");
+    }
+    std::unique_ptr<ChargeStateFold> fold(new ChargeStateFold());
+    fold->constants_ = read_names(metadata, "charge_state_constants");
+    fold->tempfile_ = std::make_unique<TempFile>(
+        TempFile::from_zip_entry(model_path, "extra/charge_state.pt2"));
+    fold->loader_ = std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+        fold->tempfile_->path(), "model", false, 1,
+        gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                    : static_cast<c10::DeviceIndex>(-1));
+    return fold;
+  }
+
+  /**
+   * @brief Rebuild the tables for a condition and write them over the
+   * constants of the lower.
+   *
+   * @param[in] charge_spin The condition.
+   * @param[in] device The device the lower was loaded on.
+   * @param[in,out] target The lower whose constants carry the condition.
+   **/
+  void apply(const std::vector<double>& charge_spin,
+             const torch::Device& device,
+             torch::inductor::AOTIModelPackageLoader& target) const {
+    // The rebuild consumes the condition in the (1, dim) float32 layout the
+    // inference lower would receive.
+    std::vector<float> state(charge_spin.begin(), charge_spin.end());
+    torch::Tensor state_tensor =
+        torch::from_blob(state.data(),
+                         {1, static_cast<std::int64_t>(state.size())},
+                         torch::TensorOptions().dtype(torch::kFloat32))
+            .clone()
+            .to(device);
+    std::vector<torch::Tensor> tables = loader_->run({state_tensor});
+    if (tables.size() != constants_.size()) {
+      throw deepmd::deepmd_exception(
+          "the charge-state rebuild returned " + std::to_string(tables.size()) +
+          " tables but the archive names " + std::to_string(constants_.size()) +
+          " constants; it cannot serve a runtime charge state");
+    }
+    std::unordered_map<std::string, at::Tensor> update;
+    for (size_t ii = 0; ii < tables.size(); ++ii) {
+      // An unnamed output belongs to a mechanism this model has disabled and
+      // has no constant to reach.
+      if (!constants_[ii].empty()) {
+        update[constants_[ii]] = tables[ii];
+      }
+    }
+    target.update_constant_buffer(update, /*use_inactive=*/false,
+                                  /*validate_full_updates=*/false);
+  }
+
+ private:
+  ChargeStateFold() = default;
+
+  static std::vector<std::string> read_names(const JsonValue& metadata,
+                                             const std::string& key) {
+    std::vector<std::string> names;
+    for (const auto& v : metadata[key].as_array()) {
+      names.push_back(v.as_string());
+    }
+    return names;
+  }
+
+  std::vector<std::string> constants_;
+  std::unique_ptr<TempFile> tempfile_;
+  std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader_;
+};
 
 }  // namespace ptexpt
 }  // namespace deepmd

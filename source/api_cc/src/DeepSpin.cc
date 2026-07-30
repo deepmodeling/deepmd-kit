@@ -458,6 +458,10 @@ template void DeepSpin::compute<float>(std::vector<ENERGYTYPE>& dener,
 
 int DeepSpin::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
+void DeepSpin::set_charge_spin(const std::vector<double>& charge_spin) {
+  dp->set_charge_spin(charge_spin);
+}
+
 std::vector<bool> DeepSpin::get_use_spin() const {
   if (dp) {
     return dp->get_use_spin();

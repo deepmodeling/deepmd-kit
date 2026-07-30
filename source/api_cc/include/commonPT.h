@@ -196,6 +196,18 @@ inline EdgeTensorPack createEdgeTensors(
     const bool with_geometry = true,
     const std::vector<int>* row_centers = nullptr,
     const bool fold_to_local = true) {
+  // Folding reads an owner for every extended atom, so a mapping shorter than
+  // that is a caller error rather than a degraded input: indexing it would be
+  // out of bounds, and the out-of-range owners it appears to yield would drop
+  // the corresponding edges one by one, leaving a quietly incomplete graph.
+  if (fold_to_local && mapping.size() < static_cast<size_t>(nall)) {
+    throw deepmd::deepmd_exception(
+        "folding ghost neighbours onto their local owners needs an owner for "
+        "each of the " +
+        std::to_string(nall) + " extended atoms, but the mapping holds " +
+        std::to_string(mapping.size()) +
+        "; under LAMMPS this is what 'atom_modify map yes' supplies");
+  }
   std::vector<std::int64_t> src;
   std::vector<std::int64_t> dst;
   std::vector<std::int64_t> src_ext;
@@ -235,8 +247,19 @@ inline EdgeTensorPack createEdgeTensors(
       std::int64_t src_node;
       if (fold_to_local) {
         const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        // Folding is single-domain, where every extended atom has an owner
+        // among the local ones. An owner outside that range therefore marks a
+        // mapping that was never filled, not a neighbour to skip: skipping
+        // would discard every ghost edge and leave a graph that is quietly
+        // missing the whole halo.
         if (src_local < 0 || src_local >= nloc) {
-          continue;
+          throw deepmd::deepmd_exception(
+              "extended atom " + std::to_string(jj) + " of " +
+              std::to_string(nall) + " maps to owner " +
+              std::to_string(src_local) + ", which is not one of the " +
+              std::to_string(nloc) +
+              " local atoms; under LAMMPS an owner for every extended atom is "
+              "what 'atom_modify map yes' supplies");
         }
         src_node = src_local;
       } else {

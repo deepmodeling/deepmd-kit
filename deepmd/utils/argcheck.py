@@ -558,6 +558,34 @@ def descrpt_dpa4c_args() -> list[Argument]:
             doc="Whether descriptor parameters are trainable.",
         ),
         Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Whether to condition the descriptor on the frame-level "
+                "`charge_spin` input `[charge, multiplicity]` of shape "
+                "`[nframes, 2]`. The embedded condition is added to the "
+                "center type embedding and to the hidden state of the "
+                "ordered type-pair encoder, so it changes how a given "
+                "geometry maps to the degree-wise moments. This is unrelated "
+                "to `model.spin`, which carries a per-atom magnetic moment."
+            ),
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=(
+                "Fallback `[charge, multiplicity]` used when `charge_spin` is "
+                "absent from the input data. Only read when "
+                "`add_chg_spin_ebd` is enabled. Compression folds this value "
+                "into the frozen tables, so a compressed model evaluates "
+                "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
             "seed",
             [int, None],
             optional=True,

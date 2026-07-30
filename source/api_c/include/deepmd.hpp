@@ -1288,6 +1288,19 @@ class DeepPot : public DeepBaseModel {
   }
 
   /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * It becomes the condition of every later evaluation that is not given one
+   * explicitly. Intended to be called once, before the first evaluation.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepPotSetChargeSpin(dp, charge_spin.data(),
+                            static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
    * @brief Evaluate a device-resident edge graph with FP64 edge vectors.
    *
    * Edge, coordinate, type, and output pointers reside on the model device.
@@ -1887,6 +1900,19 @@ class DeepSpin : public DeepBaseModel {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * It becomes the condition of every later evaluation that is not given one
+   * explicitly. Intended to be called once, before the first evaluation.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepSpinSetChargeSpin(dp, charge_spin.data(),
+                             static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   }
 
   /**
@@ -2583,6 +2609,19 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
   }
 
   /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepPotModelDeviSetChargeSpin(dp, charge_spin.data(),
+                                     static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
+  }
+
+  /**
    * @brief Evaluate the energy, force and virial by using this DP model
    *deviation.
    * @param[out] ener The system energy.
@@ -3063,6 +3102,19 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepSpinModelDeviSetChargeSpin(dp, charge_spin.data(),
+                                      static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
   }
 
   /**

@@ -106,7 +106,7 @@ def edge_features(
     return descriptor.build_edge_features(
         graph,
         atype_local,
-        descriptor.pair_film.call(descriptor.type_embedding.call()),
+        descriptor.pair_film.pair_latent(descriptor.type_embedding.call()),
     )[:3]
 
 
@@ -971,7 +971,10 @@ class TestDPA4CSpin:
             *self.descriptor.build_edge_features(
                 self.graph,
                 self.atype,
-                self.descriptor.pair_film.call(self.descriptor.type_embedding.call()),
+                self.descriptor.pair_film.pair_latent(
+                    self.descriptor.type_embedding.call()
+                ),
+                None,
                 masked,
             ),
             self.descriptor.spin.onsite_payload(masked, self.atype),
@@ -1361,3 +1364,343 @@ def test_calibration_rejects_a_corpus_without_moments() -> None:
     corpus[0].pop("spin")
     with pytest.raises(ValueError, match="requires a per-node magnetic"):
         calibrated_descriptor(corpus)
+
+
+#: Frame conditions exercised by the charge-state tests, as
+#: ``[charge, multiplicity]`` pairs.
+NEUTRAL_SINGLET = np.array([[0.0, 1.0]])
+CATION_TRIPLET = np.array([[2.0, 3.0]])
+
+
+def make_charge_descriptor(
+    *,
+    seed: int = 17,
+    activate: bool = True,
+    **kwargs: Any,
+) -> DescrptDPA4C:
+    """Return a charge-conditioned descriptor.
+
+    Parameters
+    ----------
+    seed
+        Parameter-initialization seed.
+    activate
+        Whether to replace the zero-initialized condition output head with
+        deterministic weights. Every property that depends on the condition
+        actually reaching the descriptor needs an active head; leaving it at
+        its initialization is itself the subject of one test.
+    **kwargs
+        Overrides forwarded to the descriptor constructor.
+
+    Returns
+    -------
+    DescrptDPA4C
+        Charge-conditioned descriptor.
+    """
+    kwargs.setdefault("default_chg_spin", [0.0, 1.0])
+    descriptor = DescrptDPA4C(
+        rcut=3.0,
+        ntypes=2,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=seed,
+        add_chg_spin_ebd=True,
+        **kwargs,
+    )
+    if activate:
+        head = descriptor.charge_spin_embedding.network.layers[-1]
+        head.w = np.random.default_rng(seed).normal(0.0, 0.5, size=head.w.shape)
+    return descriptor
+
+
+def evaluate_conditioned(
+    descriptor: DescrptDPA4C,
+    charge_spin: np.ndarray | None,
+    coord: np.ndarray = COORD,
+    atype: np.ndarray = ATYPE,
+) -> np.ndarray:
+    """Evaluate a charge-conditioned descriptor on the graph interface."""
+    graph, atype_local = build_graph(descriptor, coord, atype)
+    return descriptor.call_graph(graph, atype_local, charge_spin=charge_spin)[0]
+
+
+def charge_route_heads(descriptor: DescrptDPA4C) -> tuple[np.ndarray, np.ndarray]:
+    """Split the condition output head into its two routes.
+
+    Returns
+    -------
+    type_route
+        Head restricted to the centre type-embedding columns.
+    pair_route
+        Head restricted to the ordered pair encoder columns.
+    """
+    weight = descriptor.charge_spin_embedding.network.layers[-1].w
+    type_route, pair_route = weight.copy(), weight.copy()
+    type_route[:, descriptor.channels :] = 0.0
+    pair_route[:, : descriptor.channels] = 0.0
+    return type_route, pair_route
+
+
+def test_an_unconditioned_descriptor_declares_no_frame_condition() -> None:
+    descriptor = DescrptDPA4C(rcut=3.0, ntypes=2, channels=8, lmax=2, n_radial=4)
+    assert descriptor.charge_spin_embedding is None
+    assert not descriptor.supports_charge_spin()
+    assert descriptor.get_dim_chg_spin() == 0
+    assert not descriptor.has_default_chg_spin()
+
+
+def test_an_untrained_condition_head_reproduces_the_plain_descriptor() -> None:
+    """The condition output projection starts at zero.
+
+    An untrained descriptor is therefore independent of the charge state for
+    every value of it, so the fixed output calibration measured once before
+    training carries no random condition offset.
+    """
+    plain = DescrptDPA4C(
+        rcut=3.0,
+        ntypes=2,
+        channels=8,
+        lmax=2,
+        n_radial=4,
+        precision="float64",
+        seed=17,
+    )
+    conditioned = make_charge_descriptor(activate=False)
+    reference = evaluate(plain).reshape(-1, plain.get_dim_out())
+    for condition in (NEUTRAL_SINGLET, CATION_TRIPLET):
+        np.testing.assert_array_equal(
+            evaluate_conditioned(conditioned, condition),
+            reference,
+        )
+
+
+def test_each_condition_route_reaches_the_descriptor() -> None:
+    """Both injection points must be live.
+
+    The centre type route alone would be indistinguishable from handing the
+    condition to the fitting network as a frame parameter. Only the ordered
+    pair route changes how a given geometry maps to the degree-wise moments,
+    so the two are asserted separately rather than through their sum.
+    """
+    descriptor = make_charge_descriptor()
+    head = descriptor.charge_spin_embedding.network.layers[-1]
+    for route in charge_route_heads(descriptor):
+        head.w = route
+        assert not np.allclose(
+            evaluate_conditioned(descriptor, NEUTRAL_SINGLET),
+            evaluate_conditioned(descriptor, CATION_TRIPLET),
+        )
+
+
+def test_frames_carry_independent_conditions() -> None:
+    """A batched evaluation must agree with per-frame evaluations.
+
+    Each frame occupies one contiguous block of the flat node axis and an
+    edge inherits the frame of the centre it reduces onto, so a batch of
+    mixed charge states is only correct if that map is exact.
+    """
+    descriptor = make_charge_descriptor()
+    shifted = COORD + 0.05
+    batched = evaluate_conditioned(
+        descriptor,
+        np.concatenate([NEUTRAL_SINGLET, CATION_TRIPLET], axis=0),
+        np.concatenate([COORD, shifted], axis=0),
+        np.concatenate([ATYPE, ATYPE], axis=0),
+    )
+    np.testing.assert_allclose(
+        batched,
+        np.concatenate(
+            [
+                evaluate_conditioned(descriptor, NEUTRAL_SINGLET, COORD),
+                evaluate_conditioned(descriptor, CATION_TRIPLET, shifted),
+            ],
+            axis=0,
+        ),
+        atol=1e-12,
+    )
+
+
+def test_a_frame_condition_preserves_rotation_invariance() -> None:
+    # The condition is a pair of scalars, so it may not disturb the O(3)
+    # invariance the readout establishes.
+    descriptor = make_charge_descriptor()
+    angle = 0.7
+    rotation = np.array(
+        [
+            [math.cos(angle), -math.sin(angle), 0.0],
+            [math.sin(angle), math.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    np.testing.assert_allclose(
+        evaluate_conditioned(descriptor, CATION_TRIPLET, COORD @ rotation.T),
+        evaluate_conditioned(descriptor, CATION_TRIPLET),
+        atol=1e-12,
+    )
+
+
+def test_a_missing_condition_falls_back_to_the_configured_default() -> None:
+    descriptor = make_charge_descriptor()
+    np.testing.assert_array_equal(
+        evaluate_conditioned(descriptor, None),
+        evaluate_conditioned(descriptor, NEUTRAL_SINGLET),
+    )
+
+
+def test_a_missing_condition_without_a_default_is_an_error() -> None:
+    descriptor = make_charge_descriptor(default_chg_spin=None)
+    with pytest.raises(ValueError, match="requires a frame `charge_spin`"):
+        evaluate_conditioned(descriptor, None)
+
+
+def test_the_dense_interface_conditions_on_the_frame_state() -> None:
+    # The dense adapter is the reference path of the common descriptor ABI;
+    # dropping the condition there would be silent.
+    descriptor = make_charge_descriptor()
+    coord_ext, atype_ext, mapping, nlist = dense_inputs(descriptor)
+    dense = descriptor(
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping=mapping,
+        charge_spin=CATION_TRIPLET,
+    )[0]
+    np.testing.assert_allclose(
+        dense.reshape(-1, descriptor.get_dim_out()),
+        evaluate_conditioned(descriptor, CATION_TRIPLET),
+        atol=1e-12,
+    )
+
+
+def test_serialization_preserves_the_conditioned_descriptor() -> None:
+    descriptor = make_charge_descriptor()
+    restored = DescrptDPA4C.deserialize(descriptor.serialize())
+    assert restored.get_default_chg_spin() == descriptor.get_default_chg_spin()
+    np.testing.assert_allclose(
+        evaluate_conditioned(restored, CATION_TRIPLET),
+        evaluate_conditioned(descriptor, CATION_TRIPLET),
+        atol=1e-14,
+    )
+
+
+def test_the_frozen_pair_cache_reproduces_the_per_edge_route() -> None:
+    """Compression folds the condition into the ordered pair cache.
+
+    Training evaluates the conditioning heads on the edge axis, because the
+    product of the frame and ordered-pair axes exceeds the edge count for the
+    molecular systems a charge state describes. Compression evaluates the
+    same heads once over the finite pair table. The compressed artifact is
+    only valid because the two agree exactly.
+    """
+    descriptor = make_charge_descriptor()
+    type_embedding = descriptor.type_embedding.call()
+    _type_shift, pair_hidden_bias = descriptor.charge_spin_embedding.call(
+        CATION_TRIPLET
+    )
+    folded = descriptor.pair_film.call(type_embedding, hidden_bias=pair_hidden_bias[0])
+    pre_activation, base_shift = descriptor.pair_film.pair_latent(type_embedding)
+    pair_index = np.arange(pre_activation.shape[0])
+    per_edge = descriptor.build_pair_conditioning(
+        (pre_activation, base_shift),
+        pair_index,
+        np.broadcast_to(
+            pair_hidden_bias, (pair_index.size, pair_hidden_bias.shape[-1])
+        ),
+    )
+    for cache, edge in zip(folded, per_edge, strict=True):
+        if cache is None:
+            assert edge is None
+        else:
+            np.testing.assert_allclose(edge, cache, atol=1e-14)
+
+
+def test_the_padding_type_keeps_its_zero_centre_features() -> None:
+    """The condition shifts only the real rows of the centre type table.
+
+    Compressed inference conditions a frozen table whose padding row stays
+    zero, so shifting that row on the portable path would break the parity
+    between the two.
+    """
+    descriptor = make_charge_descriptor()
+    type_embedding = descriptor.type_embedding.call()
+    atype = np.array([0, 1, descriptor.ntypes], dtype=np.int64)
+    type_shift, _pair_hidden_bias = descriptor.charge_spin_embedding.call(
+        CATION_TRIPLET
+    )
+    features = descriptor.build_center_type_features(
+        type_embedding,
+        atype,
+        np.broadcast_to(type_shift, (atype.size, descriptor.channels)),
+    )
+    np.testing.assert_array_equal(features[2], np.zeros(descriptor.channels))
+    assert not np.allclose(features[0], type_embedding[0])
+
+
+def charge_corpus(charge_spin: np.ndarray | None) -> list[dict]:
+    """Build a two-type calibration corpus carrying one frame condition."""
+    rng = np.random.default_rng(3)
+    nframes, natoms, cell = 6, 8, 9.0
+    system = {
+        "coord": rng.uniform(0.0, cell, size=(nframes, natoms, 3)),
+        "atype": np.tile(np.array([0, 1, 0, 1, 0, 1, 0, 1]), (nframes, 1)),
+        "box": np.tile(np.diag([cell, cell, cell]).reshape(1, 9), (nframes, 1)),
+    }
+    if charge_spin is not None:
+        system["charge_spin"] = charge_spin
+    return [system]
+
+
+@pytest.mark.parametrize(
+    "charge_spin",
+    [
+        np.tile(np.array([[-1.0, 2.0]]), (6, 1)),
+        np.array([[-1.0, 2.0]]),
+        np.array([-1.0, 2.0]),
+    ],
+    ids=["per-frame", "single-pair-2d", "single-pair-1d"],
+)
+def test_the_calibration_accepts_every_shape_evaluation_accepts(
+    charge_spin: np.ndarray,
+) -> None:
+    """A system may state one condition for all of its frames.
+
+    Evaluation broadcasts a single pair over the frame axis, so a calibration
+    that required one row per frame would reject a corpus the trained model
+    then runs on without complaint.
+    """
+    descriptor = make_charge_descriptor()
+    descriptor.compute_input_stats(charge_corpus(charge_spin))
+    frames = descriptor._calibration_frames(charge_corpus(charge_spin)[0])
+    for frame in frames:
+        np.testing.assert_array_equal(frame["charge_spin"], np.array([[-1.0, 2.0]]))
+
+
+def test_the_calibration_samples_the_corpus_charge_states() -> None:
+    """The preconditioner must be measured over the sampled charge states.
+
+    It is frozen once and has to hold for every state the corpus contains, so
+    a calibration that read one state, or none, would fix it on the wrong
+    scale.
+    """
+    descriptor = make_charge_descriptor()
+    rng = np.random.default_rng(3)
+    nframes, natoms, cell = 6, 8, 9.0
+    corpus = [
+        {
+            "coord": rng.uniform(0.0, cell, size=(nframes, natoms, 3)),
+            "atype": np.tile(np.array([0, 1, 0, 1, 0, 1, 0, 1]), (nframes, 1)),
+            "box": np.tile(np.diag([cell, cell, cell]).reshape(1, 9), (nframes, 1)),
+            "charge_spin": np.tile(np.array([[-1.0, 2.0]]), (nframes, 1)),
+        }
+    ]
+    frames = descriptor._calibration_frames(corpus[0])
+    np.testing.assert_array_equal(frames[0]["charge_spin"], np.array([[-1.0, 2.0]]))
+
+    descriptor.compute_input_stats(corpus)
+    default_state = make_charge_descriptor()
+    default_state.compute_input_stats(
+        [{key: value for key, value in corpus[0].items() if key != "charge_spin"}]
+    )
+    assert not np.allclose(descriptor.stddev, default_state.stddev)

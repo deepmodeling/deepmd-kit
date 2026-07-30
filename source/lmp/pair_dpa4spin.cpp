@@ -224,10 +224,10 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   // Name whichever style the input selected, so the Kokkos variant reports
   // itself rather than its host base.
   const std::string style = force->pair_style;
-  if (narg != 1) {
+  if (narg < 1) {
     error->all(FLERR, "Illegal pair_style command: pair style " + style +
                           " evaluates a single native-spin artifact and takes "
-                          "its path as the only argument.");
+                          "its path as the first argument.");
   }
 
   try {
@@ -237,12 +237,74 @@ void PairDPA4Spin::settings(int narg, char** arg) {
   }
   cutoff = deep_spin.cutoff() * dist_unit_cvt_factor;
 
+  // How many values name a charge state is a property of the artifact, so the
+  // keyword can only be read once the model is loaded.
+  const int dim_chg_spin = deep_spin.dim_chg_spin();
+  std::vector<double> charge_spin;
+  int iarg = 1;
+  while (iarg < narg) {
+    if (std::string(arg[iarg]) != "charge_spin") {
+      error->all(FLERR, "Illegal pair_style command: pair style " + style +
+                            " takes the artifact path followed by the optional "
+                            "keyword charge_spin, not '" +
+                            std::string(arg[iarg]) + "'.");
+    }
+    // One charge state holds for the whole run, so a second occurrence names
+    // no state the style could serve.  Values already read mark the keyword
+    // as seen: a successful read always contributes at least one value.
+    if (!charge_spin.empty()) {
+      error->all(FLERR,
+                 "Illegal pair_style command: keyword charge_spin names the "
+                 "single charge state of the whole run, so it may appear "
+                 "only once.");
+    }
+    if (dim_chg_spin == 0) {
+      error->all(FLERR,
+                 "Illegal pair_style command: the artifact served by pair "
+                 "style " +
+                     style +
+                     " carries no charge/spin condition, so keyword "
+                     "charge_spin names nothing it can serve.");
+    }
+    if (iarg + dim_chg_spin >= narg) {
+      error->all(FLERR,
+                 "Illegal pair_style command: keyword charge_spin names a "
+                 "charge state with " +
+                     std::to_string(dim_chg_spin) + " value(s).");
+    }
+    for (int ii = 0; ii < dim_chg_spin; ++ii) {
+      charge_spin.push_back(
+          utils::numeric(FLERR, arg[iarg + 1 + ii], false, lmp));
+    }
+    iarg += 1 + dim_chg_spin;
+  }
+
+  // A charge/spin condition named on the pair_style line holds for the whole
+  // run, so it is handed to the model once here instead of being resupplied
+  // every step.  This is also what lets a compressed model serve it at all:
+  // there the condition lives inside frozen tables, which are rebuilt here
+  // and cannot be rebuilt per step at a sensible cost.
+  if (!charge_spin.empty()) {
+    try {
+      deep_spin.set_charge_spin(charge_spin);
+    } catch (deepmd_compat::deepmd_exception& e) {
+      error->one(FLERR, e.what());
+    }
+  }
+
   utils::logmesg(lmp,
                  "  >>> Info of model(s):\n"
                  "  using 1 model(s): {}\n"
                  "  rcut in model:      {}\n"
                  "  ntypes in model:    {}\n",
                  arg[0], cutoff, deep_spin.numb_types());
+  if (!charge_spin.empty()) {
+    std::string values;
+    for (const double value : charge_spin) {
+      values += fmt::format("{}  ", value);
+    }
+    utils::logmesg(lmp, "  using charge_spin:  {}\n", values);
+  }
 }
 
 /* ----------------------------------------------------------------------

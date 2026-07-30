@@ -184,6 +184,117 @@ def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
 
 
+def test_the_graph_lower_conditions_each_frame_on_its_own_charge_state() -> None:
+    """The frame condition must survive the model seam and stay per frame.
+
+    The atomic model forwards ``charge_spin`` only to descriptors that
+    declare the capability, and the graph lower flattens every frame onto one
+    node axis, so a batch of mixed charge states exercises both the seam and
+    the node-to-frame map.
+    """
+    config = _config()
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [0.0, 1.0]
+    model = get_model(config).to(env.DEVICE).eval()
+    descriptor = model.get_descriptor()
+    assert descriptor.supports_charge_spin()
+
+    # The condition output projection is zero initialized, so an untrained
+    # model would be inert and the comparison below would hold vacuously.
+    head = descriptor.charge_spin_embedding.network.layers[-1]
+    generator = torch.Generator(device=head.w.device).manual_seed(5)
+    with torch.no_grad():
+        head.w.copy_(
+            torch.randn(
+                head.w.shape,
+                dtype=head.w.dtype,
+                device=head.w.device,
+                generator=generator,
+            )
+            * 0.5
+        )
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=2,
+        nloc=7,
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+
+    def energy(second_state: list[float]) -> torch.Tensor:
+        return model.forward_common_lower_graph(
+            *sample[:10],
+            destination_sorted=True,
+            do_atomic_virial=True,
+            fparam=sample[10],
+            aparam=sample[11],
+            charge_spin=torch.tensor(
+                [[0.0, 1.0], second_state],
+                dtype=torch.float64,
+                device=env.DEVICE,
+            ),
+        )["energy_redu"]
+
+    neutral, mixed = energy([0.0, 1.0]), energy([2.0, 3.0])
+    torch.testing.assert_close(neutral[0], mixed[0], atol=0.0, rtol=0.0)
+    assert float((mixed[1] - neutral[1]).detach().abs().max()) > 0.0
+
+
+def test_an_uncompressed_export_keeps_the_charge_state_as_a_runtime_input() -> None:
+    """An uncompressed artifact conditions at run time, not at export time.
+
+    Whether a deployed model accepts a charge state is a property of
+    compression rather than of the export format: the graph lower carries a
+    conditioning slot with a dynamic frame axis, and only the fold of the
+    compact canonical path removes it.
+    """
+    config = _compressed_config()
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [2.0, 3.0]
+    model = get_model(config).to("cpu").eval()
+    exported, metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    assert metadata["dim_chg_spin"] == 2
+    assert metadata["default_chg_spin"] == [2.0, 3.0]
+    placeholders = [
+        node.name
+        for node in exported.graph_module.graph.nodes
+        if node.op == "placeholder"
+    ]
+    assert placeholders[-1].startswith("charge_spin")
+
+
+def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
+    """Compression must remove the runtime condition, not just satisfy it.
+
+    The compact canonical argument list carries no conditioning slot, and
+    evaluation rejects an artifact that claims to need one. A charge-
+    conditioned model reaches that lower only because compression folds the
+    charge state into the frozen tables and the snapshot then reports a zero
+    runtime condition width.
+    """
+    config = _compressed_config()
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [2.0, 3.0]
+    model = get_model(config).to("cpu").eval()
+    assert model.get_dim_chg_spin() == 2
+    assert _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto") == (
+        "graph"
+    )
+
+    descriptor = model.get_descriptor()
+    descriptor.enable_compression(min_nbor_dist=0.5)
+    assert model.get_dim_chg_spin() == 0
+    assert _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto") == (
+        "dpa4c_canonical"
+    )
+
+
 def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
     from deepmd.kernels.cuda.dpa4c.canonical import (
         canonical_model_eligible,

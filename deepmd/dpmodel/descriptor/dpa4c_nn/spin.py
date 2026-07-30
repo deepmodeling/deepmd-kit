@@ -469,7 +469,6 @@ class SpinChannels(NativeOP):
         envelope: Array,
         pair_scale: Array,
         pair_shift: Array,
-        pair_index: Array,
     ) -> Array:
         r"""Build the per-edge spin payload reduced over neighbours.
 
@@ -508,11 +507,9 @@ class SpinChannels(NativeOP):
         envelope
             Masked C3 envelope with shape ``(E,)``.
         pair_scale
-            Ordered spin scales with shape ``((ntypes + 1) ** 2, spin_channels)``.
+            Per-edge ordered spin scales with shape ``(E, spin_channels)``.
         pair_shift
-            Ordered spin shifts with the same shape.
-        pair_index
-            Ordered type-pair index of each edge with shape ``(E,)``.
+            Per-edge ordered spin shifts with the same shape.
 
         Returns
         -------
@@ -523,11 +520,9 @@ class SpinChannels(NativeOP):
         device = array_api_compat.device(conditioned_spin)
         channels = self.spin_channels
         neighbor_spin = xp.take(conditioned_spin, source, axis=0)  # (E, 3)
-        scale = xp.take(pair_scale, pair_index, axis=0)  # (E, Cs)
-        shift = xp.take(pair_shift, pair_index, axis=0)  # (E, Cs)
-        spin_amplitude = (radial[:, :channels] * scale + shift) * (envelope * envelope)[
-            :, None
-        ]
+        spin_amplitude = (radial[:, :channels] * pair_scale + pair_shift) * (
+            envelope * envelope
+        )[:, None]
         neighbor_gate = xp.take(
             xp.take(
                 xp_asarray_nodetach(xp, self.spin_mask, device=device),

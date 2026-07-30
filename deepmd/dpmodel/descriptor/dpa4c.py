@@ -73,15 +73,18 @@ from .dpa4_nn import (
     resolve_swiglu_hidden_width,
 )
 from .dpa4c_nn import (
+    ChargeStateEmbedding,
     InvariantReadout,
     OrderedPairFiLM,
     SpinChannels,
     build_angular_basis,
     build_moment_indices,
+    canonicalize_charge_spin,
     degree_offsets,
     derive_bispectrum_ranks,
     derive_degree_channels,
     derive_spin_channels,
+    validate_charge_state,
 )
 
 if TYPE_CHECKING:
@@ -174,6 +177,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         given, the descriptor conditions on a per-node spin vector and
         declares :meth:`supports_native_spin`. ``None`` reproduces the
         spin-free descriptor exactly.
+    add_chg_spin_ebd
+        Whether to condition on the frame-level total charge and spin
+        multiplicity. This is unrelated to ``use_spin``, which carries a
+        per-atom magnetic moment.
+    default_chg_spin
+        Fallback ``[charge, multiplicity]`` used when a caller supplies no
+        explicit condition. Compression bakes this value, so a deployed
+        artifact requires it.
     spin
         Reserved for descriptor API compatibility; only ``None`` is supported.
         Native spin is configured through ``use_spin``.
@@ -233,6 +244,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         use_spin: list[bool] | None = None,
+        add_chg_spin_ebd: bool = False,
+        default_chg_spin: list[float] | None = None,
         spin: None = None,
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
@@ -253,6 +266,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             or radial_modes < 0
         ):
             raise ValueError("`radial_modes` must be a non-negative integer.")
+        default_chg_spin = (
+            None
+            if default_chg_spin is None
+            else validate_charge_state(default_chg_spin)
+        )
         # `channels` and `lmax` are validated inside the profile derivation,
         # which owns their supported sets.
         degree_channels = derive_degree_channels(channels, lmax)
@@ -274,6 +292,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.seed = seed
         self.use_spin = None if use_spin is None else [bool(flag) for flag in use_spin]
+        self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
+        self.default_chg_spin = default_chg_spin
         # The spin branch reads the leading channels of the shared radial map,
         # so its width is derived rather than exposed.
         self.spin_channels = (
@@ -355,6 +375,17 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 seed=child_seed(seed, 5),
             )
         )
+        self.charge_spin_embedding = (
+            ChargeStateEmbedding(
+                self.channels,
+                self.pair_film.pair_hidden_width,
+                precision=self.precision,
+                trainable=self.trainable,
+                seed=child_seed(seed, 6),
+            )
+            if self.add_chg_spin_ebd
+            else None
+        )
 
         # === Step 4. Lay out the flat moment payload ===
         # Degree zero owns the leading `channels` entries of the flat layout,
@@ -385,6 +416,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         type_embedding: Array | None = None,
         comm_dict: dict | None = None,
         spin: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, None]:
         """Evaluate DPA4C on a flat neighbor graph.
 
@@ -410,6 +442,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             axis as ``atype``, including ghost and padding rows. Mandatory
             when the descriptor is configured with ``use_spin`` and ignored
             otherwise.
+        charge_spin
+            Frame-level total charge and spin multiplicity with shape
+            ``(nf, 2)``, or a single pair broadcast over the frames. Read
+            only when the descriptor is configured with ``add_chg_spin_ebd``,
+            which then falls back to ``default_chg_spin`` if this is absent.
 
         Returns
         -------
@@ -422,7 +459,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         Raises
         ------
         ValueError
-            If the descriptor is spin conditioned and ``spin`` is absent.
+            If the descriptor is spin conditioned and ``spin`` is absent, or
+            charge conditioned with neither ``charge_spin`` nor a default.
         """
         del comm_dict
         # === Step 1. Resolve type features and compute precision ===
@@ -438,7 +476,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
 
         # === Step 2. Evaluate the graph-native equations ===
-        descriptor, _ = self.evaluate_graph(graph, atype, type_embedding, spin)
+        descriptor, _ = self.evaluate_graph(
+            graph,
+            atype,
+            type_embedding,
+            spin,
+            self.require_charge_spin(
+                charge_spin, graph.n_node.shape[0], graph.edge_vec
+            ),
+        )
 
         # === Step 3. Restore the graph input dtype ===
         if descriptor.dtype != in_dtype:
@@ -480,6 +526,38 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
         return spin
 
+    def require_charge_spin(
+        self,
+        charge_spin: Array | None,
+        nf: int,
+        ref: Array,
+    ) -> Array | None:
+        """Resolve the frame condition a charge-conditioned descriptor needs.
+
+        Parameters
+        ----------
+        charge_spin
+            Frame conditions supplied by the caller, or ``None``.
+        nf
+            Number of frames on the flat node axis.
+        ref
+            Reference array supplying the compute namespace, dtype and device.
+
+        Returns
+        -------
+        Array or None
+            Frame conditions with shape ``(nf, 2)``, or ``None`` for a
+            descriptor without charge conditioning.
+        """
+        if self.charge_spin_embedding is None:
+            return None
+        return canonicalize_charge_spin(
+            charge_spin,
+            self.default_chg_spin,
+            nf=nf,
+            ref=ref,
+        )
+
     @cast_precision
     def call(
         self,
@@ -517,8 +595,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Communication metadata accepted by the common descriptor ABI;
             unused.
         charge_spin
-            Charge/spin conditioning accepted by the common descriptor ABI;
-            unsupported and unused.
+            Frame-level total charge and spin multiplicity with shape
+            ``(F, 2)``. Read only when the descriptor is configured with
+            ``add_chg_spin_ebd``.
 
         Returns
         -------
@@ -539,7 +618,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             graph_from_dense_quartet,
         )
 
-        del fparam, comm_dict, charge_spin
+        del fparam, comm_dict
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         nf, nloc, nnei = nlist.shape
 
@@ -556,6 +635,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             graph,
             atype_local,
             self.type_embedding.call(),
+            None,
+            self.require_charge_spin(charge_spin, nf, graph.edge_vec),
         )
 
         # === Step 3. Restore the common dense descriptor ABI ===
@@ -572,6 +653,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array,
         spin: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Evaluate the graph-native descriptor equations.
 
@@ -589,6 +671,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         spin
             Per-node spin vectors with shape ``(N, 3)``, mandatory for a
             spin-conditioned descriptor and ignored otherwise.
+        charge_spin
+            Canonical frame conditions with shape ``(nf, 2)``, mandatory for
+            a charge-conditioned descriptor and ignored otherwise.
 
         Returns
         -------
@@ -602,6 +687,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         ValueError
             If the descriptor is spin conditioned and ``spin`` is absent.
         """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+        )
+
         xp = array_api_compat.array_namespace(graph.edge_vec)
 
         # === Step 1. Place the precomputed type table in the graph namespace ===
@@ -617,10 +706,31 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             )
         dst = graph.edge_index[1]
         n_total = atype.shape[0]
-        center_type_embedding = self.gather_rows(type_embedding, atype, xp)
-        pair_tables = self.pair_film.call(type_embedding)
 
-        # === Step 2. Condition the per-node spin ===
+        # === Step 2. Embed the frame condition ===
+        # The two emitted vectors reach the two places the type embedding
+        # enters: the centre type tail and the ordered pair encoder. Both
+        # frames and edges address them through the node-to-frame map, an
+        # edge inheriting the frame of the centre it reduces onto.
+        type_shift, pair_hidden_bias, edge_hidden_bias = None, None, None
+        if self.charge_spin_embedding is not None:
+            type_shift, pair_hidden_bias = self.charge_spin_embedding.call(charge_spin)
+            frame_index = frame_id_from_n_node(graph.n_node, n_total)
+            edge_hidden_bias = self.gather_rows(
+                pair_hidden_bias,
+                self.gather_rows(frame_index, dst, xp),
+                xp,
+            )
+            type_shift = self.gather_rows(type_shift, frame_index, xp)
+
+        center_type_embedding = self.build_center_type_features(
+            type_embedding,
+            atype,
+            type_shift,
+        )
+        pair_latent = self.pair_film.pair_latent(type_embedding)
+
+        # === Step 3. Condition the per-node spin ===
         # The mask and the reference magnitude are applied once, so every
         # downstream spin route inherits them and the magnetic force of a
         # non-magnetic type vanishes identically rather than numerically.
@@ -630,15 +740,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             else self.spin.conditioned_spin(self.require_spin(spin), atype)
         )
 
-        # === Step 3. Build the masked edge amplitudes and harmonics ===
+        # === Step 4. Build the masked edge amplitudes and harmonics ===
         amplitude, basis, envelope, spin_payload = self.build_edge_features(
             graph,
             atype,
-            pair_tables,
+            pair_latent,
+            edge_hidden_bias,
             conditioned_spin,
         )
 
-        # === Step 4. Reduce the degree-wise moments ===
+        # === Step 5. Reduce the degree-wise moments ===
         moments, divisors = self.aggregate_moments(
             amplitude,
             basis,
@@ -651,7 +762,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             n_total,
         )
 
-        # === Step 5. Build calibrated invariant features ===
+        # === Step 6. Build calibrated invariant features ===
         return (
             self.build_invariant_descriptor(
                 moments,
@@ -661,11 +772,94 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             envelope[:, None],
         )
 
+    def build_center_type_features(
+        self,
+        type_embedding: Array,
+        atype: Array,
+        type_shift: Array | None,
+    ) -> Array:
+        """Gather the centre type embedding and add the frame condition.
+
+        The padding type keeps its zero row. Its output row is discarded, but
+        compressed inference conditions the real rows of a frozen type table
+        and leaves the padding row untouched, so shifting it here would break
+        the parity between the two paths.
+
+        Parameters
+        ----------
+        type_embedding
+            Complete type table with shape ``(ntypes + 1, channels)``.
+        atype
+            Flat node types with shape ``(N,)``.
+        type_shift
+            Per-node condition shift with shape ``(N, channels)``, or
+            ``None`` for a descriptor without charge conditioning.
+
+        Returns
+        -------
+        Array
+            Centre type features with shape ``(N, channels)``.
+        """
+        xp = array_api_compat.array_namespace(type_embedding)
+        features = self.gather_rows(type_embedding, atype, xp)
+        if type_shift is None:
+            return features
+        real_type = xp.astype(atype < self.ntypes, features.dtype)
+        return features + type_shift * real_type[:, None]
+
+    def build_pair_conditioning(
+        self,
+        pair_latent: tuple[Array, Array],
+        pair_index: Array,
+        edge_hidden_bias: Array | None,
+    ) -> tuple[Array, Array, Array | None, Array | None, Array | None]:
+        """Evaluate the ordered pair conditioning of every edge.
+
+        The heads are applied on the coarsest axis over which their argument
+        is constant. Without a frame condition that axis is the ordered type
+        pair, so the finite cache of :math:`(T+1)^2` rows is built once and
+        gathered. With one, the argument additionally depends on the frame,
+        and the product axis is larger than the edge count for the molecular
+        systems a charge state describes, so the heads move to the edge axis.
+        Both routes evaluate the same function.
+
+        Parameters
+        ----------
+        pair_latent
+            Condition-independent ordered-pair state from
+            :meth:`~deepmd.dpmodel.descriptor.dpa4c_nn.pair_film.OrderedPairFiLM.pair_latent`.
+        pair_index
+            Ordered type-pair index of each edge with shape ``(E,)``.
+        edge_hidden_bias
+            Per-edge condition bias with shape ``(E, pair_hidden_width)``, or
+            ``None`` for a descriptor without charge conditioning.
+
+        Returns
+        -------
+        tuple
+            Radial scale and shift with shape ``(E, channels)``, the
+            mode-mixing matrices with shape ``(E, channels, radial_modes)``,
+            and the ordered spin scale and shift with shape
+            ``(E, spin_channels)``. The trailing three are ``None`` when
+            their mechanism is disabled.
+        """
+        pre_activation, base_shift = pair_latent
+        if edge_hidden_bias is None:
+            return tuple(
+                None if table is None else self.gather_rows(table, pair_index)
+                for table in self.pair_film.heads(pre_activation, base_shift)
+            )
+        return self.pair_film.heads(
+            self.gather_rows(pre_activation, pair_index) + edge_hidden_bias,
+            self.gather_rows(base_shift, pair_index),
+        )
+
     def build_edge_features(
         self,
         graph: Any,
         atype: Array,
-        pair_tables: tuple,
+        pair_latent: tuple[Array, Array],
+        edge_hidden_bias: Array | None = None,
         conditioned_spin: Array | None = None,
     ) -> tuple[Array, Array, Array, Array | None]:
         r"""Build the enveloped edge amplitudes, harmonics, and spin payload.
@@ -692,14 +886,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Neighbor graph in descriptor compute precision.
         atype
             Flat node types with shape ``(N,)``.
-        pair_tables
-            Ordered pair cache produced by
-            :meth:`~deepmd.dpmodel.descriptor.dpa4c_nn.pair_film.OrderedPairFiLM.call`:
-            radial scale and shift with shape
-            ``((ntypes + 1) ** 2, channels)``, the mode-mixing table with
-            shape ``((ntypes + 1) ** 2, channels, radial_modes)`` or ``None``,
-            and the ordered spin scale and shift with shape
-            ``((ntypes + 1) ** 2, spin_channels)`` or ``None``.
+        pair_latent
+            Condition-independent ordered-pair state from
+            :meth:`~deepmd.dpmodel.descriptor.dpa4c_nn.pair_film.OrderedPairFiLM.pair_latent`.
+        edge_hidden_bias
+            Per-edge frame-condition bias with shape
+            ``(E, pair_hidden_width)``, or ``None`` for a descriptor without
+            charge conditioning.
         conditioned_spin
             Conditioned per-node spin with shape ``(N, 3)``, or
             ``None`` for a spin-free descriptor.
@@ -719,8 +912,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         from deepmd.dpmodel.utils.neighbor_graph import (
             apply_pair_exclusion,
         )
-
-        pair_scale, pair_shift, pair_mixing, spin_scale, spin_shift = pair_tables
 
         # === Step 1. Merge graph and descriptor-level exclusion masks ===
         graph = apply_pair_exclusion(graph, atype, self.emask)
@@ -752,8 +943,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         radial_hidden = self.radial_embedding.call_hidden(radial_basis)
         radial = self.radial_embedding.call_output(radial_hidden)
         pair_index = center_type * (self.ntypes + 1) + neighbor_type
-        scale = self.gather_rows(pair_scale, pair_index, xp)  # (E, C)
-        shift = self.gather_rows(pair_shift, pair_index, xp)  # (E, C)
+        scale, shift, mixing, spin_scale, spin_shift = self.build_pair_conditioning(
+            pair_latent,
+            pair_index,
+            edge_hidden_bias,
+        )
         amplitude = radial * scale + shift
 
         # === Step 4. Add the pair-conditioned radial mode residual ===
@@ -763,8 +957,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # one GEMV per edge leaves the tiny C-by-R operands far short of
         # memory bandwidth, whereas the reduction is a plain streaming pass.
         # Expanding the ordered table per edge dominates the cost either way.
-        if pair_mixing is not None:
-            mixing = self.gather_rows(pair_mixing, pair_index, xp)  # (E, C, R)
+        if mixing is not None:
             modes = self.radial_mode_head(radial_hidden)  # (E, R)
             amplitude = amplitude + xp.sum(mixing * modes[:, None, :], axis=-1)
 
@@ -784,7 +977,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 envelope[:, 0],
                 spin_scale,
                 spin_shift,
-                pair_index,
             )
         )
 
@@ -1058,6 +1250,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "pair_film",
             "readout",
             "spin",
+            "charge_spin_embedding",
         ):
             setattr(self, name, getattr(base_class, name))
         self.mean = base_class.mean
@@ -1079,8 +1272,14 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         ``trainable`` decides whether
         those layers carry gradients at all; ``type_map`` fixes what the rows
         of the shared type table mean; ``use_spin`` fixes both the presence
-        and the row meaning of the shared spin tables. Precision itself enters
-        through its resolved dtype so that equivalent spellings agree.
+        and the row meaning of the shared spin tables; ``add_chg_spin_ebd``
+        fixes the presence of the condition module and the width of the pair
+        encoder head it drives. Precision itself enters through its resolved
+        dtype so that equivalent spellings agree.
+
+        ``default_chg_spin`` is deliberately absent: it is a fallback for a
+        missing input rather than a property of the shared parameters, so two
+        branches may legitimately default to different charge states.
 
         Branch-local state is deliberately absent. ``exclude_types`` is the
         only such field: it configures the pair-exclusion mask, which each
@@ -1103,6 +1302,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             self.trainable,
             None if self.type_map is None else tuple(self.type_map),
             None if self.use_spin is None else tuple(self.use_spin),
+            self.add_chg_spin_ebd,
             np.dtype(PRECISION_DICT[self.precision]).name,
         )
 
@@ -1240,6 +1440,13 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                         if frame["spin"] is None
                         else xp.asarray(frame["spin"], dtype=dtype, device=device)
                     )
+                    charge_spin = (
+                        None
+                        if frame["charge_spin"] is None
+                        else xp.asarray(
+                            frame["charge_spin"], dtype=dtype, device=device
+                        )
+                    )
                     graph = build_neighbor_graph(
                         coord,
                         atype,
@@ -1250,6 +1457,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                         graph,
                         xp.reshape(atype, (-1,)),
                         spin=None if spin is None else xp.reshape(spin, (-1, 3)),
+                        charge_spin=charge_spin,
                     )
                     output_np = to_numpy_array(output).reshape(
                         -1,
@@ -1349,15 +1557,17 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         ----------
         system
             Sampled system carrying ``coord``, ``atype``, an optional ``box``,
-            and, for a spin-conditioned descriptor, the per-atom moment under
-            either ``model_spin`` or ``spin``.
+            for a spin-conditioned descriptor the per-atom moment under either
+            ``model_spin`` or ``spin``, and for a charge-conditioned
+            descriptor the frame condition under ``charge_spin``.
 
         Returns
         -------
         list[dict]
             One entry per drawn frame, each with a leading frame axis of
-            length one and a ``spin`` entry that is ``None`` for a spin-free
-            descriptor.
+            length one and ``spin`` and ``charge_spin`` entries that are
+            ``None`` when their mechanism is disabled or, for the frame
+            condition, when the descriptor falls back to its default.
 
         Raises
         ------
@@ -1383,6 +1593,21 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         spin = (
             None if spin is None else np.reshape(to_numpy_array(spin), (nframes, -1, 3))
         )
+        # The calibration must see the sampled distribution of charge states,
+        # because the fixed diagonal preconditioner it freezes has to hold for
+        # every one of them. A system without the key falls back to the
+        # configured default at the descriptor boundary. A system that states
+        # one condition for all of its frames is broadcast here, so that the
+        # calibration accepts exactly the shapes evaluation accepts.
+        charge_spin = None if not self.add_chg_spin_ebd else system.get("charge_spin")
+        charge_spin = (
+            None
+            if charge_spin is None
+            else np.broadcast_to(
+                np.reshape(to_numpy_array(charge_spin), (-1, 2)),
+                (nframes, 2),
+            )
+        )
         indices = np.linspace(
             0,
             nframes - 1,
@@ -1395,6 +1620,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 "atype": atype[index : index + 1],
                 "box": None if box is None else box[index : index + 1],
                 "spin": None if spin is None else spin[index : index + 1],
+                "charge_spin": (
+                    None if charge_spin is None else charge_spin[index : index + 1]
+                ),
             }
             for index in indices
         ]
@@ -1470,8 +1698,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "type_map": self.type_map,
             "seed": self.seed,
             "use_spin": self.use_spin,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
             "spin": None,
             "spin_channels": (None if self.spin is None else self.spin.serialize()),
+            "charge_spin_embedding": (
+                None
+                if self.charge_spin_embedding is None
+                else self.charge_spin_embedding.serialize()
+            ),
             "type_embedding": self.type_embedding.serialize(),
             "radial_basis": self.radial_basis.serialize(),
             "radial_embedding": self.radial_embedding.serialize(),
@@ -1523,6 +1758,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         pair_film = data.pop("pair_film")
         readout = data.pop("readout")
         spin_channels = data.pop("spin_channels")
+        charge_spin_embedding = data.pop("charge_spin_embedding")
 
         obj = cls(**data)
         obj.type_embedding = SeZMTypeEmbedding.deserialize(type_embedding)
@@ -1537,6 +1773,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         obj.readout = InvariantReadout.deserialize(readout)
         obj.spin = (
             None if spin_channels is None else SpinChannels.deserialize(spin_channels)
+        )
+        obj.charge_spin_embedding = (
+            None
+            if charge_spin_embedding is None
+            else ChargeStateEmbedding.deserialize(charge_spin_embedding)
         )
         obj.set_stat_mean_and_stddev(
             variables["mean"],
@@ -1688,6 +1929,29 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def supports_native_spin(self) -> bool:
         """Return whether ``call_graph`` conditions on a per-node spin."""
         return self.spin is not None
+
+    def supports_charge_spin(self) -> bool:
+        """Return whether ``call_graph`` conditions on a frame charge state."""
+        return self.charge_spin_embedding is not None
+
+    def get_dim_chg_spin(self) -> int:
+        """Return the runtime width of the frame condition.
+
+        Compression folds one charge state into the frozen type and ordered
+        pair tables, so the resulting snapshot evaluates that state and
+        consumes no runtime condition. Reporting zero is what routes such a
+        model onto the compact canonical lower, whose argument list carries
+        no conditioning slot.
+        """
+        return 0 if self.compress or self.charge_spin_embedding is None else 2
+
+    def has_default_chg_spin(self) -> bool:
+        """Return whether a fallback frame condition is configured."""
+        return self.default_chg_spin is not None
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Return the fallback ``[charge, multiplicity]``, if configured."""
+        return self.default_chg_spin
 
     def has_message_passing_across_ranks(self) -> bool:
         """Return whether intermediate halo communication is required."""
