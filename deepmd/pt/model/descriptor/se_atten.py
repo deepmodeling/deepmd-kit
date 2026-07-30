@@ -813,7 +813,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return False
+        # Geometric compression uses the tabulate op's sorted-neighbor fold,
+        # which assumes padding and out-of-cutoff neighbors are trailing.
+        # `forward_lower` may receive an unsorted rcut+skin list from LAMMPS,
+        # so request the filtering/sorting pass whenever that op is active.
+        return self.geo_compress
 
 
 class NeighborGatedAttention(nn.Module):
