@@ -454,18 +454,20 @@ route, and `--lower-kind` selects between the pt_expt lowers only.
 
 Which models lose multi-rank, on either route:
 
-- **ZBL zone bridging.** The Source Freeze Propagation gate folds each node's
-  full *outgoing*-edge set, which no single rank observes for ghost owners, so
-  `supports_edge_parallel()` is `False` and no with-comm artifact is emitted.
-  Bridged archives are single-rank; a multi-rank run fails with a clear error
-  rather than silently dropping the exchange.
 - **The deepspin (virtual-atom) spin scheme**, which overrides the export ABI
   to `nlist` because it expands virtual atoms inside the graph.
 
-Native spin (`scheme: "native"`) and charge/spin conditioning are *not* in
-that list: native spin reuses the `edge_vec` interface on PT and the
-NeighborGraph lower on pt_expt, and both support multi-rank. The remainder of
-this subsection describes the multi-GPU launch recipe.
+**ZBL zone bridging is multi-rank capable** (including combined with native
+spin). The Source Freeze Propagation gate folds each node's full
+*outgoing*-edge set, which no single rank observes for ghost owners; the
+with-comm artifact completes the gate's per-node `[log eta, zero count]`
+partials across ranks with one reverse-accumulate plus one forward-broadcast
+border exchange of an `(N, 2)` tensor per forward pass — negligible next to
+the per-block feature exchanges that already run. Native spin
+(`scheme: "native"`) and charge/spin conditioning likewise support
+multi-rank: native spin reuses the `edge_vec` interface on PT and the
+NeighborGraph lower on pt_expt. The remainder of this subsection describes
+the multi-GPU launch recipe.
 :::
 
 The exported `.pt2` runs across multiple GPUs in LAMMPS using MPI domain
@@ -536,8 +538,8 @@ graph-capable model is always frozen to the graph lower in any case, since
 the dense lower is deprecated in the pt_expt backend. See [Native spin (magnetic)](#native-spin-magnetic) below.
 
 Unlike the dense route (see [Multi-GPU (MPI)
-inference](#multi-gpu-mpi-inference) above), a graph-frozen `.pt2` **of a
-plain-energy (non-spin) model** embeds a with-comm AOTInductor artifact and
+inference](#multi-gpu-mpi-inference) above), a graph-frozen `.pt2` embeds a
+with-comm AOTInductor artifact and
 supports multi-rank LAMMPS: each block's cross-rank ghost-feature exchange
 runs through the `border_op` MPI path once per interaction block, the same
 mechanism used by DPA-2's graph route (see the "Graph-native inference route
@@ -549,8 +551,8 @@ exchange. Pick a domain decomposition that keeps every rank non-empty, or use
 the dense route, which has no such restriction (but is single-rank only, as
 noted above).
 
-**Native-spin graph `.pt2` archives are the exception: they carry no
-with-comm artifact and are single-rank only** -- see [Native spin
+Native-spin graph `.pt2` archives participate too: they carry the with-comm
+artifact and support multi-rank LAMMPS -- see [Native spin
 (magnetic)](#native-spin-magnetic) below.
 
 ### Native spin (magnetic)
@@ -573,17 +575,12 @@ inference](#multi-gpu-mpi-inference).
   a native-spin descriptor has only the graph lower. `--lower-kind auto`
   (the default) resolves to `graph`; `--lower-kind nlist` is not a valid
   option for a native-spin model.
-- **Single-rank only.** The frozen archive's `has_comm_artifact` metadata is
-  `false` for native-spin models (no ghost-spin cross-rank exchange is
-  implemented), so a multi-rank LAMMPS run fails fast with an explicit error
-  at the first force evaluation, mirroring the dense route's single-rank
-  restriction described in [Multi-GPU (MPI)
-  inference](#multi-gpu-mpi-inference). Run native-spin models on a single
-  MPI rank (a single GPU, or CPU without `mpirun`).
-- **Spin is per local atom.** The `spin` input is `(nframes, nloc, 3)` --
-  one vector per *local* atom, not per ghost/extended atom (`nall`); there is
-  no ghost-spin exchange to populate ghost spins across a rank boundary,
-  consistent with the single-rank restriction above.
+- **Multi-rank capable.** The frozen archive embeds the with-comm artifact
+  (`has_comm_artifact` is `true`), so multi-rank LAMMPS works exactly as
+  described in [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference): the
+  per-block ghost node features ride `border_op`, and ghost spins arrive
+  through the LAMMPS `sp` forward communication -- spin itself needs no
+  extra cross-rank exchange.
 - **The magnetic force is a second energy gradient.** As in the general
   native-scheme convention (see [Spin](#spin) above),
   `force_mag = -\partial E/\partial\mathbf{s}`, computed by pt_expt as a
@@ -595,18 +592,9 @@ inference](#multi-gpu-mpi-inference).
   route.
 
 The following combinations are **not yet supported** on the native-spin
-graph route (follow-up work):
-
-- **Multi-rank inference.** Ghost-spin cross-rank exchange (analogous to the
-  plain-energy graph route's `border_op`-based ghost-feature exchange) is not
-  implemented.
-- **Charge-spin FiLM conditioning.** Combining `add_chg_spin_ebd` with
-  `spin.scheme: native` is rejected at model-construction time; use one or
-  the other.
-- **ZBL zone bridging.** Combining `bridging_method: ZBL` with
-  `spin.scheme: native` is not supported on the pt_expt backend (`bridging_method`
-  is rejected there independently of spin -- see [Zone bridging
-  (ZBL)](#zone-bridging-zbl)).
+graph route: none of the earlier restrictions remain. Multi-rank inference,
+charge-spin FiLM conditioning (`add_chg_spin_ebd`), and ZBL zone bridging
+(`bridging_method: ZBL`) all combine freely with `spin.scheme: native`.
 
 ## Embedding extraction
 
@@ -723,12 +711,12 @@ closed over the one-hop neighbor shell.
 - DPA4/SeZM is implemented for the PyTorch backend only.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
-- Multi-rank (multi-GPU/MPI) LAMMPS inference works for a plain energy model
-  on both export routes: the PT `edge_vec` archive and the pt_expt
-  NeighborGraph archive each embed a with-comm artifact. ZBL zone bridging is
-  single-rank (its Source Freeze Propagation gate folds each node's full
-  outgoing-edge set, which no single rank observes), and a multi-rank run of
-  such an archive fails fast rather than dropping the exchange. See
+- Multi-rank (multi-GPU/MPI) LAMMPS inference works on both export routes:
+  the PT `edge_vec` archive and the pt_expt NeighborGraph archive each embed
+  a with-comm artifact. ZBL zone bridging (and its native-spin combination)
+  participates: the Source Freeze Propagation gate's per-node partials are
+  completed across ranks by one reverse-accumulate plus one
+  forward-broadcast border exchange. See
   [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
 - The pt_expt graph-native inference route is unavailable only for
   `deepspin`-scheme spin, which stays on the dense route. Charge/spin
@@ -737,9 +725,8 @@ closed over the one-hop neighbor shell.
 - `spin.scheme: native` is graph-only (it has no dense route) and supports
   multi-rank LAMMPS: ghost node features ride `border_op` per interaction
   block and ghost spins arrive through the LAMMPS `sp` forward-comm.
-  Charge-spin FiLM conditioning combines with it. Combining it with ZBL zone
-  bridging works single-rank; that combination is single-rank for the same
-  bridging reason as above. See [Native spin
+  Charge-spin FiLM conditioning and ZBL zone bridging both combine with it,
+  multi-rank included. See [Native spin
   (magnetic)](#native-spin-magnetic).
 
 ## Citation
