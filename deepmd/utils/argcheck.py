@@ -5508,6 +5508,15 @@ def training_args(
         "Default is 0. Requires distributed launch via torchrun. "
         "Currently supports single-task training; does not support LKF or change_bias_after_training."
     )
+    doc_neighbor_graph_method = (
+        "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
+        "Experimental energy models. `auto` uses the NV builder on CUDA when "
+        "nvalchemiops is available and otherwise uses the in-tree dense builder. "
+        "`nv` requires CUDA and nvalchemiops; `dense` always uses the in-tree "
+        "all-pairs implementation. The selection is resolved once at training "
+        "startup and applies consistently to eager, compiled, and full-validation "
+        "forwards."
+    )
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -5702,6 +5711,15 @@ def training_args(
             optional=True,
             default=0,
             doc=supported_backends("pt") + doc_zero_stage,
+        ),
+        Argument(
+            "neighbor_graph_method",
+            str,
+            optional=True,
+            default="auto",
+            extra_check=lambda x: x in {"auto", "dense", "nv"},
+            extra_check_errmsg="must be one of 'auto', 'dense', or 'nv'",
+            doc=supported_backends("pt_expt") + doc_neighbor_graph_method,
         ),
         Argument(
             "enable_compile",

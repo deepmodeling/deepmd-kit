@@ -4,8 +4,72 @@ import numpy as np
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     op_grads_module,
+    op_module,
     tf,
 )
+
+
+class TestLegacyProdForceGradGhost(tf.test.TestCase):
+    """Exercise a non-boundary ghost through ProdForce's registered gradient."""
+
+    def test_second_ghost_uses_its_own_upstream_gradient(self) -> None:
+        nloc = 1
+        nall = 3
+        nframes = 2
+        ndescrpt = 4
+        net_deriv = tf.placeholder(tf.float64, [nframes, nloc * ndescrpt])
+
+        in_deriv = np.zeros((nframes, nloc * ndescrpt * 12))
+        # The only neighbor is axis 0. Give descriptor 0 a simple derivative
+        # with respect to the ghost atom and leave every other term zero.
+        in_deriv[:, 3:6] = [1.0, 2.0, 3.0]
+        force = op_module.prod_force(
+            net_deriv,
+            tf.constant(in_deriv, dtype=tf.float64),
+            # The second ghost has index nloc + 1. This specifically exercises
+            # the removed ``j_idx > nloc`` modulo branch; the first ghost at
+            # exactly nloc would never have entered that branch.
+            tf.constant([[nloc + 1], [nloc + 1]], dtype=tf.int32),
+            tf.constant([[0, 0, 0, 0], [0, 0, 0, 0]], dtype=tf.int32),
+            tf.constant([nloc, nall, nloc], dtype=tf.int32),
+            n_a_sel=1,
+            n_r_sel=0,
+        )
+
+        # Local and both ghost gradients deliberately differ. The expected
+        # result must use the second-ghost slice, not fold index 2 onto local
+        # index 0 as the old modulo branch did.
+        upstream = tf.constant(
+            [
+                [10.0, 11.0, 12.0, 7.0, 8.0, 9.0, 4.0, 5.0, 6.0],
+                [20.0, 21.0, 22.0, 8.0, 7.0, 6.0, 1.0, 2.0, 3.0],
+            ],
+            dtype=tf.float64,
+        )
+        grad_net = tf.gradients(force, net_deriv, grad_ys=upstream)[0]
+
+        with self.cached_session() as sess:
+            actual_force, actual_grad = sess.run(
+                [force, grad_net],
+                feed_dict={
+                    net_deriv: [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [2.0, 0.0, 0.0, 0.0],
+                    ]
+                },
+            )
+
+        np.testing.assert_array_equal(
+            actual_force,
+            [
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -2.0, -3.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0, -4.0, -6.0],
+            ],
+        )
+        np.testing.assert_array_equal(
+            actual_grad,
+            [[-32.0, 0.0, 0.0, 0.0], [-14.0, 0.0, 0.0, 0.0]],
+        )
 
 
 class TestProdForceGrad(tf.test.TestCase):

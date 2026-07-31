@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     build_neighbor_graph,
 )
@@ -22,16 +25,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _sets(ng, nloc):
-    """Per-center set of (src_local, rounded edge_vec) over real edges."""
-    ei = np.asarray(ng.edge_index.cpu())
-    ev = np.asarray(ng.edge_vec.detach().cpu())
-    em = np.asarray(ng.edge_mask.cpu())
-    out = {c: set() for c in range(nloc)}
-    for e in range(ei.shape[1]):
-        if em[e]:
-            out[int(ei[1, e])].add((int(ei[0, e]), tuple(np.round(ev[e], 6))))
-    return out
+def _edge_multiset(ng):
+    edge_index = np.asarray(ng.edge_index.cpu())
+    edge_vec = np.asarray(ng.edge_vec.detach().cpu())
+    edge_mask = np.asarray(ng.edge_mask.cpu())
+    return sorted(
+        (
+            int(edge_index[0, edge]),
+            int(edge_index[1, edge]),
+            tuple(np.round(edge_vec[edge], 10)),
+        )
+        for edge in range(edge_index.shape[1])
+        if edge_mask[edge]
+    )
 
 
 @pytest.mark.parametrize("periodic", [False, True])  # non-PBC and PBC
@@ -50,14 +56,16 @@ def test_nv_matches_intree_carry_all(periodic):
     atype = torch.tensor([[0, 1, 0, 1]], dtype=torch.int64, device=dev)
     ng_ref = build_neighbor_graph(coord, atype, box, 2.0)
     ng = nv_builder.build_neighbor_graph_nv(coord, atype, box, 2.0)
-    assert _sets(ng, 4) == _sets(ng_ref, 4)
+    assert _edge_multiset(ng) == _edge_multiset(ng_ref)
 
 
 def test_nv_batches_frames_without_python_loop():
-    """Multi-frame: nv searches all frames in one kernel (no per-frame loop)."""
+    """NV batches flattened training coordinates without a per-frame loop."""
     dev = torch.device("cuda")
     rng = np.random.default_rng(0)
-    coord = torch.tensor(rng.random((3, 5, 3)) * 3.0, dtype=torch.float64, device=dev)
+    coord = torch.tensor(
+        rng.random((3, 5, 3)) * 3.0, dtype=torch.float64, device=dev
+    ).reshape(3, -1)
     box = (
         (torch.eye(3, dtype=torch.float64, device=dev) * 4.0)
         .reshape(1, 3, 3)
@@ -70,26 +78,7 @@ def test_nv_batches_frames_without_python_loop():
     )
     ng_ref = build_neighbor_graph(coord, atype, box, 2.0)
     ng = nv_builder.build_neighbor_graph_nv(coord, atype, box, 2.0)
-    # per-frame node offset: frame f centers occupy nodes [f*5, (f+1)*5)
-    for f in range(3):
-        s_ref = {
-            (
-                int(ng_ref.edge_index[0, e]),
-                tuple(np.round(np.asarray(ng_ref.edge_vec[e].detach().cpu()), 6)),
-            )
-            for e in range(ng_ref.edge_index.shape[1])
-            if bool(ng_ref.edge_mask[e])
-            and f * 5 <= int(ng_ref.edge_index[1, e]) < (f + 1) * 5
-        }
-        s = {
-            (
-                int(ng.edge_index[0, e]),
-                tuple(np.round(np.asarray(ng.edge_vec[e].detach().cpu()), 6)),
-            )
-            for e in range(ng.edge_index.shape[1])
-            if bool(ng.edge_mask[e]) and f * 5 <= int(ng.edge_index[1, e]) < (f + 1) * 5
-        }
-        assert s == s_ref, f"frame {f} neighbor set mismatch"
+    assert _edge_multiset(ng) == _edge_multiset(ng_ref)
 
 
 def test_nv_edge_vec_is_differentiable():
@@ -118,7 +107,34 @@ def test_nv_excludes_virtual_atoms_like_dense():
     atype = torch.tensor([[0, -1, 0, 1]], dtype=torch.int64, device=dev)  # 1 virtual
     ng_ref = build_neighbor_graph(coord, atype, box, 2.0)
     ng = nv_builder.build_neighbor_graph_nv(coord, atype, box, 2.0)
-    assert _sets(ng, 4) == _sets(ng_ref, 4)
+    assert _edge_multiset(ng) == _edge_multiset(ng_ref)
     ei = np.asarray(ng.edge_index.cpu())[:, np.asarray(ng.edge_mask.cpu())]
     at = atype.reshape(-1).cpu().numpy()
     assert np.all(at[ei[0]] >= 0) and np.all(at[ei[1]] >= 0)
+
+
+def test_nv_pair_exclusion_matches_dense():
+    dev = torch.device("cuda")
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0], [0.0, 1.1, 0.0], [1.2, 1.0, 0.0]]],
+        dtype=torch.float64,
+        device=dev,
+    )
+    atype = torch.tensor([[0, 1, 0, 1]], dtype=torch.int64, device=dev)
+    box = (torch.eye(3, dtype=torch.float64, device=dev) * 3.0).reshape(1, 3, 3)
+    pair_excl = PairExcludeMask(2, [(0, 1), (1, 0)])
+    expected = build_neighbor_graph(
+        coord,
+        atype,
+        box,
+        2.0,
+        pair_excl=pair_excl,
+    )
+    actual = nv_builder.build_neighbor_graph_nv(
+        coord,
+        atype,
+        box,
+        2.0,
+        pair_excl=pair_excl,
+    )
+    assert _edge_multiset(actual) == _edge_multiset(expected)

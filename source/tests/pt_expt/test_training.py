@@ -30,6 +30,9 @@ import torch
 from deepmd.loggers.training import (
     format_training_message,
 )
+from deepmd.pt.optimizer import (
+    HybridMuonOptimizer,
+)
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
@@ -46,6 +49,9 @@ from deepmd.utils.compat import (
 from ..common.stat_file import (
     assert_energy_stat_cache_round_trip,
     energy_model_params,
+)
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
 )
 
 EXAMPLE_DIR = os.path.join(
@@ -324,6 +330,58 @@ class TestTraining(unittest.TestCase):
         nparams = sum(p.numel() for p in model.parameters())
         self.assertGreater(nparams, 0)
 
+    def test_neighbor_graph_method_defaults_to_auto(self) -> None:
+        """Training selects the graph builder automatically unless overridden."""
+        config = _make_config(self.data_dir)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self.assertEqual(config["training"]["neighbor_graph_method"], "auto")
+
+    def test_trainer_installs_resolved_graph_method(self) -> None:
+        """The trainer installs the concrete graph backend on graph models."""
+        config = _make_config(self.data_dir)
+        config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        with patch(
+            "deepmd.pt.utils.nv_nlist.is_nv_available",
+            return_value=False,
+        ):
+            trainer = get_trainer(config)
+        self.assertEqual(trainer.model.neighbor_graph_method, "dense")
+
+    def test_explicit_graph_method_rejects_ineligible_model(self) -> None:
+        config = _make_config(self.data_dir)
+        config["training"]["neighbor_graph_method"] = "nv"
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        with self.assertRaisesRegex(ValueError, "graph-eligible"):
+            get_trainer(config)
+
+    def test_supported_optimizers_construct(self) -> None:
+        for optimizer_type, optimizer_class in (
+            ("AdamW", torch.optim.AdamW),
+            ("HybridMuon", HybridMuonOptimizer),
+        ):
+            with self.subTest(optimizer_type=optimizer_type):
+                config = _make_config(self.data_dir)
+                config["optimizer"] = {"type": optimizer_type}
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+
+                trainer = get_trainer(config)
+
+                self.assertIsInstance(trainer.optimizer, optimizer_class)
+
+    def test_unsupported_optimizer_has_clear_error(self) -> None:
+        config = _make_config(self.data_dir)
+        config["optimizer"] = {"type": "LKF"}
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        with self.assertRaisesRegex(ValueError, "Unsupported optimizer type: LKF"):
+            get_trainer(config)
+
     def _run_training(self, config: dict) -> None:
         """Run training and verify lcurve + checkpoint creation."""
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_train_")
@@ -445,6 +503,7 @@ class TestTraining(unittest.TestCase):
         self.assertEqual(config["model"]["type"], "dpa4")
         self._run_training(config)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled(self) -> None:
         """Run a few training steps with torch.compile enabled."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -453,6 +512,7 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled_silu(self) -> None:
         """Run compiled training with silu activation."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -526,6 +586,7 @@ class TestCompiledModelGetattr(unittest.TestCase):
             _ = cm.nonexistent_attribute_xyz
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledDynamicShapes(unittest.TestCase):
     """Test that _CompiledModel handles varying nall via dynamic shapes."""
 
@@ -587,6 +648,7 @@ class TestCompiledDynamicShapes(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledConsistency(unittest.TestCase):
     """Verify compiled model produces the same energy/force/virial as uncompiled."""
 
@@ -1039,6 +1101,7 @@ class TestRestart(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_restart_from_compiled_checkpoint(self) -> None:
         """Train WITH compile enabled, restart from the compiled checkpoint.
 
@@ -1133,6 +1196,7 @@ class TestRestart(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_restart_with_compile(self) -> None:
         """Train uncompiled, restart with compile enabled."""
         from deepmd.pt_expt.train.training import (
@@ -1472,6 +1536,7 @@ class TestCompiledVaryingNframesWithParams(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_compiled(self) -> None:
         """Compiled training with varying nframes + fparam/aparam."""
         self._run_steps(enable_compile=True)
@@ -1516,6 +1581,7 @@ def _create_small_system(
     np.save(os.path.join(set_dir, "virial.npy"), virial)
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledVaryingNatoms(unittest.TestCase):
     """Test compiled training with systems of different atom counts.
 
@@ -1726,6 +1792,7 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         self.assertIsInstance(trainer.wrapper.model["Default"], _CompiledModel)
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompiledSharedFittingDifferentDescriptor(unittest.TestCase):
     """Regression test: shared fitting with different descriptors gets distinct compiled graphs.
 
