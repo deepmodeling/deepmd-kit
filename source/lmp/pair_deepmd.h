@@ -47,9 +47,12 @@ class PairDeepMD : public PairDeepBaseModel {
   void settings(int, char**) override;
   void coeff(int, char**) override;
   void compute(int, int) override;
+  void init_style() override;
+  double init_one(int, int) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
+  bool compact_selection_enabled() const { return compact_selection_enabled_; }
 
  protected:
   deepmd_compat::DeepPot deep_pot;
@@ -60,6 +63,30 @@ class PairDeepMD : public PairDeepBaseModel {
   deepmd_compat::InputNlist make_comm_nlist();
 
  private:
+  // Compact evaluation is implemented by assigning type -1 to atoms outside
+  // the selected subsystem. Every supported DeepPot backend already compacts
+  // such atoms, remaps its neighbor/communication data, and scatters outputs
+  // back to the original atom order.
+  bool compact_selection_enabled_;
+  bool compact_include_molecule_;
+  bool compact_center_group_dynamic_;
+  int compact_center_group_bit_;
+  double compact_environment_cutoff_;
+  bigint compact_natoms_;
+  std::string compact_center_group_id_;
+  std::vector<tagint> compact_center_tags_;
+  std::vector<unsigned char> compact_selected_;
+
+  std::vector<tagint> allgather_unique_tagints(
+      std::vector<tagint> local_values) const;
+  void refresh_compact_center_tags();
+  bool apply_compact_selection(std::vector<int>& model_types);
+  void analyze_model_deviation(double& max,
+                               double& min,
+                               double& sum,
+                               const std::vector<double>& deviation,
+                               int nlocal) const;
+
   CommBrickDeepMD* commdata_;
 };
 

@@ -176,6 +176,12 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   // Base setup and the full neighbor-list request.
   PairDeepMD::init_style();
 
+  if (compact_selection_enabled()) {
+    error->all(FLERR,
+               "pair style deepmd/kk does not yet support center_group compact "
+               "evaluation; use pair style deepmd");
+  }
+
   // The device edge path requires a GPU execution space and a single model.
   if (std::is_same<DeviceType, LMPHostType>::value) {
     error->all(FLERR, "pair style deepmd/kk runs on the GPU backend only.");
