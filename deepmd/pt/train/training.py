@@ -31,11 +31,10 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.train import (
     change_model_out_bias,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
-    resolve_model_prob,
-    resolve_model_prob_from_epochs,
 )
 from deepmd.loggers.training import (
     format_training_message,
@@ -110,12 +109,13 @@ from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
-    _collate_lmdb_batch,
-    _SameNlocBatchSamplerTorch,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
+    min_pair_dist_frame_mask,
+    select_batch_frames,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -217,16 +217,12 @@ class Trainer:
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
-        self.model_prob = None
         self.stat_file_specs = stat_file_specs_by_task(
             stat_file_spec,
             self.model_keys,
         )
 
         # Iteration config
-        self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("numb_epoch")
-        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
@@ -299,15 +295,15 @@ class Trainer:
             _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
-            DataLoader,
+            DataLoader | LmdbBatchDataLoader,
             Generator[Any, None, None],
-            DataLoader | None,
+            DataLoader | LmdbBatchDataLoader | None,
             Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
-            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+            ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
                 if _data.mixed_batch:
                     # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
                     # RandomSampler(replacement=False) + padding collate_fn.
@@ -350,13 +346,10 @@ class Trainer:
                         block_targets=_block_targets,
                     )
 
-                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
-                _dataloader = DataLoader(
+                _dataloader = LmdbBatchDataLoader(
                     _data,
-                    batch_sampler=_batch_sampler,
-                    num_workers=0,
-                    collate_fn=_collate_lmdb_batch,
-                    pin_memory=(DEVICE != "cpu"),
+                    _inner_sampler,
+                    pin_memory=DEVICE.type != "cpu",
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
@@ -425,6 +418,7 @@ class Trainer:
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
             _stat_file_spec: StatFileSpec,
+            _min_pair_dist: float = 0.0,
             finetune_has_new_type: bool = False,
             preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
@@ -434,6 +428,7 @@ class Trainer:
                     _training_data.systems,
                     _training_data.dataloaders,
                     _data_stat_nbatch,
+                    min_pair_dist=_min_pair_dist,
                 )
                 return sampled
 
@@ -541,6 +536,7 @@ class Trainer:
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
                 self.stat_file_specs["Default"],
+                _min_pair_dist=min_pair_dist,
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -588,7 +584,9 @@ class Trainer:
                     self.model[model_key]
                 )
                 min_pair_dist = float(
-                    training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+                    training_params["data_dict"][model_key]
+                    .get("training_data", {})
+                    .get("min_pair_dist", 0.0)
                 )
                 if min_pair_dist > 0.0:
                     data_requirement.append(
@@ -621,6 +619,7 @@ class Trainer:
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
                     self.stat_file_specs[model_key],
+                    _min_pair_dist=min_pair_dist,
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
@@ -671,91 +670,36 @@ class Trainer:
                     )
 
         # Resolve training steps
-        per_task_total = []
-        if not self.multi_task:
-            if self.num_steps is None:
-                if self.num_epoch is None:
-                    raise ValueError(
-                        "Either training.numb_steps or training.num_epoch must be set."
-                    )
-                if self.num_epoch <= 0:
-                    raise ValueError("training.num_epoch must be positive.")
-                if isinstance(training_data, LmdbDataset):
-                    total_numb_batch = len(self.training_dataloader)
-                else:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader.sampler.weights
-                    )
-                    total_numb_batch = compute_total_numb_batch(
-                        training_data.index,
-                        sampler_weights,
-                    )
-                # Sampler weights carry tiny per-rank floating-point noise, so
-                # the rounded batch count can differ by one unit across ranks.
-                # Pin it to rank 0 before deriving num_steps so every rank
-                # shares the same training and full-validation schedule.
-                total_numb_batch = self._broadcast_value_from_rank0(total_numb_batch)
-                if total_numb_batch <= 0:
-                    raise ValueError(
-                        "Total number of training batches must be positive."
-                    )
-                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
-                log.info(
-                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
-                    self.num_steps,
-                    self.num_epoch,
-                    total_numb_batch,
-                )
-        else:
-            if self.num_epoch_dict:
-                if self.num_steps is not None:
-                    raise ValueError(
-                        "training.numb_steps and training.num_epoch_dict "
-                        "are mutually exclusive."
-                    )
-                for model_key in self.model_keys:
-                    if isinstance(training_data[model_key], LmdbDataset):
-                        per_task_total.append(len(self.training_dataloader[model_key]))
-                    else:
-                        sampler_weights = to_numpy_array(
-                            self.training_dataloader[model_key].sampler.weights
-                        )
-                        per_task_total.append(
-                            compute_total_numb_batch(
-                                training_data[model_key].index,
-                                sampler_weights,
-                            )
-                        )
-                per_task_total = self._broadcast_value_from_rank0(per_task_total)
-                (
-                    self.model_prob,
-                    self.num_steps,
-                    per_task_steps,
-                ) = resolve_model_prob_from_epochs(
-                    self.model_keys,
-                    self.num_epoch_dict,
-                    np.asarray(per_task_total, dtype=np.float64),
-                )
-                log.info(
-                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
-                    "with per-task target steps: %s.",
-                    self.model_prob,
-                    self.num_steps,
-                    self.num_epoch_dict,
-                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
-                )
-            else:
-                if self.num_steps is None:
-                    raise ValueError(
-                        "Either training.numb_steps (multi-task only) or "
-                        "training.num_epoch_dict must be set."
-                    )
-                self.model_prob = resolve_model_prob(
-                    self.model_keys,
-                    training_params.get("model_prob"),
-                    training_data,
-                    rank=self.rank,
-                )
+        def epoch_length(model_key: str) -> int:
+            """Return the batches this rank consumes in one epoch of a task."""
+            _data = training_data[model_key] if self.multi_task else training_data
+            _dataloader = (
+                self.training_dataloader[model_key]
+                if self.multi_task
+                else self.training_dataloader
+            )
+            if isinstance(_data, LmdbDataset):
+                return len(_dataloader)
+            return compute_total_numb_batch(
+                _data.index,
+                to_numpy_array(_dataloader.sampler.weights),
+            )
+
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=(
+                training_data
+                if self.multi_task
+                else {self.model_keys[0]: training_data}
+            ),
+            epoch_length=epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
 
         # === Derive checkpoint retention from ckpt_keep_ratio ===
         # num_steps is final here (including when derived from num_epoch), so the
@@ -780,10 +724,41 @@ class Trainer:
         self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
-        # Minimum pairwise distance for filtering unphysical frames during training
-        self.min_pair_dist = training_params.get("training_data", {}).get(
-            "min_pair_dist", 0.0
+        # Minimum pairwise distance for filtering unphysical frames during training.
+        if self.multi_task:
+            self.min_pair_dist: float | dict[str, float] = {
+                model_key: float(
+                    training_params["data_dict"][model_key]
+                    .get("training_data", {})
+                    .get("min_pair_dist", 0.0)
+                )
+                for model_key in self.model_keys
+            }
+        else:
+            self.min_pair_dist = float(
+                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            )
+        self.has_min_pair_filter = (
+            any(value > 0.0 for value in self.min_pair_dist.values())
+            if isinstance(self.min_pair_dist, dict)
+            else self.min_pair_dist > 0.0
         )
+        if self.has_min_pair_filter:
+            if self.multi_task:
+                local_training_batch_attempts = max(
+                    max(1, len(self.training_dataloader[model_key]))
+                    for model_key in self.model_keys
+                )
+            else:
+                local_training_batch_attempts = max(1, len(self.training_dataloader))
+            # Rank-specific task sampling may select loaders of different
+            # lengths, but validity collectives must use one shared retry count.
+            self._training_batch_attempts = int(
+                self._broadcast_value_from_rank0(local_training_batch_attempts)
+            )
+        else:
+            self._training_batch_attempts = 1
+        self._discarded_training_batches = 0
 
         # JIT
         if JIT:
@@ -1462,6 +1437,14 @@ class Trainer:
             self.optimizer.load_state_dict(optimizer_state_dict)
 
     def run(self) -> None:
+        """Run training and release asynchronous data pipelines."""
+        try:
+            self._run()
+        finally:
+            self._close_lmdb_loaders()
+
+    def _run(self) -> None:
+        """Execute the PyTorch optimization loop."""
         fout = (
             open(
                 self.disp_file,
@@ -1510,13 +1493,7 @@ class Trainer:
             cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
-            # All frames filtered by min_pair_dist (single-GPU only;
-            # DDP path in get_data() always keeps at least one frame)
-            if not input_dict:
-                return
+            input_dict, label_dict, log_dict = self._next_training_batch(task_key)
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -1778,16 +1755,24 @@ class Trainer:
                                 input_dict, label_dict, _ = self.get_data(
                                     is_train=True, task_key=_key
                                 )
-                                _, loss, more_loss = self.wrapper(
-                                    **input_dict,
-                                    cur_lr=pref_lr,
-                                    label=label_dict,
-                                    task_key=_key,
-                                )
-                                train_results[_key] = log_loss_train(
-                                    loss, more_loss, _task_key=_key
-                                )
+                                if input_dict and not (
+                                    self.is_distributed and self.zero_stage >= 2
+                                ):
+                                    _, loss, more_loss = self._get_inner_module()(
+                                        **input_dict,
+                                        cur_lr=pref_lr,
+                                        label=label_dict,
+                                        task_key=_key,
+                                    )
+                                    train_results[_key] = log_loss_train(
+                                        loss, more_loss, _task_key=_key
+                                    )
                             valid_results[_key] = log_loss_valid(_task_key=_key)
+                            if not train_results[_key] and valid_results[_key]:
+                                train_results[_key] = dict.fromkeys(
+                                    valid_results[_key],
+                                    float("nan"),
+                                )
                             if self.rank == 0:
                                 log.info(
                                     format_training_message_per_task(
@@ -1964,6 +1949,7 @@ class Trainer:
         self.t0 = time.time()
         self.total_train_time = 0.0
         self.timed_steps = 0
+        self._discarded_training_batches = 0
 
         if self.disp_avg:
             # Initialize loss accumulators
@@ -1979,6 +1965,13 @@ class Trainer:
             step(step_id)
             if JIT:
                 break
+
+        if self.rank == 0 and self._discarded_training_batches:
+            log.info(
+                "Discarded %d globally invalid batches while collecting "
+                "synchronized training inputs.",
+                self._discarded_training_batches,
+            )
 
         if (
             self.change_bias_after_training
@@ -2090,6 +2083,24 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
+
+    def _close_lmdb_loaders(self) -> None:
+        """Release LMDB pipelines owned by training and validation loaders."""
+        closed: set[int] = set()
+        datasets: dict[int, LmdbDataset] = {}
+        for loaders in (self.training_dataloader, self.validation_dataloader):
+            values = loaders.values() if isinstance(loaders, dict) else (loaders,)
+            for loader in values:
+                if loader is None or id(loader) in closed:
+                    continue
+                closed.add(id(loader))
+                close = getattr(loader, "close", None)
+                if close is not None:
+                    close()
+                if isinstance(loader, LmdbBatchDataLoader):
+                    datasets[id(loader.dataset)] = loader.dataset
+        for dataset in datasets.values():
+            dataset.close()
 
     def _collect_checkpoint_states(
         self,
@@ -2328,6 +2339,56 @@ class Trainer:
             use_ema_weights=True,
         )
 
+    def _get_min_pair_dist(self, task_key: str) -> float:
+        """Return the minimum pair distance configured for one task."""
+        if isinstance(self.min_pair_dist, dict):
+            return self.min_pair_dist[task_key]
+        return self.min_pair_dist
+
+    def _next_training_batch(
+        self,
+        task_key: str,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return the next batch that can produce a synchronized optimizer step.
+
+        Parameters
+        ----------
+        task_key
+            Selected training task.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+            Model inputs, labels, and sampler metadata for a globally valid
+            batch.
+
+        Raises
+        ------
+        RuntimeError
+            If no globally valid batch is found within the synchronized retry
+            budget.
+        """
+        max_attempts = self._training_batch_attempts
+        distributed_filter = (
+            self.has_min_pair_filter and dist.is_available() and dist.is_initialized()
+        )
+
+        for _ in range(max_attempts):
+            batch = self.get_data(is_train=True, task_key=task_key)
+            input_dict = batch[0]
+            globally_valid = bool(input_dict)
+            if distributed_filter:
+                globally_valid = all_ranks_have_valid_frames(globally_valid)
+            if globally_valid:
+                return batch
+            self._discarded_training_batches += 1
+
+        raise RuntimeError(
+            "Unable to collect a globally valid training batch for task "
+            f"{task_key!r} after {max_attempts} attempts with "
+            f"min_pair_dist={self._get_min_pair_dist(task_key)}."
+        )
+
     def get_data(
         self, is_train: bool = True, task_key: str = "Default"
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -2341,26 +2402,18 @@ class Trainer:
             return {}, {}, {}
         batch_data = next(iterator)
         # === Filter frames with atoms too close (training only) ===
-        if is_train and self.min_pair_dist > 0.0 and "min_pair_dist" in batch_data:
-            min_dists = batch_data["min_pair_dist"]
-            if isinstance(min_dists, torch.Tensor):
-                valid_mask = min_dists.squeeze(-1) >= self.min_pair_dist
-                n_total = valid_mask.shape[0]
-                n_valid = int(valid_mask.sum().item())
-                if n_valid == 0:
-                    # Under distributed training (DDP/FSDP), every rank must
-                    # participate in backward() to avoid collective communication
-                    # deadlock.  Keep one frame as a fallback instead of
-                    # skipping the entire batch.
-                    if dist.is_available() and dist.is_initialized():
-                        valid_mask[0] = True
-                        n_valid = 1
-                    else:
-                        return {}, {}, {}
-                if n_valid < n_total:
-                    for key, val in batch_data.items():
-                        if isinstance(val, torch.Tensor) and val.shape[0] == n_total:
-                            batch_data[key] = val[valid_mask]
+        min_pair_dist = self._get_min_pair_dist(task_key)
+        valid_mask = (
+            min_pair_dist_frame_mask(batch_data, min_pair_dist) if is_train else None
+        )
+        local_has_valid = valid_mask is None or bool(torch.any(valid_mask))
+        if not local_has_valid:
+            return {}, {}, {}
+
+        if valid_mask is not None:
+            n_valid = int(valid_mask.sum().item())
+            if n_valid < valid_mask.shape[0]:
+                batch_data = select_batch_frames(batch_data, valid_mask)
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
@@ -2472,6 +2525,29 @@ class Trainer:
         print_str += f"   {cur_lr:8.1e}\n"
         fout.write(print_str)
         fout.flush()
+
+
+def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
+    """
+    Return whether every distributed rank has a valid training frame.
+
+    Parameters
+    ----------
+    local_has_valid
+        Whether the current rank has at least one valid frame.
+
+    Returns
+    -------
+    bool
+        ``True`` only when every rank reports a valid frame.
+    """
+    all_ranks_have_valid = torch.tensor(
+        int(local_has_valid),
+        dtype=torch.int32,
+        device=DEVICE,
+    )
+    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN)
+    return bool(all_ranks_have_valid.item())
 
 
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:

@@ -105,7 +105,7 @@ def get_sezm_model(data: dict) -> EnergyModel:
         return get_native_spin_model(data)
     # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
     # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
-    # atomic model's InterPotential at construction below.
+    # atomic model's InnerPotential at construction below.
     bridging_method = str(data.get("bridging_method", "none"))
     bridging_enabled = bridging_method.lower() not in ("none", "")
     if data.get("lora") is not None:
@@ -194,10 +194,10 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
     Returns
     -------
     Any
-        A :class:`LinearEnergyModel` over ``[learned, InterPotential]``.
+        A :class:`LinearEnergyModel` over ``[learned, InnerPotential]``.
     """
-    from deepmd.dpmodel.atomic_model.inter_potential import (
-        InterPotentialAtomicModel,
+    from deepmd.dpmodel.atomic_model.inner_potential import (
+        InnerPotentialAtomicModel,
     )
     from deepmd.dpmodel.atomic_model.linear_atomic_model import (
         LinearEnergyAtomicModel,
@@ -207,7 +207,7 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
     )
 
     descriptor = model.atomic_model.descriptor
-    zbl_atomic = InterPotentialAtomicModel(
+    zbl_atomic = InnerPotentialAtomicModel(
         type_map=data["type_map"],
         mode=bridging_method,
         rcut=descriptor.get_rcut(),
@@ -231,7 +231,7 @@ def get_standard_model(data: dict) -> Any:
     pt_expt twin of :func:`deepmd.dpmodel.model.model.get_standard_model`:
     the analytical-bridging radii feed the DESCRIPTOR's
     InnerClamp/BridgingSwitch and the method composes the atomic model with
-    its InterPotential term. Without this wrapper a ``type: "standard"``
+    its InnerPotential term. Without this wrapper a ``type: "standard"``
     config with ``bridging_method`` silently dropped the bridging term
     (backend divergence from dpmodel -- issue #5906 Task 4 audit).
 

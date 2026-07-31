@@ -2,7 +2,7 @@
 """pt_expt ``get_standard_model`` must honor ``bridging_method`` like its
 dpmodel twin (``deepmd/dpmodel/model/model.py``) -- issue #5906 Task 4
 variant-alignment audit, gap 2: a ``type: "standard"`` config with bridging
-silently dropped the InterPotential composition in pt_expt.
+silently dropped the InnerPotential composition in pt_expt.
 """
 
 import copy
@@ -44,7 +44,7 @@ def _dpa4_standard_config() -> dict:
 
 def test_standard_model_type_builds_bridging_composition() -> None:
     """pt_expt twin of dpmodel model.py's get_standard_model: a config with
-    bridging_method must compose [learned, InterPotential], not silently
+    bridging_method must compose [learned, InnerPotential], not silently
     drop the bridging term.
     """
     data = _dpa4_standard_config()

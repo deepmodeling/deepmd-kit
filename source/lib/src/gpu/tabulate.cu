@@ -473,12 +473,12 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
         Csub +=
             repeat_count * res_grad * (enable_se_atten ? res * t + res : res);
         if (enable_se_atten) {
-          // A real neighbor owns one entry; the first sentinel owns the full
-          // padding tail. No other warp writes these dy_dtwo positions.
-          for (int ii2 = ii; ii2 < ii + repeat_count; ii2++) {
-            dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
-                    jj] = oldres * res;
-          }
+          // Forward folds the complete padding tail using only this first
+          // sentinel's two-embedding value. Its gradient therefore owns the
+          // full repeat count; later padding entries are independent of the
+          // folded output and keep the zero written before the launch.
+          dy_dtwo[block_idx * nnei * last_layer_size + ii * last_layer_size +
+                  jj] = repeat_count * oldres * res;
         }
       }
     }
@@ -555,8 +555,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
-      // dz_dy_dtwo * res * em
-      // res above should be used instead of res + res * t below
+      // For sorted padding, only the first sentinel has a nonzero
+      // two-embedding gradient. The repeat factor below applies its full tail
+      // multiplicity to this cotangent.
       two_grad = dz_dy_dtwo[block_idx * nnei * last_layer_size +
                             ii * last_layer_size + thread_idx] *
                  res;
@@ -1092,6 +1093,12 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
+  if (two_embed != nullptr && is_sorted) {
+    // The sorted-padding fast path writes only the first sentinel. Explicitly
+    // clear the unused tail because framework output buffers are uninitialized.
+    DPErrcheck(
+        gpuMemset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+  }
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(

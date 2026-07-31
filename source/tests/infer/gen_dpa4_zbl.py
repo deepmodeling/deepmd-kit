@@ -3,7 +3,7 @@
 """Generate deeppot_dpa4_zbl_graph.pt2: DPA4 with analytical ZBL bridging.
 
 ``bridging_method: ZBL`` builds a COMPOSITION -- ``LinearEnergyModel`` over
-``[learned DPA4, InterPotentialAtomicModel]`` with ``weights="sum"`` -- so
+``[learned DPA4, InnerPotentialAtomicModel]`` with ``weights="sum"`` -- so
 the frozen archive exercises a code path no other C++ fixture covers: the
 graph lower of a linear composition rather than a single learned model.
 Before this fixture, ZBL bridging had NO C++ or LAMMPS coverage at all; its
@@ -52,7 +52,7 @@ from gen_common import (
 
 # Small fp64 DPA4 + ZBL config.  ``bridging_r_inner``/``r_outer`` feed the
 # descriptor's InnerClamp AND BridgingSwitch (they are built together from
-# the same radii), and the model-level InterPotential term.
+# the same radii), and the model-level InnerPotential term.
 ZBL_CONFIG = {
     "type_map": ["Ni", "O"],
     "descriptor": {

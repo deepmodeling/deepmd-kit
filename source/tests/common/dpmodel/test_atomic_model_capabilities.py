@@ -12,8 +12,8 @@ import pytest
 from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
 )
-from deepmd.dpmodel.atomic_model.inter_potential import (
-    InterPotentialAtomicModel,
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
 )
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
@@ -38,9 +38,9 @@ from .test_zbl_bridging import (
 TYPE_MAP = ["Ni", "O"]
 
 
-def _inter_potential() -> InterPotentialAtomicModel:
+def _inner_potential() -> InnerPotentialAtomicModel:
     """Simplest concrete BaseAtomicModel: no descriptor at all."""
-    return InterPotentialAtomicModel(type_map=TYPE_MAP, rcut=4.0, sel=[8])
+    return InnerPotentialAtomicModel(type_map=TYPE_MAP, rcut=4.0, sel=[8])
 
 
 def _dp_atomic_model(descriptor) -> DPAtomicModel:
@@ -85,13 +85,13 @@ def _dpa4_descriptor(bridging: bool) -> DescrptDPA4:
 )
 def test_base_defaults(cap, default) -> None:
     """BaseAtomicModel answers each capability with a concrete default."""
-    model = _inter_potential()
+    model = _inner_potential()
     assert getattr(model, cap)() is default
 
 
 def test_base_graph_edge_dtype_default() -> None:
     """float64 is the model-agnostic edge-geometry ABI."""
-    assert _inter_potential().graph_edge_dtype() == "float64"
+    assert _inner_potential().graph_edge_dtype() == "float64"
 
 
 def test_dp_atomic_model_delegates_to_descriptor() -> None:
@@ -118,7 +118,7 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     )
 
 
-class _EdgeParallelChild(InterPotentialAtomicModel):
+class _EdgeParallelChild(InnerPotentialAtomicModel):
     """Stub child with settable capabilities (test_zbl_bridging.py pattern)."""
 
     def __init__(
@@ -206,27 +206,27 @@ def test_linear_aggregation_mixed_children() -> None:
 def test_linear_aggregation_dense_comm_and_graph_export() -> None:
     """dense_lower_supports_comm and supports_graph_export are ALL rules."""
 
-    class _NoDenseComm(InterPotentialAtomicModel):
+    class _NoDenseComm(InnerPotentialAtomicModel):
         def dense_lower_supports_comm(self) -> bool:
             return False
 
-    class _NoGraphExport(InterPotentialAtomicModel):
+    class _NoGraphExport(InnerPotentialAtomicModel):
         def supports_graph_export(self) -> bool:
             return False
 
-    plain = _inter_potential()
+    plain = _inner_potential()
     mixed_comm = LinearEnergyAtomicModel(
-        [_NoDenseComm(type_map=TYPE_MAP, rcut=4.0, sel=[8]), _inter_potential()],
+        [_NoDenseComm(type_map=TYPE_MAP, rcut=4.0, sel=[8]), _inner_potential()],
         type_map=TYPE_MAP,
         weights="sum",
     )
     assert mixed_comm.dense_lower_supports_comm() is False
     all_comm = LinearEnergyAtomicModel(
-        [plain, _inter_potential()], type_map=TYPE_MAP, weights="sum"
+        [plain, _inner_potential()], type_map=TYPE_MAP, weights="sum"
     )
     assert all_comm.dense_lower_supports_comm() is True
     mixed_export = LinearEnergyAtomicModel(
-        [_NoGraphExport(type_map=TYPE_MAP, rcut=4.0, sel=[8]), _inter_potential()],
+        [_NoGraphExport(type_map=TYPE_MAP, rcut=4.0, sel=[8]), _inner_potential()],
         type_map=TYPE_MAP,
         weights="sum",
     )

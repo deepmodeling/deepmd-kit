@@ -2,7 +2,7 @@
 """pt_expt ZBL bridging as COMPOSITION (review 3638077323, redesigned).
 
 ``bridging_method: ZBL`` builds a linear composition
-(``LinearEnergyModel`` over ``[learned, InterPotentialAtomicModel]`` with
+(``LinearEnergyModel`` over ``[learned, InnerPotentialAtomicModel]`` with
 ``weights="sum"``); eager values still match pt's flag-architected
 ``SeZMModel`` bit-for-bit (identical math), pinned here as a value
 regression together with FD force, export/DeepEval e2e, training smoke,
@@ -290,7 +290,7 @@ class TestNativeSpinWithBridging:
         assert isinstance(model, NativeSpinEnergyModel)
         assert model.has_spin() is True
         kinds = [type(c).__name__ for c in model.atomic_model.models]
-        assert kinds[1] == "InterPotentialAtomicModel", kinds
+        assert kinds[1] == "InnerPotentialAtomicModel", kinds
         # bridging radii still reach the LEARNED child's descriptor
         assert float(model.atomic_model.models[0].descriptor.inner_clamp.r_inner) == 0.8
 
@@ -361,7 +361,7 @@ def test_native_spin_with_bridging_dpmodel() -> None:
     model = dp_get_model(cfg)
     assert isinstance(model, NativeSpinEnergyModelDP)
     kinds = [type(c).__name__ for c in model.atomic_model.models]
-    assert kinds[1] == "InterPotentialAtomicModel", kinds
+    assert kinds[1] == "InnerPotentialAtomicModel", kinds
 
     coord, atype, spin, box = _spin_system()
     out = model.call(coord.numpy(), atype.numpy(), spin.numpy(), box=box.numpy())
@@ -506,12 +506,12 @@ class TestZBLBridgingExportAndTraining:
             os.chdir(old_cwd)
 
 
-class TestInterPotentialChangeTypeMapPtExpt:
+class TestInnerPotentialChangeTypeMapPtExpt:
     """pt_expt twin of the dpmodel ``change_type_map`` regression.
 
     Exercised through the REAL composition: ``LinearEnergyModel`` ->
-    ``LinearEnergyAtomicModel`` -> ``InterPotentialAtomicModel`` ->
-    ``InterPotential``.  Inside a pt_expt module tree the element lookup is a
+    ``LinearEnergyAtomicModel`` -> ``InnerPotentialAtomicModel`` ->
+    ``InnerPotential``.  Inside a pt_expt module tree the element lookup is a
     wrapped torch buffer, so the rebuild must land on the same
     device/namespace (review 3649295675) -- a numpy rebuild would desync the
     buffer or fail outright on CUDA.
