@@ -1070,6 +1070,13 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // The descriptor does not carry the empty neighbor dimension, so its
+    // mathematically empty reduction must be materialized explicitly.
+    DPErrcheck(gpuMemset(out, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
 #if GOOGLE_CUDA
       <<<nloc, last_layer_size>>>
@@ -1099,7 +1106,7 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nnei,
                                    const int last_layer_size,
                                    const bool is_sorted) {
-  if (nloc <= 0) {
+  if (nloc <= 0 || nnei <= 0) {
     return;
   }
   DPErrcheck(gpuGetLastError());
@@ -1141,6 +1148,14 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // Unlike the neighbor-shaped inputs, dz_dy remains non-empty and must be
+    // initialized to the zero second derivative of an empty reduction.
+    DPErrcheck(
+        gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
