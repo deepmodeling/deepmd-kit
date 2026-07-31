@@ -5330,6 +5330,15 @@ TEST_F(TestTabulateSeT, grad_grad_gpu_reuses_same_table_interval) {
   // All inputs lie in the same stride-0 interval.  The GPU cache therefore
   // must retain the coefficients loaded for the first neighbor.
   std::vector<double> test_em_x = {0.011, 0.012, 0.019};
+  const auto stride0_interval = [this](const double value) {
+    EXPECT_GE(value, info[0]);
+    EXPECT_LT(value, info[1]);
+    return static_cast<int>((value - info[0]) / info[3]);
+  };
+  const int expected_interval = stride0_interval(test_em_x.front());
+  for (const double value : test_em_x) {
+    EXPECT_EQ(stride0_interval(value), expected_interval);
+  }
   std::vector<double> test_dz_dy_dem_x = {0.5, -0.25, 0.75};
   std::vector<double> test_dz_dy_dem = {-0.2, 0.4, 0.1};
   std::vector<double> expected(last_layer_size);
