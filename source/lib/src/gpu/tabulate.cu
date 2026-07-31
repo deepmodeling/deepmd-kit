@@ -730,13 +730,16 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     int mark_table_idx = -1;
+    // The cached table index and coefficients must have the same lifetime.
+    // Keeping var outside the neighbor loop makes a cache hit reuse initialized
+    // coefficients instead of a newly scoped, uninitialized local array.
+    FPTYPE var[6];
     for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       FPTYPE dz_xx =
           dz_dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE dz_em = dz_dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE var[6];
 
       int table_idx = 0;
       FPTYPE extrapolate_delta = (FPTYPE)0.;
