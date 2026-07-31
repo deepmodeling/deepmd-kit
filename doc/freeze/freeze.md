@@ -25,7 +25,9 @@ When `-c` names a checkpoint prefix, the backend also checks the corresponding
 path with `.tf2` appended, so the example reads `model.ckpt.tf2` and writes the
 TensorFlow SavedModel to `model.savedmodeltf`. If `-c` is omitted, it defaults
 to the current directory. For a multi-task checkpoint, select a branch with
-`--head CHOSEN_BRANCH`.
+`--head CHOSEN_BRANCH`. SavedModel export currently requires graph-traceable
+model code; an `se_e2_a`/`se_a` descriptor must set `type_one_side: true`
+because the normalized default, `false`, cannot be traced.
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -84,9 +86,12 @@ The output model is called `model_branch1.json`, which is the specifically froze
 dp --jax freeze -c model.ckpt.jax -o model.hlo
 ```
 
-The JAX backend can write a StableHLO `.hlo` model, a lossless `.jax` model, or
-a JAX2TF `.savedmodel` model. The `.savedmodel` format requires TensorFlow and
-is the JAX format that supports the C++ inference interface.
+The JAX backend can write a StableHLO `.hlo` model, a lossless `.jax`
+serialization, or a JAX2TF `.savedmodel` model. The `.hlo` and `.savedmodel`
+formats work with the normal `dp test`/`DeepPot` route; `.jax` is intended for
+checkpoint round-tripping and JAX-MD and is not a DeepEval model format. The
+`.savedmodel` format requires TensorFlow and is the JAX format that supports the
+C++ inference interface.
 :::
 
 ::::

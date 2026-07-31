@@ -27,9 +27,13 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 
 The TensorFlow 2 backend uses the TensorFlow v2 eager API. Select it with
 `dp --tf2` (alias `dp --tensorflow2`). It supports training, including
-multi-task training and fine-tuning, freezing, compression, and testing.
-Training stores checkpoints in a directory named after the `save_ckpt` prefix
-with `.tf2` appended, such as `model.ckpt.tf2`.
+multi-task training and fine-tuning. Freezing, compression, and testing use a
+`.savedmodeltf` export and therefore require a graph-traceable model. In
+particular, `se_e2_a`/`se_a` descriptors currently require
+`type_one_side: true`; the normalized default, `false`, cannot be exported.
+Frozen TensorFlow 2 DOS models also cannot yet be tested because the SavedModel
+does not preserve `numb_dos`. Training stores checkpoints in a directory named
+after the `save_ckpt` prefix with `.tf2` appended, such as `model.ckpt.tf2`.
 
 Setting [`DP_JIT`](env.md#envvar-DP_JIT) enables optional `tf.function` JIT
 compilation; depending on the workload, this may improve or reduce performance.
@@ -50,8 +54,11 @@ While `.pth` and `.pt` are the same in the PyTorch package, they have different 
 Select this backend with `dp --pt-expt` (alias
 `dp --pytorch-exportable`). It uses PyTorch with the backend-independent model
 implementation and supports training, including multi-task training and
-fine-tuning, freezing, compression, change-bias, and testing. Training can read
-LMDB datasets, and Python inference can use the optional vesin neighbor-list
+fine-tuning, freezing, change-bias, and testing. Executable compression is
+currently limited to fused-CUDA-eligible, graph-lowered DPA1/`se_atten` strip
+models exported as `.pt2`; other `dp --pt-expt compress` outputs do not replace
+the exported inference graph with the tabulated model. Training can read LMDB
+datasets, and Python inference can use the optional vesin neighbor-list
 implementation.
 
 Freezing exports a `torch.export` model. The dense neighbor-list lower form
@@ -74,8 +81,8 @@ for the separate PyTorch route.
 
 ### JAX {{ jax_icon }}
 
-- Model filename extensions: `.hlo`, `.jax`, `.savedmodel`
-- Checkpoint filename extension: `.jax`
+- DeepEval model filename extensions: `.hlo`, `.savedmodel`
+- Checkpoint and lossless serialization extension: `.jax`
 
 [JAX](https://jax.readthedocs.io/) 0.4.33 or above is required.
 Both `.hlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
@@ -84,7 +91,10 @@ Only the `.savedmodel` format supports C++ inference, which needs the TensorFlow
 The model is device-specific, so that the model generated on the GPU device cannot be run on the CPUs.
 
 JAX supports training with `dp --jax train`; training checkpoints use the
-`.jax` extension and can be frozen as `.hlo`, `.jax`, or `.savedmodel` models.
+`.jax` extension. Freezing can write a DeepEval-compatible `.hlo` or
+`.savedmodel` model, or a lossless `.jax` serialization for checkpoint
+round-tripping and JAX-MD. The normal `dp test`/`DeepPot` route does not load
+`.jax` serializations.
 
 ### Paddle {{ paddle_icon }}
 

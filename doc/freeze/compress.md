@@ -79,7 +79,9 @@ dp --tf2 compress -i model.ckpt.tf2 -o model-compress.savedmodeltf
 ```
 
 TensorFlow 2 compression reads a `.tf2` training checkpoint directory or a
-checkpoint prefix and writes a compressed `.savedmodeltf` model.
+checkpoint prefix and writes a compressed `.savedmodeltf` model. For
+`se_e2_a`/`se_a`, SavedModel export currently requires
+`type_one_side: true`; the normalized default, `false`, is not graph-traceable.
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -92,20 +94,30 @@ dp --pt compress -i model.pth -o model-compress.pth
 :::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
 
 ```bash
-dp --pt-expt compress -i model.pte -o model-compress.pte
+dp --pt-expt compress -i dpa1-graph.pt2 -o dpa1-graph-compress.pt2
 ```
 
-Use matching `.pte` or `.pt2` suffixes to preserve the exported model form.
+This executable compression path is currently limited to graph-lowered
+DPA1/`se_atten` strip models that are eligible for the fused CUDA table
+operator: `attn_layer: 0`, no excluded type pairs, float32 descriptor
+statistics and tables, `neuron[-1] <= 256`, and
+`axis_neuron <= min(16, neuron[-1])`. Their `.pt2` export embeds the tabulated
+operator. For other models, the command records compressed state in
+`model.json` but leaves the exported inference graph uncompressed, so the
+resulting `.pte`/`.pt2` is not a deployment compression artifact.
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
 
 ```bash
-dp --jax compress -i frozen_model.hlo -o compressed_model.hlo
+dp --jax compress -i frozen_model.jax -o compressed_model.jax
 ```
 
-JAX compression accepts `.jax` and `.hlo` models. Use the same suffix for the
-input and output to preserve the serialized model format.
+JAX compression accepts `.jax` and `.hlo` inputs. Use `.jax` for the general,
+lossless compressed serialization path. A compressed `.hlo` can be written
+only when the descriptor is StableHLO-exportable; compressed `se_e2_a`, `se_a`,
+`dpa1`, and `se_atten` descriptors with `type_one_side: false` must remain
+`.jax` or be rebuilt with `type_one_side: true`.
 :::
 
 :::{tab-item} DP {{ dpmodel_icon }}
@@ -122,11 +134,11 @@ DP compression accepts native `.dp` and `.yaml` models.
 where `-i` gives the original frozen model, `-o` gives the compressed model.
 The DP, JAX, and TensorFlow 2 entrypoints share the native-model compression
 helpers for resolving the minimum neighbor distance and tabulating the
-descriptor's embedding networks. PyTorch-Exportable implements the same table
-strides and minimum-neighbor-distance fallback in its export-specific
-entrypoint. If the model does not contain a minimum neighbor distance, pass the
-training script with `-t` or `--training-script` so it can be computed from the
-training data.
+descriptor's embedding networks. The limited PyTorch-Exportable graph-DPA1
+path implements the same table strides and minimum-neighbor-distance fallback
+in its export-specific entrypoint. If the model does not contain a minimum
+neighbor distance, pass the training script with `-t` or `--training-script`
+so it can be computed from the training data.
 
 Several other command line options can be passed to `dp compress`, which can be checked with
 

@@ -93,8 +93,9 @@ The detailed loss can be found in `lcurve.out`:
 > [!WARNING]
 > The PyTorch TorchScript freeze route does not preserve Hessian output. A
 > PyTorch model frozen with `dp --pt freeze` is treated as a standard energy
-> model. The JAX backend can preserve Hessian output in a frozen model with
-> `dp --jax freeze --hessian`.
+> model. PyTorch-Exportable cannot construct a Hessian model for freezing or
+> inference. The JAX backend can preserve Hessian output in a frozen model
+> with `dp --jax freeze --hessian`.
 
 If one freezes and tests a Hessian model through the PyTorch route:
 

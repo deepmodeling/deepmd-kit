@@ -1,12 +1,12 @@
-# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
 > **Short-range interpolation backends**: TensorFlow and TensorFlow 2
 > {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
-> {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
+> {{ jax_icon }}, DP {{ dpmodel_icon }}
 >
 > **Linear-combination backends**: TensorFlow {{ tensorflow_icon }}, PyTorch and
-> PyTorch-Exportable {{ pytorch_icon }}
+> PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 ## Theory
 
@@ -50,7 +50,7 @@ where the scale $\alpha_s$ is a tunable scale of the interatomic distance $r_{ij
 The pairwise potential $u^{\textrm{pair}}(r)$ is defined by a user-defined table that provides the value of $u^{\textrm{pair}}$ on an evenly discretized grid from 0 to the cutoff distance.[^1]
 
 DeePMD-kit also supports combination with a pairwise potential
-{{ tensorflow_icon }} {{ pytorch_icon }}:
+{{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}:
 
 ```math
   E_i = E_i^{\mathrm{DP}} + E_i^{\mathrm{pair}},
@@ -82,7 +82,7 @@ The interaction should be smooth at the cut-off distance.
 
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
-## Combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }}
+## Combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 
