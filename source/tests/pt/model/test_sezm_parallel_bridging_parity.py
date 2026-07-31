@@ -17,6 +17,7 @@ model-level ZBL injection crashed outright on extended src indices
 """
 
 import unittest
+import unittest.mock
 
 import numpy as np
 import torch
@@ -24,7 +25,6 @@ import torch
 from deepmd.pt.model.model import (
     get_model,
 )
-from deepmd.pt.utils import env  # noqa: F401  - imports pt test env side effects
 
 from .test_sezm_parallel import (
     _perturb_descriptor,
@@ -187,13 +187,9 @@ class TestSeZMBridgingSelfCommParity(unittest.TestCase):
         """Negative contract: stubbing the exchange to identity breaks the
         parity -- proves the geometry actually exercises the gate.
         """
-        from unittest import (
-            mock,
-        )
-
         from deepmd.pt.model.descriptor import sezm as pt_sezm
 
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             pt_sezm.DescrptSeZM,
             "_gate_partial_exchange",
             lambda self, partials, comm_dict: partials,
