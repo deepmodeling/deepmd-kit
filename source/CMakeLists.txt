@@ -53,6 +53,8 @@ if(ENABLE_PADDLE)
         set(DOWNLOAD_URL
             "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn897_Trt8616_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
+        set(DOWNLOAD_SHA256
+            "89963f601a3469270080cca076327da1e6c5e8f0c0ee3aa5e0e0371b2b8c2cb7")
       elseif(CUDA_MAJOR_VERSION VERSION_EQUAL "12")
         message(
           STATUS
@@ -61,6 +63,8 @@ if(ENABLE_PADDLE)
         set(DOWNLOAD_URL
             "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda126_cudnn951_Trt105018_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
+        set(DOWNLOAD_SHA256
+            "5318eb879f4930d4b08e52c5e040c0b4b96d4afae62bf57bcae031fff0396551")
       else()
         message(
           FATAL_ERROR
@@ -75,13 +79,47 @@ if(ENABLE_PADDLE)
       set(DOWNLOAD_URL
           "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
       )
+      set(DOWNLOAD_SHA256
+          "6adeccb3920e92ddea3e7f36eee770bc10f7b51bab63ed96b9bbade47951de30")
     endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
-    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE})
+    file(
+      DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE}
+      EXPECTED_HASH SHA256=${DOWNLOAD_SHA256}
+      STATUS PADDLE_DOWNLOAD_STATUS)
+    list(GET PADDLE_DOWNLOAD_STATUS 0 PADDLE_DOWNLOAD_STATUS_CODE)
+    list(GET PADDLE_DOWNLOAD_STATUS 1 PADDLE_DOWNLOAD_STATUS_MESSAGE)
+    if(NOT PADDLE_DOWNLOAD_STATUS_CODE EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Failed to download Paddle inference library from ${DOWNLOAD_URL} (status ${PADDLE_DOWNLOAD_STATUS_CODE}): ${PADDLE_DOWNLOAD_STATUS_MESSAGE}"
+      )
+    endif()
+    # Some CMake versions report an EXPECTED_HASH mismatch separately from the
+    # transport status, so verify it explicitly before changing the cache.
+    file(SHA256 "${TGZ_FILE}" PADDLE_ACTUAL_SHA256)
+    if(NOT "${PADDLE_ACTUAL_SHA256}" STREQUAL "${DOWNLOAD_SHA256}")
+      message(
+        FATAL_ERROR
+          "SHA256 mismatch for ${TGZ_FILE}: expected ${DOWNLOAD_SHA256}, got ${PADDLE_ACTUAL_SHA256}"
+      )
+    endif()
     message(STATUS "Downloading finished, extracting...")
-    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
-                    OUTPUT_QUIET)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
+      OUTPUT_QUIET
+      ERROR_VARIABLE PADDLE_EXTRACT_ERROR
+      RESULT_VARIABLE PADDLE_EXTRACT_STATUS
+      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    if(NOT PADDLE_EXTRACT_STATUS STREQUAL "0")
+      message(
+        FATAL_ERROR
+          "Failed to extract ${TGZ_FILE} (status ${PADDLE_EXTRACT_STATUS}): ${PADDLE_EXTRACT_ERROR}"
+      )
+    endif()
+    # Cache the inferred location only after both steps succeed. Otherwise a
+    # failed configure would cause retries to skip this download block.
     file(REMOVE ${TGZ_FILE})
     set(PADDLE_INFERENCE_DIR
         ${EXTRACTED_DIR}

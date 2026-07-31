@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <array>
 #include <iostream>
 #include <vector>
 
@@ -5373,5 +5374,54 @@ TEST_F(TestTabulateSeT, grad_grad_gpu_reuses_same_table_interval) {
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dz_dy_dem_x_dev);
   deepmd::delete_device_memory(dz_dy_dem_dev);
+}
+
+TEST_F(TestTabulateSeT, grad_gpu_partial_neighbor_tiles) {
+  constexpr int test_nloc = 1;
+  constexpr int test_nnei_i = 1;
+  const std::array<int, 3> neighbor_counts = {1, 3, 5};
+  std::vector<double> test_dy(last_layer_size, 1.0);
+
+  for (const int test_nnei_j : neighbor_counts) {
+    std::vector<double> test_em_x(test_nnei_j);
+    for (int ii = 0; ii < test_nnei_j; ++ii) {
+      test_em_x[ii] = 0.01 * (ii + 1);
+    }
+    std::vector<double> expected_dy_dem_x(test_nnei_j);
+    std::vector<double> expected_dy_dem(test_nnei_j);
+    deepmd::tabulate_fusion_se_t_grad_cpu<double>(
+        expected_dy_dem_x.data(), expected_dy_dem.data(), table.data(),
+        info.data(), test_em_x.data(), test_em_x.data(), test_dy.data(),
+        test_nloc, test_nnei_i, test_nnei_j, last_layer_size);
+
+    std::vector<double> actual_dy_dem_x(test_nnei_j);
+    std::vector<double> actual_dy_dem(test_nnei_j);
+    double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr, *table_dev = nullptr,
+           *em_x_dev = nullptr, *em_dev = nullptr, *dy_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::malloc_device_memory_sync(dy_dem_dev, actual_dy_dem);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, test_em_x);
+    deepmd::malloc_device_memory_sync(em_dev, test_em_x);
+    deepmd::malloc_device_memory_sync(dy_dev, test_dy);
+
+    deepmd::tabulate_fusion_se_t_grad_gpu<double>(
+        dy_dem_x_dev, dy_dem_dev, table_dev, info.data(), em_x_dev, em_dev,
+        dy_dev, test_nloc, test_nnei_i, test_nnei_j, last_layer_size);
+    deepmd::memcpy_device_to_host(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
+
+    for (int ii = 0; ii < test_nnei_j; ++ii) {
+      EXPECT_NEAR(actual_dy_dem_x[ii], expected_dy_dem_x[ii], 1e-10);
+      EXPECT_NEAR(actual_dy_dem[ii], expected_dy_dem[ii], 1e-10);
+    }
+
+    deepmd::delete_device_memory(dy_dem_x_dev);
+    deepmd::delete_device_memory(dy_dem_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(dy_dev);
+  }
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

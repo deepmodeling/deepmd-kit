@@ -257,12 +257,6 @@ def build_neighbor_graph_nv(
     ------
     ImportError
         if ``nvalchemi-toolkit-ops`` (CUDA) is not installed.
-
-    Notes
-    -----
-    The ``pair_excl`` path of this builder has no local oracle set-equality test
-    because nvalchemiops requires CUDA; the set-equality contract must be
-    validated on a GPU box (same pattern as :class:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`).
     """
     if not is_nv_available():
         raise ImportError(
@@ -275,9 +269,8 @@ def build_neighbor_graph_nv(
     )
 
     device = coord.device
-    nf = coord.shape[0] if coord.ndim == 3 else 1
-    coord = coord.reshape(nf, -1, 3)
-    nloc = coord.shape[1]
+    nf, nloc = atype.shape[:2]
+    coord = coord.reshape(nf, nloc, 3)
     periodic = box is not None
 
     if nloc == 0:
@@ -301,9 +294,11 @@ def build_neighbor_graph_nv(
     # vesin handles unwrapped positions natively), nvalchemiops requires
     # in-cell positions, so BOTH the search and the edge_vec recomputation use
     # the normalized coords; S then matches the coords the search actually saw.
+    # The 0.25 density preserves a 25% margin over the estimator's 0.2
+    # baseline without using the safety_factor argument deprecated in Ops 0.4.
     initial_capacity = max(
         64,
-        estimate_max_neighbors(float(rcut), safety_factor=1.25),
+        estimate_max_neighbors(float(rcut), atomic_density=0.25),
     )
     coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
         coord, box, rcut, start_capacity=initial_capacity

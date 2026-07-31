@@ -77,6 +77,28 @@ Default backend.
 See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for details.
 :::
 
+:::{envvar} DP_LMDB_NUM_WORKERS
+
+**Type**: non-negative integer
+
+**Default**: automatically selected from the process CPU affinity and the
+number of local training ranks, with limits of 32 workers per rank and
+approximately 64 workers per node
+
+Number of worker processes used to read, decode, and assemble one LMDB batch
+in the PyTorch and PyTorch Exportable backends. Each process owns an
+independent read-only LMDB transaction. The next batch is prefetched while the
+current batch is consumed, and at most one batch is prefetched. Batches with
+fewer frames than workers are decoded synchronously because process startup
+and IPC cost more than their small decode workload.
+
+Set this variable to `0` or `1` to use synchronous decoding. For multi-GPU
+training, this value applies to each rank. Independent jobs do not share their
+worker pools, so reduce it when the aggregate reader count across concurrent
+jobs would overload the storage service. The LMDB dataset must remain immutable
+while any job is reading it because readers intentionally disable LMDB locking.
+:::
+
 ## C++ interface only
 
 These environment variables also apply to third-party programs using the C++ interface, such as [LAMMPS](./third-party/lammps-command.md).

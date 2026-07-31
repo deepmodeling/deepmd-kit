@@ -3,7 +3,7 @@
 // .pt2, graph lower).
 //
 // ``bridging_method: ZBL`` builds a COMPOSITION -- LinearEnergyModel over
-// [learned DPA4, InterPotentialAtomicModel] -- so this exercises the graph
+// [learned DPA4, InnerPotentialAtomicModel] -- so this exercises the graph
 // lower of a linear composition, which no other C++ fixture covers.  Before
 // this test ZBL bridging had NO C++ or LAMMPS coverage at all: its only
 // end-to-end check drove the archive through the PYTHON DeepPot, which

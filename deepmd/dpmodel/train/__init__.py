@@ -11,6 +11,10 @@ from .entrypoint import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
 )
+from .schedule import (
+    StepSchedule,
+    resolve_step_schedule,
+)
 from .trainer import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
@@ -30,6 +34,7 @@ __all__ = [
     "AbstractTrainer",
     "LearningCurveWriter",
     "RankContext",
+    "StepSchedule",
     "TrainEntrypointOptions",
     "TrainStepResult",
     "TrainerConfig",
@@ -41,4 +46,5 @@ __all__ = [
     "iter_training_task_configs",
     "make_task_maps",
     "print_data_summaries",
+    "resolve_step_schedule",
 ]

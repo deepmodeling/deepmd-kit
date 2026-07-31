@@ -4,7 +4,7 @@ NeighborGraph (graph-schema) ``.pt2`` (``deeppot_dpa4_zbl_graph.pt2``,
 ``source/tests/infer/gen_dpa4_zbl.py``).
 
 ``bridging_method: ZBL`` builds a COMPOSITION -- ``LinearEnergyModel`` over
-``[learned DPA4, InterPotentialAtomicModel]`` with ``weights="sum"`` -- so
+``[learned DPA4, InnerPotentialAtomicModel]`` with ``weights="sum"`` -- so
 this drives the graph lower of a linear composition through the LAMMPS pair
 style.  The archive already had a C++ gtest
 (``source/api_cc/tests/test_deeppot_dpa4_zbl_ptexpt.cc``) but NO LAMMPS

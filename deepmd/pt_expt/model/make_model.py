@@ -26,6 +26,9 @@ from deepmd.kernels.utils import (
 from deepmd.pt_expt.common import (
     torch_module,
 )
+from deepmd.pt_expt.utils.graph_builder import (
+    build_neighbor_graph_for_method,
+)
 from deepmd.pt_expt.utils.graph_csr import (
     validate_graph_csr_for_export,
 )
@@ -249,56 +252,6 @@ class _WrapperForwardEnergy:
         return energy_redu
 
 
-def _build_graph_for_method(
-    method: str,
-    coord: torch.Tensor,
-    atype: torch.Tensor,
-    box: torch.Tensor | None,
-    rcut: float,
-    pair_excl: Any,
-    with_csr: bool = False,
-) -> Any:
-    """Build a carry-all ``NeighborGraph`` for the named pt_expt builder.
-
-    Single owning site for the graph-builder dispatch shared by
-    :meth:`_call_common_graph` and the graph Hessian wrapper
-    (:class:`_WrapperForwardEnergyGraph`), so both build the graph identically.
-    """
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        build_neighbor_graph,
-        build_neighbor_graph_ase,
-    )
-
-    if method == "dense":
-        return build_neighbor_graph(
-            coord, atype, box, rcut, with_csr=with_csr, pair_excl=pair_excl
-        )
-    if method == "ase":
-        return build_neighbor_graph_ase(
-            coord, atype, box, rcut, with_csr=with_csr, pair_excl=pair_excl
-        )
-    if method == "vesin":
-        from deepmd.pt_expt.utils.vesin_graph_builder import (
-            build_neighbor_graph_vesin,
-        )
-
-        return build_neighbor_graph_vesin(
-            coord, atype, box, rcut, with_csr=with_csr, pair_excl=pair_excl
-        )
-    if method == "nv":
-        from deepmd.pt_expt.utils.nv_graph_builder import (
-            build_neighbor_graph_nv,
-        )
-
-        return build_neighbor_graph_nv(
-            coord, atype, box, rcut, with_csr=with_csr, pair_excl=pair_excl
-        )
-    raise ValueError(
-        f"unknown neighbor_graph_method {method!r}; use 'dense', 'ase', "
-        "'vesin', or 'nv'"
-    )
-
-
 class _WrapperForwardEnergyGraph:
     """Graph twin of :class:`_WrapperForwardEnergy` for the Hessian.
 
@@ -339,7 +292,7 @@ class _WrapperForwardEnergyGraph:
 
     def __call__(self, coord_flat: torch.Tensor) -> torch.Tensor:
         cc = coord_flat.reshape(1, self.nloc, 3)
-        ng = _build_graph_for_method(
+        ng = build_neighbor_graph_for_method(
             self.method, cc, self.atype, self.box, self.rcut, self.pair_excl
         )
         atomic_ret = self.model.atomic_model.forward_common_atomic_graph(
@@ -719,7 +672,7 @@ def make_model(
             if "energy" not in self.atomic_output_def().keys():
                 return None
             if self.mixed_types() and self.atomic_model.uses_graph_lower():
-                return "dense"
+                return getattr(self, "neighbor_graph_method", "dense")
             return None
 
         def _call_common_graph(
@@ -795,7 +748,7 @@ def make_model(
                 and bool(getattr(_desc, "geo_compress", False))
             )
             pair_excl = getattr(self.atomic_model, "pair_excl", None)
-            ng = _build_graph_for_method(
+            ng = build_neighbor_graph_for_method(
                 method, cc, atype, bb, rcut, pair_excl, with_csr=with_csr
             )
             nf, nloc = atype.shape[:2]
