@@ -2294,8 +2294,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         A domain-decomposed run must exchange them through ``border_op``, so
         multi-rank inference always needs the with-comm exchange. Whether
-        multi-rank is POSSIBLE at all is :meth:`supports_edge_parallel`
-        (bridging vetoes it there).
+        multi-rank is POSSIBLE at all is :meth:`supports_edge_parallel`,
+        which is ``True`` for every configuration including bridging: the
+        SFPG partials are completed by ``_gate_partial_exchange``.
         """
         return True
 

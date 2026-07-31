@@ -78,9 +78,13 @@ def get_sezm_model(data: dict) -> EnergyModel:
     training configs are interchangeable between the pt and pt_expt backends.
     In addition to the ``SeZM``/``sezm``/``dpa4`` aliases accepted by pt,
     pt_expt also accepts ``DPA4``.
-    The pt-only SeZM extensions (bridging, LoRA, compile, spin,
-    preset_out_bias) are not supported here and raise
-    ``NotImplementedError``.
+    Supported SeZM extensions: analytical bridging (e.g. ZBL), composed by
+    :func:`_compose_bridging`, and native-scheme spin, routed to
+    :func:`get_native_spin_model`; the two combine.
+
+    Still unsupported here, each raising ``NotImplementedError``: the
+    virtual-atom (``deepspin``) spin scheme, ``lora``, ``use_compile``, and
+    ``preset_out_bias``.
 
     Notes
     -----

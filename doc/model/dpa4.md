@@ -570,11 +570,13 @@ inference](#multi-gpu-mpi-inference).
   is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
   `deepspin`-scheme model raises an error at freeze time, per the dense/graph
   eligibility rule above.
-- **Graph route only, no dense fallback.** Unlike a plain-energy DPA4/SeZM
-  descriptor -- which can freeze to either the dense or the graph lower --
-  a native-spin descriptor has only the graph lower. `--lower-kind auto`
-  (the default) resolves to `graph`; `--lower-kind nlist` is not a valid
-  option for a native-spin model.
+- **Graph route only, no dense fallback.** A native-spin descriptor has only
+  the graph lower. This is not a spin-specific restriction on the CLI: every
+  graph-capable DPA4/SeZM model, plain-energy included, is frozen to the
+  graph lower. `--lower-kind` accepts only `nlist` (the default) and `graph`,
+  and `freeze()` overrides any non-`graph` request to `graph` whenever the
+  model is graph-lower capable, logging a warning. A dense artifact is
+  therefore not selectable through this entry point for these models.
 - **Multi-rank capable.** The frozen archive embeds the with-comm artifact
   (`has_comm_artifact` is `true`), so multi-rank LAMMPS works exactly as
   described in [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference): the

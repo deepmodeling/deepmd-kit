@@ -21,7 +21,7 @@ child consumes it, the analytical child accepts and ignores it), and the
 freeze must carry ``is_spin`` metadata for a model whose top-level class is
 the linear composition -- neither single-feature fixture exercises that.
 
-Single-rank only, and this fixture PINS that limitation
+Multi-rank capable, and this fixture PINS that contract
 -------------------------------------------------------
 Bridging enables the descriptor's Source Freeze Propagation Gate, whose
 per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a node's FULL outgoing-edge
@@ -92,7 +92,8 @@ from gen_dpa4_spin import (
 
 # Bridging radii, identical to gen_dpa4_zbl.py's: they feed the descriptor's
 # InnerClamp AND BridgingSwitch (built together from the same radii) on the
-# LEARNED child, and are what makes the composition single-rank only.
+# LEARNED child, and are what makes the composition need the SFPG cross-rank
+# completion (hence the with-comm artifact) under domain decomposition.
 _BRIDGING_R_INNER = 0.8
 _BRIDGING_R_OUTER = 1.2
 

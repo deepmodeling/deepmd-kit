@@ -2367,8 +2367,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             spin and charge_spin are threaded through ``call_graph`` like any
             other per-node/per-frame input, and bridging is applied inside
             the shared ``_run_graph`` forward with no extra threading (it
-            reads ``self.bridging_switch`` directly). Bridging models still
-            fail multi-rank fast via ``has_message_passing_across_ranks``.
+            reads ``self.bridging_switch`` directly). Bridging models are
+            multi-rank capable too: their SFPG per-node partials are
+            completed across ranks by ``_gate_partial_exchange`` before the
+            gate is applied (issue #5906).
         """
         return not self._graph_lower_disabled
 
