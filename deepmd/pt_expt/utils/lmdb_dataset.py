@@ -119,7 +119,7 @@ class LmdbDataSystem:
         )
 
     def _refresh_stat_groups(self) -> None:
-        """Rebuild statistical systems from the training sampler's groups."""
+        """Build statistical systems from stack-compatible reader groups."""
         self._stat_groups = collect_lmdb_sampling_groups(self._reader)
         self._stat_offsets = [0] * len(self._stat_groups)
 
@@ -156,7 +156,7 @@ class LmdbDataSystem:
         Parameters
         ----------
         sys_idx : int
-            Index into the ``(nloc, label-availability)`` groups.
+            Index into the per-atom-count groups.
 
         Returns
         -------
@@ -208,12 +208,8 @@ class LmdbDataSystem:
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
-        # Batches are partitioned by label availability, so new requirements
-        # repartition the frames. Both the statistical groups and the pass the
-        # sampler holds pending are therefore rebuilt from the new partition.
         self._reader.add_data_requirement(data_requirement)
         self._refresh_stat_groups()
-        self._sampler.refresh_batch_count()
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""

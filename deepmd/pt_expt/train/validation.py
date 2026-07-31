@@ -432,10 +432,10 @@ class FullValidator:
         - An LMDB-backed dataset owns an ``_reader``. Its frames are lazily
           materialized into a :class:`LmdbTestData` snapshot (cached across
           calls) and yielded as one :class:`LmdbTestDataNlocView` per
-          atom-count and label-availability group. Grouping by atom count lets
-          mixed-nloc frames be stacked, and grouping by label availability
-          keeps the scalar ``find_*`` flags valid so default-filled labels stay
-          out of the metrics.
+          atom-count and label-availability group. Grouping by atom count
+          lets mixed-nloc frames be stacked, and grouping by availability
+          keeps the scalar ``find_*`` flags valid so default-filled labels
+          stay out of the metrics.
         - A ``DeepmdDataSystem`` owns ``data_systems``, which are already
           ``DeepmdData`` instances.
         - A loader set owns ``systems``, each wrapping a ``DeepmdData`` in
@@ -444,10 +444,11 @@ class FullValidator:
         validation_data = self.validation_data
         if hasattr(validation_data, "_reader"):
             lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for (nloc, _signature), indices in sorted(
-                lmdb_test_data.find_signature_groups.items()
-            ):
-                yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
+            for nloc in sorted(lmdb_test_data.nloc_groups):
+                for indices in lmdb_test_data.availability_groups(
+                    lmdb_test_data.nloc_groups[nloc]
+                ):
+                    yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
             return
 
         if hasattr(validation_data, "data_systems"):

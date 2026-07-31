@@ -507,6 +507,7 @@ class Trainer:
                         must=False,
                         high_prec=False,
                         default=min_pair_dist,
+                        source_policy="derived",
                     )
                 )
             training_data.add_data_requirement(data_requirement)
@@ -585,6 +586,7 @@ class Trainer:
                             must=False,
                             high_prec=False,
                             default=min_pair_dist,
+                            source_policy="derived",
                         )
                     )
                 training_data[model_key].add_data_requirement(data_requirement)
@@ -2354,6 +2356,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not _model.has_default_fparam(),
                 default=_fparam_default,
+                source_policy=("default" if _model.has_default_fparam() else "tracked"),
             )
         ]
         additional_data_requirement += fparam_requirement_items
@@ -2382,6 +2385,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=True,
                 must=not allow_missing_spin,
                 default=0.0,
+                source_policy="default" if allow_missing_spin else "tracked",
             )
         ]
         additional_data_requirement += spin_requirement_items
@@ -2397,6 +2401,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_cs,
                 default=cs_default,
+                source_policy="default" if has_default_cs else "tracked",
             )
         )
     return additional_data_requirement

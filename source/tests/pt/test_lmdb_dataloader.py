@@ -35,6 +35,9 @@ from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
 )
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -551,9 +554,10 @@ class TestDataLoaderIteration:
         sampler = LmdbBatchSampler(ds._reader, shuffle=True, seed=11)
         batches = list(sampler)
         assert len(sampler) == len(batches) == 2
+        # Complementary labels must not share a batch: the frames carrying
+        # energy are indices 0 and 2, those carrying force are 1 and 3.
         for indices in batches:
-            signatures = {ds._reader.get_find_signature(index) for index in indices}
-            assert len(signatures) == 1
+            assert len({index % 2 for index in indices}) == 1
 
         distributed_batches = []
         for rank in range(2):
@@ -635,8 +639,8 @@ class TestDataLoaderIteration:
                 assert force_loss.item() > 0.0
         assert observed_flags == {(1.0, 0.0), (0.0, 1.0)}
 
-    def test_unrequested_labels_form_homogeneous_batches(self, tmp_path):
-        """Raw labels outside the loss requirements must still partition batches."""
+    def test_unrequested_labels_do_not_partition_batches(self, tmp_path):
+        """Raw labels outside the active requirements cannot alter sampling."""
         path = str(tmp_path / "partial-virial.lmdb")
         _create_partially_virial_lmdb(path)
         ds = LmdbDataset(path, type_map=["O", "H"], batch_size=2)
@@ -644,10 +648,57 @@ class TestDataLoaderIteration:
             [DataRequirementItem("energy", 1, atomic=False, must=False)]
         )
 
-        with torch.device("cpu"):
-            batches = list(ds._inner_dataloader)
-        assert len(batches) == 2
-        assert sorted("find_virial" in batch for batch in batches) == [False, True]
+        groups = ds._reader.availability_groups(np.arange(len(ds), dtype=np.int64))
+        assert len(groups) == 1
+        np.testing.assert_array_equal(groups[0], np.arange(len(ds)))
+
+    def test_default_backed_fparam_survives_statistics(self, lmdb_dir):
+        """Statistics retain explicit and default-resolved frame parameters."""
+        environment = lmdb.open(lmdb_dir, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            for index in range(0, 10, 2):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["fparam"] = {
+                    "type": "<f8",
+                    "shape": (2,),
+                    "data": np.array([2.0, 3.0], dtype=np.float64).tobytes(),
+                }
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+        dataset = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        dataset.add_data_requirement(
+            [
+                DataRequirementItem(
+                    "fparam",
+                    2,
+                    atomic=False,
+                    default=np.array([0.0, 1.0]),
+                    source_policy="default",
+                )
+            ]
+        )
+        sampled = make_stat_input(
+            dataset.systems,
+            dataset.dataloaders,
+            nbatches=5,
+        )
+        fparam = sampled[0]["fparam"]
+        explicit = torch.tensor(
+            [2.0, 3.0],
+            dtype=fparam.dtype,
+            device=fparam.device,
+        )
+        default = torch.tensor(
+            [0.0, 1.0],
+            dtype=fparam.dtype,
+            device=fparam.device,
+        )
+
+        assert float(sampled[0]["find_fparam"]) == 1.0
+        assert int(torch.all(fparam == explicit, dim=1).sum()) == 5
+        assert int(torch.all(fparam == default, dim=1).sum()) == 5
 
 
 # ============================================================
@@ -703,13 +754,20 @@ class TestCollate:
         ]
         assert _collate(frames)["box"] is None
 
-    def test_collate_rejects_mixed_find_flags(self):
+    def test_collate_demotes_mixed_find_flags(self):
+        """One scalar flag cannot claim a label only some frames supply."""
         frames = [
             {"coord": np.zeros((2, 3)), "find_energy": 1.0},
             {"coord": np.zeros((2, 3)), "find_energy": 0.0},
         ]
-        with pytest.raises(ValueError, match="mixes 'find_energy' values"):
-            _collate(frames)
+        assert float(_collate(frames)["find_energy"]) == 0.0
+
+    def test_collate_keeps_unanimous_find_flags(self):
+        frames = [
+            {"coord": np.zeros((2, 3)), "find_energy": 1.0},
+            {"coord": np.zeros((2, 3)), "find_energy": 1.0},
+        ]
+        assert float(_collate(frames)["find_energy"]) == 1.0
 
     def test_collate_pads_the_atom_axis(self):
         """Frames of different atom counts stack into one padded batch."""

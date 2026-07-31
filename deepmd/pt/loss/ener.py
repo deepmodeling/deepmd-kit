@@ -535,7 +535,8 @@ class EnergyStdLoss(TaskLoss):
                 find_atom_pref = (
                     label.get("find_atom_pref", 0.0) if not self.use_default_pf else 1.0
                 )
-                pref_pf = pref_pf * find_atom_pref
+                effective_find_pf = find_force * find_atom_pref
+                pref_pf = pref_pf * effective_find_pf
                 atom_pref_reshape = atom_pref.reshape(-1)
 
                 if self.loss_func == "mse":
@@ -544,7 +545,7 @@ class EnergyStdLoss(TaskLoss):
                     ).mean()
                     if not self.inference:
                         more_loss["l2_pref_force_loss"] = self.display_if_exist(
-                            l2_pref_force_loss.detach(), find_atom_pref
+                            l2_pref_force_loss.detach(), effective_find_pf
                         )
                     if maskf is not None:
                         # Idiom 1 with pref weight (ncomp=3).
@@ -556,7 +557,7 @@ class EnergyStdLoss(TaskLoss):
                         loss += (pref_pf * l2_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         rmse_pf = l2_pf_masked.sqrt()
                         more_loss["rmse_pf"] = self.display_if_exist(
-                            rmse_pf.detach(), find_atom_pref
+                            rmse_pf.detach(), effective_find_pf
                         )
                     else:
                         loss += (pref_pf * l2_pref_force_loss).to(
@@ -564,7 +565,7 @@ class EnergyStdLoss(TaskLoss):
                         )
                         rmse_pf = l2_pref_force_loss.sqrt()
                         more_loss["rmse_pf"] = self.display_if_exist(
-                            rmse_pf.detach(), find_atom_pref
+                            rmse_pf.detach(), effective_find_pf
                         )
                 elif self.loss_func == "mae":
                     l1_pref_force_loss = (torch.abs(diff_f) * atom_pref_reshape).mean()
@@ -576,14 +577,14 @@ class EnergyStdLoss(TaskLoss):
                         )
                         loss += (pref_pf * l1_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         more_loss["mae_pf"] = self.display_if_exist(
-                            l1_pf_masked.detach(), find_atom_pref
+                            l1_pf_masked.detach(), effective_find_pf
                         )
                     else:
                         loss += (pref_pf * l1_pref_force_loss).to(
                             GLOBAL_PT_FLOAT_PRECISION
                         )
                         more_loss["mae_pf"] = self.display_if_exist(
-                            l1_pref_force_loss.detach(), find_atom_pref
+                            l1_pref_force_loss.detach(), effective_find_pf
                         )
                 else:
                     raise NotImplementedError(
@@ -593,7 +594,8 @@ class EnergyStdLoss(TaskLoss):
             if self.has_gf and "drdq" in label:
                 drdq = label["drdq"]
                 find_drdq = label.get("find_drdq", 0.0)
-                pref_gf = pref_gf * find_drdq
+                effective_find_gf = find_force * find_drdq
+                pref_gf = pref_gf * effective_find_gf
                 if maskf is not None:
                     # Mask per-atom forces before projecting onto generalized coords.
                     f_3d = force_pred.reshape(_nf, _nloc, 3) * maskf.reshape(
@@ -627,12 +629,12 @@ class EnergyStdLoss(TaskLoss):
                 l2_gen_force_loss = torch.square(diff_gen_force).mean()
                 if not self.inference:
                     more_loss["l2_gen_force_loss"] = self.display_if_exist(
-                        l2_gen_force_loss.detach(), find_drdq
+                        l2_gen_force_loss.detach(), effective_find_gf
                     )
                 loss += (pref_gf * l2_gen_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_gf = l2_gen_force_loss.sqrt()
                 more_loss["rmse_gf"] = self.display_if_exist(
-                    rmse_gf.detach(), find_drdq
+                    rmse_gf.detach(), effective_find_gf
                 )
 
         if self.has_v and "virial" in model_pred and "virial" in label:
@@ -891,6 +893,7 @@ class EnergyStdLoss(TaskLoss):
                     high_prec=False,
                     repeat=3,
                     default=1.0,
+                    source_policy="default" if self.use_default_pf else "tracked",
                 )
             )
         if self.has_gf > 0:
@@ -912,6 +915,7 @@ class EnergyStdLoss(TaskLoss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         if self.has_h:

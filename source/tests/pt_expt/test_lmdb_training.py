@@ -21,6 +21,7 @@ import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -30,6 +31,12 @@ from deepmd.dpmodel.utils.lmdb_data import (
 )
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
+)
+from deepmd.pt_expt.loss import (
+    EnergyLoss,
+)
+from deepmd.pt_expt.train.training import (
+    Trainer,
 )
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
@@ -262,6 +269,27 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         ):
             ds.add_data_requirements([DataRequirementItem("late_label", ndof=1)])
 
+    def test_missing_mandatory_model_input_is_rejected(self) -> None:
+        """A required model input cannot silently become a zero-filled batch."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=0,
+        )
+        ds.add_data_requirements(
+            [DataRequirementItem("spin", 3, atomic=True, must=True)]
+        )
+        try:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"spin.*frame \d+.*test\.lmdb.*field is absent",
+            ):
+                ds.get_batch()
+        finally:
+            ds.close()
+
     def test_get_batch_iterates_past_end(self) -> None:
         """get_batch reseeds the sampler at the end of an epoch."""
         ds = LmdbDataSystem(
@@ -326,6 +354,118 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         batch = ds.get_batch()
         self.assertIn("energy", batch)
         self.assertIn("find_energy", batch)
+
+    def test_default_atom_pref_does_not_partition_training_data(self) -> None:
+        """OC20-style unit defaults keep mixed atom_pref frames compatible."""
+        path = os.path.join(self.tmpdir, "default_atom_pref.lmdb")
+        _create_test_lmdb(path, nframes=8, natoms=6)
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            for index in range(0, 8, 2):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["atom_pref"] = _encode_array(np.full(6, 2.0))
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+        loss = EnergyLoss(
+            starter_learning_rate=0.002,
+            start_pref_e=20.0,
+            limit_pref_e=20.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_pf=20.0,
+            limit_pref_pf=20.0,
+            start_pref_v=5.0,
+            limit_pref_v=5.0,
+            loss_func="mae",
+            f_use_norm=True,
+            use_default_pf=True,
+        )
+        with patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            wraps=lmdb_data_module._raw_frame_availability,
+        ) as inspect_availability:
+            ds = LmdbDataSystem(
+                lmdb_path=path,
+                type_map=["O", "H"],
+                batch_size="mix:30000",
+                seed=0,
+            )
+            self.assertEqual(inspect_availability.call_count, 0)
+            ds.add_data_requirements(loss.label_requirement)
+
+        try:
+            self.assertLessEqual(inspect_availability.call_count, 8)
+            self.assertEqual(len(ds._stat_groups), 1)
+            batch = ds._reader.decode_batch([0, 1])
+            np.testing.assert_array_equal(batch["atom_pref"][0], np.full(18, 2.0))
+            np.testing.assert_array_equal(batch["atom_pref"][1], np.ones(18))
+            self.assertEqual(float(batch["find_atom_pref"]), 1.0)
+            model_output = {
+                "energy": np.zeros_like(batch["energy"]),
+                "force": np.zeros_like(batch["force"]),
+                "virial": np.zeros_like(batch["virial"]),
+                "atom_energy": np.zeros((2, 6, 1), dtype=batch["energy"].dtype),
+            }
+            loss_value, metrics = loss.call(0.002, 6, model_output, batch)
+            self.assertTrue(np.isfinite(loss_value))
+            self.assertIn("mae_pf", metrics)
+        finally:
+            ds.close()
+
+    def test_missing_force_disables_default_prefactor_force_loss(self) -> None:
+        """Default atom weights cannot supervise a frame without force."""
+        path = os.path.join(self.tmpdir, "partial_force_for_pf.lmdb")
+        _create_partially_labeled_lmdb(path)
+        loss = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_pf=1.0,
+            limit_pref_pf=1.0,
+            use_default_pf=True,
+        )
+        ds = LmdbDataSystem(
+            lmdb_path=path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=0,
+        )
+        ds.add_data_requirements(loss.label_requirement)
+        try:
+            observed: dict[float, float] = {}
+            for _ in range(2):
+                batch = ds.get_batch()
+                nframes, nloc = batch["atype"].shape
+                model_output = {
+                    "energy": np.zeros_like(batch.get("energy", np.zeros(nframes))),
+                    "force": np.zeros_like(batch["force"]),
+                    "virial": np.zeros((nframes, 9), dtype=batch["force"].dtype),
+                    "atom_energy": np.zeros(
+                        (nframes, nloc, 1),
+                        dtype=batch["force"].dtype,
+                    ),
+                }
+                loss_value, metrics = loss.call(
+                    1.0,
+                    nloc,
+                    model_output,
+                    batch,
+                )
+                find_force = float(batch["find_force"])
+                observed[find_force] = float(loss_value)
+                if find_force == 0.0:
+                    self.assertTrue(np.isnan(metrics["rmse_pf"]))
+
+            self.assertEqual(observed[0.0], 0.0)
+            self.assertGreater(observed[1.0], 0.0)
+        finally:
+            ds.close()
 
     def test_partial_labels_are_batched_by_availability(self) -> None:
         from deepmd.utils.data import (
@@ -754,6 +894,43 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         self.assertEqual(batch["coord"].ndim, 3)
         self.assertEqual(batch["atype"].ndim, 2)
         self.assertNotIn("n_node", batch)
+
+    def test_layout_is_settled_before_the_pass_is_counted(self) -> None:
+        """The run length must count the packing training actually uses.
+
+        Under ``mix:N`` the layout decides where the sampler cuts a batch, and
+        the sampler materializes a pass the moment its length is asked for.
+        Settling the layout afterwards would count one packing and train on
+        another, and would serve the first epoch from the counted one.
+
+        The pass is cached once built, so both orderings report the same count
+        after the fact. What distinguishes them is the layout in force at the
+        moment the count is taken, which is what this observes.
+        """
+        config = self._config(self._dpa1())
+        del config["training"]["numb_steps"]
+        config["training"]["numb_epoch"] = 1.0
+
+        observed: dict[str, bool] = {}
+        original = Trainer._epoch_length
+
+        def record_layout(trainer_self, model_key: str) -> int:
+            observed["ragged_when_counted"] = (
+                trainer_self.training_data._reader.ragged_batches
+            )
+            return original(trainer_self, model_key)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            with patch.object(Trainer, "_epoch_length", record_layout):
+                trainer = get_trainer(config)
+        finally:
+            os.chdir(cwd)
+
+        # DPA1 reads a flat node axis, so training runs on ragged batches.
+        self.assertTrue(trainer.training_data._reader.ragged_batches)
+        self.assertTrue(observed["ragged_when_counted"])
 
 
 if __name__ == "__main__":

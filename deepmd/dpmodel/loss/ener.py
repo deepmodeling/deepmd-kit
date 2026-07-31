@@ -253,32 +253,31 @@ class EnergyLoss(Loss):
         including all enabled prefactors and any configured Huber terms.
         """
         energy = model_dict["energy"]
-        force = model_dict["force"]
-        virial = model_dict["virial"]
-        atom_ener = model_dict["atom_energy"]
-        energy_hat = label_dict["energy"]
-        force_hat = label_dict["force"]
-        virial_hat = label_dict["virial"]
-        atom_ener_hat = label_dict["atom_ener"]
-        atom_pref = label_dict["atom_pref"]
-        find_energy = label_dict["find_energy"]
-        find_force = label_dict["find_force"]
-        find_virial = label_dict["find_virial"]
-        find_atom_ener = label_dict["find_atom_ener"]
-        find_atom_pref = (
-            label_dict["find_atom_pref"] if not self.use_default_pf else 1.0
+        xp = array_api_compat.array_namespace(energy)
+
+        force_required = (
+            self.has_f or self.has_pf or self.relative_f is not None or self.has_gf
         )
-        xp = array_api_compat.array_namespace(
-            energy,
-            force,
-            virial,
-            atom_ener,
-            energy_hat,
-            force_hat,
-            virial_hat,
-            atom_ener_hat,
-            atom_pref,
-        )
+        if self.has_e:
+            energy_hat = label_dict["energy"]
+            find_energy = label_dict["find_energy"]
+        if force_required:
+            force = model_dict["force"]
+            force_hat = label_dict["force"]
+            find_force = label_dict["find_force"]
+        if self.has_v:
+            virial = model_dict["virial"]
+            virial_hat = label_dict["virial"]
+            find_virial = label_dict["find_virial"]
+        if self.has_ae:
+            atom_ener = model_dict["atom_energy"]
+            atom_ener_hat = label_dict["atom_ener"]
+            find_atom_ener = label_dict["find_atom_ener"]
+        if self.has_pf:
+            atom_pref = label_dict["atom_pref"]
+            find_atom_pref = (
+                label_dict["find_atom_pref"] if not self.use_default_pf else 1.0
+            )
 
         # Two things about a batch decide how its terms reduce, and the node
         # axis states them differently.
@@ -309,10 +308,11 @@ class EnergyLoss(Loss):
             # A + B -> C + D
             # E = - E(A) - E(B) + E(C) + E(D)
             # A, B, C, D could be put far away from each other
+            atom_ener = model_dict["atom_energy"]
             atom_ener_coeff = label_dict["atom_ener_coeff"]
             atom_ener_coeff = xp.reshape(atom_ener_coeff, atom_ener.shape)
             energy = xp.sum(atom_ener_coeff * atom_ener, axis=1)
-        if self.has_f or self.has_pf or self.relative_f or self.has_gf:
+        if force_required:
             force_reshape = xp.reshape(force, (-1,))
             force_hat_reshape = xp.reshape(force_hat, (-1,))
             diff_f = force_hat_reshape - force_reshape
@@ -332,22 +332,33 @@ class EnergyLoss(Loss):
         atom_norm = 1.0 / natoms
         atom_norm_ener = 1.0 / natoms
         lr_ratio = learning_rate / self.starter_learning_rate
-        pref_e = find_energy * (
-            self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * lr_ratio
-        )
-        pref_f = find_force * (
-            self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * lr_ratio
-        )
-        pref_v = find_virial * (
-            self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * lr_ratio
-        )
-        pref_ae = find_atom_ener * (
-            self.limit_pref_ae + (self.start_pref_ae - self.limit_pref_ae) * lr_ratio
-        )
-        pref_pf = find_atom_pref * (
-            self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
-        )
-        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * lr_ratio
+        if self.has_e:
+            pref_e = find_energy * (
+                self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * lr_ratio
+            )
+        if self.has_f:
+            pref_f = find_force * (
+                self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * lr_ratio
+            )
+        if self.has_v:
+            pref_v = find_virial * (
+                self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * lr_ratio
+            )
+        if self.has_ae:
+            pref_ae = find_atom_ener * (
+                self.limit_pref_ae
+                + (self.start_pref_ae - self.limit_pref_ae) * lr_ratio
+            )
+        if self.has_pf:
+            effective_find_pf = find_force * find_atom_pref
+            pref_pf = effective_find_pf * (
+                self.limit_pref_pf
+                + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
+            )
+        if self.has_h:
+            pref_h = (
+                self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * lr_ratio
+            )
 
         loss = 0
         more_loss = {}
@@ -693,12 +704,12 @@ class EnergyLoss(Loss):
                     )
                     loss += pref_pf * l2_pf_masked
                     more_loss["rmse_pf"] = self.display_if_exist(
-                        xp.sqrt(l2_pf_masked), find_atom_pref
+                        xp.sqrt(l2_pf_masked), effective_find_pf
                     )
                 else:
                     loss += pref_pf * l2_pref_force_loss
                     more_loss["rmse_pf"] = self.display_if_exist(
-                        xp.sqrt(l2_pref_force_loss), find_atom_pref
+                        xp.sqrt(l2_pref_force_loss), effective_find_pf
                     )
             elif self.loss_func == "mae":
                 l1_pref_force_loss = xp.mean(
@@ -710,12 +721,12 @@ class EnergyLoss(Loss):
                     l1_pf_masked = masked_atom_mean(xp.abs(diff_f_3d) * pf_3d, maskf, 3)
                     loss += pref_pf * l1_pf_masked
                     more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pf_masked, find_atom_pref
+                        l1_pf_masked, effective_find_pf
                     )
                 else:
                     loss += pref_pf * l1_pref_force_loss
                     more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pref_force_loss, find_atom_pref
+                        l1_pref_force_loss, effective_find_pf
                     )
             else:
                 raise NotImplementedError(
@@ -735,7 +746,8 @@ class EnergyLoss(Loss):
                 )
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
-            pref_gf = find_drdq * (
+            effective_find_gf = find_force * find_drdq
+            pref_gf = effective_find_gf * (
                 self.limit_pref_gf
                 + (self.start_pref_gf - self.limit_pref_gf) * lr_ratio
             )
@@ -771,7 +783,7 @@ class EnergyLoss(Loss):
             l2_gen_force_loss = xp.mean(xp.square(diff_gen_force))
             loss += pref_gf * l2_gen_force_loss
             more_loss["rmse_gf"] = self.display_if_exist(
-                xp.sqrt(l2_gen_force_loss), find_drdq
+                xp.sqrt(l2_gen_force_loss), effective_find_gf
             )
         hessian = model_dict.get("hessian", model_dict.get("energy_derv_r_derv_r"))
         if self.has_h and hessian is not None and "hessian" in label_dict:
@@ -818,54 +830,60 @@ class EnergyLoss(Loss):
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
-        label_requirement = []
-        label_requirement.append(
-            DataRequirementItem(
-                "energy",
-                ndof=1,
-                atomic=False,
-                must=False,
-                high_prec=True,
+        label_requirement: list[DataRequirementItem] = []
+        if self.has_e:
+            label_requirement.append(
+                DataRequirementItem(
+                    "energy",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=True,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "force",
-                ndof=3,
-                atomic=True,
-                must=False,
-                high_prec=False,
+        if self.has_f or self.has_pf or self.relative_f is not None or self.has_gf:
+            label_requirement.append(
+                DataRequirementItem(
+                    "force",
+                    ndof=3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "virial",
-                ndof=9,
-                atomic=False,
-                must=False,
-                high_prec=False,
+        if self.has_v:
+            label_requirement.append(
+                DataRequirementItem(
+                    "virial",
+                    ndof=9,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "atom_ener",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
+        if self.has_ae:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_ener",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "atom_pref",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                repeat=3,
-                default=1.0,
+        if self.has_pf:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_pref",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=3,
+                    default=1.0,
+                    source_policy="default" if self.use_default_pf else "tracked",
+                )
             )
-        )
         if self.has_gf > 0:
             label_requirement.append(
                 DataRequirementItem(
@@ -885,6 +903,7 @@ class EnergyLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         if self.has_h:

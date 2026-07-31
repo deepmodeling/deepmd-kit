@@ -346,6 +346,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_fparam,
                 default=fparam_default,
+                source_policy="default" if has_default_fparam else "tracked",
             )
         )
     if _model.get_dim_aparam() > 0:
@@ -368,6 +369,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=True,
                 must=not allow_missing_spin,
                 default=0.0,
+                source_policy="default" if allow_missing_spin else "tracked",
             )
         )
     if _model.has_chg_spin_ebd():
@@ -387,6 +389,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_cs,
                 default=default_cs,
+                source_policy="default" if has_default_cs else "tracked",
             )
         )
     return additional_data_requirement
@@ -1698,6 +1701,11 @@ class Trainer(AbstractTrainer):
             else self.valid_numb_batch_by_task[DEFAULT_TASK_KEY]
         )
 
+        # The layout settles before the schedule below, because under
+        # ``mix:N`` it is what decides how many frames a batch holds, and the
+        # schedule counts those batches to turn epochs into steps.
+        self._configure_batch_layout(training_data, validation_data)
+
         # Statistics ----------------------------------------------------------
         self._finetune_update_stat = False
         self._sample_funcs: dict[str, Any] = {}
@@ -2093,7 +2101,6 @@ class Trainer(AbstractTrainer):
         self._configure_neighbor_graph_method(
             training_params.get("neighbor_graph_method", "auto")
         )
-        self._configure_batch_layout(training_data, validation_data)
 
         # torch.compile -------------------------------------------------------
         if self.enable_compile:
@@ -2209,6 +2216,12 @@ class Trainer(AbstractTrainer):
         Each task has its own data system and its own model, so the answer is
         each task's own: a multi-task run pairing a graph model with a dense
         one gives the first concatenated batches and the second padded ones.
+
+        This must run before the run length is resolved. Under ``mix:N`` the
+        layout decides where the sampler cuts a batch -- padding is what makes
+        a batch's cost depend on its widest frame -- so a schedule that
+        counted batches first would count a packing training never uses, and
+        would serve its first epoch in that packing.
 
         Parameters
         ----------

@@ -471,6 +471,7 @@ class EnergySpinLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         return label_requirement
