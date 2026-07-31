@@ -26,6 +26,9 @@ from deepmd.dpmodel.utils.region import (
 from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
+from deepmd.pt_expt.model.graph_lower import (
+    graph_edge_dtype,
+)
 
 # ---------------------------------------------------------------------------
 # AOTInductor ``.pt2`` archive layout.
@@ -998,17 +1001,6 @@ def _build_dynamic_shapes(
     return (*base, None, None, None, None, None, None, None, None)
 
 
-def _graph_edge_dtype(model: torch.nn.Module, lower_kind: str) -> str:
-    """Return the graph edge-vector dtype encoded by the deployment artifact.
-
-    The dtype itself is the atomic model's capability; only the lower-kind
-    applicability (which artifact kinds carry edge geometry) lives here.
-    """
-    if lower_kind not in ("graph", "dpa1_canonical"):
-        return "float64"
-    return str(model.atomic_model.graph_edge_dtype())
-
-
 def _supports_graph_export(model: torch.nn.Module) -> bool:
     """Whether the model has an exportable graph-lower implementation."""
     return bool(model.atomic_model.supports_graph_export())
@@ -1136,7 +1128,7 @@ def _collect_metadata(
     #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
-    meta["graph_edge_dtype"] = _graph_edge_dtype(model, lower_kind)
+    meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a

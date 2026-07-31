@@ -17,8 +17,10 @@ import zipfile
 import pytest
 import torch
 
+from deepmd.pt_expt.model.graph_lower import (
+    graph_edge_dtype,
+)
 from deepmd.pt_expt.utils.serialization import (
-    _graph_edge_dtype,
     _needs_with_comm_artifact,
     _supports_graph_export,
     deserialize_to_file,
@@ -174,8 +176,8 @@ def test_compressed_graph_uses_compute_precision_edge_geometry(
     class _Model:
         atomic_model = _AtomicModel()
 
-    assert _graph_edge_dtype(_Model(), "graph") == expected
-    assert _graph_edge_dtype(_Model(), "nlist") == "float64"
+    assert graph_edge_dtype(_Model(), "graph") == expected
+    assert graph_edge_dtype(_Model(), "nlist") == "float64"
     assert _supports_graph_export(_Model()) is (statistics_dtype == torch.float32)
 
 
