@@ -24,9 +24,7 @@ import torch
 from deepmd.pt.model.model import (
     get_model,
 )
-from deepmd.pt.utils import (
-    env,  # noqa: F401  - imports pt test env side effects
-)
+from deepmd.pt.utils import env  # noqa: F401  - imports pt test env side effects
 
 from .test_sezm_parallel import (
     _perturb_descriptor,
@@ -193,9 +191,7 @@ class TestSeZMBridgingSelfCommParity(unittest.TestCase):
             mock,
         )
 
-        from deepmd.pt.model.descriptor import (
-            sezm as pt_sezm,
-        )
+        from deepmd.pt.model.descriptor import sezm as pt_sezm
 
         with mock.patch.object(
             pt_sezm.DescrptSeZM,
