@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Analytical pair potentials for Zone bridging (backend-agnostic port of
-``deepmd.pt``'s ``InterPotential``). Lives in the atomic-model package:
+``deepmd.pt``'s ``InnerPotential``). Lives in the atomic-model package:
 the atomic layer owns per-atom energy assembly, where the ZBL term is
 injected on the graph route.
 """
@@ -63,7 +63,7 @@ _KE_EV_A = 14.3996  # Coulomb constant in eV·Å
 _A_BOHR = 0.5291772109  # Bohr radius in Å
 
 
-class InterPotential(NativeOP):
+class InnerPotential(NativeOP):
     """Analytical pair potential for Zone bridging.
 
     Supports the Ziegler-Biersack-Littmark (ZBL) screened nuclear repulsion
@@ -72,7 +72,7 @@ class InterPotential(NativeOP):
     contributes ``V_ZBL(r_ij) / 2`` to both atom i and atom j, avoiding
     double-counting from the symmetric neighbor list. Backend-agnostic
     (array-API) port of the reference implementation in
-    ``deepmd.pt.model.model.sezm_model.InterPotential``.
+    ``deepmd.pt.model.model.sezm_model.InnerPotential``.
 
     Parameters
     ----------
@@ -93,7 +93,7 @@ class InterPotential(NativeOP):
         super().__init__()
         mode = str(mode).upper()
         if mode != "ZBL":
-            raise ValueError(f"Unknown InterPotential mode: {mode}")
+            raise ValueError(f"Unknown InnerPotential mode: {mode}")
         self.mode = mode
         self.type_map = list(type_map)
         self.ntypes_real = len(type_map)
@@ -266,8 +266,8 @@ class InterPotential(NativeOP):
         return xp.astype(xp.reshape(atom_energy, (1, n_node, 1)), edge_vec.dtype)
 
 
-@BaseAtomicModel.register("inter_potential")
-class InterPotentialAtomicModel(BaseAtomicModel):
+@BaseAtomicModel.register("inner_potential")
+class InnerPotentialAtomicModel(BaseAtomicModel):
     """Analytical bridging pair potential as an ATOMIC MODEL.
 
     First-principles composition design: the analytical term maps local
@@ -302,7 +302,7 @@ class InterPotentialAtomicModel(BaseAtomicModel):
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
-        self.potential = InterPotential(type_map=list(type_map), mode=mode)
+        self.potential = InnerPotential(type_map=list(type_map), mode=mode)
         self.mode = self.potential.mode
         self.rcut = float(rcut)
         self.sel = (
@@ -317,7 +317,7 @@ class InterPotentialAtomicModel(BaseAtomicModel):
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
 
         The generic base handles the public map and the stat/exclusion state;
-        the element lookup belongs to :class:`InterPotential`, so the update is
+        the element lookup belongs to :class:`InnerPotential`, so the update is
         delegated there rather than reimplemented here (review 3649295675 --
         without it the lookup keeps the ORIGINAL elements while ``atype``
         values mean new ones, and a longer new map raises ``IndexError``).
@@ -403,7 +403,7 @@ class InterPotentialAtomicModel(BaseAtomicModel):
     ) -> dict:
         """Dense route unsupported: the term rides the NeighborGraph route only."""
         raise NotImplementedError(
-            "InterPotentialAtomicModel rides the NeighborGraph route only; "
+            "InnerPotentialAtomicModel rides the NeighborGraph route only; "
             "the dense (nlist) route has no injection site for the term"
         )
 
@@ -455,7 +455,7 @@ class InterPotentialAtomicModel(BaseAtomicModel):
         data.update(
             {
                 "@class": "Model",
-                "type": "inter_potential",
+                "type": "inner_potential",
                 "@version": 1,
                 "mode": self.mode,
                 "rcut": self.rcut,
@@ -465,7 +465,7 @@ class InterPotentialAtomicModel(BaseAtomicModel):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "InterPotentialAtomicModel":
+    def deserialize(cls, data: dict) -> "InnerPotentialAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
