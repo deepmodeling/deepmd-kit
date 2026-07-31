@@ -5,6 +5,38 @@ from typing import (
     Any,
 )
 
+import torch
+
+
+def graph_edge_dtype(model: Any, lower_kind: str) -> str:
+    """Return the graph edge-vector dtype encoded by a deployment artifact.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing an atomic-model descriptor.
+    lower_kind : str
+        Concrete lower-forward schema.
+
+    Returns
+    -------
+    str
+        ``"float32"`` for eligible geometrically compressed DPA1 graph
+        lowers, otherwise ``"float64"``.
+    """
+    atomic_model = getattr(model, "atomic_model", None)
+    descriptor = getattr(atomic_model, "descriptor", None)
+    descriptor_block = getattr(descriptor, "se_atten", None)
+    statistics = getattr(descriptor_block, "mean", None)
+    if (
+        lower_kind in ("graph", "dpa1_canonical")
+        and bool(getattr(descriptor, "geo_compress", False))
+        and isinstance(statistics, torch.Tensor)
+        and statistics.dtype == torch.float32
+    ):
+        return "float32"
+    return "float64"
+
 
 def model_uses_graph_lower(model: Any) -> bool:
     """Return whether a model's default lower uses ``NeighborGraph``.

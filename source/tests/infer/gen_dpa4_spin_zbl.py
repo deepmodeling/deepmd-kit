@@ -4,7 +4,7 @@
 
 One archive, ``deeppot_dpa4_spin_zbl_graph.pt2``: a native-spin
 (``scheme="native"``) DPA4 that is ALSO bridged (``bridging_method: "ZBL"``),
-i.e. a ``LinearEnergyModel`` over ``[learned DPA4, InterPotentialAtomicModel]``
+i.e. a ``LinearEnergyModel`` over ``[learned DPA4, InnerPotentialAtomicModel]``
 with ``weights="sum"`` wrapped by the native-spin model class.
 
 Why this fixture exists
@@ -144,7 +144,7 @@ _SPINS = np.array(
 ).reshape(1, _NATOMS, 3)
 
 # ZBL screening parameters, repeated here as an INDEPENDENT reference (they
-# mirror deepmd/dpmodel/atomic_model/inter_potential.py, deliberately not
+# mirror deepmd/dpmodel/atomic_model/inner_potential.py, deliberately not
 # imported from it: a reference that shares its constants with the code under
 # test cannot catch a wrong constant).
 _ZBL_A_COEFF = (0.18175, 0.50986, 0.28022, 0.028171)
@@ -205,9 +205,9 @@ def _build_model_dict() -> dict:
     model = get_model(copy.deepcopy(SPIN_ZBL_CONFIG))
     assert model.has_spin() is True
     kinds = [type(child).__name__ for child in model.atomic_model.models]
-    assert kinds[1] == "InterPotentialAtomicModel", (
+    assert kinds[1] == "InnerPotentialAtomicModel", (
         f"expected the bridged composition's second child to be the "
-        f"analytical InterPotentialAtomicModel, got {kinds!r}; without it "
+        f"analytical InnerPotentialAtomicModel, got {kinds!r}; without it "
         f"this fixture is just the plain native-spin model again."
     )
     model_dict = model.serialize()
