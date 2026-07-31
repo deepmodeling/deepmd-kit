@@ -856,6 +856,7 @@ class TestDPModelEnergyLossHessianGradAccum:
 
         torch = pytest.importorskip("torch")
         from deepmd.pt.loss.ener import EnergyStdLoss as PTEnergyStdLoss
+        from deepmd.pt.utils import env
 
         pred, label = _full_ener_dicts(
             1,
@@ -869,13 +870,13 @@ class TestDPModelEnergyLossHessianGradAccum:
         label_h[:, : 3 * NA, : 3 * NA] = 2.0
         pred, label = self._set_hessian(pred, label, pred_h, label_h)
         pt_pred = {
-            key: torch.as_tensor(value, device="cpu")
+            key: torch.as_tensor(value, device=env.DEVICE)
             if isinstance(value, np.ndarray)
             else value
             for key, value in pred.items()
         }
         pt_label = {
-            key: torch.as_tensor(value, device="cpu")
+            key: torch.as_tensor(value, device=env.DEVICE)
             if isinstance(value, np.ndarray)
             else value
             for key, value in label.items()
@@ -997,17 +998,18 @@ class TestDPModelEnergyLossHessianGradAccum:
 
         torch = pytest.importorskip("torch")
         from deepmd.pt.loss.ener import EnergyStdLoss as PTEnergyStdLoss
+        from deepmd.pt.utils import env
 
         residual = 10.0
         pred, label = self._constant_residual_dicts(residual)
         pt_pred = {
-            key: torch.as_tensor(value, device="cpu")
+            key: torch.as_tensor(value, device=env.DEVICE)
             if isinstance(value, np.ndarray)
             else value
             for key, value in pred.items()
         }
         pt_label = {
-            key: torch.as_tensor(value, device="cpu")
+            key: torch.as_tensor(value, device=env.DEVICE)
             if isinstance(value, np.ndarray)
             else value
             for key, value in label.items()
