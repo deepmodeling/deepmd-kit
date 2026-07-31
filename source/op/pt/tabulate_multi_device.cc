@@ -29,6 +29,15 @@ static void ValidateGpuLastLayerSize(const int64_t last_layer_size) {
               last_layer_size);
 }
 
+static void ValidateGpuLastLayerSizeBeforeAllocation(
+    const torch::Tensor& table_tensor, const int64_t last_layer_size) {
+  // Forward wrappers allocate descriptor tensors using last_layer_size, so a
+  // negative GPU width must be rejected before torch::empty sees the shape.
+  if (table_tensor.device().is_cuda()) {
+    ValidateGpuLastLayerSize(last_layer_size);
+  }
+}
+
 template <typename FPTYPE>
 void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& table_info_tensor,
@@ -787,6 +796,7 @@ class TabulateFusionSeAOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -973,6 +983,7 @@ class TabulateFusionSeAttenOp
       const torch::Tensor& two_embed_tensor,
       int64_t last_layer_size,
       bool is_sorted) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1141,6 +1152,7 @@ class TabulateFusionSeTOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1294,6 +1306,7 @@ class TabulateFusionSeROp
       const torch::Tensor& table_info_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
@@ -1452,6 +1465,7 @@ class TabulateFusionSeTTebdOp
       const torch::Tensor& em_x_tensor,
       const torch::Tensor& em_tensor,
       int64_t last_layer_size) {
+    ValidateGpuLastLayerSizeBeforeAllocation(table_tensor, last_layer_size);
     // allocate output tensors
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
