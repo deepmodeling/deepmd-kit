@@ -50,35 +50,131 @@ __all__ = [
     "_restore_observed_type_from_file",
     "_save_observed_type_to_file",
     "collect_observed_types",
+    "min_pair_dist_frame_mask",
+    "select_batch_frames",
 ]
 
 
-def make_stat_input(
-    datasets: list[Any], dataloaders: list[Any], nbatches: int
-) -> dict[str, Any]:
-    """Pack data for statistics.
+def min_pair_dist_frame_mask(
+    batch: dict[str, Any],
+    min_pair_dist: float,
+) -> torch.Tensor | None:
+    """
+    Return the valid-frame mask for a minimum pair-distance threshold.
 
-    Args:
-    - dataset: A list of dataset to analyze.
-    - nbatches: Batch count for collecting stats.
+    Parameters
+    ----------
+    batch
+        Data batch containing frame-aligned tensors.
+    min_pair_dist
+        Minimum allowed pair distance in Å.
 
     Returns
     -------
-    - a list of dicts, each of which contains data from a system
+    torch.Tensor or None
+        Boolean mask with shape (nframes), or ``None`` when filtering is
+        disabled or the distance field is unavailable.
+    """
+    if min_pair_dist <= 0.0 or "min_pair_dist" not in batch:
+        return None
+    distances = batch["min_pair_dist"]
+    if not isinstance(distances, torch.Tensor):
+        return None
+    return distances.reshape(-1) >= float(min_pair_dist)
+
+
+def select_batch_frames(
+    batch: dict[str, Any],
+    frame_mask: torch.Tensor,
+) -> dict[str, Any]:
+    """
+    Select frame-aligned tensors from one data batch.
+
+    Parameters
+    ----------
+    batch
+        Data batch containing tensors and scalar metadata.
+    frame_mask
+        Boolean selection mask with shape (nframes).
+
+    Returns
+    -------
+    dict[str, Any]
+        Batch with every frame-aligned tensor sliced by ``frame_mask``.
+    """
+    nframes = frame_mask.shape[0]
+    selected: dict[str, Any] = {}
+    frame_keep = frame_mask.detach().cpu().tolist()
+    for key, value in batch.items():
+        if (
+            isinstance(value, torch.Tensor)
+            and value.ndim > 0
+            and value.shape[0] == nframes
+        ):
+            selected[key] = value[frame_mask]
+        elif isinstance(value, list) and len(value) == nframes:
+            selected[key] = [
+                item for item, keep in zip(value, frame_keep, strict=True) if keep
+            ]
+        else:
+            selected[key] = value
+    return selected
+
+
+def make_stat_input(
+    datasets: list[Any],
+    dataloaders: list[Any],
+    nbatches: int,
+    min_pair_dist: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Pack data for statistics.
+
+    Parameters
+    ----------
+    datasets
+        Data systems to analyze.
+    dataloaders
+        One data loader for each system.
+    nbatches
+        Maximum number of valid batches collected from each system.
+    min_pair_dist
+        Minimum allowed pair distance in Å. Frames below the threshold are
+        excluded before statistics are accumulated.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Packed statistics, one dictionary for each system that contributes at
+        least one valid frame.
     """
     lst = []
-    log.info(f"Packing data for statistics from {len(datasets)} systems")
-    for i in range(len(datasets)):
+    log.info("Packing data for statistics from %d systems", len(datasets))
+    for system_index in range(len(datasets)):
         sys_stat = {}
         with torch.device("cpu"):
-            iterator = iter(dataloaders[i])
-            numb_batches = min(nbatches, len(dataloaders[i]))
-            for _ in range(numb_batches):
+            dataloader = dataloaders[system_index]
+            dataloader_size = len(dataloader)
+            target_batches = min(nbatches, dataloader_size)
+            scan_limit = dataloader_size if min_pair_dist > 0.0 else target_batches
+            iterator = iter(dataloader)
+            accepted_batches = 0
+            scanned_batches = 0
+            while accepted_batches < target_batches and scanned_batches < scan_limit:
                 try:
                     stat_data = next(iterator)
                 except StopIteration:
-                    iterator = iter(dataloaders[i])
-                    stat_data = next(iterator)
+                    iterator = iter(dataloader)
+                    try:
+                        stat_data = next(iterator)
+                    except StopIteration:
+                        break
+                scanned_batches += 1
+                frame_mask = min_pair_dist_frame_mask(stat_data, min_pair_dist)
+                if frame_mask is not None and not torch.any(frame_mask):
+                    continue
+                if frame_mask is not None:
+                    stat_data = select_batch_frames(stat_data, frame_mask)
+                accepted_batches += 1
                 if (
                     "find_fparam" in stat_data
                     and "fparam" in stat_data
@@ -99,12 +195,27 @@ def make_stat_input(
                     else:
                         pass
 
+        if not sys_stat:
+            if min_pair_dist > 0.0:
+                log.info(
+                    "Skipping data system %d in statistics because no frame "
+                    "satisfies min_pair_dist=%s.",
+                    system_index,
+                    min_pair_dist,
+                )
+            else:
+                log.info(
+                    "Skipping data system %d in statistics because its data "
+                    "loader produced no batch.",
+                    system_index,
+                )
+            continue
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
                 pass
             elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            elif isinstance(stat_data[dd], torch.Tensor):
+            elif isinstance(sys_stat[key], list):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
@@ -166,20 +277,24 @@ def _post_process_stat(
 def _compute_model_predict(
     sampled: Callable[[], list[dict]] | list[dict],
     keys: list[str],
-    model_forward: Callable[..., torch.Tensor],
-) -> dict[str, list[torch.Tensor]]:
+    model_forward: Callable[..., dict[str, torch.Tensor]],
+) -> tuple[dict[str, list[np.ndarray]], list[np.ndarray]]:
     auto_batch_size = AutoBatchSize()
     model_predict = {kk: [] for kk in keys}
+    model_mask = []
     for system in sampled:
-        nframes = system["coord"].shape[0]
+        model_coord = system.get("model_coord", system["coord"])
+        model_atype = system.get("model_atype", system["atype"])
+        nframes = model_coord.shape[0]
         coord, atype, box = (
-            system["coord"],
-            system["atype"],
-            system["box"],
+            model_coord,
+            model_atype,
+            system.get("box"),
         )
         fparam = system.get("fparam", None)
-        aparam = system.get("aparam", None)
+        aparam = system.get("model_aparam", system.get("aparam", None))
         charge_spin = system.get("charge_spin", None)
+        spin = system.get("model_spin", system.get("spin", None))
 
         def model_forward_auto_batch_size(*args: Any, **kwargs: Any) -> Any:
             return auto_batch_size.execute_all(
@@ -190,16 +305,50 @@ def _compute_model_predict(
                 **kwargs,
             )
 
+        model_kwargs = {
+            "fparam": fparam,
+            "aparam": aparam,
+            "charge_spin": charge_spin,
+        }
+        if spin is not None:
+            model_kwargs["spin"] = spin
         sample_predict = model_forward_auto_batch_size(
-            coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            coord,
+            atype,
+            box,
+            **model_kwargs,
         )
+        sample_mask = sample_predict.get("mask", atype >= 0)
+        model_mask.append(to_numpy_array(sample_mask))
         for kk in keys:
             model_predict[kk].append(
                 to_numpy_array(
                     sample_predict[kk]  # nf x nloc x odims
                 )
             )
-    return model_predict
+    return model_predict, model_mask
+
+
+def _reduce_model_prediction(
+    prediction: np.ndarray,
+    mask: np.ndarray,
+    intensive: bool,
+) -> np.ndarray:
+    """Reduce atomic predictions, rejecting undefined intensive means."""
+    reduced = np.sum(prediction, axis=1)
+    if intensive:
+        atom_count = np.sum(mask, axis=1)
+        empty_frames = np.flatnonzero(atom_count == 0)
+        if empty_frames.size:
+            raise ValueError(
+                "Cannot reduce intensive model predictions for frames with no "
+                f"unmasked atoms: {empty_frames.tolist()}."
+            )
+        atom_count = atom_count.reshape(
+            (atom_count.shape[0],) + (1,) * (reduced.ndim - 1)
+        )
+        reduced = reduced / atom_count
+    return reduced
 
 
 def _make_preset_out_bias(
@@ -260,10 +409,10 @@ def compute_output_stats(
     stat_file_path: DPPath | None = None,
     rcond: float | None = None,
     preset_bias: dict[str, list[np.ndarray | None]] | None = None,
-    model_forward: Callable[..., torch.Tensor] | None = None,
+    model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-) -> dict[str, Any]:
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -278,6 +427,8 @@ def compute_output_stats(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
+    keys : str or list[str], optional
+        Output labels whose per-type bias and standard deviation are computed.
     stat_file_path : DPPath, optional
         The path to the stat file.
     rcond : float, optional
@@ -287,7 +438,7 @@ def compute_output_stats(
         The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descriptor should be set.
-    model_forward : Callable[..., torch.Tensor], optional
+    model_forward : Callable[..., dict[str, torch.Tensor]], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
@@ -296,6 +447,20 @@ def compute_output_stats(
         Whether to distinguish different element types in the statistics.
     intensive : bool, optional
         Whether the fitting target is intensive.
+
+    Returns
+    -------
+    tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]
+        Per-output bias and standard-deviation tensors.
+
+    Raises
+    ------
+    ValueError
+        If output statistics must be computed but no sampled system contains a
+        valid frame.
+    RuntimeError
+        If the requested statistics cannot be computed from the available
+        labels.
     """
     keys = [keys] if isinstance(keys, str) else keys
     assert isinstance(keys, list)
@@ -308,10 +473,20 @@ def compute_output_stats(
     if bias_atom_e is None:
         # only get data once, sampled is a list of dict[str, torch.Tensor]
         sampled = merged() if callable(merged) else merged
+        if not sampled:
+            raise ValueError(
+                "Output statistics require at least one sampled system with a "
+                "valid frame."
+            )
         if model_forward is not None:
-            model_pred = _compute_model_predict(sampled, keys, model_forward)
+            model_pred, model_mask = _compute_model_predict(
+                sampled,
+                keys,
+                model_forward,
+            )
         else:
             model_pred = None
+            model_mask = []
 
         # remove the keys that are not in the sample
         new_keys = [
@@ -338,8 +513,13 @@ def compute_output_stats(
         model_pred_g = (
             {
                 kk: [
-                    np.sum(vv[idx], axis=1) for idx in global_sampled_idx[kk]
-                ]  # sum atomic dim
+                    _reduce_model_prediction(
+                        vv[idx],
+                        model_mask[idx],
+                        intensive,
+                    )
+                    for idx in global_sampled_idx[kk]
+                ]
                 for kk, vv in model_pred.items()
             }
             if model_pred

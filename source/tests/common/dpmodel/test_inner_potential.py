@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""dpmodel ``InterPotential`` (analytical ZBL bridging term) unit tests.
+"""dpmodel ``InnerPotential`` (analytical ZBL bridging term) unit tests.
 
 Ports the pt reference values from
-``source/tests/pt/model/test_sezm_model.py::TestInterPotential``: the exact
+``source/tests/pt/model/test_sezm_model.py::TestInnerPotential``: the exact
 universal-ZBL formula is reproduced in-test and the half-split per-edge
 scatter must sum back to the full analytic pair energy.
 """
@@ -12,8 +12,8 @@ import math
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.atomic_model.inter_potential import (
-    InterPotential,
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotential,
 )
 
 _A_BOHR = 0.5291772109
@@ -48,7 +48,7 @@ def _two_atom_inputs(r: float):
 )
 def test_zbl_known_value(type_map, atypes, zi, zj):
     r = 0.8
-    pot = InterPotential(type_map=type_map)
+    pot = InnerPotential(type_map=type_map)
     edge_vec, edge_index, edge_mask = _two_atom_inputs(r)
     out = pot.call(
         edge_vec,
@@ -67,7 +67,7 @@ def test_zbl_known_value(type_map, atypes, zi, zj):
 def test_virtual_types_masked():
     # real_type_count=1: type 1 is a virtual/placeholder type; its edges
     # contribute zero, and only real-real edges survive.
-    pot = InterPotential(type_map=["O"])
+    pot = InnerPotential(type_map=["O"])
     r = 0.9
     edge_vec = np.array(
         [[r, 0, 0], [-r, 0, 0], [0, r, 0], [0, -r, 0]], dtype=np.float64
@@ -83,7 +83,7 @@ def test_virtual_types_masked():
 
 
 def test_edge_mask_zeroes_edges():
-    pot = InterPotential(type_map=["O"])
+    pot = InnerPotential(type_map=["O"])
     edge_vec, edge_index, _ = _two_atom_inputs(0.8)
     out = pot.call(
         edge_vec,
@@ -97,19 +97,19 @@ def test_edge_mask_zeroes_edges():
 
 def test_unknown_element_raises():
     with pytest.raises(ValueError, match="Unknown element symbol"):
-        InterPotential(type_map=["O", "Xx"])
+        InnerPotential(type_map=["O", "Xx"])
 
 
 def test_unknown_mode_raises():
-    with pytest.raises(ValueError, match="Unknown InterPotential mode"):
-        InterPotential(type_map=["O"], mode="lj")
+    with pytest.raises(ValueError, match="Unknown InnerPotential mode"):
+        InnerPotential(type_map=["O"], mode="lj")
 
 
 def test_torch_namespace_smoke_and_gradient():
     """Torch inputs match numpy at 1e-12 and edge_vec gradients exist."""
     import torch
 
-    pot = InterPotential(type_map=["O", "H"])
+    pot = InnerPotential(type_map=["O", "H"])
     edge_vec_np, edge_index, edge_mask = _two_atom_inputs(0.8)
     atypes = np.array([0, 1], dtype=np.int64)
     ref = np.asarray(pot.call(edge_vec_np, edge_index, atypes, edge_mask, 2))
