@@ -149,7 +149,9 @@ std::vector<tagint> PairDeepMD::allgather_unique_tagints(
     return local_values;
   }
 
-  const int local_count = static_cast<int>(local_values.size());
+  // LAMMPS serial MPI stubs declare send buffers as void*, so MPI send
+  // scalars must remain mutable even though the collective does not alter them.
+  int local_count = static_cast<int>(local_values.size());
   std::vector<int> counts(comm->nprocs, 0);
   std::vector<int> displacements(comm->nprocs, 0);
   MPI_Allgather(&local_count, 1, MPI_INT, counts.data(), 1, MPI_INT, world);
@@ -286,14 +288,15 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
     }
   }
 
-  const bigint selected_local = selected_nlocal;
+  // Keep MPI send scalars mutable for compatibility with LAMMPS STUBS/mpi.h.
+  bigint selected_local = selected_nlocal;
   MPI_Allreduce(&selected_local, &compact_natoms_, 1, MPI_LMP_BIGINT, MPI_SUM,
                 world);
   if (compact_natoms_ == 0) {
     error->all(FLERR, "compact pair_style deepmd selected no model atoms");
   }
 
-  const int local_changed = compact_selected_ != selected;
+  int local_changed = compact_selected_ != selected;
   compact_selected_ = std::move(selected);
   int global_changed = 0;
   MPI_Allreduce(&local_changed, &global_changed, 1, MPI_INT, MPI_MAX, world);
@@ -310,6 +313,8 @@ void PairDeepMD::analyze_model_deviation(double& max,
     return;
   }
 
+  // If this rank owns no selected atom, preserve the caller's reduction-neutral
+  // seeds (min = max double, max = 0, sum = 0) for the following MPI_Reduce.
   bool found = false;
   for (int ii = 0; ii < nlocal; ++ii) {
     if (!compact_selected_[ii]) {

@@ -197,6 +197,7 @@ def _run_compact_mpi_scenario(
         cwd=run_dir,
         capture_output=True,
         text=True,
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     energy = float(energy_file.read_text().strip())
