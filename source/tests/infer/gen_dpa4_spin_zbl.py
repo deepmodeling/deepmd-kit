@@ -313,7 +313,7 @@ def _assert_zbl_term_is_active(model_dict: dict) -> float:
 
 
 def _check_metadata(pt2_path: str) -> None:
-    """Assert the frozen archive's metadata and the with-comm ABSENCE.
+    """Assert the frozen archive's metadata and the with-comm PRESENCE.
 
     Parameters
     ----------

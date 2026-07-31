@@ -591,10 +591,10 @@ inference](#multi-gpu-mpi-inference).
   are `None` placeholders there, exactly as for the plain-energy dpmodel
   route.
 
-The following combinations are **not yet supported** on the native-spin
-graph route: none of the earlier restrictions remain. Multi-rank inference,
-charge-spin FiLM conditioning (`add_chg_spin_ebd`), and ZBL zone bridging
-(`bridging_method: ZBL`) all combine freely with `spin.scheme: native`.
+No native-spin combination restrictions remain on the graph route:
+multi-rank inference, charge-spin FiLM conditioning (`add_chg_spin_ebd`),
+and ZBL zone bridging (`bridging_method: ZBL`) all combine freely with
+`spin.scheme: native`.
 
 ## Embedding extraction
 
