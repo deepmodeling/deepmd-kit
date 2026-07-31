@@ -118,6 +118,44 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     )
 
 
+def test_hybrid_descriptor_aggregates_dense_comm() -> None:
+    """A hybrid is only as comm-capable as its least capable child.
+
+    Without the ALL-aggregation a ``hybrid([dpa4, se_e2_a])`` inherits the
+    ``True`` default while its DPA4 child says ``False``, so the freeze
+    machinery emits a dense with-comm artifact whose trace then dies in
+    DPA4's ``NotImplementedError``.
+    """
+    from deepmd.dpmodel.descriptor.hybrid import (
+        DescrptHybrid,
+    )
+
+    dpa4 = _dpa4_descriptor(bridging=False)
+    sea = DescrptSeA(rcut=4.0, rcut_smth=3.5, sel=[8, 8])
+    assert dpa4.dense_lower_supports_comm() is False
+    assert sea.dense_lower_supports_comm() is True
+
+    mixed = DescrptHybrid(list=[dpa4, sea])
+    # the hybrid itself stays on the DENSE lower ...
+    assert mixed.uses_graph_lower() is False
+    # ... and needs a ghost exchange because of the DPA4 child ...
+    assert mixed.has_message_passing_across_ranks() is True
+    # ... which the dense lower cannot provide: ALL-aggregation vetoes it
+    assert mixed.dense_lower_supports_comm() is False
+    assert mixed.supports_edge_parallel() is True
+
+    # the True branch of the same ALL rule
+    all_dense = DescrptHybrid(
+        list=[sea, DescrptSeA(rcut=4.0, rcut_smth=3.5, sel=[8, 8])]
+    )
+    assert all_dense.dense_lower_supports_comm() is True
+    assert all_dense.has_message_passing_across_ranks() is False
+
+    # and the atomic model delegates the aggregate, not the default
+    assert _dp_atomic_model(mixed).dense_lower_supports_comm() is False
+    assert _dp_atomic_model(all_dense).dense_lower_supports_comm() is True
+
+
 class _EdgeParallelChild(InnerPotentialAtomicModel):
     """Stub child with settable capabilities (test_zbl_bridging.py pattern)."""
 
