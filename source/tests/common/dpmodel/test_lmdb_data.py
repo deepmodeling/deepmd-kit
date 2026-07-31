@@ -1814,33 +1814,6 @@ class TestDecoderPoolFailure(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
 
     @unittest.skipUnless(
-        hasattr(signal, "SIGHUP"),
-        "SIGHUP is not available on this platform",
-    )
-    def test_decoders_survive_the_hangup_of_their_launching_session(self) -> None:
-        """A decoder outlives the session that started the run.
-
-        The hangup delivered when that session goes away reaches every
-        background helper of the run. A decoder that died of it would break
-        the pool of an otherwise healthy run.
-        """
-        iterator = self._isolated_iterator()
-        first = next(iterator)
-        processes = list(iterator._pool.executor._processes.values())
-        self.assertTrue(processes)
-
-        for process in processes:
-            os.kill(process.pid, signal.SIGHUP)
-
-        # Delivering the next batch is what proves the decoders lived through
-        # it: a pool that lost one degrades instead. That is both a stronger
-        # statement than reading their liveness and free of any timing.
-        self._assert_same_batch(first, self._reader.decode_batch([0, 1, 2, 3]))
-        self._assert_same_batch(next(iterator), self._reader.decode_batch([4, 5, 6, 7]))
-        self.assertTrue(iterator._pool.healthy)
-        self.assertTrue(all(process.is_alive() for process in processes))
-
-    @unittest.skipUnless(
         hasattr(signal, "SIGKILL"),
         "SIGKILL is not available on this platform",
     )

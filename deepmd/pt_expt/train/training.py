@@ -50,12 +50,20 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
+from deepmd.pt.optimizer import (
+    HybridMuonOptimizer,
+)
 from deepmd.pt.train.utils import (
     resolve_best_checkpoint_dir,
 )
 from deepmd.pt.train.validation import (
     FullValidator,
     resolve_full_validation_start_step,
+)
+from deepmd.pt.utils.compile_compat import (
+    apply_global_compile_patches,
+    build_inductor_compile_options,
+    check_compile_torch_version,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
@@ -583,19 +591,14 @@ def _finalize_compiled_lower(
     if not was_training:
         model.eval()
 
-    # Inductor defaults tuned for second-order-gradient training graphs.
-    # User-supplied compile_opts override these on a per-key basis.
-    inductor_options: dict[str, Any] = {
-        "max_autotune": False,
-        "shape_padding": True,
-        "epilogue_fusion": False,
-        "triton.cudagraphs": False,
-        "max_fusion_size": 8,
-        # NOTE: On GPU with PyTorch <=2.11, consider adding
-        # "triton.mix_order_reduction": False to work around
-        # pytorch/pytorch#174379, #178080, #179494 under
-        # data-dependent symbolic shapes.
-    }
+    # This is the common boundary immediately before every pt_expt
+    # ``torch.compile`` call. Applying the idempotent process-global patches
+    # here leaves eager-only imports untouched while still preceding all
+    # Dynamo and Inductor configuration reads.
+    apply_global_compile_patches()
+
+    # Keep pt_expt training on the same compiler contract as the PT SeZM path.
+    inductor_options = build_inductor_compile_options(inference=False)
     if extra_options:
         inductor_options.update(extra_options)
     if compile_opts:
@@ -1157,8 +1160,8 @@ class _CompiledModel(torch.nn.Module):
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
         """
-        from deepmd.dpmodel.utils.neighbor_graph import (
-            build_neighbor_graph,
+        from deepmd.pt_expt.utils.graph_builder import (
+            build_neighbor_graph_for_method,
         )
 
         _model = self.original_model
@@ -1209,7 +1212,14 @@ class _CompiledModel(torch.nn.Module):
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
         pair_excl = getattr(_model.atomic_model, "pair_excl", None)
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
+        ng = build_neighbor_graph_for_method(
+            getattr(_model, "neighbor_graph_method", "dense"),
+            coord_3d,
+            atype,
+            box_flat,
+            rcut,
+            pair_excl,
+        )
         atype_flat = atype.reshape(nframes * nloc)
 
         # Lazy compile of the GRAPH lower (cached per structure key).
@@ -1363,6 +1373,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
 
         # Task normalization --------------------------------------------------
@@ -1614,24 +1625,51 @@ class Trainer(AbstractTrainer):
                 )
 
         # Optimiser -----------------------------------------------------------
-        opt_type = training_params.get("opt_type", "Adam")
+        opt_type = optimizer_params.get("type", "Adam")
+        if opt_type not in {"Adam", "AdamW", "HybridMuon"}:
+            raise ValueError(f"Unsupported optimizer type: {opt_type}")
+
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
         # lambda initialize the optimizer to the requested warmup value.
         initial_lr = float(self.lr_schedule.start_lr)
+        adam_betas = (
+            float(optimizer_params["adam_beta1"]),
+            float(optimizer_params["adam_beta2"]),
+        )
+        weight_decay = float(optimizer_params["weight_decay"])
 
         if opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
+            self.optimizer = torch.optim.Adam(
+                self.wrapper.parameters(),
+                lr=initial_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+            )
         elif opt_type == "AdamW":
-            weight_decay = training_params.get("weight_decay", 0.001)
             self.optimizer = torch.optim.AdamW(
                 self.wrapper.parameters(),
                 lr=initial_lr,
+                betas=adam_betas,
                 weight_decay=weight_decay,
             )
-        else:
-            raise ValueError(f"Unsupported optimizer type: {opt_type}")
+        else:  # HybridMuon
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
+            self.optimizer = HybridMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=initial_lr,
+                momentum=float(optimizer_params["momentum"]),
+                weight_decay=weight_decay,
+                adam_betas=adam_betas,
+                lr_adjust=float(optimizer_params["lr_adjust"]),
+                lr_adjust_coeff=float(optimizer_params["lr_adjust_coeff"]),
+                muon_mode=str(optimizer_params["muon_mode"]),
+                named_parameters=runtime_named_parameters,
+                enable_gram=bool(optimizer_params["enable_gram"]),
+                flash_muon=bool(optimizer_params["flash_muon"]),
+                magma_muon=bool(optimizer_params["magma_muon"]),
+            )
 
         for param_group in self.optimizer.param_groups:
             param_group["initial_lr"] = initial_lr
@@ -1840,9 +1878,14 @@ class Trainer(AbstractTrainer):
                     last_epoch=self.start_step - 1,
                 )
 
+        self._configure_neighbor_graph_method(
+            training_params.get("neighbor_graph_method", "auto")
+        )
+
         # torch.compile -------------------------------------------------------
         self.enable_compile = training_params.get("enable_compile", False)
         if self.enable_compile:
+            check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
             log.info("Compiling model with torch.compile (%s)", compile_opts)
             self._compile_model(compile_opts)
@@ -1938,6 +1981,29 @@ class Trainer(AbstractTrainer):
     # torch.compile helpers
     # ------------------------------------------------------------------
 
+    def _configure_neighbor_graph_method(self, requested: str) -> None:
+        """Resolve and install the training graph builder on eligible models."""
+        graph_models = [
+            self.models[model_key]
+            for model_key in self.model_keys
+            if model_uses_graph_lower(self.models[model_key])
+        ]
+        if not graph_models:
+            if requested != "auto":
+                raise ValueError(
+                    "training.neighbor_graph_method applies only to "
+                    "graph-eligible energy models"
+                )
+            return
+
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_neighbor_graph_method,
+        )
+
+        resolved = resolve_neighbor_graph_method(requested, DEVICE)
+        for model in graph_models:
+            model.neighbor_graph_method = resolved
+
     def _compile_model(self, compile_opts: dict[str, Any]) -> None:
         """Replace ``self.model`` with a compiled version.
 
@@ -1953,14 +2019,6 @@ class Trainer(AbstractTrainer):
         needed.  The coord extension + nlist build (data-dependent
         control flow) are kept outside the compiled region.
         """
-        # Disable DDPOptimizer: our compile region wraps only the inner
-        # compute function, not the whole DDP model.  DDPOptimizer assumes
-        # it owns the full model graph and splits at bucket boundaries,
-        # producing subgraphs whose outputs include symbolic integers.
-        # AOT Autograd then crashes with ``'int' object has no attribute
-        # 'meta'`` (pytorch/pytorch#134182).
-        torch._dynamo.config.optimize_ddp = False
-
         # Under DDP, self.wrapper is a DistributedDataParallel wrapper;
         # access the underlying ModelWrapper via .module.
         wrapper_mod = (

@@ -63,6 +63,10 @@ from deepmd.utils.data_system import (
     process_systems,
 )
 
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
+)
+
 _energy_data_requirement = [
     DataRequirementItem("energy", ndof=1, atomic=False, must=False, high_prec=True),
     DataRequirementItem("force", ndof=3, atomic=True, must=False, high_prec=False),
@@ -1493,6 +1497,7 @@ class TestMultiTaskDPA3ShareFit(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestMultiTaskCompile(unittest.TestCase):
     """Verify that multi-task + torch.compile works correctly."""
 
@@ -2131,6 +2136,7 @@ class TestMultiTaskGradient(unittest.TestCase):
         )
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
     """Compiled multi-task with ``dim_case_embd > 0`` and varying ``nframes``.
 
