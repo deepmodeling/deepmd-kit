@@ -414,8 +414,11 @@ class TestZBLBridgingExportAndTraining:
 
         with zipfile.ZipFile(model_file) as z:
             md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
-        # single-rank contract: compositions never get a with-comm artifact
-        assert md["has_comm_artifact"] is False
+        # multi-rank contract (issue #5906): the SFPG partials are completed
+        # across ranks, so a bridged composition DOES get a with-comm twin
+        assert md["has_comm_artifact"] is True
+        with zipfile.ZipFile(model_file) as z:
+            assert "model/extra/forward_lower_with_comm.pt2" in z.namelist()
 
         dp = DeepPot(str(model_file))
         e, f, v = dp.eval(
@@ -643,14 +646,17 @@ def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
 
     model_file = tmp_path / "dpa4_native_spin_zbl_graph.pt2"
     # native spin has no dense lower at all, so the graph kind is the only
-    # valid one here; the composition additionally forbids a with-comm twin.
+    # valid one here; since issue #5906 the graph lower additionally carries
+    # a with-comm twin (only the dense lower stays single-rank for spin).
     deserialize_to_file(
         str(model_file), {"model": model.serialize()}, lower_kind="graph"
     )
     with zipfile.ZipFile(model_file) as z:
         md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+        names = z.namelist()
     assert md["is_spin"] is True
-    assert md["has_comm_artifact"] is False
+    assert md["has_comm_artifact"] is True
+    assert "model/extra/forward_lower_with_comm.pt2" in names
     assert md["use_spin"] == [True, False]
 
     dp = DeepPot(str(model_file))
