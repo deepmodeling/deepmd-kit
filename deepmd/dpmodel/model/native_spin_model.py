@@ -34,7 +34,7 @@ class NativeSpinModelKind:
     ``NativeSpinEnergyModel``) are parallel products with NO subclass
     relation between them -- an ``isinstance`` against one backend's
     concrete class is silently dead in the other. Backend seams that need a
-    cross-backend family test test against this shared marker instead. The
+    cross-backend family test check against this shared marker instead. The
     motivating consumer is the with-comm freeze gate, where native spin
     excludes only the DENSE lower; native-spin GRAPH lowers do participate
     in the with-comm path and carry the nested artifact (issue #5906).
