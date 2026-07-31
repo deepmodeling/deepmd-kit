@@ -23,6 +23,7 @@ import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
+    build_neighbor_graph,
     from_dense_quartet,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -101,6 +102,8 @@ class TestDpa1GraphLower:
         smooth: bool = False,
         pair_excl_types: list | None = None,
         descr_excl_types: list | None = None,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
     ) -> EnergyModel:
         ds = DescrptDPA1(
             self.rcut,
@@ -130,6 +133,8 @@ class TestDpa1GraphLower:
             ds.get_dim_out(),
             1,
             mixed_types=ds.mixed_types(),
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
             precision="float64",
             seed=GLOBAL_SEED,
         ).to(self.device)
@@ -139,6 +144,157 @@ class TestDpa1GraphLower:
             type_map=self.type_map,
             pair_exclude_types=pair_excl_types or [],
         ).to(self.device)
+
+    @pytest.mark.parametrize("nframes", [1, 2])
+    def test_output_stat_forward_uses_graph_lower(
+        self, monkeypatch, nframes: int
+    ) -> None:
+        model = self._make_model(pair_excl_types=[(0, 1)], numb_fparam=2, numb_aparam=3)
+        model.eval()
+        atomic_model = model.atomic_model
+        coord = self.coord.repeat(nframes, 1, 1)
+        atype = self.atype.repeat(nframes, 1)
+        box = self.cell.reshape(1, 9).repeat(nframes, 1)
+        fparam = torch.arange(
+            nframes * 2, dtype=torch.float64, device=self.device
+        ).reshape(nframes, 2)
+        aparam = torch.arange(
+            nframes * self.natoms * 3,
+            dtype=torch.float64,
+            device=self.device,
+        ).reshape(nframes, self.natoms, 3)
+        charge_spin = torch.arange(
+            nframes * 2, dtype=torch.float64, device=self.device
+        ).reshape(nframes, 2)
+
+        graph = build_neighbor_graph(
+            coord,
+            atype,
+            box,
+            atomic_model.get_rcut(),
+            pair_excl=atomic_model.pair_excl,
+        )
+        original_forward = atomic_model.forward_common_atomic_graph
+        expected = original_forward(
+            graph,
+            atype.reshape(-1),
+            fparam=fparam,
+            aparam=aparam.reshape(nframes * self.natoms, 3),
+            charge_spin=charge_spin,
+        )
+        forwarded = {}
+
+        def record_forward(graph, atype, fparam=None, aparam=None, charge_spin=None):
+            forwarded.update(
+                graph=graph,
+                atype=atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+            return original_forward(
+                graph,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+
+        def fail_dense(*args, **kwargs):
+            raise AssertionError("the graph statistics route must not use dense sel")
+
+        monkeypatch.setattr(atomic_model, "forward_common_atomic_graph", record_forward)
+        monkeypatch.setattr(atomic_model, "get_sel", fail_dense)
+        monkeypatch.setattr(
+            "deepmd.dpmodel.utils.nlist.extend_input_and_build_neighbor_list",
+            fail_dense,
+        )
+
+        actual = atomic_model._get_forward_wrapper_func()(
+            coord.detach().cpu().numpy(),
+            atype.detach().cpu().numpy(),
+            box.detach().cpu().numpy(),
+            fparam=fparam.detach().cpu().numpy(),
+            aparam=aparam.detach().cpu().numpy(),
+            charge_spin=charge_spin.detach().cpu().numpy(),
+        )
+
+        assert forwarded["atype"].shape == (nframes * self.natoms,)
+        assert forwarded["fparam"].shape == (nframes, 2)
+        assert forwarded["aparam"].shape == (nframes * self.natoms, 3)
+        assert forwarded["charge_spin"].shape == (nframes, 2)
+        for key in ("energy", "mask"):
+            expected_array = (
+                expected[key]
+                .detach()
+                .cpu()
+                .numpy()
+                .reshape(nframes, self.natoms, *expected[key].shape[1:])
+            )
+            np.testing.assert_allclose(
+                actual[key], expected_array, rtol=1e-12, atol=1e-12
+            )
+
+    def test_change_out_bias_uses_graph_lower(self, monkeypatch) -> None:
+        model = self._make_model(pair_excl_types=[(0, 1)])
+        model.eval()
+        atomic_model = model.atomic_model
+        nframes = 2
+        coord = self.coord.repeat(nframes, 1, 1)
+        atype = self.atype.repeat(nframes, 1)
+        box = self.cell.reshape(1, 9).repeat(nframes, 1)
+        graph = build_neighbor_graph(
+            coord,
+            atype,
+            box,
+            atomic_model.get_rcut(),
+            pair_excl=atomic_model.pair_excl,
+        )
+        atom_energy = atomic_model.forward_common_atomic_graph(
+            graph, atype.reshape(-1)
+        )["energy"].reshape(nframes, self.natoms, -1)
+        sampled = [
+            {
+                "coord": coord.detach().cpu().numpy(),
+                "atype": atype.detach().cpu().numpy(),
+                "box": box.detach().cpu().numpy(),
+                "natoms": np.tile(
+                    np.array([[self.natoms, self.natoms, 3, 2]]), (nframes, 1)
+                ),
+                "energy": atom_energy.sum(dim=1).detach().cpu().numpy(),
+                "find_energy": np.float32(1.0),
+            }
+        ]
+        original_bias = atomic_model.get_out_bias().detach().clone()
+
+        def fail_dense(*args, **kwargs):
+            raise AssertionError("the graph statistics route must not use dense sel")
+
+        monkeypatch.setattr(atomic_model, "get_sel", fail_dense)
+        monkeypatch.setattr(
+            "deepmd.dpmodel.utils.nlist.extend_input_and_build_neighbor_list",
+            fail_dense,
+        )
+
+        atomic_model.change_out_bias(sampled, bias_adjust_mode="change-by-statistic")
+
+        torch.testing.assert_close(
+            atomic_model.get_out_bias(), original_bias, rtol=1e-12, atol=1e-12
+        )
+
+    def test_output_stat_forward_empty_system(self) -> None:
+        atomic_model = self._make_model(numb_aparam=3).atomic_model
+        nframes = 2
+
+        actual = atomic_model._get_forward_wrapper_func()(
+            np.empty((nframes, 0, 3)),
+            np.empty((nframes, 0), dtype=np.int64),
+            np.zeros((nframes, 9)),
+            aparam=np.empty((nframes, 0, 3)),
+        )
+
+        assert actual["energy"].shape == (nframes, 0, 1)
+        assert actual["mask"].shape == (nframes, 0)
 
     def _prepare_lower_inputs(self, periodic: bool):
         """Build extended coords, atype, nlist, mapping as torch tensors."""
