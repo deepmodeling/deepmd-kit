@@ -459,6 +459,33 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
 
+    def graph_type_embedding_table(self) -> Array:
+        """Full type-embedding table consumed by the graph-route forward.
+
+        Returns
+        -------
+        Array
+            The ``(ntypes + 1, tebd_dim)`` table from ``type_embedding``.
+        """
+        return self.type_embedding.call()
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The transformer attention lower (``attn_layer > 0``) enumerates
+        neighbor pairs via the compact ``center_edge_pairs`` realization
+        (unbacked-SymInt ``nonzero``/``repeat`` sizes, ``pairs.py``);
+        the factorizable lower (``attn_layer == 0``) traces with backed
+        symbols only.  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return self.se_atten.attn_layer > 0
+
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.
 
@@ -781,6 +808,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward.
 
@@ -817,6 +845,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (N,) flat LOCAL atom types where ``N = sum(n_node)``.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        comm_dict
+            MPI communication metadata. Accepted for ABI parity with
+            :meth:`DescrptDPA2.call_graph` (uniform ``forward_atomic_graph``
+            call site), but UNUSED: a single se_atten descriptor has no
+            cross-rank message passing (``has_message_passing_across_ranks()``
+            is ``False``), so this is always ``None`` in practice.
 
         Returns
         -------
@@ -1427,15 +1461,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self, use_graph=True)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
@@ -2174,6 +2200,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
 
 class NeighborGatedAttention(NativeOP):
+    r"""Gated neighbor aggregation :math:`h_i'=h_i+\sum_j a_{ij}v_{ij}`."""
+
     def __init__(
         self,
         layer_num: int,
@@ -2307,6 +2335,21 @@ class NeighborGatedAttention(NativeOP):
 
 
 class NeighborGatedAttentionLayer(NativeOP):
+    r"""Single gated neighbor-attention residual layer.
+
+    For neighbor features :math:`\mathbf X`, the layer applies gated attention,
+    adds a residual connection, and normalizes the result:
+
+    .. math::
+        \mathbf X' = \operatorname{LayerNorm}\!\left(
+        \mathbf X + \operatorname{GatedAttention}
+        (\mathbf X, \mathbf M, \mathbf R, \mathbf S)\right),
+
+    where :math:`\mathbf M` is the neighbor mask and the optional
+    :math:`\mathbf R` and :math:`\mathbf S` supply directional and switching
+    information.
+    """
+
     def __init__(
         self,
         nnei: int,
@@ -2366,6 +2409,12 @@ class NeighborGatedAttentionLayer(NativeOP):
         input_r: Array | None = None,
         sw: Array | None = None,
     ) -> Array:
+        r"""Apply attention, its residual connection, and layer normalization.
+
+        .. math::
+            H_{\mathrm{out}}=\operatorname{LayerNorm}
+            \left(H+\operatorname{GatedAttention}(H,M,R,S)\right).
+        """
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -2415,6 +2464,35 @@ class NeighborGatedAttentionLayer(NativeOP):
 
 
 class GatedAttentionLayer(NativeOP):
+    r"""Projected gated self-attention output.
+
+    With projected queries, keys, and values, the layer returns only the
+    attention output (the residual connection is applied by
+    :class:`NeighborGatedAttentionLayer`):
+
+    .. math::
+        Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
+        L=\alpha\,\widetilde Q\widetilde K^T,\qquad
+        S_{ij}=s_i s_j,
+
+    .. math::
+
+        \overline L_{ij}=(L_{ij}+c)S_{ij}-c,\qquad
+        \overline A_{ij}=\operatorname{softmax}_{j}(\overline L_{ij}),
+        \qquad A_{ij}=S_{ij}\overline A_{ij},
+
+        O=\operatorname{reshape}((A\odot R)V)W_{\mathrm{out}}.
+
+    Here the tildes denote optional per-vector normalization of :math:`Q`,
+    :math:`K`, and :math:`V`.  The implementation uses
+    :math:`\alpha=(d\,s)^{-1/2}` for ``scaling_factor`` :math:`s`, or the
+    configured ``temperature`` value when it is provided.  Neighbor masks and
+    cutoff smoothing modifies both the logits before softmax and, through
+    :math:`S`, the attention amplitude afterward.  Without smoothing, invalid
+    keys are masked before softmax and invalid query rows are zeroed.  The
+    optional angular matrix :math:`R` is applied after these operations.
+    """
+
     def __init__(
         self,
         nnei: int,

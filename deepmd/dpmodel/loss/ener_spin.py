@@ -26,6 +26,32 @@ from deepmd.utils.version import (
 class EnergySpinLoss(Loss):
     r"""Loss on energy, real force, magnetic force and virial for spin models.
 
+    For mean-squared error, the objective is a weighted sum
+
+    .. math::
+
+        L = p_E\left\langle\frac{(\Delta E)^2}{N^q}\right\rangle
+        +p_{F_r}\left\langle(\Delta F^r_{i\alpha})^2
+        \right\rangle_{i,\alpha}
+        +p_{F_m}\left\langle(\Delta F^m_{i\alpha})^2
+        \right\rangle_{i\in\mathcal M,\alpha}
+        +p_\Xi\left\langle\frac{(\Delta\Xi_{\alpha\beta})^2}{N^q}
+        \right\rangle_{\alpha,\beta}
+        +p_{E_i}\langle(\Delta E_i)^2\rangle,
+
+    where :math:`q=2` for intensive energy/virial normalization and :math:`q=1`
+    for the legacy normalization, and :math:`\mathcal M` is the set selected by
+    ``mask_mag``.  Thus force and virial errors are componentwise means rather
+    than means of squared vector or tensor norms.  In MAE mode the squared
+    component differences are replaced by absolute differences and extensive
+    terms use :math:`1/N`.  Every prefactor is interpolated using the current
+    learning rate,
+
+    .. math::
+        p_X(\eta)=p_X^{\mathrm{limit}}+
+        \left(p_X^{\mathrm{start}}-p_X^{\mathrm{limit}}\right)
+        \frac{\eta}{\eta_0}.
+
     Parameters
     ----------
     starter_learning_rate : float
@@ -206,8 +232,13 @@ class EnergySpinLoss(Loss):
         if self.has_fr:
             find_force = label_dict.get("find_force", 0.0)
             pref_fr = pref_fr * find_force
-            force_pred = model_dict["force"]
-            force_label = label_dict["force"]
+            # Reshape to the canonical (nf, natoms, 3) atomic shape: the raw
+            # data-loader label is flat (nf, natoms * 3), matching the
+            # ``xp.reshape(label_dict[...], (-1, natoms, ncomp))`` idiom used
+            # by every other atomic-label loss (see ``dpmodel/loss/dos.py``
+            # and ``dpmodel/loss/tensor.py``).
+            force_pred = xp.reshape(model_dict["force"], (-1, natoms, 3))
+            force_label = xp.reshape(label_dict["force"], (-1, natoms, 3))
             if self.loss_func == "mse":
                 diff_fr = force_label - force_pred  # [nf, nloc, 3]
                 if maskf is not None:
@@ -250,22 +281,27 @@ class EnergySpinLoss(Loss):
         if self.has_fm:
             find_force_mag = label_dict.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_mag
-            force_mag_pred = model_dict["force_mag"]
-            force_mag_label = label_dict["force_mag"]
+            # Same flat -> (nf, natoms, 3) reshape as the real-force branch above.
+            force_mag_pred = xp.reshape(model_dict["force_mag"], (-1, natoms, 3))
+            force_mag_label = xp.reshape(label_dict["force_mag"], (-1, natoms, 3))
             mask_mag = model_dict["mask_mag"]
             # mask_mag: [nframes, natoms, 1], bool -> use mask multiplication
             mask_float = xp.astype(mask_mag, force_mag_pred.dtype)
             # zero out non-magnetic atoms
             diff_fm = (force_mag_label - force_mag_pred) * mask_float
             n_valid = xp.sum(mask_float)
+            # Guard the denominator itself because array backends may evaluate
+            # both branches of ``where``. This is safe under JAX tracing and
+            # makes an all-empty magnetic mask contribute exactly zero.
+            safe_n_valid = xp.where(n_valid > 0, n_valid, xp.ones_like(n_valid))
             if self.loss_func == "mse":
-                l2_force_mag_loss = xp.sum(xp.square(diff_fm)) / (n_valid * 3)
+                l2_force_mag_loss = xp.sum(xp.square(diff_fm)) / (safe_n_valid * 3)
                 loss += pref_fm * l2_force_mag_loss
                 more_loss["rmse_fm"] = self.display_if_exist(
                     xp.sqrt(l2_force_mag_loss), find_force_mag
                 )
                 if mae:
-                    mae_fm = xp.sum(xp.abs(diff_fm)) / (n_valid * 3)
+                    mae_fm = xp.sum(xp.abs(diff_fm)) / (safe_n_valid * 3)
                     more_loss["mae_fm"] = self.display_if_exist(mae_fm, find_force_mag)
             elif self.loss_func == "mae":
                 abs_diff_fm = xp.abs(diff_fm)  # [nf, na, 3], zeros for non-magnetic
@@ -273,7 +309,7 @@ class EnergySpinLoss(Loss):
                 # force_mag MSE, force_real MAE and the displayed mae_fm) so the
                 # loss is batch-size independent: a 2-frame batch equals the mean
                 # of the two single-frame losses.
-                l1_force_mag_loss = xp.sum(abs_diff_fm) / (n_valid * 3)
+                l1_force_mag_loss = xp.sum(abs_diff_fm) / (safe_n_valid * 3)
                 loss += pref_fm * l1_force_mag_loss
                 more_loss["mae_fm"] = self.display_if_exist(
                     l1_force_mag_loss, find_force_mag

@@ -424,15 +424,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -821,7 +813,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return False
+        # Geometric compression uses the tabulate op's sorted-neighbor fold,
+        # which assumes padding and out-of-cutoff neighbors are trailing.
+        # `forward_lower` may receive an unsorted rcut+skin list from LAMMPS,
+        # so request the filtering/sorting pass whenever that op is active.
+        return self.geo_compress
 
 
 class NeighborGatedAttention(nn.Module):

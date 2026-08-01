@@ -6,9 +6,50 @@ import numpy as np
 
 from deepmd.utils.spin import (
     Spin,
+    normalize_spin_use_spin,
 )
 
 CUR_DIR = os.path.dirname(__file__)
+
+
+class NormalizeUseSpinTest(unittest.TestCase):
+    """Unit tests for ``normalize_spin_use_spin`` (pure; all three forms)."""
+
+    def setUp(self) -> None:
+        self.type_map = ["Ni", "O", "H"]
+
+    def test_boolean_passthrough(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([True, False, True], self.type_map),
+            [True, False, True],
+        )
+
+    def test_index_form(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([0, 2], self.type_map),
+            [True, False, True],
+        )
+
+    def test_symbol_form(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin(["Ni", "H"], self.type_map),
+            [True, False, True],
+        )
+
+    def test_empty_list_all_false(self) -> None:
+        self.assertEqual(
+            normalize_spin_use_spin([], self.type_map),
+            [False, False, False],
+        )
+
+    def test_unknown_symbol_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "absent from type_map"):
+            normalize_spin_use_spin(["Fe"], self.type_map)
+
+    def test_pure_no_input_mutation(self) -> None:
+        use_spin = ["Ni"]
+        normalize_spin_use_spin(use_spin, self.type_map)
+        self.assertEqual(use_spin, ["Ni"])
 
 
 class SpinTest(unittest.TestCase):

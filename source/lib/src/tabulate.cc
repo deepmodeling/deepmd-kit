@@ -165,6 +165,12 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
                                       const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(out, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  // An empty neighbor axis is a valid empty reduction.  Return after
+  // initializing the non-empty descriptor output instead of inspecting the
+  // nonexistent last neighbor below.
+  if (nnei <= 0) {
+    return;
+  }
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];
@@ -246,6 +252,12 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                            const int nnei,
                                            const int last_layer_size,
                                            const bool is_sorted) {
+  // Every gradient output has a zero-sized neighbor axis in this case.  Avoid
+  // both zero-length memory operations on potentially null tensor pointers and
+  // the last-neighbor lookup in the atom loop.
+  if (nnei <= 0) {
+    return;
+  }
   bool enable_se_atten = two_embed != nullptr;
   memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
   memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4);
@@ -310,11 +322,12 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
           dy_dem[ii * nnei * 4 + jj * 4 + 2] += res * rr[2] * (nnei - jj);
           dy_dem[ii * nnei * 4 + jj * 4 + 3] += res * rr[3] * (nnei - jj);
           if (enable_se_atten) {
-            // fill from jj to nnei
-            for (int jj2 = jj; jj2 < nnei; jj2++) {
-              dy_dtwo[ii * nnei * last_layer_size + jj2 * last_layer_size +
-                      kk] += resold * dotllrr;
-            }
+            // Forward folds the complete padding tail using only this first
+            // sentinel's two-embedding value. Its gradient therefore owns the
+            // full repeat count; later padding entries remain independent of
+            // the folded output and retain the zero initialized above.
+            dy_dtwo[ii * nnei * last_layer_size + jj * last_layer_size + kk] +=
+                (nnei - jj) * resold * dotllrr;
           }
         } else {
           grad += g * dotllrr;
@@ -352,6 +365,11 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
+  // The second-order output retains the descriptor shape, so initialize the
+  // empty reduction to zero before returning.
+  if (nnei <= 0) {
+    return;
+  }
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];
@@ -397,8 +415,9 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          // dz_dy_dtwo * var * ll
-          // var above should be used instead of var + var * t below
+          // For sorted padding, only the first sentinel has a nonzero
+          // two-embedding gradient. The repeat factor below applies its full
+          // tail multiplicity to this cotangent.
           two_grad = dz_dy_dtwo[ii * nnei * last_layer_size +
                                 jj * last_layer_size + kk] *
                      var;

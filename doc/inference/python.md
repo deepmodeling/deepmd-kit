@@ -1,8 +1,7 @@
 # Python interface
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 
@@ -34,14 +33,13 @@ descriptors = dp.eval_descriptor(coord, cell, atype)
 
 where `descriptors` is the descriptor matrix of the system. This can also be done using the command line interface `dp eval-desc` as described in the [test documentation](../test/test.md).
 
-:::{note}
-`eval_descriptor` is the descriptor-only interface supported across backends. In
-the PyTorch backend, [`eval_embedding`](embedding.md) additionally returns the
-descriptor, per-atom feature, and per-structure feature in a single forward pass.
-PyTorch descriptor/embedding APIs accept `dtype="fp32"`, `"fp64"`, or `"native"`;
-`eval_descriptor` defaults to `native`, while `eval_embedding` defaults to
-`fp32`.
-:::
+> [!NOTE]
+> `eval_descriptor` is the descriptor-only interface supported across backends. In
+> the PyTorch backend, [`eval_embedding`](embedding.md) additionally returns the
+> descriptor, per-atom feature, and per-structure feature in a single forward pass.
+> PyTorch descriptor/embedding APIs accept `dtype="fp32"`, `"fp64"`, or `"native"`;
+> `eval_descriptor` defaults to `native`, while `eval_embedding` defaults to
+> `fp32`.
 
 Furthermore, one can use the python interface to calculate model deviation.
 
@@ -62,9 +60,8 @@ Otherwise, TensorFlow or PyTorch will never release the memory, and this may lea
 
 ## External neighbor list algorithm {{ tensorflow_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}
 
 The native neighbor list algorithm of the DeePMD-kit is in $O(N^2)$ complexity ($N$ is the number of atoms).
 While this is not a problem for small systems that quantum methods can afford, the large systems for molecular dynamics have slow performance.

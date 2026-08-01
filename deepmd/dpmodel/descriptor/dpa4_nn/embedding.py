@@ -330,8 +330,8 @@ class GeometricInitialEmbedding(NativeOP):
         # applied after the validity masking below. This reduction is
         # layout-agnostic: it is correct both for the padded ``call`` (row-major
         # ``dst`` makes the accumulation order identical to a sum over the
-        # ``nnei`` axis, hence bit-exact) and for the sparse ``call_with_edges``
-        # (arbitrary ``dst`` order and per-node degree). The l=0 row is left at
+        # ``nnei`` axis, hence bit-exact) and for the graph-native ``call_graph``
+        # route (arbitrary ``dst`` order and per-node degree). The l=0 row is left at
         # its zero initialization by concatenating it below the contiguous
         # non-scalar rows 1..D-1.
         edge_mask = edge_cache.edge_mask
@@ -686,8 +686,8 @@ class EnvironmentInitialEmbedding(NativeOP):
         # Destination scatter-add over ``dst`` (pt ``index_add_``), applied after
         # the validity masking below. Layout-agnostic: correct for the padded
         # ``call`` (row-major ``dst`` keeps the accumulation order identical to a
-        # sum over the ``nnei`` axis, hence bit-exact) and for the sparse
-        # ``call_with_edges`` (arbitrary ``dst`` order and per-node degree).
+        # sum over the ``nnei`` axis, hence bit-exact) and for the graph-native
+        # ``call_graph`` route (arbitrary ``dst`` order and per-node degree).
         edge_mask = edge_cache.edge_mask
         if edge_mask is not None:
             outer_flat = outer_flat * xp.astype(

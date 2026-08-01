@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
@@ -756,6 +758,32 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_cpu) {
   }
 }
 
+TEST_F(TestTabulateSeA, empty_neighbors_cpu) {
+  constexpr int empty_nnei = 0;
+  std::vector<double> descriptor(nloc * 4 * last_layer_size, 1.0);
+
+  deepmd::tabulate_fusion_se_a_cpu<double>(
+      descriptor.data(), table.data(), info.data(), nullptr, nullptr, nullptr,
+      nloc, empty_nnei, last_layer_size);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  // First-order outputs all carry the empty neighbor dimension, so null data
+  // pointers are valid and must not be dereferenced.
+  deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+      nullptr, nullptr, nullptr, table.data(), info.data(), nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+
+  std::fill(descriptor.begin(), descriptor.end(), 1.0);
+  deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
+      descriptor.data(), table.data(), info.data(), nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+}
+
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu) {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size, 0.0);
@@ -855,5 +883,413 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
   deepmd::delete_device_memory(two_embed_dev);
+}
+
+TEST_F(TestTabulateSeA, empty_neighbors_gpu) {
+  constexpr int empty_nnei = 0;
+  std::vector<double> descriptor(nloc * 4 * last_layer_size, 1.0);
+  double* descriptor_dev = nullptr;
+  deepmd::malloc_device_memory_sync(descriptor_dev, descriptor);
+
+  deepmd::tabulate_fusion_se_a_gpu<double>(descriptor_dev, nullptr, info.data(),
+                                           nullptr, nullptr, nullptr, nloc,
+                                           empty_nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  // First-order outputs are all empty, and the entry point must return before
+  // launching a kernel or touching their null pointers.
+  deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+      nullptr, nullptr, nullptr, nullptr, info.data(), nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+
+  std::fill(descriptor.begin(), descriptor.end(), 1.0);
+  deepmd::memcpy_host_to_device(descriptor_dev, descriptor);
+  deepmd::tabulate_fusion_se_a_grad_grad_gpu<double>(
+      descriptor_dev, nullptr, info.data(), nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nloc, empty_nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+  for (const double value : descriptor) {
+    EXPECT_DOUBLE_EQ(value, 0.0);
+  }
+
+  deepmd::delete_device_memory(descriptor_dev);
+}
+
+TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_padding_modes) {
+  constexpr int test_nloc = 1;
+  constexpr int test_nnei = 12;
+  constexpr int padding_begin = 4;
+  std::vector<double> test_em_x = {0.04, 0.07, 0.11, 0.14};
+  test_em_x.resize(test_nnei, 0.19);
+  std::vector<double> test_em(test_nnei * 4, 0.0);
+  for (int ii = 0; ii < padding_begin; ++ii) {
+    test_em[ii * 4 + 0] = test_em_x[ii];
+    test_em[ii * 4 + 1] = 0.1 * (ii + 1);
+    test_em[ii * 4 + 2] = -0.05 * (ii + 1);
+    test_em[ii * 4 + 3] = 0.025 * (ii + 1);
+  }
+  for (int ii = padding_begin; ii < test_nnei; ++ii) {
+    test_em[ii * 4] = test_em_x[ii];
+  }
+  std::vector<double> test_dy(4 * last_layer_size);
+  for (int ii = 0; ii < test_dy.size(); ++ii) {
+    test_dy[ii] = 0.01 * (ii + 1);
+  }
+  std::vector<double> test_two_embed(test_nnei * last_layer_size);
+  for (int ii = 0; ii < test_two_embed.size(); ++ii) {
+    test_two_embed[ii] = 0.001 * (ii + 1);
+  }
+
+  auto compare_cpu_gpu = [&](const std::vector<double>* two_embed_host,
+                             const bool is_sorted) {
+    std::vector<double> expected_dy_dem_x(test_nnei);
+    std::vector<double> expected_dy_dem(test_nnei * 4);
+    std::vector<double> expected_dy_dtwo(test_nnei * last_layer_size);
+    deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+        expected_dy_dem_x.data(), expected_dy_dem.data(),
+        two_embed_host == nullptr ? nullptr : expected_dy_dtwo.data(),
+        table.data(), info.data(), test_em_x.data(), test_em.data(),
+        two_embed_host == nullptr ? nullptr : two_embed_host->data(),
+        test_dy.data(), test_nloc, test_nnei, last_layer_size, is_sorted);
+
+    std::vector<double> actual_dy_dem_x(test_nnei);
+    std::vector<double> actual_dy_dem(test_nnei * 4);
+    std::vector<double> actual_dy_dtwo(test_nnei * last_layer_size);
+    double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr,
+           *dy_dtwo_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr, *dy_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::malloc_device_memory_sync(dy_dem_dev, actual_dy_dem);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, test_em_x);
+    deepmd::malloc_device_memory_sync(em_dev, test_em);
+    deepmd::malloc_device_memory_sync(dy_dev, test_dy);
+    if (two_embed_host != nullptr) {
+      deepmd::malloc_device_memory_sync(dy_dtwo_dev, actual_dy_dtwo);
+      deepmd::malloc_device_memory_sync(two_embed_dev, *two_embed_host);
+    }
+
+    deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+        dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(), em_x_dev,
+        em_dev, two_embed_dev, dy_dev, test_nloc, test_nnei, last_layer_size,
+        is_sorted);
+    deepmd::memcpy_device_to_host(dy_dem_x_dev, actual_dy_dem_x);
+    deepmd::memcpy_device_to_host(dy_dem_dev, actual_dy_dem);
+    if (two_embed_host != nullptr) {
+      deepmd::memcpy_device_to_host(dy_dtwo_dev, actual_dy_dtwo);
+    }
+
+    for (int ii = 0; ii < actual_dy_dem_x.size(); ++ii) {
+      EXPECT_NEAR(actual_dy_dem_x[ii], expected_dy_dem_x[ii], 1e-10);
+    }
+    for (int ii = 0; ii < actual_dy_dem.size(); ++ii) {
+      EXPECT_NEAR(actual_dy_dem[ii], expected_dy_dem[ii], 1e-10);
+    }
+    if (two_embed_host != nullptr) {
+      for (int ii = 0; ii < actual_dy_dtwo.size(); ++ii) {
+        EXPECT_NEAR(actual_dy_dtwo[ii], expected_dy_dtwo[ii], 1e-10);
+      }
+      // Forward folds the sorted-padding tail through its first sentinel only,
+      // so that sentinel owns the whole tail's two-embedding gradient and the
+      // later padding entries stay zero.
+      if (is_sorted) {
+        for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+          for (int jj = 0; jj < last_layer_size; ++jj) {
+            EXPECT_DOUBLE_EQ(actual_dy_dtwo[ii * last_layer_size + jj], 0.0);
+          }
+        }
+      }
+    }
+    // Later sentinels are padding, not independent neighbors owned by other
+    // warps, and therefore must retain zero descriptor gradients.
+    if (is_sorted) {
+      for (int ii = padding_begin + 1; ii < test_nnei; ++ii) {
+        EXPECT_DOUBLE_EQ(actual_dy_dem_x[ii], 0.0);
+        for (int jj = 0; jj < 4; ++jj) {
+          EXPECT_DOUBLE_EQ(actual_dy_dem[ii * 4 + jj], 0.0);
+        }
+      }
+    }
+
+    deepmd::delete_device_memory(dy_dem_x_dev);
+    deepmd::delete_device_memory(dy_dem_dev);
+    deepmd::delete_device_memory(dy_dtwo_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    deepmd::delete_device_memory(dy_dev);
+  };
+
+  for (const bool is_sorted : {false, true}) {
+    compare_cpu_gpu(nullptr, is_sorted);
+    compare_cpu_gpu(&test_two_embed, is_sorted);
+  }
+}
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
+class TestTabulateSeASortedPaddingTwoEmbed : public ::testing::Test {
+ protected:
+  static constexpr int nloc = 1;
+  static constexpr int nnei = 6;
+  static constexpr int last_layer_size = 1;
+
+  // The last five neighbors form a sorted padding tail. Its length exceeds the
+  // GPU kernel's four-warp tile so the test also covers tail entries that no
+  // warp writes after encountering an earlier sentinel. The constant table
+  // polynomial keeps the expected Jacobian focused on the folding contract.
+  const std::vector<double> info = {0.0, 1.0, 2.0, 1.0, 1.0, -1.0};
+  const std::vector<double> table = {2.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  const std::vector<double> em_x = {0.25, 0.5, 0.5, 0.5, 0.5, 0.5};
+  const std::vector<double> em = {
+      1.0, 0.3, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+      0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+  };
+  const std::vector<double> two_embed = {0.1, 0.2, 0.3, 0.4, 0.5, 0.9};
+  const std::vector<double> dy = {1.0, -0.5, 0.25, 2.0};
+
+  static double dot(const std::vector<double>& lhs,
+                    const std::vector<double>& rhs) {
+    EXPECT_EQ(lhs.size(), rhs.size());
+    if (lhs.size() != rhs.size()) {
+      return 0.0;
+    }
+    double result = 0.0;
+    for (std::size_t ii = 0; ii < lhs.size(); ++ii) {
+      result += lhs[ii] * rhs[ii];
+    }
+    return result;
+  }
+
+  std::vector<double> forward_cpu(
+      const std::vector<double>& test_two_embed) const {
+    std::vector<double> descriptor(nloc * 4 * last_layer_size);
+    deepmd::tabulate_fusion_se_a_cpu<double>(
+        descriptor.data(), table.data(), info.data(), em_x.data(), em.data(),
+        test_two_embed.data(), nloc, nnei, last_layer_size, true);
+    return descriptor;
+  }
+
+  double forward_projection_cpu(
+      const std::vector<double>& test_two_embed) const {
+    return dot(forward_cpu(test_two_embed), dy);
+  }
+
+  std::vector<double> grad_two_cpu(const std::vector<double>& test_dy) const {
+    std::vector<double> dy_dem_x(nloc * nnei);
+    std::vector<double> dy_dem(nloc * nnei * 4);
+    std::vector<double> dy_dtwo(nloc * nnei * last_layer_size);
+    deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+        dy_dem_x.data(), dy_dem.data(), dy_dtwo.data(), table.data(),
+        info.data(), em_x.data(), em.data(), two_embed.data(), test_dy.data(),
+        nloc, nnei, last_layer_size, true);
+    return dy_dtwo;
+  }
+
+  double backward_projection_cpu(const std::vector<double>& test_dy,
+                                 const std::vector<double>& dz_dy_dtwo) const {
+    return dot(grad_two_cpu(test_dy), dz_dy_dtwo);
+  }
+
+  std::vector<double> grad_grad_cpu(
+      const std::vector<double>& dz_dy_dtwo) const {
+    std::vector<double> dz_dy(nloc * 4 * last_layer_size);
+    const std::vector<double> dz_dy_dem_x(nloc * nnei, 0.0);
+    const std::vector<double> dz_dy_dem(nloc * nnei * 4, 0.0);
+    deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
+        dz_dy.data(), table.data(), info.data(), em_x.data(), em.data(),
+        two_embed.data(), dz_dy_dem_x.data(), dz_dy_dem.data(),
+        dz_dy_dtwo.data(), nloc, nnei, last_layer_size, true);
+    return dz_dy;
+  }
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  std::vector<double> forward_gpu(
+      const std::vector<double>& test_two_embed) const {
+    std::vector<double> descriptor(nloc * 4 * last_layer_size);
+    double *descriptor_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr;
+    deepmd::malloc_device_memory_sync(descriptor_dev, descriptor);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+    deepmd::malloc_device_memory_sync(em_dev, em);
+    deepmd::malloc_device_memory_sync(two_embed_dev, test_two_embed);
+
+    deepmd::tabulate_fusion_se_a_gpu<double>(
+        descriptor_dev, table_dev, info.data(), em_x_dev, em_dev, two_embed_dev,
+        nloc, nnei, last_layer_size, true);
+    deepmd::memcpy_device_to_host(descriptor_dev, descriptor);
+
+    deepmd::delete_device_memory(descriptor_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    return descriptor;
+  }
+
+  std::vector<double> grad_two_gpu(const std::vector<double>& test_dy) const {
+    std::vector<double> dy_dem_x(nloc * nnei);
+    std::vector<double> dy_dem(nloc * nnei * 4);
+    // Start from nonzero memory to verify that unused padding gradients are
+    // explicitly cleared by the GPU wrapper.
+    std::vector<double> dy_dtwo(nloc * nnei * last_layer_size, 7.0);
+    double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr,
+           *dy_dtwo_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr, *dy_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+    deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
+    deepmd::malloc_device_memory_sync(dy_dtwo_dev, dy_dtwo);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+    deepmd::malloc_device_memory_sync(em_dev, em);
+    deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+    deepmd::malloc_device_memory_sync(dy_dev, test_dy);
+
+    deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+        dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, info.data(), em_x_dev,
+        em_dev, two_embed_dev, dy_dev, nloc, nnei, last_layer_size, true);
+    deepmd::memcpy_device_to_host(dy_dtwo_dev, dy_dtwo);
+
+    deepmd::delete_device_memory(dy_dem_x_dev);
+    deepmd::delete_device_memory(dy_dem_dev);
+    deepmd::delete_device_memory(dy_dtwo_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    deepmd::delete_device_memory(dy_dev);
+    return dy_dtwo;
+  }
+
+  double backward_projection_gpu(const std::vector<double>& test_dy,
+                                 const std::vector<double>& dz_dy_dtwo) const {
+    return dot(grad_two_gpu(test_dy), dz_dy_dtwo);
+  }
+
+  std::vector<double> grad_grad_gpu(
+      const std::vector<double>& dz_dy_dtwo) const {
+    std::vector<double> dz_dy(nloc * 4 * last_layer_size);
+    const std::vector<double> dz_dy_dem_x(nloc * nnei, 0.0);
+    const std::vector<double> dz_dy_dem(nloc * nnei * 4, 0.0);
+    double *dz_dy_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+           *em_dev = nullptr, *two_embed_dev = nullptr,
+           *dz_dy_dem_x_dev = nullptr, *dz_dy_dem_dev = nullptr,
+           *dz_dy_dtwo_dev = nullptr;
+    deepmd::malloc_device_memory_sync(dz_dy_dev, dz_dy);
+    deepmd::malloc_device_memory_sync(table_dev, table);
+    deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+    deepmd::malloc_device_memory_sync(em_dev, em);
+    deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+    deepmd::malloc_device_memory_sync(dz_dy_dem_x_dev, dz_dy_dem_x);
+    deepmd::malloc_device_memory_sync(dz_dy_dem_dev, dz_dy_dem);
+    deepmd::malloc_device_memory_sync(dz_dy_dtwo_dev, dz_dy_dtwo);
+
+    deepmd::tabulate_fusion_se_a_grad_grad_gpu<double>(
+        dz_dy_dev, table_dev, info.data(), em_x_dev, em_dev, two_embed_dev,
+        dz_dy_dem_x_dev, dz_dy_dem_dev, dz_dy_dtwo_dev, nloc, nnei,
+        last_layer_size, true);
+    deepmd::memcpy_device_to_host(dz_dy_dev, dz_dy);
+
+    deepmd::delete_device_memory(dz_dy_dev);
+    deepmd::delete_device_memory(table_dev);
+    deepmd::delete_device_memory(em_x_dev);
+    deepmd::delete_device_memory(em_dev);
+    deepmd::delete_device_memory(two_embed_dev);
+    deepmd::delete_device_memory(dz_dy_dem_x_dev);
+    deepmd::delete_device_memory(dz_dy_dem_dev);
+    deepmd::delete_device_memory(dz_dy_dtwo_dev);
+    return dz_dy;
+  }
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+};
+
+TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
+       two_embed_gradient_matches_forward_cpu) {
+  constexpr double step = 1e-6;
+  const std::vector<double> actual = grad_two_cpu(dy);
+  for (std::size_t ii = 0; ii < two_embed.size(); ++ii) {
+    std::vector<double> plus = two_embed;
+    std::vector<double> minus = two_embed;
+    plus[ii] += step;
+    minus[ii] -= step;
+    const double expected =
+        (forward_projection_cpu(plus) - forward_projection_cpu(minus)) /
+        (2.0 * step);
+    EXPECT_NEAR(actual[ii], expected, 1e-9);
+  }
+  EXPECT_NEAR(actual[1], 1.0, 1e-12);
+  for (std::size_t ii = 2; ii < two_embed.size(); ++ii) {
+    EXPECT_DOUBLE_EQ(actual[ii], 0.0);
+  }
+}
+
+TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
+       two_embed_grad_grad_matches_backward_cpu) {
+  constexpr double step = 1e-6;
+  // The last weight is deliberately different and must not affect grad-grad,
+  // because the trailing padding entry is independent of forward.
+  const std::vector<double> dz_dy_dtwo = {0.0, 1.0, 2.0, 4.0, 8.0, 16.0};
+  const std::vector<double> actual = grad_grad_cpu(dz_dy_dtwo);
+  for (std::size_t ii = 0; ii < dy.size(); ++ii) {
+    std::vector<double> plus = dy;
+    std::vector<double> minus = dy;
+    plus[ii] += step;
+    minus[ii] -= step;
+    const double expected = (backward_projection_cpu(plus, dz_dy_dtwo) -
+                             backward_projection_cpu(minus, dz_dy_dtwo)) /
+                            (2.0 * step);
+    EXPECT_NEAR(actual[ii], expected, 1e-9);
+  }
+  EXPECT_NEAR(actual[0], 1.0, 1e-12);
+}
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
+       two_embed_gradient_matches_forward_gpu) {
+  constexpr double step = 1e-6;
+  const std::vector<double> expected_forward = forward_cpu(two_embed);
+  const std::vector<double> actual_forward = forward_gpu(two_embed);
+  ASSERT_EQ(actual_forward.size(), expected_forward.size());
+  for (std::size_t ii = 0; ii < actual_forward.size(); ++ii) {
+    EXPECT_NEAR(actual_forward[ii], expected_forward[ii], 1e-10);
+  }
+
+  const std::vector<double> actual = grad_two_gpu(dy);
+  for (std::size_t ii = 0; ii < two_embed.size(); ++ii) {
+    std::vector<double> plus = two_embed;
+    std::vector<double> minus = two_embed;
+    plus[ii] += step;
+    minus[ii] -= step;
+    const double expected =
+        (forward_projection_cpu(plus) - forward_projection_cpu(minus)) /
+        (2.0 * step);
+    EXPECT_NEAR(actual[ii], expected, 1e-9);
+  }
+  EXPECT_NEAR(actual[1], 1.0, 1e-12);
+  for (std::size_t ii = 2; ii < two_embed.size(); ++ii) {
+    EXPECT_DOUBLE_EQ(actual[ii], 0.0);
+  }
+}
+
+TEST_F(TestTabulateSeASortedPaddingTwoEmbed,
+       two_embed_grad_grad_matches_backward_gpu) {
+  constexpr double step = 1e-6;
+  const std::vector<double> dz_dy_dtwo = {0.0, 1.0, 2.0, 4.0, 8.0, 16.0};
+  const std::vector<double> actual = grad_grad_gpu(dz_dy_dtwo);
+  for (std::size_t ii = 0; ii < dy.size(); ++ii) {
+    std::vector<double> plus = dy;
+    std::vector<double> minus = dy;
+    plus[ii] += step;
+    minus[ii] -= step;
+    const double expected = (backward_projection_gpu(plus, dz_dy_dtwo) -
+                             backward_projection_gpu(minus, dz_dy_dtwo)) /
+                            (2.0 * step);
+    EXPECT_NEAR(actual[ii], expected, 1e-9);
+  }
+  EXPECT_NEAR(actual[0], 1.0, 1e-12);
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

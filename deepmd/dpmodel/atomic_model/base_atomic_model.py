@@ -53,6 +53,15 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
+    """Base interface mapping local atomic environments to per-atom outputs.
+
+    The local environment includes the selected neighbor indices and the
+    corresponding coordinates and atom types, together with optional frame,
+    atomic, or descriptor-specific conditioning inputs.  Concrete subclasses
+    may learn a descriptor-plus-fitting map, interpolate a fixed pair table, or
+    combine outputs from existing atomic models.
+    """
+
     def __init__(
         self,
         type_map: list[str],
@@ -156,6 +165,29 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
+        return False
+
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this atomic model supports the NeighborGraph lower.
+
+        Generic capability (concrete default ``False``): the model layer
+        consults it for graph-route eligibility without assuming anything
+        about the atomic model's internal architecture. Implementations
+        answer from their own structure (e.g. a descriptor+fitting model
+        delegates to its descriptor; a composition supports it iff ALL its
+        children do).
+        """
+        return False
+
+    def supports_native_spin(self) -> bool:
+        """Returns whether this atomic model consumes a per-atom spin input.
+
+        Generic capability (concrete default ``False``), the twin of
+        :meth:`uses_graph_lower`: the model layer asks the atomic model
+        directly instead of reaching into it for a descriptor, so the answer
+        stays correct for architectures with no descriptor at all (analytical
+        terms) and for compositions.
+        """
         return False
 
     def get_default_fparam(self) -> list[float] | None:
@@ -372,6 +404,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
@@ -395,8 +429,19 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded unchanged to
+            :meth:`forward_atomic_graph`, which only passes it on to the
+            descriptor's ``call_graph`` for descriptors that declare
+            ``supports_charge_spin`` (currently DPA4 only).
+        spin
+            flat (N, 3) per-node spin, forwarded unchanged to
+            :meth:`forward_atomic_graph` (and, from there, the descriptor's
+            ``call_graph``); None for spin-less models.
+        comm_dict
+            MPI communication metadata forwarded to :meth:`forward_atomic_graph`
+            (and, from there, the descriptor's ``call_graph``). ``None`` for
+            non-parallel inference (default). Mirrors :meth:`forward_common_atomic`'s
+            ``comm_dict`` on the dense route.
 
         Returns
         -------
@@ -411,6 +456,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            spin=spin,
+            comm_dict=comm_dict,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)
 
@@ -711,7 +758,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
@@ -724,7 +771,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             bias_out, std_out = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
