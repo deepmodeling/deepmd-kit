@@ -32,7 +32,7 @@ def _reference_type_neighbor_list(
     rcut: float,
     sel: list[int],
 ) -> np.ndarray:
-    """Build a simple per-type distance-sorted neighbor-list reference."""
+    """Build a distance-sorted reference with the runtime global cap."""
     coord = np.asarray(coord).reshape(coord.shape[0], -1, 3)
     expected = np.full((coord.shape[0], nloc, sum(sel)), -1, dtype=np.int64)
     offsets = np.cumsum([0, *sel])
@@ -41,16 +41,20 @@ def _reference_type_neighbor_list(
             if atype[frame, center] < 0:
                 continue
             distances = np.linalg.norm(coord[frame] - coord[frame, center], axis=-1)
+            candidates = [
+                atom
+                for atom in range(coord.shape[1])
+                if atom != center
+                and atype[frame, atom] >= 0
+                and distances[atom] <= rcut
+            ]
+            candidates.sort(key=lambda atom: (distances[atom], atom))
+            candidates = candidates[: sum(sel)]
             for type_index, limit in enumerate(sel):
-                candidates = [
-                    atom
-                    for atom in range(coord.shape[1])
-                    if atom != center
-                    and atype[frame, atom] == type_index
-                    and distances[atom] <= rcut
+                selected = [
+                    atom for atom in candidates if atype[frame, atom] == type_index
                 ]
-                candidates.sort(key=lambda atom: (distances[atom], atom))
-                selected = candidates[:limit]
+                selected = selected[:limit]
                 expected[
                     frame,
                     center,
@@ -192,7 +196,8 @@ class TestDPModelFormatNlist(unittest.TestCase):
         """Global candidate selection and early type splits must be equivalent.
 
         The matrix covers same-type truncation, real batch axes, multiple local
-        atoms, ghosts, exact distance ties, virtual atoms, and padded buckets.
+        atoms, ghosts, exact distance ties, virtual atoms, the global candidate
+        cap, and padded buckets.
         Keeping it on the shared formatting fixture makes the contract visible
         beside the other short/equal/long neighbor-list cases.
         """
@@ -215,6 +220,25 @@ class TestDPModelFormatNlist(unittest.TestCase):
                 "sel": [2, 1],
                 "rcut": 3.0,
                 "expected": np.array([[[1, 2, 4]]], dtype=np.int64),
+            },
+            "global_cap_excludes_far_type": {
+                "coord": np.array(
+                    [
+                        [
+                            [0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            [1.5, 0.0, 0.0],
+                            [2.0, 0.0, 0.0],
+                            [2.5, 0.0, 0.0],
+                        ]
+                    ],
+                    dtype=np.float64,
+                ),
+                "atype": np.array([[0, 0, 0, 0, 1]], dtype=np.int64),
+                "nloc": 1,
+                "sel": [1, 2],
+                "rcut": 3.0,
+                "expected": np.array([[[1, -1, -1]]], dtype=np.int64),
             },
             "batched_ghost_ties_virtual_padding": {
                 "coord": np.array(
