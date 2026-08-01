@@ -32,7 +32,29 @@ def _array_device_or_none(array: Array) -> Any:
 
 
 def remap_atype_to_padding(atype: Array, ntypes_with_padding: int) -> Array:
-    """Map negative placeholder types to a table's final padding row."""
+    """Map negative placeholder types to a padded table's final row.
+
+    Parameters
+    ----------
+    atype : Array
+        Atom-type indices. Negative entries denote virtual or padding atoms.
+    ntypes_with_padding : int
+        Number of rows in a table that reserves its final row for padding.
+
+    Returns
+    -------
+    Array
+        Atom-type indices with every negative entry replaced by
+        ``ntypes_with_padding - 1``.
+
+    Notes
+    -----
+    This sentinel convention is valid only for tables that explicitly include
+    a final padding row, such as descriptor type-embedding and type-pair
+    tables. It must not be used for real-type-only tables such as ``davg``,
+    ``dstd``, or spin masks; virtual entries must be masked or clamped to a
+    valid real type before indexing those tables.
+    """
     xp = array_api_compat.array_namespace(atype)
     return xp.where(
         atype >= 0,
@@ -44,9 +66,31 @@ def remap_atype_to_padding(atype: Array, ntypes_with_padding: int) -> Array:
 def take_type_embedding(type_embedding: Array, atype: Array) -> Array:
     """Gather type embeddings, mapping virtual atom types to the padding row.
 
-    Descriptor type-embedding tables append an all-zero final row for virtual
-    atoms. Negative placeholder types must select that row explicitly because
-    negative gather indices either wrap or fail depending on the array backend.
+    Parameters
+    ----------
+    type_embedding : Array
+        Type-embedding table whose final row is reserved for virtual or
+        padding atoms.
+    atype : Array
+        Atom-type indices with arbitrary shape. Negative entries denote
+        virtual or padding atoms.
+
+    Returns
+    -------
+    Array
+        Gathered embeddings with shape ``(*atype.shape,
+        type_embedding.shape[-1])``.
+
+    Notes
+    -----
+    ``TypeEmbedNet`` reconstructs a literal zero padding row on every call.
+    ``SeZMTypeEmbedding`` stores its reserved row in the trainable embedding
+    array and initializes it to zero. This helper guarantees selection of the
+    reserved row; the table implementation remains responsible for keeping
+    that row neutral.
+
+    Negative placeholder types must be remapped explicitly because negative
+    gather indices either wrap or fail depending on the array backend.
     """
     # The caller's atom-type array determines the active backend. Model
     # conversion keeps the embedding table in that same namespace while

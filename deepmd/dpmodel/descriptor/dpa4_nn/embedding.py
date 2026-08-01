@@ -39,6 +39,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -147,7 +150,7 @@ class SeZMTypeEmbedding(NativeOP):
         # then restore the original index shape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
         if self.padding:
-            index = xp.where(index >= 0, index, xp.full_like(index, self.ntypes))
+            index = remap_atype_to_padding(index, self.ntypes + 1)
         out = xp.take(weight, index, axis=0)
         return xp.reshape(out, (*atype.shape, self.embed_dim))
 

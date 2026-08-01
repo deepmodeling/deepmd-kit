@@ -12,6 +12,9 @@ from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebd
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.pt_expt.common import (
     torch_module,
 )
@@ -237,7 +240,9 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
         # nf x (nloc x nnei)
         nei_type = torch.gather(atype_ext, dim=1, index=nlist_index)
         # nfnl x nnei
-        nei_type = nei_type.view(nfnl, nnei)
+        nei_type = remap_atype_to_padding(
+            nei_type.view(nfnl, nnei), ntypes_with_padding
+        )
         # nfnl x nnei x nnei
         nei_type_i = nei_type.unsqueeze(2).expand(-1, -1, nnei)
         nei_type_j = nei_type.unsqueeze(1).expand(-1, nnei, -1)

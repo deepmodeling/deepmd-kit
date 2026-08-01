@@ -1822,22 +1822,27 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # value so the kernel stays jit/export-traceable (no concretize of n_node).
         n_total = atype.shape[0]
         atype = xp.asarray(atype, device=dev)
+        # Padded embedding tables reserve their final row, whereas exclusion
+        # and normalization tables contain only real types. Keep both forms so
+        # each downstream lookup receives the sentinel convention it expects.
+        safe_real_atype = xp.where(atype >= 0, atype, xp.zeros_like(atype))
         # descriptor-level pair exclusion: same canonical transform as the
         # model-level ``pair_exclude_types`` (decision #18). Masked edges
         # contribute zero to every segment_sum below; the dense path's
         # nlist-erasure + env-mat zeroing is reproduced exactly.
         # apply_pair_exclusion is a no-op when self.emask has no exclusions.
-        graph = apply_pair_exclusion(graph, atype, self.emask)
+        graph = apply_pair_exclusion(graph, safe_real_atype, self.emask)
         src = graph.edge_index[0, :]
         dst = graph.edge_index[1, :]
         center_type = xp.take(atype, dst, axis=0)  # (E,)
         nei_type = xp.take(atype, src, axis=0)  # (E,)
+        center_type_for_stats = xp.take(safe_real_atype, dst, axis=0)
         # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
         # self.mean/self.stddev are slot-independent (ntypes, nnei, 4); slot 0 is
         # the canonical per-type vector.
         rr, sw_e = edge_env_mat(
             graph.edge_vec,
-            center_type,
+            center_type_for_stats,
             self.mean[:, 0, :],
             self.stddev[:, 0, :],
             self.rcut,

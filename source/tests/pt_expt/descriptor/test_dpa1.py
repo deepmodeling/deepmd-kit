@@ -3,6 +3,9 @@
 import numpy as np
 import pytest
 import torch
+from types import (
+    SimpleNamespace,
+)
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
@@ -10,6 +13,7 @@ from torch.fx.experimental.proxy_tensor import (
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DPDescrptDPA1
 from deepmd.pt_expt.descriptor.dpa1 import (
     DescrptDPA1,
+    _strip_pair_index,
 )
 from deepmd.pt_expt.utils import (
     env,
@@ -29,6 +33,69 @@ from ..export_helpers import (
     export_save_load_and_compare,
     make_descriptor_dynamic_shapes,
 )
+
+
+def test_strip_virtual_neighbor_matches_explicit_padding() -> None:
+    """Torch strip-mode pair arithmetic uses the reserved padding type."""
+    device = env.DEVICE
+    descriptor = DescrptDPA1(
+        rcut=4.0,
+        rcut_smth=0.5,
+        sel=[2, 2],
+        ntypes=2,
+        attn_layer=0,
+        axis_neuron=2,
+        neuron=[6, 12],
+        tebd_dim=2,
+        tebd_input_mode="strip",
+        type_one_side=False,
+        seed=GLOBAL_SEED,
+    ).to(device)
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+        dtype=torch.float64,
+        device=device,
+    )
+    nlist = torch.tensor(
+        [[[1, 2, -1, -1], [0, 2, -1, -1]]],
+        dtype=torch.long,
+        device=device,
+    )
+
+    actual = descriptor(
+        coord,
+        torch.tensor([[0, 1, -1]], dtype=torch.long, device=device),
+        nlist,
+    )
+    expected = descriptor(
+        coord,
+        torch.tensor([[0, 1, 2]], dtype=torch.long, device=device),
+        nlist,
+    )
+
+    for actual_value, expected_value in zip(actual, expected, strict=True):
+        if actual_value is not None:
+            torch.testing.assert_close(actual_value, expected_value)
+
+
+def test_strip_pair_index_remaps_virtual_types() -> None:
+    """The pt_expt override folds only explicit padded type indices."""
+    device = env.DEVICE
+    descriptor = SimpleNamespace(se_atten=SimpleNamespace(type_one_side=False))
+    actual = _strip_pair_index(
+        descriptor,
+        torch.tensor([[0, 1, -1]], dtype=torch.long, device=device),
+        torch.tensor([[1, 2], [0, 2]], dtype=torch.long, device=device),
+        torch.zeros((3, 2), dtype=torch.float64, device=device),
+        nf=1,
+        nloc=2,
+        nnei=2,
+    )
+
+    torch.testing.assert_close(
+        actual,
+        torch.tensor([1, 2, 3, 5], dtype=torch.long, device=device),
+    )
 
 
 class TestDescrptDPA1(TestCaseSingleFrameWithNlist):

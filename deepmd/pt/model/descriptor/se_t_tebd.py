@@ -1021,6 +1021,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
             # nfnl x nnei
             nei_type = nei_type.reshape(nfnl, nnei)
+            nei_type = torch.where(
+                nei_type >= 0,
+                nei_type,
+                torch.full_like(nei_type, ntypes_with_padding - 1),
+            )
             # nfnl x nnei x nnei
             nei_type_i = nei_type.unsqueeze(2).expand([-1, -1, nnei])
             nei_type_j = nei_type.unsqueeze(1).expand([-1, nnei, -1])

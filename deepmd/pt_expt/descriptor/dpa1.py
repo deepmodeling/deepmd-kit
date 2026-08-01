@@ -13,6 +13,9 @@ from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.kernels.cuda.dpa1.graph_compress import (
     dpa1_graph_compress,
 )
@@ -167,9 +170,10 @@ def _strip_pair_index(
     ntypes_with_padding = type_embedding.shape[0]
     nlist_index = nlist_masked.view(nf, nloc * nnei)
     nei_type = torch.gather(atype_ext, dim=1, index=nlist_index)
+    nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
     if se.type_one_side:
         return nei_type.reshape(-1).to(torch.long)
-    atype = atype_ext[:, :nloc]
+    atype = remap_atype_to_padding(atype_ext[:, :nloc], ntypes_with_padding)
     idx_i = torch.tile(atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]).view(-1)
     return (idx_i + nei_type.reshape(-1)).to(torch.long)
 
@@ -793,10 +797,15 @@ class DescrptDPA1(DescrptDPA1DP):
         u = ((length - se.rcut_smth) / (se.rcut - se.rcut_smth)).clamp(0.0, 1.0)
         sw = u**3 * (-6 * u**2 + 15 * u - 10) + 1.0
         em = torch.cat([sw / q, ev * (sw / q**2)], dim=-1)
-        rr = (em - se.mean[:, 0, :][center_type]) / se.stddev[:, 0, :][center_type]
+        center_type_for_stats = center_type.clamp_min(0)
+        rr = (em - se.mean[:, 0, :][center_type_for_stats]) / se.stddev[:, 0, :][
+            center_type_for_stats
+        ]
 
         # === Step 2. Strip type-pair gate from the precomputed table ===
         ntypes = type_embedding.shape[0]
+        center_type = remap_atype_to_padding(center_type, ntypes)
+        nei_type = remap_atype_to_padding(nei_type, ntypes)
         pair_idx = nei_type if se.type_one_side else center_type * ntypes + nei_type
         gate = self.type_embd_data[pair_idx]
         if se.smooth:
@@ -983,6 +992,7 @@ class DescrptDPA1(DescrptDPA1DP):
         dst = graph.edge_index[1, :]
         center_type = atype[dst]
         nei_type = atype[src]
+        center_type_for_stats = center_type.clamp_min(0)
         # Per-edge env-mat 4-vector, normalized by the center (dst) atom type;
         # mean/stddev are slot-independent, so slot 0 is the canonical vector.
         # The fused operator is captured opaquely under the pt_expt trace and
@@ -992,7 +1002,7 @@ class DescrptDPA1(DescrptDPA1DP):
         # in ``edge_vec``); the same operator emits it when ``return_sw`` is set.
         rr, sw_e = _edge_env_mat_triton(
             graph.edge_vec,
-            center_type,
+            center_type_for_stats,
             se.mean[:, 0, :],
             se.stddev[:, 0, :],
             se.rcut,
@@ -1013,6 +1023,8 @@ class DescrptDPA1(DescrptDPA1DP):
             emb_in = ss
             tt = _type_pair_table(self, type_embedding)
             ntypes_with_padding = type_embedding.shape[0]
+            center_type = remap_atype_to_padding(center_type, ntypes_with_padding)
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
             if se.type_one_side:
                 gate_idx = nei_type.to(torch.long)
             else:
@@ -1029,6 +1041,9 @@ class DescrptDPA1(DescrptDPA1DP):
             # concat embedding input: radial channel plus the neighbor (and, two-
             # side, center) type embeddings. Ghost type == owner type, so
             # gathering by the local owner reproduces the dense neighbor tebd.
+            ntypes_with_padding = type_embedding.shape[0]
+            center_type = remap_atype_to_padding(center_type, ntypes_with_padding)
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
             nlist_tebd = type_embedding[nei_type]  # (E, tebd_dim)
             if se.type_one_side:
                 emb_in = torch.cat([ss, nlist_tebd], dim=-1)
