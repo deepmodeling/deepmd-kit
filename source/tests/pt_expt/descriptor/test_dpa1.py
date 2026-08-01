@@ -127,21 +127,49 @@ def test_fused_env_prologue_clamps_virtual_center_statistics() -> None:
         device=device,
     )
     nlist = torch.tensor([[[1, 2, -1, -1]]], dtype=torch.long, device=device)
+    virtual_atype = torch.tensor([[-1, 1, 0]], dtype=torch.long, device=device)
+    real_atype = torch.tensor([[0, 1, 0]], dtype=torch.long, device=device)
 
     with patch("deepmd.pt_expt.descriptor.dpa1.triton_infer_level", return_value=0):
-        actual = _env_mat(
-            descriptor,
-            coord,
-            torch.tensor([[-1, 1, 0]], dtype=torch.long, device=device),
-            nlist,
-        )[5]
         expected = _env_mat(
             descriptor,
             coord,
-            torch.tensor([[0, 1, 0]], dtype=torch.long, device=device),
+            real_atype,
             nlist,
         )[5]
 
+    captured_center_types = []
+
+    def fused_env_mat_stub(
+        coord_ext,
+        nlist_arg,
+        center_types,
+        mean,
+        stddev,
+        rcut,
+        rcut_smth,
+        **kwargs,
+    ):
+        """Mirror the dense result while exposing the fused center-type input."""
+        captured_center_types.append(center_types.clone())
+        return descriptor.se_atten.env_mat.call(
+            coord_ext, real_atype, nlist_arg, mean, stddev
+        )
+
+    with (
+        patch("deepmd.pt_expt.descriptor.dpa1.triton_infer_level", return_value=1),
+        patch(
+            "deepmd.pt_expt.descriptor.dpa1._env_mat_triton",
+            side_effect=fused_env_mat_stub,
+        ),
+    ):
+        actual = _env_mat(descriptor, coord, virtual_atype, nlist)[5]
+
+    assert len(captured_center_types) == 1
+    torch.testing.assert_close(
+        captured_center_types[0],
+        torch.zeros((1, 1), dtype=torch.long, device=device),
+    )
     torch.testing.assert_close(actual, expected)
 
 
