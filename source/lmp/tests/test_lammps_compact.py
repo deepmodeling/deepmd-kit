@@ -268,8 +268,7 @@ def _make_special_bond_system(model: Path, *, compact: bool) -> PyLammps:
             "atom_style molecular",
             "atom_modify map array",
             "region box block 0 20 0 20 0 20 units box",
-            "create_box 2 box bond/types 1 extra/bond/per/atom 1 "
-            "extra/special/per/atom 1",
+            "create_box 2 box bond/types 1 extra/bond/per/atom 1 extra/special/per/atom 1",
             "create_atoms 1 single 5 5 5 units box",
             "create_atoms 2 single 6 5 5 units box",
             "set atom 1 mol 1",
