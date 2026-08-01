@@ -87,6 +87,7 @@ def test_spin_is_forwarded_and_sliced_by_auto_batch() -> None:
     assert len(actual) == 5  # energy, force, virial, magnetic force, magnetic mask
     for actual_value, expected_value in zip(actual, expected, strict=True):
         np.testing.assert_allclose(actual_value, expected_value, equal_nan=True)
+    assert not np.isnan(actual[-1]).any()
     # Distinct spin vectors must reach the model instead of being ignored.
     assert actual[0][0, 0] != pytest.approx(actual[0][1, 0])
 
