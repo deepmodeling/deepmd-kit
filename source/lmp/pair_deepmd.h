@@ -75,6 +75,10 @@ class PairDeepMD : public PairDeepBaseModel {
   bigint compact_natoms_;
   std::string compact_center_group_id_;
   std::vector<tagint> compact_center_tags_;
+  // Center membership is stable between neighbor rebuilds for a static
+  // group.  Cache it in LAMMPS atom order so the per-step cutoff search can
+  // walk only the pair neighbor rows owned by center atoms.
+  std::vector<unsigned char> compact_is_center_;
   std::vector<unsigned char> compact_selected_;
 
   std::vector<tagint> allgather_unique_tagints(

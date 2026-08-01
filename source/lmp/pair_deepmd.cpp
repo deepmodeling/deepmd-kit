@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <sstream>
+#include <unordered_map>
 
 #include "atom.h"
 #include "citeme.h"
@@ -207,12 +208,21 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
     return model_types[index] >= 0 && model_types[index] < model_ntypes;
   };
 
-  std::vector<unsigned char> is_center(nall, 0);
+  // Atom order and the ghost set remain stable between neighbor rebuilds.
+  // Dynamic groups are the exception because their membership may change on
+  // any step even when the neighbor topology does not.
+  if (compact_is_center_.size() != static_cast<size_t>(nall) ||
+      compact_center_group_dynamic_ || neighbor->ago == 0) {
+    compact_is_center_.resize(nall);
+    for (int ii = 0; ii < nall; ++ii) {
+      compact_is_center_[ii] = std::binary_search(
+          compact_center_tags_.begin(), compact_center_tags_.end(), tag[ii]);
+    }
+  }
+
   int invalid_center_local = 0;
-  for (int ii = 0; ii < nall; ++ii) {
-    is_center[ii] = std::binary_search(compact_center_tags_.begin(),
-                                       compact_center_tags_.end(), tag[ii]);
-    if (ii < nlocal && is_center[ii] && !is_model_atom(ii)) {
+  for (int ii = 0; ii < nlocal; ++ii) {
+    if (compact_is_center_[ii] && !is_model_atom(ii)) {
       invalid_center_local = 1;
     }
   }
@@ -225,39 +235,98 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
                "type is not represented by the DeepMD model");
   }
 
-  // Search from every owned center atom over the local-plus-ghost atom set.
-  // The pair cutoff is enlarged to the environment cutoff by init_one(), so
-  // every atom that can satisfy this test is present as an owned or ghost
-  // atom. minimum_image() keeps the test correct for orthogonal and restricted
-  // triclinic periodic cells and does not depend on special_bonds filtering in
-  // the pair neighbor list.
+  if (!list) {
+    error->all(FLERR,
+               "compact pair_style deepmd requires an available pair "
+               "neighbor list");
+  }
+
+  // The DeepMD full neighbor list already contains every ordinary atom pair
+  // within the environment cutoff (plus skin), including the correct ghost
+  // image in triclinic cells.  Walking only center rows avoids an O(Ncenter*N)
+  // all-atom scan on every step.  Pairs removed by special_bonds are handled
+  // separately below so compact selection remains independent of force-field
+  // exclusions.
   const double environment_cutsq =
       compact_environment_cutoff_ * compact_environment_cutoff_;
   std::vector<tagint> local_selection_keys;
   int invalid_molecule_local = 0;
+  const auto select_environment_atom = [&](int center, int environment,
+                                           bool apply_minimum_image) {
+    if (compact_is_center_[environment] || !is_model_atom(environment)) {
+      return;
+    }
+    double dx = x[environment][0] - x[center][0];
+    double dy = x[environment][1] - x[center][1];
+    double dz = x[environment][2] - x[center][2];
+    if (apply_minimum_image) {
+      domain->minimum_image(FLERR, dx, dy, dz);
+    }
+    if (dx * dx + dy * dy + dz * dz >= environment_cutsq) {
+      return;
+    }
+    if (compact_include_molecule_) {
+      if (molecule[environment] <= 0) {
+        invalid_molecule_local = 1;
+        return;
+      }
+      local_selection_keys.push_back(molecule[environment]);
+    } else {
+      local_selection_keys.push_back(tag[environment]);
+    }
+  };
+
   for (int ii = 0; ii < nlocal; ++ii) {
-    if (!is_center[ii]) {
+    if (!compact_is_center_[ii]) {
       continue;
     }
-    for (int jj = 0; jj < nall; ++jj) {
-      if (is_center[jj] || !is_model_atom(jj)) {
+    const int jnum = list->numneigh[ii];
+    int* const jlist = list->firstneigh[ii];
+    for (int jj = 0; jj < jnum; ++jj) {
+      select_environment_atom(ii, jlist[jj] & NEIGHMASK, false);
+    }
+  }
+
+  // Both zero-valued special_bonds factors remove the corresponding pair
+  // from the neighbor list.  Recover only those few pairs by tag.  Building
+  // the tag lookup is deferred until a non-center excluded partner is found;
+  // the usual DPRc case has an entire bonded QM molecule in center_group and
+  // therefore pays no hash-table cost.
+  if (atom->molecular != Atom::ATOMIC && atom->special && atom->nspecial) {
+    std::unordered_map<tagint, int> tag_to_index;
+    const auto find_atom_by_tag = [&](tagint atom_tag) {
+      if (tag_to_index.empty()) {
+        tag_to_index.reserve(nall);
+        for (int jj = 0; jj < nall; ++jj) {
+          tag_to_index.emplace(tag[jj], jj);
+        }
+      }
+      const auto found = tag_to_index.find(atom_tag);
+      return found == tag_to_index.end() ? -1 : found->second;
+    };
+
+    for (int ii = 0; ii < nlocal; ++ii) {
+      if (!compact_is_center_[ii]) {
         continue;
       }
-      double dx = x[jj][0] - x[ii][0];
-      double dy = x[jj][1] - x[ii][1];
-      double dz = x[jj][2] - x[ii][2];
-      domain->minimum_image(FLERR, dx, dy, dz);
-      if (dx * dx + dy * dy + dz * dz >= environment_cutsq) {
-        continue;
-      }
-      if (compact_include_molecule_) {
-        if (molecule[jj] <= 0) {
-          invalid_molecule_local = 1;
+      for (int level = 1; level <= 3; ++level) {
+        if (force->special_lj[level] != 0.0 ||
+            force->special_coul[level] != 0.0) {
           continue;
         }
-        local_selection_keys.push_back(molecule[jj]);
-      } else {
-        local_selection_keys.push_back(tag[jj]);
+        const int begin = level == 1 ? 0 : atom->nspecial[ii][level - 2];
+        const int end = atom->nspecial[ii][level - 1];
+        for (int jj = begin; jj < end; ++jj) {
+          const tagint special_tag = atom->special[ii][jj];
+          if (std::binary_search(compact_center_tags_.begin(),
+                                 compact_center_tags_.end(), special_tag)) {
+            continue;
+          }
+          const int special_index = find_atom_by_tag(special_tag);
+          if (special_index >= 0) {
+            select_environment_atom(ii, special_index, true);
+          }
+        }
       }
     }
   }
@@ -279,7 +348,7 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
     const bool selected_environment =
         std::binary_search(selected_keys.begin(), selected_keys.end(), key);
     const bool active =
-        is_model_atom(ii) && (is_center[ii] || selected_environment);
+        is_model_atom(ii) && (compact_is_center_[ii] || selected_environment);
     selected[ii] = active;
     if (!active) {
       model_types[ii] = -1;

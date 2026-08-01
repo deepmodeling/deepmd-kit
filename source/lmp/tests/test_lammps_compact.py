@@ -253,6 +253,45 @@ def _make_selection_transition_system(
     return lammps
 
 
+def _make_special_bond_system(model: Path, *, compact: bool) -> PyLammps:
+    """Create a bonded center/environment pair excluded from its neighbor list."""
+    lammps = PyLammps()
+    if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
+        lammps.lmp.command(f"plugin load {plugin}")
+    style = f"deepmd {model.resolve()}"
+    if compact:
+        style += " center_group qm environment_cutoff 1.5 include_molecule no"
+    lammps.lmp.commands_list(
+        [
+            "units metal",
+            "boundary p p p",
+            "atom_style molecular",
+            "atom_modify map array",
+            "region box block 0 20 0 20 0 20 units box",
+            "create_box 2 box bond/types 1 extra/bond/per/atom 1 "
+            "extra/special/per/atom 1",
+            "create_atoms 1 single 5 5 5 units box",
+            "create_atoms 2 single 6 5 5 units box",
+            "set atom 1 mol 1",
+            "set atom 2 mol 2",
+            "group qm id 1",
+            "mass 1 16",
+            "mass 2 2",
+            "bond_style zero",
+            "bond_coeff 1",
+            "create_bonds single/bond 1 1 2",
+            "special_bonds lj 0 0 0 coul 0 0 0",
+            "neighbor 2.0 bin",
+            style,
+            "pair_coeff * *",
+            "compute peatom all pe/atom pair",
+            "variable peatom atom c_peatom",
+            "run 0",
+        ]
+    )
+    return lammps
+
+
 @pytest.mark.parametrize("triclinic", [False, True])
 def test_compact_matches_explicit_selected_subsystem(
     compact_models: tuple[Path, Path], triclinic: bool
@@ -337,6 +376,25 @@ def test_compact_selection_change_rebuilds_backend_cache(
         assert moving[2] == pytest.approx(reference[2])
     finally:
         moving_lmp.close()
+        reference_lmp.close()
+
+
+def test_compact_selection_recovers_special_bonds_excluded_from_neighbor_list(
+    compact_models: tuple[Path, Path],
+) -> None:
+    """Selection remains independent of zero-valued special_bonds factors."""
+    model, _ = compact_models
+    compact_lmp = _make_special_bond_system(model, compact=True)
+    reference_lmp = _make_special_bond_system(model, compact=False)
+    try:
+        compact = _snapshot(compact_lmp, 2)
+        reference = _snapshot(reference_lmp, 2)
+        assert compact[0] == pytest.approx(reference[0])
+        assert compact[1] == pytest.approx(reference[1])
+        assert compact[2] == pytest.approx(reference[2])
+        assert abs(compact[2][1]) > 1.0
+    finally:
+        compact_lmp.close()
         reference_lmp.close()
 
 
