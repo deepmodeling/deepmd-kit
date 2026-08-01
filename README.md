@@ -1,4 +1,4 @@
-[![DeePMD-kit logo](./doc/_static/logo.svg)][documentation]
+[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>][documentation]
 
 # DeePMD-kit
 
