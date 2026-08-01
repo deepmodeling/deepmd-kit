@@ -1093,6 +1093,17 @@ class DeepEval(DeepEvalBackend):
             coords,
             atom_types,
         )
+        # Canonicalize shared parameter shorthands before AutoBatchSize slices
+        # the frame axis; otherwise a shared per-atom array can be mistaken for
+        # a batch of frames.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         descriptor = self._eval_func(self._eval_descriptor_inner, numb_test, natoms)(
             coords,
             cells,
