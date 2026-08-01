@@ -165,6 +165,18 @@ class TestDpdataFormatConversion(unittest.TestCase):
             other_cwd / ".deepmd_dpdata_cache",
         )
 
+    def test_process_systems_revalidates_in_memory_cache(self) -> None:
+        """A source rewrite in one process must refresh its converted output."""
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            systems = process_systems(str(self.source), fmt="extxyz")
+            output_mtime = Path(systems[0]).stat().st_mtime
+            refreshed_mtime = output_mtime + 1.0
+            os.utime(self.source, (refreshed_mtime, refreshed_mtime))
+            systems_again = process_systems(str(self.source), fmt="extxyz")
+
+        self.assertEqual(systems, systems_again)
+        self.assertEqual(_FakeMultiSystems.write_count, 2)
+
     def test_process_systems_converts_to_explicit_hdf5(self) -> None:
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(
@@ -191,6 +203,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         self.assertEqual(data.get_nsystems(), 1)
         self.assertIsInstance(data, LmdbDataSystem)
+        self.assertTrue(data.mixed_type)
         self.assertEqual(_FakeMultiSystems.load_calls, [(str(self.source), "extxyz")])
         batch = data.get_batch()
         self.assertIn("type", batch)

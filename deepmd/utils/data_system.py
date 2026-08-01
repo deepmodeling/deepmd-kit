@@ -753,7 +753,9 @@ class LmdbDataSystem:
             lmdb_path, type_map, batch_size, mixed_batch=False
         )
         self._type_map = list(type_map)
-        self.mixed_type = self._detect_mixed_type()
+        # LMDB is defined as mixed-type by its reader contract; determining
+        # this must not scan every frame during data-system initialization.
+        self.mixed_type = self._reader.mixed_type
         self.nsystems = 1
         self.system_dirs = [lmdb_path]
         self.natoms = [max(self._reader.frame_nlocs) if self._reader.frame_nlocs else 0]
@@ -817,18 +819,6 @@ class LmdbDataSystem:
             block_targets=block_targets,
         )
         self._iter = iter(self._sampler)
-
-    def _detect_mixed_type(self) -> bool:
-        """Return True when frames cannot be represented as fixed-type data."""
-        if len(self._reader.nloc_groups) > 1:
-            return True
-        if len(self._reader) == 0:
-            return False
-        ref_type = self._reader[0]["atype"]
-        for idx in range(1, len(self._reader)):
-            if not np.array_equal(self._reader[idx]["atype"], ref_type):
-                return True
-        return False
 
     def _detect_pbc(self) -> bool:
         """Return True when LMDB frames contain a non-zero simulation box."""
@@ -1267,10 +1257,16 @@ def _convert_system_by_dpdata(
         fmt,
         out_fmt,
     )
-    if cache_key in _DPDATA_CONVERSION_CACHE:
-        return _DPDATA_CONVERSION_CACHE[cache_key]
-
     output = _conversion_cache_path(source, fmt, out_fmt)
+    cached_systems = _DPDATA_CONVERSION_CACHE.get(cache_key)
+    if cached_systems is not None:
+        if _is_conversion_current(source, output):
+            return cached_systems
+        # A long-lived training/validation process may observe source files
+        # rewritten in place. Drop the fast-path entry so the normal locked
+        # conversion flow refreshes the on-disk result before it is reused.
+        del _DPDATA_CONVERSION_CACHE[cache_key]
+
     output.parent.mkdir(parents=True, exist_ok=True)
     lock_path = output.with_suffix(output.suffix + ".lock")
     if not _is_conversion_current(source, output):
