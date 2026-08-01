@@ -190,14 +190,17 @@ that matches the version used and the method-specific papers listed in
 - Wang et al., “DeePMD-kit: A deep learning package for many-body potential
   energy representation and molecular dynamics,” *Computer Physics
   Communications* 228 (2018), 178–184.
-  [DOI: 10.1016/j.cpc.2018.03.016](https://doi.org/10.1016/j.cpc.2018.03.016)
+  [![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2018.03.016)
+  [![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
 - Zeng et al., “DeePMD-kit v2: A software package for Deep Potential models,”
   *The Journal of Chemical Physics* 159 (2023), 054801.
-  [DOI: 10.1063/5.0155600](https://doi.org/10.1063/5.0155600)
+  [![doi:10.1063/5.0155600](https://img.shields.io/badge/DOI-10.1063%2F5.0155600-blue)](https://doi.org/10.1063/5.0155600)
+  [![Citations](https://citations.njzjz.win/10.1063/5.0155600)](https://badge.dimensions.ai/details/doi/10.1063/5.0155600)
 - Zeng et al., “DeePMD-kit v3: A Multiple-Backend Framework for Machine
   Learning Potentials,” *Journal of Chemical Theory and Computation* 21
   (2025), 4375–4385.
-  [DOI: 10.1021/acs.jctc.5c00340](https://doi.org/10.1021/acs.jctc.5c00340)
+  [![doi:10.1021/acs.jctc.5c00340](https://img.shields.io/badge/DOI-10.1021%2Facs.jctc.5c00340-blue)](https://doi.org/10.1021/acs.jctc.5c00340)
+  [![Citations](https://citations.njzjz.win/10.1021/acs.jctc.5c00340)](https://badge.dimensions.ai/details/doi/10.1021/acs.jctc.5c00340)
 
 ## License
 
