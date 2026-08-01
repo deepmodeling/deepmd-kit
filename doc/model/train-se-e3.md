@@ -1,8 +1,7 @@
 # Descriptor `"se_e3"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 
 The notation of `se_e3` is short for three-body embedding DeepPot-SE, which incorporates embedded bond-angle information.
 The embedding takes bond angles between a central atom and its two neighboring atoms as input (denoted by `e3`).

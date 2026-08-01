@@ -3,6 +3,10 @@
 perf-only equivalent of 'dense' (same energy + force); dpmodel/jax fail-fast.
 """
 
+from unittest.mock import (
+    patch,
+)
+
 import numpy as np
 import pytest
 import torch
@@ -21,6 +25,9 @@ from deepmd.pt_expt.fitting.invar_fitting import (
 )
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
+)
+from deepmd.pt_expt.utils.graph_builder import (
+    resolve_neighbor_graph_method,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
@@ -71,6 +78,64 @@ def _eval(model, method):
     # graph path returns the output-agnostic dict (no translated force/virial);
     # energy_redu = total energy, energy_derv_r = d energy / d coord (force parity)
     return ret["energy_redu"], ret["energy_derv_r"]
+
+
+def test_runtime_default_graph_method_is_configurable():
+    model = _make_model()
+    model.neighbor_graph_method = "nv"
+    assert model._resolve_graph_method(None) == "nv"
+    assert model._resolve_graph_method("dense") == "dense"
+
+
+def test_compiled_model_uses_runtime_graph_method():
+    from deepmd.pt_expt.train.training import (
+        _CompiledModel,
+        _get_model_structure_key,
+    )
+
+    class BuilderCalled(RuntimeError):
+        pass
+
+    model = _make_model().train()
+    model.neighbor_graph_method = "nv"
+    compiled = _CompiledModel(model, _get_model_structure_key(model))
+    coord = torch.zeros((1, 2, 3), dtype=torch.float64, device=env.DEVICE)
+    atype = torch.zeros((1, 2), dtype=torch.int64, device=env.DEVICE)
+    box = torch.eye(3, dtype=torch.float64, device=env.DEVICE).reshape(1, 3, 3) * 8.0
+    with (
+        patch(
+            "deepmd.pt_expt.utils.graph_builder.build_neighbor_graph_for_method",
+            side_effect=BuilderCalled,
+        ) as builder,
+        patch(
+            "deepmd.pt_expt.train.training._trace_and_compile_graph",
+            side_effect=AssertionError("compiled lower reached before graph builder"),
+        ),
+        pytest.raises(BuilderCalled),
+    ):
+        compiled(coord, atype, box)
+    assert builder.call_args.args[0] == "nv"
+
+
+def test_auto_graph_method_uses_nv_only_on_cuda():
+    with patch("deepmd.pt.utils.nv_nlist.is_nv_available", return_value=True):
+        assert resolve_neighbor_graph_method("auto", torch.device("cuda")) == "nv"
+        assert resolve_neighbor_graph_method("auto", torch.device("cpu")) == "dense"
+
+
+def test_auto_graph_method_warns_when_nv_is_unavailable(caplog):
+    with (
+        patch("deepmd.pt.utils.nv_nlist.is_nv_available", return_value=False),
+        caplog.at_level("WARNING", logger="deepmd.pt_expt.utils.graph_builder"),
+    ):
+        assert resolve_neighbor_graph_method("auto", torch.device("cuda")) == "dense"
+
+    assert "pip install nvalchemi-toolkit-ops" in caplog.text
+
+
+def test_explicit_nv_rejects_cpu():
+    with pytest.raises(ValueError, match="requires a CUDA"):
+        resolve_neighbor_graph_method("nv", torch.device("cpu"))
 
 
 @pytest.mark.skipif(not is_vesin_torch_available(), reason="vesin[torch] not installed")
@@ -144,8 +209,7 @@ def test_dpmodel_backend_rejects_vesin():
 def test_explicit_method_fails_fast_for_ineligible_descriptor():
     """An EXPLICIT neighbor_graph_method must fail fast when the descriptor
     has no graph lower (mirrors the dpmodel guard; the default-path check in
-    _resolve_graph_method does not protect explicit methods). Regression for
-    OutisLi review on #5714.
+    _resolve_graph_method does not protect explicit methods).
     """
     from deepmd.pt_expt.descriptor.se_e2_a import (
         DescrptSeA,

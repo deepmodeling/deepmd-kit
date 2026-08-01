@@ -4,7 +4,8 @@
 Covers two pieces:
 
 1. ``Backend.detect_backend_by_model`` sniffs ``.pt`` content
-   (``.w``/``.b`` -> pt_expt, ``.matrix``/``.bias`` -> pt) so that
+   (``.w`` weights -> pt_expt and ``.matrix`` weights -> pt, with only the
+   pt_expt-specific ``.b`` suffix used as a fallback) so that
    ``dp test -m foo.pt`` routes to the right backend.
 2. ``pt_expt.DeepEval._load_pt`` reconstructs the model from
    ``_extra_state["model_params"]``, loads ``state_dict``, and runs
@@ -17,6 +18,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import pytest
@@ -40,12 +44,19 @@ from deepmd.pt_expt.fitting import (
 from deepmd.pt_expt.infer.deep_eval import DeepEval as PtExptDeepEval
 from deepmd.pt_expt.model import (
     EnergyModel,
+    get_model,
+)
+from deepmd.pt_expt.model.graph_lower import (
+    model_uses_graph_lower,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
+)
+from deepmd.utils.pt_checkpoint import (
+    detect_pt_checkpoint_backend,
 )
 
 from ...seed import (
@@ -110,6 +121,39 @@ def _build_model_and_params(
     return model, model_params
 
 
+def _build_graph_dpa1_model_and_params() -> tuple[EnergyModel, dict]:
+    """Build a graph-routed DPA1 model with nonzero descriptor statistics."""
+    model_params = {
+        "type_map": ["H", "O"],
+        "descriptor": {
+            "type": "dpa1",
+            "sel": 20,
+            "rcut_smth": 0.5,
+            "rcut": 4.0,
+            "neuron": [3, 6],
+            "axis_neuron": 2,
+            "attn": 4,
+            "attn_layer": 0,
+            "smooth_type_embedding": True,
+            "set_davg_zero": False,
+            "type_one_side": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [8, 8],
+            "precision": "float64",
+            "seed": 1,
+        },
+    }
+    model = get_model(copy.deepcopy(model_params)).to(torch.float64).to(DEVICE).eval()
+    with torch.no_grad():
+        model.atomic_model.descriptor.se_atten.mean.fill_(0.01)
+        model.atomic_model.descriptor.se_atten.stddev.fill_(0.1)
+    return model, model_params
+
+
 def _save_pt_checkpoint(
     model: EnergyModel,
     model_params: dict,
@@ -162,12 +206,45 @@ def _save_pt_checkpoint_compiled(
     torch.save({"model": cooked}, path)
 
 
+class TestPtCheckpointBackendDetection(unittest.TestCase):
+    """Checkpoint dialect detection must be conservative and deterministic."""
+
+    def test_parameter_name_matrix(self) -> None:
+        cases = {
+            "wrapped pt_expt weight with torch bias": (
+                {"model": {"layer.w": object(), "module.bias": object()}},
+                "pt-expt",
+            ),
+            "unwrapped pt weight": ({"layer.matrix": object()}, "pt"),
+            "pt_expt bias only": ({"layer.b": object()}, "pt-expt"),
+            "torch bias only": ({"layer.bias": object()}, None),
+            "mixed weights": (
+                {"left.w": object(), "right.matrix": object()},
+                None,
+            ),
+            "mixed biases": (
+                {"left.b": object(), "right.bias": object()},
+                None,
+            ),
+            "no string keys": ({1: object()}, None),
+            "non-mapping payload": (object(), None),
+            "wrapped non-mapping payload": ({"model": object()}, None),
+        }
+        for name, (checkpoint, expected) in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(
+                    detect_pt_checkpoint_backend(checkpoint),
+                    expected,
+                )
+
+
 class TestBackendDispatchPt(unittest.TestCase):
     """``Backend.detect_backend_by_model`` must sniff `.pt` content."""
 
     def setUp(self) -> None:
         # Real pt_expt-trained checkpoint (uses `.w`/`.b` keys).
         model, model_params = _build_model_and_params()
+        self.output_def = ModelOutputDef(model.atomic_output_def())
         self.pt_expt_pt = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
         _save_pt_checkpoint(model, model_params, self.pt_expt_pt)
 
@@ -189,6 +266,18 @@ class TestBackendDispatchPt(unittest.TestCase):
             self.pt_pt,
         )
 
+        # Mixed weight dialects are deliberately unclassified.
+        self.ambiguous_pt = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
+        torch.save(
+            {
+                "model": {
+                    "left.w": torch.zeros(1),
+                    "right.matrix": torch.zeros(1),
+                }
+            },
+            self.ambiguous_pt,
+        )
+
         # File that exists but is not a valid torch checkpoint — sniffing
         # must fail gracefully and fall back to suffix dispatch.
         self.bogus_pt = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
@@ -196,7 +285,12 @@ class TestBackendDispatchPt(unittest.TestCase):
             f.write(b"not a real torch file")
 
     def tearDown(self) -> None:
-        for p in (self.pt_expt_pt, self.pt_pt, self.bogus_pt):
+        for p in (
+            self.pt_expt_pt,
+            self.pt_pt,
+            self.ambiguous_pt,
+            self.bogus_pt,
+        ):
             if os.path.exists(p):
                 os.unlink(p)
 
@@ -213,6 +307,16 @@ class TestBackendDispatchPt(unittest.TestCase):
         # picks the pt backend (registered owner of `.pt`).
         backend = Backend.detect_backend_by_model(self.bogus_pt)
         self.assertIs(backend, Backend.get_backend("pt"))
+
+    def test_forced_pt_expt_rejects_other_dialects(self) -> None:
+        cases = (
+            (self.pt_pt, "regular `pt` parameter dialect"),
+            (self.ambiguous_pt, "Cannot determine the parameter dialect"),
+        )
+        for checkpoint, message in cases:
+            with self.subTest(checkpoint=checkpoint):
+                with self.assertRaisesRegex(ValueError, message):
+                    PtExptDeepEval(checkpoint, self.output_def)
 
 
 class TestPtExptLoadPt(unittest.TestCase):
@@ -240,6 +344,25 @@ class TestPtExptLoadPt(unittest.TestCase):
         self.assertEqual(de.get_dim_fparam(), 0)
         self.assertEqual(de.get_dim_aparam(), 0)
         self.assertFalse(de._is_spin)
+
+    def test_nlist_controls_remain_available(self) -> None:
+        output_def = ModelOutputDef(self.model.atomic_output_def())
+        PtExptDeepEval(
+            self.pt_path,
+            output_def,
+            neighbor_list=mock.sentinel.neighbor_list,
+        )
+        PtExptDeepEval(
+            self.pt_path,
+            output_def,
+            nlist_backend="native",
+        )
+        with self.assertRaisesRegex(ValueError, "only applies to graph-routed"):
+            PtExptDeepEval(
+                self.pt_path,
+                output_def,
+                neighbor_graph_method="dense",
+            )
 
     def test_eval_matches_source_model(self) -> None:
         """Run inference via DeepPot(.pt) and compare to direct forward."""
@@ -294,6 +417,137 @@ class TestPtExptLoadPt(unittest.TestCase):
                 PtExptDeepEval(bogus, ModelOutputDef(self.model.atomic_output_def()))
         finally:
             os.unlink(bogus)
+
+
+class TestNeighborGraphMethodResolution(unittest.TestCase):
+    """Auto graph-builder selection must cover each host policy explicitly."""
+
+    def test_auto_resolution(self) -> None:
+        cases = (
+            ("cpu", False, "dense", False),
+            ("cuda", True, "nv", False),
+            ("cuda", False, "dense", True),
+        )
+        for device_type, nv_available, expected, warns in cases:
+            with self.subTest(
+                device_type=device_type,
+                nv_available=nv_available,
+            ):
+                with (
+                    mock.patch(
+                        "deepmd.pt_expt.utils.env.DEVICE",
+                        torch.device(device_type),
+                    ),
+                    mock.patch(
+                        "deepmd.pt.utils.nv_nlist.is_nv_available",
+                        return_value=nv_available,
+                    ),
+                ):
+                    if warns:
+                        with self.assertLogs(
+                            "deepmd.pt_expt.infer.deep_eval",
+                            level="WARNING",
+                        ):
+                            actual = PtExptDeepEval._resolve_neighbor_graph_method(
+                                "auto"
+                            )
+                    else:
+                        actual = PtExptDeepEval._resolve_neighbor_graph_method("auto")
+                self.assertEqual(actual, expected)
+
+
+class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
+    """Raw DPA1 checkpoints retain the source model's graph-forward semantics."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.model, cls.model_params = _build_graph_dpa1_model_and_params()
+        cls.pt_paths = {
+            "plain": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
+            "compiled": tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name,
+        }
+        _save_pt_checkpoint(cls.model, cls.model_params, cls.pt_paths["plain"])
+        _save_pt_checkpoint_compiled(
+            cls.model,
+            cls.model_params,
+            cls.pt_paths["compiled"],
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for path in cls.pt_paths.values():
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_eval_matches_public_forward(self) -> None:
+        self.assertTrue(model_uses_graph_lower(self.model))
+
+        coords = np.array([[[1.0, 1.0, 1.0], [2.0, 1.0, 1.0], [1.0, 2.0, 1.0]]])
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0], dtype=np.int32)
+
+        output_names = (
+            "energy",
+            "force",
+            "virial",
+            "atom_energy",
+            "atom_virial",
+        )
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+        expected = self.model.forward(
+            coord_t,
+            atype_t,
+            cell_t,
+            do_atomic_virial=True,
+        )
+
+        for layout, path in self.pt_paths.items():
+            with self.subTest(layout=layout):
+                dp = DeepPot(path, auto_batch_size=False)
+                self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "graph")
+                actual = dict(
+                    zip(
+                        output_names,
+                        dp.eval(coords, cells, atom_types, atomic=True),
+                        strict=True,
+                    )
+                )
+                for name in output_names:
+                    np.testing.assert_allclose(
+                        actual[name],
+                        expected[name].detach().cpu().numpy(),
+                        rtol=1e-10,
+                        atol=1e-10,
+                        err_msg=name,
+                    )
+
+    def test_nlist_controls_fail_without_changing_graph_semantics(self) -> None:
+        output_def = ModelOutputDef(self.model.atomic_output_def())
+        path = self.pt_paths["plain"]
+        with self.assertRaisesRegex(
+            ValueError,
+            "switching to the nlist lower would change",
+        ):
+            PtExptDeepEval(
+                path,
+                output_def,
+                neighbor_list=mock.sentinel.neighbor_list,
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "only applies to nlist-routed artifacts",
+        ):
+            PtExptDeepEval(
+                path,
+                output_def,
+                nlist_backend="native",
+            )
 
 
 class TestPtExptLoadPtCompiledLayout(unittest.TestCase):
@@ -583,6 +837,81 @@ def _spin_eager_reference(model, COORD, ATYPE, SPIN, BOX):
     box_t = torch.tensor(BOX.reshape(1, 9), dtype=torch.float64, device=DEVICE)
     ref = model(coord_t, atype_t, spin_t, box_t)
     return {k: v.detach().cpu().numpy() for k, v in ref.items()}
+
+
+class TestPtExptLoadPtNativeSpinDPA4(unittest.TestCase):
+    """A native-spin DPA4 checkpoint reaches the graph-spin eager runner."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from ..model.test_dpa4_native_spin import (
+            NATIVE_SPIN_CONFIG,
+            _build_native_spin_model_cpu,
+        )
+        from .test_deep_eval_spin import (
+            ATYPE,
+            BOX,
+            COORD,
+            SPIN,
+        )
+
+        cls.ATYPE = ATYPE
+        cls.BOX = BOX
+        cls.COORD = COORD
+        cls.SPIN = SPIN
+        cls.model = _build_native_spin_model_cpu().to(DEVICE).eval()
+        cls.ref = _spin_eager_reference(
+            cls.model, cls.COORD, cls.ATYPE, cls.SPIN, cls.BOX
+        )
+        cls.pt_path = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
+        _save_pt_checkpoint(
+            cls.model,
+            copy.deepcopy(NATIVE_SPIN_CONFIG),
+            cls.pt_path,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if os.path.exists(cls.pt_path):
+            os.unlink(cls.pt_path)
+
+    def test_auto_dispatch_and_eval_match_eager(self) -> None:
+        backend = Backend.detect_backend_by_model(self.pt_path)
+        self.assertIs(backend, Backend.get_backend("pt-expt"))
+
+        dp = DeepPot(
+            self.pt_path,
+            auto_batch_size=False,
+            neighbor_graph_method="dense",
+        )
+        self.assertTrue(dp.has_spin)
+        self.assertEqual(dp.deep_eval.metadata["lower_input_kind"], "graph")
+        self.assertEqual(dp.deep_eval._neighbor_graph_method, "dense")
+
+        energy, force, virial, force_mag, mask_mag = dp.eval(
+            self.COORD,
+            self.BOX,
+            self.ATYPE,
+            atomic=False,
+            spin=self.SPIN,
+        )
+        for name, actual in (
+            ("energy", energy),
+            ("force", force),
+            ("virial", virial),
+            ("force_mag", force_mag),
+        ):
+            np.testing.assert_allclose(
+                actual.reshape(-1),
+                self.ref[name].reshape(-1),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=name,
+            )
+        np.testing.assert_array_equal(
+            mask_mag.reshape(-1),
+            self.ref["mask_mag"].reshape(-1),
+        )
 
 
 class _SpinFilesMixin:

@@ -47,7 +47,7 @@ from deepmd.dpmodel.utils.batch import (
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
+    make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.training_utils import (
     resolve_model_prob,
@@ -86,13 +86,15 @@ from deepmd.utils.finetune import (
 from deepmd.utils.model_stat import (
     make_stat_input,
 )
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    stat_file_specs_by_task,
+)
 
 if TYPE_CHECKING:
     from deepmd.utils.data_system import (
         DeepmdDataSystem,
-    )
-    from deepmd.utils.path import (
-        DPPath,
     )
 
 log = logging.getLogger(__name__)
@@ -211,7 +213,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | Mapping[str, DeepmdDataSystem],
-        stat_file_path: DPPath | Mapping[str, DPPath | None] | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem
         | Mapping[str, DeepmdDataSystem | None]
         | None = None,
@@ -267,10 +269,9 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         self.num_steps = int(training_params["numb_steps"])
@@ -361,10 +362,11 @@ class Trainer(AbstractTrainer):
                     "data stating for task %s... (this step may take long time)",
                     model_key,
                 )
-                self.models[model_key].compute_or_load_stat(
-                    self._sample_funcs[model_key],
-                    stat_file_path=self.stat_file_path_by_task[model_key],
-                )
+                with open_stat_file(self.stat_file_specs[model_key]) as stat_file_path:
+                    self.models[model_key].compute_or_load_stat(
+                        self._sample_funcs[model_key],
+                        stat_file_path=stat_file_path,
+                    )
 
         if self.finetune_model is not None:
             self._apply_finetune()
@@ -385,9 +387,9 @@ class Trainer(AbstractTrainer):
             resume=init_model is not None or restart_model is not None
         )
 
-        lr_params = dict(config["learning_rate"])
-        lr_params["num_steps"] = self.num_steps
-        self.lr_schedule = LearningRateExp(**lr_params)
+        self.lr_schedule = make_learning_rate_schedule(
+            config["learning_rate"], self.num_steps
+        )
         self.optimizer = self._build_optimizer(config.get("optimizer", {}))
         self.model_container = _TaskModelContainer(self.models)
         self.step = tf.Variable(0, dtype=tf.int64, trainable=False, name="step")
@@ -871,7 +873,9 @@ class Trainer(AbstractTrainer):
             aparam: Any,
             charge_spin: Any,
         ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any, bool]:
-            cc, bb, fp, ap, cs, _input_prec = model._input_type_cast(
+            # ``_input_type_cast`` returns a ``spin`` slot (native-spin graph
+            # route); tf2 has no spin lower, so it is discarded.
+            cc, bb, fp, ap, cs, _, _input_prec = model._input_type_cast(
                 to_tensorflow_array(coord),
                 box=to_tensorflow_array(box),
                 fparam=to_tensorflow_array(fparam),

@@ -104,6 +104,45 @@ class TestNeighborGraphBuilder(unittest.TestCase):
             brute_force_neighbor_sets(self.coord[0], None, self.rcut),
         )
 
+    def test_canonicalization_is_explicit(self) -> None:
+        generic = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        with_csr = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            with_csr=True,
+        )
+        canonical = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            canonicalize=True,
+        )
+
+        self.assertFalse(generic.destination_sorted)
+        self.assertIsNone(generic.destination_order)
+        self.assertIsNone(generic.destination_row_ptr)
+        self.assertIsNone(generic.source_order)
+        self.assertIsNone(generic.source_row_ptr)
+        self.assertFalse(with_csr.destination_sorted)
+        self.assertIsNotNone(with_csr.destination_order)
+        self.assertIsNotNone(with_csr.destination_row_ptr)
+        self.assertIsNotNone(with_csr.source_order)
+        self.assertIsNotNone(with_csr.source_row_ptr)
+        self.assertTrue(canonical.destination_sorted)
+        np.testing.assert_array_equal(
+            canonical.destination_order,
+            np.arange(canonical.edge_index.shape[1]),
+        )
+        real_destination = canonical.edge_index[1, canonical.edge_mask]
+        self.assertTrue(bool(np.all(real_destination[:-1] <= real_destination[1:])))
+        self.assertEqual(
+            graph_neighbor_sets(canonical, 4),
+            graph_neighbor_sets(generic, 4),
+        )
+
     def test_periodic_matches_brute_force(self) -> None:
         box = np.eye(3, dtype=np.float64)[None] * 6.0
         ng = build_neighbor_graph(self.coord, self.atype, box, self.rcut)
@@ -382,6 +421,25 @@ class TestBuildNeighborGraphPairExclOracle(unittest.TestCase):
         # sanity: exclusion actually REMOVED some edges
         self.assertLess(int(ng_fused.edge_mask.sum()), int(ng_base.edge_mask.sum()))
 
+    def test_canonical_csr_reflects_pair_exclusion(self) -> None:
+        pe = self._pair_excl([(0, 1), (1, 0)])
+        graph = build_neighbor_graph(
+            self.coord,
+            self.atype,
+            None,
+            self.rcut,
+            pair_excl=pe,
+            canonicalize=True,
+        )
+
+        valid_edges = int(graph.edge_mask.sum())
+        self.assertEqual(int(graph.destination_row_ptr[-1]), valid_edges)
+        self.assertEqual(int(graph.source_row_ptr[-1]), valid_edges)
+        self.assertTrue(bool(np.all(graph.edge_mask[:valid_edges])))
+        self.assertFalse(bool(np.any(graph.edge_mask[valid_edges:])))
+        destination = graph.edge_index[1, :valid_edges]
+        self.assertTrue(bool(np.all(destination[:-1] <= destination[1:])))
+
     def test_oracle_set_equality_dense_periodic(self) -> None:
         """Periodic PBC: builder with pair_excl==(0,0) == builder() + apply."""
         pe = self._pair_excl([(0, 0)])
@@ -466,11 +524,6 @@ class TestBuildNeighborGraphAseOracle(unittest.TestCase):
         # exclusion actually removed edges
         ng_ase_plain = build_neighbor_graph_ase(self.coord, self.atype, None, self.rcut)
         self.assertLess(int(ng_ase.edge_mask.sum()), int(ng_ase_plain.edge_mask.sum()))
-
-
-# NOTE: nvalchemiops builder has no local oracle set-equality test for pair_excl
-# because it requires CUDA; validation is deferred to GPU box tests (PR-C/nv-gtest).
-# See deepmd.pt_expt.utils.nv_graph_builder.build_neighbor_graph_nv docstring.
 
 
 if __name__ == "__main__":

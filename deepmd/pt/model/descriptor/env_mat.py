@@ -2,6 +2,13 @@
 
 import torch
 
+from deepmd.kernels.triton.env_mat import (
+    TRITON_AVAILABLE,
+)
+from deepmd.kernels.triton.env_mat import env_mat as _env_mat_triton
+from deepmd.kernels.utils import (
+    triton_infer_level,
+)
 from deepmd.pt.utils.preprocess import (
     compute_exp_sw,
     compute_smooth_weight,
@@ -77,6 +84,26 @@ def prod_env_mat(
     -------
     - env_mat: Shape is [nframes, natoms[1]*nnei*4].
     """
+    # Opt-in inference (``DP_TRITON_INFER >= 1``, CUDA): the fused Triton kernel
+    # forms the environment matrix in one node-parallel pass and carries a
+    # closed-form backward for the force path.  Training (level 0) and the CPU
+    # path keep the dense autograd chain below, which supports higher-order
+    # differentiation.  The block is nested under ``torch.jit.is_scripting`` so
+    # the whole (non-scriptable) branch is pruned under ``torch.jit.script``.
+    if not torch.jit.is_scripting():
+        if TRITON_AVAILABLE and triton_infer_level() >= 1 and extended_coord.is_cuda:
+            return _env_mat_triton(
+                extended_coord,
+                nlist,
+                atype,
+                mean,
+                stddev,
+                rcut,
+                rcut_smth,
+                radial_only=radial_only,
+                protection=protection,
+                use_exp_switch=use_exp_switch,
+            )
     _env_mat_se_a, diff, switch = _make_env_mat(
         nlist,
         extended_coord,

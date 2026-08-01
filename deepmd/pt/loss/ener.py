@@ -6,6 +6,11 @@ from typing import (
 import torch
 import torch.nn.functional as F
 
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    masked_pair_mean,
+    per_frame_component_mean,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -56,6 +61,8 @@ class EnergyStdLoss(TaskLoss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
         loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
@@ -103,6 +110,10 @@ class EnergyStdLoss(TaskLoss):
             The prefactor of generalized force loss at the end of the training.
         numb_generalized_coord : int
             The dimension of generalized coordinates.
+        start_pref_h : float
+            The prefactor of Hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of Hessian loss at the end of the training.
         loss_func : str
             Loss function type. Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
             MAE loss is less sensitive to outliers compared to MSE loss.
@@ -152,6 +163,10 @@ class EnergyStdLoss(TaskLoss):
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
         self.has_gf = start_pref_gf != 0.0 and limit_pref_gf != 0.0
+        # Hessian labels scale quadratically with the atom count. Unlike the
+        # linear-size labels above, do not request them merely because a mock
+        # inference loss is collecting requirements for ``dp change-bias``.
+        self.has_h = start_pref_h != 0.0 or limit_pref_h != 0.0
 
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -165,6 +180,8 @@ class EnergyStdLoss(TaskLoss):
         self.limit_pref_pf = limit_pref_pf
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
         self.use_default_pf = use_default_pf
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
@@ -191,8 +208,10 @@ class EnergyStdLoss(TaskLoss):
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
             raise RuntimeError(
-                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force."
             )
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian.")
 
     def forward(
         self,
@@ -233,6 +252,7 @@ class EnergyStdLoss(TaskLoss):
         pref_ae = self.limit_pref_ae + (self.start_pref_ae - self.limit_pref_ae) * coef
         pref_pf = self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * coef
         pref_gf = self.limit_pref_gf + (self.start_pref_gf - self.limit_pref_gf) * coef
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
@@ -282,7 +302,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive): per-frame normalization.
                     se = torch.square(energy_pred - energy_label)  # [nf, k]
-                    per_frame = torch.mean(se.reshape(_nf, -1), dim=-1)  # [nf]
+                    per_frame = per_frame_component_mean(se)  # [nf]
                     if not self.use_huber:
                         loss += pref_e * torch.mean(per_frame * inv**norm_exp)
                     else:
@@ -319,8 +339,9 @@ class EnergyStdLoss(TaskLoss):
                     reduction="mean",
                 )
                 if maskf is not None:
-                    abs_e = torch.abs(energy_pred - energy_label)
-                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        torch.abs(energy_pred - energy_label)
+                    )
                     l1_ener_masked = torch.mean(per_frame_ae * inv)
                     loss += pref_e * l1_ener_masked
                     more_loss["mae_e"] = self.display_if_exist(
@@ -339,8 +360,9 @@ class EnergyStdLoss(TaskLoss):
                 )
             if mae:
                 if maskf is not None:
-                    abs_e = torch.abs(energy_pred - energy_label)
-                    per_frame_ae = torch.mean(abs_e.reshape(_nf, -1), dim=-1)
+                    per_frame_ae = per_frame_component_mean(
+                        torch.abs(energy_pred - energy_label)
+                    )
                     mae_e = torch.mean(per_frame_ae * inv)
                 else:
                     mae_e = (
@@ -382,10 +404,9 @@ class EnergyStdLoss(TaskLoss):
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         maskf_col = maskf.reshape(_nf, _nloc, 1)
                         # Masked MSE computed for rmse_f display regardless of use_huber.
-                        sq_f = torch.square(diff_f_3d) * maskf_col
-                        _pfs = sq_f.reshape(_nf, -1).sum(dim=-1)
-                        _pfd = maskf.sum(dim=-1) * 3
-                        l2_f_masked = torch.mean(_pfs / _pfd)
+                        l2_f_masked = masked_atom_mean(
+                            torch.square(diff_f_3d), maskf, 3
+                        )
                         if not self.use_huber:
                             loss += (pref_f * l2_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         else:
@@ -456,12 +477,10 @@ class EnergyStdLoss(TaskLoss):
                 elif self.loss_func == "mae":
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
                         if not self.f_use_norm:
-                            abs_f = torch.abs(diff_f_3d) * maskf_col
-                            per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
-                            per_frame_dof = maskf.sum(dim=-1) * 3
-                            l1_f_masked = torch.mean(per_frame_sum / per_frame_dof)
+                            l1_f_masked = masked_atom_mean(
+                                torch.abs(diff_f_3d), maskf, 3
+                            )
                         else:
                             diff_3 = (force_label - force_pred).reshape(_nf, _nloc, 3)
                             norm_2d = torch.linalg.vector_norm(
@@ -500,11 +519,7 @@ class EnergyStdLoss(TaskLoss):
                 if mae:
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        abs_f = torch.abs(diff_f_3d) * maskf_col
-                        per_frame_sum = abs_f.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        mae_f = torch.mean(per_frame_sum / per_frame_dof)
+                        mae_f = masked_atom_mean(torch.abs(diff_f_3d), maskf, 3)
                     else:
                         mae_f = torch.mean(torch.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
@@ -531,11 +546,9 @@ class EnergyStdLoss(TaskLoss):
                         # Idiom 1 with pref weight (ncomp=3).
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         pf_3d = atom_pref.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        sq_pf = torch.square(diff_f_3d) * pf_3d * maskf_col
-                        per_frame_sum = sq_pf.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        l2_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        l2_pf_masked = masked_atom_mean(
+                            torch.square(diff_f_3d) * pf_3d, maskf, 3
+                        )
                         loss += (pref_pf * l2_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         rmse_pf = l2_pf_masked.sqrt()
                         more_loss["rmse_pf"] = self.display_if_exist(
@@ -554,11 +567,9 @@ class EnergyStdLoss(TaskLoss):
                     if maskf is not None:
                         diff_f_3d = diff_f.reshape(_nf, _nloc, 3)
                         pf_3d = atom_pref.reshape(_nf, _nloc, 3)
-                        maskf_col = maskf.reshape(_nf, _nloc, 1)
-                        abs_pf = torch.abs(diff_f_3d) * pf_3d * maskf_col
-                        per_frame_sum = abs_pf.reshape(_nf, -1).sum(dim=-1)
-                        per_frame_dof = maskf.sum(dim=-1) * 3
-                        l1_pf_masked = torch.mean(per_frame_sum / per_frame_dof)
+                        l1_pf_masked = masked_atom_mean(
+                            torch.abs(diff_f_3d) * pf_3d, maskf, 3
+                        )
                         loss += (pref_pf * l1_pf_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                         more_loss["mae_pf"] = self.display_if_exist(
                             l1_pf_masked.detach(), find_atom_pref
@@ -635,7 +646,7 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization.
                     se_v = torch.square(diff_v)  # [nf, 9]
-                    per_frame_v = torch.mean(se_v, dim=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(se_v)  # [nf]
                     if not self.use_huber:
                         loss += pref_v * torch.mean(per_frame_v * inv**norm_exp)
                     else:
@@ -671,8 +682,7 @@ class EnergyStdLoss(TaskLoss):
                     reduction="mean",
                 )
                 if maskf is not None:
-                    abs_v = torch.abs(diff_v)  # [nf, 9]
-                    per_frame_v = torch.mean(abs_v, dim=-1)  # [nf]
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))  # [nf]
                     l1_v_masked = torch.mean(per_frame_v * inv)
                     loss += pref_v * l1_v_masked
                     more_loss["mae_v"] = self.display_if_exist(
@@ -690,8 +700,7 @@ class EnergyStdLoss(TaskLoss):
                 )
             if mae:
                 if maskf is not None:
-                    abs_v = torch.abs(diff_v)
-                    per_frame_v = torch.mean(abs_v, dim=-1)
+                    per_frame_v = per_frame_component_mean(torch.abs(diff_v))
                     mae_v = torch.mean(per_frame_v * inv)
                 else:
                     mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
@@ -717,10 +726,10 @@ class EnergyStdLoss(TaskLoss):
                     # Idiom 1 (per-atom masked mean, ncomp=1).
                     ae_2d = atom_ener.reshape(_nf, _nloc)
                     ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
-                    sq_ae = torch.square(ae_hat_2d - ae_2d) * maskf  # [nf, nloc]
-                    per_frame_sum = sq_ae.sum(dim=-1)  # [nf]
-                    per_frame_dof = maskf.sum(dim=-1)  # [nf]
-                    l2_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    per_frame_dof = maskf.sum(dim=-1)  # [nf], kept for huber branch
+                    l2_ae_masked = masked_atom_mean(
+                        torch.square(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     if not self.use_huber:
                         loss += (pref_ae * l2_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     else:
@@ -765,10 +774,9 @@ class EnergyStdLoss(TaskLoss):
                 if maskf is not None:
                     ae_2d = atom_ener.reshape(_nf, _nloc)
                     ae_hat_2d = atom_ener_label.reshape(_nf, _nloc)
-                    abs_ae = torch.abs(ae_hat_2d - ae_2d) * maskf
-                    per_frame_sum = abs_ae.sum(dim=-1)
-                    per_frame_dof = maskf.sum(dim=-1)
-                    l1_ae_masked = torch.mean(per_frame_sum / per_frame_dof)
+                    l1_ae_masked = masked_atom_mean(
+                        torch.abs(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                    )
                     loss += (pref_ae * l1_ae_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_ae_masked.detach(), find_atom_ener
@@ -782,6 +790,46 @@ class EnergyStdLoss(TaskLoss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for atomic energy loss."
                 )
+
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
+            find_hessian = label.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            if maskf is not None:
+                hessian_shape = (_nf, _nloc * 3, _nloc * 3)
+                diff_h = label["hessian"].reshape(hessian_shape) - model_pred[
+                    "hessian"
+                ].reshape(hessian_shape)
+                # Both Cartesian axes must refer to real atoms for a Hessian
+                # element to contribute to the loss or display denominator.
+                l2_hessian_loss = masked_pair_mean(torch.square(diff_h), maskf, ncomp=3)
+            else:
+                diff_h = label["hessian"].reshape(-1) - model_pred["hessian"].reshape(
+                    -1
+                )
+                l2_hessian_loss = torch.mean(torch.square(diff_h))
+            if not self.inference:
+                more_loss["l2_hessian_loss"] = self.display_if_exist(
+                    l2_hessian_loss.detach(), find_hessian
+                )
+            mae_h = None
+            if self.loss_func == "mae" or mae:
+                if maskf is not None:
+                    mae_h = masked_pair_mean(torch.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = torch.mean(torch.abs(diff_h))
+            if self.loss_func == "mse":
+                loss += pref_h * l2_hessian_loss
+            elif self.loss_func == "mae":
+                loss += pref_h * mae_h
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for hessian loss."
+                )
+            more_loss["rmse_h"] = self.display_if_exist(
+                l2_hessian_loss.sqrt().detach(), find_hessian
+            )
+            if mae:
+                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
 
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
@@ -864,6 +912,17 @@ class EnergyStdLoss(TaskLoss):
                     default=1.0,
                 )
             )
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                    special_shape="hessian",
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:
@@ -874,9 +933,11 @@ class EnergyStdLoss(TaskLoss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
-            "@version": 4,
+            # Only Hessian-bearing payloads need the version-5 schema. Keeping
+            # ordinary energy losses at version 4 preserves existing readers.
+            "@version": 5 if self.has_h else 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -900,6 +961,10 @@ class EnergyStdLoss(TaskLoss):
             "use_default_pf": self.use_default_pf,
             "intensive_ener_virial": self.intensive_ener_virial,
         }
+        if self.start_pref_h != 0.0 or self.limit_pref_h != 0.0:
+            data["start_pref_h"] = self.start_pref_h
+            data["limit_pref_h"] = self.limit_pref_h
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "TaskLoss":
@@ -917,89 +982,18 @@ class EnergyStdLoss(TaskLoss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 3:
             data.setdefault("intensive_ener_virial", False)
+        # Version 5 introduced explicit Hessian prefactors. Version 1-4
+        # payloads therefore default to the standard non-Hessian loss.
+        if version < 5:
+            data.setdefault("start_pref_h", 0.0)
+            data.setdefault("limit_pref_h", 0.0)
         return cls(**data)
 
 
 class EnergyHessianStdLoss(EnergyStdLoss):
-    def __init__(
-        self,
-        start_pref_h: float = 0.0,
-        limit_pref_h: float = 0.0,
-        **kwargs: Any,
-    ) -> None:
-        r"""Enable the layer to compute loss on hessian.
-
-        Parameters
-        ----------
-        start_pref_h : float
-            The prefactor of hessian loss at the start of the training.
-        limit_pref_h : float
-            The prefactor of hessian loss at the end of the training.
-        **kwargs
-            Other keyword arguments.
-        """
-        super().__init__(**kwargs)
-        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
-
-        self.start_pref_h = start_pref_h
-        self.limit_pref_h = limit_pref_h
-
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
-        model_pred, loss, more_loss = super().forward(
-            input_dict, model, label, natoms, learning_rate, mae=mae
-        )
-        coef = learning_rate / self.starter_learning_rate
-        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
-
-        if self.has_h and "hessian" in model_pred and "hessian" in label:
-            find_hessian = label.get("find_hessian", 0.0)
-            pref_h = pref_h * find_hessian
-            diff_h = label["hessian"].reshape(
-                -1,
-            ) - model_pred["hessian"].reshape(
-                -1,
-            )
-            l2_hessian_loss = torch.mean(torch.square(diff_h))
-            if not self.inference:
-                more_loss["l2_hessian_loss"] = self.display_if_exist(
-                    l2_hessian_loss.detach(), find_hessian
-                )
-            loss += pref_h * l2_hessian_loss
-            rmse_h = l2_hessian_loss.sqrt()
-            more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
-            if mae:
-                mae_h = torch.mean(torch.abs(diff_h))
-                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
-
-        if not self.inference:
-            more_loss["rmse"] = torch.sqrt(loss.detach())
-        return model_pred, loss, more_loss
-
-    @property
-    def label_requirement(self) -> list[DataRequirementItem]:
-        """Add hessian label requirement needed for this loss calculation."""
-        label_requirement = super().label_requirement
-        if self.has_h:
-            label_requirement.append(
-                DataRequirementItem(
-                    "hessian",
-                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
-            )
-        return label_requirement
+    """Backward-compatible name for the unified energy loss."""

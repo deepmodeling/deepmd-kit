@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """3-body angle graph: pairs of edges sharing a center within a_rcut.
 
-Angles reference EDGES (angle_index into [0,E)); edge_vec stays the only
-geometry leaf. a_sel is normalization-only (not a truncation). Reuses PR-D's
-center_edge_pairs; a_rcut filters the participating edges.
+Angles reference edges (angle_index into [0,E)); edge_vec stays the only
+geometry leaf. a_sel is normalization-only (not a truncation), and a_rcut
+filters the edges passed to center_edge_pairs.
 """
 
 from __future__ import (
@@ -89,8 +89,8 @@ def build_angle_index(
     # the normalization below.
     dist = safe_for_vector_norm(edge_vec, axis=-1)  # (E,)
     a_edge_mask = xp.astype(edge_mask, xp.bool) & (dist < a_rcut)
-    # compact eager form only (static_nnei not exposed until angle export is
-    # needed, PR-G). dst = edge_index[1, :] per the [src, dst] SoA convention.
+    # The compact eager form groups by destination under the [src, dst] SoA
+    # convention.
     q_e, k_e, pair_mask = center_edge_pairs(
         edge_index[1, :],
         a_edge_mask,

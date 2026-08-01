@@ -1,8 +1,7 @@
 # Descriptor DPA4 {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}
 
 DPA4 is the DeePMD-kit implementation of the SeZM (Smooth Equivariant
 Zone-bridging Model) architecture: an SO(3)-equivariant message-passing model
@@ -74,16 +73,15 @@ DPA4/SeZM defaults to `float32`
 ({ref}`precision <model[dpa4]/descriptor[dpa4]/precision>`); double precision is
 unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 
-:::{note}
-{ref}`sel <model[dpa4]/descriptor[dpa4]/sel>` behaves differently from classic
-descriptors. On the conservative **energy** path it is only an initial
-neighbor-search capacity that grows on demand, so it never truncates the
-neighbor list and you do not need to size it to the true maximum neighbor count.
-The native spin scheme shares this energy path, so it grows on demand too; only
-the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
-`sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
-the training data.
-:::
+> [!NOTE]
+> {ref}`sel <model[dpa4]/descriptor[dpa4]/sel>` behaves differently from classic
+> descriptors. On the conservative **energy** path it is only an initial
+> neighbor-search capacity that grows on demand, so it never truncates the
+> neighbor list and you do not need to size it to the true maximum neighbor count.
+> The native spin scheme shares this energy path, so it grows on demand too; only
+> the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
+> `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
+> the training data.
 
 ### Main options
 
@@ -390,14 +388,13 @@ level `3` perturbs forces at the 2^-22 rounding scale (three orders of
 magnitude finer than TF32) and is the recommended fast setting once validated
 for the target system.
 
-:::{important}
-Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
-matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
-captured into the graph at export time and are **not** re-evaluated when the
-`.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
-package, so training-time memory-saving switches do not apply to it.
-:::
+> [!IMPORTANT]
+> Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
+> an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
+> matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
+> captured into the graph at export time and are **not** re-evaluated when the
+> `.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+> package, so training-time memory-saving switches do not apply to it.
 
 ### Hardware selection
 
@@ -432,24 +429,57 @@ pair_coeff * * O H
 
 ### Multi-GPU (MPI) inference
 
-The exported `.pt2` runs across multiple GPUs in LAMMPS using MPI domain
-decomposition. Multi-GPU support is built into the package by `dp --pt freeze`,
-so no extra freeze options are needed and the same `.pt2` file serves both
-single- and multi-GPU runs.
+:::{important}
+**Multi-rank support depends on the model, not on a dense/graph choice.**
+DPA4/SeZM reads ghost-neighbour features at every interaction block, so a
+multi-rank archive must embed a with-comm AOTInductor artifact
+(`model/extra/forward_lower_with_comm.pt2`) for the cross-rank exchange.
+Two different export routes produce one:
 
-Launch LAMMPS with one MPI rank per GPU and make the target devices visible:
+- **PT (`dp --pt freeze`, the default on this page).** DPA4/SeZM is detected
+  and exported through `freeze_sezm_to_pt2`, which uses the compact
+  **`edge_vec`** ABI (`coord`, `atype`, `edge_index`, `edge_vec`,
+  `edge_scatter_index`, `edge_mask`), building the neighbour topology on the
+  C++ side. This is *not* a padded dense neighbour-list export. A plain
+  energy model reports `supports_edge_parallel() == True`, so the archive
+  carries the with-comm artifact (`has_comm_artifact=true`) and **supports
+  multi-rank LAMMPS out of the box** — no extra freeze options.
+- **pt_expt (`dp --pt_expt freeze`).** Graph-capable models export through the
+  **NeighborGraph** ABI (see [Graph-native inference route
+  (pt_expt)](#graph-native-inference-route-pt_expt) below), which likewise
+  embeds a with-comm artifact and supports multi-rank LAMMPS.
+
+The two are distinct ABIs consumed by different C++ paths; neither is a dense
+route, and `--lower-kind` selects between the pt_expt lowers only.
+
+Which models lose multi-rank, on either route:
+
+- **ZBL zone bridging.** The Source Freeze Propagation gate folds each node's
+  full *outgoing*-edge set, which no single rank observes for ghost owners, so
+  `supports_edge_parallel()` is `False` and no with-comm artifact is emitted.
+  Bridged archives are single-rank; a multi-rank run fails with a clear error
+  rather than silently dropping the exchange.
+- **The deepspin (virtual-atom) spin scheme**, which overrides the export ABI
+  to `nlist` because it expands virtual atoms inside the graph.
+
+Native spin (`scheme: "native"`) and charge/spin conditioning are *not* in
+that list: native spin reuses the `edge_vec` interface on PT and the
+NeighborGraph lower on pt_expt, and both support multi-rank. The remainder of
+this subsection describes the multi-GPU launch recipe.
+:::
+
+The exported `.pt2` runs across multiple GPUs in LAMMPS using MPI domain
+decomposition, with the same `.pt2` file serving both single- and multi-GPU
+runs and no extra freeze options needed beyond `--lower-kind graph`. The
+launch recipe:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 ```
 
 Each MPI rank uses at most one GPU, so `CUDA_VISIBLE_DEVICES` must list every
-GPU the run may use. If only one device is visible, all ranks share it: results
-stay correct, but the GPU work is serialized and that device's memory grows
-with the rank count.
-
-DPA4/SeZM exchanges neighbor information across the domain boundary, so the
-LAMMPS atom map must be enabled:
+GPU the run may use. DPA4/SeZM exchanges neighbor information across the
+domain boundary, so the LAMMPS atom map must be enabled:
 
 ```lammps
 atom_modify map yes
@@ -466,8 +496,117 @@ Two settings improve multi-GPU runs:
   memory stable. A zero skin rebuilds the neighbor list every step and can
   substantially increase memory use.
 
-Multi-GPU inference applies to the plain energy model. ZBL zone bridging and
-spin models run on a single MPI rank.
+## Graph-native inference route (pt_expt)
+
+In the pt_expt backend, a plain-energy DPA4/SeZM descriptor -- or one
+configured with `spin.scheme: native` (see [Native spin
+(magnetic)](#native-spin-magnetic) below) -- can be frozen through a
+NeighborGraph-native inference path instead of the legacy dense
+neighbor-list path. Frame-level charge/spin conditioning
+(`add_chg_spin_ebd`) and ZBL zone bridging are graph-eligible too; only the
+`deepspin` virtual-atom spin scheme remains dense-only:
+
+```bash
+dp --pt_expt freeze -o model.pt2 --lower-kind graph
+```
+
+As with DPA-1's and DPA-2's graph paths (see [Difference among different
+backends](train-se-atten.md#difference-among-different-backends) and the
+"Graph-native inference route (pt_expt)" section of [DPA-2's
+documentation](dpa2.md)), the graph route is a sel-free, carry-all builder:
+it considers every neighbor within `rcut` rather than the capacity fixed by
+`sel`. For the default conservative-energy path, `sel` is already only an
+initial search capacity that grows on demand (see the note in [Minimal
+input](#minimal-input)), so graph and dense results agree there down to
+floating-point noise. Where `sel` does act as a hard cap -- the `dens`
+denoising path, or the `deepspin` virtual-atom spin scheme, both of which
+size the neighbor list to `sum(sel)` -- the graph route's larger neighbor set
+can diverge from the dense route, the same deliberate divergence documented
+for DPA-1/DPA-2.
+
+A DPA4/SeZM descriptor configured with `deepspin`-scheme spin is not
+graph-eligible and always runs the dense route regardless of `--lower-kind`;
+`--lower-kind graph` on such a model raises an error at freeze time instead
+of exporting a silently-dense-only artifact. `native`-scheme spin and ZBL
+zone bridging are the opposite case: they have *no* dense route at all --
+the analytical bridging term has no dense injection site -- so they are
+always graph-frozen, `--lower-kind` notwithstanding. Charge/spin
+conditioning rides the graph lower and constrains neither. Note that a
+graph-capable model is always frozen to the graph lower in any case, since
+the dense lower is deprecated in the pt_expt backend. See [Native spin (magnetic)](#native-spin-magnetic) below.
+
+Unlike the dense route (see [Multi-GPU (MPI)
+inference](#multi-gpu-mpi-inference) above), a graph-frozen `.pt2` **of a
+plain-energy (non-spin) model** embeds a with-comm AOTInductor artifact and
+supports multi-rank LAMMPS: each block's cross-rank ghost-feature exchange
+runs through the `border_op` MPI path once per interaction block, the same
+mechanism used by DPA-2's graph route (see the "Graph-native inference route
+(pt_expt)" section of [DPA-2's documentation](dpa2.md)). As on DPA-2,
+multi-rank inference on the graph route requires every MPI rank to own or
+ghost at least one atom; a rank with zero atoms in both categories aborts the
+run collectively rather than silently desynchronizing the per-block
+exchange. Pick a domain decomposition that keeps every rank non-empty, or use
+the dense route, which has no such restriction (but is single-rank only, as
+noted above).
+
+**Native-spin graph `.pt2` archives are the exception: they carry no
+with-comm artifact and are single-rank only** -- see [Native spin
+(magnetic)](#native-spin-magnetic) below.
+
+### Native spin (magnetic)
+
+`spin.scheme: native` (see [Spin](#spin) above for the general convention and
+the `native`-scheme JSON example) is graph-only: a native-spin DPA4/SeZM
+model has no dense (nlist) lower at all, so it is always frozen through the
+NeighborGraph path regardless of `--lower-kind`, and always runs through it
+at inference time. The `deepspin` virtual-atom scheme is unaffected and
+keeps using the dense route described in [Spin](#spin) and [Multi-GPU (MPI)
+inference](#multi-gpu-mpi-inference).
+
+- **Native scheme only.** `deepspin`-scheme spin (and the general `spin`
+  virtual-atom model outside DPA4/SeZM) is dense-only; only `scheme: native`
+  is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
+  `deepspin`-scheme model raises an error at freeze time, per the dense/graph
+  eligibility rule above.
+- **Graph route only, no dense fallback.** Unlike a plain-energy DPA4/SeZM
+  descriptor -- which can freeze to either the dense or the graph lower --
+  a native-spin descriptor has only the graph lower. `--lower-kind auto`
+  (the default) resolves to `graph`; `--lower-kind nlist` is not a valid
+  option for a native-spin model.
+- **Single-rank only.** The frozen archive's `has_comm_artifact` metadata is
+  `false` for native-spin models (no ghost-spin cross-rank exchange is
+  implemented), so a multi-rank LAMMPS run fails fast with an explicit error
+  at the first force evaluation, mirroring the dense route's single-rank
+  restriction described in [Multi-GPU (MPI)
+  inference](#multi-gpu-mpi-inference). Run native-spin models on a single
+  MPI rank (a single GPU, or CPU without `mpirun`).
+- **Spin is per local atom.** The `spin` input is `(nframes, nloc, 3)` --
+  one vector per *local* atom, not per ghost/extended atom (`nall`); there is
+  no ghost-spin exchange to populate ghost spins across a rank boundary,
+  consistent with the single-rank restriction above.
+- **The magnetic force is a second energy gradient.** As in the general
+  native-scheme convention (see [Spin](#spin) above),
+  `force_mag = -\partial E/\partial\mathbf{s}`, computed by pt_expt as a
+  second `torch.autograd.grad` call alongside the ordinary
+  `force = -\partial E/\partial\mathbf{r}` call; both are real autograd
+  outputs, not placeholders. The dpmodel (NumPy) backend is energy-only for
+  native-spin models -- it has no autograd, so `force`/`force_mag`/`virial`
+  are `None` placeholders there, exactly as for the plain-energy dpmodel
+  route.
+
+The following combinations are **not yet supported** on the native-spin
+graph route (follow-up work):
+
+- **Multi-rank inference.** Ghost-spin cross-rank exchange (analogous to the
+  plain-energy graph route's `border_op`-based ghost-feature exchange) is not
+  implemented.
+- **Charge-spin FiLM conditioning.** Combining `add_chg_spin_ebd` with
+  `spin.scheme: native` is rejected at model-construction time; use one or
+  the other.
+- **ZBL zone bridging.** Combining `bridging_method: ZBL` with
+  `spin.scheme: native` is not supported on the pt_expt backend (`bridging_method`
+  is rejected there independently of spin -- see [Zone bridging
+  (ZBL)](#zone-bridging-zbl)).
 
 ## Embedding extraction
 
@@ -584,8 +723,24 @@ closed over the one-hop neighbor shell.
 - DPA4/SeZM is implemented for the PyTorch backend only.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
-- Multi-GPU (MPI) LAMMPS inference is supported for the plain energy model;
-  ZBL zone bridging and spin models run on a single MPI rank.
+- Multi-rank (multi-GPU/MPI) LAMMPS inference works for a plain energy model
+  on both export routes: the PT `edge_vec` archive and the pt_expt
+  NeighborGraph archive each embed a with-comm artifact. ZBL zone bridging is
+  single-rank (its Source Freeze Propagation gate folds each node's full
+  outgoing-edge set, which no single rank observes), and a multi-rank run of
+  such an archive fails fast rather than dropping the exchange. See
+  [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
+- The pt_expt graph-native inference route is unavailable only for
+  `deepspin`-scheme spin, which stays on the dense route. Charge/spin
+  conditioning, ZBL zone bridging and `native`-scheme spin are all
+  graph-eligible.
+- `spin.scheme: native` is graph-only (it has no dense route) and supports
+  multi-rank LAMMPS: ghost node features ride `border_op` per interaction
+  block and ghost spins arrive through the LAMMPS `sp` forward-comm.
+  Charge-spin FiLM conditioning combines with it. Combining it with ZBL zone
+  bridging works single-rank; that combination is single-rank for the same
+  bridging reason as above. See [Native spin
+  (magnetic)](#native-spin-magnetic).
 
 ## Citation
 

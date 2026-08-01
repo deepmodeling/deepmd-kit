@@ -37,6 +37,46 @@ from .base_atomic_model import (
 )
 
 
+def _extend_graph_aparam(
+    aparam: Array,
+    n_node: Array,
+    n_local: Array,
+    n_total: int,
+) -> Array:
+    """Expand frame-local atomic parameters onto a local-plus-halo node axis."""
+    import array_api_compat
+
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        frame_id_from_n_node,
+        node_ownership_mask,
+    )
+
+    xp = array_api_compat.array_namespace(aparam, n_node, n_local)
+    frame_id = frame_id_from_n_node(n_node, n_total=n_total)
+    frame_end = xp.cumulative_sum(n_node)
+    frame_start = frame_end - n_node
+    node_index = xp.arange(
+        n_total,
+        dtype=n_node.dtype,
+        device=array_api_compat.device(n_node),
+    )
+    index_in_frame = node_index - xp.take(frame_start, frame_id, axis=0)
+    local_capacity = aparam.shape[1]
+    sentinel = xp.zeros(
+        (aparam.shape[0], 1, aparam.shape[2]),
+        dtype=aparam.dtype,
+        device=array_api_compat.device(aparam),
+    )
+    padded_aparam = xp.concat([aparam, sentinel], axis=1)
+    padded_capacity = local_capacity + 1
+    local_index = index_in_frame % padded_capacity
+    flat_index = frame_id * padded_capacity + local_index
+    flat_aparam = xp.reshape(padded_aparam, (-1, aparam.shape[-1]))
+    gathered = xp.take(flat_aparam, flat_index, axis=0)
+    ownership = node_ownership_mask(n_node, n_local, n_total)
+    return xp.where(ownership[:, None], gathered, xp.zeros_like(gathered))
+
+
 @BaseAtomicModel.register("standard")
 class DPAtomicModel(BaseAtomicModel):
     r"""Model give atomic prediction of some physical property.
@@ -83,6 +123,22 @@ class DPAtomicModel(BaseAtomicModel):
         self.add_chg_spin_ebd: bool = getattr(
             self.descriptor, "add_chg_spin_ebd", False
         )
+        # Structural capability: only descriptors with a native spin
+        # conditioning mechanism (currently DPA4) accept a ``spin`` kwarg on
+        # ``call_graph`` at all -- unlike ``charge_spin``, which every
+        # descriptor's dense ``call()`` accepts (and ignores) for interface
+        # stability, the graph-native ``call_graph`` signature is
+        # per-descriptor, so ``forward_atomic_graph`` must not pass the
+        # keyword to a descriptor whose ``call_graph`` does not declare it
+        # (that would be a ``TypeError``, not a no-op). Queried via the
+        # ``supports_native_spin`` capability method declared on
+        # ``BaseDescriptor`` (concrete default ``False``; DPA4 overrides).
+        self._supports_native_spin: bool = self.descriptor.supports_native_spin()
+        # Same capability method as ``supports_native_spin`` above, for the
+        # frame-level ``charge_spin`` FiLM kwarg: only DPA4's ``call_graph``
+        # declares it; other descriptors' ``call_graph`` would ``TypeError``
+        # on an unconditional ``charge_spin=`` kwarg.
+        self.supports_charge_spin: bool = self.descriptor.supports_charge_spin()
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:
@@ -106,6 +162,14 @@ class DPAtomicModel(BaseAtomicModel):
         if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
             return self.descriptor.get_default_chg_spin()
         return None
+
+    def uses_graph_lower(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.uses_graph_lower())
+
+    def supports_native_spin(self) -> bool:
+        """Delegates to this model's own descriptor (cached at construction)."""
+        return self._supports_native_spin
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -261,6 +325,8 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
@@ -280,8 +346,19 @@ class DPAtomicModel(BaseAtomicModel):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded to the
+            descriptor's ``call_graph`` only when
+            ``self.supports_charge_spin`` (currently DPA4 only); ignored (not
+            forwarded, never a ``TypeError``) for descriptors without that
+            capability, keeping the interface stable for all of them.
+        spin
+            flat (N, 3) per-node spin, forwarded to the descriptor's
+            ``call_graph``; None for spin-less models.
+        comm_dict
+            MPI communication metadata forwarded to the descriptor's
+            ``call_graph`` (the message-passing part). ``None`` for
+            non-parallel inference (default). Mirrors :meth:`forward_atomic`'s
+            ``comm_dict`` on the dense route.
 
         Returns
         -------
@@ -296,16 +373,50 @@ class DPAtomicModel(BaseAtomicModel):
         )
 
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        type_embedding = self.descriptor.type_embedding.call()
+        # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
+        # embeds types internally from ``atype`` and returns None.
+        type_embedding = self.descriptor.graph_type_embedding_table()
+        # Only forward the ``spin``/``charge_spin`` keyword to descriptors
+        # whose ``call_graph`` declares it.  Queried through the public
+        # capability -- an override must reach THIS call site too, so the
+        # cached field stays behind the method.
+        spin_kwargs = {"spin": spin} if self.supports_native_spin() else {}
+        charge_spin_kwargs = (
+            {"charge_spin": charge_spin} if self.supports_charge_spin else {}
+        )
         gg, rot_mat = self.descriptor.call_graph(
-            graph, atype, type_embedding=type_embedding
+            graph,
+            atype,
+            type_embedding=type_embedding,
+            comm_dict=comm_dict,
+            **spin_kwargs,
+            **charge_spin_kwargs,
         )
         fparam_node = None
         if fparam is not None:
-            frame_id = frame_id_from_n_node(graph.n_node)
+            # Pass the STATIC flat node count (``atype.shape[0] == N``) so the
+            # helper does not fall back to ``int(sum(n_node))``: that int() on a
+            # traced tensor breaks make_fx / torch.export
+            # (``GuardOnDataDependentSymNode``) for the graph .pt2 export and
+            # compiled-training paths when ``numb_fparam > 0``.
+            frame_id = frame_id_from_n_node(graph.n_node, n_total=atype.shape[0])
             fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
+        aparam_node = aparam
+        if aparam is not None and graph.n_local is not None and aparam.ndim == 3:
+            aparam_node = _extend_graph_aparam(
+                aparam,
+                graph.n_node,
+                graph.n_local,
+                atype.shape[0],
+            )
         return self.fitting_net.call_graph(
-            gg, atype, gr=rot_mat, g2=None, h2=None, fparam=fparam_node, aparam=aparam
+            gg,
+            atype,
+            gr=rot_mat,
+            g2=None,
+            h2=None,
+            fparam=fparam_node,
+            aparam=aparam_node,
         )
 
     def compute_or_load_stat(

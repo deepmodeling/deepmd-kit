@@ -37,6 +37,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     apply_pair_exclusion,
+    attach_edge_csr,
     neighbor_graph_from_ijs,
 )
 from deepmd.pt.utils.nv_nlist import (
@@ -212,6 +213,8 @@ def build_neighbor_graph_nv(
     rcut: float,
     layout: GraphLayout | None = None,
     *,
+    with_csr: bool = False,
+    canonicalize: bool = False,
     pair_excl: PairExcludeMask | None = None,
     compact: bool = False,
 ) -> NeighborGraph:
@@ -229,6 +232,12 @@ def build_neighbor_graph_nv(
         cutoff radius.
     layout
         edge-axis length policy; ``None`` => dynamic with ``min_edges`` guards.
+    with_csr
+        Whether to construct destination/source CSR views for a consumer that
+        requires edge-grouped reductions.
+    canonicalize
+        Whether to reorder every edge field into destination-major form. Implies
+        ``with_csr=True``.
     pair_excl
         Optional :class:`~deepmd.dpmodel.utils.neighbor_graph.graph.PairExcludeMask`
         for model-level ``pair_exclude_types``. When given,
@@ -248,12 +257,6 @@ def build_neighbor_graph_nv(
     ------
     ImportError
         if ``nvalchemi-toolkit-ops`` (CUDA) is not installed.
-
-    Notes
-    -----
-    The ``pair_excl`` path of this builder has no local oracle set-equality test
-    because nvalchemiops requires CUDA; the set-equality contract must be
-    validated on a GPU box (same pattern as :class:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph_ase`).
     """
     if not is_nv_available():
         raise ImportError(
@@ -261,18 +264,29 @@ def build_neighbor_graph_nv(
             "install with `pip install nvalchemi-toolkit-ops` or use "
             "neighbor_graph_method='dense'."
         )
+    from nvalchemiops.neighbors.neighbor_utils import (
+        estimate_max_neighbors,
+    )
 
     device = coord.device
-    nf = coord.shape[0] if coord.ndim == 3 else 1
-    coord = coord.reshape(nf, -1, 3)
-    nloc = coord.shape[1]
+    nf, nloc = atype.shape[:2]
+    coord = coord.reshape(nf, nloc, 3)
     periodic = box is not None
 
     if nloc == 0:
         empty_i = torch.zeros((0,), dtype=torch.int64, device=device)
         empty_S = torch.zeros((0, 3), dtype=torch.int64, device=device)
         return neighbor_graph_from_ijs(
-            empty_i, empty_i, empty_S, coord, box, empty_i, nloc, layout=layout
+            empty_i,
+            empty_i,
+            empty_S,
+            coord,
+            box,
+            empty_i,
+            nloc,
+            layout=layout,
+            with_csr=with_csr,
+            canonicalize=canonicalize,
         )
 
     # Carry-all: grow capacity until every neighbor fits (no sel cap).
@@ -280,8 +294,14 @@ def build_neighbor_graph_nv(
     # vesin handles unwrapped positions natively), nvalchemiops requires
     # in-cell positions, so BOTH the search and the edge_vec recomputation use
     # the normalized coords; S then matches the coords the search actually saw.
+    # The 0.25 density preserves a 25% margin over the estimator's 0.2
+    # baseline without using the safety_factor argument deprecated in Ops 0.4.
+    initial_capacity = max(
+        64,
+        estimate_max_neighbors(float(rcut), atomic_density=0.25),
+    )
     coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
-        coord, box, rcut, start_capacity=max(64, nloc)
+        coord, box, rcut, start_capacity=initial_capacity
     )
     box_out = cell  # edge_vec is recomputed from these (normalized) coords
 
@@ -300,9 +320,18 @@ def build_neighbor_graph_nv(
     shift, frame_idx = shift[keep], frame_idx[keep]
 
     graph = neighbor_graph_from_ijs(
-        center_local, src_local, shift, coord, box_out, frame_idx, nloc, layout=layout
+        center_local,
+        src_local,
+        shift,
+        coord,
+        box_out,
+        frame_idx,
+        nloc,
+        layout=layout,
     )
     if pair_excl is not None:
         at_flat = torch.as_tensor(atype, device=device).reshape(-1)
         graph = apply_pair_exclusion(graph, at_flat, pair_excl, compact=compact)
+    if with_csr or canonicalize:
+        graph = attach_edge_csr(graph, nf * nloc, canonicalize=canonicalize)
     return graph

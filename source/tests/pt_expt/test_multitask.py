@@ -63,6 +63,10 @@ from deepmd.utils.data_system import (
     process_systems,
 )
 
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
+)
+
 _energy_data_requirement = [
     DataRequirementItem("energy", ndof=1, atomic=False, must=False, high_prec=True),
     DataRequirementItem("force", ndof=3, atomic=True, must=False, high_prec=False),
@@ -1249,6 +1253,42 @@ class MultiTaskTrainTest:
             shutil.rmtree("stat_files")
 
 
+class TestMultiTaskEpochSchedule(unittest.TestCase):
+    """Test the run length and task weights derived from num_epoch_dict."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _skip_if_no_data()
+        # Both tasks read the same system one frame per batch, so their epoch
+        # lengths are equal to its frame count.
+        cls.epoch_length = np.load(
+            os.path.join(_PT_DATA, "set.000", "coord.npy")
+        ).shape[0]
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp(prefix="pt_expt_mt_epoch_")
+        self._old_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+
+    def tearDown(self) -> None:
+        os.chdir(self._old_cwd)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_steps_and_prob_follow_epoch_targets(self) -> None:
+        config = _make_multitask_config(_descriptor_se_e2_a)
+        del config["training"]["numb_steps"]
+        del config["training"]["model_prob"]
+        config["training"]["num_epoch_dict"] = {"model_1": 1.0, "model_2": 3.0}
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+
+        trainer = get_trainer(deepcopy(config), shared_links=shared_links)
+
+        self.assertEqual(trainer.num_steps, 4 * self.epoch_length)
+        np.testing.assert_allclose(trainer.model_prob, [0.25, 0.75])
+
+
 class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
     """Multi-task training with se_e2_a descriptor."""
 
@@ -1457,6 +1497,7 @@ class TestMultiTaskDPA3ShareFit(unittest.TestCase, MultiTaskTrainTest):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestMultiTaskCompile(unittest.TestCase):
     """Verify that multi-task + torch.compile works correctly."""
 
@@ -2095,6 +2136,7 @@ class TestMultiTaskGradient(unittest.TestCase):
         )
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
     """Compiled multi-task with ``dim_case_embd > 0`` and varying ``nframes``.
 
