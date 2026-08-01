@@ -240,9 +240,16 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
-        model_kwargs = dict(kwargs)
+        # The public evaluator accepts a superset of backend/model inputs (for
+        # example ``efield`` is TensorFlow-only). Forward only the dpmodel
+        # inputs understood here instead of leaking unrelated ``None`` values
+        # into concrete model ``call`` signatures.
+        model_kwargs = {}
+        charge_spin = kwargs.get("charge_spin")
+        if charge_spin is not None:
+            model_kwargs["charge_spin"] = charge_spin
         if self.get_has_spin():
-            spin = model_kwargs.get("spin")
+            spin = kwargs.get("spin")
             if spin is None:
                 raise ValueError("spin must be provided when evaluating a spin model")
             spin = np.asarray(spin)
@@ -310,8 +317,11 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
                 )
-                # DeepPot always returns the magnetic-atom mask for spin
-                # models, even when per-atom energy was not requested.
+                # ``mask_mag`` is exported directly by spin graphs but does not
+                # fit the category filter. Adding all OUT variables would also
+                # request atom energy and the general atom mask at
+                # ``atomic=False``, so keep this low-cost compatibility output
+                # explicit instead of widening the category set.
                 or x.name == "mask_mag"
             ]
 

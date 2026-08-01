@@ -13,6 +13,7 @@ from deepmd.infer import (
 )
 
 MODEL_FILE = Path(__file__).with_name("deeppot_dpa_spin.yaml")
+PLAIN_MODEL_FILE = Path(__file__).with_name("deeppot_dpa.yaml")
 ATOM_TYPES = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
 COORD = np.array(
     [
@@ -96,3 +97,19 @@ def test_spin_model_requires_spin_input() -> None:
 
     with pytest.raises(ValueError, match="spin must be provided"):
         evaluator.eval(COORD, BOX, ATOM_TYPES)
+
+
+def test_plain_model_ignores_inputs_for_other_backends() -> None:
+    """The generic ``dp test`` kwarg set must not reach model ``call``."""
+    evaluator = DeepEval(PLAIN_MODEL_FILE, auto_batch_size=False)
+
+    result = evaluator.eval(
+        COORD,
+        BOX,
+        ATOM_TYPES,
+        efield=None,
+        spin=None,
+        charge_spin=None,
+    )
+
+    assert len(result) == 3
