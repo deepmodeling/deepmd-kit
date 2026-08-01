@@ -326,88 +326,84 @@ class TestEmbeddingDeepEvalAPI(unittest.TestCase):
         path = self._save_checkpoint(model, params, "se_e2_a_params.pt")
 
         natoms = int(self.atype_np.shape[0])
-        coords = np.repeat(self.coord_np, 2, axis=0)
+        coords = np.concatenate((self.coord_np, self.coord_np + 0.125), axis=0)
         cells = np.repeat(self.cell_np, 2, axis=0)
+        cells[1, 0] += 0.25
         fparam_shared = np.array([0.25, -0.5], dtype=np.float64)
         fparam_full = np.repeat(fparam_shared[None, :], 2, axis=0)
         aparam_shared = np.linspace(0.1, 0.7, natoms, dtype=np.float64)[:, None]
         aparam_full = np.repeat(aparam_shared[None, :, :], 2, axis=0)
 
-        # A batch budget of exactly natoms forces each of the two frames into
-        # a separate backend call and exposes normalization done too late.
-        dp = DeepPot(path, auto_batch_size=natoms, no_jit=True)
-        backend = dp.deep_eval
-        self.assertIsInstance(backend, PTDeepEval)
-        self.assertEqual(backend.auto_batch_size.current_batch_size, natoms)
+        def assert_method_matches_full(
+            method_name: str,
+            fparam: np.ndarray,
+            aparam: np.ndarray,
+            full_fparam: np.ndarray,
+            full_aparam: np.ndarray,
+        ) -> None:
+            # A fresh batch budget of exactly natoms forces the shorthand call
+            # to split the two frames even on GPU, where successful calls grow
+            # the auto-batch size. The reference is intentionally unbatched.
+            backend = DeepPot(path, auto_batch_size=natoms, no_jit=True).deep_eval
+            self.assertIsInstance(backend, PTDeepEval)
+            self.assertEqual(backend.auto_batch_size.current_batch_size, natoms)
+            actual = getattr(backend, method_name)(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=fparam,
+                aparam=aparam,
+            )
 
-        full = backend.eval_embedding(
-            coords,
-            cells,
-            self.atype_np,
-            fparam=fparam_full,
-            aparam=aparam_full,
-        )
-        shared = backend.eval_embedding(
-            coords,
-            cells,
-            self.atype_np,
-            fparam=fparam_shared,
-            aparam=aparam_shared,
-        )
-        for full_value, shared_value in zip(full, shared, strict=True):
-            np.testing.assert_allclose(shared_value, full_value)
+            reference_backend = DeepPot(
+                path, auto_batch_size=False, no_jit=True
+            ).deep_eval
+            expected = getattr(reference_backend, method_name)(
+                coords,
+                cells,
+                self.atype_np,
+                fparam=full_fparam,
+                aparam=full_aparam,
+            )
+            actual_values = actual if isinstance(actual, tuple) else (actual,)
+            expected_values = expected if isinstance(expected, tuple) else (expected,)
+            for actual_value, expected_value in zip(
+                actual_values, expected_values, strict=True
+            ):
+                np.testing.assert_allclose(actual_value, expected_value)
 
-        np.testing.assert_allclose(
-            backend.eval_descriptor(
-                coords,
-                cells,
-                self.atype_np,
-                fparam=fparam_shared,
-                aparam=aparam_shared,
-            ),
-            backend.eval_descriptor(
-                coords,
-                cells,
-                self.atype_np,
-                fparam=fparam_full,
-                aparam=aparam_full,
-            ),
-        )
-        np.testing.assert_allclose(
-            backend.eval_fitting_last_layer(
-                coords,
-                cells,
-                self.atype_np,
-                fparam=fparam_shared,
-                aparam=aparam_shared,
-            ),
-            backend.eval_fitting_last_layer(
-                coords,
-                cells,
-                self.atype_np,
-                fparam=fparam_full,
-                aparam=aparam_full,
-            ),
-        )
+        for method_name in (
+            "eval_embedding",
+            "eval_descriptor",
+            "eval_fitting_last_layer",
+        ):
+            assert_method_matches_full(
+                method_name,
+                fparam_shared,
+                aparam_shared,
+                fparam_full,
+                aparam_full,
+            )
 
         scalar_aparam = np.array([0.35], dtype=np.float64)
         scalar_full = np.full((2, natoms, 1), scalar_aparam.item())
-        scalar = backend.eval_embedding(
-            coords,
-            cells,
-            self.atype_np,
-            fparam=fparam_shared,
-            aparam=scalar_aparam,
+        assert_method_matches_full(
+            "eval_embedding",
+            fparam_shared,
+            scalar_aparam,
+            fparam_full,
+            scalar_full,
         )
-        scalar_reference = backend.eval_embedding(
-            coords,
-            cells,
-            self.atype_np,
-            fparam=fparam_full,
-            aparam=scalar_full,
+
+        # Distinct frame-major values ensure batching preserves the frame and
+        # atom axes instead of merely producing a shape-compatible result.
+        assert_method_matches_full(
+            "eval_embedding",
+            np.stack((fparam_shared, fparam_shared + 0.375)),
+            np.stack((aparam_shared, aparam_shared + 0.2)),
+            np.stack((fparam_shared, fparam_shared + 0.375)),
+            np.stack((aparam_shared, aparam_shared + 0.2)),
         )
-        for scalar_value, reference_value in zip(scalar, scalar_reference, strict=True):
-            np.testing.assert_allclose(scalar_value, reference_value)
 
     def test_legacy_frozen_model_uses_baked_in_hook(self) -> None:
         # Frozen ``.pth`` files predating ``forward_embedding`` still carry the

@@ -181,13 +181,10 @@ class IOTest:
                 aparam = np.ones((nframes, natoms, deep_eval.get_dim_aparam()))
             else:
                 aparam = None
-            # Paddle is absent from the loop above: deserialize_to_file only
-            # writes .json, serialize_from_file is not implemented, and the
-            # .json reader rejects fparam/aparam. Its normalization is covered
-            # by source/tests/common/test_deep_eval_parameter_shorthand.py.
-            if backend_name in {"pytorch", "jax", "tf2"} and (
-                deep_eval.get_dim_fparam() > 0 and deep_eval.get_dim_aparam() > 0
-            ):
+            # Paddle is absent from the loop above because its frozen .json
+            # reader rejects fparam/aparam. A dedicated adapter test executes
+            # its normalization path without relying on that frozen format.
+            if deep_eval.get_dim_fparam() > 0 and deep_eval.get_dim_aparam() > 0:
                 self._assert_backend_parameter_shorthand(model_file, deep_eval)
             ret = deep_eval.eval(
                 self.coords,
@@ -258,30 +255,50 @@ class IOTest:
         """
         natoms = self.atype.shape[1]
         nframes = 2
-        coords = np.repeat(self.coords, nframes, axis=0)
+        coords = np.concatenate((self.coords, self.coords + 0.125), axis=0)
         boxes = np.repeat(self.box, nframes, axis=0)
-        atom_types = self.atype.reshape(-1)
-        fparam_shared = np.ones(deep_eval.get_dim_fparam())
-        aparam_per_atom = np.ones((natoms, deep_eval.get_dim_aparam()))
+        boxes[1, 0] += 0.25
+        atom_types = np.repeat(self.atype, nframes, axis=0)
+        dim_fparam = deep_eval.get_dim_fparam()
+        dim_aparam = deep_eval.get_dim_aparam()
+        fparam_shared = np.linspace(0.25, -0.5, dim_fparam)
+        aparam_per_atom = np.linspace(0.1, 0.9, natoms * dim_aparam).reshape(
+            natoms, dim_aparam
+        )
         fparam_full = np.tile(fparam_shared, (nframes, 1))
         aparam_full = np.tile(aparam_per_atom, (nframes, 1, 1))
-        backend = DeepEval(model_file, auto_batch_size=natoms).deep_eval
+        fparam_per_frame = np.stack((fparam_shared, fparam_shared + 0.375))
+        aparam_per_frame = np.stack((aparam_per_atom, aparam_per_atom + 0.2))
+        aparam_all_atoms = np.linspace(-0.3, 0.4, dim_aparam)
 
-        expected = backend.eval(
-            coords,
-            boxes,
-            atom_types,
-            fparam=fparam_full,
-            aparam=aparam_full,
-        )
-        shorthand_cases = (
-            (fparam_shared.tolist(), aparam_per_atom),
+        cases = (
             (
-                fparam_shared,
-                np.ones(deep_eval.get_dim_aparam()),
+                fparam_shared.tolist(),
+                aparam_per_atom,
+                fparam_full,
+                aparam_full,
+                "shared-frame-and-per-atom",
+            ),
+            (
+                fparam_per_frame,
+                aparam_all_atoms,
+                fparam_per_frame,
+                np.tile(aparam_all_atoms, (nframes, natoms, 1)),
+                "shared-all-atoms",
+            ),
+            (
+                fparam_per_frame,
+                aparam_per_frame,
+                fparam_per_frame,
+                aparam_per_frame,
+                "full-frame-major",
             ),
         )
-        for fparam, aparam in shorthand_cases:
+        for fparam, aparam, full_fparam, full_aparam, case_name in cases:
+            # Run the shorthand/full input first on a fresh auto-batcher so a
+            # GPU runner cannot grow the batch size on a preceding reference
+            # call and silently stop exercising the split path.
+            backend = DeepEval(model_file, auto_batch_size=natoms).deep_eval
             actual = backend.eval(
                 coords,
                 boxes,
@@ -289,15 +306,23 @@ class IOTest:
                 fparam=fparam,
                 aparam=aparam,
             )
+            reference_backend = DeepEval(model_file, auto_batch_size=False).deep_eval
+            expected = reference_backend.eval(
+                coords,
+                boxes,
+                atom_types,
+                fparam=full_fparam,
+                aparam=full_aparam,
+            )
             self.assertEqual(actual.keys(), expected.keys())
             for name in actual:
                 np.testing.assert_allclose(
                     actual[name],
                     expected[name],
-                    rtol=1e-12,
-                    atol=1e-12,
+                    rtol=1e-10,
+                    atol=1e-10,
                     equal_nan=True,
-                    err_msg=f"backend-direct shorthand output {name}",
+                    err_msg=f"backend-direct {case_name} output {name}",
                 )
 
 

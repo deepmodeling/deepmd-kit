@@ -43,6 +43,33 @@ def _standardize_fparam_aparam(
     This normalization must happen before automatic batching. In particular,
     an ``(natoms, dim_aparam)`` shared atomic parameter has an atom axis first;
     a batcher would otherwise mistake that axis for frames and slice it.
+
+    Parameters
+    ----------
+    fparam : np.ndarray or list or None
+        Frame parameters in full ``(nframes, dim_fparam)`` form or shared
+        ``(dim_fparam,)`` shorthand.
+    aparam : np.ndarray or list or None
+        Atomic parameters in full ``(nframes, natoms, dim_aparam)`` form,
+        shared-per-atom ``(natoms, dim_aparam)`` shorthand, or shared-for-all
+        ``(dim_aparam,)`` shorthand.
+    nframes : int
+        Number of input frames.
+    natoms : int
+        Number of atoms in each frame.
+    dim_fparam : int
+        Number of frame-parameter components.
+    dim_aparam : int
+        Number of atomic-parameter components.
+
+    Returns
+    -------
+    normalized_fparam : np.ndarray or None
+        Frame parameters with shape ``(nframes, dim_fparam)`` when provided.
+    normalized_aparam : np.ndarray or None
+        Atomic parameters with shape ``(nframes, natoms, dim_aparam)`` when
+        provided. The public wrapper may subsequently flatten the last two
+        axes to preserve its historical backend ABI.
     """
     if fparam is not None:
         fparam = np.asarray(fparam)
