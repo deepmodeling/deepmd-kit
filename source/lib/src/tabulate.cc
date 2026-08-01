@@ -172,6 +172,12 @@ void tabulate_fusion_se_a_cpu_impl(FPTYPE* out,
                                    const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(out, 0, sizeof(FPTYPE) * nloc * NDESCRPT * last_layer_size);
+  // An empty neighbor axis is a valid empty reduction.  Return after
+  // initializing the non-empty descriptor output instead of inspecting the
+  // nonexistent last neighbor below.
+  if (nnei <= 0) {
+    return;
+  }
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];
@@ -239,6 +245,12 @@ void tabulate_fusion_se_a_grad_cpu_impl(FPTYPE* dy_dem_x,
                                         const int nnei,
                                         const int last_layer_size,
                                         const bool is_sorted) {
+  // Every gradient output has a zero-sized neighbor axis in this case.  Avoid
+  // both zero-length memory operations on potentially null tensor pointers and
+  // the last-neighbor lookup in the atom loop.
+  if (nnei <= 0) {
+    return;
+  }
   bool enable_se_atten = two_embed != nullptr;
   memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
   memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * NDESCRPT);
@@ -344,6 +356,11 @@ void tabulate_fusion_se_a_grad_grad_cpu_impl(FPTYPE* dz_dy,
                                              const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(dz_dy, 0, sizeof(FPTYPE) * nloc * NDESCRPT * last_layer_size);
+  // The second-order output retains the descriptor shape, so initialize the
+  // empty reduction to zero before returning.
+  if (nnei <= 0) {
+    return;
+  }
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
   const FPTYPE _max = table_info[2];

@@ -12,7 +12,12 @@ from pathlib import (
 )
 
 from deepmd.pd.loss import (
+    EnergyHessianStdLoss,
     EnergyStdLoss,
+)
+from deepmd.pd.train.training import (
+    get_loss,
+    whether_hessian,
 )
 from deepmd.pd.utils.dataset import (
     DeepmdDataSetForLoader,
@@ -579,6 +584,79 @@ class TestEnerStdLossRelativeF(LossCommonTest):
                 )
             )
             self.assertTrue(np.isnan(pd_more_loss_absent[f"l2_{key}_loss"].numpy()))
+
+
+class TestEnergyHessianLossCompatibility(unittest.TestCase):
+    """Paddle uses the same Hessian activation and data-shape contract."""
+
+    def test_either_schedule_endpoint_enables_hessian(self) -> None:
+        """Ramp-up and ramp-down schedules must both activate supervision."""
+        for loss_type in ("ener", "ener_hess"):
+            for start_pref_h, limit_pref_h in ((1.0, 0.0), (0.0, 1.0)):
+                params = {
+                    "type": loss_type,
+                    "start_pref_h": start_pref_h,
+                    "limit_pref_h": limit_pref_h,
+                }
+
+                self.assertTrue(whether_hessian(params))
+                loss = get_loss(params, start_lr=1.0, _ntypes=0, _model=None)
+                self.assertIsInstance(loss, EnergyHessianStdLoss)
+                self.assertTrue(loss.has_h)
+                hessian_req = next(
+                    item for item in loss.label_requirement if item.key == "hessian"
+                )
+                self.assertFalse(hessian_req.atomic)
+                self.assertEqual(hessian_req.special_shape, "hessian")
+
+    def test_zero_schedule_keeps_standard_energy_loss(self) -> None:
+        """Two zero endpoints must leave Hessian supervision disabled."""
+        params = {
+            "type": "ener",
+            "start_pref_h": 0.0,
+            "limit_pref_h": 0.0,
+        }
+
+        self.assertFalse(whether_hessian(params))
+        loss = get_loss(params, start_lr=1.0, _ntypes=0, _model=None)
+        self.assertIs(type(loss), EnergyStdLoss)
+
+    def test_huber_is_rejected_for_hessian_supervision(self) -> None:
+        """Paddle must not silently optimize Hessians with raw MSE under Huber."""
+        with self.assertRaisesRegex(
+            RuntimeError, "Huber loss is not implemented for hessian"
+        ):
+            EnergyHessianStdLoss(start_pref_h=1.0, use_huber=True)
+
+    def test_hessian_padding_is_masked_on_both_atom_axes(self) -> None:
+        """Only the real-real Cartesian block contributes to Hessian loss."""
+        residual = np.full((1, 6, 6), 10.0)
+        residual[:, :3, :3] = 2.0
+        model_pred = {
+            "hessian": paddle.zeros([1, 6, 6], dtype="float64"),
+            "mask": paddle.to_tensor([[1.0, 0.0]], dtype="float64"),
+        }
+        label = {
+            "hessian": paddle.to_tensor(residual, dtype="float64"),
+            "find_hessian": 1.0,
+        }
+        loss_module = EnergyHessianStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_h=1.0,
+            limit_pref_h=1.0,
+        )
+
+        def fake_model(**kwargs):
+            return model_pred
+
+        _, loss, more_loss = loss_module(
+            {}, fake_model, label, natoms=2, learning_rate=1.0, mae=True
+        )
+
+        self.assertTrue(np.allclose(loss.numpy(), 4.0))
+        self.assertTrue(np.allclose(more_loss["l2_hessian_loss"].numpy(), 4.0))
+        self.assertTrue(np.allclose(more_loss["rmse_h"].numpy(), 2.0))
+        self.assertTrue(np.allclose(more_loss["mae_h"].numpy(), 2.0))
 
 
 if __name__ == "__main__":

@@ -4430,7 +4430,9 @@ loss_args_plugin = ArgsPlugin()
 
 
 @loss_args_plugin.register(
-    "ener", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+    "ener",
+    alias=["ener_hess"],
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2"),
 )
 def loss_ener() -> list[Argument]:
     doc_start_pref_e = start_pref("energy", abbr="e")
@@ -4537,14 +4539,14 @@ def loss_ener() -> list[Argument]:
             [float, int],
             optional=True,
             default=0.00,
-            doc=supported_backends("pt", "pd") + doc_start_pref_h,
+            doc=supported_backends("pt", "jax", "pd") + doc_start_pref_h,
         ),
         Argument(
             "limit_pref_h",
             [float, int],
             optional=True,
             default=0.00,
-            doc=supported_backends("pt", "pd") + doc_limit_pref_h,
+            doc=supported_backends("pt", "jax", "pd") + doc_limit_pref_h,
         ),
         Argument(
             "start_pref_ae",
@@ -5126,7 +5128,7 @@ def loss_tensor() -> list[Argument]:
 
 
 def loss_variant_type_args() -> Variant:
-    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
+    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, its legacy alias `ener_hess`, `dens` (Only DPA4/SeZM supported), or left unset. Hessian supervision is configured through `start_pref_h` and `limit_pref_h` on the `ener` loss. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
     return Variant(
         "type",
@@ -5138,7 +5140,7 @@ def loss_variant_type_args() -> Variant:
 
 
 def loss_args() -> list[Argument]:
-    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset."
+    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset. The legacy `ener_hess` type is normalized to `ener`."
     ca = Argument(
         "loss", dict, [], [loss_variant_type_args()], optional=True, doc=doc_loss
     )
