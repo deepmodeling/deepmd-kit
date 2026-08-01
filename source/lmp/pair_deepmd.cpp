@@ -406,6 +406,15 @@ void PairDeepMD::init_style() {
   if (!compact_selection_enabled_) {
     return;
   }
+  // Compact selection reconstructs the environment from the pair neighbor
+  // list. User exclusions remove otherwise eligible pairs before that list
+  // reaches this style, and unlike special_bonds there is no bounded topology
+  // list from which every excluded partner can be recovered.
+  if (neighbor->nex_type || neighbor->nex_group || neighbor->nex_mol) {
+    error->all(
+        FLERR,
+        "compact pair_style deepmd does not support neigh_modify exclude");
+  }
   if (!atom->tag_enable) {
     error->all(FLERR,
                "compact pair_style deepmd requires atom IDs to be enabled");
