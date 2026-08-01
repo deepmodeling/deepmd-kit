@@ -80,7 +80,7 @@ def main():
     print(f"Exporting to {savedmodel_default_path} ...")  # noqa: T201
     jax_deserialize_to_file(savedmodel_default_path, copy.deepcopy(data_default))
 
-    # ---- 3. Export fparam_aparam.pt2 and .pth (without default_fparam) ----
+    # ---- 3. Export fparam_aparam artifacts (without default_fparam) ----
     config_no_default = copy.deepcopy(config)
     config_no_default["fitting_net"].pop("default_fparam", None)
     model_no_default = get_model(config_no_default)
@@ -98,6 +98,10 @@ def main():
     pt_expt_deserialize_to_file(
         pt2_path, copy.deepcopy(data_no_default), do_atomic_virial=True
     )
+
+    savedmodel_path = os.path.join(base_dir, "fparam_aparam.savedmodel")
+    print(f"Exporting to {savedmodel_path} ...")  # noqa: T201
+    jax_deserialize_to_file(savedmodel_path, copy.deepcopy(data_no_default))
 
     pth_path = os.path.join(base_dir, "fparam_aparam.pth")
     pth_exported = False

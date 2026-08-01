@@ -546,8 +546,9 @@ inline std::vector<double> make_fparam_input(
     const std::vector<double>& default_fparam) {
   if (dfparam == 0) {
     if (!fparam.empty()) {
-      throw deepmd::deepmd_exception(
-          "fparam was provided, but this model has dim_fparam=0.");
+      std::cerr << "WARNING: fparam was provided, but this model has "
+                   "dim_fparam=0. The provided fparam will be ignored."
+                << std::endl;
     }
     return {};
   }

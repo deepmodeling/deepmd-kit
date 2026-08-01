@@ -1897,6 +1897,22 @@ TEST_P(FParamAParamDeepPotTest, Metadata) {
   EXPECT_FALSE(dp.has_default_fparam());
 }
 
+TEST_P(FParamAParamDeepPotTest, JAXRejectsMissingRequiredFParam) {
+  if (GetParam().backend != Backend::JAX) {
+    GTEST_SKIP() << "This regression targets JAX SavedModel tensor inputs.";
+  }
+  const std::vector<double> coord = deepmd_test::deeppot_coord();
+  const std::vector<int> atype = deepmd_test::fparam_aparam_atype();
+  const std::vector<double> box = deepmd_test::deeppot_box();
+  const std::vector<double> aparam = deepmd_test::aparam_value();
+  double energy = 0.0;
+  std::vector<double> force, virial;
+
+  EXPECT_THROW(dp.compute(energy, force, virial, coord, atype, box,
+                          std::vector<double>{}, aparam),
+               deepmd::deepmd_exception);
+}
+
 TEST_P(FParamAParamDeepPotTest, ComputeDouble) {
   check_fparam_compute_atomic<double>(dp, *ref, GetParam().double_tol,
                                       deepmd_test::fparam_value());
