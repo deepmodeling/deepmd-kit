@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import numpy as np
-import pytest
-import torch
 from types import (
     SimpleNamespace,
 )
+
+import numpy as np
+import pytest
+import torch
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )

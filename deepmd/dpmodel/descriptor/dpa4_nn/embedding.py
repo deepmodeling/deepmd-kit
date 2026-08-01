@@ -39,11 +39,11 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
 )
-from deepmd.dpmodel.utils.type_embed import (
-    remap_atype_to_padding,
-)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
+)
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
