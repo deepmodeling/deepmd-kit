@@ -46,50 +46,69 @@ class ProdForceGradOp : public OpKernel {
     TensorShape axis_shape = axis_tensor.shape();
 
     OP_REQUIRES(context, (grad_shape.dims() == 2),
-                errors::InvalidArgument("Dim of grad should be 2"));
-    OP_REQUIRES(context, (net_deriv_shape.dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
-    OP_REQUIRES(context, (in_deriv_shape.dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of grad should be 2"));
+    OP_REQUIRES(
+        context, (net_deriv_shape.dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of net deriv should be 2"));
+    OP_REQUIRES(
+        context, (in_deriv_shape.dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (nlist_shape.dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
     OP_REQUIRES(context, (axis_shape.dims() == 2),
-                errors::InvalidArgument("Dim of axis should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of axis should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int nloc = natoms(0);
+    int nall = natoms(1);
     int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == grad_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == in_deriv_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == nlist_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == axis_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-
     OP_REQUIRES(
-        context, (nloc * 3 == grad_shape.dim_size(1)),
-        errors::InvalidArgument("input grad shape should be 3 x natoms"));
+        context, (nframes == grad_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == in_deriv_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == axis_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+
+    // natoms is [nloc, nall, ...]. The registered training gradient normally
+    // has nall == nloc, while callers of the public raw op can supply an
+    // extended layout. These checks enforce the layout grad() is indexed with
+    // for both entry points.
+    OP_REQUIRES(
+        context, (nall >= nloc),
+        deepmd::tf_compat::InvalidArgument(
+            "number of all atoms should not be smaller than local atoms"));
+    OP_REQUIRES(context,
+                (static_cast<int64_t>(nall) * 3 == grad_shape.dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "input grad shape should be 3 x all atoms"));
     OP_REQUIRES(context,
                 (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
                  in_deriv_shape.dim_size(1)),
-                errors::InvalidArgument("number of descriptors should match"));
-    OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
-                errors::InvalidArgument("number of neighbors should match"));
+                deepmd::tf_compat::InvalidArgument(
+                    "number of descriptors should match"));
     OP_REQUIRES(
-        context, (nloc * 4 == axis_shape.dim_size(1)),
-        errors::InvalidArgument("number of axis type+id should be 2+2"));
+        context, (nnei == n_a_sel + n_r_sel),
+        deepmd::tf_compat::InvalidArgument("number of neighbors should match"));
+    OP_REQUIRES(context, (nloc * 4 == axis_shape.dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "number of axis type+id should be 2+2"));
 
     // Create an output tensor
     TensorShape grad_net_shape;
@@ -109,10 +128,28 @@ class ProdForceGradOp : public OpKernel {
     auto axis = axis_tensor.flat<int>();
     auto grad_net = grad_net_tensor->flat<FPTYPE>();
 
+    // ProdForce returns one force vector for every local and ghost atom. Keep
+    // those upstream gradients distinct: folding ghost indices modulo nloc
+    // would differentiate a different output than the forward op produced.
+    //
+    // The registered gradient only sees the neighbor list that ProdForce
+    // consumed, but the raw op is public and j_idx addresses grad() directly
+    // below. Bound it once with a parallel reduction rather than a per-element
+    // check on the hot path.
+    const int64_t nlist_size = static_cast<int64_t>(nframes) * nloc * nnei;
+    int nlist_out_of_range = 0;
+#pragma omp parallel for reduction(| : nlist_out_of_range)
+    for (int64_t ii = 0; ii < nlist_size; ++ii) {
+      nlist_out_of_range |= (nlist(ii) >= nall);
+    }
+    OP_REQUIRES(context, (!nlist_out_of_range),
+                deepmd::tf_compat::InvalidArgument(
+                    "neighbor index should be smaller than all atoms"));
+
     // loop over frames
 #pragma omp parallel for
     for (int kk = 0; kk < nframes; ++kk) {
-      int grad_iter = kk * nloc * 3;
+      int grad_iter = kk * nall * 3;
       int net_iter = kk * nloc * ndescrpt;
       int in_iter = kk * nloc * ndescrpt * 12;
       int nlist_iter = kk * nloc * nnei;
@@ -154,9 +191,6 @@ class ProdForceGradOp : public OpKernel {
         // loop over neighbors
         for (int jj = 0; jj < nnei; ++jj) {
           int j_idx = nlist(nlist_iter + i_idx * nnei + jj);
-          if (j_idx > nloc) {
-            j_idx = j_idx % nloc;
-          }
           if (j_idx < 0) {
             continue;
           }

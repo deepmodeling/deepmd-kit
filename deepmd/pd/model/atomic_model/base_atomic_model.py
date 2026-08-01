@@ -181,6 +181,22 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
+    def get_default_chg_spin(self) -> paddle.Tensor | None:
+        """Get the default charge_spin values."""
+        return None
+
     # to make jit happy...
     def make_atom_mask(
         self,
@@ -229,6 +245,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
@@ -252,6 +269,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             atomic parameter, shape: nf x nloc x dim_aparam
         comm_dict
             The data needed for communication for parallel inference.
+        charge_spin
+            charge and spin parameters, shape: nf x 2
 
         Returns
         -------
@@ -282,6 +301,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
         # nf x nloc
@@ -311,6 +331,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -320,6 +341,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
 
     def change_type_map(

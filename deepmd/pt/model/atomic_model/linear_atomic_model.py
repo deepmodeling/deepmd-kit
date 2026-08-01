@@ -74,18 +74,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
 
         self.models = torch.nn.ModuleList(models)
-        sub_model_type_maps = [md.get_type_map() for md in models]
-        err_msg = []
-        self.mapping_list = []
-        common_type_map = set(type_map)
         self.type_map = type_map
-        for tpmp in sub_model_type_maps:
-            if not common_type_map.issubset(set(tpmp)):
-                err_msg.append(
-                    f"type_map {tpmp} is not a subset of type_map {type_map}"
-                )
-            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
-        assert len(err_msg) == 0, "\n".join(err_msg)
+        self.mapping_list = self._build_mapping_list()
 
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         self.rcuts = torch.tensor(
@@ -104,6 +94,31 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
             )
         self.weights = weights
+
+    def _build_mapping_list(self) -> list[torch.Tensor]:
+        """Map common type IDs to the current type IDs of every submodel."""
+        common_type_map = set(self.type_map)
+        mapping_list = []
+        err_msg = []
+        for model in self.models:
+            submodel_type_map = model.get_type_map()
+            if not common_type_map.issubset(set(submodel_type_map)):
+                missing_types = [
+                    atom_type
+                    for atom_type in self.type_map
+                    if atom_type not in submodel_type_map
+                ]
+                err_msg.append(
+                    f"type_map {self.type_map} contains types {missing_types} "
+                    f"not supported by submodel type_map {submodel_type_map}"
+                )
+                # remap_atype assumes every common type exists in the submodel.
+                # Defer the combined validation error instead of leaking KeyError.
+                continue
+            mapping_list.append(self.remap_atype(submodel_type_map, self.type_map))
+        if err_msg:
+            raise ValueError("\n".join(err_msg))
+        return mapping_list
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -151,6 +166,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 if model_with_new_type_stat is not None
                 else None,
             )
+        # Recreate the tensors after the submodels update their type ordering;
+        # otherwise forward paths keep indexing through the stale constructor map.
+        self.mapping_list = self._build_mapping_list()
 
     def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
@@ -271,12 +289,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels()
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
             )
         ]
         ener_list = []
@@ -305,6 +325,66 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             ),
         }  # (nframes, nloc, 1)
         return fit_ret
+
+    def has_embedding(self) -> bool:
+        """A linear model supports embeddings if any sub-model does."""
+        for model in self.models:
+            if model.has_embedding():
+                return True
+        return False
+
+    def forward_embedding(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return the embedding of the first descriptor-fitting sub-model.
+
+        A linear/ZBL combination carries one learned descriptor-fitting model
+        (e.g. the DP part of a DP+ZBL model) whose embedding is well defined; the
+        per-sub-model neighbor lists are rebuilt exactly as in `forward_atomic`.
+        """
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.view(nframes, -1, 3)
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
+        nlists = build_multiple_neighbor_list(
+            extended_coord.detach(),
+            nlist,
+            sorted_rcuts,
+            sorted_sels,
+        )
+        raw_nlists = [
+            nlists[get_multiple_nlist_key(rcut, sel)]
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
+        ]
+        nlists_ = [
+            nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
+            for mt, nl, sel in zip(
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
+            )
+        ]
+        for i, model in enumerate(self.models):
+            if model.has_embedding():
+                type_map_model = self.mapping_list[i].to(extended_atype.device)
+                return model.forward_embedding(
+                    extended_coord,
+                    type_map_model[extended_atype],
+                    nlists_[i],
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                )
+        raise NotImplementedError(
+            "This linear model has no embedding-capable sub-model."
+        )
 
     def apply_out_stat(
         self,

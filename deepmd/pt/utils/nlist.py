@@ -18,6 +18,7 @@ def extend_input_and_build_neighbor_list(
     sel: list[int],
     mixed_types: bool = False,
     box: torch.Tensor | None = None,
+    cap_neighbors: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -39,6 +40,7 @@ def extend_input_and_build_neighbor_list(
         rcut,
         sel,
         distinguish_types=(not mixed_types),
+        cap_neighbors=cap_neighbors,
     )
     extended_coord = extended_coord.view(nframes, -1, 3)
     return extended_coord, extended_atype, mapping, nlist
@@ -51,6 +53,7 @@ def build_neighbor_list(
     rcut: float,
     sel: int | list[int],
     distinguish_types: bool = True,
+    cap_neighbors: bool = True,
 ) -> torch.Tensor:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
@@ -72,6 +75,11 @@ def build_neighbor_list(
         types.
     distinguish_types : bool
         distinguish different types.
+    cap_neighbors : bool
+        If True (default), keep at most ``sum(sel)`` nearest neighbors per atom,
+        the historical fixed-width behavior. If False, keep every neighbor
+        within ``rcut`` and size the neighbor axis from the data so no neighbor
+        is dropped; supported only together with ``distinguish_types=False``.
 
     Returns
     -------
@@ -121,7 +129,14 @@ def build_neighbor_list(
     idx = torch.arange(diag_len, device=rr.device, dtype=torch.int)
     rr[:, idx, idx] -= 1.0
 
-    nsel = sum(sel)
+    if cap_neighbors:
+        nsel = sum(sel)
+    else:
+        # Keep every neighbor within ``rcut``: size the axis from the densest
+        # local environment. Each local atom counts itself once (its diagonal
+        # distance was decremented above), so subtract one to exclude self.
+        nsel = int((rr <= rcut).sum(dim=-1).max().item()) - 1
+        nsel = max(nsel, 1)
     nnei = rr.shape[-1]
     top_k = min(nsel + 1, nnei)
     rr, nlist = torch.topk(rr, top_k, largest=False)
@@ -131,7 +146,7 @@ def build_neighbor_list(
     nlist = nlist[:, :, 1:]
 
     return _trim_mask_distinguish_nlist(
-        is_vir, atype, rr, nlist, rcut, sel, distinguish_types
+        is_vir, atype, rr, nlist, rcut, sel, distinguish_types, nsel=nsel
     )
 
 
@@ -143,9 +158,11 @@ def _trim_mask_distinguish_nlist(
     rcut: float,
     sel: list[int],
     distinguish_types: bool,
+    nsel: int | None = None,
 ) -> torch.Tensor:
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
-    nsel = sum(sel)
+    if nsel is None:
+        nsel = sum(sel)
     # nloc x nsel
     batch_size, nloc, nnei = rr.shape
     assert batch_size == is_vir_cntl.shape[0]

@@ -37,6 +37,9 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -216,11 +219,135 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
+        @torch.jit.export
+        def forward_embedding(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Extract embeddings in a single forward, without force/virial autograd.
+
+            One descriptor and fitting forward yields the per-atom descriptor, the
+            per-atom last fitting hidden activation, and the per-structure pooled
+            feature (the masked atom-sum of the atomic feature).  The neighbor
+            list is built exactly as in `forward_common`, so the descriptor and
+            atomic feature match the energy forward.
+
+            Parameters
+            ----------
+            coord
+                Coordinates with shape (nf, nloc*3) or (nf, nloc, 3).
+            atype
+                Atom types with shape (nf, nloc).
+            box
+                Simulation box with shape (nf, 9), or None.
+            fparam
+                Frame parameters with shape (nf, ndf), or None.
+            aparam
+                Atomic parameters with shape (nf, nloc, nda), or None.
+            charge_spin
+                Frame-level charge and spin conditions with shape (nf, 2), or None.
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` with
+                shape (nf, nloc, h), and ``structural_feature`` with shape
+                (nf, h), in the model's native precision. The DeepEval embedding
+                API casts these to the requested output dtype (float32 by
+                default).
+
+            Raises
+            ------
+            RuntimeError
+                If called in training mode; call ``model.eval()`` first.
+            """
+            if self.training:
+                raise RuntimeError(
+                    "Embedding extraction requires eval mode; call model.eval() first."
+                )
+            cc, bb, fp, ap, _ = self._input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam
+            )
+            del coord, box, fparam, aparam
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                cc,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                # types are distinguished by `format_nlist` below when needed
+                mixed_types=True,
+                box=bb,
+            )
+            extended_coord = extended_coord.view(extended_atype.shape[0], -1, 3)
+            nlist = self.format_nlist(extended_coord, extended_atype, nlist)
+            with torch.no_grad():
+                return self.atomic_model.forward_embedding(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fp,
+                    aparam=ap,
+                    charge_spin=charge_spin,
+                )
+
         def get_out_bias(self) -> torch.Tensor:
             return self.atomic_model.get_out_bias()
 
         def set_out_bias(self, out_bias: torch.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
+
+        def predict_atomic_outputs_for_stat(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Return atomic outputs through the standard atomic-model path."""
+            return self.atomic_model._get_forward_wrapper_func()(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+            )
+
+        def _change_out_bias_with_model_forward(
+            self,
+            merged: Callable[[], list[dict]] | list[dict],
+            model_forward: Callable[..., dict[str, torch.Tensor]],
+        ) -> None:
+            """Fit a residual output-bias shift from a complete model predictor."""
+            atomic_model = self.atomic_model
+            delta_bias, out_std = compute_output_stats(
+                merged,
+                atomic_model.get_ntypes(),
+                keys=atomic_model.bias_keys,
+                model_forward=model_forward,
+                rcond=atomic_model.rcond,
+                preset_bias=atomic_model.preset_out_bias,
+                stats_distinguish_types=(
+                    atomic_model.get_compute_stats_distinguish_types()
+                ),
+                intensive=atomic_model.get_intensive(),
+            )
+            atomic_model._store_out_stat(delta_bias, out_std, add=True)
 
         def change_out_bias(
             self,
@@ -244,6 +371,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                         and do least square on the errors to obtain the target shift as bias.
                 'set-by-statistic' : directly use the statistic output bias in the target dataset.
             """
+            if bias_adjust_mode == "change-by-statistic":
+                self._change_out_bias_with_model_forward(
+                    merged,
+                    self.predict_atomic_outputs_for_stat,
+                )
+                return
             self.atomic_model.change_out_bias(
                 merged,
                 bias_adjust_mode=bias_adjust_mode,

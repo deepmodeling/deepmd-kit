@@ -34,7 +34,10 @@ class DPModelBackend(Backend):
     name = "DPModel"
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
-        Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
+        Backend.Feature.ENTRY_POINT
+        | Backend.Feature.DEEP_EVAL
+        | Backend.Feature.NEIGHBOR_STAT
+        | Backend.Feature.IO
     )
     """The features of the backend."""
     suffixes: ClassVar[list[str]] = [".dp", ".yaml", ".yml"]
@@ -59,7 +62,9 @@ class DPModelBackend(Backend):
         Callable[[Namespace], None]
             The entry point hook of the backend.
         """
-        raise NotImplementedError(f"Unsupported backend: {self.name}")
+        from deepmd.dpmodel.entrypoints.main import main as deepmd_main
+
+        return deepmd_main
 
     @property
     def deep_eval(self) -> type["DeepEvalBackend"]:

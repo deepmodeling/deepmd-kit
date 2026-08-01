@@ -69,32 +69,33 @@ class DescrptSeAEfVertOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of coord should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of coord should be 2"));
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of type should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of type should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
     OP_REQUIRES(context, (box_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of box should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of box should be 2"));
     OP_REQUIRES(context, (mesh_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of mesh should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of mesh should be 1"));
     OP_REQUIRES(context, (ef_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of ef should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of ef should be 2"));
     OP_REQUIRES(context, (avg_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of avg should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of avg should be 2"));
     OP_REQUIRES(context, (std_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of std should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of std should be 2"));
     OP_REQUIRES(
         context, (fill_nei_a),
-        errors::InvalidArgument(
+        deepmd::tf_compat::InvalidArgument(
             "Rotational free descriptor only support the case rcut_a < 0"));
     OP_REQUIRES(context, (sec_r.back() == 0),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "Rotational free descriptor only support all-angular "
                     "information: sel_r should be all zero."));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
     int nloc = natoms(0);
@@ -103,29 +104,39 @@ class DescrptSeAEfVertOp : public OpKernel {
     int nsamples = coord_tensor.shape().dim_size(0);
 
     // check the sizes
-    OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nsamples == box_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nsamples == ef_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (ntypes == avg_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of avg should be ntype"));
-    OP_REQUIRES(context, (ntypes == std_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of std should be ntype"));
+    OP_REQUIRES(
+        context, (nsamples == type_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nsamples == box_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nsamples == ef_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (ntypes == avg_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of avg should be ntype"));
+    OP_REQUIRES(
+        context, (ntypes == std_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of std should be ntype"));
 
-    OP_REQUIRES(context, (nall * 3 == coord_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of atoms should match"));
-    OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of atoms should match"));
-    OP_REQUIRES(context, (9 == box_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of box should be 9"));
+    OP_REQUIRES(
+        context, (nall * 3 == coord_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of atoms should match"));
+    OP_REQUIRES(
+        context, (nall == type_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of atoms should match"));
+    OP_REQUIRES(
+        context, (9 == box_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of box should be 9"));
     OP_REQUIRES(context, (nloc * 3 == ef_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of ef should be 3"));
-    OP_REQUIRES(context, (ndescrpt == avg_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of avg should be ndescrpt"));
-    OP_REQUIRES(context, (ndescrpt == std_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of std should be ndescrpt"));
+                deepmd::tf_compat::InvalidArgument("number of ef should be 3"));
+    OP_REQUIRES(
+        context, (ndescrpt == avg_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of avg should be ndescrpt"));
+    OP_REQUIRES(
+        context, (ndescrpt == std_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of std should be ndescrpt"));
 
     int nei_mode = 0;
     if (mesh_tensor.shape().dim_size(0) == 16) {
@@ -208,10 +219,10 @@ class DescrptSeAEfVertOp : public OpKernel {
     // }
     // int ntypes = max_type_v + 1;
     OP_REQUIRES(context, (ntypes == int(sel_a.size())),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of types should match the length of sel array"));
     OP_REQUIRES(context, (ntypes == int(sel_r.size())),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of types should match the length of sel array"));
 
     for (int kk = 0; kk < nsamples; ++kk) {

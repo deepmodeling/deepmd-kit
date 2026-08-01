@@ -13,6 +13,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.common import (
     make_default_mesh,
@@ -110,6 +113,7 @@ class DeepEval(DeepEvalBackend):
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
@@ -305,6 +309,22 @@ class DeepEval(DeepEvalBackend):
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.
@@ -529,7 +549,14 @@ class DeepEval(DeepEvalBackend):
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list: "ase.neighborlist.NeighborList | None",
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -537,7 +564,8 @@ class DeepEval(DeepEvalBackend):
         coords : np.ndarray
             The coordinates of atoms. Should be of shape [natoms, 3]
         cell : Optional[np.ndarray]
-            The cell of the system. Should be of shape [3, 3]
+            The cell of the system. Should be of shape [3, 3]. None denotes
+            open boundary conditions.
         atype : np.ndarray
             The type of atoms. Should be of shape [natoms]
         imap : np.ndarray
@@ -567,7 +595,11 @@ class DeepEval(DeepEvalBackend):
             The index map of ghost atoms. Should be of shape [nghost]
         """
         pbc = np.repeat(cell is not None, 3)
-        cell = cell.reshape(3, 3)
+        # ASE still requires a 3x3 cell for non-periodic systems, but the cell
+        # must not be used to infer periodicity or create ghost atoms.
+        cell = (
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
+        )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True
         neighbor_list.self_interaction = False
@@ -794,6 +826,9 @@ class DeepEval(DeepEvalBackend):
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
+        # Keep the original boundary semantics separate from the identity box
+        # used only to satisfy TensorFlow's non-optional box placeholder.
+        neighbor_cell = cells if pbc else None
 
         if self.has_fparam:
             assert fparam is not None
@@ -864,7 +899,7 @@ class DeepEval(DeepEvalBackend):
                 ghost_map,
             ) = self.build_neighbor_list(
                 coords,
-                cells if cells is not None else None,
+                neighbor_cell,
                 atom_types,
                 imap,
                 self.neighbor_list,
@@ -1121,6 +1156,22 @@ class DeepEval(DeepEvalBackend):
         model_def_script = script.decode("utf-8")
         return json.loads(model_def_script)["model"]
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.tf.model.model import (
+            Model,
+        )
+        from deepmd.tf.utils.graph import (
+            load_graph_def,
+        )
+
+        graph, graph_def = load_graph_def(str(self.model_file))
+
+        model_def_script = self.get_model_def_script()
+        model = Model(**model_def_script)
+        # important! must be called before serialize
+        model.init_variables(graph=graph, graph_def=graph_def)
+        return model.serialize()
+
     def get_model(self) -> "tf.Graph":
         """Get the TensorFlow graph.
 
@@ -1172,6 +1223,7 @@ class DeepEvalOld:
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
@@ -1229,6 +1281,28 @@ class DeepEvalOld:
         """Get TF session."""
         # start a tf session associated to the graph
         return tf.Session(graph=self.graph, config=default_tf_session_config)
+
+    def close(self) -> None:
+        """Close the TensorFlow session held by this evaluator."""
+        # ``sess`` is a cached_property; only close it if it was materialized,
+        # and drop the cache so a later access can recreate the session.
+        sess = self.__dict__.pop("sess", None)
+        if sess is not None:
+            sess.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # during interpreter shutdown TF/Python state may already be torn down;
+        # swallow errors so GC does not emit noisy "Exception ignored" messages.
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _graph_compatable(self) -> bool:
         """Check the model compatibility.
@@ -1475,7 +1549,14 @@ class DeepEvalOld:
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list: "ase.neighborlist.NeighborList | None",
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -1483,7 +1564,8 @@ class DeepEvalOld:
         coords : np.ndarray
             The coordinates of atoms. Should be of shape [natoms, 3]
         cell : Optional[np.ndarray]
-            The cell of the system. Should be of shape [3, 3]
+            The cell of the system. Should be of shape [3, 3]. None denotes
+            open boundary conditions.
         atype : np.ndarray
             The type of atoms. Should be of shape [natoms]
         imap : np.ndarray
@@ -1513,7 +1595,11 @@ class DeepEvalOld:
             The index map of ghost atoms. Should be of shape [nghost]
         """
         pbc = np.repeat(cell is not None, 3)
-        cell = cell.reshape(3, 3)
+        # ASE still requires a 3x3 cell for non-periodic systems, but the cell
+        # must not be used to infer periodicity or create ghost atoms.
+        cell = (
+            np.zeros((3, 3), dtype=np.float64) if cell is None else cell.reshape(3, 3)
+        )
         positions = coords.reshape(-1, 3)
         neighbor_list.bothways = True
         neighbor_list.self_interaction = False

@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils import (
     lmdb_data,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
+    _ENV_CACHE,
     DistributedSameNlocBatchSampler,
     LmdbDataReader,
     SameNlocBatchSampler,
@@ -24,7 +25,11 @@ from deepmd.dpmodel.utils.lmdb_data import (
     _remap_keys,
     merge_lmdb,
 )
+from deepmd.pt.loss.ener import (
+    EnergyStdLoss,
+)
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
     _collate_lmdb_batch,
 )
@@ -79,6 +84,68 @@ def _create_test_lmdb(path: str, nframes: int = 10, natoms: int = 6) -> None:
             key = format(i, fmt).encode()
             frame = _make_frame(natoms=natoms, seed=i)
             txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+
+
+def _create_partially_labeled_lmdb(path: str) -> None:
+    """Create same-nloc frames with complementary energy/force labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [3, 3]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms=natoms, seed=index)
+            if index % 2 == 0:
+                frame.pop("forces")
+                frame["energies"]["data"] = np.array([2.0], dtype=np.float64).tobytes()
+            else:
+                frame.pop("energies")
+                frame["forces"]["data"] = np.ones(
+                    (natoms, 3), dtype=np.float64
+                ).tobytes()
+            txn.put(
+                format(index, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+
+
+def _create_partially_virial_lmdb(path: str) -> None:
+    """Create same-nloc frames that differ only by an unrequested virial."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [3, 3]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms=natoms, seed=index)
+            if index % 2 == 0:
+                frame["virials"] = {
+                    "nd": None,
+                    "type": "float64",
+                    "kind": "",
+                    "shape": [3, 3],
+                    "data": np.eye(3, dtype=np.float64).tobytes(),
+                }
+            txn.put(
+                format(index, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
     env.close()
 
 
@@ -299,6 +366,101 @@ class TestDataLoaderIteration:
             batch = next(iter(ds.dataloaders[0]))
         assert batch["coord"].shape[0] == 2
 
+    def test_parallel_batch_loader_has_finite_epoch(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        sampler = SameNlocBatchSampler(ds._reader, shuffle=False)
+        loader = LmdbBatchDataLoader(
+            ds,
+            sampler,
+            pin_memory=False,
+            num_workers=2,
+        )
+        try:
+            assert sum(batch["coord"].shape[0] for batch in loader) == 10
+        finally:
+            loader.close()
+
+    def test_parallel_loaders_share_pool_for_same_dataset(self, lmdb_dir):
+        first_data = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        second_data = LmdbDataset(
+            f"{lmdb_dir}/.",
+            type_map=["O", "H"],
+            batch_size=2,
+        )
+        first = LmdbBatchDataLoader(
+            first_data,
+            SameNlocBatchSampler(first_data._reader, shuffle=True, seed=1),
+            pin_memory=False,
+            num_workers=2,
+        )
+        second = LmdbBatchDataLoader(
+            second_data,
+            SameNlocBatchSampler(second_data._reader, shuffle=True, seed=2),
+            pin_memory=False,
+            num_workers=2,
+        )
+        first_iterator = iter(first)
+        second_iterator = iter(second)
+        try:
+            next(first_iterator)
+            next(second_iterator)
+            assert first._batch_iterator._pool is second._batch_iterator._pool
+            first.close()
+            assert next(second_iterator)["coord"].shape == (2, 6, 3)
+        finally:
+            first.close()
+            second.close()
+
+    def test_small_batch_stays_synchronous(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=4,
+        )
+        try:
+            assert next(iter(loader))["coord"].shape == (2, 6, 3)
+            assert not loader._batch_iterator.started
+            assert loader._batch_iterator._pending is None
+        finally:
+            loader.close()
+
+    def test_partial_successor_is_deferred(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=4)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=4,
+        )
+        iterator = iter(loader)
+        try:
+            assert next(iterator)["coord"].shape[0] == 4
+            assert next(iterator)["coord"].shape[0] == 4
+            assert loader._batch_iterator._pending is None
+            deferred = loader._batch_iterator._deferred_indices
+            assert deferred is not None
+            assert len(deferred) == 2
+            assert next(iterator)["coord"].shape[0] == 2
+        finally:
+            loader.close()
+
+    def test_requirements_freeze_after_batch_read(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=0,
+        )
+        try:
+            next(iter(loader))
+            with pytest.raises(RuntimeError, match="must be registered before reading"):
+                ds.add_data_requirement([DataRequirementItem("late_label", 1)])
+        finally:
+            loader.close()
+
     def test_full_epoch(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=3)
         from torch.utils.data import (
@@ -311,6 +473,120 @@ class TestDataLoaderIteration:
             )
             total_frames = sum(batch["coord"].shape[0] for batch in dl)
         assert total_frames == 10
+
+    def test_partial_labels_form_homogeneous_loss_batches(self, tmp_path, monkeypatch):
+        """Default-filled labels must never share a scalar flag with real ones."""
+        monkeypatch.setattr("deepmd.pt.loss.ener.env.DEVICE", torch.device("cpu"))
+        path = str(tmp_path / "partial.lmdb")
+        _create_partially_labeled_lmdb(path)
+        ds = LmdbDataset(path, type_map=["O", "H"], batch_size=2)
+        ds.add_data_requirement(
+            [
+                DataRequirementItem("energy", 1, atomic=False, must=False, default=7.0),
+                DataRequirementItem("force", 3, atomic=True, must=False, default=11.0),
+            ]
+        )
+
+        sampler = SameNlocBatchSampler(ds._reader, shuffle=True, seed=11)
+        batches = list(sampler)
+        assert len(sampler) == len(batches) == 2
+        for indices in batches:
+            signatures = {ds._reader.get_find_signature(index) for index in indices}
+            assert len(signatures) == 1
+
+        distributed_batches = []
+        for rank in range(2):
+            distributed = DistributedSameNlocBatchSampler(
+                ds._reader,
+                rank=rank,
+                world_size=2,
+                shuffle=True,
+                seed=11,
+            )
+            rank_batches = list(distributed)
+            assert len(distributed) == len(rank_batches) == 1
+            distributed_batches.extend(rank_batches)
+        assert sorted(index for batch in distributed_batches for index in batch) == [
+            0,
+            1,
+            2,
+            3,
+        ]
+
+        loss_module = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+        )
+        force_loss_module = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+        )
+        observed_flags = set()
+        with torch.device("cpu"):
+            batches = list(ds._inner_dataloader)
+            stat_batches = [
+                batch for dataloader in ds.dataloaders for batch in dataloader
+            ]
+        assert {
+            (float(batch["find_energy"]), float(batch["find_force"]))
+            for batch in stat_batches
+        } == {(1.0, 0.0), (0.0, 1.0)}
+        for batch in batches:
+            flags = (float(batch["find_energy"]), float(batch["find_force"]))
+            observed_flags.add(flags)
+
+            def zero_model(_batch=batch, **kwargs):
+                return {
+                    "energy": torch.zeros_like(_batch["energy"]),
+                    "force": torch.zeros_like(_batch["force"]),
+                }
+
+            _, loss, _ = loss_module(
+                {},
+                zero_model,
+                {
+                    "energy": batch["energy"],
+                    "find_energy": batch["find_energy"],
+                },
+                natoms=6,
+                learning_rate=1.0,
+            )
+            if flags[0] == 0.0:
+                assert loss.item() == 0.0
+            else:
+                assert loss.item() > 0.0
+
+            _, force_loss, _ = force_loss_module(
+                {},
+                zero_model,
+                {
+                    "force": batch["force"],
+                    "find_force": batch["find_force"],
+                },
+                natoms=6,
+                learning_rate=1.0,
+            )
+            if flags[1] == 0.0:
+                assert force_loss.item() == 0.0
+            else:
+                assert force_loss.item() > 0.0
+        assert observed_flags == {(1.0, 0.0), (0.0, 1.0)}
+
+    def test_unrequested_labels_form_homogeneous_batches(self, tmp_path):
+        """Raw labels outside the loss requirements must still partition batches."""
+        path = str(tmp_path / "partial-virial.lmdb")
+        _create_partially_virial_lmdb(path)
+        ds = LmdbDataset(path, type_map=["O", "H"], batch_size=2)
+        ds.add_data_requirement(
+            [DataRequirementItem("energy", 1, atomic=False, must=False)]
+        )
+
+        with torch.device("cpu"):
+            batches = list(ds._inner_dataloader)
+        assert len(batches) == 2
+        assert sorted("find_virial" in batch for batch in batches) == [False, True]
 
 
 # ============================================================
@@ -355,6 +631,14 @@ class TestCollate:
             {"coord": np.zeros((2, 3)), "box": None},
         ]
         assert _collate_lmdb_batch(frames)["box"] is None
+
+    def test_collate_rejects_mixed_find_flags(self):
+        frames = [
+            {"coord": np.zeros((2, 3)), "find_energy": 1.0},
+            {"coord": np.zeros((2, 3)), "find_energy": 0.0},
+        ]
+        with pytest.raises(ValueError, match="mixes 'find_energy' values"):
+            _collate_lmdb_batch(frames)
 
 
 # ============================================================
@@ -463,7 +747,7 @@ class TestDistributedSameNlocBatchSampler:
     """Test DistributedSameNlocBatchSampler (pure logic, no torch.distributed)."""
 
     def test_disjoint_batches(self, multi_nloc_lmdb):
-        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=1)
         s0 = DistributedSameNlocBatchSampler(
             reader, rank=0, world_size=2, shuffle=True, seed=42
         )
@@ -492,10 +776,14 @@ class TestDistributedSameNlocBatchSampler:
 
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
         total = len(SameNlocBatchSampler(reader, shuffle=False))
-        dist_s = DistributedSameNlocBatchSampler(
-            reader, rank=0, world_size=2, shuffle=False, seed=0
-        )
-        assert len(dist_s) == math.ceil(total / 2)
+        samplers = [
+            DistributedSameNlocBatchSampler(
+                reader, rank=rank, world_size=4, shuffle=False, seed=0
+            )
+            for rank in range(4)
+        ]
+        assert {len(sampler) for sampler in samplers} == {math.ceil(total / 4)}
+        assert all(len(list(sampler)) == len(sampler) for sampler in samplers)
 
     def test_deterministic(self, multi_nloc_lmdb):
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
@@ -663,7 +951,7 @@ class TestAutoProbDataset:
             block_targets=ds._block_targets,
         )
         assert len(dist_sampler_rank0) == math.ceil(global_batches / 2)
-        assert len(dist_sampler_rank1) == global_batches // 2
+        assert len(dist_sampler_rank1) == math.ceil(global_batches / 2)
         assert len(dist_sampler_rank0) == len(list(dist_sampler_rank0))
         assert len(dist_sampler_rank1) == len(list(dist_sampler_rank1))
 
@@ -697,13 +985,42 @@ class TestAutoProbDataset:
         )
 
         assert calls == 1
-        expected_len = len(ds._batch_sampler) // 2
+        expected_len = (len(ds._batch_sampler) + 1) // 2
         assert len(dist_sampler) == expected_len
         assert calls == 1
 
 
 class TestMergeLmdbSystemIds:
     """Test merge_lmdb propagates frame_system_ids."""
+
+    def test_merge_does_not_close_active_source_reader(self, tmp_path):
+        src1, src2 = str(tmp_path / "live1.lmdb"), str(tmp_path / "live2.lmdb")
+        _create_test_lmdb(src1, nframes=3, natoms=6)
+        _create_test_lmdb(src2, nframes=2, natoms=6)
+        active = LmdbDataReader(src1, ["O", "H"])
+        try:
+            merge_lmdb([src1, src2], str(tmp_path / "live_merged.lmdb"))
+            assert active[0]["coord"].shape == (6, 3)
+        finally:
+            active.close()
+
+    def test_failed_merge_releases_source_lease(self, tmp_path):
+        src = str(tmp_path / "overflow_source.lmdb")
+        _create_test_lmdb(src, nframes=3, natoms=6)
+        active = LmdbDataReader(src, ["O", "H"])
+        resolved = active.lmdb_path
+        initial_refcount = _ENV_CACHE[resolved][1]
+        try:
+            with pytest.raises(lmdb.MapFullError):
+                merge_lmdb(
+                    [src],
+                    str(tmp_path / "overflow_destination.lmdb"),
+                    map_size=4096,
+                )
+            assert _ENV_CACHE[resolved][1] == initial_refcount
+        finally:
+            active.close()
+        assert resolved not in _ENV_CACHE
 
     def test_merge_propagates_system_ids(self, tmp_path):
         src1, src2 = str(tmp_path / "src1.lmdb"), str(tmp_path / "src2.lmdb")
@@ -755,6 +1072,32 @@ class TestMergeLmdbSystemIds:
 # ============================================================
 # Multitask LMDB training
 # ============================================================
+
+
+def test_trainer_releases_lmdb_loader_after_failure() -> None:
+    """The PT trainer closes asynchronous loaders on exceptional exit."""
+    from deepmd.pt.train.training import (
+        Trainer,
+    )
+
+    class Loader:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    loader = Loader()
+    trainer = object.__new__(Trainer)
+    trainer.training_dataloader = loader
+    trainer.validation_dataloader = None
+
+    def fail() -> None:
+        raise RuntimeError("training failure")
+
+    trainer._run = fail
+    with pytest.raises(RuntimeError, match="training failure"):
+        trainer.run()
+    assert loader.closed
 
 
 @pytest.fixture
@@ -888,6 +1231,7 @@ class TestMultitaskLmdbTraining:
 
         config, tmp_path = multitask_lmdb_setup
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "2")
         config = update_deepmd_input(deepcopy(config), warning=True)
         config["model"], shared_links = preprocess_shared_params(config["model"])
         config = normalize(config, multi_task=True)
@@ -912,10 +1256,18 @@ class TestMultitaskLmdbTraining:
             )
             assert "coord" in input_dict
             assert "sid" in log_dict
+        assert (
+            trainer.training_dataloader["model_1"]._batch_iterator._pool
+            is trainer.training_dataloader["model_2"]._batch_iterator._pool
+        )
 
         # -- training run assertions --
         trainer.run()
         assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
+        assert trainer.training_dataloader["model_1"]._batch_iterator.closed
+        assert trainer.training_dataloader["model_2"]._batch_iterator.closed
+        assert trainer.training_dataloader["model_1"].dataset._reader.closed
+        assert trainer.training_dataloader["model_2"].dataset._reader.closed
 
         # Explicit cleanup to free memory on CI
         import gc

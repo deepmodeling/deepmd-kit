@@ -11,6 +11,9 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.model.ener_model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.model.model import get_model as get_model_dp
+from deepmd.dpmodel.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -28,9 +31,10 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -48,6 +52,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.ener import EnerModel as EnergyModelTF
 else:
     EnergyModelTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.ener_model import EnergyModel as EnergyModelTF2
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+else:
+    EnergyModelTF2 = None
 if INSTALLED_PD:
     from deepmd.pd.model.model import get_model as get_model_pd
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
@@ -74,16 +83,28 @@ else:
     EnergyModelJAX = None
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
+MODEL_EXCLUSION_CURATED_CASES = (
+    ([], []),
+    ([], [1]),
+    ([[0, 1]], []),
+    ([[0, 1]], [1]),
 )
+
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
+)
+
+ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES = (
+    ("no_chg_spin",),
+    ("explicit_chg_spin",),
+    ("default_chg_spin",),
+)
+
+
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -119,6 +140,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
@@ -153,6 +175,14 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         )
 
     @property
+    def skip_tf2(self) -> bool:
+        # tf2 folds model-level pair_exclude_types into the nlist at BUILD time
+        # (decision #18/A4): the eager upper path (dp_model.call_common) passes
+        # pair_excl through, so exclusion IS exercised here — do not skip it (it
+        # is the regression guard for that path).
+        return not INSTALLED_TF2
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -168,6 +198,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -250,6 +282,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -290,6 +331,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -302,16 +344,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError(f"Unknown backend: {backend}")
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
-)
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -347,6 +380,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pt_expt_class = EnergyModelPTExpt
@@ -377,6 +411,12 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         return True
 
     @property
+    def skip_tf2(self) -> bool:
+        # See TestEner.skip_tf2: tf2 supports model-level pair_exclude_types via
+        # the build seam, so exclusion is exercised (regression guard).
+        return not INSTALLED_TF2
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -390,6 +430,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -445,6 +487,14 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             6.0,
             [20, 20],
             distinguish_types=True,
+            # model-level pair exclusion is a nlist-BUILD transform (decision
+            # #18/A4): the dpmodel-family lowers consume a pre-excluded nlist;
+            # legacy pt/pd re-apply internally, which is an idempotent no-op.
+            pair_excl=PairExcludeMask(
+                self.ntypes, [tuple(p) for p in self.data["pair_exclude_types"]]
+            )
+            if self.data["pair_exclude_types"]
+            else None,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
         self.nlist = nlist
@@ -486,6 +536,18 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 pt_expt_numpy_to_torch(self.extended_atype),
                 pt_expt_numpy_to_torch(self.nlist),
                 pt_expt_numpy_to_torch(self.mapping),
+                do_atomic_virial=True,
+            ).items()
+        }
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return {
+            kk: to_numpy_array(vv)
+            for kk, vv in tf2_obj.call_lower(
+                self.extended_coord,
+                self.extended_atype,
+                self.nlist,
+                self.mapping,
                 do_atomic_virial=True,
             ).items()
         }
@@ -535,6 +597,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif backend in {
             self.RefBackend.PT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -1669,10 +1732,7 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
-)
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.
@@ -2015,12 +2075,10 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
             compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
 
 
-@parameterized(
-    ("no_chg_spin", "explicit_chg_spin", "default_chg_spin"),  # cs_mode
-)
+@parameterized_cases(*ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerChgSpinEbdFparam(unittest.TestCase):
-    """Test dp/pt/pt_expt model forward consistency for add_chg_spin_ebd with three modes.
+    """Test dp/pt/pt_expt/pd model forward consistency for add_chg_spin_ebd with three modes.
 
     - no_chg_spin: add_chg_spin_ebd=False (baseline)
     - explicit_chg_spin: add_chg_spin_ebd=True, charge_spin provided
@@ -2075,6 +2133,8 @@ class TestEnerChgSpinEbdFparam(unittest.TestCase):
         serialized = self.dp_model.serialize()
         self.pt_model = EnergyModelPT.deserialize(serialized)
         self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+        if INSTALLED_PD:
+            self.pd_model = EnergyModelPD.deserialize(serialized)
 
         self.coords = np.array(
             [
@@ -2152,3 +2212,22 @@ class TestEnerChgSpinEbdFparam(unittest.TestCase):
                 atol=1e-10,
                 err_msg=f"dp vs pt_expt mismatch in {key} (mode={self.cs_mode})",
             )
+        if INSTALLED_PD:
+            pd_ret = {
+                kk: paddle_to_numpy(vv)
+                for kk, vv in self.pd_model(
+                    numpy_to_paddle(self.coords),
+                    numpy_to_paddle(self.atype),
+                    box=numpy_to_paddle(self.box),
+                    charge_spin=numpy_to_paddle(self.charge_spin_np),
+                    do_atomic_virial=True,
+                ).items()
+            }
+            for key in ("energy", "atom_energy"):
+                np.testing.assert_allclose(
+                    dp_ret[key],
+                    pd_ret[key],
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"dp vs pd mismatch in {key} (mode={self.cs_mode})",
+                )

@@ -60,7 +60,7 @@ if TYPE_CHECKING:
         Callable,
     )
 
-GridNetLayout = Literal["ndfc", "nfdc", "flat"]
+GridNetLayout = Literal["ndfc", "nfdc", "fndc", "flat"]
 GridNetMode = Literal["self", "cross"]
 GridNetOp = Literal["glu", "mlp", "branch"]
 
@@ -479,8 +479,10 @@ class BaseGridNet(nn.Module):
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
         self.dtype = dtype
         self.layout = str(layout).lower()
-        if self.layout not in {"ndfc", "nfdc", "flat"}:
-            raise ValueError("`layout` must be one of 'ndfc', 'nfdc', or 'flat'")
+        if self.layout not in {"ndfc", "nfdc", "fndc", "flat"}:
+            raise ValueError(
+                "`layout` must be one of 'ndfc', 'nfdc', 'fndc', or 'flat'"
+            )
         if self.mode == "self" and self.layout == "flat":
             raise ValueError("`layout='flat'` is only supported for cross grid nets")
         self.mlp_bias = bool(mlp_bias)
@@ -702,10 +704,16 @@ class BaseGridNet(nn.Module):
         return coeff.reshape(n_batch, coeff_dim, n_focus, -1)
 
     def _to_ndfc(self, value: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
+        # All grid operations run in the canonical ``(N, D, F, C)`` layout; the
+        # ``fndc`` re-orientation folds the focus-major SO(2) mixing layout into the
+        # same transpose the ``nfdc`` path performs, so the grid compute below is
+        # identical regardless of the caller's layout.
         if self.layout == "ndfc":
             return value, tuple(value.shape)
         if self.layout == "nfdc":
             return value.transpose(1, 2), tuple(value.shape)
+        if self.layout == "fndc":
+            return value.permute(1, 2, 0, 3), tuple(value.shape)
         n_batch, coeff_dim, _ = value.shape
         return (
             value.reshape(n_batch, coeff_dim, self.n_focus, -1),
@@ -721,6 +729,8 @@ class BaseGridNet(nn.Module):
             return value
         if self.layout == "nfdc":
             return value.transpose(1, 2)
+        if self.layout == "fndc":
+            return value.permute(2, 0, 1, 3)
         n_batch, coeff_dim, _ = shape_info
         return value.reshape(n_batch, coeff_dim, -1)
 

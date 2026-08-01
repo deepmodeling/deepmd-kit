@@ -68,7 +68,6 @@ class Encode:
             if h[ii] == "p":
                 ed = ii + 1
         is_zero = h[st] == "0"
-        #
         if is_zero:
             return "0" * (1 + nbit_expo + nbit_frac)
         else:

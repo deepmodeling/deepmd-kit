@@ -7,8 +7,23 @@ Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 
 import logging
 import math
+import multiprocessing
+import signal
+import threading
 from collections.abc import (
     Iterator,
+    Sequence,
+)
+from concurrent.futures import (
+    Future,
+    ProcessPoolExecutor,
+)
+from concurrent.futures import wait as futures_wait
+from concurrent.futures.process import (
+    BrokenProcessPool,
+)
+from dataclasses import (
+    dataclass,
 )
 from pathlib import (
     Path,
@@ -47,6 +62,21 @@ _KEY_REMAP = {
 # Keys whose high_prec is always True in the standard pipeline
 # (energy is set by Loss DataRequirementItem; reduce() also sets high_prec=True)
 _HIGH_PREC_KEYS = frozenset({"energy"})
+
+# Keys that describe frame geometry or LMDB bookkeeping rather than optional
+# model inputs/labels.  They must not participate in availability signatures.
+_STRUCTURAL_KEYS = frozenset(
+    {
+        "coord",
+        "box",
+        "atype",
+        "natoms",
+        "real_natoms_vec",
+        "fid",
+    }
+)
+_LMDB_METADATA_KEYS = frozenset({"atom_numbs", "atom_names", "orig"})
+_OPTIONAL_MODEL_INPUT_KEYS = frozenset({"fparam", "aparam", "spin", "charge_spin"})
 
 # Process-level cache: python-lmdb does not allow opening the same path twice
 # in one process.  We ref-count so the Environment is closed (and freed from
@@ -99,7 +129,7 @@ def _read_metadata(txn: lmdb.Transaction) -> dict:
     return msgpack.unpackb(raw, raw=False)
 
 
-def _decode_array(obj: dict) -> np.ndarray:
+def _decode_array(obj: dict, *, copy: bool = True) -> np.ndarray:
     """Reconstruct ndarray from msgpack-encoded dict with {type, shape, data}.
 
     Handles both string keys ("type", "data") and byte keys (b"type", b"data").
@@ -113,7 +143,8 @@ def _decode_array(obj: dict) -> np.ndarray:
         shape = tuple(obj[shape_key])
     else:
         shape = (len(data) // dtype.itemsize,)
-    return np.frombuffer(data, dtype=dtype).reshape(shape).copy()
+    array = np.frombuffer(data, dtype=dtype).reshape(shape)
+    return array.copy() if copy else array
 
 
 def _is_encoded_array(val: Any) -> bool:
@@ -123,21 +154,25 @@ def _is_encoded_array(val: Any) -> bool:
     return ("data" in val and "type" in val) or (b"data" in val and b"type" in val)
 
 
-def _decode_value(val: Any) -> Any:
+def _decode_value(val: Any, *, copy_arrays: bool = True) -> Any:
     """Decode a value: encoded array -> ndarray, list of encoded -> list of ndarray, else pass through."""
     if _is_encoded_array(val):
-        return _decode_array(val)
+        return _decode_array(val, copy=copy_arrays)
     elif isinstance(val, list) and len(val) > 0 and _is_encoded_array(val[0]):
-        return [_decode_array(item) for item in val]
+        return [_decode_array(item, copy=copy_arrays) for item in val]
     return val
 
 
-def _decode_frame(raw_bytes: bytes) -> dict[str, Any]:
+def _decode_frame(
+    raw_bytes: bytes,
+    *,
+    copy_arrays: bool = True,
+) -> dict[str, Any]:
     """Decode a msgpack-serialized frame into a dict of numpy arrays / scalars."""
     frame = msgpack.unpackb(raw_bytes, raw=False)
     result = {}
     for key, val in frame.items():
-        result[key] = _decode_value(val)
+        result[key] = _decode_value(val, copy_arrays=copy_arrays)
     return result
 
 
@@ -147,6 +182,778 @@ def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
     for k, v in frame.items():
         out[_KEY_REMAP.get(k, k)] = v
     return out
+
+
+def _availability_signature_keys(
+    frame: dict[str, Any], requirement_keys: Iterator[str]
+) -> list[str]:
+    """Return data keys whose availability can affect frame collation.
+
+    In addition to registered requirements and standard optional model inputs,
+    include every label-like field that :class:`LmdbDataReader` exposes from
+    the raw frame.  This keeps sampler/validation grouping consistent with the
+    complete set of ``find_*`` flags checked during collation.
+    """
+    keys = set(requirement_keys) | set(_OPTIONAL_MODEL_INPUT_KEYS)
+    for frame_key in frame:
+        if frame_key.startswith("find_"):
+            keys.add(frame_key.removeprefix("find_"))
+        elif frame_key not in _STRUCTURAL_KEYS | _LMDB_METADATA_KEYS:
+            keys.add(frame_key)
+    return sorted(keys)
+
+
+def _remap_atom_types(atype: np.ndarray, type_remap: np.ndarray) -> np.ndarray:
+    """Remap real atom types while preserving negative virtual sentinels.
+
+    Positive indices retain NumPy's normal bounds checking, so malformed LMDB
+    data cannot be silently reinterpreted as a different species.
+    """
+    remapped_atype = atype.astype(np.int64, copy=True)
+    real_atom_mask = remapped_atype >= 0
+    remapped_atype[real_atom_mask] = type_remap[remapped_atype[real_atom_mask]]
+    return remapped_atype
+
+
+@dataclass
+class LmdbDecodeConfig:
+    """Serializable state required to decode one LMDB frame.
+
+    The configuration deliberately excludes the LMDB environment and the
+    dataset-wide index tables. It can therefore be sent to worker processes
+    without duplicating the potentially very large metadata owned by
+    :class:`LmdbDataReader`.
+
+    Parameters
+    ----------
+    ntypes
+        Number of model atom types.
+    natoms
+        Fallback atom count for records without ``atom_types``.
+    type_remap
+        Optional LMDB-type to model-type lookup table.
+    data_requirements
+        Registered data requirements keyed by field name.
+    """
+
+    ntypes: int
+    natoms: int
+    type_remap: np.ndarray | None
+    data_requirements: dict[str, Any]
+
+
+def _requirement_dtype(requirement: Any) -> np.dtype:
+    """Resolve the NumPy dtype associated with a data requirement."""
+    if isinstance(requirement, dict):
+        dtype = requirement.get("dtype")
+        high_precision = requirement.get("high_prec", False)
+    else:
+        dtype = getattr(requirement, "dtype", None)
+        high_precision = getattr(requirement, "high_prec", False)
+    if dtype is not None:
+        return np.dtype(dtype)
+    return np.dtype(
+        GLOBAL_ENER_FLOAT_PRECISION if high_precision else GLOBAL_NP_FLOAT_PRECISION
+    )
+
+
+def _resolve_frame_dtype(config: LmdbDecodeConfig, key: str) -> np.dtype:
+    """Resolve one decoded field's output dtype."""
+    requirement = config.data_requirements.get(key)
+    if requirement is not None:
+        return _requirement_dtype(requirement)
+    if key in _HIGH_PREC_KEYS:
+        return np.dtype(GLOBAL_ENER_FLOAT_PRECISION)
+    return np.dtype(GLOBAL_NP_FLOAT_PRECISION)
+
+
+def _compute_frame_natoms(atype: np.ndarray, ntypes: int) -> np.ndarray:
+    """Build ``[nloc, nloc, count(type_0), ...]`` for one frame.
+
+    Negative virtual types are excluded from the per-type counts, matching
+    mixed-type NPY data handling, as are positive indices outside the
+    configured type map. The leading ``nloc`` entries still count every atom
+    slot.
+    """
+    nloc = len(atype)
+    real_atype = atype[(atype >= 0) & (atype < ntypes)]
+    counts = np.bincount(real_atype, minlength=ntypes)
+    natoms = np.empty(ntypes + 2, dtype=np.int64)
+    natoms[0] = nloc
+    natoms[1] = nloc
+    natoms[2:] = counts
+    return natoms
+
+
+def decode_lmdb_frame(
+    raw: bytes,
+    original_key: int,
+    config: LmdbDecodeConfig,
+    *,
+    copy_arrays: bool,
+) -> dict[str, Any]:
+    """Decode and normalize one LMDB record.
+
+    Parameters
+    ----------
+    raw
+        Msgpack-encoded frame payload.
+    original_key
+        Integer LMDB frame key.
+    config
+        Decoder state independent of the LMDB environment.
+    copy_arrays
+        Whether encoded arrays are copied while unpacking. Batch decoding sets
+        this to ``False`` because every value is copied exactly once into its
+        preallocated batch destination.
+
+    Returns
+    -------
+    dict[str, Any]
+        One normalized frame in DeePMD data-system convention.
+    """
+    frame = _remap_keys(_decode_frame(raw, copy_arrays=copy_arrays))
+
+    for metadata_key in ("atom_numbs", "atom_names", "orig"):
+        frame.pop(metadata_key, None)
+
+    if "coord" in frame and isinstance(frame["coord"], np.ndarray):
+        frame["coord"] = (
+            frame["coord"]
+            .reshape(-1, 3)
+            .astype(_resolve_frame_dtype(config, "coord"), copy=False)
+        )
+    if "box" in frame and isinstance(frame["box"], np.ndarray):
+        frame["box"] = (
+            frame["box"]
+            .reshape(9)
+            .astype(_resolve_frame_dtype(config, "box"), copy=False)
+        )
+    if "energy" in frame:
+        value = frame["energy"]
+        if isinstance(value, np.ndarray):
+            frame["energy"] = value.reshape(1).astype(
+                _resolve_frame_dtype(config, "energy"), copy=False
+            )
+        else:
+            frame["energy"] = np.array(
+                [float(value)], dtype=_resolve_frame_dtype(config, "energy")
+            )
+    if "force" in frame and isinstance(frame["force"], np.ndarray):
+        frame["force"] = (
+            frame["force"]
+            .reshape(-1, 3)
+            .astype(_resolve_frame_dtype(config, "force"), copy=False)
+        )
+    if "atype" in frame and isinstance(frame["atype"], np.ndarray):
+        frame["atype"] = frame["atype"].reshape(-1).astype(np.int64, copy=False)
+        if config.type_remap is not None:
+            frame["atype"] = _remap_atom_types(frame["atype"], config.type_remap)
+    if "virial" in frame and isinstance(frame["virial"], np.ndarray):
+        frame["virial"] = (
+            frame["virial"]
+            .reshape(9)
+            .astype(_resolve_frame_dtype(config, "virial"), copy=False)
+        )
+
+    atype = frame.get("atype")
+    if atype is not None:
+        frame_natoms = len(atype)
+        natoms = _compute_frame_natoms(atype, config.ntypes)
+    else:
+        frame_natoms = config.natoms
+        natoms = np.array(
+            [config.natoms, config.natoms] + [0] * config.ntypes,
+            dtype=np.int64,
+        )
+    frame["natoms"] = natoms
+    frame["real_natoms_vec"] = natoms
+
+    requirements = config.data_requirements
+    coord = frame.get("coord")
+    if (
+        "min_pair_dist" in requirements
+        and "min_pair_dist" not in frame
+        and isinstance(coord, np.ndarray)
+        and isinstance(atype, np.ndarray)
+    ):
+        box = frame.get("box")
+        if box is not None and np.allclose(box, 0.0):
+            box = None
+        requirement = requirements["min_pair_dist"]
+        default = (
+            requirement.get("default", 0.0)
+            if isinstance(requirement, dict)
+            else getattr(requirement, "default", 0.0)
+        )
+        frame["find_min_pair_dist"] = np.float32(1.0)
+        frame["min_pair_dist"] = np.array(
+            [
+                compute_min_pair_dist_single(
+                    coord,
+                    box,
+                    atype,
+                    stop_below=float(default),
+                )
+            ],
+            dtype=_resolve_frame_dtype(config, "min_pair_dist"),
+        )
+
+    structural_keys = frozenset(
+        {
+            "coord",
+            "box",
+            "atype",
+            "natoms",
+            "real_natoms_vec",
+            "fid",
+        }
+    )
+    for key in list(frame):
+        if key.startswith("find_") or key in structural_keys or key in requirements:
+            continue
+        frame.setdefault(f"find_{key}", np.float32(1.0))
+
+    for key, requirement in requirements.items():
+        if isinstance(requirement, dict):
+            ndof = requirement["ndof"]
+            default = requirement["default"]
+            atomic = requirement["atomic"]
+            repeat = requirement.get("repeat", 1)
+        else:
+            ndof = requirement.ndof
+            default = requirement.default
+            atomic = requirement.atomic
+            repeat = getattr(requirement, "repeat", 1)
+        dtype = _requirement_dtype(requirement)
+
+        if key not in frame:
+            frame[f"find_{key}"] = np.float32(0.0)
+            shape = (frame_natoms, ndof) if atomic else (ndof,)
+            data = np.full(shape, default, dtype=dtype)
+            if repeat != 1:
+                data = np.repeat(data, repeat).reshape(-1)
+            frame[key] = data
+        else:
+            frame.setdefault(f"find_{key}", np.float32(1.0))
+            if repeat != 1 and isinstance(frame[key], np.ndarray):
+                frame[key] = (
+                    np.repeat(frame[key], repeat).reshape(-1).astype(dtype, copy=False)
+                )
+
+    for key in ("fparam", "aparam", "spin", "charge_spin"):
+        frame.setdefault(
+            f"find_{key}",
+            np.float32(1.0 if key in frame else 0.0),
+        )
+
+    frame["fid"] = original_key
+    return frame
+
+
+def _allocate_lmdb_batch(
+    frame: dict[str, Any],
+    batch_size: int,
+) -> dict[str, Any]:
+    """Allocate a contiguous NumPy batch from the first decoded frame."""
+    batch: dict[str, Any] = {}
+    for key, value in frame.items():
+        if key.startswith("find_"):
+            batch[key] = value
+        elif key == "fid":
+            batch[key] = [None] * batch_size
+            batch[key][0] = value
+        elif key == "type":
+            continue
+        elif value is None:
+            batch[key] = None
+        else:
+            array = np.asarray(value)
+            destination = np.empty((batch_size, *array.shape), dtype=array.dtype)
+            destination[0] = array
+            batch[key] = destination
+    return batch
+
+
+def decode_lmdb_batch(
+    transaction: lmdb.Transaction,
+    original_keys: Sequence[int],
+    frame_format: str,
+    config: LmdbDecodeConfig,
+) -> dict[str, Any]:
+    """Decode LMDB records directly into preallocated contiguous arrays.
+
+    The function keeps at most one temporary frame alive. It avoids the
+    decode-copy, dtype-copy, Python frame-list, and final ``numpy.stack``
+    sequence used by generic collation.
+    """
+    if not original_keys:
+        raise ValueError("decode_lmdb_batch requires at least one frame key")
+
+    batch: dict[str, Any] | None = None
+    batch_size = len(original_keys)
+    expected_fields: frozenset[str] | None = None
+    for row, original_key in enumerate(original_keys):
+        key = format(int(original_key), frame_format).encode()
+        raw = transaction.get(key)
+        if raw is None:
+            raise IndexError(f"Frame {original_key} not found in LMDB")
+        frame = decode_lmdb_frame(
+            raw,
+            int(original_key),
+            config,
+            copy_arrays=False,
+        )
+        if batch is None:
+            batch = _allocate_lmdb_batch(frame, batch_size)
+            expected_fields = frozenset(frame)
+            continue
+
+        frame_fields = frozenset(frame)
+        if frame_fields != expected_fields:
+            raise ValueError(
+                "LMDB frames in one same-nloc batch expose inconsistent fields: "
+                f"frame {original_keys[0]} has {sorted(expected_fields)}, while "
+                f"frame {original_key} has {sorted(frame_fields)}"
+            )
+        for field, value in frame.items():
+            if field.startswith("find_"):
+                if not np.array_equal(batch[field], value):
+                    raise ValueError(
+                        f"LMDB field availability changes within one batch: "
+                        f"{field!r} differs at frame {original_key}"
+                    )
+                continue
+            if field == "type" or value is None:
+                continue
+            if field == "fid":
+                batch[field][row] = value
+            else:
+                destination = batch[field]
+                array = np.asarray(value)
+                if destination.shape[1:] != array.shape:
+                    raise ValueError(
+                        f"LMDB field {field!r} changes shape within one batch: "
+                        f"expected {destination.shape[1:]}, got {array.shape} "
+                        f"for frame {original_key}"
+                    )
+                result_dtype = np.result_type(destination.dtype, array.dtype)
+                if result_dtype != destination.dtype:
+                    promoted = np.empty(destination.shape, dtype=result_dtype)
+                    promoted[:row] = destination[:row]
+                    batch[field] = destination = promoted
+                destination[row] = array
+
+    assert batch is not None
+    batch["sid"] = np.asarray([0], dtype=np.int64)
+    return batch
+
+
+_WORKER_LMDB_READERS: dict[
+    str,
+    tuple[lmdb.Environment, lmdb.Transaction],
+] = {}
+
+
+def _decode_lmdb_worker_chunk(
+    lmdb_path: str,
+    frame_format: str,
+    config: LmdbDecodeConfig,
+    original_keys: list[int],
+) -> dict[str, Any]:
+    """Decode one chunk using process-local LMDB state."""
+    reader = _WORKER_LMDB_READERS.get(lmdb_path)
+    if reader is None:
+        environment = lmdb.open(
+            lmdb_path,
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False,
+        )
+        reader = (environment, environment.begin())
+        _WORKER_LMDB_READERS[lmdb_path] = reader
+    return decode_lmdb_batch(
+        reader[1],
+        original_keys,
+        frame_format,
+        config,
+    )
+
+
+def _merge_lmdb_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge ordered worker chunks into one contiguous batch."""
+    if not chunks:
+        raise ValueError("cannot merge an empty LMDB chunk list")
+    if len(chunks) == 1:
+        return chunks[0]
+
+    first = chunks[0]
+    expected_fields = frozenset(first)
+    for chunk_index, chunk in enumerate(chunks[1:], start=1):
+        chunk_fields = frozenset(chunk)
+        if chunk_fields != expected_fields:
+            raise ValueError(
+                "LMDB worker chunks expose inconsistent fields: "
+                f"chunk 0 has {sorted(expected_fields)}, while chunk "
+                f"{chunk_index} has {sorted(chunk_fields)}"
+            )
+
+    merged: dict[str, Any] = {}
+    for key, value in first.items():
+        if key.startswith("find_"):
+            for chunk_index, chunk in enumerate(chunks[1:], start=1):
+                if not np.array_equal(value, chunk[key]):
+                    raise ValueError(
+                        "LMDB field availability changes across worker chunks: "
+                        f"{key!r} differs in chunk {chunk_index}"
+                    )
+            merged[key] = value
+        elif key == "sid" or value is None:
+            merged[key] = value
+        elif key == "fid":
+            merged[key] = [frame_id for chunk in chunks for frame_id in chunk[key]]
+        else:
+            merged[key] = np.concatenate([chunk[key] for chunk in chunks], axis=0)
+    return merged
+
+
+@dataclass
+class _LmdbPoolEntry:
+    """Reference-counted process pool shared by data tasks in one rank.
+
+    Attributes
+    ----------
+    executor : ProcessPoolExecutor
+        The pool itself.
+    users : int
+        Number of iterators holding the pool, which is retired by its last one.
+    healthy : bool
+        Whether the pool still decodes. Losing a decoder disables the pool for
+        every iterator sharing it, and marks it as one that must not be waited
+        on: a pool stuck reading the partial result of a decoder killed
+        mid-write never finishes shutting down.
+    """
+
+    executor: ProcessPoolExecutor
+    users: int
+    healthy: bool = True
+
+
+_LMDB_POOL_LOCK = threading.Lock()
+_LMDB_POOLS: dict[int, _LmdbPoolEntry] = {}
+
+
+def _detach_decoder_from_session() -> None:
+    """Shield a decoder from the hangup that ends its launching session.
+
+    A decoder is a background helper of the training process and owns no
+    terminal, so the ``SIGHUP`` delivered when the session a run was launched
+    from goes away carries no meaning for it, while the default disposition
+    makes it fatal. The signals by which a run is actually stopped, ``SIGINT``
+    and ``SIGTERM``, keep their disposition.
+
+    This protects the decoders alone. It is effective because the pool is
+    built on the ``spawn`` start method, whose workers are direct children of
+    the training process with no intermediary of their own to lose.
+    """
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+
+def _create_lmdb_executor(num_workers: int) -> ProcessPoolExecutor:
+    """Create a CUDA-safe LMDB decoder process pool.
+
+    The ``spawn`` start method is chosen over ``forkserver`` for the sake of
+    the shielding above: a fork server is an unshielded intermediary whose own
+    death is reported as the death of every decoder it started, which breaks
+    the pool however well the decoders themselves are protected.
+    """
+    return ProcessPoolExecutor(
+        max_workers=num_workers,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=_detach_decoder_from_session,
+    )
+
+
+def _acquire_lmdb_executor(num_workers: int) -> _LmdbPoolEntry:
+    """Acquire the process-wide pool for one worker count."""
+    with _LMDB_POOL_LOCK:
+        entry = _LMDB_POOLS.get(num_workers)
+        if entry is None:
+            entry = _LmdbPoolEntry(
+                executor=_create_lmdb_executor(num_workers),
+                users=0,
+            )
+            _LMDB_POOLS[num_workers] = entry
+        entry.users += 1
+        return entry
+
+
+def _release_lmdb_executor(num_workers: int) -> None:
+    """Release one pool user and stop the pool after its final user."""
+    retired: _LmdbPoolEntry | None = None
+    with _LMDB_POOL_LOCK:
+        entry = _LMDB_POOLS.get(num_workers)
+        if entry is None:
+            return
+        entry.users -= 1
+        if entry.users == 0:
+            retired = entry
+            del _LMDB_POOLS[num_workers]
+    if retired is not None:
+        if not retired.healthy:
+            _dismantle_lmdb_executor(retired.executor)
+        retired.executor.shutdown(wait=retired.healthy, cancel_futures=True)
+
+
+def _dismantle_lmdb_executor(executor: ProcessPoolExecutor) -> None:
+    """Force a pool that stopped delivering to finish shutting down.
+
+    A pool reading the partial result of a decoder killed mid-write waits for
+    bytes that never arrive, because the training process itself holds the
+    last write end of that queue. The interpreter joins every pool manager
+    thread before it exits, so a run would complete its training and then
+    never terminate. Closing the write end delivers the awaited end of file;
+    the surviving decoders are stopped first so that none of them writes into
+    a queue about to close. The pool offers no public way to release a manager
+    thread already committed to a read.
+    """
+    for process in list(getattr(executor, "_processes", {}).values()):
+        if process.exitcode is None:
+            process.kill()
+    writer = getattr(getattr(executor, "_result_queue", None), "_writer", None)
+    if writer is not None:
+        writer.close()
+
+
+#: Seconds between two liveness checks while waiting on the decoder pool. The
+#: wait ends as soon as the chunks arrive, so this bounds only how long a pool
+#: that has stopped delivering goes unnoticed.
+_DECODER_LIVENESS_INTERVAL = 5.0
+
+
+@dataclass
+class _PendingBatch:
+    """A batch handed to the decoder pool, and the indices that produced it.
+
+    The indices are retained so that the batch can still be decoded in this
+    process should the pool fail to deliver it.
+    """
+
+    indices: list[int]
+    futures: list[Future[dict[str, Any]]]
+
+
+class LmdbBatchIterator:
+    """Deterministic same-nloc batches with parallel decode and one prefetch.
+
+    The sampler remains in the parent process. Worker tasks receive only the
+    selected integer frame keys and compact decoder state, so the dataset-wide
+    metadata is never duplicated. Data tasks in the same rank share one
+    process pool while retaining independent samplers and pending batches.
+    Before a new pass is prefetched, samplers exposing ``set_epoch`` are
+    advanced to the next deterministic shuffle state.
+
+    Parameters
+    ----------
+    reader
+        LMDB reader that owns metadata and the synchronous transaction.
+    sampler
+        Finite iterator yielding same-nloc dataset-index batches.
+    num_workers
+        Decoder process count. Zero or one selects synchronous decoding.
+    """
+
+    def __init__(
+        self,
+        reader: "LmdbDataReader",
+        sampler: Any,
+        num_workers: int,
+    ) -> None:
+        if num_workers < 0:
+            raise ValueError(f"num_workers must be non-negative, got {num_workers}")
+        self._reader = reader
+        self._sampler = sampler
+        self._epoch = 0
+        self._iterator = self._iter_epoch()
+        self._num_workers = num_workers
+        self._pool: _LmdbPoolEntry | None = None
+        self._pending: _PendingBatch | None = None
+        self._deferred_indices: list[int] | None = None
+        self._closed = False
+
+    def __iter__(self) -> "LmdbBatchIterator":
+        return self
+
+    def __next__(self) -> dict[str, Any]:
+        if self._closed:
+            raise RuntimeError("cannot read from a closed LMDB batch iterator")
+
+        if self._pending is not None:
+            pending, self._pending = self._pending, None
+            batch = self._collect(pending)
+        elif self._deferred_indices is not None:
+            indices, self._deferred_indices = self._deferred_indices, None
+            batch = self._reader.decode_batch(indices)
+        else:
+            batch = self._decode(self._next_indices())
+
+        self._schedule(self._next_indices())
+        return batch
+
+    def _decode(self, indices: list[int]) -> dict[str, Any]:
+        """Decode one batch, in the pool when that is worthwhile and possible."""
+        futures = self._offer(indices)
+        if futures is None:
+            return self._reader.decode_batch(indices)
+        return self._collect(_PendingBatch(indices, futures))
+
+    def _offer(self, indices: list[int]) -> list[Future[dict[str, Any]]] | None:
+        """Hand a batch to the pool, or ``None`` if it will not take it."""
+        if not self._worth_decoding_in_parallel(indices):
+            return None
+        if self._pool is None:
+            self._pool = _acquire_lmdb_executor(self._num_workers)
+        if not self._pool.healthy:
+            return None
+        try:
+            return self._submit(indices)
+        except BrokenProcessPool:
+            self._lose_the_pool()
+            return None
+
+    def _collect(self, pending: _PendingBatch) -> dict[str, Any]:
+        """Return a batch from the pool, decoding it here if the pool cannot.
+
+        A decoder killed from outside -- by the kernel under memory pressure,
+        or by a signal aimed at the session the run was launched from -- ends
+        the batch one of two ways. Usually the pool notices and fails every
+        future it holds. Should the decoder die midway through writing a
+        result, however, the pool reads that partial result forever instead of
+        reporting itself broken, and the run stops with no diagnosis and no
+        error; punctuating the wait with a liveness check covers that case.
+        """
+        try:
+            if self._wait_for_decoder(pending.futures):
+                return _merge_lmdb_chunks(
+                    [future.result() for future in pending.futures]
+                )
+        except BrokenProcessPool:
+            pass
+        self._lose_the_pool(pending.futures)
+        return self._reader.decode_batch(pending.indices)
+
+    def _wait_for_decoder(
+        self,
+        futures: "Sequence[Future[dict[str, Any]]]",
+    ) -> bool:
+        """Wait for submitted work while checking that its decoder survives."""
+        remaining = set(futures)
+        while remaining:
+            _, remaining = futures_wait(remaining, timeout=_DECODER_LIVENESS_INTERVAL)
+            if remaining and self._decoder_exited():
+                return False
+        return not any(
+            isinstance(future.exception(), BrokenProcessPool) for future in futures
+        )
+
+    def _decoder_exited(self) -> bool:
+        """Whether any decoder has exited, which the pool reports nowhere else."""
+        processes = getattr(self._pool.executor, "_processes", None) or {}
+        return any(process.exitcode is not None for process in processes.values())
+
+    def _lose_the_pool(self, futures: "Sequence[Future[dict[str, Any]]]" = ()) -> None:
+        """Disable the pool for every iterator sharing it, reporting it once."""
+        for future in futures:
+            future.cancel()
+        if self._pool is None or not self._pool.healthy:
+            return
+        self._pool.healthy = False
+        log.warning(
+            "An LMDB decoder process exited unexpectedly; decoding continues "
+            "in the training process. Throughput may drop. Set "
+            "DP_LMDB_NUM_WORKERS=1 to select in-process decoding from the "
+            "start, and launch the run under nohup or setsid so that the "
+            "decoders outlive the session that started it."
+        )
+
+    def _next_indices(self) -> list[int]:
+        """Return the next sampler batch and restart after exhaustion."""
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            self._epoch += 1
+            self._iterator = self._iter_epoch()
+            return next(self._iterator)
+
+    def _iter_epoch(self) -> Iterator[list[int]]:
+        """Create a sampler iterator for the current epoch."""
+        set_epoch = getattr(self._sampler, "set_epoch", None)
+        if callable(set_epoch):
+            set_epoch(self._epoch)
+        return iter(self._sampler)
+
+    def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
+        """Submit one batch as balanced contiguous chunks."""
+        original_keys = self._reader.original_keys(indices)
+        workers = min(self._num_workers, len(original_keys))
+        base_size, remainder = divmod(len(original_keys), workers)
+        chunks: list[list[int]] = []
+        start = 0
+        for worker_index in range(workers):
+            chunk_size = base_size + int(worker_index < remainder)
+            stop = start + chunk_size
+            chunks.append(original_keys[start:stop])
+            start = stop
+        decode_config = self._reader.worker_decode_config()
+        return [
+            self._pool.executor.submit(
+                _decode_lmdb_worker_chunk,
+                self._reader.lmdb_path,
+                self._reader.frame_format,
+                decode_config,
+                chunk,
+            )
+            for chunk in chunks
+        ]
+
+    def _worth_decoding_in_parallel(self, indices: list[int]) -> bool:
+        """Whether process decoding amortizes its scheduling and IPC cost."""
+        return self._num_workers > 1 and len(indices) >= self._num_workers
+
+    def _schedule(self, indices: list[int]) -> None:
+        """Prefetch the next batch in the pool, or leave it to the caller."""
+        futures = self._offer(indices)
+        self._pending = _PendingBatch(indices, futures) if futures else None
+        self._deferred_indices = None if futures else indices
+
+    @property
+    def started(self) -> bool:
+        """Whether this iterator has acquired the shared process pool."""
+        return self._pool is not None
+
+    @property
+    def closed(self) -> bool:
+        """Whether this iterator has released its resources."""
+        return self._closed
+
+    def close(self) -> None:
+        """Finish or cancel prefetched work and release the decoder pool."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._pending is not None:
+            running = [
+                future for future in self._pending.futures if not future.cancel()
+            ]
+            if running and not self._wait_for_decoder(running):
+                self._lose_the_pool(running)
+            self._pending = None
+        self._deferred_indices = None
+        if self._pool is not None:
+            self._pool = None
+            _release_lmdb_executor(self._num_workers)
 
 
 def is_lmdb(systems: str) -> bool:
@@ -286,7 +1093,7 @@ class LmdbDataReader:
         batch_size: int | str = "auto",
         mixed_batch: bool = False,
     ) -> None:
-        self.lmdb_path = str(lmdb_path)
+        self.lmdb_path = str(Path(lmdb_path).resolve())
         self._type_map = type_map
         self._env = _open_lmdb(self.lmdb_path)
         self.mixed_batch = mixed_batch
@@ -318,9 +1125,10 @@ class LmdbDataReader:
                 f"remap={remap}"
             )
 
-        # Persistent read-only transaction for __getitem__ (avoids per-read overhead).
-        # Safe because we use num_workers=0 in DataLoader.
+        # The parent transaction serves synchronous reads. Decoder workers open
+        # independent process-local environments and transactions.
         self._txn = self._env.begin()
+        self._closed = False
 
         # Scan per-frame nloc only when needed for same-nloc batching.
         # For mixed_batch=True, skip the scan entirely (future: padding handles it).
@@ -462,19 +1270,16 @@ class LmdbDataReader:
 
         # Data requirements tracking
         self._data_requirements: dict[str, DataRequirementItem] = {}
-
-    def _compute_natoms_vec(self, atype: np.ndarray) -> np.ndarray:
-        """Compute natoms_vec from a frame's atype array.
-
-        Returns [nloc, nloc, count_type0, count_type1, ...] with length ntypes+2.
-        """
-        nloc = len(atype)
-        counts = np.bincount(atype, minlength=self._ntypes)[: self._ntypes]
-        vec = np.empty(self._ntypes + 2, dtype=np.int64)
-        vec[0] = nloc
-        vec[1] = nloc
-        vec[2:] = counts
-        return vec
+        self._data_requirements_frozen = False
+        self._decode_config = LmdbDecodeConfig(
+            ntypes=self._ntypes,
+            natoms=self._natoms,
+            type_remap=self._type_remap,
+            data_requirements=self._data_requirements,
+        )
+        # Availability signatures are decoded lazily and reused by every
+        # sampler epoch. Registering new requirements invalidates the cache.
+        self._find_signature_cache: dict[int, tuple[tuple[str, bool], ...]] = {}
 
     def _resolve_dtype(self, key: str) -> np.dtype:
         """Resolve the target numpy dtype for a given key.
@@ -482,33 +1287,32 @@ class LmdbDataReader:
         Priority: DataRequirementItem.dtype > DataRequirementItem.high_prec >
         built-in defaults (energy=high, others=normal).
         """
-        if key in self._data_requirements:
-            req = self._data_requirements[key]
-            # Support both DataRequirementItem objects and plain dicts
-            if isinstance(req, dict):
-                dtype = req.get("dtype")
-                if dtype is not None:
-                    return dtype
-                if req.get("high_prec", False):
-                    return GLOBAL_ENER_FLOAT_PRECISION
-                return GLOBAL_NP_FLOAT_PRECISION
-            else:
-                # DataRequirementItem object
-                if hasattr(req, "dtype") and req.dtype is not None:
-                    return req.dtype
-                if hasattr(req, "high_prec") and req.high_prec:
-                    return GLOBAL_ENER_FLOAT_PRECISION
-                return GLOBAL_NP_FLOAT_PRECISION
-        # Fall back to built-in defaults
-        if key in _HIGH_PREC_KEYS:
-            return GLOBAL_ENER_FLOAT_PRECISION
-        return GLOBAL_NP_FLOAT_PRECISION
+        return _resolve_frame_dtype(self._decode_config, key)
 
     def __del__(self) -> None:
-        """Release the LMDB environment ref-count on garbage collection."""
-        path = getattr(self, "lmdb_path", None)
-        if path is not None:
-            _close_lmdb(path)
+        """Release the parent LMDB transaction and environment."""
+        self.close()
+
+    def close(self) -> None:
+        """Release parent-process LMDB resources idempotently."""
+        if getattr(self, "_closed", False):
+            return
+        transaction = getattr(self, "_txn", None)
+        if transaction is not None:
+            transaction.abort()
+            self._txn = None
+        environment = getattr(self, "_env", None)
+        if environment is not None:
+            self._env = None
+            _close_lmdb(self.lmdb_path)
+        self._closed = True
+
+    def _transaction(self) -> lmdb.Transaction:
+        """Return the active parent transaction or fail after closure."""
+        transaction = self._txn
+        if transaction is None:
+            raise RuntimeError("cannot read from a closed LMDB reader")
+        return transaction
 
     def get_batch_size_for_nloc(self, nloc: int) -> int:
         """Return the per-nloc batch size for the configured rule.
@@ -540,8 +1344,86 @@ class LmdbDataReader:
         ``filter:N`` the LMDB key space may have gaps (dropped frames), so
         we translate through ``self._retained_keys`` before hitting LMDB.
         """
+        self._data_requirements_frozen = True
         if index < 0 or index >= self.nframes:
             raise IndexError(f"dataset index {index} out of range [0, {self.nframes})")
+        original_key = self._retained_keys[index]
+        key = format(original_key, self._frame_fmt).encode()
+        raw = self._transaction().get(key)
+        if raw is None:
+            raise IndexError(
+                f"Frame {original_key} not found in LMDB (dataset index {index})"
+            )
+        return decode_lmdb_frame(
+            raw,
+            original_key,
+            self._decode_config,
+            copy_arrays=True,
+        )
+
+    def original_keys(self, indices: Sequence[int]) -> list[int]:
+        """Translate dataset indices to original integer LMDB keys."""
+        keys: list[int] = []
+        for index in indices:
+            index = int(index)
+            if index < 0 or index >= self.nframes:
+                raise IndexError(
+                    f"dataset index {index} out of range [0, {self.nframes})"
+                )
+            keys.append(self._retained_keys[index])
+        return keys
+
+    def decode_batch(self, indices: Sequence[int]) -> dict[str, Any]:
+        """Decode a same-nloc batch directly into contiguous NumPy arrays."""
+        self._data_requirements_frozen = True
+        return decode_lmdb_batch(
+            self._transaction(),
+            self.original_keys(indices),
+            self._frame_fmt,
+            self._decode_config,
+        )
+
+    @property
+    def frame_format(self) -> str:
+        """Format specification used for integer LMDB frame keys."""
+        return self._frame_fmt
+
+    def worker_decode_config(self) -> LmdbDecodeConfig:
+        """Freeze and return decoder state for worker serialization."""
+        self._data_requirements_frozen = True
+        return self._decode_config
+
+    @property
+    def closed(self) -> bool:
+        """Whether parent-process LMDB resources have been released."""
+        return self._closed
+
+    # --- Data requirement interface ---
+
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
+        """Register expected keys; missing keys get default fill + find_key=0.0."""
+        if self._data_requirements_frozen:
+            raise RuntimeError(
+                "LMDB data requirements must be registered before reading any frame"
+            )
+        for item in data_requirement:
+            self._data_requirements[item["key"]] = item
+        self._find_signature_cache.clear()
+
+    def get_find_signature(self, index: int) -> tuple[tuple[str, bool], ...]:
+        """Return the scalar availability signature for one retained frame.
+
+        The signature covers registered data requirements and optional model
+        inputs whose ``find_*`` flags are created by :meth:`__getitem__`.
+        Reading only msgpack keys avoids decoding large coordinate and label
+        arrays while the sampler partitions frames.
+        """
+        cached = self._find_signature_cache.get(index)
+        if cached is not None:
+            return cached
+        if index < 0 or index >= self.nframes:
+            raise IndexError(f"dataset index {index} out of range [0, {self.nframes})")
+
         original_key = self._retained_keys[index]
         key = format(original_key, self._frame_fmt).encode()
         raw = self._txn.get(key)
@@ -549,167 +1431,36 @@ class LmdbDataReader:
             raise IndexError(
                 f"Frame {original_key} not found in LMDB (dataset index {index})"
             )
-        frame = _decode_frame(raw)
-        frame = _remap_keys(frame)
-
-        # Remove LMDB-specific metadata keys not needed by trainer
-        for meta_key in ("atom_numbs", "atom_names", "orig"):
-            frame.pop(meta_key, None)
-
-        # Flatten arrays to match DeePMD convention
-        if "coord" in frame and isinstance(frame["coord"], np.ndarray):
-            frame["coord"] = (
-                frame["coord"].reshape(-1, 3).astype(self._resolve_dtype("coord"))
-            )
-        if "box" in frame and isinstance(frame["box"], np.ndarray):
-            frame["box"] = frame["box"].reshape(9).astype(self._resolve_dtype("box"))
-        if "energy" in frame:
-            val = frame["energy"]
-            if isinstance(val, np.ndarray):
-                frame["energy"] = val.reshape(1).astype(self._resolve_dtype("energy"))
-            else:
-                frame["energy"] = np.array(
-                    [float(val)], dtype=self._resolve_dtype("energy")
-                )
-        if "force" in frame and isinstance(frame["force"], np.ndarray):
-            frame["force"] = (
-                frame["force"].reshape(-1, 3).astype(self._resolve_dtype("force"))
-            )
-        if "atype" in frame and isinstance(frame["atype"], np.ndarray):
-            frame["atype"] = frame["atype"].reshape(-1).astype(np.int64)
-            # Remap atom types from LMDB's type_map to model's type_map
-            if self._type_remap is not None:
-                frame["atype"] = self._type_remap[frame["atype"]].astype(np.int64)
-        if "virial" in frame and isinstance(frame["virial"], np.ndarray):
-            frame["virial"] = (
-                frame["virial"].reshape(9).astype(self._resolve_dtype("virial"))
-            )
-
-        # Per-frame natoms_vec from atype
-        atype = frame.get("atype")
-        if atype is not None:
-            frame_natoms = len(atype)
-            natoms_vec = self._compute_natoms_vec(atype)
-            frame["natoms"] = natoms_vec
-            frame["real_natoms_vec"] = natoms_vec
-        else:
-            frame_natoms = self._natoms
-            fallback = np.array(
-                [self._natoms, self._natoms] + [0] * self._ntypes, dtype=np.int64
-            )
-            frame["natoms"] = fallback
-            frame["real_natoms_vec"] = fallback
-
-        if "min_pair_dist" in self._data_requirements and "min_pair_dist" not in frame:
-            box = frame.get("box")
-            if box is not None and np.allclose(box, 0.0):
-                box = None
-            req = self._data_requirements["min_pair_dist"]
-            min_pair_dist = float(
-                req.get("default", 0.0)
-                if isinstance(req, dict)
-                else getattr(req, "default", 0.0)
-            )
-            frame["find_min_pair_dist"] = np.float32(1.0)
-            frame["min_pair_dist"] = np.array(
-                [
-                    compute_min_pair_dist_single(
-                        frame["coord"],
-                        box,
-                        frame["atype"],
-                        stop_below=min_pair_dist,
-                    )
-                ],
-                dtype=self._resolve_dtype("min_pair_dist"),
-            )
-
-        # Add find_* flags for all data keys present in the frame.
-        # Core structural keys and metadata are excluded — only label-like
-        # and auxiliary data keys get find_* flags.
-        _structural_keys = frozenset(
-            {
-                "coord",
-                "box",
-                "atype",
-                "natoms",
-                "real_natoms_vec",
-                "fid",
-            }
+        raw_frame = msgpack.unpackb(raw, raw=False)
+        frame = {_KEY_REMAP.get(name, name): value for name, value in raw_frame.items()}
+        signature_keys = _availability_signature_keys(
+            frame, iter(self._data_requirements)
         )
-        for fk in list(frame.keys()):
-            if fk.startswith("find_") or fk in _structural_keys:
-                continue
-            # Skip keys handled by data_requirements (processed below)
-            if fk in self._data_requirements:
-                continue
-            if f"find_{fk}" not in frame:
-                frame[f"find_{fk}"] = np.float32(1.0)
-
-        # Handle registered data requirements: fill defaults for missing keys,
-        # apply repeat, and cast dtype.
-        for req_key, req_item in self._data_requirements.items():
-            # Extract requirement fields (support both dict and object)
-            if isinstance(req_item, dict):
-                ndof = req_item["ndof"]
-                default = req_item["default"]
-                atomic = req_item["atomic"]
-                repeat = req_item.get("repeat", 1)
-                req_dtype = req_item.get("dtype")
-                if req_dtype is None:
-                    req_dtype = (
-                        GLOBAL_ENER_FLOAT_PRECISION
-                        if req_item.get("high_prec", False)
-                        else GLOBAL_NP_FLOAT_PRECISION
-                    )
+        signature = []
+        for data_key in signature_keys:
+            find_key = f"find_{data_key}"
+            if find_key in frame:
+                find_value = _decode_value(frame[find_key])
+                available = bool(float(np.asarray(find_value).item()))
+            elif data_key == "min_pair_dist" and data_key in self._data_requirements:
+                # __getitem__ computes this requirement when it is not stored.
+                available = True
             else:
-                ndof = req_item.ndof
-                default = req_item.default
-                atomic = req_item.atomic
-                repeat = getattr(req_item, "repeat", 1)
-                req_dtype = req_item.dtype
-                if req_dtype is None:
-                    req_dtype = (
-                        GLOBAL_ENER_FLOAT_PRECISION
-                        if req_item.high_prec
-                        else GLOBAL_NP_FLOAT_PRECISION
-                    )
+                available = data_key in frame
+            signature.append((find_key, available))
 
-            if req_key not in frame:
-                frame[f"find_{req_key}"] = np.float32(0.0)
-                if atomic:
-                    shape = (frame_natoms, ndof)
-                else:
-                    shape = (ndof,)
-                data = np.full(shape, default, dtype=req_dtype)
-                if repeat != 1:
-                    data = np.repeat(data, repeat).reshape(-1)
-                frame[req_key] = data
-            else:
-                if f"find_{req_key}" not in frame:
-                    frame[f"find_{req_key}"] = np.float32(1.0)
-                # Apply repeat to existing data (e.g. atom_pref repeat=3)
-                if repeat != 1 and isinstance(frame[req_key], np.ndarray):
-                    frame[req_key] = (
-                        np.repeat(frame[req_key], repeat).reshape(-1).astype(req_dtype)
-                    )
+        result = tuple(signature)
+        self._find_signature_cache[index] = result
+        return result
 
-        # Add find_* for fparam/aparam/spin/charge_spin if not already set
-        for extra_key in ["fparam", "aparam", "spin", "charge_spin"]:
-            if f"find_{extra_key}" not in frame:
-                frame[f"find_{extra_key}"] = (
-                    np.float32(1.0) if extra_key in frame else np.float32(0.0)
-                )
-
-        frame["fid"] = original_key
-
-        return frame
-
-    # --- Data requirement interface ---
-
-    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
-        """Register expected keys; missing keys get default fill + find_key=0.0."""
-        for item in data_requirement:
-            self._data_requirements[item["key"]] = item
+    def group_indices_by_find_signature(
+        self, indices: list[int]
+    ) -> dict[tuple[tuple[str, bool], ...], list[int]]:
+        """Partition dataset indices into scalar-compatible label groups."""
+        groups: dict[tuple[tuple[str, bool], ...], list[int]] = {}
+        for index in indices:
+            groups.setdefault(self.get_find_signature(index), []).append(index)
+        return groups
 
     @property
     def data_requirements(self) -> list[DataRequirementItem]:
@@ -758,7 +1509,7 @@ class LmdbDataReader:
         if self.mixed_batch:
             return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
         total = 0
-        for nloc, indices in self._nloc_groups.items():
+        for nloc, indices in collect_lmdb_sampling_groups(self):
             bs = self.get_batch_size_for_nloc(nloc)
             total += (len(indices) + bs - 1) // bs
         return total
@@ -815,10 +1566,14 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
     etc. The array library is inferred from the first frame's ``coord``.
 
     Conventions match :func:`deepmd.dpmodel.utils.batch.normalize_batch`:
-    ``find_*`` flags are taken from the first frame (constant within a
-    batch); ``fid`` is collected as a list; ``type`` is dropped (callers
-    should already use ``atype``); other arrays are stacked along axis 0.
-    A ``sid`` placeholder is appended.
+    ``find_*`` flags remain scalar and must be constant within a batch;
+    ``fid`` is collected as a list; ``type`` is dropped (callers should
+    already use ``atype``); other arrays are stacked along axis 0. A ``sid``
+    placeholder is appended.
+
+    The batch keeps the key order of its frames, which is the order
+    :func:`decode_lmdb_batch` also produces, so a batch is the same mapping
+    whichever of the two decode paths built it.
     """
     import array_api_compat
 
@@ -827,6 +1582,25 @@ def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
 
     xp = array_api_compat.array_namespace(frames[0]["coord"])
     dev = array_api_compat.device(frames[0]["coord"])
+
+    # Availability must agree across the batch before the flags can collapse
+    # to one scalar per key. Frames are checked ahead of collation so a mixed
+    # batch is reported rather than silently reduced to its first frame.
+    find_keys = sorted(
+        {key for frame in frames for key in frame if key.startswith("find_")}
+    )
+    for key in find_keys:
+        if any(key not in frame for frame in frames):
+            raise ValueError(
+                f"LMDB batch has inconsistent availability metadata for {key!r}"
+            )
+        values = [float(frame[key]) for frame in frames]
+        if any(value != values[0] for value in values[1:]):
+            raise ValueError(
+                f"LMDB batch mixes {key!r} values {values}; "
+                "SameNlocBatchSampler must group frames by label availability"
+            )
+
     out: dict[str, Any] = {}
     for key in frames[0]:
         if key.startswith("find_"):
@@ -961,6 +1735,7 @@ def _expand_indices_by_blocks(
     rng: np.random.Generator,
     _block_total_actual: list[int] | None = None,
     _sid_to_blk_arr: np.ndarray | None = None,
+    _group_block_targets: list[int] | None = None,
 ) -> list[int]:
     """Expand frame indices according to block targets.
 
@@ -984,6 +1759,10 @@ def _expand_indices_by_blocks(
     _sid_to_blk_arr : np.ndarray or None
         Pre-computed system-id to block-index lookup array.  When provided,
         avoids rebuilding the mapping for each call.
+    _group_block_targets : list[int] or None
+        Exact target for each block in this group. Production samplers
+        allocate these targets globally across all ``(nloc, find-signature)``
+        groups so independent rounding cannot change a block's total size.
 
     Returns
     -------
@@ -1011,7 +1790,7 @@ def _expand_indices_by_blocks(
     idx_blks = _sid_to_blk_arr[idx_sids]
 
     # Pre-compute block_total_actual if not provided
-    if _block_total_actual is None:
+    if _block_total_actual is None and _group_block_targets is None:
         _block_total_actual = []
         for sys_ids, _ in block_targets:
             total = sum(int(np.sum(sid_arr == sid)) for sid in sys_ids)
@@ -1031,15 +1810,25 @@ def _expand_indices_by_blocks(
         if n_actual == 0:
             continue
 
-        _, block_total_target = block_targets[blk_idx]
-        block_total_act = _block_total_actual[blk_idx]
-
-        # Proportional target for this nloc subset
-        if block_total_act > 0:
-            target = round(block_total_target * n_actual / block_total_act)
+        if _group_block_targets is not None:
+            target = _group_block_targets[blk_idx]
         else:
-            target = n_actual
-        target = max(target, n_actual)  # never shrink
+            _, block_total_target = block_targets[blk_idx]
+            block_total_act = _block_total_actual[blk_idx]
+
+            # Backward-compatible fallback for direct callers. Samplers pass
+            # exact group targets allocated by _allocate_group_block_targets.
+            if block_total_act > 0:
+                target = round(block_total_target * n_actual / block_total_act)
+            else:
+                target = n_actual
+            target = max(target, n_actual)  # never shrink
+
+        if target < n_actual:
+            raise ValueError(
+                "Per-group auto-probability target cannot shrink original frames: "
+                f"target={target}, actual={n_actual}, block={blk_idx}"
+            )
 
         # Full copies + remainder
         deficit = target - n_actual
@@ -1063,13 +1852,99 @@ def _expand_indices_by_blocks(
     return []
 
 
+def collect_lmdb_sampling_groups(
+    reader: "LmdbDataReader",
+) -> list[tuple[int, list[int]]]:
+    """Collect homogeneous LMDB groups shared by training and statistics.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        Reader whose frames are grouped by atom count and label availability.
+
+    Returns
+    -------
+    list[tuple[int, list[int]]]
+        Stable ``(nloc, frame indices)`` groups compatible with collation.
+    """
+    groups: list[tuple[int, list[int]]] = []
+    for nloc in sorted(reader.nloc_groups):
+        signature_groups = reader.group_indices_by_find_signature(
+            list(reader.nloc_groups[nloc])
+        )
+        for signature in sorted(signature_groups):
+            groups.append((nloc, list(signature_groups[signature])))
+    return groups
+
+
+def _allocate_group_block_targets(
+    groups: list[tuple[int, list[int]]],
+    frame_system_ids: list[int] | np.ndarray,
+    block_targets: list[tuple[list[int], int]],
+) -> list[list[int]]:
+    """Allocate every block target exactly across homogeneous groups.
+
+    Original frames form the non-shrinking baseline. Each block's expansion
+    deficit is apportioned by actual group size using the integer largest-
+    remainder method. Stable group order breaks equal-remainder ties, which
+    keeps distributed ranks deterministic without floating-point rounding.
+    """
+    group_actual = [[0] * len(block_targets) for _ in groups]
+    system_to_block = {
+        system_id: block_index
+        for block_index, (system_ids, _target) in enumerate(block_targets)
+        for system_id in system_ids
+    }
+    for group_index, (_nloc, indices) in enumerate(groups):
+        for index in indices:
+            block_index = system_to_block.get(int(frame_system_ids[index]))
+            if block_index is not None:
+                group_actual[group_index][block_index] += 1
+
+    group_targets = [counts.copy() for counts in group_actual]
+    for block_index, (_system_ids, block_target) in enumerate(block_targets):
+        block_actual = sum(counts[block_index] for counts in group_actual)
+        if block_target < block_actual:
+            raise ValueError(
+                "Auto-probability block target cannot shrink original frames: "
+                f"target={block_target}, actual={block_actual}, block={block_index}"
+            )
+        if block_actual == 0:
+            if block_target != 0:
+                raise ValueError(
+                    "Cannot allocate a nonzero auto-probability target to an "
+                    f"empty block: target={block_target}, block={block_index}"
+                )
+            continue
+
+        deficit = block_target - block_actual
+        remainders: list[tuple[int, int]] = []
+        allocated = 0
+        for group_index, counts in enumerate(group_actual):
+            actual = counts[block_index]
+            quotient, remainder = divmod(deficit * actual, block_actual)
+            group_targets[group_index][block_index] += quotient
+            allocated += quotient
+            if actual > 0:
+                remainders.append((remainder, group_index))
+
+        # The largest-remainder method leaves fewer units than nonempty
+        # groups, so each selected group receives at most one final unit.
+        remainder_units = deficit - allocated
+        remainders.sort(key=lambda item: (-item[0], item[1]))
+        for _remainder, group_index in remainders[:remainder_units]:
+            group_targets[group_index][block_index] += 1
+
+    return group_targets
+
+
 def _build_all_batches(
     reader: "LmdbDataReader",
     shuffle: bool,
     rng: np.random.Generator,
     block_targets: list[tuple[list[int], int]] | None = None,
 ) -> list[list[int]]:
-    """Build the full list of same-nloc batches from the reader.
+    """Build batches homogeneous in atom count and label availability.
 
     This is the shared batch-construction logic used by both
     SameNlocBatchSampler (single-GPU) and DistributedSameNlocBatchSampler.
@@ -1090,22 +1965,23 @@ def _build_all_batches(
     Returns
     -------
     list[list[int]]
-        Each inner list is a batch of frame indices, all with the same nloc.
+        Each inner list has one nloc and one scalar ``find_*`` signature.
     """
+    groups = collect_lmdb_sampling_groups(reader)
+
     # Build per-group batches
     group_batches: list[list[list[int]]] = []
 
     # Pre-compute expensive objects once (avoids O(N) work per nloc group)
-    block_total_actual: list[int] | None = None
     sid_arr: np.ndarray | None = None
     sid_to_blk_arr: np.ndarray | None = None
+    group_block_targets: list[list[int]] | None = None
     if block_targets and reader.frame_system_ids is not None:
-        block_total_actual = []
-        for sys_ids, _ in block_targets:
-            total = sum(reader.system_nframes[s] for s in sys_ids)
-            block_total_actual.append(total)
         # Convert frame_system_ids to numpy once
         sid_arr = np.array(reader.frame_system_ids, dtype=np.int64)
+        group_block_targets = _allocate_group_block_targets(
+            groups, sid_arr, block_targets
+        )
         # Build sys_id -> block_idx lookup array once
         sys_to_block: dict[int, int] = {}
         for blk_idx, (sys_ids, _target) in enumerate(block_targets):
@@ -1116,17 +1992,18 @@ def _build_all_batches(
         for sid, blk in sys_to_block.items():
             sid_to_blk_arr[sid] = blk
 
-    for nloc in sorted(reader.nloc_groups.keys()):
-        indices = list(reader.nloc_groups[nloc])
-        # Expand indices by block targets if provided
-        if block_targets and sid_arr is not None:
+    for group_index, (nloc, original_indices) in enumerate(groups):
+        indices = original_indices
+        # Expand each availability group independently using targets that
+        # were allocated globally, preserving both scalar flags and totals.
+        if block_targets and sid_arr is not None and group_block_targets is not None:
             indices = _expand_indices_by_blocks(
                 indices,
                 sid_arr,
                 block_targets,
                 rng,
-                _block_total_actual=block_total_actual,
                 _sid_to_blk_arr=sid_to_blk_arr,
+                _group_block_targets=group_block_targets[group_index],
             )
         if shuffle:
             rng.shuffle(indices)
@@ -1152,16 +2029,18 @@ def _build_all_batches(
 
 
 class SameNlocBatchSampler:
-    """Batch sampler that groups frames by nloc.
+    """Batch sampler that groups frames by nloc and ``find_*`` signature.
 
     For mixed-nloc datasets with mixed_batch=False: each batch contains only
-    frames with the same nloc. Within each nloc group, frames are shuffled.
-    Groups are interleaved round-robin so training sees diverse nloc values.
+    frames with the same nloc and label availability. Within each group,
+    frames are shuffled. Groups are interleaved round-robin so training sees
+    diverse nloc and label combinations.
 
     When auto batch_size is used, batch_size is computed per-nloc-group.
 
-    The sampler is deterministic: given the same seed, repeated calls to
-    ``__iter__`` produce the same batch sequence.
+    The sampler is deterministic for a fixed seed and epoch. Use
+    :meth:`set_epoch` to select a different reproducible sequence for each
+    training pass.
 
     Parameters
     ----------
@@ -1185,49 +2064,58 @@ class SameNlocBatchSampler:
         self._reader = reader
         self._shuffle = shuffle
         self._seed = seed
+        self._epoch = 0
         self._block_targets = block_targets
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set the epoch used to derive the deterministic shuffle state.
+
+        Parameters
+        ----------
+        epoch : int
+            Zero-based training epoch.
+        """
+        self._epoch = epoch
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield batches of frame indices, all with the same nloc."""
-        rng = np.random.default_rng(self._seed)
+        seed = None if self._seed is None else self._seed + self._epoch
+        rng = np.random.default_rng(seed)
         yield from _build_all_batches(
             self._reader, self._shuffle, rng, self._block_targets
         )
 
     def __len__(self) -> int:
-        """Total number of batches across all nloc groups (estimated)."""
-        total = 0
-        for nloc, indices in self._reader.nloc_groups.items():
-            n = len(indices)
-            if self._block_targets and self._reader.frame_system_ids is not None:
-                # Estimate expanded count for this nloc group
-                n = self._estimate_expanded_count(indices)
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (n + bs - 1) // bs
-        return total
+        """Total batches across nloc and label-availability groups."""
+        groups = collect_lmdb_sampling_groups(self._reader)
+        group_block_targets = None
+        assigned_system_ids: set[int] = set()
+        if self._block_targets and self._reader.frame_system_ids is not None:
+            group_block_targets = _allocate_group_block_targets(
+                groups,
+                self._reader.frame_system_ids,
+                self._block_targets,
+            )
+            assigned_system_ids = {
+                system_id
+                for system_ids, _target in self._block_targets
+                for system_id in system_ids
+            }
 
-    def _estimate_expanded_count(self, indices: list[int]) -> int:
-        """Estimate expanded index count for __len__ without RNG."""
-        if not self._block_targets or self._reader.frame_system_ids is None:
-            return len(indices)
-        sys_ids = self._reader.frame_system_ids
         total = 0
-        for blk_idx, (blk_sys_ids, block_target) in enumerate(self._block_targets):
-            blk_sys_set = set(blk_sys_ids)
-            n_in_nloc = sum(1 for i in indices if sys_ids[i] in blk_sys_set)
-            if n_in_nloc == 0:
-                continue
-            block_total_actual = sum(1 for sid in sys_ids if sid in blk_sys_set)
-            if block_total_actual > 0:
-                target = round(block_target * n_in_nloc / block_total_actual)
-            else:
-                target = n_in_nloc
-            total += max(target, n_in_nloc)
-        # Add unassigned
-        all_sys = set()
-        for blk_sys_ids, _ in self._block_targets:
-            all_sys.update(blk_sys_ids)
-        total += sum(1 for i in indices if sys_ids[i] not in all_sys)
+        for group_index, (nloc, indices) in enumerate(groups):
+            bs = self._reader.get_batch_size_for_nloc(nloc)
+            n = len(indices)
+            if (
+                group_block_targets is not None
+                and self._reader.frame_system_ids is not None
+            ):
+                unassigned = sum(
+                    int(self._reader.frame_system_ids[index]) not in assigned_system_ids
+                    for index in indices
+                )
+                n = unassigned + sum(group_block_targets[group_index])
+            total += (n + bs - 1) // bs
         return total
 
 
@@ -1235,8 +2123,10 @@ class DistributedSameNlocBatchSampler:
     """Distributed wrapper for same-nloc batch sampling.
 
     All ranks build the same deterministic global batch list (using
-    ``seed + epoch``), then each rank takes a disjoint subset via
-    :meth:`_partition_batches`.
+    ``seed + epoch``). The list is padded deterministically when its length is
+    not divisible by the number of ranks, then each rank takes a strided
+    subset via :meth:`_partition_batches`. This keeps every rank on the same
+    sampler epoch while duplicating at most ``world_size - 1`` batches.
 
     Override :meth:`_partition_batches` for custom load-balancing strategies.
     The default uses strided partitioning which gives good nloc diversity per
@@ -1275,6 +2165,10 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self.refresh_batch_count()
+
+    def refresh_batch_count(self) -> None:
+        """Refresh the cached global count after sampling groups change."""
         self._total_batches = len(
             SameNlocBatchSampler(
                 self._reader,
@@ -1304,24 +2198,38 @@ class DistributedSameNlocBatchSampler:
     def _partition_batches(self, all_batches: list[list[int]]) -> list[list[int]]:
         """Partition global batches to this rank.
 
-        Default: strided partition ``all_batches[rank::world_size]``.
-        This gives good nloc diversity per rank since batches are
-        interleaved across nloc groups before shuffling.
+        The default pads the global list to a multiple of ``world_size`` and
+        then takes ``all_batches[rank::world_size]``. This gives good nloc
+        diversity per rank since batches are interleaved across nloc groups
+        before shuffling, while ensuring that every rank yields the same
+        number of batches.
 
         Override this method for custom load-balancing. For example, a
         greedy algorithm could assign batches to ranks based on estimated
         compute cost (``reader.frame_nlocs[batch[0]]`` gives the nloc of
         each batch).
         """
+        if not all_batches:
+            return []
+        batches_per_rank = (len(all_batches) + self._world_size - 1) // self._world_size
+        total_size = batches_per_rank * self._world_size
+        padding_size = total_size - len(all_batches)
+        if padding_size:
+            repetitions = (padding_size + len(all_batches) - 1) // len(all_batches)
+            all_batches = [
+                *all_batches,
+                *(all_batches * repetitions)[:padding_size],
+            ]
         return all_batches[self._rank :: self._world_size]
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        return max(
-            0,
-            (self._total_batches + self._world_size - 1 - self._rank)
-            // self._world_size,
-        )
+        return (self._total_batches + self._world_size - 1) // self._world_size
+
+    @property
+    def total_batches(self) -> int:
+        """Return the global batch count before distributed padding."""
+        return self._total_batches
 
     @property
     def rank(self) -> int:
@@ -1459,9 +2367,9 @@ class LmdbTestData:
                         and "atype" in frame
                         and isinstance(frame["atype"], np.ndarray)
                     ):
-                        frame["atype"] = self._type_remap[
-                            frame["atype"].reshape(-1)
-                        ].astype(np.int64)
+                        frame["atype"] = _remap_atom_types(
+                            frame["atype"].reshape(-1), self._type_remap
+                        )
                     self._frames.append(frame)
 
         # Shuffle if requested
@@ -1501,6 +2409,48 @@ class LmdbTestData:
     def nloc_groups(self) -> dict[int, list[int]]:
         """Nloc → list of frame indices in self._frames."""
         return self._nloc_groups
+
+    @staticmethod
+    def _frame_has_data(frame: dict[str, Any], key: str) -> bool:
+        """Resolve one frame's explicit or inferred ``find_*`` value."""
+        find_key = f"find_{key}"
+        if find_key in frame:
+            return bool(float(np.asarray(frame[find_key]).item()))
+        value = frame.get(key)
+        return isinstance(value, (np.ndarray, np.generic, int, float, bool))
+
+    @property
+    def find_signature_groups(
+        self,
+    ) -> dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]]:
+        """Group frames by atom count and scalar label availability."""
+        groups: dict[tuple[int, tuple[tuple[str, bool], ...]], list[int]] = {}
+        for index, frame in enumerate(self._frames):
+            atype = frame.get("atype")
+            nloc = len(atype) if isinstance(atype, np.ndarray) else self._natoms
+            signature = tuple(
+                (f"find_{key}", self._frame_has_data(frame, key))
+                for key in _availability_signature_keys(frame, iter(self._requirements))
+            )
+            groups.setdefault((nloc, signature), []).append(index)
+        return groups
+
+    def get_test_by_indices(self, frame_indices: list[int]) -> dict[str, Any]:
+        """Stack one homogeneous validation group selected by frame index."""
+        if not frame_indices:
+            raise ValueError("frame_indices must contain at least one frame")
+        frames = [self._frames[index] for index in frame_indices]
+        nlocs = {
+            len(frame["atype"])
+            for frame in frames
+            if isinstance(frame.get("atype"), np.ndarray)
+        }
+        if len(nlocs) != 1:
+            raise ValueError(
+                "LMDB validation group must contain exactly one atom count, "
+                f"got {sorted(nlocs)}"
+            )
+        return self._stack_frames(frames, nlocs.pop())
 
     def add(
         self,
@@ -1649,9 +2599,12 @@ class LmdbTestData:
             all_keys[key] = req
 
         for key, req_info in all_keys.items():
-            has_key = any(
-                key in f and isinstance(f.get(key), np.ndarray) for f in frames
-            )
+            availability = [self._frame_has_data(frame, key) for frame in frames]
+            if any(flag != availability[0] for flag in availability[1:]):
+                raise ValueError(
+                    f"LMDB validation group mixes find_{key} values {availability}"
+                )
+            has_key = availability[0]
             result[f"find_{key}"] = 1.0 if has_key else 0.0
 
             # Get repeat factor from registered requirements
@@ -1703,25 +2656,96 @@ class LmdbTestData:
 
 
 class LmdbTestDataNlocView:
-    """Thin wrapper exposing a fixed-``nloc`` view of :class:`LmdbTestData`.
+    """Expose one stack-compatible subset of :class:`LmdbTestData`.
 
     The underlying :class:`LmdbTestData` groups frames by atom count. This
-    view fixes one ``nloc`` group, so ``get_test()`` returns only the frames
-    with that atom count and all other attributes (``pbc``, ``mixed_type``,
-    …) are forwarded to the underlying object. It lets downstream consumers
-    that expect a ``DeepmdData``-style system (one fixed natoms per
-    ``get_test()``) work on mixed-nloc LMDB datasets without changes.
+    view fixes one ``nloc`` and can additionally select a homogeneous
+    label-availability subgroup. All other attributes (``pbc``,
+    ``mixed_type``, …) are forwarded to the underlying object. It lets
+    downstream consumers that expect a ``DeepmdData``-style system work on
+    mixed-nloc or partially labeled LMDB datasets without vector find flags.
     """
 
-    def __init__(self, lmdb_test_data: "LmdbTestData", nloc: int) -> None:
+    def __init__(
+        self,
+        lmdb_test_data: "LmdbTestData",
+        nloc: int,
+        frame_indices: list[int] | None = None,
+    ) -> None:
         self._inner = lmdb_test_data
         self._nloc = nloc
+        self._frame_indices = frame_indices
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
     def get_test(self) -> dict[str, Any]:
+        if self._frame_indices is not None:
+            return self._inner.get_test_by_indices(self._frame_indices)
         return self._inner.get_test(nloc=self._nloc)
+
+
+def _copy_lmdb_source(
+    src_path: str,
+    dst_env: lmdb.Environment,
+    dst_format: str,
+    frame_idx: int,
+    frame_nlocs: list[int],
+    frame_system_ids: list[int],
+    system_id_offset: int,
+) -> tuple[int, dict, list[str] | None, int]:
+    """Copy one source under a ref-counted environment lease."""
+    src_env = _open_lmdb(src_path)
+    try:
+        with src_env.begin() as transaction:
+            metadata = _read_metadata(transaction)
+        nframes, src_format, natoms_per_type = _parse_metadata(metadata)
+        fallback_natoms = sum(natoms_per_type)
+        source_nlocs = metadata.get("frame_nlocs")
+        source_system_ids = metadata.get("frame_system_ids")
+
+        with src_env.begin() as src_txn, dst_env.begin(write=True) as dst_txn:
+            for source_index in range(nframes):
+                source_key = format(source_index, src_format).encode()
+                raw = src_txn.get(source_key)
+                if raw is None:
+                    continue
+                destination_key = format(frame_idx, dst_format).encode()
+                dst_txn.put(destination_key, raw)
+
+                if source_nlocs is not None:
+                    frame_nlocs.append(int(source_nlocs[source_index]))
+                else:
+                    frame_raw = msgpack.unpackb(raw, raw=False)
+                    atype_raw = frame_raw.get("atom_types")
+                    if isinstance(atype_raw, dict):
+                        shape = atype_raw.get("shape") or atype_raw.get(b"shape")
+                        frame_nlocs.append(int(shape[0]) if shape else fallback_natoms)
+                    else:
+                        frame_nlocs.append(fallback_natoms)
+
+                if source_system_ids is not None and source_index < len(
+                    source_system_ids
+                ):
+                    frame_system_ids.append(
+                        int(source_system_ids[source_index]) + system_id_offset
+                    )
+                else:
+                    frame_system_ids.append(system_id_offset)
+                frame_idx += 1
+
+        if source_system_ids is not None and len(source_system_ids) > 0:
+            system_id_offset += max(int(value) for value in source_system_ids) + 1
+        else:
+            system_id_offset += 1
+        return (
+            frame_idx,
+            metadata.get("system_info", {}),
+            metadata.get("type_map"),
+            system_id_offset,
+        )
+    finally:
+        _close_lmdb(src_path)
 
 
 def merge_lmdb(
@@ -1763,77 +2787,43 @@ def merge_lmdb(
     first_system_info: dict | None = None
     first_type_map: list[str] | None = None
     sys_id_offset = 0
+    try:
+        for src_path in src_paths:
+            (
+                frame_idx,
+                source_system_info,
+                source_type_map,
+                sys_id_offset,
+            ) = _copy_lmdb_source(
+                src_path,
+                dst_env,
+                fmt,
+                frame_idx,
+                frame_nlocs,
+                frame_system_ids,
+                sys_id_offset,
+            )
+            if first_system_info is None:
+                first_system_info = source_system_info
+            if first_type_map is None:
+                first_type_map = source_type_map
 
-    for src_path in src_paths:
-        src_env = _open_lmdb(src_path)
-        with src_env.begin() as txn:
-            meta = _read_metadata(txn)
-        nframes, src_fmt, natoms_per_type = _parse_metadata(meta)
-        fallback_natoms = sum(natoms_per_type)
-
-        if first_system_info is None:
-            first_system_info = meta.get("system_info", {})
-        if first_type_map is None:
-            first_type_map = meta.get("type_map")
-
-        # Check for pre-computed frame_nlocs in source
-        src_nlocs = meta.get("frame_nlocs")
-        # Check for frame_system_ids in source
-        src_sys_ids = meta.get("frame_system_ids")
-
-        with src_env.begin() as src_txn, dst_env.begin(write=True) as dst_txn:
-            for i in range(nframes):
-                src_key = format(i, src_fmt).encode()
-                raw = src_txn.get(src_key)
-                if raw is None:
-                    continue
-                dst_key = format(frame_idx, fmt).encode()
-                dst_txn.put(dst_key, raw)
-
-                # Get nloc for this frame
-                if src_nlocs is not None:
-                    frame_nlocs.append(int(src_nlocs[i]))
-                else:
-                    frame_raw = msgpack.unpackb(raw, raw=False)
-                    atype_raw = frame_raw.get("atom_types")
-                    if isinstance(atype_raw, dict):
-                        shape = atype_raw.get("shape") or atype_raw.get(b"shape")
-                        if shape:
-                            frame_nlocs.append(int(shape[0]))
-                        else:
-                            frame_nlocs.append(fallback_natoms)
-                    else:
-                        frame_nlocs.append(fallback_natoms)
-
-                # Propagate system IDs with offset
-                if src_sys_ids is not None and i < len(src_sys_ids):
-                    frame_system_ids.append(int(src_sys_ids[i]) + sys_id_offset)
-                else:
-                    frame_system_ids.append(sys_id_offset)
-
-                frame_idx += 1
-
-        # Update sys_id_offset for next source
-        if src_sys_ids is not None and len(src_sys_ids) > 0:
-            sys_id_offset += max(int(s) for s in src_sys_ids) + 1
-        else:
-            sys_id_offset += 1
-
-        src_env.close()
-
-    # Write merged metadata with frame_nlocs for fast init
-    merged_meta = {
-        "nframes": frame_idx,
-        "frame_idx_fmt": fmt,
-        "system_info": first_system_info or {},
-        "frame_nlocs": frame_nlocs,
-        "frame_system_ids": frame_system_ids,
-    }
-    if first_type_map is not None:
-        merged_meta["type_map"] = first_type_map
-    with dst_env.begin(write=True) as txn:
-        txn.put(b"__metadata__", msgpack.packb(merged_meta, use_bin_type=True))
-    dst_env.close()
+        merged_meta = {
+            "nframes": frame_idx,
+            "frame_idx_fmt": fmt,
+            "system_info": first_system_info or {},
+            "frame_nlocs": frame_nlocs,
+            "frame_system_ids": frame_system_ids,
+        }
+        if first_type_map is not None:
+            merged_meta["type_map"] = first_type_map
+        with dst_env.begin(write=True) as transaction:
+            transaction.put(
+                b"__metadata__",
+                msgpack.packb(merged_meta, use_bin_type=True),
+            )
+    finally:
+        dst_env.close()
 
     nloc_counts: dict[int, int] = {}
     for n in frame_nlocs:

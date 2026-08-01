@@ -2,6 +2,7 @@
 import functools
 import json
 import os
+import platform
 import shutil
 import signal
 import tempfile
@@ -35,12 +36,19 @@ from deepmd.pt.entrypoints.main import train as train_entry
 from deepmd.pt.train.ema import (
     EMA_CHECKPOINT_KEY,
 )
+from deepmd.pt.train.training import (
+    all_ranks_have_valid_frames,
+)
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
 from deepmd.pt.utils.multi_task import (
     _cascade_top_level_defaults,
     preprocess_shared_params,
+)
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+    select_batch_frames,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -88,6 +96,81 @@ def _training_timeout(seconds: int) -> Callable[[_F], _F]:
 
 
 TRAINING_TEST_TIMEOUT = _training_timeout(60)
+
+
+class TestStatisticsFrameFiltering(unittest.TestCase):
+    """Verify statistics use the training minimum-distance frame semantics."""
+
+    def test_min_pair_dist_filters_every_frame_aligned_tensor(self) -> None:
+        batch = {
+            "coord": torch.arange(18, dtype=torch.float64, device="cpu").reshape(
+                2, 3, 3
+            ),
+            "atype": torch.tensor(
+                [[0, 0, 1], [0, 1, 1]], dtype=torch.long, device="cpu"
+            ),
+            "energy": torch.tensor(
+                [[1000.0], [2.0]], dtype=torch.float64, device="cpu"
+            ),
+            "natoms": torch.tensor([[3, 3, 2, 1], [3, 3, 1, 2]], device="cpu"),
+            "min_pair_dist": torch.tensor(
+                [[0.5], [1.0]], dtype=torch.float64, device="cpu"
+            ),
+            "fid": ["rejected", "accepted"],
+            "find_energy": np.float32(1.0),
+        }
+        filtered_batch = select_batch_frames(
+            batch,
+            torch.tensor([False, True], device="cpu"),
+        )
+        self.assertEqual(filtered_batch["fid"], ["accepted"])
+        sampled = make_stat_input(
+            [object()],
+            [[batch]],
+            nbatches=1,
+            min_pair_dist=0.8,
+        )
+
+        self.assertEqual(sampled[0]["coord"].shape[0], 1)
+        self.assertEqual(sampled[0]["atype"].shape[0], 1)
+        self.assertEqual(sampled[0]["natoms"].shape[0], 1)
+        torch.testing.assert_close(
+            sampled[0]["energy"].cpu(),
+            torch.tensor([[2.0]], dtype=torch.float64, device="cpu"),
+        )
+
+    def test_min_pair_dist_skips_system_without_valid_frames(self) -> None:
+        batch = {
+            "coord": torch.zeros(1, 2, 3, device="cpu"),
+            "atype": torch.zeros(1, 2, dtype=torch.long, device="cpu"),
+            "energy": torch.zeros(1, 1, device="cpu"),
+            "natoms": torch.tensor([[2, 2, 2]], device="cpu"),
+            "min_pair_dist": torch.tensor([[0.5]], device="cpu"),
+            "find_energy": np.float32(1.0),
+        }
+        sampled = make_stat_input(
+            [object()],
+            [[batch]],
+            nbatches=1,
+            min_pair_dist=0.8,
+        )
+        self.assertEqual(sampled, [])
+
+    def test_distributed_filter_skips_when_any_rank_is_empty(self) -> None:
+        """The global MIN decision prevents invalid fallback frames."""
+
+        def mark_remote_rank_empty(
+            valid_flag: torch.Tensor,
+            op: Any,
+        ) -> None:
+            self.assertEqual(op, torch.distributed.ReduceOp.MIN)
+            valid_flag.zero_()
+
+        with patch(
+            "deepmd.pt.train.training.dist.all_reduce",
+            side_effect=mark_remote_rank_empty,
+        ):
+            self.assertFalse(all_ranks_have_valid_frames(local_has_valid=True))
 
 
 class DPTrainTest:
@@ -933,6 +1016,7 @@ class TestFullValidation(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
@@ -964,6 +1048,29 @@ class TestFullValidation(unittest.TestCase):
         self.assertEqual(val_lines[0].split()[1], "1000.0")
         self.assertEqual(val_lines[1].split()[1], "2000.0")
 
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_save_best_dir(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 1.5},
+        ]
+        config = deepcopy(self.config)
+        config["validating"]["save_best_dir"] = "nested/best"
+        config["validating"]["max_best_ckpt"] = 1
+        trainer = get_trainer(config)
+        trainer.run()
+
+        best_dir = Path("nested/best")
+        self.assertTrue(best_dir.is_dir())
+        # The single best checkpoint (lowest E:MAE, at step 3) lands under
+        # save_best_dir, and none is left in the working directory.
+        self.assertTrue((best_dir / "best.ckpt-3.t-1.pt").is_file())
+        self.assertEqual(list(Path(".").glob("best.ckpt-*.pt")), [])
+
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_runs_when_start_step_is_final_step(
         self, mocked_eval
@@ -1000,12 +1107,6 @@ class TestFullValidation(unittest.TestCase):
                 * normalized["validating"]["full_val_start"]
             ),
         )
-
-    def test_full_validation_rejects_spin_loss(self) -> None:
-        config = deepcopy(self.config)
-        config["loss"]["type"] = "ener_spin"
-        with self.assertRaisesRegex(ValueError, "spin-energy"):
-            get_trainer(config)
 
     def test_full_validation_rejects_multitask(self) -> None:
         multitask_json = str(Path(__file__).parent / "water/multitask.json")
@@ -1078,6 +1179,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
         self.config["training"]["numb_steps"] = 2
         self.config["training"]["save_freq"] = 2
         self.config["training"]["disp_training"] = False
+        self.config["training"]["training_data"]["min_pair_dist"] = 0.1
         self.config["validating"] = {
             "full_validation": False,
             "ema_full_validation": False,
@@ -1087,7 +1189,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
-    def test_skipped_batch_does_not_advance_scheduler(self) -> None:
+    def test_invalid_batch_is_retried_without_losing_a_step(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         original_get_data = trainer.get_data
         skipped = {"done": False}
@@ -1110,7 +1212,7 @@ class TestSkippedTrainingBatch(unittest.TestCase):
             trainer.run()
 
         self.assertTrue(skipped["done"])
-        self.assertEqual(trainer.scheduler.last_epoch, 1)
+        self.assertEqual(trainer.scheduler.last_epoch, 2)
 
 
 class TestEMATraining(unittest.TestCase):
@@ -1158,6 +1260,71 @@ class TestEMATraining(unittest.TestCase):
             module.NUM_WORKERS = num_workers
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    def test_ckpt_keep_ratio_overrides_keep_counts(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["ckpt_keep_ratio"] = 0.5
+        trainer = get_trainer(config)
+        # 4 periodic checkpoints; ceil(0.5 * 4) = 2 overrides both the regular
+        # and EMA keep counts.
+        self.assertEqual(trainer.max_ckpt_keep, 2)
+        self.assertEqual(trainer.ema_ckpt_keep, 2)
+        save_ckpt = trainer.save_ckpt
+        ema_save_ckpt = trainer.ema_save_ckpt
+        trainer.run()
+
+        self.assertEqual(
+            sorted(path.name for path in Path(".").glob(f"{save_ckpt}-*.pt")),
+            [f"{save_ckpt}-3.pt", f"{save_ckpt}-4.pt"],
+        )
+        self.assertEqual(
+            sorted(path.name for path in Path(".").glob(f"{ema_save_ckpt}-*.pt")),
+            [f"{ema_save_ckpt}-3.pt", f"{ema_save_ckpt}-4.pt"],
+        )
+
+    @TRAINING_TEST_TIMEOUT
+    def test_save_dir_redirects_checkpoints_with_local_symlinks(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["save_dir"] = "ckpt"
+        trainer = get_trainer(config)
+        save_ckpt = trainer.save_ckpt
+        ema_save_ckpt = trainer.ema_save_ckpt
+        trainer.run()
+
+        save_dir = Path("ckpt")
+        # Periodic regular/EMA checkpoints honor their keep limits inside save_dir.
+        self.assertEqual(
+            sorted(path.name for path in save_dir.glob(f"{save_ckpt}-*.pt")),
+            [f"{save_ckpt}-2.pt", f"{save_ckpt}-3.pt", f"{save_ckpt}-4.pt"],
+        )
+        self.assertEqual(
+            sorted(path.name for path in save_dir.glob(f"{ema_save_ckpt}-*.pt")),
+            [f"{ema_save_ckpt}-3.pt", f"{ema_save_ckpt}-4.pt"],
+        )
+        self.assertEqual(trainer.latest_model, save_dir / f"{save_ckpt}-4.pt")
+
+        # The latest-checkpoint alias stays in the working directory and points
+        # at the newest checkpoint under save_dir; none is created inside
+        # save_dir. symlink_prefix_files() copies on Windows, so the alias is a
+        # content copy there rather than a symlink.
+        for prefix in (save_ckpt, ema_save_ckpt):
+            link = Path(f"{prefix}.pt")
+            target = save_dir / f"{prefix}-4.pt"
+            self.assertTrue(link.exists())
+            if platform.system() == "Windows":
+                self.assertEqual(link.read_bytes(), target.read_bytes())
+            else:
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(link.resolve(), target.resolve())
+        self.assertFalse((save_dir / f"{save_ckpt}.pt").exists())
+
+        # The checkpoint pointer file stays in the working directory and points
+        # at the real file under save_dir.
+        self.assertEqual(
+            Path(Path("checkpoint").read_text().strip()),
+            save_dir / f"{save_ckpt}-4.pt",
+        )
 
     @TRAINING_TEST_TIMEOUT
     def test_ema_checkpoint_rotation(self) -> None:

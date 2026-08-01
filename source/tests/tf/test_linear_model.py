@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+import unittest
 
 import numpy as np
 
@@ -121,3 +122,37 @@ class TestLinearModel(tf.test.TestCase):
         for pb in self.graph_dirs:
             os.remove(pb)
         del_data()
+
+
+class TestLinearModelGetLoss(unittest.TestCase):
+    """A non-trainable submodel (frozen/pairtab) returns ``None`` from
+    ``get_loss``; a later trainable submodel must still receive the original
+    loss configuration rather than that ``None``.
+    """
+
+    def test_get_loss_skips_none_returning_submodels(self) -> None:
+        class _NoneLossModel:
+            """Mimics frozen/pairtab submodels, which own no trainable loss."""
+
+            def get_loss(self, loss, lr):
+                return None
+
+        class _EnerLossModel:
+            """Mimics a trainable ener submodel: dereferences loss as a dict
+            (as EnerFitting.get_loss does via ``loss.pop``).
+            """
+
+            def get_loss(self, loss, lr):
+                loss.pop("type", "ener")
+                return "ener-loss"
+
+        # bypass the heavy __init__; get_loss only touches self.models
+        model = object.__new__(LinearEnergyModel)
+        model.models = [_NoneLossModel(), _EnerLossModel()]
+
+        loss_config = {"type": "ener", "start_pref_e": 1.0}
+        result = model.get_loss(loss_config, lr=None)
+
+        self.assertEqual(result, "ener-loss")
+        # the original config must be preserved for other consumers
+        self.assertEqual(loss_config, {"type": "ener", "start_pref_e": 1.0})

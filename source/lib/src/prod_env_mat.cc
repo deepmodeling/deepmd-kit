@@ -24,6 +24,7 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE* em,
                                 const FPTYPE* std,
                                 const int nloc,
                                 const int nall,
+                                const int nframes,
                                 const float rcut,
                                 const float rcut_smth,
                                 const std::vector<int> sec,
@@ -33,76 +34,99 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE* em,
   }
   const int nnei = sec.back();
   const int nem = nnei * 4;
+  assert(nframes * nloc == inlist.inum);
 
-  // set & normalize coord
-  std::vector<FPTYPE> d_coord3(nall * 3);
-  for (int ii = 0; ii < nall; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      d_coord3[ii * 3 + dd] = coord[ii * 3 + dd];
-    }
-  }
+  std::vector<std::vector<FPTYPE> > frame_coords(nframes);
+  std::vector<std::vector<int> > frame_f_types(nframes);
+  std::vector<std::vector<std::vector<int> > > frame_nlists(nframes);
 
-  // set type
-  std::vector<int> d_f_type(nall);
-  for (int ii = 0; ii < nall; ++ii) {
-    d_f_type[ii] = f_type[ii];
-  }
+#pragma omp parallel
+  {
+#pragma omp for
+    for (int ff = 0; ff < nframes; ++ff) {
+      const FPTYPE* frame_coord = coord + static_cast<size_t>(ff) * nall * 3;
+      const int* frame_f_type = f_type + static_cast<size_t>(ff) * nall;
+      const int_64 row_offset = static_cast<int_64>(ff) * nloc;
 
-  // build nlist
-  std::vector<std::vector<int> > d_nlist_a(nloc);
+      frame_coords[ff].resize(static_cast<size_t>(nall) * 3);
+      for (int ii = 0; ii < nall; ++ii) {
+        for (int dd = 0; dd < 3; ++dd) {
+          frame_coords[ff][ii * 3 + dd] = frame_coord[ii * 3 + dd];
+        }
+      }
 
-  assert(nloc == inlist.inum);
-  for (unsigned ii = 0; ii < nloc; ++ii) {
-    d_nlist_a[ii].reserve(max_nbor_size);
-  }
-  for (unsigned ii = 0; ii < nloc; ++ii) {
-    int i_idx = inlist.ilist[ii];
-    for (unsigned jj = 0; jj < inlist.numneigh[ii]; ++jj) {
-      int j_idx = inlist.firstneigh[ii][jj];
-      d_nlist_a[i_idx].push_back(j_idx);
-    }
-  }
+      frame_f_types[ff].resize(nall);
+      for (int ii = 0; ii < nall; ++ii) {
+        frame_f_types[ff][ii] = frame_f_type[ii];
+      }
 
-#pragma omp parallel for
-  for (int ii = 0; ii < nloc; ++ii) {
-    std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_f_type, ii,
-                                 d_nlist_a[ii], rcut, sec);
-    std::vector<FPTYPE> d_em_a;
-    std::vector<FPTYPE> d_em_a_deriv;
-    std::vector<FPTYPE> d_em_r;
-    std::vector<FPTYPE> d_em_r_deriv;
-    std::vector<FPTYPE> d_rij_a;
-    env_mat_a_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_f_type, ii,
-                  fmt_nlist_a, sec, rcut_smth, rcut);
-
-    // check sizes
-    assert(d_em_a.size() == nem);
-    assert(d_em_a_deriv.size() == nem * 3);
-    assert(d_rij_a.size() == nnei * 3);
-    assert(fmt_nlist_a.size() == nnei);
-    // record outputs
-    for (int jj = 0; jj < nem; ++jj) {
-      if (type[ii] >= 0) {
-        em[ii * nem + jj] =
-            (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
-      } else {
-        em[ii * nem + jj] = 0;
+      frame_nlists[ff].resize(nloc);
+      for (int ii = 0; ii < nloc; ++ii) {
+        frame_nlists[ff][ii].reserve(max_nbor_size);
+      }
+      for (int ii = 0; ii < nloc; ++ii) {
+        const int_64 row = row_offset + ii;
+        const int i_idx = inlist.ilist[row];
+        for (int jj = 0; jj < inlist.numneigh[row]; ++jj) {
+          const int j_idx = inlist.firstneigh[row][jj];
+          frame_nlists[ff][i_idx].push_back(j_idx);
+        }
       }
     }
-    for (int jj = 0; jj < nem * 3; ++jj) {
-      if (type[ii] >= 0) {
-        em_deriv[ii * nem * 3 + jj] =
-            d_em_a_deriv[jj] / std[type[ii] * nem + jj / 3];
-      } else {
-        em_deriv[ii * nem * 3 + jj] = 0;
+
+#pragma omp for
+    for (int_64 row = 0; row < static_cast<int_64>(nframes) * nloc; ++row) {
+      const int ff = row / nloc;
+      const int ii = row % nloc;
+      const int_64 row_offset = static_cast<int_64>(ff) * nloc;
+      const int* frame_type = type + static_cast<size_t>(ff) * nall;
+      FPTYPE* frame_em = em + static_cast<size_t>(row_offset) * nem;
+      FPTYPE* frame_em_deriv =
+          em_deriv + static_cast<size_t>(row_offset) * nem * 3;
+      FPTYPE* frame_rij = rij + static_cast<size_t>(row_offset) * nnei * 3;
+      int* frame_nlist = nlist + static_cast<size_t>(row_offset) * nnei;
+      const std::vector<FPTYPE>& d_coord3 = frame_coords[ff];
+      const std::vector<int>& d_f_type = frame_f_types[ff];
+      std::vector<int> fmt_nlist_a;
+      format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_f_type, ii,
+                         frame_nlists[ff][ii], rcut, sec);
+      std::vector<FPTYPE> d_em_a;
+      std::vector<FPTYPE> d_em_a_deriv;
+      std::vector<FPTYPE> d_em_r;
+      std::vector<FPTYPE> d_em_r_deriv;
+      std::vector<FPTYPE> d_rij_a;
+      env_mat_a_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_f_type, ii,
+                    fmt_nlist_a, sec, rcut_smth, rcut);
+
+      // check sizes
+      assert(d_em_a.size() == nem);
+      assert(d_em_a_deriv.size() == nem * 3);
+      assert(d_rij_a.size() == nnei * 3);
+      assert(fmt_nlist_a.size() == nnei);
+      // record outputs
+      for (int jj = 0; jj < nem; ++jj) {
+        if (frame_type[ii] >= 0) {
+          frame_em[ii * nem + jj] =
+              (d_em_a[jj] - avg[frame_type[ii] * nem + jj]) /
+              std[frame_type[ii] * nem + jj];
+        } else {
+          frame_em[ii * nem + jj] = 0;
+        }
       }
-    }
-    for (int jj = 0; jj < nnei * 3; ++jj) {
-      rij[ii * nnei * 3 + jj] = d_rij_a[jj];
-    }
-    for (int jj = 0; jj < nnei; ++jj) {
-      nlist[ii * nnei + jj] = fmt_nlist_a[jj];
+      for (int jj = 0; jj < nem * 3; ++jj) {
+        if (frame_type[ii] >= 0) {
+          frame_em_deriv[ii * nem * 3 + jj] =
+              d_em_a_deriv[jj] / std[frame_type[ii] * nem + jj / 3];
+        } else {
+          frame_em_deriv[ii * nem * 3 + jj] = 0;
+        }
+      }
+      for (int jj = 0; jj < nnei * 3; ++jj) {
+        frame_rij[ii * nnei * 3 + jj] = d_rij_a[jj];
+      }
+      for (int jj = 0; jj < nnei; ++jj) {
+        frame_nlist[ii * nnei + jj] = fmt_nlist_a[jj];
+      }
     }
   }
 }
@@ -120,73 +144,103 @@ void deepmd::prod_env_mat_r_cpu(FPTYPE* em,
                                 const FPTYPE* std,
                                 const int nloc,
                                 const int nall,
+                                const int nframes,
                                 const float rcut,
                                 const float rcut_smth,
                                 const std::vector<int> sec) {
   const int nnei = sec.back();
   const int nem = nnei * 1;
+  assert(nframes * nloc == inlist.inum);
 
-  // set & normalize coord
-  std::vector<FPTYPE> d_coord3(nall * 3);
-  for (int ii = 0; ii < nall; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      d_coord3[ii * 3 + dd] = coord[ii * 3 + dd];
+  std::vector<std::vector<FPTYPE> > frame_coords(nframes);
+  std::vector<std::vector<int> > frame_types(nframes);
+  std::vector<std::vector<std::vector<int> > > frame_nlists(nframes);
+
+#pragma omp parallel
+  {
+#pragma omp for
+    for (int ff = 0; ff < nframes; ++ff) {
+      const FPTYPE* frame_coord = coord + static_cast<size_t>(ff) * nall * 3;
+      const int* frame_type = type + static_cast<size_t>(ff) * nall;
+      const int_64 row_offset = static_cast<int_64>(ff) * nloc;
+
+      frame_coords[ff].resize(static_cast<size_t>(nall) * 3);
+      for (int ii = 0; ii < nall; ++ii) {
+        for (int dd = 0; dd < 3; ++dd) {
+          frame_coords[ff][ii * 3 + dd] = frame_coord[ii * 3 + dd];
+        }
+      }
+
+      frame_types[ff].resize(nall);
+      for (int ii = 0; ii < nall; ++ii) {
+        frame_types[ff][ii] = frame_type[ii];
+      }
+
+      frame_nlists[ff].resize(nloc);
+      for (int ii = 0; ii < nloc; ++ii) {
+        frame_nlists[ff][ii].reserve(max_nbor_size);
+      }
+      for (int ii = 0; ii < nloc; ++ii) {
+        const int_64 row = row_offset + ii;
+        const int i_idx = inlist.ilist[row];
+        for (int jj = 0; jj < inlist.numneigh[row]; ++jj) {
+          const int j_idx = inlist.firstneigh[row][jj];
+          frame_nlists[ff][i_idx].push_back(j_idx);
+        }
+      }
     }
-  }
 
-  // set type
-  std::vector<int> d_type(nall);
-  for (int ii = 0; ii < nall; ++ii) {
-    d_type[ii] = type[ii];
-  }
+#pragma omp for
+    for (int_64 row = 0; row < static_cast<int_64>(nframes) * nloc; ++row) {
+      const int ff = row / nloc;
+      const int ii = row % nloc;
+      const int_64 row_offset = static_cast<int_64>(ff) * nloc;
+      FPTYPE* frame_em = em + static_cast<size_t>(row_offset) * nem;
+      FPTYPE* frame_em_deriv =
+          em_deriv + static_cast<size_t>(row_offset) * nem * 3;
+      FPTYPE* frame_rij = rij + static_cast<size_t>(row_offset) * nnei * 3;
+      int* frame_nlist = nlist + static_cast<size_t>(row_offset) * nnei;
+      const std::vector<FPTYPE>& d_coord3 = frame_coords[ff];
+      const std::vector<int>& d_type = frame_types[ff];
+      std::vector<int> fmt_nlist_a;
+      format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_type, ii,
+                         frame_nlists[ff][ii], rcut, sec);
+      std::vector<FPTYPE> d_em_a;
+      std::vector<FPTYPE> d_em_a_deriv;
+      std::vector<FPTYPE> d_em_r;
+      std::vector<FPTYPE> d_em_r_deriv;
+      std::vector<FPTYPE> d_rij_a;
+      env_mat_r_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii,
+                    fmt_nlist_a, sec, rcut_smth, rcut);
 
-  // build nlist
-  std::vector<std::vector<int> > d_nlist_a(nloc);
-
-  assert(nloc == inlist.inum);
-  for (unsigned ii = 0; ii < nloc; ++ii) {
-    d_nlist_a[ii].reserve(max_nbor_size);
-  }
-  for (unsigned ii = 0; ii < nloc; ++ii) {
-    int i_idx = inlist.ilist[ii];
-    for (unsigned jj = 0; jj < inlist.numneigh[ii]; ++jj) {
-      int j_idx = inlist.firstneigh[ii][jj];
-      d_nlist_a[i_idx].push_back(j_idx);
-    }
-  }
-
-#pragma omp parallel for
-  for (int ii = 0; ii < nloc; ++ii) {
-    std::vector<int> fmt_nlist_a;
-    int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_type, ii,
-                                 d_nlist_a[ii], rcut, sec);
-    std::vector<FPTYPE> d_em_a;
-    std::vector<FPTYPE> d_em_a_deriv;
-    std::vector<FPTYPE> d_em_r;
-    std::vector<FPTYPE> d_em_r_deriv;
-    std::vector<FPTYPE> d_rij_a;
-    env_mat_r_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_type, ii,
-                  fmt_nlist_a, sec, rcut_smth, rcut);
-
-    // check sizes
-    assert(d_em_a.size() == nem);
-    assert(d_em_a_deriv.size() == nem * 3);
-    assert(d_rij_a.size() == nnei * 3);
-    assert(fmt_nlist_a.size() == nnei);
-    // record outputs
-    for (int jj = 0; jj < nem; ++jj) {
-      em[ii * nem + jj] = (d_em_a[jj] - avg[d_type[ii] * nem + jj]) /
-                          std[d_type[ii] * nem + jj];
-    }
-    for (int jj = 0; jj < nem * 3; ++jj) {
-      em_deriv[ii * nem * 3 + jj] =
-          d_em_a_deriv[jj] / std[d_type[ii] * nem + jj / 3];
-    }
-    for (int jj = 0; jj < nnei * 3; ++jj) {
-      rij[ii * nnei * 3 + jj] = d_rij_a[jj];
-    }
-    for (int jj = 0; jj < nnei; ++jj) {
-      nlist[ii * nnei + jj] = fmt_nlist_a[jj];
+      // check sizes
+      assert(d_em_a.size() == nem);
+      assert(d_em_a_deriv.size() == nem * 3);
+      assert(d_rij_a.size() == nnei * 3);
+      assert(fmt_nlist_a.size() == nnei);
+      // record outputs
+      for (int jj = 0; jj < nem; ++jj) {
+        if (d_type[ii] >= 0) {
+          frame_em[ii * nem + jj] = (d_em_a[jj] - avg[d_type[ii] * nem + jj]) /
+                                    std[d_type[ii] * nem + jj];
+        } else {
+          frame_em[ii * nem + jj] = 0;
+        }
+      }
+      for (int jj = 0; jj < nem * 3; ++jj) {
+        if (d_type[ii] >= 0) {
+          frame_em_deriv[ii * nem * 3 + jj] =
+              d_em_a_deriv[jj] / std[d_type[ii] * nem + jj / 3];
+        } else {
+          frame_em_deriv[ii * nem * 3 + jj] = 0;
+        }
+      }
+      for (int jj = 0; jj < nnei * 3; ++jj) {
+        frame_rij[ii * nnei * 3 + jj] = d_rij_a[jj];
+      }
+      for (int jj = 0; jj < nnei; ++jj) {
+        frame_nlist[ii * nnei + jj] = fmt_nlist_a[jj];
+      }
     }
   }
 }
@@ -203,6 +257,7 @@ template void deepmd::prod_env_mat_a_cpu<double>(double* em,
                                                  const double* std,
                                                  const int nloc,
                                                  const int nall,
+                                                 const int nframes,
                                                  const float rcut,
                                                  const float rcut_smth,
                                                  const std::vector<int> sec,
@@ -220,6 +275,7 @@ template void deepmd::prod_env_mat_a_cpu<float>(float* em,
                                                 const float* std,
                                                 const int nloc,
                                                 const int nall,
+                                                const int nframes,
                                                 const float rcut,
                                                 const float rcut_smth,
                                                 const std::vector<int> sec,
@@ -237,6 +293,7 @@ template void deepmd::prod_env_mat_r_cpu<double>(double* em,
                                                  const double* std,
                                                  const int nloc,
                                                  const int nall,
+                                                 const int nframes,
                                                  const float rcut,
                                                  const float rcut_smth,
                                                  const std::vector<int> sec);
@@ -253,6 +310,7 @@ template void deepmd::prod_env_mat_r_cpu<float>(float* em,
                                                 const float* std,
                                                 const int nloc,
                                                 const int nall,
+                                                const int nframes,
                                                 const float rcut,
                                                 const float rcut_smth,
                                                 const std::vector<int> sec);

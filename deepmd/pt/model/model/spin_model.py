@@ -35,18 +35,85 @@ from .make_model import (
     make_model,
 )
 
+_NATOMS_VEC_KEYS = ("natoms", "real_natoms_vec")
+_SPIN_STAT_RESERVED_KEYS = frozenset(
+    {"coord", "atype", "spin", "natoms", "real_natoms_vec", "aparam"}
+)
+
+
+def _expand_natoms_vec_for_virtual_spin(natoms: torch.Tensor) -> torch.Tensor:
+    """Expand a DeePMD natoms vector for the virtual-atom spin layout.
+
+    The leading two entries count local and extended atoms; they are doubled
+    to reflect real/virtual atom pairs. Per-type counts are duplicated so that
+    virtual spin slots inherit the population of their real counterparts.
+
+    Parameters
+    ----------
+    natoms
+        Natoms vector with shape ``(nframes, ntypes_real + 2)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Expanded vector with shape ``(nframes, 2 * ntypes_real + 2)``.
+    """
+    return torch.cat(
+        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]],
+        dim=-1,
+    )
+
+
+def _pack_spin_stat_sample(
+    spin_model: "SpinModel",
+    sample: dict[str, Any],
+) -> dict[str, Any]:
+    """Transform one statistics sample into the virtual-atom spin layout."""
+    coord_updated, atype_updated, _ = spin_model.process_spin_input(
+        sample["coord"], sample["atype"], sample["spin"]
+    )
+    packed: dict[str, Any] = {
+        "coord": coord_updated,
+        "atype": atype_updated,
+    }
+    if "aparam" in sample:
+        packed["aparam"] = spin_model.expand_aparam(
+            sample["aparam"], atype_updated.shape[1]
+        )
+    for key in _NATOMS_VEC_KEYS:
+        if key in sample:
+            packed[key] = _expand_natoms_vec_for_virtual_spin(sample[key])
+    for item_key in sample:
+        if item_key not in _SPIN_STAT_RESERVED_KEYS:
+            packed[item_key] = sample[item_key]
+    return packed
+
 
 def _lookup_type_values(values: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
     """
-    Gather one scalar value per atom type.
+    Gather one scalar value per atom type, mapping virtual atom types to zero.
 
-    ``values[atype]`` is semantically equivalent, but AOTInductor may lower
-    that advanced-indexing form to a CUDA ``index.Tensor`` shim even for a CPU
-    ``.pt2`` package. ``index_select`` keeps the exported spin graph device
-    stable while preserving the same lookup semantics.
+    ``values[atype]`` is semantically equivalent for real atoms, but
+    AOTInductor may lower that advanced-indexing form to a CUDA
+    ``index.Tensor`` shim even for a CPU ``.pt2`` package. ``index_select``
+    keeps the exported spin graph device stable.
+
+    Padding slots carry ``atype == -1``: ``deepmd/utils/data.py`` appends it as
+    the virtual-atom padding for mixed-type systems, and batched extended
+    regions are padded to a uniform ``nall``. Those are placeholders, not
+    Python-style indices from the end of the type table, so they get zero
+    rather than row 0's value — otherwise a padded slot picks up a real spin
+    scale and mask whenever type 0 is magnetic. This matches
+    ``SpinModel._lookup_type_values`` in ``deepmd/dpmodel/model/spin_model.py``.
     """
-    flat_atype = atype.reshape(-1).to(dtype=torch.long)
-    return torch.index_select(values.to(atype.device), 0, flat_atype).view(atype.shape)
+    long_atype = atype.to(dtype=torch.long)
+    real_atom = long_atype >= 0
+    # index_select rejects negative indices, unlike advanced indexing.
+    flat_atype = torch.clamp_min(long_atype.reshape(-1), 0)
+    gathered = torch.index_select(values.to(atype.device), 0, flat_atype).view(
+        atype.shape
+    )
+    return torch.where(real_atom, gathered, torch.zeros_like(gathered))
 
 
 class SpinModel(torch.nn.Module):
@@ -81,7 +148,12 @@ class SpinModel(torch.nn.Module):
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
-        atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
+        # Keep virtual placeholders at -1 instead of offsetting them into a
+        # real type of the spin half of the type table.
+        virtual_atype = torch.where(
+            atype >= 0, atype + self.ntypes_real, torch.full_like(atype, -1)
+        )
+        atype_spin = torch.concat([atype, virtual_atype], dim=-1)
         # spin_dist = s_i * \mu_i
         spin_dist = spin * _lookup_type_values(
             self.virtual_scale_mask,
@@ -134,7 +206,11 @@ class SpinModel(torch.nn.Module):
             extended_atype,
         ).reshape([nframes, nall, 1])
         virtual_extended_coord = extended_coord + extended_spin_dist
-        virtual_extended_atype = extended_atype + self.ntypes_real
+        virtual_extended_atype = torch.where(
+            extended_atype >= 0,
+            extended_atype + self.ntypes_real,
+            torch.full_like(extended_atype, -1),
+        )
         extended_coord_updated = concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
         )
@@ -413,26 +489,7 @@ class SpinModel(torch.nn.Module):
     ) -> Callable[[], list[dict]]:
         @functools.lru_cache
         def spin_sampled_func() -> list[dict]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    tmp_dict["natoms"] = torch.cat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
 
         return self.backbone_model.atomic_model._make_wrapped_sampler(spin_sampled_func)
 
@@ -501,36 +558,7 @@ class SpinModel(torch.nn.Module):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict[str, Any]]:
-            sampled = sampled_func()
-            spin_sampled = []
-            for sys in sampled:
-                coord_updated, atype_updated, _ = self.process_spin_input(
-                    sys["coord"], sys["atype"], sys["spin"]
-                )
-                tmp_dict = {
-                    "coord": coord_updated,
-                    "atype": atype_updated,
-                }
-                if "aparam" in sys:
-                    tmp_dict["aparam"] = self.expand_aparam(
-                        sys["aparam"], atype_updated.shape[1]
-                    )
-                if "natoms" in sys:
-                    natoms = sys["natoms"]
-                    tmp_dict["natoms"] = torch.cat(
-                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
-                    )
-                for item_key in sys.keys():
-                    if item_key not in [
-                        "coord",
-                        "atype",
-                        "spin",
-                        "natoms",
-                        "aparam",
-                    ]:
-                        tmp_dict[item_key] = sys[item_key]
-                spin_sampled.append(tmp_dict)
-            return spin_sampled
+            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
 
         self.backbone_model.compute_or_load_stat(
             spin_sampled_func,

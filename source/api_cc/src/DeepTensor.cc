@@ -3,12 +3,7 @@
 
 #include <memory>
 
-#ifdef BUILD_TENSORFLOW
-#include "DeepTensorTF.h"
-#endif
-#ifdef BUILD_PYTORCH
-#include "DeepTensorPT.h"
-#endif
+#include "BackendPlugin.h"
 #include "common.h"
 
 using namespace deepmd;
@@ -34,20 +29,17 @@ void DeepTensor::init(const std::string& model,
     return;
   }
   const DPBackend backend = get_backend(model);
-  if (deepmd::DPBackend::TensorFlow == backend) {
-#ifdef BUILD_TENSORFLOW
-    dt = std::make_shared<deepmd::DeepTensorTF>(model, gpu_rank, name_scope_);
-#else
-    throw deepmd::deepmd_exception("TensorFlow backend is not built.");
-#endif
-  } else if (deepmd::DPBackend::PyTorch == backend) {
-#ifdef BUILD_PYTORCH
-    dt = std::make_shared<deepmd::DeepTensorPT>(model, gpu_rank, name_scope_);
-#else
-    throw deepmd::deepmd_exception("PyTorch backend is not built.");
-#endif
+  if (deepmd::DPBackend::TensorFlow == backend ||
+      deepmd::DPBackend::PyTorch == backend) {
+    dt = create_deeptensor_backend_from_plugin(backend, model, gpu_rank,
+                                               name_scope_);
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
+  } else if (deepmd::DPBackend::PyTorchExportable == backend) {
+    throw deepmd::deepmd_exception(
+        "PyTorch Exportable backend is not supported yet");
+  } else if (deepmd::DPBackend::JAX == backend) {
+    throw deepmd::deepmd_exception("JAX backend is not supported yet");
   } else {
     throw deepmd::deepmd_exception("Unknown file type");
   }

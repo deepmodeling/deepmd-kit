@@ -53,7 +53,7 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorch);
   int gpu_num = torch::cuda::device_count();
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
   gpu_enabled = torch::cuda::is_available();

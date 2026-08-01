@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import operator
 from enum import (
     Enum,
@@ -30,6 +31,9 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .model import (
@@ -74,11 +78,14 @@ class LinearModel(Model):
 
     def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
-        # the first model that is not None, or None if all models are None
+        # Return the first submodel loss that is not None, or None if all
+        # submodels are non-trainable. Each submodel must receive the original
+        # loss config: frozen/table submodels return None, so consuming the
+        # return value would pass None to a later trainable submodel.
         for model in self.models:
-            loss = model.get_loss(loss, lr)
-            if loss is not None:
-                return loss
+            submodel_loss = model.get_loss(copy.deepcopy(loss), lr)
+            if submodel_loss is not None:
+                return submodel_loss
         return None
 
     def get_rcut(self) -> float:
@@ -92,9 +99,14 @@ class LinearModel(Model):
                 raise ValueError("Models have different ntypes")
         return self.models[0].get_ntypes()
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
-        for model in self.models:
-            model.data_stat(data)
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
+        for ii, model in enumerate(self.models):
+            model_stat_path = (
+                None if stat_file_path is None else stat_file_path / f"model{ii}"
+            )
+            model.data_stat(data, stat_file_path=model_stat_path)
 
     def init_variables(
         self,

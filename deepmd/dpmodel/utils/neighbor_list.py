@@ -10,9 +10,51 @@ and are injected into the model, so the rest of the model is agnostic to how the
 neighbor list was built.
 """
 
+from dataclasses import (
+    dataclass,
+)
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+)
+
 from deepmd.dpmodel.array_api import (
     Array,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+
+
+@dataclass
+class EdgeNeighborList:
+    """Edge-vector neighbor-list contract.
+
+    The model consumes geometry only through ``edge_vec``.  Builders that own
+    periodic-image shifts compute those shifts before constructing this object;
+    callers that receive already-shifted ghost coordinates use zero-shift edge
+    vectors computed from the provided coordinates.
+    """
+
+    coord: Array
+    """Coordinates of the scatter domain with shape ``(nf, nscatter, 3)``."""
+
+    atype: Array
+    """Local owner atom types with shape ``(nf, nloc)``."""
+
+    edge_index: Array
+    """Message-passing edge indices with shape ``(2, nedge)`` in owner space."""
+
+    edge_vec: Array
+    """Per-edge displacement vectors with shape ``(nedge, 3)``."""
+
+    edge_scatter_index: Array
+    """Force/virial scatter indices with shape ``(2, nedge)`` in scatter space."""
+
+    edge_mask: Array
+    """Boolean edge-validity mask with shape ``(nedge,)``."""
 
 
 class NeighborList:
@@ -32,7 +74,9 @@ class NeighborList:
         box: Array | None,
         rcut: float,
         sel: list[int],
-    ) -> tuple[Array, Array, Array, Array]:
+        return_mode: Literal["extended", "edges"] = "extended",
+        pair_excl: "PairExcludeMask | None" = None,
+    ) -> tuple[Array, Array, Array, Array] | EdgeNeighborList:
         """Build the extended system and a candidate neighbor list.
 
         Parameters
@@ -47,6 +91,15 @@ class NeighborList:
             cutoff radius.
         sel
             number of selected neighbors per type.
+        return_mode
+            ``"extended"`` returns the historical extended-coordinate quartet.
+            ``"edges"`` returns :class:`EdgeNeighborList`, where ``edge_vec`` is
+            the only geometric displacement consumed by the model.
+        pair_excl : PairExcludeMask or None, optional
+            When provided, excluded type pairs are erased from the returned
+            neighbor list (entries set to ``-1``) by calling
+            :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
+            Subclasses are expected to apply this filter before returning.
 
         Returns
         -------

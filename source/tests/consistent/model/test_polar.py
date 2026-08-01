@@ -27,8 +27,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -46,6 +47,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.tensor import PolarModel as PolarModelTF
 else:
     PolarModelTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+    from deepmd.tf2.model.polar_model import PolarModel as PolarModelTF2
+else:
+    PolarModelTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.model.model import get_model as get_model_jax
     from deepmd.jax.model.polar_model import PolarModel as PolarModelJAX
@@ -89,6 +95,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = PolarModelTF
+    tf2_class = PolarModelTF2
     dp_class = PolarModelDP
     pt_class = PolarModelPT
     pt_expt_class = PolarModelPTExpt
@@ -115,6 +122,8 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
     def skip_tf(self):
         return not INSTALLED_TF
 
+    skip_tf2 = not INSTALLED_TF2
+
     @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
@@ -131,6 +140,8 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
         elif cls is PolarModelPTExpt:
             dp_model = get_model_dp(data)
             return PolarModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is PolarModelTF2:
+            return get_model_tf2(data)
         elif cls is PolarModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -206,6 +217,15 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -226,6 +246,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.DP,
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
+            self.RefBackend.TF2,
             self.RefBackend.JAX,
         }:
             return (
@@ -1218,10 +1239,15 @@ class TestPolarModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
 )
+
+
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestPolarComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.
@@ -1437,9 +1463,15 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
             )
 
         # 2. Run compute_or_load_stat on all three backends
-        self.dp_model.compute_or_load_stat(lambda: self.np_sampled)
-        self.pt_model.compute_or_load_stat(lambda: self.pt_sampled)
-        self.pt_expt_model.compute_or_load_stat(lambda: self.np_sampled)
+        # deepcopy because stat.py mutates natoms in-place when atom_exclude_types
+        # is non-empty (natoms[:, 2:] *= type_mask).
+        from copy import (
+            deepcopy,
+        )
+
+        self.dp_model.compute_or_load_stat(lambda: deepcopy(self.np_sampled))
+        self.pt_model.compute_or_load_stat(lambda: deepcopy(self.pt_sampled))
+        self.pt_expt_model.compute_or_load_stat(lambda: deepcopy(self.np_sampled))
 
         # 3. Serialize all three and compare @variables
         dp_ser = self.dp_model.serialize()
@@ -1494,6 +1526,9 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
 
     def test_load_stat_from_file(self) -> None:
         import tempfile
+        from copy import (
+            deepcopy,
+        )
         from pathlib import (
             Path,
         )
@@ -1515,13 +1550,13 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
 
             # 1. Compute stats and save to file
             self.dp_model.compute_or_load_stat(
-                lambda: self.np_sampled, stat_file_path=DPPath(dp_h5, "a")
+                lambda: deepcopy(self.np_sampled), stat_file_path=DPPath(dp_h5, "a")
             )
             self.pt_model.compute_or_load_stat(
-                lambda: self.pt_sampled, stat_file_path=DPPath(pt_h5, "a")
+                lambda: deepcopy(self.pt_sampled), stat_file_path=DPPath(pt_h5, "a")
             )
             self.pt_expt_model.compute_or_load_stat(
-                lambda: self.np_sampled, stat_file_path=DPPath(pe_h5, "a")
+                lambda: deepcopy(self.np_sampled), stat_file_path=DPPath(pe_h5, "a")
             )
 
             # Save the computed serializations as reference

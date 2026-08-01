@@ -1,10 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""Outer TensorFlow call wrapper for the JAX/jax2tf SavedModel.
+
+The wrapper builds PBC ghosts, neighbor lists, and output communication around
+the lower JAX model. It deliberately uses the graph-safe helpers in this
+package instead of the TF2 eager helpers, because this code is traced by
+``tf.saved_model.save`` and must keep tensor-shape branches convertible by
+AutoGraph before it invokes the jax2tf-converted model body.
+"""
+
 from collections.abc import (
     Callable,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -20,64 +36,58 @@ from deepmd.jax.jax2tf.transform_output import (
     communicate_extended_output,
 )
 
+CallLower = (
+    Callable[
+        [
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+        ],
+        dict[str, tf.Tensor],
+    ]
+    | Callable[
+        [
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+            tf.Tensor,
+        ],
+        dict[str, tf.Tensor],
+    ]
+)
+
 
 def model_call_from_call_lower(
     *,  # enforce keyword-only arguments
-    call_lower: Callable[
-        [
-            tnp.ndarray,
-            tnp.ndarray,
-            tnp.ndarray,
-            tnp.ndarray,
-            tnp.ndarray,
-            bool,
-        ],
-        dict[str, tnp.ndarray],
-    ],
+    call_lower: CallLower,
     rcut: float,
     sel: list[int],
     mixed_types: bool,
     model_output_def: ModelOutputDef,
-    coord: tnp.ndarray,
-    atype: tnp.ndarray,
-    box: tnp.ndarray,
-    fparam: tnp.ndarray,
-    aparam: tnp.ndarray,
+    coord: tf.Tensor,
+    atype: tf.Tensor,
+    box: tf.Tensor,
+    fparam: tf.Tensor,
+    aparam: tf.Tensor,
+    charge_spin: tf.Tensor | None = None,
     do_atomic_virial: bool = False,
-) -> dict[str, tnp.ndarray]:
-    """Return model prediction from lower interface.
-
-    Parameters
-    ----------
-    coord
-        The coordinates of the atoms.
-        shape: nf x (nloc x 3)
-    atype
-        The type of atoms. shape: nf x nloc
-    box
-        The simulation box. shape: nf x 9
-    fparam
-        frame parameter. nf x ndf
-    aparam
-        atomic parameter. nf x nloc x nda
-    do_atomic_virial
-        If calculate the atomic virial.
-
-    Returns
-    -------
-    ret_dict
-        The result dict of type dict[str,tnp.ndarray].
-        The keys are defined by the `ModelOutputDef`.
-
-    """
+    pair_excl: "PairExcludeMask | None" = None,
+) -> dict[str, tf.Tensor]:
+    """Return model prediction from lower interface."""
     atype_shape = tf.shape(atype)
     nframes, nloc = atype_shape[0], atype_shape[1]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
     if tf.shape(bb)[-1] != 0:
         coord_normalized = normalize_coord(
-            cc.reshape(nframes, nloc, 3),
-            bb.reshape(nframes, 3, 3),
+            tf.reshape(cc, [nframes, nloc, 3]),
+            tf.reshape(bb, [nframes, 3, 3]),
         )
     else:
         coord_normalized = cc
@@ -90,18 +100,40 @@ def model_call_from_call_lower(
         nloc,
         rcut,
         sel,
-        # types will be distinguished in the lower interface,
-        # so it doesn't need to be distinguished here
+        # types will be distinguished in the lower interface, so it doesn't
+        # need to be distinguished here
         distinguish_types=False,
     )
-    extended_coord = extended_coord.reshape(nframes, -1, 3)
+    if pair_excl is not None and len(pair_excl.get_exclude_types()) > 0:
+        # Reuse the canonical dpmodel nlist-BUILD transform (decision #18/A4)
+        # via the vendored ``ndtensorflow`` array-API namespace -- the same way
+        # the TF2 backend (``deepmd/tf2``) runs dpmodel array-API code on
+        # TensorFlow. Unlike the neighbor-list *build* (see the docstring of
+        # ``jax2tf/nlist.py``), the exclusion has no data-dependent Python
+        # control flow: its only branch is on the static ``exclude_types``
+        # config, so it traces cleanly under SavedModel export and does not
+        # need a hand-written TF twin.
+        from deepmd._vendors import ndtensorflow as ndtf
+        from deepmd.dpmodel.utils.nlist import (
+            apply_pair_exclusion_nlist,
+        )
+
+        nlist = apply_pair_exclusion_nlist(
+            ndtf.asarray(nlist), ndtf.asarray(extended_atype), pair_excl
+        ).unwrap()
+    extended_coord = tf.reshape(extended_coord, [nframes, -1, 3])
+    call_lower_kwargs = {
+        "fparam": fp,
+        "aparam": ap,
+    }
+    if charge_spin is not None:
+        call_lower_kwargs["charge_spin"] = charge_spin
     model_predict_lower = call_lower(
         extended_coord,
         extended_atype,
         nlist,
         mapping,
-        fparam=fp,
-        aparam=ap,
+        **call_lower_kwargs,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,

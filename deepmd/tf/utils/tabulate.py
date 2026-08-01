@@ -194,7 +194,7 @@ class DPTabulate(BaseTabulate):
                 bias["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeA):
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[
                                 f"filter_type_all{self.suffix}/bias_{layer}_{ii}"
@@ -203,7 +203,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             bias["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -223,7 +223,7 @@ class DPTabulate(BaseTabulate):
                         bias["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeR):
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[
                                 f"filter_type_all{self.suffix}/bias_{layer}_{ii}"
@@ -232,7 +232,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             bias["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -260,7 +260,7 @@ class DPTabulate(BaseTabulate):
                 matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeA):
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[
                                 f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"
@@ -269,7 +269,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             matrix["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -289,7 +289,7 @@ class DPTabulate(BaseTabulate):
                         matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeR):
                 if self.type_one_side:
-                    for ii in range(0, self.ntypes):
+                    for ii in range(self.ntypes):
                         if not self._all_excluded(ii):
                             node = self.embedding_net_nodes[
                                 f"filter_type_all{self.suffix}/matrix_{layer}_{ii}"
@@ -298,7 +298,7 @@ class DPTabulate(BaseTabulate):
                         else:
                             matrix["layer_" + str(layer)].append(np.array([]))
                 else:
-                    for ii in range(0, self.ntypes * self.ntypes):
+                    for ii in range(self.ntypes * self.ntypes):
                         if (
                             ii // self.ntypes,
                             ii % self.ntypes,
@@ -508,7 +508,7 @@ class DPTabulate(BaseTabulate):
     @cached_property
     def _n_all_excluded(self) -> int:
         """Then number of types excluding all types."""
-        return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
+        return sum(int(self._all_excluded(ii)) for ii in range(self.ntypes))
 
     def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to tf.Tensor."""

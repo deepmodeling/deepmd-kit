@@ -6,6 +6,12 @@ from pathlib import (
     Path,
 )
 
+from deepmd.backend.suffix import (
+    format_model_suffix,
+)
+from deepmd.jax.entrypoints.compress import (
+    enable_compression,
+)
 from deepmd.jax.entrypoints.freeze import (
     freeze,
 )
@@ -51,6 +57,23 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
         train(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
+    elif args.command == "compress":
+        enable_compression(
+            input_file=format_model_suffix(
+                args.input,
+                preferred_backend="jax",
+                strict_prefer=True,
+            ),
+            output=format_model_suffix(
+                args.output,
+                preferred_backend="jax",
+                strict_prefer=True,
+            ),
+            stride=args.step,
+            extrapolate=args.extrapolate,
+            check_frequency=args.frequency,
+            training_script=args.training_script,
+        )
     elif args.command is None:
         pass
     else:

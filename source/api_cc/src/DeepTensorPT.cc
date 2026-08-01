@@ -74,7 +74,7 @@ void DeepTensorPT::init(const std::string& model,
     return;
   }
   name_scope = name_scope_;
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorch);
   int gpu_num = torch::cuda::device_count();
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;

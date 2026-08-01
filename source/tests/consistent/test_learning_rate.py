@@ -18,7 +18,8 @@ from .common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
-    parameterized,
+    INSTALLED_TF2,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -34,7 +35,7 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict as xp
 
 
-@parameterized(
+LEARNING_RATE_CURATED_CASES = (
     (
         {
             "type": "exp",
@@ -44,6 +45,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "num_steps": 1000000,
             "warmup_steps": 10000,
         },
+    ),
+    (
         {
             "type": "cosine",
             "start_lr": 1e-3,
@@ -51,6 +54,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "num_steps": 1000000,
             "warmup_steps": 10000,
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -59,6 +64,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "warmup_steps": 10000,
             "decay_phase_ratio": 0.1,
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -68,6 +75,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "decay_phase_ratio": 0.1,
             "decay_type": "cosine",
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -79,6 +88,9 @@ if INSTALLED_ARRAY_API_STRICT:
         },
     ),
 )
+
+
+@parameterized_cases(*LEARNING_RATE_CURATED_CASES)
 class TestLearningRateConsistent(unittest.TestCase):
     """Test learning rate consistency across different array backends."""
 
@@ -135,3 +147,15 @@ class TestLearningRateConsistent(unittest.TestCase):
         self.compare_test_with_ref(jnp.array(self.step))
         if self.warmup_step is not None:
             self.compare_test_with_warmup_ref(jnp.array(self.warmup_step))
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_consistent_with_ref(self) -> None:
+        from deepmd.tf2.common import (
+            to_tensorflow_array,
+        )
+
+        self.compare_test_with_ref(to_tensorflow_array(np.asarray(self.step)))
+        if self.warmup_step is not None:
+            self.compare_test_with_warmup_ref(
+                to_tensorflow_array(np.asarray(self.warmup_step))
+            )

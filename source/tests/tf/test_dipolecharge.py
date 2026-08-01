@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
 
@@ -124,6 +127,13 @@ class TestDipoleCharge(unittest.TestCase):
     def tearDownClass(cls) -> None:
         os.remove("dipolecharge_d.pb")
         cls.dp = None
+
+    def test_close_forwards_to_ewald(self) -> None:
+        # closing the modifier must release the EwaldRecp session. Patch the
+        # evaluator so the shared class-level modifier is not disturbed.
+        with mock.patch.object(self.dp, "er") as mock_er:
+            self.dp.close()
+        mock_er.close.assert_called_once()
 
     def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 5)

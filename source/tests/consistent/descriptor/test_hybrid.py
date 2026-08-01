@@ -17,6 +17,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
 )
 from .common import (
@@ -32,6 +33,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.hybrid import DescrptHybrid as DescrptHybridTF
 else:
     DescrptHybridTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.hybrid import DescrptHybrid as DescrptHybridTF2
+else:
+    DescrptHybridTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.hybrid import DescrptHybrid as DescrptHybridJAX
 else:
@@ -86,6 +91,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
         }
 
     tf_class = DescrptHybridTF
+    tf2_class = DescrptHybridTF2
     dp_class = DescrptHybridDP
     pt_class = DescrptHybridPT
     pt_expt_class = DescrptHybridPTExpt
@@ -96,6 +102,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_pt_expt = not INSTALLED_PT_EXPT
+    skip_tf2 = not INSTALLED_TF2
 
     def setUp(self) -> None:
         CommonTest.setUp(self)
@@ -171,6 +178,15 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

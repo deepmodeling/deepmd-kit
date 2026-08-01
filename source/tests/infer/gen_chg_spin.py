@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate chg_spin.pt2 / chg_spin.pth test models and reference values.
+"""Generate charge-spin test models and reference values.
 
 Creates a DPA3 model with add_chg_spin_ebd=True and default_chg_spin=[0.0, 1.0],
-exports it to both .pt2 (AOTInductor) and .pth (TorchScript) from the same
-weights, and writes chg_spin.expected with two sections:
+exports it to .pt2 (AOTInductor), .pth (TorchScript), and .savedmodel (JAX)
+from the same weights, and writes chg_spin.expected with two sections:
   [default]  -- eval with no charge_spin (uses stored default [0.0, 1.0])
   [explicit] -- eval with charge_spin=[1.0, 2.0]
 The .pth is verified to match the .pt2 reference for both sections.
@@ -73,6 +73,9 @@ def main():
         "version": "3.0.0",
     }
 
+    from deepmd.jax.utils.serialization import (
+        deserialize_to_file as jax_deserialize_to_file,
+    )
     from deepmd.pt.utils.serialization import (
         deserialize_to_file as pt_deserialize_to_file,
     )
@@ -86,6 +89,10 @@ def main():
     pt2_path = os.path.join(base_dir, "chg_spin.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
+
+    savedmodel_path = os.path.join(base_dir, "chg_spin.savedmodel")
+    print(f"Exporting to {savedmodel_path} ...")  # noqa: T201
+    jax_deserialize_to_file(savedmodel_path, copy.deepcopy(data))
 
     pth_path = os.path.join(base_dir, "chg_spin.pth")
     # Remove any stale .pth first so a failed export below cannot leave an old

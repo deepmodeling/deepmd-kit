@@ -8,6 +8,51 @@ from deepmd.env import (
 )
 
 
+def normalize_spin_use_spin(use_spin: list, type_map: list[str]) -> list[bool]:
+    """Normalize ``use_spin`` to a per-type boolean list.
+
+    Three equivalent forms are accepted: a per-type boolean list, a list of
+    magnetic type indices, or a list of magnetic element symbols. The index
+    and symbol forms are expanded against ``type_map``, so a large type map
+    only needs its magnetic species named. Pure: the inputs are not
+    modified.
+
+    Parameters
+    ----------
+    use_spin : list
+        The ``spin.use_spin`` configuration value, in any of the three
+        accepted forms.
+    type_map : list[str]
+        The model's type map, defining the per-type order and (for the
+        symbol form) the element names.
+
+    Returns
+    -------
+    list[bool]
+        The per-type boolean form, of length ``len(type_map)``.
+
+    Raises
+    ------
+    ValueError
+        If a symbol in ``use_spin`` is absent from ``type_map``.
+    """
+    if use_spin and isinstance(use_spin[0], str):
+        type_index = {name: idx for idx, name in enumerate(type_map)}
+        unknown = [name for name in use_spin if name not in type_index]
+        if unknown:
+            raise ValueError(
+                f"spin.use_spin references element(s) {unknown} absent from type_map."
+            )
+        use_spin = [type_index[name] for name in use_spin]
+    # ``bool`` is a subclass of ``int``; an already-boolean list is passed
+    # through while an index list is scattered into a per-type mask.
+    if not use_spin or not isinstance(use_spin[0], bool):
+        mask = np.full(len(type_map), False, dtype=bool)
+        mask[use_spin] = True
+        return mask.tolist()
+    return [bool(flag) for flag in use_spin]
+
+
 class Spin:
     """Class for spin, mainly processes the spin type-related information.
     Atom types can be split into three kinds:
@@ -30,18 +75,25 @@ class Spin:
                 The virtual coordinate is defined as the real coordinate plus spin * virtual_scale.
                 List of float values with shape of [ntypes] or [ntypes_spin] or one single float value for all types,
                 only used when use_spin is True for each atom type.
+    allow_missing_label: bool
+                Whether a training system that lacks a ``spin`` data file is admitted by
+                filling its per-atom spin with zeros instead of raising. Supported only by
+                the SeZM/DPA4 spin model. As a data-loading option it is excluded from
+                serialization.
     """
 
     def __init__(
         self,
         use_spin: list[bool],
         virtual_scale: list[float] | float,
+        allow_missing_label: bool = False,
     ) -> None:
         type_dtype = np.int32
         self.ntypes_real = len(use_spin)
         self.ntypes_spin = use_spin.count(True)
         self.use_spin = np.array(use_spin)
         self.spin_mask = self.use_spin.astype(np.int64)
+        self.allow_missing_label = bool(allow_missing_label)
         self.ntypes_real_and_spin = self.ntypes_real + self.ntypes_spin
         self.ntypes_placeholder = self.ntypes_real - self.ntypes_spin
         self.ntypes_input = 2 * self.ntypes_real  # with placeholder for input types

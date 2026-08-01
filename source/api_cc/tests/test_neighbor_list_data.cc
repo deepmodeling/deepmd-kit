@@ -8,6 +8,9 @@
 #include <vector>
 
 #include "common.h"
+#ifdef BUILD_PYTORCH
+#include "commonPT.h"
+#endif
 #include "neighbor_list.h"
 
 namespace deepmd {
@@ -54,8 +57,7 @@ TEST(TestNeighborListData, MakeInlistMixedEmptyAndNonemptyRows) {
 }
 
 // convert_nlist(jagged) must not dereference an empty row when populating
-// firstneigh.  Regression test for the same `&vec[0]` UB pattern fixed in
-// commit 72f95f87.
+// firstneigh.
 TEST(TestNeighborListData, ConvertNlistEmptyRows) {
   std::vector<std::vector<int>> input = {{}, {}, {}};  // all rows empty
   std::vector<int> ilist(input.size()), numneigh(input.size());
@@ -135,5 +137,138 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
   EXPECT_EQ(out.numneigh[2], 0);
   EXPECT_EQ(out.numneigh[3], 1);
 }
+
+#ifdef BUILD_PYTORCH
+TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
+  GraphTensorPack graph;
+  graph.atype = torch::tensor({0}, torch::kInt64);
+  graph.n_node = torch::tensor({1}, torch::kInt64);
+  graph.n_local = torch::tensor({1}, torch::kInt64);
+  graph.edge_index = torch::tensor({{0, 0, 0}, {0, 0, 0}}, torch::kInt64);
+  graph.edge_vec = torch::tensor(
+      {{1.5, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, torch::kFloat64);
+  graph.edge_mask = torch::tensor({true, false, false}, torch::kBool);
+  graph.destination_order = torch::tensor({0, 1, 2}, torch::kInt64);
+  graph.destination_row_ptr = torch::tensor({0, 1}, torch::kInt64);
+  graph.source_order = torch::tensor({0, 1, 2}, torch::kInt64);
+  graph.source_row_ptr = torch::tensor({0, 1}, torch::kInt64);
+
+  const auto compact = compactCanonicalGraph(graph);
+  EXPECT_EQ(compact.source.scalar_type(), torch::kInt64);
+  EXPECT_EQ(compact.source.numel(), 2);
+  EXPECT_EQ(compact.edge_vec.scalar_type(), torch::kFloat32);
+  EXPECT_EQ(compact.edge_vec.size(0), 2);
+  EXPECT_TRUE(
+      torch::equal(compact.source_order, torch::tensor({0, 1}, torch::kInt64)));
+  EXPECT_EQ(compact.destination_row_ptr.select(0, 1).item<std::int64_t>(), 1);
+  EXPECT_EQ(compact.source_row_ptr.select(0, 1).item<std::int64_t>(), 1);
+}
+
+TEST(TestEdgeTensorPack, CreateEdgeTensorsUsesRowCenters) {
+  const torch::Device device(torch::kCPU);
+  const std::vector<std::vector<int>> nlist = {{0}, {1}};
+  const std::vector<int> centers = {2, 0};
+  const std::vector<double> coord = {
+      0.0, 0.0, 0.0,  // atom 0
+      1.0, 0.0, 0.0,  // atom 1
+      2.0, 0.0, 0.0,  // atom 2
+  };
+  const std::vector<std::int64_t> mapping = {0, 1, 2};
+
+  const auto pack = createEdgeTensors(nlist, coord, mapping, 3, 3, device,
+                                      /*with_geometry=*/true, &centers);
+
+  ASSERT_EQ(pack.edge_index.size(1), 4);
+  EXPECT_EQ(pack.edge_index.select(0, 0).select(0, 0).item<int64_t>(), 0);
+  EXPECT_EQ(pack.edge_index.select(0, 1).select(0, 0).item<int64_t>(), 2);
+  EXPECT_EQ(pack.edge_index_ext.select(0, 1).select(0, 0).item<int64_t>(), 2);
+  EXPECT_DOUBLE_EQ(pack.edge_vec.select(0, 0).select(0, 0).item<double>(),
+                   -2.0);
+  EXPECT_EQ(pack.edge_index.select(0, 0).select(0, 1).item<int64_t>(), 1);
+  EXPECT_EQ(pack.edge_index.select(0, 1).select(0, 1).item<int64_t>(), 0);
+  EXPECT_DOUBLE_EQ(pack.edge_vec.select(0, 1).select(0, 0).item<double>(), 1.0);
+
+  GraphTensorPack graph;
+  graph.edge_index = pack.edge_index;
+  graph.edge_vec = pack.edge_vec;
+  graph.edge_mask = pack.edge_mask;
+  buildGraphCSR(graph, 3);
+  EXPECT_TRUE(torch::equal(graph.destination_order,
+                           torch::tensor({1, 0, 2, 3}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.destination_row_ptr,
+                           torch::tensor({0, 1, 1, 2}, torch::kInt64)));
+
+  canonicalizeGraphPayload(graph, 3);
+  EXPECT_TRUE(torch::equal(graph.destination_order,
+                           torch::tensor({0, 1, 2, 3}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.edge_index.select(0, 1),
+                           torch::tensor({0, 2, 0, 0}, torch::kInt64)));
+}
+
+TEST(TestEdgeTensorPack, CompactFiltersSkinTopologyAndAppendsDummies) {
+  const torch::Device device(torch::kCPU);
+  const std::vector<std::vector<int>> nlist = {{1, 2}, {0}};
+  const std::vector<double> coord = {
+      0.0, 0.0, 0.0,  // atom 0
+      0.5, 0.0, 0.0,  // atom 1, inside cutoff
+      2.0, 0.0, 0.0,  // atom 2, skin-only ghost
+  };
+  const std::vector<std::int64_t> mapping = {0, 1, 0};
+
+  const auto skin_topology =
+      createEdgeTensors(nlist, coord, mapping, 2, 3, device,
+                        /*with_geometry=*/false);
+  ASSERT_EQ(skin_topology.edge_index.size(1), 3);
+  ASSERT_EQ(skin_topology.edge_index_ext.size(1), 3);
+  EXPECT_FALSE(skin_topology.edge_vec.defined());
+  EXPECT_FALSE(skin_topology.edge_mask.defined());
+
+  const auto coord_tensor =
+      torch::tensor(coord, torch::TensorOptions().dtype(torch::kFloat64))
+          .view({1, 3, 3});
+  const auto compact =
+      compactEdgeTensors(skin_topology.edge_index, skin_topology.edge_index_ext,
+                         coord_tensor, /*rcut=*/1.0);
+
+  ASSERT_EQ(compact.edge_index.size(1), 4);
+  ASSERT_EQ(compact.edge_index_ext.size(1), 4);
+  ASSERT_EQ(compact.edge_vec.size(0), 4);
+  ASSERT_EQ(compact.edge_mask.size(0), 4);
+  EXPECT_EQ(compact.edge_mask.sum().item<int64_t>(), 2);
+  EXPECT_FALSE(compact.edge_mask.select(0, 2).item<bool>());
+  EXPECT_FALSE(compact.edge_mask.select(0, 3).item<bool>());
+
+  GraphTensorPack graph;
+  graph.edge_index = compact.edge_index;
+  graph.edge_mask = compact.edge_mask;
+  buildGraphCSR(graph, 2, /*destination_sorted=*/true);
+  EXPECT_TRUE(torch::equal(graph.destination_order,
+                           torch::tensor({0, 1, 2, 3}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.destination_row_ptr,
+                           torch::tensor({0, 1, 2}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.source_order,
+                           torch::tensor({1, 0, 2, 3}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.source_row_ptr,
+                           torch::tensor({0, 1, 2}, torch::kInt64)));
+}
+
+TEST(TestEdgeTensorPack, CanonicalizeGraphPayloadIsStableWithinDestination) {
+  GraphTensorPack graph;
+  graph.edge_index = torch::tensor({{2, 1, 0, 0}, {1, 0, 0, 0}},
+                                   torch::TensorOptions().dtype(torch::kInt64));
+  graph.edge_vec =
+      torch::arange(12, torch::TensorOptions().dtype(torch::kFloat64))
+          .reshape({4, 3});
+  graph.edge_mask = torch::tensor({true, true, true, false});
+
+  canonicalizeGraphPayload(graph, 3);
+
+  EXPECT_TRUE(torch::equal(graph.edge_index.select(0, 0),
+                           torch::tensor({1, 0, 2, 0}, torch::kInt64)));
+  EXPECT_TRUE(torch::equal(graph.destination_order,
+                           torch::tensor({0, 1, 2, 3}, torch::kInt64)));
+}
+
+#endif
 
 }  // namespace deepmd

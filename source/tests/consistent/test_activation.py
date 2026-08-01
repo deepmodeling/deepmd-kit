@@ -21,7 +21,8 @@ from .common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
-    parameterized,
+    INSTALLED_TF2,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -54,9 +55,10 @@ if INSTALLED_PD:
     )
 
 
-@parameterized(
-    tuple([x.capitalize() for x in VALID_ACTIVATION]),
-)
+ACTIVATION_FUNCTION_CURATED_CASES = tuple((x.capitalize(),) for x in VALID_ACTIVATION)
+
+
+@parameterized_cases(*ACTIVATION_FUNCTION_CURATED_CASES)
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self) -> None:
         (self.activation,) = self.param
@@ -99,6 +101,16 @@ class TestActivationFunctionConsistent(unittest.TestCase):
         self.assertTrue(isinstance(test, jnp.ndarray))
         np.testing.assert_allclose(self.ref, np.from_dlpack(test), atol=1e-10)
 
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_consistent_with_ref(self) -> None:
+        from deepmd.tf2.common import (
+            to_tensorflow_array,
+        )
+
+        input = to_tensorflow_array(self.random_input)
+        test = get_activation_fn_dp(self.activation)(input)
+        np.testing.assert_allclose(self.ref, to_numpy_array(test), atol=1e-7)
+
     @unittest.skipUnless(INSTALLED_PD, "Paddle is not installed")
     def test_pd_consistent_with_ref(self):
         if INSTALLED_PD:
@@ -117,14 +129,15 @@ class TestActivationFunctionConsistent(unittest.TestCase):
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
 
 
-@parameterized(
-    (
-        "silut",  # default threshold 3.0
-        "silut:3.0",  # explicit threshold 3.0
-        "silut:10.0",  # large threshold
-        "custom_silu:5.0",  # alias
-    ),
+SILUT_VARIANT_CURATED_CASES = (
+    ("silut",),  # default threshold 3.0
+    ("silut:3.0",),  # explicit threshold 3.0
+    ("silut:10.0",),  # large threshold
+    ("custom_silu:5.0",),  # alias
 )
+
+
+@parameterized_cases(*SILUT_VARIANT_CURATED_CASES)
 class TestSilutVariantsConsistent(unittest.TestCase):
     """Cross-backend consistency for silut with different thresholds."""
 

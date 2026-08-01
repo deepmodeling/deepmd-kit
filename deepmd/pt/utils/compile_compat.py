@@ -12,10 +12,11 @@ The contents fall into two kinds:
 * helpers and workarounds common to the supported releases -- trace-shape and
   trace-input preparation, per-task buffer promotion, FX graph repair, the
   Inductor option lockdown, and the process-global configuration; and
-* a workaround specific to PyTorch 2.12, which must not be applied on 2.11.
+* a workaround for the Inductor symbolic-divisibility regression introduced in
+  PyTorch 2.12, which must not be applied on 2.11.
 
-Only PyTorch 2.11.x and 2.12.x are permitted for compilation (see
-:func:`check_compile_torch_version`).
+Only the releases listed in :data:`SUPPORTED_COMPILE_TORCH` are permitted for
+compilation (see :func:`check_compile_torch_version`).
 """
 
 from __future__ import (
@@ -35,6 +36,7 @@ from packaging.version import (
 __all__ = [
     "AM_PREFIX",
     "FIT_PREFIX",
+    "SUPPORTED_COMPILE_TORCH",
     "apply_global_compile_patches",
     "build_inductor_compile_options",
     "check_compile_torch_version",
@@ -42,24 +44,51 @@ __all__ = [
     "get_task_buffer_values",
     "is_prime",
     "next_safe_prime",
+    "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
+    "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
 ]
 
 
+#: ``(major, minor)`` releases explicitly enabled for SeZM compilation after
+#: validation. This runtime allowlist is not a record of which releases happen
+#: to be installed in CI.
+SUPPORTED_COMPILE_TORCH = ((2, 11), (2, 12), (2, 13))
+
+#: Releases carrying the Inductor symbolic-divisibility regression repaired by
+#: :func:`patch_inductor_symbolic_divisibility`. PyTorch 2.11 evaluates the
+#: predicate correctly and must be left alone.
+_DIVISIBILITY_REGRESSION_TORCH = ((2, 12), (2, 13))
+
+
+def _torch_release() -> tuple[int, int]:
+    """Return the ``(major, minor)`` pair of the running PyTorch release.
+
+    Returns
+    -------
+    tuple[int, int]
+        The major and minor components, or ``(0, 0)`` when the version string
+        carries fewer than two components and therefore matches no supported
+        release.
+    """
+    release = Version(torch.__version__).release
+    return (release[0], release[1]) if len(release) >= 2 else (0, 0)
+
+
 # =============================================================================
-# Common workarounds (PyTorch 2.11 and 2.12)
+# Common workarounds (every supported release)
 # =============================================================================
 def apply_global_compile_patches() -> None:
     """Apply every process-global PyTorch adjustment the compile path needs.
 
-    The adjustments are mutually independent and individually idempotent. The
-    function is intended to run exactly once, when the model module is
-    imported, so that the global state is established before the first
-    compilation. The symbolic-divisibility repair is applied only on PyTorch
-    2.12, where the regression exists.
+    The adjustments are mutually independent and individually idempotent.
+    Invoke this function before the first Dynamo or Inductor compilation in
+    each entry path; repeated calls from independent compile paths are safe.
+    The symbolic-divisibility repair is applied only on releases where the
+    regression exists.
     """
     # Silence Inductor / Triton autotune console dumps.  ``torch.compile``
     # reads these environment variables once, when its backend is first
@@ -83,19 +112,62 @@ def apply_global_compile_patches() -> None:
 
     dynamo_config.optimize_ddp = False
 
-    # The symbolic-divisibility regression exists only on PyTorch 2.12; the
+    # Force int64 tensor indexing in every compiled kernel.  Applies on all
+    # supported PyTorch versions and is independent of runtime shapes.
+    patch_inductor_force_int64_indexing()
+
+    # The symbolic-divisibility regression was introduced in PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
     # patched.
-    if Version(torch.__version__).release[:2] == (2, 12):
+    if _torch_release() in _DIVISIBILITY_REGRESSION_TORCH:
         patch_inductor_symbolic_divisibility()
 
 
+def patch_inductor_force_int64_indexing() -> None:
+    """Force Inductor to emit int64 tensor indexing in every compiled kernel.
+
+    Inductor selects the index dtype from static size hints. The compiled
+    ``core_compute`` graph is traced with the small placeholder shapes returned
+    by :func:`next_safe_prime`, from which Inductor infers that the
+    data-dependent edge and node axes fit in int32. At runtime those axes grow
+    large enough that the flattened index of a tensor such as ``(E, D, D, C)``
+    exceeds ``2**31`` and wraps to an out-of-range address, which surfaces
+    asynchronously as a CUDA illegal memory access. Forcing int64 indexing
+    removes this dependence on the trace-time size hints at the cost of a small
+    amount of additional address arithmetic. The patch is idempotent and
+    complements ``triton.max_tiles=1`` in :func:`build_inductor_compile_options`.
+    """
+    try:
+        from torch._inductor.codegen.simd import (
+            SIMDScheduling,
+        )
+    except Exception:
+        return
+
+    if getattr(SIMDScheduling, "_dp_force_int64_patched", False):
+        return
+
+    # ``can_use_32bit_indexing`` gates int32 selection; returning ``False``
+    # forces int64 indexing in every generated kernel.
+    SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
+    SIMDScheduling._dp_force_int64_patched = True
+
+
 def check_compile_torch_version() -> None:
-    """Fail fast when ``torch.compile`` is requested on an unsupported PyTorch."""
-    version = Version(torch.__version__).release
-    if len(version) < 2 or (version[:2] != (2, 11) and version[:2] != (2, 12)):
+    """Fail fast when ``torch.compile`` is requested on an unsupported PyTorch.
+
+    Raises
+    ------
+    RuntimeError
+        If the running PyTorch release is absent from
+        :data:`SUPPORTED_COMPILE_TORCH`.
+    """
+    if _torch_release() not in SUPPORTED_COMPILE_TORCH:
+        supported = ", ".join(
+            f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH
+        )
         raise RuntimeError(
-            "deepmd `torch.compile` support requires PyTorch 2.11.x or 2.12.x; "
+            f"deepmd `torch.compile` support requires PyTorch {supported}; "
             f"found torch {torch.__version__}."
         )
 
@@ -114,6 +186,57 @@ def is_prime(n: int) -> bool:
             return False
         k += 2
     return True
+
+
+def forbidden_dims_from_model(
+    model: torch.nn.Module,
+    task_buf_vals: tuple[torch.Tensor, ...] = (),
+) -> set[int]:
+    """Prime-collision set for trace-dim selection.
+
+    Collects every ``> 1`` dim of the model's parameters/buffers (so
+    :func:`next_safe_prime` never aliases an internal dim like ``g2_dim`` /
+    ``axis_neuron`` / ``attn_head`` without a hardcoded list), plus
+    ``dim_fparam``/``dim_aparam`` and the task-buffer dims.  Shared by the
+    compiled-training traces (``_trace_and_compile`` /
+    ``_trace_and_compile_graph``) and the graph ``.pt2`` export trace
+    (``_trace_and_export``); each caller adds its path-specific dims
+    (nall/nloc/nsel for dense, charge_spin for both) on top of this base set.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model whose parameter/buffer/conditioning dims to collect.
+    task_buf_vals : tuple of torch.Tensor
+        Per-task buffers promoted to FX placeholders (multi-task compiled
+        training); their dims join the forbidden set.
+
+    Returns
+    -------
+    set of int
+        Every ``> 1`` dimension a trace-time size must not collide with.
+    """
+    forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    for _getter_name in ("get_dim_fparam", "get_dim_aparam"):
+        try:
+            # resolve inside the try: a model without the accessor must fall
+            # through the best-effort path, not raise during tuple building
+            _dim = getattr(model, _getter_name)()
+            if _dim > 1:
+                forbidden.add(int(_dim))
+        except Exception:
+            pass  # best-effort: dim unavailable -> nothing to forbid
+    for _tbv in task_buf_vals:
+        for _d in _tbv.shape:
+            if _d > 1:
+                forbidden.add(int(_d))
+    return forbidden
 
 
 def next_safe_prime(start: int, forbidden: set[int]) -> int:
@@ -144,8 +267,19 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     index-bearing tensors (``nlist`` neighbor indices, ``mapping``
     extended-to-local indices) because the duplicated row reuses the
     previously-valid row's values.  Trimming likewise never invalidates
-    indices.  Only shapes flow downstream during ``make_fx`` tracing,
-    so the exact replicated/trimmed values do not affect the FX graph.
+    indices.
+
+    The result is always contiguous, which matters as much as its shape.
+    Trimming a non-leading dimension by slicing returns a view whose stride
+    still encodes the *pre-trim* length; ``make_fx`` symbolic tracing records
+    that stale stride as a free symbol, and duck-shaping then unifies it with
+    any size symbol that happens to share the same trace-time value -- e.g. the
+    trimmed ``atype`` stride (= the frame's ``nloc``) colliding with the edge
+    count when both equal a ``next_safe_prime`` value. The compiled graph would
+    then guard unrelated axes against one another and fail ``assert_size_stride``
+    at runtime. Materializing a contiguous copy keeps the trace inputs' memory
+    layout identical to the contiguous runtime inputs, so strides never carry a
+    stale length into the symbol pool.
     """
     cur = int(t.shape[dim])
     if cur == target:
@@ -153,7 +287,7 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     if cur > target:
         sl: list[slice] = [slice(None)] * t.ndim
         sl[dim] = slice(None, target)
-        return t[tuple(sl)]
+        return t[tuple(sl)].contiguous()
     sl = [slice(None)] * t.ndim
     sl[dim] = slice(-1, None)
     last = t[tuple(sl)]
@@ -254,7 +388,37 @@ def rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
     return new_gm
 
 
-def build_inductor_compile_options() -> dict[str, Any]:
+def relax_views_to_reshapes(gm: torch.fx.GraphModule) -> None:
+    """Rewrite every ``aten.view`` in a ``make_fx`` graph to ``aten.reshape``.
+
+    ``make_fx`` lowers ``Tensor.reshape`` to ``aten.view`` whenever the traced
+    ``FakeTensor`` is view-compatible. The lowering is unsound when the fake
+    stride differs from the eager stride -- a permuted tensor that ``FakeTensor``
+    keeps strided while eager materializes contiguous -- since the baked
+    ``aten.view`` is accepted during tracing yet rejected at runtime for
+    incompatible size and stride. ``aten.reshape`` coincides with ``aten.view``
+    on view-compatible strides (and is elided by Inductor in that case) and
+    copies only when a view is impossible; the rewrite is therefore
+    semantics-preserving and free on the fast path.
+
+    Parameters
+    ----------
+    gm : torch.fx.GraphModule
+        The ``make_fx`` graph to rewrite in place.
+    """
+    view = torch.ops.aten.view.default
+    reshape = torch.ops.aten.reshape.default
+    relaxed = False
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target is view:
+            node.target = reshape
+            relaxed = True
+    if relaxed:
+        gm.graph.lint()
+        gm.recompile()
+
+
+def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]:
     """Return the conservative Inductor options used to lower the dynamic graph.
 
     The option set disables every Inductor and Triton feature that has
@@ -264,6 +428,22 @@ def build_inductor_compile_options() -> dict[str, Any]:
     some GPU/Triton combinations. Options absent from the running PyTorch's
     configuration registry are dropped so the returned dictionary stays valid
     across releases.
+
+    Parameters
+    ----------
+    inference : bool
+        Whether the options lower an inference graph (the ``make_fx`` +
+        ``aot_module_simplified`` path and the AOTInductor freeze) rather
+        than the ``torch.compile`` training graph.  Inference graphs enter
+        Inductor with hint-less data-dependent symbols, which breaks the
+        peak-memory reordering pass (see below); training graphs carry real
+        size hints from the first traced call and benefit from the pass.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keyword options accepted by ``torch.compile(options=...)`` and by
+        ``torch._inductor.config.patch``.
     """
     compile_options: dict[str, Any] = {
         "max_autotune": False,
@@ -276,7 +456,27 @@ def build_inductor_compile_options() -> dict[str, Any]:
         # shapes on PyTorch 2.11 and earlier (pytorch/pytorch#174379, #178080,
         # #179494); the edge count is exactly that kind of shape.
         "triton.mix_order_reduction": False,
+        # Constrain every generated kernel to a 1D launch grid. The default
+        # 2D/3D tiling can place the data-dependent edge or node axis on the y
+        # or z launch dimension, whose limit is 65535; a larger axis then
+        # launches an out-of-range grid that surfaces as a CUDA illegal memory
+        # access. A 1D grid keeps that axis on the x dimension (limit 2**31-1).
+        # The option is shared by the training and evaluation graphs.
+        "triton.max_tiles": 1,
     }
+    if inference:
+        # The peak-memory reordering pass sizes buffers through
+        # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
+        # lowered from ``make_fx`` fake placeholders whose edge-count symbols
+        # carry no hint, so every dynamically shaped buffer is costed as zero
+        # bytes, the candidate orders become indistinguishable to the cost
+        # model, and the pass rewrites the schedule into an order that hoists
+        # the dynamic allocations to the head of the generated ``call()`` --
+        # all forward/backward intermediates then coexist, more than doubling
+        # peak memory on the SeZM inference graph.  Training compiles through
+        # Dynamo with real hints from the first call and measurably benefits
+        # from the pass, so it keeps the upstream default.
+        compile_options["reorder_for_peak_memory"] = False
     try:
         from torch._inductor import config as inductor_config
 
@@ -348,10 +548,10 @@ def get_task_buffer_values(
 
 
 # =============================================================================
-# PyTorch 2.12-specific workarounds
+# Workarounds for PyTorch 2.12 and later
 # =============================================================================
 def patch_inductor_symbolic_divisibility() -> None:
-    """Repair the PyTorch 2.12 Inductor symbolic-divisibility regression.
+    """Repair the Inductor symbolic-divisibility regression of PyTorch 2.12+.
 
     ``SizeVarAllocator.statically_known_multiple_of`` determines whether one
     symbolic size is an exact multiple of another. ``SIMDKernel`` consults it
@@ -362,9 +562,9 @@ def patch_inductor_symbolic_divisibility() -> None:
     factors polynomials, so an expression such as ``(32*s + 64) % (s + 2)``
     reduces to ``0`` and the split proceeds. PyTorch 2.12 rewrote the helper
     and, for symbolic denominators, routes the test through Inductor's own
-    ``Mod`` implementation, which does not factor. ``Mod(32*s + 64, s + 2)``
-    therefore stays unevaluated, the test returns ``False``, and lowering
-    aborts with::
+    ``Mod`` implementation, which does not factor; 2.13 retains that behaviour.
+    ``Mod(32*s + 64, s + 2)`` therefore stays unevaluated, the test returns
+    ``False``, and lowering aborts with::
 
         CantSplit: 32*s38 + 64 not divisible by s38 + 2
 
@@ -390,7 +590,13 @@ def patch_inductor_symbolic_divisibility() -> None:
     if getattr(SizeVarAllocator, "_dp_divisibility_patched", False):
         return
 
-    original_known_multiple_of = SizeVarAllocator.statically_known_multiple_of
+    original_known_multiple_of = getattr(
+        SizeVarAllocator,
+        "statically_known_multiple_of",
+        None,
+    )
+    if not callable(original_known_multiple_of):
+        return
 
     def statically_known_multiple_of(
         self: Any, numerator: Any, denominator: Any

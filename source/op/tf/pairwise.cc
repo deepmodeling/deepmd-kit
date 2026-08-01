@@ -45,9 +45,10 @@ class PairwiseIdxOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (idxs_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of idxs should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of idxs should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     auto idxs = idxs_tensor.matrix<int>();
     int nframes = idxs_tensor.shape().dim_size(0);
@@ -55,7 +56,7 @@ class PairwiseIdxOp : public OpKernel {
     int nloc = natoms(0);
     int nall = natoms(1);
     OP_REQUIRES(context, nframes > 0,
-                errors::InvalidArgument("nframes should be > 0"));
+                deepmd::tf_compat::InvalidArgument("nframes should be > 0"));
 
     std::vector<std::vector<int>> forward_qm_maps, backward_qm_maps,
         forward_qmmm_maps, backward_qmmm_maps;
@@ -237,9 +238,10 @@ class ConvertForwardMapOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (sub_forward_map_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of idxs should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of idxs should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     auto sub_forward_map = sub_forward_map_tensor.matrix<int>();
     int sub_nframes = sub_forward_map_tensor.shape().dim_size(0);

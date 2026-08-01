@@ -1,7 +1,7 @@
 .. _cli:
 
-Command line interface
-======================
+DeePMD-kit command line interface
+=================================
 
 .. argparse::
    :module: deepmd.tf.entrypoints.main

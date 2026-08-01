@@ -5,6 +5,9 @@ import unittest
 from pathlib import (
     Path,
 )
+from typing import (
+    ClassVar,
+)
 
 import numpy as np
 
@@ -32,6 +35,9 @@ infer_path = Path(__file__).parent.parent.parent / "infer"
 
 class IOTest:
     data: dict
+    # backends that cannot represent this model type (e.g. tf v1 has no
+    # property model), skipped by the cross-backend round trips below.
+    skip_backends: ClassVar[set[str]] = set()
 
     def get_data_from_model(self, model_file: str) -> dict:
         """Get data from a model file.
@@ -81,6 +87,8 @@ class IOTest:
             ("dpmodel", 0),
         ):
             with self.subTest(backend_name=backend_name):
+                if backend_name in self.skip_backends:
+                    continue
                 backend = Backend.get_backend(backend_name)()
                 if not backend.is_available():
                     continue
@@ -146,21 +154,25 @@ class IOTest:
         for backend_name, suffix_idx in (
             # unfortunately, jax2tf cannot work with tf v1 behaviors
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
+            ("tf2", 0) if DP_TEST_TF2_ONLY else (None, None),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
         ):
-            if backend_name is None:
+            if backend_name is None or backend_name in self.skip_backends:
                 continue
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(
-                prefix + backend.suffixes[suffix_idx], reference_data
-            )
-            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
+            model_file = prefix + backend.suffixes[suffix_idx]
+            self.save_data_to_model(model_file, reference_data)
+            deep_eval = DeepEval(model_file)
             self.assertIsInstance(deep_eval.get_model_def_script(), dict)
+            if not model_file.endswith((".savedmodel", ".savedmodeltf")):
+                # SavedModel formats store an executable graph, not a lossless model dict.
+                serialized_data = self.get_data_from_model(model_file)
+                np.testing.assert_equal(deep_eval.serialize(), serialized_data["model"])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
@@ -176,6 +188,10 @@ class IOTest:
                 fparam=fparam,
                 aparam=aparam,
             )
+            # the non-atomic eval returns exactly the global outputs; the atomic
+            # eval appends the per-atom outputs. Split by that count so this
+            # generalizes across model types (energy: 3 global, property: 1).
+            n_global = len(ret)
             rets.append(ret)
             ret = deep_eval.eval(
                 self.coords,
@@ -185,8 +201,8 @@ class IOTest:
                 aparam=aparam,
                 atomic=True,
             )
-            rets.append(ret[:3])
-            rets_atomic.append(ret[3:])
+            rets.append(ret[:n_global])
+            rets_atomic.append(ret[n_global:])
             ret = deep_eval.eval(
                 self.coords,
                 None,
@@ -203,8 +219,8 @@ class IOTest:
                 aparam=aparam,
                 atomic=True,
             )
-            rets_nopbc.append(ret[:3])
-            rets_nopbc_atomic.append(ret[3:])
+            rets_nopbc.append(ret[:n_global])
+            rets_nopbc_atomic.append(ret[n_global:])
 
         for rets_idx, rets_x in enumerate(
             (rets, rets_atomic, rets_nopbc, rets_nopbc_atomic)
@@ -296,6 +312,109 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
                 "seed": 1,
                 "numb_fparam": 2,
                 "numb_aparam": 2,
+            },
+        }
+        model = get_model(copy.deepcopy(model_def_script))
+        self.data = {
+            "model": model.serialize(),
+            "backend": "test",
+            "model_def_script": model_def_script,
+        }
+
+    def tearDown(self) -> None:
+        IOTest.tearDown(self)
+
+
+@unittest.skipIf(
+    not DP_TEST_TF2_ONLY,
+    "pair_exclude_types is not supported by the TF v1 backend; it is validated "
+    "in the TF2-only job, where test_deep_eval also exercises the jax2tf "
+    "'.savedmodel' export path (see the backend table in test_deep_eval).",
+)
+class TestDeepPotPairExclude(unittest.TestCase, IOTest):
+    """Model-level ``pair_exclude_types`` is a nlist-BUILD transform (decision
+    #18/A4). Every backend folds it in where the neighbor list is built (the
+    jax2tf ``.savedmodel`` export reuses the dpmodel
+    ``apply_pair_exclusion_nlist`` via the ``ndtensorflow`` namespace), so the
+    exported models must still eval-agree across backends.
+    """
+
+    def setUp(self) -> None:
+        model_def_script = {
+            "type_map": ["O", "H"],
+            "pair_exclude_types": [[0, 1]],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [20, 20],
+                "rcut_smth": 0.50,
+                "rcut": 6.00,
+                "neuron": [
+                    3,
+                    6,
+                ],
+                "resnet_dt": False,
+                "axis_neuron": 2,
+                "precision": "float64",
+                "type_one_side": True,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "ener",
+                "neuron": [
+                    5,
+                    5,
+                ],
+                "resnet_dt": True,
+                "precision": "float64",
+                "atom_ener": [],
+                "seed": 1,
+            },
+        }
+        model = get_model(copy.deepcopy(model_def_script))
+        self.data = {
+            "model": model.serialize(),
+            "backend": "test",
+            "model_def_script": model_def_script,
+        }
+
+    def tearDown(self) -> None:
+        IOTest.tearDown(self)
+
+
+class TestDeepProperty(unittest.TestCase, IOTest):
+    # tf v1 has no property model, so the property dict cannot round trip
+    # through the tensorflow backend.
+    skip_backends: ClassVar[set[str]] = {"tensorflow"}
+
+    def setUp(self) -> None:
+        model_def_script = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [20, 20],
+                "rcut_smth": 0.50,
+                "rcut": 6.00,
+                "neuron": [
+                    3,
+                    6,
+                ],
+                "resnet_dt": False,
+                "axis_neuron": 2,
+                "precision": "float64",
+                "type_one_side": True,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "property",
+                "neuron": [
+                    5,
+                    5,
+                ],
+                "property_name": "foo",
+                "task_dim": 3,
+                "resnet_dt": True,
+                "precision": "float64",
+                "seed": 1,
             },
         }
         model = get_model(copy.deepcopy(model_def_script))

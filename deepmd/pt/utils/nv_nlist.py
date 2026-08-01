@@ -20,6 +20,8 @@ from __future__ import (
 
 import contextlib
 import logging
+import os
+import sys
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -28,14 +30,19 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.utils.neighbor_list import (
+    EdgeNeighborList,
     NeighborList,
 )
-from deepmd.pt.utils.region import (
-    normalize_coord,
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_neighbor_matrix,
 )
 
 NV_CELL_LIST_THRESHOLD = 1024
 NV_NONPERIODIC_CELL_LIST_THRESHOLD = 4096
+# CPU has far less parallelism than CUDA, so the O(N^2) ``batch_naive`` method
+# is overtaken by the O(N) ``batch_cell_list`` at a much smaller atom count;
+# switch over early regardless of periodicity.
+NV_CPU_CELL_LIST_THRESHOLD = 128
 
 log = logging.getLogger(__name__)
 
@@ -44,33 +51,81 @@ if TYPE_CHECKING:
         Iterator,
     )
 
+    from deepmd.dpmodel.utils.exclude_mask import (
+        PairExcludeMask,
+    )
+
+
+@contextlib.contextmanager
+def _suppress_native_stderr() -> Iterator[None]:
+    """Redirect the process ``stderr`` file descriptor to ``os.devnull``.
+
+    ``nvalchemiops`` initializes NVIDIA Warp on first import, which probes for a
+    CUDA driver and prints a native ``Warp CUDA error 100`` line straight to the
+    ``stderr`` fd on CPU-only hosts. That line bypasses Python logging, so the
+    only way to mute it is at the descriptor level around the triggering import.
+    """
+    try:
+        stderr_fd = sys.stderr.fileno()
+    except (AttributeError, OSError, ValueError):
+        # stderr is not a real file descriptor (e.g. captured in tests); the
+        # native chatter cannot be redirected, so import without suppression.
+        yield
+        return
+    saved_fd = os.dup(stderr_fd)
+    with open(os.devnull, "w") as devnull:
+        os.dup2(devnull.fileno(), stderr_fd)
+        try:
+            yield
+        finally:
+            os.dup2(saved_fd, stderr_fd)
+            os.close(saved_fd)
+
 
 def is_nv_available() -> bool:
     """Whether the ``nvalchemiops`` Toolkit-Ops neighbor list is importable."""
+    # Warp's one-time CUDA probe prints to the native stderr on CPU-only hosts;
+    # mute it there without hiding diagnostics on machines that have a GPU.
+    import_ctx = (
+        _suppress_native_stderr()
+        if not torch.cuda.is_available()
+        else contextlib.nullcontext()
+    )
     try:
-        import nvalchemiops.torch.neighbors  # noqa: F401
+        with import_ctx:
+            import nvalchemiops.torch.neighbors  # noqa: F401
     except (ImportError, OSError, RuntimeError) as err:
         log.debug("nvalchemiops Toolkit-Ops neighbor list is unavailable: %s", err)
         return False
     return True
 
 
-def choose_nv_nlist_method(nloc: int, *, periodic: bool = True) -> str:
+def choose_nv_nlist_method(
+    nloc: int, *, periodic: bool = True, device: torch.device | None = None
+) -> str:
     """Choose the Toolkit-Ops neighbor method for a homogeneous batch.
 
     Parameters
     ----------
     nloc
         Number of local atoms per frame.
+    periodic
+        Whether the batch is periodic.
+    device
+        Target device. CPU uses a lower cell-list threshold than CUDA because
+        the ``batch_naive`` method does not parallelize well there.
 
     Returns
     -------
     str
         Toolkit-Ops method name.
     """
-    threshold = (
-        NV_CELL_LIST_THRESHOLD if periodic else NV_NONPERIODIC_CELL_LIST_THRESHOLD
-    )
+    if device is not None and device.type == "cpu":
+        threshold = NV_CPU_CELL_LIST_THRESHOLD
+    elif periodic:
+        threshold = NV_CELL_LIST_THRESHOLD
+    else:
+        threshold = NV_NONPERIODIC_CELL_LIST_THRESHOLD
     if nloc >= threshold:
         return "batch_cell_list"
     return "batch_naive"
@@ -103,68 +158,64 @@ class NvNeighborList(NeighborList):
         box: Any,
         rcut: float,
         sel: list[int],
-    ) -> tuple[Any, Any, Any, Any]:
+        return_mode: str = "extended",
+        pair_excl: PairExcludeMask | None = None,
+    ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         """Build the extended system and neighbor list.
 
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`. The
         returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``.
+
+        Parameters
+        ----------
+        pair_excl : PairExcludeMask or None, optional
+            When provided, excluded type pairs are erased from the returned
+            neighbor list (entries set to ``-1``) by
+            :func:`~deepmd.dpmodel.utils.nlist.apply_pair_exclusion_nlist`.
+            ``NvNeighborList`` is CUDA-only; the ``pair_excl`` parameter is
+            accepted for API parity with the other strategies but cannot be
+            validated on a CPU-only machine.
+            ``return_mode='edges'`` does not support ``pair_excl``; a
+            :class:`NotImplementedError` is raised in that combination.
         """
-        from nvalchemiops.torch.neighbors import (
-            neighbor_list,
+        if return_mode == "edges" and pair_excl is not None:
+            raise NotImplementedError(
+                "pair_excl is not supported with return_mode='edges'; "
+                "use apply_pair_exclusion (graph variant) on the returned EdgeNeighborList."
+            )
+        device = coord.device
+        nf, nloc = atype.shape[:2]
+        target_neighbors = int(sum(sel))
+        coord = coord.reshape(nf, nloc, 3)
+        periodic = box is not None
+
+        # Delegate the raw search to the shared helper in nv_graph_builder.
+        # Function-level import avoids a module-level pt -> pt_expt cycle while
+        # keeping the search logic in exactly one place (graph-builder primary,
+        # legacy strategy is the deprecation-bound caller).
+        from deepmd.pt_expt.utils.nv_graph_builder import (
+            nv_search_matrix,
         )
 
-        device = coord.device
-        with _input_device_context(device):
-            nf, nloc = atype.shape[:2]
-            target_neighbors = int(sum(sel))
-            search_capacity = target_neighbors
-            total_atoms = nf * nloc
-            coord = coord.reshape(nf, nloc, 3)
-            periodic = box is not None
-            if not periodic:
-                cell = None
-                pbc = None
-            else:
-                cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
-                coord = normalize_coord(coord, cell)
-                pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
-            positions_for_nlist = coord.reshape(total_atoms, 3).detach()
-            batch_idx = torch.arange(
-                nf, dtype=torch.int32, device=device
-            ).repeat_interleave(nloc)
-            batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
-            method = choose_nv_nlist_method(nloc, periodic=periodic)
+        coord, cell, neighbor_matrix, num_neighbors, shifts = nv_search_matrix(
+            coord, box, rcut, start_capacity=target_neighbors
+        )
 
-            # Grow the search capacity until all neighbors fit so the distance-sort
-            # below selects the true nearest ``sum(sel)``.
-            while True:
-                nlist_result = neighbor_list(
-                    positions_for_nlist,
-                    float(rcut),
+        with _input_device_context(device):
+            if return_mode == "edges":
+                return edge_schema_from_neighbor_matrix(
+                    coord=coord,
+                    atype=atype,
                     cell=cell,
-                    pbc=pbc,
-                    batch_idx=batch_idx,
-                    batch_ptr=batch_ptr,
-                    method=method,
-                    max_neighbors=int(search_capacity),
-                    return_neighbor_list=False,
-                    wrap_positions=False,
+                    neighbor_matrix=neighbor_matrix,
+                    num_neighbors=num_neighbors,
+                    shifts=shifts,
+                    rcut=float(rcut),
                 )
-                if len(nlist_result) == 2:
-                    neighbor_matrix, num_neighbors = nlist_result
-                    shifts = torch.zeros(
-                        (*neighbor_matrix.shape, 3),
-                        dtype=torch.int32,
-                        device=device,
-                    )
-                else:
-                    neighbor_matrix, num_neighbors, shifts = nlist_result
-                max_found = (
-                    int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
+            if return_mode != "extended":
+                raise ValueError(
+                    f"Unsupported neighbor-list return_mode: {return_mode!r}"
                 )
-                if max_found <= search_capacity:
-                    break
-                search_capacity = max(max_found, _grow_search_capacity(search_capacity))
 
             extended_coord, extended_atype, mapping, nlist = _matrix_to_extended_inputs(
                 coord=coord,
@@ -178,6 +229,12 @@ class NvNeighborList(NeighborList):
             nlist = _truncate_to_sel_compiled(
                 extended_coord, nlist, target_neighbors, float(rcut)
             )
+            if pair_excl is not None:
+                from deepmd.dpmodel.utils.nlist import (
+                    apply_pair_exclusion_nlist,
+                )
+
+                nlist = apply_pair_exclusion_nlist(nlist, extended_atype, pair_excl)
             return extended_coord, extended_atype, nlist, mapping
 
 

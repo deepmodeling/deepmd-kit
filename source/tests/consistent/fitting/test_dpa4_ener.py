@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.fitting.dpa4_ener import SeZMEnergyFittingNet as SeZMEnerFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -15,10 +18,11 @@ from deepmd.utils.argcheck import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -40,15 +44,28 @@ if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
 else:
     SeZMEnerFittingPTExpt = None
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.dpa4_ener import (
+        SeZMEnergyFittingNet as SeZMEnerFittingStrict,
+    )
+else:
+    SeZMEnerFittingStrict = None
 
 # not implemented
 SeZMEnerFittingTF = None
 
 
-@parameterized(
-    ("float64", "float32"),  # precision
-    ([0], [16, 16]),  # neuron ([0] = auto-width placeholder)
+DPA4_ENER_FITTING_CURATED_CASES = (
+    ("float64", [0]),
+    ("float64", [16, 16]),
+    ("float32", [0]),
+    ("float32", [16, 16]),
 )
+
+
+@parameterized_cases(*DPA4_ENER_FITTING_CURATED_CASES)
 class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -72,7 +89,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     skip_jax = True
     skip_pd = True
     skip_pt_expt = not INSTALLED_PT_EXPT
-    skip_array_api_strict = True
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = SeZMEnerFittingTF
     dp_class = SeZMEnerFittingDP
@@ -80,7 +97,7 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     pt_expt_class = SeZMEnerFittingPTExpt
     jax_class = None
     pd_class = None
-    array_api_strict_class = None
+    array_api_strict_class = SeZMEnerFittingStrict
     args = fitting_sezm_ener()
 
     def setUp(self) -> None:
@@ -131,6 +148,14 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
             .detach()
             .cpu()
             .numpy()
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return to_numpy_array(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+            )["energy"]
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:

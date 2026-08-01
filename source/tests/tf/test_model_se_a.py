@@ -1,4 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from pathlib import (
+    Path,
+)
+from tempfile import (
+    TemporaryDirectory,
+)
+
 import dpdata
 import numpy as np
 
@@ -16,6 +23,9 @@ from deepmd.tf.model import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .common import (
@@ -36,6 +46,41 @@ class TestModel(tf.test.TestCase):
 
     def tearDown(self) -> None:
         del_data()
+
+    def test_descriptor_stat_file(self) -> None:
+        jdata = j_loader("water_se_a.json")
+        data = DataSystem(
+            jdata["systems"],
+            "set",
+            1,
+            1,
+            jdata["model"]["descriptor"]["rcut"],
+            run_opt=None,
+        )
+        test_data = data.get_test()
+
+        jdata["model"]["descriptor"].pop("type", None)
+        descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_rot_mat_1"] = descrpt.get_dim_rot_mat_1()
+        fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
+        model = EnerModel(descrpt, fitting)
+
+        input_data = {
+            "coord": [test_data["coord"]],
+            "box": [test_data["box"]],
+            "type": [test_data["type"]],
+            "natoms_vec": [test_data["natoms_vec"]],
+            "default_mesh": [test_data["default_mesh"]],
+        }
+        with TemporaryDirectory() as tempdir:
+            stat_path = DPPath(str(Path(tempdir)), "a")
+            model._compute_input_stat(input_data, stat_file_path=stat_path)
+            self.assertTrue(
+                any(child.is_dir() for child in Path(tempdir).iterdir()),
+                "Descriptor stat hash directory should be created",
+            )
 
     def test_model_atom_ener(self) -> None:
         jfile = "water_se_a.json"

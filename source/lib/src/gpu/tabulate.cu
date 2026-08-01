@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "device.h"
 #include "tabulate.h"
 
@@ -48,16 +50,60 @@ __device__ void GpuSyncThreads() {
 }
 
 template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE nextafter_device(const FPTYPE& from,
+                                                   const FPTYPE& to);
+
+template <>
+__forceinline__ __device__ float nextafter_device<float>(const float& from,
+                                                         const float& to) {
+  return nextafterf(from, to);
+}
+
+template <>
+__forceinline__ __device__ double nextafter_device<double>(const double& from,
+                                                           const double& to) {
+  return nextafter(from, to);
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ int locate_high_tail_xx(const FPTYPE& lower,
+                                                   const FPTYPE& upper,
+                                                   const FPTYPE& max,
+                                                   const FPTYPE& stride0,
+                                                   const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = nextafter_device(max, lower);
+  const int first_stride = int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ int locate_high_tail_xx_se_t(const FPTYPE& lower,
+                                                        const FPTYPE& upper,
+                                                        const FPTYPE& min,
+                                                        const FPTYPE& max,
+                                                        const FPTYPE& stride0,
+                                                        const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = nextafter_device(max, min);
+  const int first_stride =
+      int((lower - min) / stride1) + int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
 __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
                                                int& table_idx,
                                                const FPTYPE& lower,
                                                const FPTYPE& upper,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < lower) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - lower;
   } else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
     xx -= (table_idx * stride0 + lower);
@@ -66,9 +112,10 @@ __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx =
-        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -80,10 +127,14 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
                                                const FPTYPE& min,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < min) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - min;
   } else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
     xx -= (table_idx * stride1 + min);
@@ -97,9 +148,12 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
-                (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride =
+        int((lower - min) / stride1) + int((upper - lower) / stride0);
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -112,10 +166,14 @@ __forceinline__ __device__ void locate_xx_se_t_tebd(FPTYPE& xx,
                                                     const FPTYPE& min,
                                                     const FPTYPE& max,
                                                     const FPTYPE& stride0,
-                                                    const FPTYPE& stride1) {
+                                                    const FPTYPE& stride1,
+                                                    FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < min) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - min;
   } else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
     xx -= (table_idx * stride1 + min);
@@ -129,9 +187,12 @@ __forceinline__ __device__ void locate_xx_se_t_tebd(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
-                (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride =
+        int((lower - min) / stride1) + int((upper - lower) / stride0);
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -142,10 +203,14 @@ __forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
                                                const FPTYPE& upper,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < lower) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - lower;
   } else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
     xx -= (table_idx * stride0 + lower);
@@ -154,9 +219,10 @@ __forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx =
-        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -173,6 +239,32 @@ __forceinline__ __device__ void load_polynomial_params(
   var[3] = table[table_idx * last_layer_size * 6 + idx * 6 + 3];
   var[4] = table[table_idx * last_layer_size * 6 + idx * 6 + 4];
   var[5] = table[table_idx * last_layer_size * 6 + idx * 6 + 5];
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE polynomial5(const FPTYPE var[6],
+                                              const FPTYPE& xx) {
+  return var[0] +
+         (var[1] +
+          (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
+             xx;
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE polynomial5_grad(const FPTYPE var[6],
+                                                   const FPTYPE& xx) {
+  return var[1] + ((FPTYPE)2. * var[2] +
+                   ((FPTYPE)3. * var[3] +
+                    ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                       xx) *
+                      xx;
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE extrapolated_polynomial5(
+    const FPTYPE var[6], const FPTYPE& xx, const FPTYPE& extrapolate_delta) {
+  const FPTYPE grad = polynomial5_grad(var, xx);
+  return polynomial5(var, xx) + grad * extrapolate_delta;
 }
 
 template <typename FPTYPE>
@@ -239,15 +331,14 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
       breakpoint = ii;
     }
     int table_idx = 0;
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
-    FPTYPE res =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
+    FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
@@ -307,8 +398,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
-  int breakpoint = nnei - 1;
-  bool unloop = false;
+  __shared__ int breakpoint;
   FPTYPE* iteratorA = (FPTYPE*)&_data[0];  // dy
   for (int ii = 0; ii < MTILE; ii++) {
     for (int jj = thread_idx; jj < last_layer_size; jj += blockDim.x) {
@@ -317,78 +407,93 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     }
   }
   __syncthreads();
-  FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
-  for (int ii = warp_idx; ii < nnei; ii += KTILE) {
-    FPTYPE xx = em_x[block_idx * nnei + ii];
-    if (ago == xx && em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
-        em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
-        em[block_idx * nnei * 4 + ii * 4 + 3] == 0. && is_sorted) {
-      unloop = true;
-      breakpoint = ii;
-    }
 
-    int table_idx = 0;
-    FPTYPE reg_em[MTILE] = {em[block_idx * nnei * MTILE + ii * 4 + 0],
-                            em[block_idx * nnei * MTILE + ii * 4 + 1],
-                            em[block_idx * nnei * MTILE + ii * 4 + 2],
-                            em[block_idx * nnei * MTILE + ii * 4 + 3]};
+  // Sorted padding must be folded at the first sentinel for the whole atom,
+  // exactly as in the sequential CPU implementation. A warp-local search can
+  // select several later sentinels because neighbor indices are striped over
+  // KTILE warps, producing duplicate tail contributions and overlapping
+  // dy_dtwo writes.
+  if (thread_idx == 0) {
+    breakpoint = nnei;  // nnei means that no padding sentinel was found.
+    if (is_sorted) {
+      const FPTYPE ago = em_x[block_idx * nnei + nnei - 1];
+      for (int ii = 0; ii < nnei; ++ii) {
+        if (ago == em_x[block_idx * nnei + ii] &&
+            em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
+            em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
+            em[block_idx * nnei * 4 + ii * 4 + 3] == 0.) {
+          breakpoint = ii;
+          break;
+        }
+      }
+    }
+  }
+  __syncthreads();
+
+  // Keep the tile loop uniform across the block. GpuSyncThreads is a warp
+  // barrier on CUDA but a block barrier on ROCm, so warp-specific early exits
+  // would deadlock HIP when the shared breakpoint falls inside a tile.
+  for (int tile = 0; tile < nnei && tile <= breakpoint; tile += KTILE) {
+    const int ii = tile + warp_idx;
+    const bool active = ii < nnei && ii <= breakpoint;
     FPTYPE Csub = (FPTYPE)0.;
     FPTYPE sum[MTILE] = {(FPTYPE)0.};
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    if (active) {
+      const int repeat_count = ii == breakpoint ? nnei - breakpoint : 1;
+      FPTYPE xx = em_x[block_idx * nnei + ii];
+      int table_idx = 0;
+      FPTYPE reg_em[MTILE] = {em[block_idx * nnei * MTILE + ii * MTILE + 0],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 1],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 2],
+                              em[block_idx * nnei * MTILE + ii * MTILE + 3]};
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                     extrapolate_delta);
 
-    FPTYPE var[6];
-    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
-      load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
-      FPTYPE oldres = res;
-      FPTYPE t;
-      if (enable_se_atten) {
-        t = two_embed[block_idx * nnei * last_layer_size +
-                      ii * last_layer_size + jj];
-        res = res * t + res;
-      }
+      FPTYPE var[6];
+      for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+        load_polynomial_params(var, table, table_idx, jj, last_layer_size);
+        FPTYPE res_grad = polynomial5_grad(var, xx);
+        FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
+        FPTYPE oldres = res;
+        FPTYPE t;
+        if (enable_se_atten) {
+          t = two_embed[block_idx * nnei * last_layer_size +
+                        ii * last_layer_size + jj];
+          res = res * t + res;
+        }
 
-      for (int kk = 0; kk < MTILE; kk++) {
-        sum[kk] +=
-            (nnei - breakpoint) * iteratorA[kk * last_layer_size + jj] * res;
-      }
-      res = reg_em[0] * iteratorA[0 * last_layer_size + jj];
-      res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
-      res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
-      res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
-      Csub +=
-          (nnei - breakpoint) *
-          (var[1] + ((FPTYPE)2. * var[2] +
-                     ((FPTYPE)3. * var[3] +
-                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                         xx) *
-                        xx) *
-          (enable_se_atten ? res * t + res : res);
-      if (enable_se_atten) {
-        // from ii to ii + (nnei - breakpoint)
-        for (int ii2 = ii; ii2 < ii + nnei - breakpoint; ii2++) {
-          dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
-                  jj] = oldres * res;
+        for (int kk = 0; kk < MTILE; kk++) {
+          sum[kk] += repeat_count * iteratorA[kk * last_layer_size + jj] * res;
+        }
+        res = reg_em[0] * iteratorA[0 * last_layer_size + jj];
+        res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
+        res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
+        res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
+        Csub +=
+            repeat_count * res_grad * (enable_se_atten ? res * t + res : res);
+        if (enable_se_atten) {
+          // Forward folds the complete padding tail using only this first
+          // sentinel's two-embedding value. Its gradient therefore owns the
+          // full repeat count; later padding entries are independent of the
+          // folded output and keep the zero written before the launch.
+          dy_dtwo[block_idx * nnei * last_layer_size + ii * last_layer_size +
+                  jj] = repeat_count * oldres * res;
         }
       }
     }
     GpuSyncThreads();
-    for (int kk = 0; kk < MTILE; kk++) {
-      warp_reduce(sum[kk]);
-    }
-    warp_reduce(Csub);
-    if (lane_idx == 0) {
+    if (active) {
       for (int kk = 0; kk < MTILE; kk++) {
-        dy_dem[block_idx * nnei * MTILE + ii * 4 + kk] = sum[kk];
+        warp_reduce(sum[kk]);
       }
-      dy_dem_x[block_idx * nnei + ii] = Csub;
-    }
-    if (unloop) {
-      break;
+      warp_reduce(Csub);
+      if (lane_idx == 0) {
+        for (int kk = 0; kk < MTILE; kk++) {
+          dy_dem[block_idx * nnei * MTILE + ii * MTILE + kk] = sum[kk];
+        }
+        dy_dem_x[block_idx * nnei + ii] = Csub;
+      }
     }
   }
 }
@@ -436,28 +541,23 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
       breakpoint = ii;
     }
     int table_idx = 0;
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
 
-    FPTYPE res =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
-    FPTYPE res_grad =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+    FPTYPE res_grad = polynomial5_grad(var, xx);
+    FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
     FPTYPE two_grad = 0.;
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
-      // dz_dy_dtwo * res * em
-      // res above should be used instead of res + res * t below
+      // For sorted padding, only the first sentinel has a nonzero
+      // two-embedding gradient. The repeat factor below applies its full tail
+      // multiplicity to this cotangent.
       two_grad = dz_dy_dtwo[block_idx * nnei * last_layer_size +
                             ii * last_layer_size + thread_idx] *
                  res;
@@ -527,16 +627,14 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                     extrapolate_delta);
       if (table_idx != mark_table_idx) {
         load_polynomial_params(var, table, table_idx, thread_idx,
                                last_layer_size);
       }
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
+      FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
 
       sum += tmp * res;
       mark_table_idx = table_idx;
@@ -573,37 +671,38 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
   __syncthreads();
 
   for (int ii = 0; ii < nnei_i; ii++) {
-    for (int jj = warp_idx; jj < nnei_j; jj += KTILE) {
-      FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE tmp = xx;
-      int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+    // GpuSyncThreads is block-wide on ROCm, so every wavefront must execute
+    // the same number of tile iterations even when the last tile is partial.
+    for (int tile = 0; tile < nnei_j; tile += KTILE) {
+      const int jj = tile + warp_idx;
+      const bool active = jj < nnei_j;
       FPTYPE sum = (FPTYPE)0.;
       FPTYPE Csub = (FPTYPE)0.;
-      for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
-        FPTYPE var[6];
-        load_polynomial_params(var, table, table_idx, kk, last_layer_size);
-        FPTYPE res =
-            var[0] +
-            (var[1] +
-             (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-                xx;
+      if (active) {
+        FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
+        FPTYPE tmp = xx;
+        int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
+        locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                       extrapolate_delta);
+        for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
+          FPTYPE var[6];
+          load_polynomial_params(var, table, table_idx, kk, last_layer_size);
+          FPTYPE res_grad = polynomial5_grad(var, xx);
+          FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
-        sum += iteratorA[kk] * res;
-        Csub +=
-            iteratorA[kk] * tmp *
-            (var[1] + ((FPTYPE)2. * var[2] +
-                       ((FPTYPE)3. * var[3] +
-                        ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                           xx) *
-                          xx);
+          sum += iteratorA[kk] * res;
+          Csub += iteratorA[kk] * tmp * res_grad;
+        }
       }
       GpuSyncThreads();
-      warp_reduce(sum);
-      warp_reduce(Csub);
-      if (lane_idx == 0) {
-        dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
-        dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+      if (active) {
+        warp_reduce(sum);
+        warp_reduce(Csub);
+        if (lane_idx == 0) {
+          dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
+          dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+        }
       }
     }
   }
@@ -631,29 +730,27 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     int mark_table_idx = -1;
+    // The cached table index and coefficients must have the same lifetime.
+    // Keeping var outside the neighbor loop makes a cache hit reuse initialized
+    // coefficients instead of a newly scoped, uninitialized local array.
+    FPTYPE var[6];
     for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       FPTYPE dz_xx =
           dz_dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE dz_em = dz_dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE var[6];
 
       int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                     extrapolate_delta);
       if (table_idx != mark_table_idx) {
         load_polynomial_params(var, table, table_idx, thread_idx,
                                last_layer_size);
       }
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
-      FPTYPE res_grad =
-          var[1] + (2 * var[2] +
-                    (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
-                       xx;
+      FPTYPE res_grad = polynomial5_grad(var, xx);
+      FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
       sum += (tmp * res_grad * dz_xx + dz_em * res);
       mark_table_idx = table_idx;
@@ -695,19 +792,16 @@ __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
 
     // Determine the table index based on the value of xx.
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Serially loop through the 'last_layer_size' dimension to calculate all
     // features.
     for (int idx = 0; idx < last_layer_size; idx++) {
       FPTYPE var[6];
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
+      FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
       // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
       // jj, idx).
       const int_64 out_idx =
@@ -750,8 +844,9 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
     // Determine the table index based on the value of xx.
     FPTYPE xx = em_x[i];
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Accumulate the gradient contributions from all features.
     FPTYPE grad_sum = 0.0;
@@ -760,12 +855,7 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
       // Calculate the derivative of the polynomial with respect to xx.
-      FPTYPE dres_dxx =
-          var[1] + ((FPTYPE)2. * var[2] +
-                    ((FPTYPE)3. * var[3] +
-                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                        xx) *
-                       xx;
+      FPTYPE dres_dxx = polynomial5_grad(var, xx);
 
       // Read the incoming gradient from the previous layer.
       const int_64 dy_idx =
@@ -819,8 +909,9 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
 
     // Determine the table index based on the value of xx.
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Serially loop through the 'last_layer_size' dimension.
     for (int idx = 0; idx < last_layer_size; idx++) {
@@ -828,12 +919,7 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
       // Calculate the derivative of the polynomial with respect to xx.
-      FPTYPE dres_dxx =
-          var[1] + ((FPTYPE)2. * var[2] +
-                    ((FPTYPE)3. * var[3] +
-                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                        xx) *
-                       xx;
+      FPTYPE dres_dxx = polynomial5_grad(var, xx);
 
       // Apply the chain rule: dz/dy_idx = (dz/dxx) * (dxx/dy_idx)
       // which simplifies to dz_dy_dem_x_val * dres_dxx
@@ -870,16 +956,15 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em[block_idx * nnei + ii];
     int table_idx = 0;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
     out[block_idx * nnei * last_layer_size + ii * last_layer_size +
-        thread_idx] =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
+        thread_idx] = extrapolated_polynomial5(var, xx, extrapolate_delta);
     mark_table_idx = table_idx;
   }
 }
@@ -902,29 +987,32 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
   int lane_idx = thread_idx % WARP_SIZE;
   __syncthreads();
-  for (int ii = warp_idx; ii < nnei; ii += KTILE) {
-    FPTYPE xx = em[block_idx * nnei + ii];
-
-    int table_idx = 0;
+  // Keep all wavefronts on uniform control flow around the ROCm block barrier.
+  for (int tile = 0; tile < nnei; tile += KTILE) {
+    const int ii = tile + warp_idx;
+    const bool active = ii < nnei;
     FPTYPE Csub = (FPTYPE)0.;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    if (active) {
+      FPTYPE xx = em[block_idx * nnei + ii];
+      int table_idx = 0;
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                     extrapolate_delta);
 
-    FPTYPE var[6];
-    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
-      load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      Csub +=
-          (var[1] + ((FPTYPE)2. * var[2] +
-                     ((FPTYPE)3. * var[3] +
-                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                         xx) *
-                        xx) *
-          dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      FPTYPE var[6];
+      for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+        load_polynomial_params(var, table, table_idx, jj, last_layer_size);
+        Csub +=
+            polynomial5_grad(var, xx) *
+            dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      }
     }
     GpuSyncThreads();
-
-    warp_reduce(Csub);
-    if (lane_idx == 0) {
-      dy_dem[block_idx * nnei + ii] = Csub;
+    if (active) {
+      warp_reduce(Csub);
+      if (lane_idx == 0) {
+        dy_dem[block_idx * nnei + ii] = Csub;
+      }
     }
   }
 }
@@ -954,17 +1042,14 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em[block_idx * nnei + ii];
     int table_idx = 0;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
-    FPTYPE res_grad =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+    FPTYPE res_grad = polynomial5_grad(var, xx);
     mark_table_idx = table_idx;
     dz_dy[block_idx * nnei * last_layer_size + ii * last_layer_size +
           thread_idx] = dz_dy_dem[block_idx * nnei + ii] * res_grad;
@@ -988,6 +1073,13 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // The descriptor does not carry the empty neighbor dimension, so its
+    // mathematically empty reduction must be materialized explicitly.
+    DPErrcheck(gpuMemset(out, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
 #if GOOGLE_CUDA
       <<<nloc, last_layer_size>>>
@@ -1017,13 +1109,19 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nnei,
                                    const int last_layer_size,
                                    const bool is_sorted) {
-  if (nloc <= 0) {
+  if (nloc <= 0 || nnei <= 0) {
     return;
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
+  if (two_embed != nullptr && is_sorted) {
+    // The sorted-padding fast path writes only the first sentinel. Explicitly
+    // clear the unused tail because framework output buffers are uninitialized.
+    DPErrcheck(
+        gpuMemset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+  }
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
@@ -1053,6 +1151,14 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // Unlike the neighbor-shaped inputs, dz_dy remains non-empty and must be
+    // initialized to the zero second derivative of an empty reduction.
+    DPErrcheck(
+        gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(

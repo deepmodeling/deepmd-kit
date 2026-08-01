@@ -30,7 +30,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -61,16 +61,20 @@ from deepmd.utils.argcheck import (
 TESTS_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
+ZBL_MODEL_EXCLUSION_CURATED_CASES = (
+    ([], []),
+    ([], [1]),
+    ([[0, 1]], []),
+    ([[0, 1]], [1]),
 )
+
+ZBL_MODEL_STAT_CURATED_CASES = (
+    (([], []),),
+    (([[0, 1]], [1]),),
+)
+
+
+@parameterized_cases(*ZBL_MODEL_EXCLUSION_CURATED_CASES)
 class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -1018,9 +1022,7 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-)
+@parameterized_cases(*ZBL_MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestZBLComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.

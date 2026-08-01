@@ -182,3 +182,13 @@ class TestDPModel(unittest.TestCase, HessianTest):
             self.model_hess.model_output_def()["energy_derv_r_derv_r"].category,
             OutputVariableCategory.DERV_R_DERV_R,
         )
+
+    def test_enable_hessian_is_idempotent(self) -> None:
+        """Restored Hessian models may be enabled again by loss requirements."""
+        self.model_valu.enable_hessian()
+        enabled_type = type(self.model_valu)
+
+        self.model_valu.enable_hessian()
+
+        self.assertIs(type(self.model_valu), enabled_type)
+        self.assertTrue(self.model_valu.model_output_def()["energy"].r_hessian)

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+#
+# NOTE: `dp eval-desc` is deprecated; prefer `dp embed` (see test_embedding.py).
+# These tests cover the compatibility path, which now redirects to the embedding
+# implementation internally and extracts the descriptor from its output.
 import json
 import os
 import shutil

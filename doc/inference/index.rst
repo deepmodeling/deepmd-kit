@@ -7,5 +7,6 @@ Note that the model for inference is required to be compatible with the DeePMD-k
    :maxdepth: 1
 
    python
+   embedding
    cxx
    nodejs

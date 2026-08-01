@@ -15,7 +15,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -41,17 +41,15 @@ from deepmd.utils.argcheck import (
     model_args,
 )
 
-
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
+LINEAR_ENER_MODEL_EXCLUSION_CURATED_CASES = (
+    ([], []),
+    ([], [1]),
+    ([[0, 1]], []),
+    ([[0, 1]], [1]),
 )
+
+
+@parameterized_cases(*LINEAR_ENER_MODEL_EXCLUSION_CURATED_CASES)
 class TestLinearEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:

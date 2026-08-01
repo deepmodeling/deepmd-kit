@@ -43,15 +43,17 @@ class ProdForceSeAMaskGradOp : public OpKernel {
     TensorShape nlist_shape = nlist_tensor.shape();
 
     OP_REQUIRES(context, (grad_shape.dims() == 2),
-                errors::InvalidArgument("Dim of grad should be 2"));
-    OP_REQUIRES(context, (net_deriv_shape.dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
-    OP_REQUIRES(context, (in_deriv_shape.dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of grad should be 2"));
+    OP_REQUIRES(
+        context, (net_deriv_shape.dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of net deriv should be 2"));
+    OP_REQUIRES(
+        context, (in_deriv_shape.dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (mask_shape.dims() == 2),
-                errors::InvalidArgument("Dim of mask should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of mask should be 2"));
     OP_REQUIRES(context, (nlist_shape.dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
 
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int nloc = total_atom_num;
@@ -59,22 +61,27 @@ class ProdForceSeAMaskGradOp : public OpKernel {
     int nnei = total_atom_num;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == grad_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == in_deriv_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == nlist_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == mask_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-
     OP_REQUIRES(
-        context, (nloc * 3 == grad_shape.dim_size(1)),
-        errors::InvalidArgument("input grad shape should be 3 x natoms"));
+        context, (nframes == grad_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == in_deriv_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == mask_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+
+    OP_REQUIRES(context, (nloc * 3 == grad_shape.dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "input grad shape should be 3 x natoms"));
     OP_REQUIRES(context,
                 (static_cast<int64_t>(nloc) * ndescrpt * 3 ==
                  in_deriv_shape.dim_size(1)),
-                errors::InvalidArgument("number of descriptors should match"));
+                deepmd::tf_compat::InvalidArgument(
+                    "number of descriptors should match"));
 
     // Create an output tensor
     TensorShape grad_net_shape;

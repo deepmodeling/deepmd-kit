@@ -73,6 +73,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -81,6 +82,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
@@ -117,6 +119,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: list[paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -128,6 +131,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            charge_spin=charge_spin,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

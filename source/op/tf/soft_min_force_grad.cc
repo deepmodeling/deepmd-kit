@@ -45,18 +45,20 @@ class SoftMinForceGradOp : public OpKernel {
     TensorShape nlist_shape = nlist_tensor.shape();
 
     OP_REQUIRES(context, (grad_shape.dims() == 2),
-                errors::InvalidArgument("Dim of grad should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of grad should be 2"));
     OP_REQUIRES(context, (du_shape.dims() == 2),
-                errors::InvalidArgument("Dim of du should be 2"));
-    OP_REQUIRES(context, (sw_deriv_shape.dims() == 2),
-                errors::InvalidArgument("Dim of sw deriv should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of du should be 2"));
+    OP_REQUIRES(
+        context, (sw_deriv_shape.dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of sw deriv should be 2"));
     OP_REQUIRES(context, (nlist_shape.dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
-    OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
+    OP_REQUIRES(
+        context, (natoms_tensor.shape().dims() == 1),
+        deepmd::tf_compat::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                deepmd::tf_compat::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -65,24 +67,29 @@ class SoftMinForceGradOp : public OpKernel {
     int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == grad_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == sw_deriv_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-    OP_REQUIRES(context, (nframes == nlist_shape.dim_size(0)),
-                errors::InvalidArgument("number of frames should match"));
-
-    OP_REQUIRES(context, (nloc == du_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of du should match"));
     OP_REQUIRES(
-        context, (nloc * 3 == grad_shape.dim_size(1)),
-        errors::InvalidArgument("input grad shape should be 3 x natoms"));
+        context, (nframes == grad_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == sw_deriv_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_shape.dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of frames should match"));
+
+    OP_REQUIRES(
+        context, (nloc == du_tensor.shape().dim_size(1)),
+        deepmd::tf_compat::InvalidArgument("number of du should match"));
+    OP_REQUIRES(context, (nloc * 3 == grad_shape.dim_size(1)),
+                deepmd::tf_compat::InvalidArgument(
+                    "input grad shape should be 3 x natoms"));
     OP_REQUIRES(
         context,
         (static_cast<int64_t>(nloc) * nnei * 3 == sw_deriv_shape.dim_size(1)),
-        errors::InvalidArgument("number of sw deriv should match"));
-    OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
-                errors::InvalidArgument("number of neighbors should match"));
+        deepmd::tf_compat::InvalidArgument("number of sw deriv should match"));
+    OP_REQUIRES(
+        context, (nnei == n_a_sel + n_r_sel),
+        deepmd::tf_compat::InvalidArgument("number of neighbors should match"));
 
     // Create an output tensor
     TensorShape grad_net_shape;

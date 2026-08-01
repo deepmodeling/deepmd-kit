@@ -18,7 +18,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -50,6 +50,12 @@ pt_model = "deeppot_for_consistent_frozen.pth"
 tf_model = "deeppot_for_consistent_frozen.pb"
 dp_model = "deeppot_for_consistent_frozen.dp"
 
+FROZEN_MODEL_CURATED_CASES = (
+    (pt_model,),
+    (tf_model,),
+    (dp_model,),
+)
+
 
 def setUpModule() -> None:
     case = get_cases()["se_e2_a"]
@@ -72,7 +78,7 @@ def tearDownModule() -> None:
         os.remove(tmp_pb)
 
 
-@parameterized((pt_model, tf_model, dp_model))
+@parameterized_cases(*FROZEN_MODEL_CURATED_CASES)
 class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:

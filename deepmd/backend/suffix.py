@@ -63,8 +63,13 @@ def format_model_suffix(
         )
     )
     pp = Path(filename)
-    current_suffix = pp.suffix
-    if current_suffix not in all_suffixes:
+    # Match on a case-insensitive endswith, consistent with
+    # Backend.match_filename / detect_backend_by_model. This recognizes both
+    # ordinary dotted suffixes (e.g. ".pth") and whole-name aliases registered
+    # as suffixes by PretrainedBackend (e.g. "dpa-3.2-5m"), which Path().suffix
+    # would miss (Path("DPA-3.2-5M").suffix == ".2-5M").
+    fname = str(pp).lower()
+    if not any(fname.endswith(suffix) for suffix in all_suffixes):
         if preferred_backend is not None:
             return str(pp) + preferred_backend.suffixes[0]
         raise ValueError(f"Unsupported model file format: {filename}")

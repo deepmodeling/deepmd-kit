@@ -17,12 +17,16 @@ from torch.utils.data import (
 )
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbBatchIterator,
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
     collate_lmdb_frames,
     compute_block_targets,
     is_lmdb,
+)
+from deepmd.env import (
+    get_lmdb_num_workers,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -32,6 +36,7 @@ log = logging.getLogger(__name__)
 
 # Re-export for backward compatibility
 __all__ = [
+    "LmdbBatchDataLoader",
     "LmdbDataset",
     "LmdbTestData",
     "_collate_lmdb_batch",
@@ -76,6 +81,25 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
         return collate_lmdb_frames(torch_frames)
 
 
+def _lmdb_batch_to_torch(
+    batch: dict[str, Any],
+    *,
+    pin_memory: bool,
+) -> dict[str, Any]:
+    """Convert a contiguous NumPy LMDB batch to CPU tensors."""
+    converted: dict[str, Any] = {}
+    with torch.device("cpu"):
+        for key, value in batch.items():
+            if key.startswith("find_") or key == "fid" or key == "type":
+                converted[key] = value
+            elif value is None:
+                converted[key] = None
+            else:
+                tensor = torch.as_tensor(value)
+                converted[key] = tensor.pin_memory() if pin_memory else tensor
+    return converted
+
+
 class _SameNlocBatchSamplerTorch(Sampler):
     """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
 
@@ -97,6 +121,53 @@ class _SameNlocBatchSamplerTorch(Sampler):
         """Forward set_epoch to inner sampler if it supports it."""
         if hasattr(self._inner, "set_epoch"):
             self._inner.set_epoch(epoch)
+
+
+class LmdbBatchDataLoader:
+    """DataLoader-compatible iterable backed by :class:`LmdbBatchIterator`.
+
+    The parent sampler determines batch order. The shared LMDB process pool
+    decodes one batch and prefetches its successor, then this adapter converts
+    the contiguous NumPy result to pinned CPU tensors.
+    """
+
+    def __init__(
+        self,
+        dataset: "LmdbDataset",
+        sampler: Any,
+        *,
+        pin_memory: bool,
+        num_workers: int | None = None,
+    ) -> None:
+        self.dataset = dataset
+        self.batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+        self.sampler = sampler
+        self._pin_memory = pin_memory
+        self._batch_iterator = LmdbBatchIterator(
+            dataset._reader,
+            sampler,
+            get_lmdb_num_workers() if num_workers is None else num_workers,
+        )
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        for _ in range(len(self)):
+            yield _lmdb_batch_to_torch(
+                next(self._batch_iterator),
+                pin_memory=self._pin_memory,
+            )
+
+    def __len__(self) -> int:
+        return len(self.batch_sampler)
+
+    def close(self) -> None:
+        """Release this loader's prefetched batch and shared-pool reference."""
+        self._batch_iterator.close()
+
+    def __del__(self) -> None:
+        """Release the shared-pool reference during interpreter teardown."""
+        iterator = getattr(self, "_batch_iterator", None)
+        if iterator is not None:
+            iterator.close()
 
 
 class LmdbDataset(Dataset):
@@ -171,24 +242,41 @@ class LmdbDataset(Dataset):
                 collate_fn=_collate_lmdb_batch,
             )
 
-        # Per-nloc-group dataloaders for make_stat_input.
-        # Each group gets its own DataLoader so torch.cat in stat collection
-        # only concatenates same-shape tensors.
-        self._nloc_dataloaders: list[DataLoader] = []
+        # Per-nloc and label-availability dataloaders for make_stat_input.
+        # These are rebuilt after requirements are registered so statistics
+        # never collate real labels with default-filled placeholders.
+        self._nloc_dataloaders: list[DataLoader] | None = None
+
+    def _rebuild_nloc_dataloaders(self) -> None:
+        """Build homogeneous loaders used by model-stat collection."""
+        dataloaders: list[DataLoader] = []
         for nloc in sorted(self._reader.nloc_groups.keys()):
-            indices = self._reader.nloc_groups[nloc]
-            subset = torch.utils.data.Subset(self, indices)
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            with torch.device("cpu"):
-                dl = DataLoader(
-                    subset,
-                    batch_size=bs,
-                    shuffle=False,
-                    num_workers=0,
-                    drop_last=False,
-                    collate_fn=_collate_lmdb_batch,
-                )
-            self._nloc_dataloaders.append(dl)
+            signature_groups = self._reader.group_indices_by_find_signature(
+                self._reader.nloc_groups[nloc]
+            )
+            for signature in sorted(signature_groups):
+                subset = torch.utils.data.Subset(self, signature_groups[signature])
+                bs = self._reader.get_batch_size_for_nloc(nloc)
+                with torch.device("cpu"):
+                    dl = DataLoader(
+                        subset,
+                        batch_size=bs,
+                        shuffle=False,
+                        num_workers=0,
+                        drop_last=False,
+                        collate_fn=_collate_lmdb_batch,
+                    )
+                dataloaders.append(dl)
+        self._nloc_dataloaders = dataloaders
+
+    def _get_nloc_dataloaders(self) -> list[DataLoader]:
+        """Materialize statistics loaders lazily when none are registered."""
+        if self._nloc_dataloaders is None:
+            self._rebuild_nloc_dataloaders()
+        dataloaders = self._nloc_dataloaders
+        if dataloaders is None:
+            raise RuntimeError("Failed to initialize LMDB statistics dataloaders")
+        return dataloaders
 
     def __len__(self) -> int:
         return len(self._reader)
@@ -229,6 +317,17 @@ class LmdbDataset(Dataset):
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
+        self._rebuild_nloc_dataloaders()
+
+    def close(self) -> None:
+        """Release parent-process LMDB resources."""
+        self._reader.close()
+
+    def __del__(self) -> None:
+        """Release parent-process LMDB resources during teardown."""
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
 
     def preload_and_modify_all_data_torch(self) -> None:
         """No-op: LMDB reads on demand."""
@@ -328,17 +427,17 @@ class LmdbDataset(Dataset):
 
     @property
     def systems(self) -> list:
-        """One 'system' per nloc group for stat collection compatibility."""
-        return [self] * len(self._nloc_dataloaders)
+        """One logical system per stack-compatible statistics group."""
+        return [self] * len(self._get_nloc_dataloaders())
 
     @property
     def dataloaders(self) -> list:
-        """Per-nloc-group dataloaders for make_stat_input.
+        """Homogeneous dataloaders for make_stat_input.
 
-        Each dataloader yields batches with uniform nloc, so torch.cat
-        in stat collection only concatenates same-shape tensors.
+        Each loader has one nloc and one availability signature, so stat
+        collection sees consistent shapes and scalar ``find_*`` flags.
         """
-        return self._nloc_dataloaders
+        return self._get_nloc_dataloaders()
 
     @property
     def sampler_list(self) -> list:

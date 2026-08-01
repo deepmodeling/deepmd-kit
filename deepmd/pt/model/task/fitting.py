@@ -51,6 +51,9 @@ from deepmd.utils.finetune import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.stat_file import (
+    load_required_items,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -209,13 +212,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         """
         fp = stat_file_path / "fparam"
         arr = fp.load_numpy()
-        assert arr.shape == (self.numb_fparam, 3)
-        _fparam_stat = []
-        for ii in range(self.numb_fparam):
-            _fparam_stat.append(
-                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
-            )
-        self.stats["fparam"] = _fparam_stat
+        self._restore_param_stats("fparam", arr, self.numb_fparam)
         log.info(f"Load fparam stats from {fp}.")
 
     def restore_aparam_from_file(self, stat_file_path: DPPath) -> None:
@@ -228,14 +225,23 @@ class Fitting(torch.nn.Module, BaseFitting):
         """
         fp = stat_file_path / "aparam"
         arr = fp.load_numpy()
-        assert arr.shape == (self.numb_aparam, 3)
-        _aparam_stat = []
-        for ii in range(self.numb_aparam):
-            _aparam_stat.append(
-                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
-            )
-        self.stats["aparam"] = _aparam_stat
+        self._restore_param_stats("aparam", arr, self.numb_aparam)
         log.info(f"Load aparam stats from {fp}.")
+
+    def _restore_param_stats(
+        self,
+        name: str,
+        arr: np.ndarray,
+        dimension: int,
+    ) -> None:
+        if arr.shape != (dimension, 3):
+            raise ValueError(
+                f"Invalid {name} statistics shape {arr.shape}; "
+                f"expected ({dimension}, 3)."
+            )
+        self.stats[name] = [
+            StatItem(number=row[0], sum=row[1], squared_sum=row[2]) for row in arr
+        ]
 
     def compute_input_stats(
         self,
@@ -269,12 +275,9 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat fparam
         if self.numb_fparam > 0:
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "fparam").is_file()
-            ):
-                self.restore_fparam_from_file(stat_file_path)
+            cached = load_required_items(stat_file_path, ["fparam"])
+            if cached is not None:
+                self._restore_param_stats("fparam", cached["fparam"], self.numb_fparam)
             else:
                 sampled = merged() if callable(merged) else merged
                 self.stats["fparam"] = []
@@ -307,12 +310,9 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat aparam
         if self.numb_aparam > 0:
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "aparam").is_file()
-            ):
-                self.restore_aparam_from_file(stat_file_path)
+            cached = load_required_items(stat_file_path, ["aparam"])
+            if cached is not None:
+                self._restore_param_stats("aparam", cached["aparam"], self.numb_aparam)
             else:
                 sampled = merged() if callable(merged) else merged
                 self.stats["aparam"] = []
@@ -548,8 +548,6 @@ class GeneralFitting(Fitting):
         for param in self.parameters():
             param.requires_grad = self.trainable
 
-        self.eval_return_middle_output = False
-
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
@@ -681,9 +679,6 @@ class GeneralFitting(Fitting):
             case_idx
         ]
 
-    def set_return_middle_output(self, return_middle_output: bool = True) -> None:
-        self.eval_return_middle_output = return_middle_output
-
     def __setitem__(self, key: str, value: torch.Tensor) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
@@ -745,6 +740,7 @@ class GeneralFitting(Fitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
@@ -846,8 +842,8 @@ class GeneralFitting(Fitting):
 
         if self.mixed_types:
             atom_property = self.filter_layers.networks[0](xx)
-            if self.eval_return_middle_output:
-                results["middle_output"] = self.filter_layers.networks[
+            if return_atomic_feature:
+                results["atomic_feature"] = self.filter_layers.networks[
                     0
                 ].call_until_last(xx)
             if xx_zeros is not None:
@@ -856,23 +852,28 @@ class GeneralFitting(Fitting):
                 outs + atom_property + self.bias_atom_e[atype].to(self.prec)
             )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
-            if self.eval_return_middle_output:
-                outs_middle = torch.zeros(
-                    (nf, nloc, self.neuron[-1]),
-                    dtype=self.prec,
-                    device=descriptor.device,
-                )  # jit assertion
+            if return_atomic_feature:
+                # Each atom carries the last hidden activation of its own type
+                # network, gathered by summing the type-masked contributions.
+                atomic_feature_type: torch.Tensor = self.filter_layers.networks[
+                    0
+                ].call_until_last(xx)
+                mask = (atype == 0).unsqueeze(-1)
+                atomic_feature = torch.where(
+                    mask,
+                    atomic_feature_type,
+                    torch.zeros_like(atomic_feature_type),
+                )
                 for type_i, ll in enumerate(self.filter_layers.networks):
-                    mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, net_dim_out))
-                    middle_output_type = ll.call_until_last(xx)
-                    middle_output_type = torch.where(
-                        torch.tile(mask, (1, 1, self.neuron[-1])),
-                        middle_output_type,
-                        0.0,
-                    )
-                    outs_middle = outs_middle + middle_output_type
-                results["middle_output"] = outs_middle
+                    if type_i > 0:
+                        mask = (atype == type_i).unsqueeze(-1)
+                        atomic_feature_type = ll.call_until_last(xx)
+                        atomic_feature = atomic_feature + torch.where(
+                            mask,
+                            atomic_feature_type,
+                            torch.zeros_like(atomic_feature_type),
+                        )
+                results["atomic_feature"] = atomic_feature
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))

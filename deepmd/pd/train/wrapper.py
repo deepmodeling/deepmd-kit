@@ -148,6 +148,7 @@ class ModelWrapper(paddle.nn.Layer):
         do_atomic_virial: bool = False,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         if not self.multi_task:
             task_key = "Default"
@@ -162,11 +163,9 @@ class ModelWrapper(paddle.nn.Layer):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
+            "charge_spin": charge_spin,
         }
-        has_spin = getattr(self.model[task_key], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin:
+        if self.model[task_key].has_spin():
             input_dict["spin"] = spin
 
         if self.inference_only or inference_only:
@@ -205,7 +204,6 @@ class ModelWrapper(paddle.nn.Layer):
     def set_extra_state(self, extra_state: dict[str, Any]) -> None:
         self.model_params = extra_state["model_params"]
         self.train_infos = extra_state["train_infos"]
-        return None
 
     def get_extra_state(self) -> dict:
         extra_state = {

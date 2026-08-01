@@ -17,8 +17,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -37,6 +38,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_r import DescrptSeR as DescrptSeRTF
 else:
     DescrptSeRTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_e2_r import DescrptSeR as DescrptSeRTF2
+else:
+    DescrptSeRTF2 = None
 from deepmd.utils.argcheck import (
     descrpt_se_r_args,
 )
@@ -53,12 +58,43 @@ else:
     DescrptSeRArrayAPIStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
+SE_R_CASE_FIELDS = (
+    "resnet_dt",
+    "type_one_side",
+    "excluded_types",
+    "precision",
 )
+
+SE_R_BASELINE_CASE = {
+    "resnet_dt": True,
+    "type_one_side": True,
+    "excluded_types": [],
+    "precision": "float64",
+}
+
+
+def se_r_case(**overrides: Any) -> tuple:
+    case = SE_R_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_R_CASE_FIELDS)
+
+
+SE_R_CURATED_CASES = (
+    se_r_case(),
+    se_r_case(resnet_dt=False),
+    se_r_case(type_one_side=False),
+    se_r_case(excluded_types=[[0, 1]]),
+    se_r_case(precision="float32"),
+)
+
+SE_R_DESCRIPTOR_API_CURATED_CASES = (
+    se_r_case(),
+    se_r_case(resnet_dt=False),
+    se_r_case(type_one_side=False),
+    se_r_case(excluded_types=[[0, 1]]),
+)
+
+
+@parameterized_cases(*SE_R_CURATED_CASES)
 class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -131,7 +167,18 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_TF2
+
     tf_class = DescrptSeRTF
+    tf2_class = DescrptSeRTF2
     dp_class = DescrptSeRDP
     pt_class = DescrptSeRPT
     pt_expt_class = DescrptSeRPTExpt
@@ -210,6 +257,15 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
@@ -264,12 +320,7 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float64",),  # precision
-)
+@parameterized_cases(*SE_R_DESCRIPTOR_API_CURATED_CASES)
 class TestSeRDescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

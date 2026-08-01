@@ -52,7 +52,7 @@ void DeepSpinPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorch);
   int gpu_num = torch::cuda::device_count();
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;
@@ -160,7 +160,17 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)
           .to(device);
-  std::vector<VALUETYPE> spin_wrapped = spin;
+  // ``select_real_atoms_coord`` compacts coordinates and atom types in
+  // ``bkw_map`` order.  Spin is another per-atom side channel, so it must use
+  // the same mapping; taking a prefix of the original spin buffer is only
+  // correct when every filtered NULL atom happens to be at the end.
+  std::vector<VALUETYPE> spin_wrapped(static_cast<size_t>(nall_real) * 3);
+  for (int ii = 0; ii < nall_real; ++ii) {
+    for (int dd = 0; dd < 3; ++dd) {
+      spin_wrapped[static_cast<size_t>(ii) * 3 + dd] =
+          spin[static_cast<size_t>(bkw_map[ii]) * 3 + dd];
+    }
+  }
   at::Tensor spin_wrapped_Tensor =
       torch::from_blob(spin_wrapped.data(), {1, nall_real, 3}, options)
           .to(device);

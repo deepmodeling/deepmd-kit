@@ -19,6 +19,13 @@ from deepmd.tf.env import (
 from deepmd.tf.fit.fitting import (
     Fitting,
 )
+from deepmd.tf.fit.stat import (
+    load_param_stats,
+    make_aparam_stats,
+    make_fparam_stats,
+    save_param_stats,
+    stats_avg_std,
+)
 from deepmd.tf.loss.dos import (
     DOSLoss,
 )
@@ -47,6 +54,9 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 if TYPE_CHECKING:
@@ -265,7 +275,12 @@ class DOSFitting(Fitting):
 
         return dos_shift
 
-    def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
+    def compute_input_stats(
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
         """Compute the input statistics.
 
         Parameters
@@ -276,35 +291,24 @@ class DOSFitting(Fitting):
             can be prepared by model.make_stat_input
         protection
             Divided-by-zero protection
+        stat_file_path
+            The path to the stat file.
         """
         # stat fparam
         if self.numb_fparam > 0:
-            cat_data = np.concatenate(all_stat["fparam"], axis=0)
-            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
-            self.fparam_avg = np.average(cat_data, axis=0)
-            self.fparam_std = np.std(cat_data, axis=0)
-            for ii in range(self.fparam_std.size):
-                if self.fparam_std[ii] < protection:
-                    self.fparam_std[ii] = protection
+            fparam_stats = load_param_stats(stat_file_path, "fparam", self.numb_fparam)
+            if fparam_stats is None:
+                fparam_stats = make_fparam_stats(all_stat, self.numb_fparam)
+                save_param_stats(stat_file_path, "fparam", fparam_stats)
+            self.fparam_avg, self.fparam_std = stats_avg_std(fparam_stats, protection)
             self.fparam_inv_std = 1.0 / self.fparam_std
         # stat aparam
         if self.numb_aparam > 0:
-            sys_sumv = []
-            sys_sumv2 = []
-            sys_sumn = []
-            for ss_ in all_stat["aparam"]:
-                ss = np.reshape(ss_, [-1, self.numb_aparam])
-                sys_sumv.append(np.sum(ss, axis=0))
-                sys_sumv2.append(np.sum(np.multiply(ss, ss), axis=0))
-                sys_sumn.append(ss.shape[0])
-            sumv = np.sum(sys_sumv, axis=0)
-            sumv2 = np.sum(sys_sumv2, axis=0)
-            sumn = np.sum(sys_sumn)
-            self.aparam_avg = (sumv) / sumn
-            self.aparam_std = self._compute_std(sumv2, sumv, sumn)
-            for ii in range(self.aparam_std.size):
-                if self.aparam_std[ii] < protection:
-                    self.aparam_std[ii] = protection
+            aparam_stats = load_param_stats(stat_file_path, "aparam", self.numb_aparam)
+            if aparam_stats is None:
+                aparam_stats = make_aparam_stats(all_stat, self.numb_aparam)
+                save_param_stats(stat_file_path, "aparam", aparam_stats)
+            self.aparam_avg, self.aparam_std = stats_avg_std(aparam_stats, protection)
             self.aparam_inv_std = 1.0 / self.aparam_std
 
     def _compute_std(
@@ -348,7 +352,7 @@ class DOSFitting(Fitting):
             one_layer = one_layer_nvnmd
         else:
             one_layer = one_layer_deepmd
-        for ii in range(0, len(self.n_neuron)):
+        for ii in range(len(self.n_neuron)):
             if self.layer_name is not None and self.layer_name[ii] is not None:
                 layer_suffix = "share_" + self.layer_name[ii] + type_suffix
                 layer_reuse = tf.AUTO_REUSE
@@ -448,8 +452,8 @@ class DOSFitting(Fitting):
         if input_dict is None:
             input_dict = {}
         bias_dos = self.bias_dos
-        type_embedding = input_dict.get("type_embedding", None)
-        atype = input_dict.get("atype", None)
+        type_embedding = input_dict.get("type_embedding")
+        atype = input_dict.get("atype")
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.0

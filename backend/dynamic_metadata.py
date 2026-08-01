@@ -1,7 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""Provide project metadata that depends on the selected build configuration."""
+
 import sys
+from collections.abc import (
+    Mapping,
+)
 from pathlib import (
     Path,
+)
+from typing import (
+    Any,
 )
 
 from .find_pytorch import (
@@ -27,10 +35,23 @@ def __dir__() -> list[str]:
 
 
 def dynamic_metadata(
-    field: str,
-    settings: dict[str, object] | None = None,
-):
-    assert field in ["optional-dependencies", "entry-points", "scripts"]
+    settings: Mapping[str, object],
+    _project: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return one metadata fragment using the standard v1 provider protocol.
+
+    Each ``[[tool.dynamic-metadata]]`` entry selects a field explicitly. The
+    returned mapping is merged into the resolved ``[project]`` table by
+    scikit-build-core.
+    """
+    field = settings.get("field")
+    if not isinstance(field, str) or field not in {
+        "optional-dependencies",
+        "scripts",
+    }:
+        msg = f"Unsupported dynamic metadata field: {field!r}"
+        raise ValueError(msg)
+
     _, _, find_libpython_requires, extra_scripts, tf_version, pt_version = (
         get_argument_from_env()
     )
@@ -38,18 +59,20 @@ def dynamic_metadata(
         pyproject = tomllib.load(f)
 
     if field == "scripts":
-        return {
+        result = {
             **pyproject["tool"]["deepmd_build_backend"]["scripts"],
             **extra_scripts,
         }
-    elif field == "optional-dependencies":
+    else:
         optional_dependencies = pyproject["tool"]["deepmd_build_backend"][
             "optional-dependencies"
         ]
         optional_dependencies["lmp"].extend(find_libpython_requires)
         optional_dependencies["ipi"].extend(find_libpython_requires)
-        return {
+        result = {
             **optional_dependencies,
             **get_tf_requirement(tf_version),
             **get_pt_requirement(pt_version),
         }
+
+    return {field: result}

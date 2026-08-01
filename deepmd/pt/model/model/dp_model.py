@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import torch
-
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -52,23 +50,3 @@ class DPModelCommon:
     def get_descriptor(self):  # noqa: ANN201
         """Get the descriptor."""
         return self.atomic_model.descriptor
-
-    @torch.jit.export
-    def set_eval_descriptor_hook(self, enable: bool) -> None:
-        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
-        self.atomic_model.set_eval_descriptor_hook(enable)
-
-    @torch.jit.export
-    def eval_descriptor(self) -> torch.Tensor:
-        """Evaluate the descriptor."""
-        return self.atomic_model.eval_descriptor()
-
-    @torch.jit.export
-    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
-        """Set the hook for evaluating fitting_last_layer and clear the cache for fitting_last_layer list."""
-        self.atomic_model.set_eval_fitting_last_layer_hook(enable)
-
-    @torch.jit.export
-    def eval_fitting_last_layer(self) -> torch.Tensor:
-        """Evaluate the fitting_last_layer."""
-        return self.atomic_model.eval_fitting_last_layer()

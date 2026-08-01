@@ -51,17 +51,12 @@ class TestInferDeepSpinDpaPtExpt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    // The .pt2 spin model requires the BUILD_PT_EXPT guard from the header.
-    // If AOTInductor headers are missing, skip.
-    {
-      std::ifstream f(kModelPath);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
-      }
-    }
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
+    std::ifstream model_file(kModelPath);
+    ASSERT_TRUE(model_file.good())
+        << "Model artifact is not available: " << kModelPath;
     dp.init(kModelPath);
 
     deepmd_test::ExpectedRef ref;
@@ -205,15 +200,12 @@ class TestInferDeepSpinDpaPtExptNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    {
-      std::ifstream f(kModelPath);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
-      }
-    }
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
+    std::ifstream model_file(kModelPath);
+    ASSERT_TRUE(model_file.good())
+        << "Model artifact is not available: " << kModelPath;
     dp.init(kModelPath);
 
     deepmd_test::ExpectedRef ref;

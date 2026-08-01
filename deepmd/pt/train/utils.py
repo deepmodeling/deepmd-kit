@@ -9,8 +9,15 @@ import os
 from contextlib import (
     contextmanager,
 )
+from math import (
+    ceil,
+)
+from pathlib import (
+    Path,
+)
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 import torch
@@ -191,3 +198,88 @@ def scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def latest_checkpoint_path(prefix: str, step_label: int, save_dir: Path | None) -> Path:
+    """
+    Resolve the on-disk path of a periodic checkpoint file.
+
+    Parameters
+    ----------
+    prefix : str
+        The checkpoint prefix, e.g. ``model.ckpt`` or its EMA counterpart.
+    step_label : int
+        The training step encoded into the filename.
+    save_dir : Path or None
+        The configured checkpoint directory. When ``None`` the file follows
+        ``prefix`` relative to the working directory.
+
+    Returns
+    -------
+    Path
+        ``save_dir/<prefix name>-<step>.pt`` when ``save_dir`` is set, otherwise
+        ``<prefix>-<step>.pt`` relative to the working directory.
+    """
+    directory = save_dir if save_dir is not None else Path(prefix).parent
+    return directory / f"{Path(prefix).name}-{step_label}.pt"
+
+
+def resolve_best_checkpoint_dir(
+    validating_params: dict[str, Any], save_ckpt: str
+) -> Path:
+    """
+    Resolve the directory for full-validation best checkpoints.
+
+    Parameters
+    ----------
+    validating_params : dict
+        The ``validating`` section of the training configuration.
+    save_ckpt : str
+        The regular checkpoint prefix from ``training.save_ckpt``.
+
+    Returns
+    -------
+    Path
+        ``validating.save_best_dir`` when set, otherwise the directory derived
+        from ``save_ckpt``.
+    """
+    save_best_dir = validating_params.get("save_best_dir")
+    if save_best_dir:
+        return Path(save_best_dir)
+    return Path(save_ckpt).parent
+
+
+def resolve_keep_ckpt_count(
+    ckpt_keep_ratio: float | None, num_steps: int, save_freq: int
+) -> int | None:
+    """
+    Convert a checkpoint-retention ratio into a sliding-window keep count.
+
+    A checkpoint is written every ``save_freq`` steps and once more at the final
+    step, so a run of ``num_steps`` produces ``ceil(num_steps / save_freq)`` of
+    them in total (the terminal checkpoint is off-cadence when ``num_steps`` is
+    not a multiple of ``save_freq``). Keeping the most recent
+    ``ceil(ratio * total)`` is equivalent to retaining the final ``ratio``
+    fraction of the run by step, without the caller computing the count by hand.
+
+    Parameters
+    ----------
+    ckpt_keep_ratio : float or None
+        The fraction of the training run, by step, whose periodic checkpoints
+        are retained. ``None`` leaves the keep count unchanged.
+    num_steps : int
+        The total number of training steps, already resolved (including when
+        derived from ``numb_epoch``).
+    save_freq : int
+        The checkpoint saving frequency in steps.
+
+    Returns
+    -------
+    int or None
+        The number of most recent checkpoints to keep (at least one), or
+        ``None`` when ``ckpt_keep_ratio`` is not set.
+    """
+    if ckpt_keep_ratio is None:
+        return None
+    total_ckpts = max(1, ceil(num_steps / save_freq))
+    return max(1, ceil(ckpt_keep_ratio * total_ckpts))

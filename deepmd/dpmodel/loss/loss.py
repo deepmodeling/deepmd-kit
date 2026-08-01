@@ -21,6 +21,12 @@ from deepmd.utils.plugin import (
 
 
 class Loss(NativeOP, ABC, make_plugin_registry("loss")):
+    r"""Base interface for objectives :math:`L(\hat y,y)`.
+
+    Concrete losses map model outputs and labels to a scalar objective and
+    return diagnostic metrics alongside it.
+    """
+
     @abstractmethod
     def call(
         self,

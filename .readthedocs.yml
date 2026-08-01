@@ -12,5 +12,3 @@ build:
     - inkscape
 sphinx:
   configuration: doc/conf.py
-formats:
-  - pdf

@@ -1,0 +1,92 @@
+{
+  "model": {
+    "type_map": [
+      "Ti",
+      "O"
+    ],
+    "descriptor": {
+      "type": "dpa3",
+      "repflow": {
+        "n_dim": 128,
+        "e_dim": 64,
+        "a_dim": 32,
+        "nlayers": 6,
+        "e_rcut": 6.0,
+        "e_rcut_smth": 5.3,
+        "e_sel": 120,
+        "a_rcut": 4.0,
+        "a_rcut_smth": 3.5,
+        "a_sel": 30,
+        "axis_neuron": 4,
+        "fix_stat_std": 0.3,
+        "a_compress_rate": 1,
+        "a_compress_e_rate": 2,
+        "a_compress_use_split": true,
+        "update_angle": true,
+        "smooth_edge_update": true,
+        "edge_init_use_dist": true,
+        "use_exp_switch": true,
+        "update_style": "res_residual",
+        "update_residual": 0.1,
+        "update_residual_init": "const"
+      },
+      "activation_function": "silut:10.0",
+      "use_tebd_bias": false,
+      "precision": "float32",
+      "concat_output_tebd": false
+    },
+    "fitting_net": {
+      "type": "population",
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "precision": "float32",
+      "numb_aparam": 1,
+      "seed": 1
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 0.001,
+    "stop_lr": 3e-05,
+    "decay_steps": 5000
+  },
+  "loss": {
+    "type": "population",
+    "start_pref_spin": 1,
+    "limit_pref_spin": 1,
+    "start_pref_spin_total": 1,
+    "limit_pref_spin_total": 1,
+    "start_pref_pop": 1000,
+    "limit_pref_pop": 1,
+    "start_pref_pop_alpha_total": 1,
+    "limit_pref_pop_alpha_total": 1,
+    "start_pref_pop_beta_total": 1,
+    "limit_pref_pop_beta_total": 1,
+    "loss_func": "mae",
+    "metric": [
+      "mae"
+    ]
+  },
+  "training": {
+    "stop_batch": 100000,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "save_freq": 100000,
+    "save_ckpt": "model.ckpt",
+    "disp_training": true,
+    "time_training": true,
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "seed": 1,
+    "training_data": {
+      "batch_size": 1,
+      "systems": [
+        "../data"
+      ]
+    }
+  }
+}

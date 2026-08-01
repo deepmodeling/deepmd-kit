@@ -53,6 +53,7 @@ class RepFlowLayer(paddle.nn.Layer):
         optim_update: bool = True,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
         smooth_edge_update: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
@@ -102,8 +103,15 @@ class RepFlowLayer(paddle.nn.Layer):
         self.smooth_edge_update = smooth_edge_update
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
         self.dynamic_e_sel = self.nnei / self.sel_reduce_factor
         self.dynamic_a_sel = self.a_sel / self.sel_reduce_factor
+        if self.sequential_update and self.update_style != "res_residual":
+            raise NotImplementedError(
+                "sequential_update only supports update_style='res_residual'!"
+            )
+        if self.sequential_update and not self.update_angle:
+            raise NotImplementedError("sequential_update requires update_angle=True!")
 
         assert update_residual_init in [
             "norm",
@@ -1229,6 +1237,7 @@ class RepFlowLayer(paddle.nn.Layer):
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "sequential_update": self.sequential_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

@@ -26,8 +26,9 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -46,6 +47,11 @@ if INSTALLED_JAX:
     from deepmd.jax.model.property_model import PropertyModel as PropertyModelJAX
 else:
     PropertyModelJAX = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+    from deepmd.tf2.model.property_model import PropertyModel as PropertyModelTF2
+else:
+    PropertyModelTF2 = None
 if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.common import to_torch_array as pt_expt_numpy_to_torch
     from deepmd.pt_expt.model import PropertyModel as PropertyModelPTExpt
@@ -85,6 +91,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = None
+    tf2_class = PropertyModelTF2
     dp_class = PropertyModelDP
     pt_class = PropertyModelPT
     pt_expt_class = PropertyModelPTExpt
@@ -110,6 +117,8 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
     def skip_tf(self):
         return True  # need to fix tf consistency
 
+    skip_tf2 = not INSTALLED_TF2
+
     @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
@@ -126,6 +135,8 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
         elif cls is PropertyModelPTExpt:
             dp_model = get_model_dp(data)
             return PropertyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is PropertyModelTF2:
+            return get_model_tf2(data)
         elif cls is PropertyModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -207,6 +218,15 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -223,6 +243,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.DP,
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
+            self.RefBackend.TF2,
             self.RefBackend.JAX,
         }:
             return (
@@ -1210,10 +1231,15 @@ class TestPropertyModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
 )
+
+
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestPropertyComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.

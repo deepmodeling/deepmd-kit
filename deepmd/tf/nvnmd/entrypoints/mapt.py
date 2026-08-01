@@ -108,7 +108,6 @@ class MapTable:
         if self.Gs_Gt_mode == 1:
             self.shift_Gs = 0
             self.shift_Gt = 1
-        #
         M = nvnmd_cfg.dscp["M1"]
         if nvnmd_cfg.version == 0:
             ndim = nvnmd_cfg.dscp["ntype"]
@@ -183,7 +182,6 @@ class MapTable:
         if nvnmd_cfg.version == 1:
             self.map.update(dic_map3)
             self.map.update(dic_map4)
-        #
         FioDic().save(self.map_file, self.map)
         log.info("NVNMD: finish building mapping table")
         return self.map
@@ -231,7 +229,6 @@ class MapTable:
         t_table_info = tf.placeholder(tf.float64, [None], "t_table_info")
         t_y = op_module.map_flt_nvnmd(t_x, t_table, t_table_grad, t_table_info)
         sess = get_sess()
-        #
         n = len(x)
         dic_val = {}
         for key in dic_map.keys():
@@ -293,7 +290,6 @@ class MapTable:
                 y_i = ys
                 grad_i = grads
                 grad_grad_i = grad_grads
-            #
             coef_i = []
             coef_grad_i = []
             for jj in range(Nc):
@@ -339,7 +335,6 @@ class MapTable:
             y1 = y1[:Nd]
             dy0 = dy0[:Nd]
             dy1 = dy1[:Nd]
-            #
             a = (dx * dy1 - 2 * y1 + dx * dy0 + 2 * y0) / dx**3
             b = (3 * y1 - dx * dy1 - 2 * dx * dy0 - 3 * y0) / dx**2
             c = dy0
@@ -386,7 +381,6 @@ class MapTable:
         if dmin > 1e-6:
             min_dist = dmin
         min_dist = 0.5 if (min_dist > 0.5) else (min_dist - 0.1)
-        #
         r = tf.sqrt(r2)
         r_ = tf.clip_by_value(r, rmin, rmax)
         r__ = tf.clip_by_value(r, min_dist, rmax)
@@ -423,7 +417,6 @@ class MapTable:
             ndim = nvnmd_cfg.dscp["ntype"]
         if nvnmd_cfg.version == 1:
             ndim = 1
-        #
         dic_ph = {}
         dic_ph["u"] = tf.placeholder(tf.float64, [None, 1], "t_u")
         dic_ph["s"], dic_ph["h"] = self.build_u2s(dic_ph["u"])
@@ -473,7 +466,6 @@ class MapTable:
             res_dic["h"][tt][0] = 0
             res_dic["h_grad"][tt][0] = 0
             res_dic["h_grad_grad"][tt][0] = 0
-            #
             res_dic2["s"][tt][0] = -avg[tt, 0] / std[tt, 0]
             res_dic2["s_grad"][tt][0] = 0
             res_dic2["s_grad_grad"][tt][0] = 0
@@ -493,7 +485,6 @@ class MapTable:
             ntype = nvnmd_cfg.dscp["ntype"]
         if nvnmd_cfg.version == 1:
             ntype = 1
-        #
         xyz_scatters = []
         for tt2 in range(ntype):
             wbs = [get_filter_weight(nvnmd_cfg.weight, tt2, ll) for ll in range(1, 5)]
@@ -504,7 +495,6 @@ class MapTable:
     def build_s2g_grad(self) -> dict:
         r"""Build gradient of G with respect to s."""
         M1 = nvnmd_cfg.dscp["M1"]
-        #
         if nvnmd_cfg.version == 0:
             ntypex = nvnmd_cfg.dscp["ntypex"]
             ntype = nvnmd_cfg.dscp["ntype"]
@@ -513,7 +503,6 @@ class MapTable:
         if nvnmd_cfg.version == 1:
             ndim = 1
             shift = self.shift_Gs
-        #
         dic_ph = {}
         dic_ph["s"] = tf.placeholder(tf.float64, [None, 1], "t_s")
         dic_ph["g"] = [g + shift for g in self.build_s2g(dic_ph["s"])]
@@ -550,7 +539,6 @@ class MapTable:
             smin_ = np.floor(smin * prec - 1) / prec
         if nvnmd_cfg.version == 1:
             smin_ = 0
-        #
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
@@ -616,10 +604,8 @@ class MapTable:
         tf.reset_default_graph()
         dic_ph = self.build_t2g()
         sess = get_sess()
-        #
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
-        #
         res_lst = run_sess(sess, vals, feed_dict={})
         res_dic = dict(zip(keys, res_lst, strict=True))
 
@@ -659,7 +645,6 @@ class MapTable:
     def build_davg_dstd(self) -> dict:
         ntype = nvnmd_cfg.dscp["ntype"]
         davg, dstd = get_normalize(nvnmd_cfg.weight)
-        #
         res_dic = {}
         res_dic["davg_opp"] = np.array([-davg[tt, 0:4] for tt in range(ntype)])
         res_dic["dstd_inv"] = np.array([1.0 / dstd[tt, 0:4] for tt in range(ntype)])

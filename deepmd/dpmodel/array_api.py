@@ -133,6 +133,37 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
 
     # Generic array_api implementation (works for JAX, NumPy, array-api-strict, etc.)
     xp = array_api_compat.array_namespace(input)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        input_tensor = input.unwrap()
+        index_tensor = tf.cast(index.unwrap(), tf.int64)
+        src_tensor = src.unwrap()
+        rank = input_tensor.shape.rank
+        if rank is None:
+            raise ValueError("xp_scatter_sum requires a statically known rank")
+        dim = dim + rank if dim < 0 else dim
+        src_shape = tf.shape(src_tensor, out_type=tf.int64)
+        coords = []
+        for axis in range(rank):
+            if axis == dim:
+                coord = index_tensor
+            else:
+                view_shape = [1] * rank
+                view_shape[axis] = src_shape[axis]
+                coord = tf.broadcast_to(
+                    tf.reshape(tf.range(src_shape[axis], dtype=tf.int64), view_shape),
+                    src_shape,
+                )
+            coords.append(coord)
+        scatter_indices = tf.reshape(tf.stack(coords, axis=-1), (-1, rank))
+        scatter_updates = tf.reshape(src_tensor, (-1,))
+        scattered = tf.scatter_nd(
+            scatter_indices,
+            scatter_updates,
+            tf.shape(input_tensor, out_type=tf.int64),
+        )
+        return xp.asarray(input_tensor + scattered)
 
     # Create flat index array matching input shape
     idx = xp.arange(input.size, dtype=xp.int64, device=array_api_compat.device(input))
@@ -177,6 +208,74 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         for i in range(n):
             idx = int(indices[i])
             x[idx, ...] = x[idx, ...] + values[i, ...]
+        return x
+
+
+def xp_hint_dynamic_size(x: Array) -> None:
+    """Mark a data-dependent leading dimension as a valid size for torch.export.
+
+    Under symbolic tracing (``make_fx`` / ``torch.export``) the length of a
+    data-dependent array (e.g. the output of ``nonzero`` or a tensor-``repeat``)
+    is an UNBACKED SymInt; guarding Python control flow or allocations on it
+    raises ``GuardOnDataDependentSymNode``. ``torch._check_is_size`` registers
+    the ``>= 0`` size hint that lets the tracer treat it as a proper dimension
+    (recorded as a ``sym_constrain_range_for_size`` node, preserved by AOTI).
+
+    No-op for numpy / jax / eager-torch concrete shapes — safe to call
+    unconditionally from dpmodel code (torch imported lazily, torch arrays only).
+    """
+    if array_api_compat.is_torch_array(x):
+        import torch
+
+        torch._check_is_size(x.shape[0])
+
+
+def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
+    """Segment max-assign of values into x at the specified indices.
+
+    Element-wise analogue of :func:`xp_add_at` that takes the maximum instead
+    of the sum: for every ``k`` it assigns ``x[indices[k]] = maximum(
+    x[indices[k]], values[k])``. Repeated indices reduce to the per-segment
+    maximum, which is order-independent.
+
+    Parameters
+    ----------
+    x : Array
+        Destination array indexed along axis 0; typically pre-filled with
+        ``-inf`` so empty segments stay neutral.
+    indices : Array
+        Integer destination indices with shape (K,).
+    values : Array
+        Source values with shape (K, *x.shape[1:]).
+
+    Returns
+    -------
+    Array
+        The updated array (modified in place and returned for NumPy; a new
+        array for JAX/PyTorch).
+    """
+    xp = array_api_compat.array_namespace(x, indices, values)
+    if array_api_compat.is_numpy_array(x):
+        # NumPy: in-place ufunc reduction at the given indices.
+        xp.maximum.at(x, indices, values)
+        return x
+
+    elif array_api_compat.is_jax_array(x):
+        # JAX: functional indexed-max update, not in-place.
+        return x.at[indices].max(values)
+    elif array_api_compat.is_torch_array(x):
+        import torch
+
+        index = indices.reshape([-1] + [1] * (values.ndim - 1)).expand_as(values)
+        return torch.scatter_reduce(
+            x, 0, index, values, reduce="amax", include_self=True
+        )
+    else:
+        # Fallback for array_api_strict: basic indexing only.
+        n = indices.shape[0]
+        for i in range(n):
+            idx = int(indices[i])
+            x[idx, ...] = xp.maximum(x[idx, ...], values[i, ...])
         return x
 
 
@@ -233,6 +332,48 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     # Standard item assignment for NumPy, array-api-strict, etc.
     x[mask] = values
     return x
+
+
+def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> Array:
+    """Draw ``size`` uniform samples in ``[low, high)`` on ``like``'s device.
+
+    Each backend uses its own generator: torch draws with ``torch.rand`` (as
+    pt does, so ``setup_seed`` replays it, with no host copy -- and a host
+    draw would freeze to a constant under tracing); other backends use
+    :mod:`deepmd.utils.random`, which ``setup_seed`` also seeds. Draws are
+    therefore not comparable across backends -- use only for a per-forward
+    random stream, never where a parity test looks.
+
+    Parameters
+    ----------
+    like : Array
+        Reference array supplying backend, dtype and device.
+    size : int
+        Number of samples to draw.
+    low : float
+        Lower bound of the interval.
+    high : float
+        Upper bound of the interval, exclusive.
+
+    Returns
+    -------
+    Array
+        Samples of shape ``(size,)`` matching ``like``.
+    """
+    if array_api_compat.is_torch_array(like):
+        import torch
+
+        return (
+            torch.rand(size, dtype=like.dtype, device=like.device) * (high - low) + low
+        )
+    from deepmd.utils import random as dp_random
+
+    xp = array_api_compat.array_namespace(like)
+    drawn = np.asarray(dp_random.random(size)) * (high - low) + low
+    return xp.astype(
+        xp_asarray_nodetach(xp, drawn, device=array_api_compat.device(like)),
+        like.dtype,
+    )
 
 
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:

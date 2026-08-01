@@ -20,8 +20,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DipoleFittingTest,
@@ -45,6 +46,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.polar import PolarFittingSeA as PolarFittingTF
 else:
     PolarFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import PolarFittingNet as PolarFittingTF2
+else:
+    PolarFittingTF2 = object
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
@@ -64,12 +72,34 @@ from deepmd.utils.argcheck import (
     fitting_polar,
 )
 
-
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
-    (True, False),  # mixed_types
+POLAR_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
 )
+
+POLAR_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+}
+
+
+def polar_fitting_case(**overrides: Any) -> tuple:
+    case = POLAR_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in POLAR_FITTING_CASE_FIELDS)
+
+
+POLAR_FITTING_CURATED_CASES = (
+    polar_fitting_case(),
+    polar_fitting_case(resnet_dt=False),
+    polar_fitting_case(precision="float32"),
+    polar_fitting_case(mixed_types=False),
+    polar_fitting_case(resnet_dt=False, precision="float32", mixed_types=False),
+)
+
+
+@parameterized_cases(*POLAR_FITTING_CURATED_CASES)
 class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -96,6 +126,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     tf_class = PolarFittingTF
+    tf2_class = PolarFittingTF2
     dp_class = PolarFittingDP
     pt_class = PolarFittingPT
     pt_expt_class = PolarFittingPTExpt
@@ -104,6 +135,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
     args = fitting_polar()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def skip_pt_expt(self) -> bool:
@@ -192,6 +224,16 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.gr,
             None,
         )["polarizability"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                to_tensorflow_array(self.gr),
+                None,
+            )["polarizability"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         return np.asarray(

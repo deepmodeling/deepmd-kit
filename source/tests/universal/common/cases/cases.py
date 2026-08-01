@@ -51,7 +51,7 @@ class TestCaseSingleFrameWithNlist:
             [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
         )
         self.mapping = np.concatenate(
-            [self.mapping, self.mapping[:, self.perm]], axis=0
+            [self.mapping, inv_perm[self.mapping[:, self.perm]]], axis=0
         )
         self.mock_descriptor = np.concatenate(
             [self.mock_descriptor, self.mock_descriptor[:, self.perm[: self.nloc], :]],

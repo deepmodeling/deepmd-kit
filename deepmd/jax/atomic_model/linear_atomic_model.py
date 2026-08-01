@@ -24,7 +24,7 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
         if name == "zbl_weight":
             # discard since it's only used in tests
             # to fix flax.errors.TraceContextError: Cannot mutate 'FlaxModule' from different trace level
-            return
+            return None
         return super().__setattr__(name, value)
 
     def forward_common_atomic(

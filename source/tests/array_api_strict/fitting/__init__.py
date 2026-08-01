@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .dpa4_ener import (
+    SeZMEnergyFittingNet,
+)
 from .fitting import (
     DipoleFittingNet,
     DOSFittingNet,
@@ -13,4 +16,5 @@ __all__ = [
     "EnergyFittingNet",
     "PolarFittingNet",
     "PropertyFittingNet",
+    "SeZMEnergyFittingNet",
 ]

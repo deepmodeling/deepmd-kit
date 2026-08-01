@@ -196,12 +196,10 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
         self._has_spin = (
-            getattr(self.dp.model["Default"], "has_spin", False)
+            self.dp.model["Default"].has_spin()
             if isinstance(self.dp, ModelWrapper)
             else False
         )
-        if callable(self._has_spin):
-            self._has_spin = False
         self._has_hessian = False
 
     def get_rcut(self) -> float:
@@ -739,6 +737,19 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.model_def_script
+
+    def serialize(self) -> dict[str, Any]:
+        model = (
+            self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
+        )
+        if hasattr(model, "serialize"):
+            return model.serialize()
+
+        from deepmd.pd.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file(self.model_path)["model"]
 
     def get_model_size(self) -> dict:
         """Get model parameter count.

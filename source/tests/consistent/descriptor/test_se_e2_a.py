@@ -18,6 +18,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -43,6 +44,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
 else:
     DescrptSeATF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_e2_a import DescrptSeA as DescrptSeATF2
+else:
+    DescrptSeATF2 = None
 if INSTALLED_PD:
     import paddle
 
@@ -190,6 +195,10 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         return env_protection != 0.0 or CommonTest.skip_tf
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2
+
+    @property
     def skip_jax(self) -> bool:
         (
             resnet_dt,
@@ -223,6 +232,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeATF
+    tf2_class = DescrptSeATF2
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
     pt_expt_class = DescrptSeAPTExpt
@@ -308,6 +318,15 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,
@@ -452,6 +471,10 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         return True
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2
+
+    @property
     def skip_jax(self) -> bool:
         (
             resnet_dt,
@@ -485,6 +508,7 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeATF
+    tf2_class = DescrptSeATF2
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
     pt_expt_class = DescrptSeAPTExpt
@@ -607,6 +631,26 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         )
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        tf2_obj.compute_input_stats(
+            [
+                {
+                    "r0": None,
+                    "coord": self.coords.reshape(-1, self.natoms[0], 3),
+                    "atype": self.atype.reshape(1, -1),
+                    "box": self.box.reshape(1, 3, 3),
+                    "natoms": self.natoms[0],
+                }
+            ]
+        )
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

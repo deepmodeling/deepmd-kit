@@ -1,49 +1,58 @@
 # Descriptor DPA4 {{ pytorch_icon }}
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch {{ pytorch_icon }}
 
 DPA4 is the DeePMD-kit implementation of the SeZM (Smooth Equivariant
-Zone-bridging Model) architecture. Use `model.type: "dpa4"` in new input
-files. The aliases `DPA4`, `SeZM`, and `sezm` are accepted for the same
-implementation. The DPA4 model scaffold uses the SeZM descriptor and the
-`dpa4_ener` fitting network, so `descriptor.type` and `fitting_net.type`
-may be omitted in ordinary DPA4 inputs.
+Zone-bridging Model) architecture: an SO(3)-equivariant message-passing model
+for conservative interatomic potentials. The aliases `DPA4`, `SeZM`, and
+`sezm` all select the same implementation.
+
+`model.type: "dpa4"` is a convenience scaffold that selects the SeZM descriptor
+and defaults to the `dpa4_ener` energy fitting network, so `descriptor.type` and
+`fitting_net.type` may be omitted for energy training. A new energy input then
+needs only the model type, `type_map`, and a few descriptor options.
 
 Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
 
-Training example: `examples/water/dpa4/input.json`.
+## Quick start
 
-Quick start:
+DPA4 is a PyTorch-only model. Train it with the standard `dp --pt` workflow:
 
 ```bash
 cd examples/water/dpa4
 dp --pt train input.json
 ```
 
+`examples/water/dpa4/input.json` is a complete, compact training input you can
+copy and adapt. See [training energy models](train-energy.md) for the general
+training workflow shared by all energy models.
+
 ## Overview
 
-DPA4/SeZM is an SO(3)-equivariant message-passing model for conservative
-interatomic potentials. It predicts atomic energies and obtains forces and
-virials by differentiating the energy, following the same conservative
-formulation used by standard DeePMD energy models:
+DPA4/SeZM predicts atomic energies and obtains forces and virials by
+differentiating the energy, the same conservative formulation used by standard
+DeePMD energy models:
 
 ```math
 \mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i}.
 ```
 
-The model keeps vector and higher-order angular information while building
-the descriptor. Only the final descriptor sent to the fitting network is
-scalar. This separates geometric representation from energy prediction:
-equivariant layers encode local environments, and the fitting network maps
-the resulting scalar features to atomic energies.
+Internally the model keeps vector and higher-order angular (SO(3)-equivariant)
+information while building the descriptor, and only the final descriptor sent
+to the fitting network is a scalar. This separates geometric representation
+(equivariant message-passing layers that encode local environments) from
+energy prediction (the fitting network that maps scalar features to atomic
+energies). The architecture targets a favorable accuracy–cost trade-off; if you
+want the design details, see [Architecture details](#architecture-details) at
+the end of this page.
 
-## Model scaffold
+## Configuration
 
-The DPA4 model type is a convenience scaffold around the SeZM descriptor and
-the `dpa4_ener` energy fitting network. A minimal input therefore only needs
-the model type, `type_map`, and descriptor settings such as `sel` and `rcut`:
+### Minimal input
+
+A minimal DPA4 model only needs the model type, `type_map`, and the neighbor
+list (`sel`, `rcut`). Every other option uses its documented default.
 
 ```json
 {
@@ -54,237 +63,60 @@ the model type, `type_map`, and descriptor settings such as `sel` and `rcut`:
       "H"
     ],
     "descriptor": {
-      "sel": 120,
       "rcut": 6.0
     }
   }
 }
 ```
 
-Options that are not written in the input use their documented defaults.
-The neighbor selection `sel` may be an integer total neighbor limit, a
-per-type list, or `auto` / `auto:factor`.
+DPA4/SeZM defaults to `float32`
+({ref}`precision <model[dpa4]/descriptor[dpa4]/precision>`); double precision is
+unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 
-Internally, the PyTorch model builds a standard DeePMD neighbor list for the
-public forward path. When `use_compile` is enabled, the model additionally
-uses a compact sparse-edge path for compiled training. Both paths share the
-same descriptor and fitting definitions.
+> [!NOTE]
+> {ref}`sel <model[dpa4]/descriptor[dpa4]/sel>` behaves differently from classic
+> descriptors. On the conservative **energy** path it is only an initial
+> neighbor-search capacity that grows on demand, so it never truncates the
+> neighbor list and you do not need to size it to the true maximum neighbor count.
+> The native spin scheme shares this energy path, so it grows on demand too; only
+> the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
+> `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
+> the training data.
 
-## Descriptor construction
+### Main options
 
-For each frame, DPA4/SeZM first builds a local neighbor graph within cutoff
-radius `rcut`. Each edge stores the displacement vector, smooth cutoff
-weights, radial basis features, and the rotation between the global frame and
-an edge-aligned local frame. These edge features are built once per forward
-call and reused by all interaction blocks.
+Every descriptor option, with its default and full description, is listed in
+the {ref}`argument reference <model[dpa4]/descriptor[dpa4]>`. The options worth
+tuning first group into four accuracy–cost levers:
 
-One DPA4/SeZM interaction block consists of the following operations:
+- **Angular width** — the primary control. {ref}`lmax <model[dpa4]/descriptor[dpa4]/lmax>`
+  with the per-block pyramid {ref}`l_schedule <model[dpa4]/descriptor[dpa4]/l_schedule>`
+  (which overrides `lmax` and `n_blocks`), and the SO(2) order
+  {ref}`mmax <model[dpa4]/descriptor[dpa4]/mmax>` /
+  {ref}`m_schedule <model[dpa4]/descriptor[dpa4]/m_schedule>`. Cost grows
+  quickly with `lmax`; a non-increasing `l_schedule` is often a good compromise.
+- **Depth** — {ref}`n_blocks <model[dpa4]/descriptor[dpa4]/n_blocks>`,
+  {ref}`so2_layers <model[dpa4]/descriptor[dpa4]/so2_layers>`,
+  {ref}`ffn_blocks <model[dpa4]/descriptor[dpa4]/ffn_blocks>`.
+- **Width** — {ref}`channels <model[dpa4]/descriptor[dpa4]/channels>`,
+  {ref}`n_radial <model[dpa4]/descriptor[dpa4]/n_radial>`.
+- **Aggregation** — {ref}`n_focus <model[dpa4]/descriptor[dpa4]/n_focus>`,
+  {ref}`n_atten_head <model[dpa4]/descriptor[dpa4]/n_atten_head>` (`0` falls
+  back to a plain envelope-weighted scatter).
 
-1. Gather source-atom equivariant features on each edge.
-1. Rotate them into the edge-local frame.
-1. Apply SO(2)-equivariant convolution on the retained angular orders.
-1. Rotate messages back to the global frame.
-1. Aggregate messages at destination atoms with smooth envelope weights or
-   attention weights.
-1. Update atom features with an equivariant feed-forward block.
+The neighbor list is set by {ref}`rcut <model[dpa4]/descriptor[dpa4]/rcut>` and
+{ref}`sel <model[dpa4]/descriptor[dpa4]/sel>`, the initial node features by
+{ref}`use_env_seed <model[dpa4]/descriptor[dpa4]/use_env_seed>`, and the energy
+head by the fitting `neuron` list (`[0]` is a direct projection). The quickest
+starting point is to copy `examples/water/dpa4/input.json` and adjust the
+levers above.
 
-After the last block, DPA4/SeZM keeps the `l = 0` scalar channels:
+## Training
 
-```math
-\mathcal{D}_i = \mathrm{Scalar}\left(\mathbf{h}_i^{(L)}\right),
-```
+### Energy training (default)
 
-where $\mathbf{h}_i^{(L)}$ is the final equivariant feature of atom `i`.
-
-## Angular representation
-
-DPA4/SeZM stores intermediate features as SO(3)-equivariant coefficients. A
-feature block with maximum degree `lmax` contains all degrees
-`l = 0, ..., lmax`, and each degree has `2l + 1` angular components.
-
-The model reduces angular cost by working in a local frame on each edge. In
-that frame, rotations around the edge axis become SO(2) operations. The SO(2)
-convolution retains orders `|m| <= mmax`, or the per-block value specified by
-`m_schedule`, while preserving the required equivariant transformation
-behavior.
-
-Two schedules control the angular width:
-
-- `l_schedule` sets the SO(3) degree used by each block. A schedule such as
-  `[3, 3, 2]` uses higher degrees in early blocks and truncates them in later
-  blocks.
-- `mmax` or `m_schedule` sets how many SO(2) orders are retained in the
-  edge-local convolution.
-
-The angular schedule is one of the primary accuracy-cost controls in
-DPA4/SeZM. Larger angular spaces can represent more complex local chemistry,
-but the cost grows quickly with `lmax`. For many systems, a non-increasing
-`l_schedule` provides a practical compromise.
-
-## Radial basis and smooth cutoff
-
-Every edge uses a radial basis multiplied by a smooth envelope. The default
-basis is Bessel-like, and a Gaussian basis is also available through
-`basis_type`. The cutoff envelope is constructed so that its value and first
-three derivatives vanish at `rcut`. This smoothness is important for
-molecular dynamics because nonsmooth descriptor cutoffs would be inherited by
-force derivatives.
-
-DPA4/SeZM uses two envelope exponents through `env_exp`:
-
-- the first exponent controls the radial basis envelope,
-- the second exponent controls message-passing edge weights.
-
-Increasing an exponent keeps the corresponding envelope closer to one for
-more of the cutoff range before it drops near `rcut`.
-
-## Attention and focus streams
-
-DPA4/SeZM can aggregate edge messages either by envelope-weighted scatter or
-by attention. When attention is enabled with `n_atten_head > 0`, the cutoff
-envelope also participates in the softmax normalization. Edges near the
-cutoff are therefore smoothly suppressed in both the numerator and the
-denominator, avoiding nonsmooth contributions from the normalization term.
-
-The SO(2) convolution can also use multiple focus streams through `n_focus`.
-These streams process the same edge geometry in parallel and are then
-combined through scalar weights. This design is not a sparse mixture of
-experts: all focus streams are evaluated before soft reweighting. The
-additional capacity helps the convolution distinguish different local
-patterns while preserving equivariance.
-
-## Grid nonlinearities
-
-Several DPA4/SeZM branches can use sphere-grid or SO(3)-grid nonlinearities
-inside the equivariant network. The most commonly used public switches are:
-
-- `s2_activation`, which enables S2-grid nonlinearities for the SO(2) branch
-  and/or the block-internal feed-forward branch.
-- `ffn_so3_grid`, which uses an SO(3) Wigner-D grid in the block-internal
-  feed-forward path.
-- `lebedev_quadrature`, which selects packaged Lebedev quadrature rules for
-  enabled S2-grid branches.
-- `grid_mlp` and `grid_branch`, which select the polynomial point-wise MLP or
-  the scalar-routed polynomial branch mixer for each grid path. Each is either
-  a single value applied to every path or a list
-  `[node_wise, message_node, ffn]`.
-
-These options affect the expressiveness and cost of the equivariant
-nonlinearity. The final `l = 0` output descriptor remains a scalar feature
-tensor consumed by the fitting network.
-
-## Environment-seeded initial features
-
-When `use_env_seed` is enabled, DPA4/SeZM seeds the initial node state from
-the local environment before the equivariant message-passing blocks. The
-scalar seed uses a DeePMD-style local environment matrix with radial
-information and normalized directions, then produces FiLM-like scale and
-shift values for the first scalar features. When non-scalar degrees are
-present, the same switch also enables the geometric initial embedding.
-
-When `use_env_seed` is disabled, the initial node state contains only
-atom-local scalar features before message passing. This keeps a one-block
-model closed over the one-hop neighbor shell.
-
-## Zone bridging and ZBL
-
-DPA4/SeZM includes an optional short-range bridge for analytical repulsion.
-The typical use case is ZBL:
-
-```math
-E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
-```
-
-The purpose of zone bridging is to combine the analytical short-range
-repulsion with the learned model while preventing uncontrolled learned forces
-in the same protected region.
-
-Zone bridging has two pieces:
-
-1. Distances below `bridging_r_inner` are clamped before they enter the
-   descriptor. Between `bridging_r_inner` and `bridging_r_outer`, a smooth
-   polynomial transitions back to the true distance.
-1. A source gate suppresses message propagation from atoms involved in frozen
-   short-range pairs. This blocks multi-hop leakage, where a third atom could
-   otherwise carry information about the frozen pair back into the learned
-   energy.
-
-This gives a controlled decomposition in the protected region:
-
-```math
-E_\mathrm{total}(r) = E_\mathrm{ZBL}(r) + E_\mathrm{model}(\tilde r),
-```
-
-where $r$ is the true distance and $\tilde r$ is the clamped distance seen by
-the descriptor.
-
-Enable zone bridging with:
-
-```json
-{
-  "model": {
-    "bridging_method": "zbl",
-    "bridging_r_inner": 0.5,
-    "bridging_r_outer": 0.8
-  }
-}
-```
-
-When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to
-the same value as `bridging_r_inner` so that frames with shorter atom pairs
-are excluded from training. See `examples/water/dpa4/input-zbl.json` for a
-complete ZBL input example.
-
-## Fitting network
-
-DPA4/SeZM uses the `dpa4_ener` energy fitting implementation. It is selected
-automatically by the DPA4 model scaffold and maps scalar descriptors to atomic
-energies.
-
-The fitting network uses the same common keys as DeePMD's standard energy
-fitting network:
-
-- `neuron`
-- `activation_function`
-- `precision`
-- `seed`
-- `numb_fparam`
-- `numb_aparam`
-
-The hidden layers use GLU-style transformations. If `neuron` is `[0]`, the
-fitting network uses a direct projection from descriptor channels to atomic
-energy. This compact setting is useful for small examples and quick
-validation tests.
-
-For shared-fitting multitask training, DPA4/SeZM supports case embeddings.
-With `case_film_embd: true`, the case vector modulates the fitting network
-instead of being concatenated directly to the descriptor. This keeps the
-descriptor case-independent while allowing the energy map to depend on the
-task branch.
-
-## Configuration
-
-For a complete training input, see `examples/water/dpa4/input.json`. The
-example uses a compact water setup with the DPA4 model type, SeZM descriptor
-options, `dpa4_ener` fitting settings, and the standard conservative energy
-loss. Its structure is closer to a DPA4-Neo-style compact configuration than
-to the DPA4-Air pretrained configuration.
-
-Common descriptor controls include:
-
-- `sel` and `rcut` for the neighbor list.
-- `channels`, `n_radial`, and `basis_type` for feature width and radial
-  resolution.
-- `lmax`, `l_schedule`, `mmax`, and `m_schedule` for angular resolution.
-- `n_blocks`, `so2_layers`, and `ffn_blocks` for network depth.
-- `n_focus` and `n_atten_head` for focus streams and attention aggregation.
-- `use_env_seed`, `s2_activation`, `ffn_so3_grid`, and `message_node_so3` for
-  the main geometric feature paths.
-- `use_amp` and `precision` for training precision.
-
-## Training modes
-
-The recommended training objective is the standard conservative energy loss:
+The recommended objective is the standard conservative energy loss. The model
+predicts energies and forces are obtained by autograd:
 
 ```json
 {
@@ -294,11 +126,40 @@ The recommended training objective is the standard conservative energy loss:
 }
 ```
 
-In this mode, the model predicts energies, and forces are computed by
-autograd. See [training energy models](train-energy.md) for the general
-energy-training workflow.
+See [training energy models](train-energy.md) for the general workflow.
 
-DPA4/SeZM also has an experimental direct-force denoising mode selected by:
+### Property training
+
+DPA4/SeZM can also train invariant structure properties by selecting the
+standard property fitting network. Set `fitting_net.type` to `property`, provide
+the property name used by the data file, and use the property loss:
+
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "fitting_net": {
+      "type": "property",
+      "property_name": "band_prop",
+      "task_dim": 3,
+      "intensive": true
+    }
+  },
+  "loss": {
+    "type": "property"
+  }
+}
+```
+
+The property label follows the usual DeePMD property-data convention: each
+system provides `band_prop.npy` when `property_name` is `band_prop`. Property
+fitting is not a water task, so the complete DPA4/SeZM property input lives with
+the property dataset: see `examples/property/train/input_dpa4.json`, which trains
+on the QM9 property subset in `examples/property/data`.
+
+### Direct-force denoising (`dens`, experimental)
+
+DPA4/SeZM has an experimental direct-force denoising head:
 
 ```json
 {
@@ -308,14 +169,82 @@ DPA4/SeZM also has an experimental direct-force denoising mode selected by:
 }
 ```
 
-Use `dens` only when the direct-force denoising head is required. It is not
-the default training path. See `examples/water/dpa4/input_dens.json` for an
-example input.
+Use `dens` only when the direct-force denoising head is required; it is not the
+default training path. See `examples/water/dpa4/input_dens.json` for an example.
 
-## Spin
+### Spin
 
-DPA4/SeZM supports the DeePMD-kit spin convention in the PyTorch backend.
-Keep the DPA4/SeZM type string and add the standard `model.spin` block:
+DPA4/SeZM supports the DeePMD-kit spin convention through the standard
+`model.spin` block. Two schemes are available, selected by `model.spin.scheme`:
+
+- `native` — the per-atom spin vector enters the descriptor as an
+  equivariant feature, and the magnetic force is the spin gradient of the
+  energy. No virtual atoms are introduced, so the neighbor list and type map
+  keep their real-system sizes.
+- `deepspin` (default) — the classical DeepSpin representation, in which each
+  magnetic atom is paired with a virtual atom displaced along its spin. It is
+  the default, so a `model.spin` block without an explicit `scheme` reproduces
+  the classical behaviour shared with every non-SeZM spin model.
+
+Both schemes train against the conservative `ener_spin` loss, share the same
+`spin` / `force_mag` data convention, and are not combined with the `dens` mode.
+Because the dataset and loss are identical, switching `scheme` does not require
+any change to the data or the loss block. Complete inputs are in
+`examples/spin/dpa4/`: `input.json` for the native scheme and
+`input-deepspin.json` for the deepspin scheme. See
+[training spin energy models](train-energy-spin.md) for the general workflow.
+
+`use_spin` accepts a per-type boolean list or, to avoid enumerating a large
+`type_map`, the list of magnetic species as type indices or element symbols
+(e.g. `"use_spin": ["Fe"]`), expanded against `type_map`. For the native scheme,
+`model.spin.allow_missing_label` additionally admits training systems that lack a
+`spin` data file by filling their spin with zeros; since a zero spin reduces the
+native descriptor to its spin-free form, a model can be trained on a mixture of
+spin-labelled and spin-free systems, or pretrained on spin-free data and
+fine-tuned on spin-labelled data without changing its type map or parameters.
+
+#### Native scheme
+
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "scheme": "native"
+    },
+    "descriptor": {
+      "rcut": 6.0
+    }
+  }
+}
+```
+
+`use_spin` marks which atom types carry spin. Both the conservative force and
+the magnetic force come from a single energy gradient:
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+\qquad
+\mathbf{F}^{\mathrm{mag}}_i = -\frac{\partial E}{\partial \mathbf{s}_i},
+```
+
+where $\mathbf{s}_i$ is the input spin vector. The model does not rescale the
+spin internally, so $\mathbf{s}_i$ keeps the dataset's `spin` convention and the
+magnetic force is reported in the matching units of `force_mag` -- there is no
+`virtual_scale` factor in this scheme. The magnetic force is reported on the
+magnetic atom types only, matching the `force_mag` label. The native scheme
+relies on the descriptor's angular degrees to represent the spin direction, so
+it requires `lmax >= 1` (the default).
+
+#### DeepSpin virtual-atom scheme (default)
 
 ```json
 {
@@ -332,7 +261,8 @@ Keep the DPA4/SeZM type string and add the standard `model.spin` block:
       ],
       "virtual_scale": [
         0.314
-      ]
+      ],
+      "scheme": "deepspin"
     },
     "descriptor": {
       "sel": 120,
@@ -342,175 +272,24 @@ Keep the DPA4/SeZM type string and add the standard `model.spin` block:
 }
 ```
 
-The spin path supports the conservative `ener_spin` loss. The direct-force
-denoising mode is not used together with spin. See
-[training spin energy models](train-energy-spin.md) for the common spin
-training settings, and `examples/water/dpa4/input-spin.json` for a DPA4-style
-input example.
+The `deepspin` scheme augments each magnetic atom with a virtual atom at
+`coord + spin * virtual_scale`, which doubles the internal neighbor capacity and
+type map. `virtual_scale` is required by this scheme and ignored by the native
+scheme.
 
-## Performance and hardware recommendations
+### Multi-task / shared fitting
 
-### bfloat16 automatic mixed precision
+DPA4/SeZM supports shared-fitting multitask training. With
+`case_film_embd: true`, the case vector modulates the fitting network instead
+of being concatenated to the descriptor, which keeps the descriptor
+case-independent while letting the energy map depend on the task branch. See
+[multi-task training](../train/multi-task-training.md) for the workflow and
+`examples/water/dpa4/input_multitask.json` for an example.
 
-DPA4/SeZM supports automatic mixed precision (AMP) during training through the
-descriptor option `use_amp`, whose default value is `true`. This option uses
-bfloat16 (bf16) autocast for eligible CUDA operations. In typical DPA4/SeZM
-workloads, bf16 AMP reduces memory usage and may improve throughput while
-preserving fitted accuracy; no visible accuracy degradation is expected in
-normal DPA4/SeZM training. Numerically sensitive geometric operations are kept
-in promoted precision.
+### LoRA fine-tuning
 
-When the GPU provides native bf16 support, enabling `use_amp` is recommended:
-
-```json
-{
-  "model": {
-    "descriptor": {
-      "use_amp": true
-    }
-  }
-}
-```
-
-On GPUs without native bf16 support, explicitly set `use_amp` to `false` to
-avoid runtime errors or additional conversion overhead:
-
-```json
-{
-  "model": {
-    "descriptor": {
-      "use_amp": false
-    }
-  }
-}
-```
-
-On NVIDIA hardware, native bf16 support starts with the Ampere generation,
-including A100-series accelerators and RTX 30-series GPUs, and continues on
-newer architectures.
-
-### Experimental `torch.compile` path
-
-DPA4/SeZM can train through an experimental `torch.compile` path:
-
-```json
-{
-  "model": {
-    "use_compile": true
-  }
-}
-```
-
-This path is useful for force-loss training, where differentiating the force
-loss requires higher-order derivatives through the conservative
-energy-gradient path. DPA4/SeZM traces this path before passing it to
-Inductor.
-
-This path is experimental and may expose PyTorch compiler issues. It currently
-requires `torch==2.11`; other PyTorch versions are not supported for this
-compiled DPA4/SeZM training path. On NVIDIA GPUs, CUDA must be >= 12.6. Apple
-Silicon Macs are also supported. It has been tested with Python 3.13. If the
-compiled path fails or produces unexpected behavior, please report the issue
-with the PyTorch version, CUDA version, GPU model, and a minimal input file.
-
-### Inference environment variables
-
-DPA4/SeZM reads inference-related environment variables when the PyTorch model
-is constructed. If these variables are already exported in the shell, they
-take precedence over values written in the input file. Changing them after
-model construction does not affect that model instance.
-
-`DP_COMPILE_INFER` controls whether evaluation and inference forwards use the
-DPA4/SeZM compile path:
-
-```bash
-export DP_COMPILE_INFER=1
-```
-
-Accepted true values are `1`, `true`, `yes`, and `on`; accepted false values
-are `0`, `false`, `no`, and `off`. Enabling this path has the same PyTorch
-version requirements as `model.use_compile`.
-
-During training validation, the same setting can be requested in the input
-file:
-
-```json
-{
-  "validating": {
-    "compiled_infer": true
-  }
-}
-```
-
-The trainer translates this option into `DP_COMPILE_INFER=1` before model
-construction, unless the shell environment already defines `DP_COMPILE_INFER`.
-
-`DP_TF32_INFER` controls the float32 matmul precision used by evaluation and
-inference forwards on CUDA:
-
-- `0`: use PyTorch `highest` precision. This is the default.
-- `1`: use PyTorch `high` precision.
-- `2`: use PyTorch `medium` precision.
-
-During training validation, the input option
-`validating.tf32_infer: true` is translated into `DP_TF32_INFER=1` before
-model construction, again without overriding an explicitly exported
-environment variable. Training forwards are controlled separately by
-`model.enable_tf32`, independently of whether `model.use_compile` selects the
-compiled or eager training path.
-
-For molecular dynamics and other workflows that are sensitive to potential
-energy surface smoothness, keep `DP_TF32_INFER=0`. Enabling TF32 inference may
-leave energy and force MAE nearly unchanged while making the potential energy
-surface less smooth. For less smoothness-sensitive evaluation or screening
-workloads, `DP_TF32_INFER=1` or `2` may be useful for improving throughput.
-
-`DP_TRITON_INFER` enables fused block-diagonal Triton kernels for the SO(2)
-Wigner-D rotation. It applies to evaluation and inference on CUDA in eval mode
-only and is disabled by default:
-
-```bash
-export DP_TRITON_INFER=1
-```
-
-The kernels operate on the block-diagonal (by degree `l`) structure of the
-Wigner-D matrix and are numerically equivalent to the default dense rotation up
-to floating-point rounding. They retain full float32 accumulation regardless of
-`DP_TF32_INFER` and are therefore appropriate for smoothness-sensitive
-workflows. They are compatible with the compile path (`DP_COMPILE_INFER=1`) and
-reduce both latency and peak memory.
-
-When exporting DPA4/SeZM to `.pt2`, set inference environment variables before
-running `dp --pt freeze`. The exported package is an AOTInductor artifact, so
-graph-level choices and compiler precision settings are fixed during export and
-are not re-evaluated when the `.pt2` file is later loaded by ASE or LAMMPS.
-In particular, `DP_TRITON_INFER` selects the SO(2) rotation branch that is
-captured into the exported graph, and `DP_TF32_INFER` should be set before
-export if TF32 inference is desired. `DP_ACT_INFER` is not a runtime control for
-`.pt2` inference: activation checkpointing is a Python/autograd memory-saving
-strategy, while `.pt2` inference runs a forward-only AOTI package whose force
-and virial computations have already been lowered into the exported graph.
-
-### Hardware selection
-
-DPA4/SeZM is designed for fp32 training and inference. Hardware selection
-should therefore be based primarily on fp32 throughput rather than fp64
-throughput. In contrast to workloads dominated by double-precision linear
-algebra, DPA4/SeZM does not require GPUs with especially strong fp64
-performance.
-
-For practical training, prefer GPUs that combine high fp32 FLOPS with native
-bf16 support. Native bf16 enables the recommended AMP path, lowering memory
-usage and often improving throughput. Because AMP can substantially reduce the
-activation memory footprint, DPA4/SeZM training usually does not require
-unusually large-memory GPUs once the target system and batch size fit. In that
-regime, native bf16 support and fp32 FLOPS are usually more important
-selection criteria than maximum device memory.
-
-## LoRA fine-tuning
-
-DPA4/SeZM supports LoRA adapters on its SO(3) and SO(2) linear layers. This
-mode is intended for single-task fine-tuning. A typical input block is:
+DPA4/SeZM supports LoRA adapters on its SO(3) and SO(2) linear layers, intended
+for single-task fine-tuning:
 
 ```json
 {
@@ -524,46 +303,444 @@ mode is intended for single-task fine-tuning. A typical input block is:
 }
 ```
 
-Then fine-tune from a checkpoint:
+Fine-tune from a checkpoint:
 
 ```bash
 dp --pt train lora_ft.json --finetune pretrained.pt
 ```
 
-See `examples/water/dpa4/lora_ft.json` for a complete example.
+Best checkpoints fold the LoRA deltas back into the base weights, producing
+plain DPA4/SeZM checkpoints suitable for deployment. See
+`examples/water/dpa4/lora_ft.json`.
 
-## Export
+## Zone bridging (ZBL)
 
-DPA4/SeZM checkpoints use the PyTorch `.pt2` export path. Run the standard
-freeze command:
+DPA4/SeZM can add an analytical short-range repulsion (typically ZBL) to the
+learned energy in a protected region:
+
+```math
+E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
+```
+
+Below `bridging_r_inner` the distance seen by the descriptor is clamped, with a
+smooth transition back to the true distance up to `bridging_r_outer`; a source
+gate additionally blocks the learned model from leaking information about the
+frozen short-range pairs. Enable it with:
+
+```json
+{
+  "model": {
+    "bridging_method": "zbl",
+    "bridging_r_inner": 0.5,
+    "bridging_r_outer": 0.8
+  }
+}
+```
+
+When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
+same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
+from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
+
+## Performance and precision
+
+### Training-time settings
+
+Three options control training precision and the compiled path:
+
+- {ref}`use_amp <model[dpa4]/descriptor[dpa4]/use_amp>` — bf16 automatic mixed
+  precision on CUDA. Reduces memory and often improves throughput with no
+  expected accuracy loss. Recommended on GPUs with native bf16 (NVIDIA Ampere
+  and newer, e.g. A100 / RTX 30-series); set it off on GPUs without native bf16
+  to avoid runtime errors and conversion overhead.
+- {ref}`enable_tf32 <model[dpa4]/enable_tf32>` — TF32 matmul precision for CUDA
+  **training** forwards (independent of `use_compile`, and separate from the
+  inference TF32 control below).
+- {ref}`use_compile <model[dpa4]/use_compile>` — experimental `torch.compile`
+  training path. Useful for force-loss training (higher-order derivatives
+  through the energy gradient) and can speed training markedly on supported
+  setups.
+
+### Inference and deployment settings
+
+Inference behavior is controlled by environment variables, each with an
+equivalent input-file option used during training validation:
+
+| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference when `descriptor.use_amp=true`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). `1`: universal fused kernels, numerically equivalent to the dense path with full float32 accumulation. `2`: adds the table-configured fused SO(2) value path and edge-block backward kernels (still exact float32). `3`: additionally runs the SO(2) mixing stack on fp16 tensor cores with split compensation — roughly float32-level accuracy (maximum force deviation about 4e-6 eV/Å on a 4-thousand-atom system) at a substantial speedup; only shapes validated by the tuning sweep are affected. Levels 2 and 3 read launch tables tuned per GPU model (H20 ships built in); on other GPUs the kernels fall back to conservative configurations, and `dp --pt freeze` tunes the missing entries automatically on the local GPU before exporting (a one-off sweep of a few minutes, baked into the `.pt2`). |
+
+Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
+`0`/`false`/`no`/`off`; `DP_TRITON_INFER` accepts only the numeric levels.
+Shell exports take precedence over the input-file options and over values
+written in the input; they are read when the model is constructed and changing
+them afterward has no effect.
+
+For molecular dynamics and other workflows sensitive to the smoothness of the
+potential energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+`DP_AMP_INFER` can coexist with `DP_TF32_INFER`, but bf16 autocast dominates
+the eligible operations it covers, so TF32 usually adds little extra throughput
+there. `DP_TRITON_INFER` levels `1` and `2` retain full float32 accumulation
+regardless of the precision policy and are therefore safe for those workflows;
+level `3` perturbs forces at the 2^-22 rounding scale (three orders of
+magnitude finer than TF32) and is the recommended fast setting once validated
+for the target system.
+
+> [!IMPORTANT]
+> Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
+> an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
+> matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
+> captured into the graph at export time and are **not** re-evaluated when the
+> `.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+> package, so training-time memory-saving switches do not apply to it.
+
+### Hardware selection
+
+DPA4/SeZM is designed for fp32 training and inference, so prefer GPUs with high
+fp32 throughput and native bf16 support rather than strong fp64 performance.
+Because bf16 AMP substantially reduces the activation memory footprint, very
+large device memory is usually less important than fp32 FLOPS and bf16 support
+once the target system and batch size fit.
+
+## Export and running in LAMMPS
+
+### Freeze to `.pt2`
+
+DPA4/SeZM checkpoints use the PyTorch `.pt2` (AOTInductor) export path; the
+ordinary TorchScript freeze path is not used. Run the standard freeze command:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
-The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`. Use this
-`.pt2` file with LAMMPS:
+The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`.
+
+### Single GPU
+
+Use the frozen `.pt2` with the `deepmd` pair style. A small example is in
+`examples/water/dpa4/lmp/`.
 
 ```lammps
 pair_style deepmd frozen_model.pt2
 pair_coeff * * O H
 ```
 
-The ordinary TorchScript freeze path is not used for DPA4/SeZM checkpoints.
-A small LAMMPS example is in `examples/water/dpa4/lmp/`.
+### Multi-GPU (MPI) inference
+
+:::{important}
+**Multi-rank support depends on the model, not on a dense/graph choice.**
+DPA4/SeZM reads ghost-neighbour features at every interaction block, so a
+multi-rank archive must embed a with-comm AOTInductor artifact
+(`model/extra/forward_lower_with_comm.pt2`) for the cross-rank exchange.
+Two different export routes produce one:
+
+- **PT (`dp --pt freeze`, the default on this page).** DPA4/SeZM is detected
+  and exported through `freeze_sezm_to_pt2`, which uses the compact
+  **`edge_vec`** ABI (`coord`, `atype`, `edge_index`, `edge_vec`,
+  `edge_scatter_index`, `edge_mask`), building the neighbour topology on the
+  C++ side. This is *not* a padded dense neighbour-list export. A plain
+  energy model reports `supports_edge_parallel() == True`, so the archive
+  carries the with-comm artifact (`has_comm_artifact=true`) and **supports
+  multi-rank LAMMPS out of the box** — no extra freeze options.
+- **pt_expt (`dp --pt_expt freeze`).** Graph-capable models export through the
+  **NeighborGraph** ABI (see [Graph-native inference route
+  (pt_expt)](#graph-native-inference-route-pt_expt) below), which likewise
+  embeds a with-comm artifact and supports multi-rank LAMMPS.
+
+The two are distinct ABIs consumed by different C++ paths; neither is a dense
+route, and `--lower-kind` selects between the pt_expt lowers only.
+
+Which models lose multi-rank, on either route:
+
+- **ZBL zone bridging.** The Source Freeze Propagation gate folds each node's
+  full *outgoing*-edge set, which no single rank observes for ghost owners, so
+  `supports_edge_parallel()` is `False` and no with-comm artifact is emitted.
+  Bridged archives are single-rank; a multi-rank run fails with a clear error
+  rather than silently dropping the exchange.
+- **The deepspin (virtual-atom) spin scheme**, which overrides the export ABI
+  to `nlist` because it expands virtual atoms inside the graph.
+
+Native spin (`scheme: "native"`) and charge/spin conditioning are *not* in
+that list: native spin reuses the `edge_vec` interface on PT and the
+NeighborGraph lower on pt_expt, and both support multi-rank. The remainder of
+this subsection describes the multi-GPU launch recipe.
+:::
+
+The exported `.pt2` runs across multiple GPUs in LAMMPS using MPI domain
+decomposition, with the same `.pt2` file serving both single- and multi-GPU
+runs and no extra freeze options needed beyond `--lower-kind graph`. The
+launch recipe:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
+```
+
+Each MPI rank uses at most one GPU, so `CUDA_VISIBLE_DEVICES` must list every
+GPU the run may use. DPA4/SeZM exchanges neighbor information across the
+domain boundary, so the LAMMPS atom map must be enabled:
+
+```lammps
+atom_modify map yes
+pair_style deepmd frozen_model.pt2
+pair_coeff * * O H
+```
+
+Two settings improve multi-GPU runs:
+
+- For fast GPU-to-GPU exchange, build the C++ interface against a
+  [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library;
+  otherwise the cross-rank exchange falls back to a slower CPU path.
+- Use a non-zero neighbor skin, e.g. `neighbor 2.0 bin`, to keep per-step GPU
+  memory stable. A zero skin rebuilds the neighbor list every step and can
+  substantially increase memory use.
+
+## Graph-native inference route (pt_expt)
+
+In the pt_expt backend, a plain-energy DPA4/SeZM descriptor -- or one
+configured with `spin.scheme: native` (see [Native spin
+(magnetic)](#native-spin-magnetic) below) -- can be frozen through a
+NeighborGraph-native inference path instead of the legacy dense
+neighbor-list path. Frame-level charge/spin conditioning
+(`add_chg_spin_ebd`) and ZBL zone bridging are graph-eligible too; only the
+`deepspin` virtual-atom spin scheme remains dense-only:
+
+```bash
+dp --pt_expt freeze -o model.pt2 --lower-kind graph
+```
+
+As with DPA-1's and DPA-2's graph paths (see [Difference among different
+backends](train-se-atten.md#difference-among-different-backends) and the
+"Graph-native inference route (pt_expt)" section of [DPA-2's
+documentation](dpa2.md)), the graph route is a sel-free, carry-all builder:
+it considers every neighbor within `rcut` rather than the capacity fixed by
+`sel`. For the default conservative-energy path, `sel` is already only an
+initial search capacity that grows on demand (see the note in [Minimal
+input](#minimal-input)), so graph and dense results agree there down to
+floating-point noise. Where `sel` does act as a hard cap -- the `dens`
+denoising path, or the `deepspin` virtual-atom spin scheme, both of which
+size the neighbor list to `sum(sel)` -- the graph route's larger neighbor set
+can diverge from the dense route, the same deliberate divergence documented
+for DPA-1/DPA-2.
+
+A DPA4/SeZM descriptor configured with `deepspin`-scheme spin is not
+graph-eligible and always runs the dense route regardless of `--lower-kind`;
+`--lower-kind graph` on such a model raises an error at freeze time instead
+of exporting a silently-dense-only artifact. `native`-scheme spin and ZBL
+zone bridging are the opposite case: they have *no* dense route at all --
+the analytical bridging term has no dense injection site -- so they are
+always graph-frozen, `--lower-kind` notwithstanding. Charge/spin
+conditioning rides the graph lower and constrains neither. Note that a
+graph-capable model is always frozen to the graph lower in any case, since
+the dense lower is deprecated in the pt_expt backend. See [Native spin (magnetic)](#native-spin-magnetic) below.
+
+Unlike the dense route (see [Multi-GPU (MPI)
+inference](#multi-gpu-mpi-inference) above), a graph-frozen `.pt2` **of a
+plain-energy (non-spin) model** embeds a with-comm AOTInductor artifact and
+supports multi-rank LAMMPS: each block's cross-rank ghost-feature exchange
+runs through the `border_op` MPI path once per interaction block, the same
+mechanism used by DPA-2's graph route (see the "Graph-native inference route
+(pt_expt)" section of [DPA-2's documentation](dpa2.md)). As on DPA-2,
+multi-rank inference on the graph route requires every MPI rank to own or
+ghost at least one atom; a rank with zero atoms in both categories aborts the
+run collectively rather than silently desynchronizing the per-block
+exchange. Pick a domain decomposition that keeps every rank non-empty, or use
+the dense route, which has no such restriction (but is single-rank only, as
+noted above).
+
+**Native-spin graph `.pt2` archives are the exception: they carry no
+with-comm artifact and are single-rank only** -- see [Native spin
+(magnetic)](#native-spin-magnetic) below.
+
+### Native spin (magnetic)
+
+`spin.scheme: native` (see [Spin](#spin) above for the general convention and
+the `native`-scheme JSON example) is graph-only: a native-spin DPA4/SeZM
+model has no dense (nlist) lower at all, so it is always frozen through the
+NeighborGraph path regardless of `--lower-kind`, and always runs through it
+at inference time. The `deepspin` virtual-atom scheme is unaffected and
+keeps using the dense route described in [Spin](#spin) and [Multi-GPU (MPI)
+inference](#multi-gpu-mpi-inference).
+
+- **Native scheme only.** `deepspin`-scheme spin (and the general `spin`
+  virtual-atom model outside DPA4/SeZM) is dense-only; only `scheme: native`
+  is graph-eligible. `dp --pt_expt freeze --lower-kind graph` on a
+  `deepspin`-scheme model raises an error at freeze time, per the dense/graph
+  eligibility rule above.
+- **Graph route only, no dense fallback.** Unlike a plain-energy DPA4/SeZM
+  descriptor -- which can freeze to either the dense or the graph lower --
+  a native-spin descriptor has only the graph lower. `--lower-kind auto`
+  (the default) resolves to `graph`; `--lower-kind nlist` is not a valid
+  option for a native-spin model.
+- **Single-rank only.** The frozen archive's `has_comm_artifact` metadata is
+  `false` for native-spin models (no ghost-spin cross-rank exchange is
+  implemented), so a multi-rank LAMMPS run fails fast with an explicit error
+  at the first force evaluation, mirroring the dense route's single-rank
+  restriction described in [Multi-GPU (MPI)
+  inference](#multi-gpu-mpi-inference). Run native-spin models on a single
+  MPI rank (a single GPU, or CPU without `mpirun`).
+- **Spin is per local atom.** The `spin` input is `(nframes, nloc, 3)` --
+  one vector per *local* atom, not per ghost/extended atom (`nall`); there is
+  no ghost-spin exchange to populate ghost spins across a rank boundary,
+  consistent with the single-rank restriction above.
+- **The magnetic force is a second energy gradient.** As in the general
+  native-scheme convention (see [Spin](#spin) above),
+  `force_mag = -\partial E/\partial\mathbf{s}`, computed by pt_expt as a
+  second `torch.autograd.grad` call alongside the ordinary
+  `force = -\partial E/\partial\mathbf{r}` call; both are real autograd
+  outputs, not placeholders. The dpmodel (NumPy) backend is energy-only for
+  native-spin models -- it has no autograd, so `force`/`force_mag`/`virial`
+  are `None` placeholders there, exactly as for the plain-energy dpmodel
+  route.
+
+The following combinations are **not yet supported** on the native-spin
+graph route (follow-up work):
+
+- **Multi-rank inference.** Ghost-spin cross-rank exchange (analogous to the
+  plain-energy graph route's `border_op`-based ghost-feature exchange) is not
+  implemented.
+- **Charge-spin FiLM conditioning.** Combining `add_chg_spin_ebd` with
+  `spin.scheme: native` is rejected at model-construction time; use one or
+  the other.
+- **ZBL zone bridging.** Combining `bridging_method: ZBL` with
+  `spin.scheme: native` is not supported on the pt_expt backend (`bridging_method`
+  is rejected there independently of spin -- see [Zone bridging
+  (ZBL)](#zone-bridging-zbl)).
+
+## Embedding extraction
+
+A trained DPA4/SeZM model can export learned representations for downstream
+analysis with `dp embed`. A single forward pass (no force or virial) produces
+three embeddings per system:
+
+- `descriptor`: per-atom local-environment representation, shape
+  `(nframes, natoms, dim_descriptor)`.
+- `atomic_feature`: per-atom activation after the last fitting hidden layer,
+  shape `(nframes, natoms, dim_hidden)`.
+- `structural_feature`: whole-structure summary obtained by summing
+  `atomic_feature` over atoms, shape `(nframes, dim_hidden)`.
+
+```bash
+dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+```
+
+The results are written to a single HDF5 file in which each system is a group
+holding the three float32 datasets above:
+
+```python
+import h5py
+
+with h5py.File("embedding.hdf5", "r") as f:
+    type_map = f.attrs["type_map"]
+    group = f[next(iter(f.keys()))]
+    descriptor = group["descriptor"][:]
+    atomic_feature = group["atomic_feature"][:]
+    structural_feature = group["structural_feature"][:]
+```
+
+This command operates on the training checkpoint (`.pt`), not the frozen
+`.pt2`, and honors both `DP_COMPILE_INFER` and `DP_TRITON_INFER`. See
+[model embeddings](../inference/embedding.md) for the full description.
 
 ## Data format
 
-DPA4/SeZM uses the [standard DeePMD-kit data format](../data/system.md). Keep
-the `type_map` order consistent across the dataset, input file, and any
-downstream `pair_coeff` mapping.
+DPA4/SeZM uses the [standard DeePMD-kit data format](../data/system.md) and
+also supports the [mixed-type data format](../data/system.md#mixed-type), which
+is convenient for datasets that mix many element combinations (and is the usual
+choice for multi-task training). Keep the `type_map` order consistent across the
+dataset, the input file, and any downstream `pair_coeff` mapping.
+
+## Architecture details
+
+Optional background on how the descriptor works, linking each part to the
+options that control it. Skip it unless you are tuning those options.
+
+### Equivariant representation and the l = 0 read-out
+
+DPA4/SeZM stores intermediate features as SO(3)-equivariant coefficients: a
+feature block of maximum degree `lmax` holds all degrees `l = 0, …, lmax`, each
+with `2l + 1` angular components (controlled by `lmax` / `l_schedule`).
+
+For each frame the model first builds a local neighbor graph within `rcut`.
+Each edge stores the displacement vector, smooth cutoff weights, radial basis
+features, and the rotation between the global frame and an edge-aligned local
+frame; these are built once and reused by all blocks. One interaction block
+then (1) gathers source-atom features on each edge, (2) rotates them into the
+edge-local frame, (3) applies an SO(2)-equivariant convolution on the retained
+angular orders, (4) rotates the messages back, (5) aggregates them at
+destination atoms with envelope or attention weights, and (6) updates atom
+features with an equivariant feed-forward block.
+
+Working in the edge-local frame turns rotations around the edge axis into SO(2)
+operations, so the cost scales with `lmax` instead of cubically. The SO(2)
+convolution retains orders `|m| ≤ mmax` (or `m_schedule`). After the last block,
+only the `l = 0` scalar channels are read out and passed to the fitting network:
+
+```math
+\mathcal{D}_i = \mathrm{Scalar}\left(\mathbf{h}_i^{(L)}\right).
+```
+
+### Radial basis and smooth cutoff
+
+Every edge uses a radial basis (`basis_type`, with `n_radial` functions)
+multiplied by a smooth envelope whose value and first three derivatives vanish
+at `rcut`. This smoothness matters for MD because nonsmooth descriptor cutoffs
+would be inherited by the force derivatives. The two `env_exp` exponents control
+the radial-basis envelope and the message-passing edge weights respectively;
+larger values keep an envelope closer to one for more of the cutoff range.
+
+### Attention and focus streams
+
+Messages are aggregated either by envelope-weighted scatter or by attention
+(`n_atten_head > 0`). With attention, the cutoff envelope participates in the
+softmax normalization, so edges near `rcut` are smoothly suppressed in both the
+numerator and the denominator. The SO(2) convolution can also use multiple
+`n_focus` streams that process the same edge geometry in parallel and are
+combined by scalar weights, adding capacity while preserving equivariance.
+
+### Grid nonlinearities
+
+Several branches can use sphere-grid (S2) or SO(3) Wigner-D grid
+nonlinearities. The main switches are `s2_activation` (S2-grid nonlinearity for
+the SO(2) and/or FFN branch), `ffn_so3_grid` (SO(3) grid in the block-internal
+FFN), `lebedev_quadrature` (Lebedev rules for enabled S2 branches), and
+`grid_mlp` / `grid_branch` (point-wise polynomial MLP or scalar-routed branch
+mixer per grid path). These trade expressiveness for cost; the final `l = 0`
+output remains a scalar.
+
+### Environment-seeded initial features
+
+With `use_env_seed` enabled, the initial node state is seeded from the local
+environment: a DeePMD-style environment matrix produces FiLM-like scale and
+shift values for the first scalar features, and the geometric initial embedding
+is enabled when non-scalar degrees are present. With it disabled, the initial
+state contains only atom-local scalar features, which keeps a one-block model
+closed over the one-hop neighbor shell.
 
 ## Limitations
 
-- DPA4/SeZM is currently implemented for the PyTorch backend.
+- DPA4/SeZM is implemented for the PyTorch backend only.
+- Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.
-- Export uses `.pt2`; the ordinary TorchScript freeze path is not used for
-  DPA4/SeZM checkpoints.
+- Multi-rank (multi-GPU/MPI) LAMMPS inference works for a plain energy model
+  on both export routes: the PT `edge_vec` archive and the pt_expt
+  NeighborGraph archive each embed a with-comm artifact. ZBL zone bridging is
+  single-rank (its Source Freeze Propagation gate folds each node's full
+  outgoing-edge set, which no single rank observes), and a multi-rank run of
+  such an archive fails fast rather than dropping the exchange. See
+  [Multi-GPU (MPI) inference](#multi-gpu-mpi-inference).
+- The pt_expt graph-native inference route is unavailable only for
+  `deepspin`-scheme spin, which stays on the dense route. Charge/spin
+  conditioning, ZBL zone bridging and `native`-scheme spin are all
+  graph-eligible.
+- `spin.scheme: native` is graph-only (it has no dense route) and supports
+  multi-rank LAMMPS: ghost node features ride `border_op` per interaction
+  block and ghost spins arrive through the LAMMPS `sp` forward-comm.
+  Charge-spin FiLM conditioning combines with it. Combining it with ZBL zone
+  bridging works single-rank; that combination is single-rank for the same
+  bridging reason as above. See [Native spin
+  (magnetic)](#native-spin-magnetic).
 
 ## Citation
 

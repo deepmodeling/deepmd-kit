@@ -3,6 +3,15 @@ import unittest
 from collections import (
     defaultdict,
 )
+from pathlib import (
+    Path,
+)
+from tempfile import (
+    TemporaryDirectory,
+)
+from typing import (
+    NoReturn,
+)
 
 import numpy as np
 
@@ -11,6 +20,9 @@ from deepmd.tf.descriptor import (
 )
 from deepmd.tf.fit import (
     EnerFitting,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .common import (
@@ -101,3 +113,52 @@ class TestEnerFittingStat(unittest.TestCase):
         np.testing.assert_almost_equal(frefs, fitting.fparam_std)
         np.testing.assert_almost_equal(arefa, fitting.aparam_avg)
         np.testing.assert_almost_equal(arefs, fitting.aparam_std)
+
+    def test_stat_file(self) -> None:
+        descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
+        avgs = [0, 10]
+        stds = [2, 0.4]
+        sys_natoms = [10, 100]
+        sys_nframes = [5, 2]
+        all_data = _make_fake_data(sys_natoms, sys_nframes, avgs, stds)
+        frefa, frefs = _brute_fparam(all_data, len(avgs))
+        arefa, arefs = _brute_aparam(all_data, len(avgs))
+
+        with TemporaryDirectory() as tempdir:
+            stat_path = DPPath(str(Path(tempdir)), "a")
+            fitting = EnerFitting(
+                descrpt.get_ntypes(),
+                descrpt.get_dim_out(),
+                neuron=[240, 240, 240],
+                resnet_dt=True,
+                numb_fparam=2,
+                numb_aparam=2,
+            )
+            fitting.compute_input_stats(
+                all_data, protection=1e-2, stat_file_path=stat_path
+            )
+            self.assertTrue((stat_path / "fparam").is_file())
+            self.assertTrue((stat_path / "aparam").is_file())
+            np.testing.assert_almost_equal(frefa, fitting.fparam_avg)
+            np.testing.assert_almost_equal(frefs, fitting.fparam_std)
+            np.testing.assert_almost_equal(arefa, fitting.aparam_avg)
+            np.testing.assert_almost_equal(arefs, fitting.aparam_std)
+
+            def raise_error() -> NoReturn:
+                raise RuntimeError
+
+            fitting = EnerFitting(
+                descrpt.get_ntypes(),
+                descrpt.get_dim_out(),
+                neuron=[240, 240, 240],
+                resnet_dt=True,
+                numb_fparam=2,
+                numb_aparam=2,
+            )
+            fitting.compute_input_stats(
+                raise_error, protection=1e-2, stat_file_path=stat_path
+            )
+            np.testing.assert_almost_equal(frefa, fitting.fparam_avg)
+            np.testing.assert_almost_equal(frefs, fitting.fparam_std)
+            np.testing.assert_almost_equal(arefa, fitting.aparam_avg)
+            np.testing.assert_almost_equal(arefs, fitting.aparam_std)

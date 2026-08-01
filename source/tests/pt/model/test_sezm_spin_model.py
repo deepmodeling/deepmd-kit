@@ -27,6 +27,9 @@ from deepmd.pt.train.training import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -43,16 +46,18 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
-# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
-# can segfault or drift, and other torch versions are similarly unstable. Skip
-# the compile-parity test off 2.11 until CI standardizes on a SeZM-compatible
-# torch, then drop this guard.
+# Keep compile-parity test gating aligned with the runtime allowlist in
+# ``deepmd.pt.utils.compile_compat``. Membership in the allowlist does not imply
+# that every release is installed in CI.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
-_SKIP_OFF_TORCH_211_REASON = (
-    "SeZM's torch.compile path is only stable on torch 2.11.x; "
-    f"current torch is {torch.__version__}."
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
@@ -157,6 +162,7 @@ class TestSeZMSpinModel(unittest.TestCase):
             "spin": {
                 "use_spin": [True, False],
                 "virtual_scale": 0.2,
+                "scheme": "deepspin",
             },
             "descriptor": {
                 "type": "SeZM",
@@ -379,7 +385,121 @@ class TestSeZMSpinModel(unittest.TestCase):
 
         torch.testing.assert_close(energy_with_virtual, energy_real_only)
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    def test_zbl_change_out_bias_is_invariant_for_self_labels(self) -> None:
+        """Spin-expanded statistics include the complete bridged energy."""
+        model = get_model(self._build_model_params(bridging_method="ZBL")).to(
+            self.device
+        )
+        model.eval()
+        label = model(
+            self.coord,
+            self.atype,
+            spin=self.spin,
+            box=self.box,
+        )["energy"].detach()
+        old_bias = model.get_out_bias().detach().clone()
+        sample = {
+            "coord": self.coord,
+            "atype": self.atype,
+            "spin": self.spin,
+            "box": self.box,
+            "energy": label,
+            "natoms": torch.tensor(
+                [[3, 3, 2, 1]],
+                dtype=torch.long,
+                device=self.device,
+            ),
+            "find_energy": torch.tensor(1.0, device=self.device),
+        }
+
+        model.change_out_bias(
+            [sample],
+            bias_adjust_mode="change-by-statistic",
+        )
+        torch.testing.assert_close(
+            model.get_out_bias(),
+            old_bias,
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
+
+    def test_zbl_statistics_use_physical_spin_neighbor_topology(self) -> None:
+        """Statistics preserve real-nlist expansion when `sel` is saturated."""
+        params = self._build_model_params(bridging_method="ZBL")
+        params["descriptor"]["sel"] = [1, 1]
+        params["descriptor"]["precision"] = "float64"
+        params["fitting_net"]["precision"] = "float64"
+        model = get_model(params).to(self.device).eval()
+        coord = torch.tensor(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.8, 0.0, 0.0],
+                    [0.0, 0.9, 0.0],
+                    [0.9, 0.9, 0.0],
+                ]
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        atype = torch.tensor(
+            [[0, 1, 0, 1]],
+            dtype=torch.long,
+            device=self.device,
+        )
+        spin = torch.tensor(
+            [
+                [
+                    [0.20, 0.10, 0.00],
+                    [0.00, 0.00, 0.00],
+                    [0.10, 0.20, 0.10],
+                    [0.00, 0.00, 0.00],
+                ]
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        box = torch.tensor(
+            [[6.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 6.0]],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        label = model(coord, atype, spin=spin, box=box)["energy"].detach()
+        stat_energy = model.predict_atomic_outputs_for_stat(
+            coord,
+            atype,
+            box,
+            spin=spin,
+        )["energy"].sum(dim=1)
+        torch.testing.assert_close(stat_energy, label, atol=1.0e-12, rtol=1.0e-12)
+
+        old_bias = model.get_out_bias().detach().clone()
+        model.change_out_bias(
+            [
+                {
+                    "coord": coord,
+                    "atype": atype,
+                    "spin": spin,
+                    "box": box,
+                    "energy": label,
+                    "natoms": torch.tensor(
+                        [[4, 4, 2, 2]],
+                        dtype=torch.long,
+                        device=self.device,
+                    ),
+                    "find_energy": torch.tensor(1.0, device=self.device),
+                }
+            ],
+            bias_adjust_mode="change-by-statistic",
+        )
+        torch.testing.assert_close(
+            model.get_out_bias(),
+            old_bias,
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """Compiled SeZM spin path should match eager predictions."""
         eager = get_model(self._build_model_params(use_compile=False)).to(self.device)

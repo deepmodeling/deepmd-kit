@@ -2,8 +2,50 @@
 """Common utilities shared by model generation scripts (gen_*.py)."""
 
 import glob
+import json
 import os
 import sys
+import zipfile
+
+
+def derive_pair_exclude_pt2(src_pt2, dst_pt2, exclude_types):
+    """Derive a model-level ``pair_exclude_types`` variant of a ``.pt2`` archive.
+
+    Parameters
+    ----------
+    src_pt2 : str
+        Path to the no-exclusion baseline ``.pt2``. Must have the same weights
+        and ``lower_kind`` as the desired variant (only the exclusion list may
+        differ); a graph-lower baseline cannot derive an nlist-lower variant.
+    dst_pt2 : str
+        Path to write the derived ``.pt2``.
+    exclude_types : list[list[int]]
+        The ``pair_exclude_types`` list to inject, e.g. ``[[0, 1]]``.
+
+    Notes
+    -----
+    Model-level ``pair_exclude_types`` is a build-time transform (decision
+    #18/A4) applied at the C++ ingestion seam (from ``metadata.json``) and the
+    Python DeepEval build seam (from the serialized ``model.json``); it is not
+    baked into the exported graph, so the compiled AOTI artifact (including any
+    nested with-comm ``.pt2``) is byte-identical to the baseline. Only the two
+    JSON blobs that carry the list are patched -- both, so the C++ and Python
+    inference paths agree; patching one alone makes them disagree. This avoids
+    a second inductor compile and is bit-identical to a full recompile.
+    """
+    with zipfile.ZipFile(src_pt2) as zin:
+        entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    with zipfile.ZipFile(dst_pt2, "w") as zout:
+        for info, blob in entries:
+            if info.filename == "model/extra/metadata.json":
+                meta = json.loads(blob)
+                meta["pair_exclude_types"] = exclude_types
+                blob = json.dumps(meta).encode()
+            elif info.filename == "model/extra/model.json":
+                mdl = json.loads(blob)
+                mdl["model"]["pair_exclude_types"] = exclude_types
+                blob = json.dumps(mdl).encode()
+            zout.writestr(info, blob)
 
 
 def ensure_inductor_compiler():

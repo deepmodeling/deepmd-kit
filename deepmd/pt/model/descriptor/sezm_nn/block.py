@@ -63,6 +63,59 @@ if TYPE_CHECKING:
     )
 
 
+def exchange_ghost_features(
+    x: torch.Tensor,
+    comm_dict: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    """
+    Refresh ghost-node features from their owner ranks via MPI border exchange.
+
+    SeZM node features are SO(3) coefficients expressed in the shared global
+    frame, so a ghost atom and its owner carry identical features and the
+    per-row owner->ghost copy is exact and equivariance-preserving. The opaque
+    ``deepmd_export::border_op`` performs the exchange and carries a registered
+    backward (reverse communication of gradients), so a single
+    ``autograd.grad(energy, edge_vec)`` accumulates cross-rank force
+    contributions when every rank runs the exchange in lockstep.
+
+    This is applied to the SO(2) convolution input — the descriptor's only
+    cross-node operation — so ghost rows are correct exactly where message
+    passing reads them, regardless of how the (per-node) attention-residual
+    history that produced the input populated its ghost rows.
+
+    Parameters
+    ----------
+    x
+        Extended node features with shape (nall, D, 1, channels). Owned-atom rows
+        hold up-to-date values; ghost rows are overwritten by this call.
+    comm_dict
+        Border-exchange tensors ``send_list``, ``send_proc``, ``recv_proc``,
+        ``send_num``, ``recv_num``, ``communicator``, ``nlocal``, ``nghost``.
+
+    Returns
+    -------
+    torch.Tensor
+        Node features with ghost rows filled, same shape as ``x``.
+    """
+    n_nodes, ebed_dim, n_focus, channels = x.shape
+    # border_op exchanges whole rows by raw pointer arithmetic, so the buffer
+    # must be contiguous; a degree-truncated node tensor reshapes to a strided
+    # view that would otherwise corrupt the exchange.
+    g1 = x.reshape(n_nodes, ebed_dim * n_focus * channels).contiguous()
+    g1 = torch.ops.deepmd_export.border_op(
+        comm_dict["send_list"],
+        comm_dict["send_proc"],
+        comm_dict["recv_proc"],
+        comm_dict["send_num"],
+        comm_dict["recv_num"],
+        g1,
+        comm_dict["communicator"],
+        comm_dict["nlocal"],
+        comm_dict["nghost"],
+    )
+    return g1.reshape(n_nodes, ebed_dim, n_focus, channels)
+
+
 class SeZMInteractionBlock(nn.Module):
     """
     SeZM interaction block with SO(2) message passing and equivariant FFN stack.
@@ -98,11 +151,18 @@ class SeZMInteractionBlock(nn.Module):
         ``focus_dim=0`` means using ``channels``.
     focus_compete
         If True, enable cross-focus softmax competition in SO(2) convolution.
+    focus_norm
+        If True, RMS-normalize the cross-focus competition scalars before the
+        softmax. The competition input is envelope-gated (via radial modulation)
+        and vanishes at the cutoff, so normalizing it crosses the norm ``eps``
+        floor near ``rcut``; ``False`` drops the norm so the competition decays
+        smoothly to uniform weights at the cutoff.
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core. ``0``
+        applies only the edge-condition modulation.
     so2_attn_res
         Depth-wise attention residual mode across the internal SO(2) layer
         history. Must be one of ``"none"``, ``"independent"``, or
@@ -116,6 +176,16 @@ class SeZMInteractionBlock(nn.Module):
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
         per-channel dynamic degree kernel.
+    edge_cartesian
+        If True, replace the per-edge SO(2) rotation-frame tensor product inside
+        ``SO2Convolution`` with the global-frame Cartesian rank-2 tensor
+        product. Requires ``lmax`` in ``{1, 2}``.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message inside ``SO2Convolution``, configured by a ``"<mode>:<layers>"``
+        string (``mode`` is ``"default"`` or ``"parity"``); a bare integer ``N``
+        is shorthand for ``"default:N"``, and ``"none"`` disables it. Requires
+        ``lmax`` in ``{1, 2}`` and is orthogonal to ``edge_cartesian``.
     n_atten_head
         Number of attention heads when aggregating messages in SO(2) convolution.
         0 means no attention is used; >0 enables envelope-gated grouped softmax
@@ -134,6 +204,10 @@ class SeZMInteractionBlock(nn.Module):
         If True, apply pre-norm before SO(2) convolution.
     so2_post_norm
         If True, apply post-norm on SO(2) output before the residual add.
+    so2_post_norm_eps
+        Variance floor for the SO(2) post-norm. A value of ``1`` preserves small
+        residual messages instead of amplifying them by ``1/sqrt(eps)``. Other
+        normalization sites retain their own RMSNorm floors.
     ffn_pre_norm
         If True, apply pre-norm before each FFN subblock.
     ffn_post_norm
@@ -235,17 +309,21 @@ class SeZMInteractionBlock(nn.Module):
         n_focus: int = 1,
         focus_dim: int = 0,
         focus_compete: bool = True,
+        focus_norm: bool = True,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         n_atten_head: int = 1,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         so2_pre_norm: bool = True,
         so2_post_norm: bool = False,
+        so2_post_norm_eps: float = 1e-5,
         ffn_pre_norm: bool = True,
         ffn_post_norm: bool = False,
         ffn_neurons: int = 96,
@@ -300,8 +378,9 @@ class SeZMInteractionBlock(nn.Module):
         if self.focus_dim < 0:
             raise ValueError("`focus_dim` must be >= 0")
         self.focus_compete = bool(focus_compete)
+        self.focus_norm = bool(focus_norm)
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        self.mixing_layers = int(mixing_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -309,12 +388,15 @@ class SeZMInteractionBlock(nn.Module):
             )
         self.radial_so2_mode = str(radial_so2_mode).lower()
         self.radial_so2_rank = int(radial_so2_rank)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.n_atten_head = int(n_atten_head)
         self.atten_f_mix = bool(atten_f_mix)
         self.use_atten_v_proj = bool(atten_v_proj)
         self.use_atten_o_proj = bool(atten_o_proj)
         self.so2_pre_norm = bool(so2_pre_norm)
         self.so2_post_norm = bool(so2_post_norm)
+        self.so2_post_norm_eps = float(so2_post_norm_eps)
         self.ffn_pre_norm = bool(ffn_pre_norm)
         self.ffn_post_norm = bool(ffn_post_norm)
         self.ffn_neurons = int(ffn_neurons)
@@ -395,6 +477,7 @@ class SeZMInteractionBlock(nn.Module):
                 self.lmax,
                 self.channels,
                 n_focus=1,
+                eps=self.so2_post_norm_eps,
                 dtype=self.compute_dtype,
                 trainable=trainable,
             )
@@ -409,11 +492,14 @@ class SeZMInteractionBlock(nn.Module):
             n_focus=self.n_focus,
             focus_dim=self.focus_dim,
             focus_compete=self.focus_compete,
+            focus_norm=self.focus_norm,
             so2_norm=self.so2_norm,
-            so2_layers=self.so2_layers,
+            mixing_layers=self.mixing_layers,
             so2_attn_res=self.so2_attn_res_mode,
             radial_so2_mode=self.radial_so2_mode,
             radial_so2_rank=self.radial_so2_rank,
+            edge_cartesian=self.edge_cartesian,
+            node_cartesian=self.node_cartesian,
             layer_scale=self.layer_scale,
             n_atten_head=n_atten_head,
             atten_f_mix=self.atten_f_mix,
@@ -586,6 +672,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -606,6 +693,12 @@ class SeZMInteractionBlock(nn.Module):
             `full_attn_res != "none"`, it is interpreted as completed unit
             history. When `block_attn_res != "none"`, it is interpreted as
             completed block history.
+        comm_dict
+            Border-exchange tensors for parallel (LAMMPS multi-rank) inference.
+            When provided, the SO(2) convolution input has its ghost rows
+            refreshed from owner ranks; the depth-attention history may carry
+            stale ghost rows because the exchange happens at the convolution
+            input, after the (per-node) aggregation that consumes it.
 
         Returns
         -------
@@ -619,7 +712,7 @@ class SeZMInteractionBlock(nn.Module):
             - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
             - block AttnRes path returns `(block_output, block_summary, None, None)`
         """
-        return self._forward_impl(x, edge_cache, radial_feat, unit_history)
+        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
 
     def _extract_l0_from_canonical(self, value: torch.Tensor) -> torch.Tensor:
         """
@@ -657,6 +750,7 @@ class SeZMInteractionBlock(nn.Module):
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Run the SO(2) unit without an outer block-level residual shortcut.
@@ -669,12 +763,19 @@ class SeZMInteractionBlock(nn.Module):
             Edge cache.
         radial_feat
             Per-edge radial features with shape (E, lmax+1, C).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            convolution input's ghost rows are refreshed from owner ranks
+            immediately before the only cross-node operation in the block, so
+            owned destinations gather up-to-date neighbour features.
 
         Returns
         -------
         torch.Tensor
             SO(2) unit output with shape `(N, D, 1, C)`.
         """
+        if comm_dict is not None:
+            x = exchange_ghost_features(x, comm_dict)
         if self._use_infer_activation_checkpoint(x, radial_feat):
             edge_cache_no_proj = edge_cache._replace(
                 D_to_m_cache=None,
@@ -759,6 +860,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -778,6 +880,10 @@ class SeZMInteractionBlock(nn.Module):
             Per-edge radial features with shape (E, lmax+1, C).
         unit_history
             Unused in the residual-connected path.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The owned-atom residual reads the original ``x``, which
+            is already correct on owned rows.
 
         Returns
         -------
@@ -785,7 +891,7 @@ class SeZMInteractionBlock(nn.Module):
             Tuple `(block_output, None, None, None)`.
         """
         with nvtx_range("so2_conv"):
-            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat, comm_dict)
             so2_state = x + so2_unit_output
 
         with nvtx_range("ffn"):
@@ -803,6 +909,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -823,6 +930,11 @@ class SeZMInteractionBlock(nn.Module):
         unit_history
             Truncated history in canonical node layout. Each source has shape
             `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
 
         Returns
         -------
@@ -836,7 +948,9 @@ class SeZMInteractionBlock(nn.Module):
                     scalar_extractor=self._extract_l0_from_canonical,
                     current_x=x,
                 )
-            so2_unit_output = self._run_so2_unit(so2_input, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(
+                so2_input, edge_cache, radial_feat, comm_dict
+            )
 
         with nvtx_range("ffn"):
             completed_units = [*unit_history, so2_unit_output]
@@ -863,6 +977,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -883,6 +998,11 @@ class SeZMInteractionBlock(nn.Module):
         unit_history
             Truncated block history in canonical node layout. Each source has shape
             `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
 
         Returns
         -------
@@ -896,7 +1016,9 @@ class SeZMInteractionBlock(nn.Module):
                     scalar_extractor=self._extract_l0_from_canonical,
                     current_x=x,
                 )
-            so2_unit_output = self._run_so2_unit(so2_input, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(
+                so2_input, edge_cache, radial_feat, comm_dict
+            )
 
         with nvtx_range("ffn"):
             partial_block = so2_unit_output
@@ -931,17 +1053,21 @@ class SeZMInteractionBlock(nn.Module):
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
+                "focus_norm": self.focus_norm,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "n_atten_head": self.n_atten_head,
                 "atten_f_mix": self.atten_f_mix,
                 "atten_v_proj": self.use_atten_v_proj,
                 "atten_o_proj": self.use_atten_o_proj,
                 "so2_pre_norm": self.so2_pre_norm,
                 "so2_post_norm": self.so2_post_norm,
+                "so2_post_norm_eps": self.so2_post_norm_eps,
                 "ffn_pre_norm": self.ffn_pre_norm,
                 "ffn_post_norm": self.ffn_post_norm,
                 "ffn_neurons": self.ffn_neurons,

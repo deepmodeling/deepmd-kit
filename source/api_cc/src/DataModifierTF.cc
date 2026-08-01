@@ -8,22 +8,29 @@ using namespace deepmd;
 using namespace tensorflow;
 
 DipoleChargeModifierTF::DipoleChargeModifierTF()
-    : inited(false), graph_def(new GraphDef()) {}
+    : session(nullptr), graph_def(new GraphDef()), inited(false) {}
 
 DipoleChargeModifierTF::DipoleChargeModifierTF(const std::string& model,
                                                const int& gpu_rank,
                                                const std::string& name_scope_)
-    : inited(false), name_scope(name_scope_), graph_def(new GraphDef()) {
+    : session(nullptr),
+      name_scope(name_scope_),
+      graph_def(new GraphDef()),
+      inited(false) {
   try {
     init(model, gpu_rank, name_scope_);
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
+    deepmd::close_and_delete_session(session);
     delete graph_def;
     throw;
   }
 }
 
-DipoleChargeModifierTF::~DipoleChargeModifierTF() { delete graph_def; };
+DipoleChargeModifierTF::~DipoleChargeModifierTF() {
+  deepmd::close_and_delete_session(session);
+  delete graph_def;
+};
 
 void DipoleChargeModifierTF::init(const std::string& model,
                                   const int& gpu_rank,
@@ -34,12 +41,13 @@ void DipoleChargeModifierTF::init(const std::string& model,
               << std::endl;
     return;
   }
+  deepmd::SessionCleanupGuard session_guard(session);
   name_scope = name_scope_;
   SessionOptions options;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::TensorFlow);
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
@@ -72,6 +80,7 @@ void DipoleChargeModifierTF::init(const std::string& model,
   get_vector<int>(sel_type, "model_attr/sel_type");
   sort(sel_type.begin(), sel_type.end());
   inited = true;
+  session_guard.release();
 }
 
 template <class VT>

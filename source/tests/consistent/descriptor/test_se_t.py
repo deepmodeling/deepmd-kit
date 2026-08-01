@@ -17,8 +17,9 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -37,6 +38,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_t import DescrptSeT as DescrptSeTTF
 else:
     DescrptSeTTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_t import DescrptSeT as DescrptSeTTF2
+else:
+    DescrptSeTTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t import DescrptSeT as DescrptSeTJAX
 else:
@@ -49,13 +54,45 @@ from deepmd.utils.argcheck import (
     descrpt_se_t_args,
 )
 
-
-@parameterized(
-    (True, False),  # resnet_dt
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_T_CASE_FIELDS = (
+    "resnet_dt",
+    "excluded_types",
+    "precision",
+    "env_protection",
 )
+
+SE_T_BASELINE_CASE = {
+    "resnet_dt": True,
+    "excluded_types": [],
+    "precision": "float64",
+    "env_protection": 0.0,
+}
+
+
+def se_t_case(**overrides: Any) -> tuple:
+    case = SE_T_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_T_CASE_FIELDS)
+
+
+SE_T_CURATED_CASES = (
+    se_t_case(),
+    se_t_case(resnet_dt=False),
+    se_t_case(excluded_types=[[0, 1]]),
+    se_t_case(precision="float32"),
+    se_t_case(env_protection=1e-8),
+    se_t_case(env_protection=1e-2),
+)
+
+SE_T_DESCRIPTOR_API_CURATED_CASES = (
+    se_t_case(),
+    se_t_case(resnet_dt=False),
+    se_t_case(excluded_types=[[0, 1]]),
+    se_t_case(env_protection=1e-8),
+    se_t_case(env_protection=1e-2),
+)
+
+
+@parameterized_cases(*SE_T_CURATED_CASES)
 class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -120,8 +157,10 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
 
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_jax = not INSTALLED_JAX
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = DescrptSeTTF
+    tf2_class = DescrptSeTTF2
     dp_class = DescrptSeTDP
     pt_class = DescrptSeTPT
     pt_expt_class = DescrptSeTPTExpt
@@ -210,6 +249,15 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
@@ -264,12 +312,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ([], [[0, 1]]),  # excluded_types
-    ("float64",),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
-)
+@parameterized_cases(*SE_T_DESCRIPTOR_API_CURATED_CASES)
 class TestSeTDescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

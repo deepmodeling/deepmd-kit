@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <sstream>
 #include <vector>
 
 #include "DeepTensor.h"
@@ -147,18 +146,9 @@ TYPED_TEST(TestInferDeepTensorPt, print_summary) {
 
 TYPED_TEST(TestInferDeepTensorPt, get_type_map) {
   deepmd::DeepTensor& dt = this->dt;
-  std::string type_map_str;
-  dt.get_type_map(type_map_str);
-  // Parse the type map string manually
-  std::vector<std::string> type_map;
-  std::istringstream iss(type_map_str);
-  std::string token;
-  while (iss >> token) {
-    type_map.push_back(token);
-  }
-  EXPECT_EQ(type_map.size(), 2);
-  EXPECT_EQ(type_map[0], "O");
-  EXPECT_EQ(type_map[1], "H");
+  std::string type_map;
+  dt.get_type_map(type_map);
+  EXPECT_EQ(type_map, "O H");
 }
 
 TYPED_TEST(TestInferDeepTensorPt, get_properties) {

@@ -105,6 +105,12 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
         self.force = None
         self.ntypes = len(self.sel_a)
 
+    def close(self) -> None:
+        """Close the TensorFlow session held by the Ewald reciprocal evaluator."""
+        er = getattr(self, "er", None)
+        if er is not None:
+            er.close()
+
     def serialize(self) -> dict:
         """Serialize the modifier.
 
