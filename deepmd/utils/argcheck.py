@@ -5,6 +5,9 @@ import warnings
 from collections.abc import (
     Callable,
 )
+from dataclasses import (
+    dataclass,
+)
 from typing import (
     Any,
 )
@@ -45,10 +48,57 @@ log = logging.getLogger(__name__)
 ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
 PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
-doc_only_tf_supported = "(Supported Backend: TensorFlow) "
-doc_only_pt_supported = "(Supported Backend: PyTorch) "
-doc_only_pt_expt_supported = "(Supported Backend: PyTorch Exportable) "
-doc_only_pd_supported = "(Supported Backend: Paddle) "
+
+@dataclass(frozen=True)
+class BackendDocumentation:
+    """Display settings for one backend in generated argument documentation."""
+
+    display_name: str
+    visible: bool = True
+
+
+# Keys deliberately match the backend package directories. To document a new
+# backend, add it here and use the same key in ``supported_backends`` calls.
+# ``visible`` is source configuration evaluated while this module is imported;
+# changing the registry at runtime cannot update labels already attached to
+# arguments. To retire a backend, set ``visible`` to ``False`` in this mapping
+# and regenerate the documentation from a fresh process.
+#
+# Support means that a user can configure the documented feature on the named
+# backend. Descriptor variants generally follow backend registration, while
+# fitting, loss, and training options can be narrower when a backend registers
+# a component for inference but cannot train or otherwise consume that option.
+BACKEND_DOCUMENTATION: dict[str, BackendDocumentation] = {
+    "tf": BackendDocumentation("TensorFlow"),
+    "pt": BackendDocumentation("PyTorch"),
+    "jax": BackendDocumentation("JAX"),
+    "pd": BackendDocumentation("PaddlePaddle"),
+    "pt_expt": BackendDocumentation("PyTorch Exportable"),
+    "tf2": BackendDocumentation("TensorFlow 2"),
+}
+
+
+def supported_backends(*backends: str) -> str:
+    """Build the standard support label for visible backend directory keys.
+
+    The registry order defines the stable display order, independently of the
+    order or duplication of keys supplied by callers.
+    """
+    unknown_backends = set(backends).difference(BACKEND_DOCUMENTATION)
+    if unknown_backends:
+        unknown = ", ".join(sorted(unknown_backends))
+        raise ValueError(f"Unknown backend documentation key(s): {unknown}")
+    selected_backends = set(backends)
+    display_names = [
+        backend.display_name
+        for key, backend in BACKEND_DOCUMENTATION.items()
+        if key in selected_backends and backend.visible
+    ]
+    if not display_names:
+        return ""
+    return f"(Supported Backend: {', '.join(display_names)}) "
+
+
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and computes the descriptor as local coordinates under this frame."
 doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
@@ -151,7 +201,7 @@ def spin_args() -> list[Argument]:
     doc_use_spin = (
         "Whether to use atomic spin model for each atom type. "
         "List of boolean values with the shape of [ntypes] to specify which types use spin, "
-        f"or, {doc_only_pt_supported}, a list of the magnetic types given either as type "
+        f"or {supported_backends('pt', 'pt_expt')}a list of the magnetic types given either as type "
         'indices or as element symbols (e.g. `["Fe"]`), which is expanded against '
         "`type_map` so that a large type map only needs its magnetic species named."
     )
@@ -186,33 +236,33 @@ def spin_args() -> list[Argument]:
             "spin_norm",
             list[float],
             optional=True,
-            doc=doc_only_tf_supported + doc_spin_norm,
+            doc=supported_backends("tf") + doc_spin_norm,
         ),
         Argument(
             "virtual_len",
             list[float],
             optional=True,
-            doc=doc_only_tf_supported + doc_virtual_len,
+            doc=supported_backends("tf") + doc_virtual_len,
         ),
         Argument(
             "virtual_scale",
             [list[float], float],
             optional=True,
-            doc=doc_only_pt_supported + doc_virtual_scale,
+            doc=supported_backends("pt", "pt_expt") + doc_virtual_scale,
         ),
         Argument(
             "scheme",
             str,
             optional=True,
             default="deepspin",
-            doc=doc_only_pt_supported + doc_scheme,
+            doc=supported_backends("pt", "pt_expt") + doc_scheme,
         ),
         Argument(
             "allow_missing_label",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_allow_missing_label,
+            doc=supported_backends("pt", "pt_expt") + doc_allow_missing_label,
         ),
     ]
 
@@ -305,7 +355,7 @@ class ArgsPlugin:
 descrpt_args_plugin = ArgsPlugin()
 
 
-@descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported + doc_loc_frame)
+@descrpt_args_plugin.register("loc_frame", doc=supported_backends("tf") + doc_loc_frame)
 def descrpt_local_frame_args() -> list[Argument]:
     doc_sel_a = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor."
     doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only the relative distances of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
@@ -326,7 +376,11 @@ def descrpt_local_frame_args() -> list[Argument]:
     ]
 
 
-@descrpt_args_plugin.register("se_e2_a", alias=["se_a"], doc=doc_se_e2_a)
+@descrpt_args_plugin.register(
+    "se_e2_a",
+    alias=["se_a"],
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_se_e2_a,
+)
 def descrpt_se_a_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -386,7 +440,8 @@ def descrpt_se_a_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_env_protection,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
@@ -397,7 +452,7 @@ def descrpt_se_a_args() -> list[Argument]:
 @descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
-    doc=doc_only_pt_supported + doc_se_zm,
+    doc=supported_backends("pt", "jax", "pt_expt") + doc_se_zm,
 )
 def descrpt_se_zm_args() -> list[Argument]:
     # Follows exact order of docstring in sezm.py DescrptSeZM class
@@ -747,28 +802,28 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_use_env_seed,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_use_env_seed,
         ),
         Argument(
             "random_gamma",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_random_gamma,
+            doc=supported_backends("pt", "pt_expt") + doc_random_gamma,
         ),
         Argument(
             "edge_cartesian",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_edge_cartesian,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_edge_cartesian,
         ),
         Argument(
             "node_cartesian",
             [str, int],
             optional=True,
             default="none",
-            doc=doc_only_pt_supported + doc_node_cartesian,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_node_cartesian,
         ),
         Argument("lmax", int, optional=True, default=3, doc=doc_lmax),
         Argument(
@@ -788,7 +843,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=1,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be >= 0",
-            doc=doc_only_pt_supported + doc_kmax,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_kmax,
         ),
         Argument(
             "m_schedule", list[int], optional=True, default=None, doc=doc_m_schedule
@@ -819,7 +874,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default="none",
             extra_check=lambda x: x in attn_res_modes,
             extra_check_errmsg="must be one of 'none', 'independent', or 'dependent'",
-            doc=doc_only_pt_supported + doc_so2_attn_res,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_so2_attn_res,
         ),
         Argument(
             "radial_so2_mode",
@@ -828,7 +883,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default="degree_channel",
             extra_check=lambda x: x in radial_so2_modes,
             extra_check_errmsg="must be one of 'none', 'degree', or 'degree_channel'",
-            doc=doc_only_pt_supported + doc_radial_so2_mode,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_radial_so2_mode,
         ),
         Argument(
             "radial_so2_rank",
@@ -837,7 +892,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=1,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be non-negative",
-            doc=doc_only_pt_supported + doc_radial_so2_rank,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_radial_so2_rank,
         ),
         Argument("n_focus", int, optional=True, default=1, doc=doc_n_focus),
         Argument(
@@ -855,21 +910,21 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_atten_f_mix,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_atten_f_mix,
         ),
         Argument(
             "atten_v_proj",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_atten_v_proj,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_atten_v_proj,
         ),
         Argument(
             "atten_o_proj",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_atten_o_proj,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_atten_o_proj,
         ),
         Argument(
             "ffn_neurons",
@@ -887,7 +942,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=False,
             extra_check=lambda x: isinstance(x, bool) or len(x) == 3,
             extra_check_errmsg="must be a boolean or a list of three booleans: [node_wise, message_node, ffn]",
-            doc=doc_only_pt_supported + doc_grid_mlp,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_grid_mlp,
         ),
         Argument(
             "grid_branch",
@@ -903,35 +958,35 @@ def descrpt_se_zm_args() -> list[Argument]:
                 )
             ),
             extra_check_errmsg="must be a non-negative int or a list of three non-negative ints: [node_wise, message_node, ffn]",
-            doc=doc_only_pt_supported + doc_grid_branch,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_grid_branch,
         ),
         Argument(
             "ffn_blocks",
             int,
             optional=True,
             default=1,
-            doc=doc_only_pt_supported + doc_ffn_blocks,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_ffn_blocks,
         ),
         Argument(
             "sandwich_norm",
             list[bool],
             optional=True,
             default=[False, True, True, False],
-            doc=doc_only_pt_supported + doc_sandwich_norm,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_sandwich_norm,
         ),
         Argument(
             "mlp_bias",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_mlp_bias,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_mlp_bias,
         ),
         Argument(
             "layer_scale",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_layer_scale,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_layer_scale,
         ),
         Argument(
             "full_attn_res",
@@ -940,7 +995,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default="none",
             extra_check=lambda x: x in attn_res_modes,
             extra_check_errmsg="must be one of 'none', 'independent', or 'dependent'",
-            doc=doc_only_pt_supported + doc_full_attn_res,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_full_attn_res,
         ),
         Argument(
             "block_attn_res",
@@ -949,7 +1004,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default="none",
             extra_check=lambda x: x in attn_res_modes,
             extra_check_errmsg="must be one of 'none', 'independent', or 'dependent'",
-            doc=doc_only_pt_supported + doc_block_attn_res,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_block_attn_res,
         ),
         Argument(
             "s2_activation",
@@ -958,42 +1013,42 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=[False, True],
             extra_check=lambda x: len(x) == 2,
             extra_check_errmsg="must be a list of two booleans: [so2_activation, ffn_activation]",
-            doc=doc_only_pt_supported + doc_s2_activation,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_s2_activation,
         ),
         Argument(
             "ffn_so3_grid",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_ffn_so3_grid,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_ffn_so3_grid,
         ),
         Argument(
             "node_wise_s2",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_node_wise_s2,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_node_wise_s2,
         ),
         Argument(
             "node_wise_so3",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_node_wise_so3,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_node_wise_so3,
         ),
         Argument(
             "message_node_s2",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_message_node_s2,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_message_node_s2,
         ),
         Argument(
             "message_node_so3",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_message_node_so3,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_message_node_so3,
         ),
         Argument(
             "so3_readout",
@@ -1002,7 +1057,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default="none",
             extra_check=lambda x: x in ("none", "glu", "mlp"),
             extra_check_errmsg="must be one of 'none', 'glu', or 'mlp'",
-            doc=doc_only_pt_supported + doc_so3_readout,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_so3_readout,
         ),
         Argument(
             "readout_layers",
@@ -1011,7 +1066,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=1,
             extra_check=lambda x: x >= 1,
             extra_check_errmsg="must be >= 1",
-            doc=doc_only_pt_supported + doc_readout_layers,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_readout_layers,
         ),
         Argument(
             "lebedev_quadrature",
@@ -1020,7 +1075,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=True,
             extra_check=lambda x: isinstance(x, bool) or len(x) == 2,
             extra_check_errmsg="must be a boolean or a list of two booleans: [so2_quadrature, ffn_quadrature]",
-            doc=doc_only_pt_supported + doc_lebedev_quadrature,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_lebedev_quadrature,
         ),
         Argument(
             "activation_function",
@@ -1034,22 +1089,28 @@ def descrpt_se_zm_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_glu_activation,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_glu_activation,
         ),
-        Argument("use_amp", bool, optional=True, default=True, doc=doc_use_amp),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=True,
+            doc=supported_backends("pt", "pt_expt") + doc_use_amp,
+        ),
         Argument(
             "add_chg_spin_ebd",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_add_chg_spin_ebd,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_add_chg_spin_ebd,
         ),
         Argument(
             "default_chg_spin",
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_chg_spin,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_default_chg_spin,
         ),
         Argument(
             "exclude_types",
@@ -1064,7 +1125,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             float,
             optional=True,
             default=1e-7,
-            doc=doc_only_pt_supported + doc_eps,
+            doc=supported_backends("pt", "jax", "pt_expt") + doc_eps,
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
@@ -1072,7 +1133,9 @@ def descrpt_se_zm_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
-    "se_e3", alias=["se_at", "se_a_3be", "se_t"], doc=doc_se_e3
+    "se_e3",
+    alias=["se_at", "se_a_3be", "se_t"],
+    doc=supported_backends("tf", "pt", "jax", "pt_expt", "tf2") + doc_se_e3,
 )
 def descrpt_se_t_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
@@ -1123,13 +1186,13 @@ def descrpt_se_t_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pt_expt", "tf2") + doc_env_protection,
         ),
     ]
 
 
 @descrpt_args_plugin.register(
-    "se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported + doc_se_a_tpe
+    "se_a_tpe", alias=["se_a_ebd"], doc=supported_backends("tf") + doc_se_a_tpe
 )
 def descrpt_se_a_tpe_args() -> list[Argument]:
     doc_type_nchanl = "number of channels for type embedding"
@@ -1144,7 +1207,11 @@ def descrpt_se_a_tpe_args() -> list[Argument]:
     ]
 
 
-@descrpt_args_plugin.register("se_e2_r", alias=["se_r"], doc=doc_se_e2_r)
+@descrpt_args_plugin.register(
+    "se_e2_r",
+    alias=["se_r"],
+    doc=supported_backends("tf", "pt", "jax", "pt_expt", "tf2") + doc_se_e2_r,
+)
 def descrpt_se_r_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -1198,12 +1265,15 @@ def descrpt_se_r_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pt_expt", "tf2") + doc_env_protection,
         ),
     ]
 
 
-@descrpt_args_plugin.register("hybrid", doc=doc_hybrid)
+@descrpt_args_plugin.register(
+    "hybrid",
+    doc=supported_backends("tf", "pt", "jax", "pt_expt", "tf2") + doc_hybrid,
+)
 def descrpt_hybrid_args() -> list[Argument]:
     doc_list = "A list of descriptor definitions"
 
@@ -1286,7 +1356,8 @@ def descrpt_se_atten_common_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_env_protection,
         ),
         Argument("attn", int, optional=True, default=128, doc=doc_attn),
         Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
@@ -1295,9 +1366,13 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     ]
 
 
-@descrpt_args_plugin.register("se_atten", alias=["dpa1"], doc=doc_se_atten)
+@descrpt_args_plugin.register(
+    "se_atten",
+    alias=["dpa1"],
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_se_atten,
+)
 def descrpt_se_atten_args() -> list[Argument]:
-    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {supported_backends('tf')}When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
         "Whether to use trainable shift and scale weights in layer normalization."
@@ -1324,7 +1399,7 @@ def descrpt_se_atten_args() -> list[Argument]:
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
         "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
         "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
-        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')}When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_stripped_type_embedding = (
@@ -1364,14 +1439,15 @@ def descrpt_se_atten_args() -> list[Argument]:
             int,
             optional=True,
             default=8,
-            doc=doc_only_pt_supported + doc_tebd_dim,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_tebd_dim,
         ),
         Argument(
             "use_econf_tebd",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_use_econf_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_use_econf_tebd,
         ),
         Argument(
             "use_tebd_bias",
@@ -1392,32 +1468,37 @@ def descrpt_se_atten_args() -> list[Argument]:
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_scaling_factor,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_scaling_factor,
         ),
         Argument(
             "normalize",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_normalize,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_normalize,
         ),
         Argument(
             "temperature",
             float,
             optional=True,
-            doc=doc_only_pt_supported + doc_temperature,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_temperature,
         ),
         Argument(
             "concat_output_tebd",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_concat_output_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_concat_output_tebd,
         ),
     ]
 
 
-@descrpt_args_plugin.register("se_e3_tebd", doc=doc_only_pt_supported)
+@descrpt_args_plugin.register(
+    "se_e3_tebd", doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+)
 def descrpt_se_e3_tebd_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
@@ -1464,7 +1545,7 @@ def descrpt_se_e3_tebd_args() -> list[Argument]:
             int,
             optional=True,
             default=8,
-            doc=doc_only_pt_supported + doc_tebd_dim,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_tebd_dim,
         ),
         Argument(
             "tebd_input_mode",
@@ -1489,7 +1570,8 @@ def descrpt_se_e3_tebd_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_env_protection,
         ),
         Argument(
             "smooth",
@@ -1513,14 +1595,16 @@ def descrpt_se_e3_tebd_args() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_concat_output_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_concat_output_tebd,
         ),
         Argument(
             "use_econf_tebd",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_use_econf_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_use_econf_tebd,
         ),
         Argument(
             "use_tebd_bias",
@@ -1531,7 +1615,10 @@ def descrpt_se_e3_tebd_args() -> list[Argument]:
     ]
 
 
-@descrpt_args_plugin.register("se_atten_v2", doc=doc_se_atten_v2)
+@descrpt_args_plugin.register(
+    "se_atten_v2",
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_se_atten_v2,
+)
 def descrpt_se_atten_v2_args() -> list[Argument]:
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
@@ -1569,14 +1656,15 @@ def descrpt_se_atten_v2_args() -> list[Argument]:
             int,
             optional=True,
             default=8,
-            doc=doc_only_pt_supported + doc_tebd_dim,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_tebd_dim,
         ),
         Argument(
             "use_econf_tebd",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_use_econf_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_use_econf_tebd,
         ),
         Argument(
             "use_tebd_bias",
@@ -1590,32 +1678,37 @@ def descrpt_se_atten_v2_args() -> list[Argument]:
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_scaling_factor,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_scaling_factor,
         ),
         Argument(
             "normalize",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_normalize,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_normalize,
         ),
         Argument(
             "temperature",
             float,
             optional=True,
-            doc=doc_only_pt_supported + doc_temperature,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_temperature,
         ),
         Argument(
             "concat_output_tebd",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported + doc_concat_output_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_concat_output_tebd,
         ),
     ]
 
 
-@descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
+@descrpt_args_plugin.register(
+    "dpa2", doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+)
 def descrpt_dpa2_args() -> list[Argument]:
     # repinit args
     doc_repinit = "Arguments for the `repinit` block, which builds the initial atom-wise representations before `repformer`."
@@ -1665,7 +1758,8 @@ def descrpt_dpa2_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_env_protection,
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
@@ -1682,7 +1776,8 @@ def descrpt_dpa2_args() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_use_econf_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_use_econf_tebd,
         ),
         Argument(
             "use_tebd_bias",
@@ -1715,7 +1810,7 @@ def dpa2_repinit_args() -> list[Argument]:
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
         "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
         "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
-        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {supported_backends('pt', 'jax', 'pd', 'pt_expt', 'tf2')}When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used."
@@ -2086,7 +2181,9 @@ def dpa2_repformer_args() -> list[Argument]:
     ]
 
 
-@descrpt_args_plugin.register("dpa3", doc=doc_only_pt_supported)
+@descrpt_args_plugin.register(
+    "dpa3", doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+)
 def descrpt_dpa3_args() -> list[Argument]:
     # repflow args
     doc_repflow = "Arguments for the `repflow` block, which updates node, edge, and angle representations in DPA3."
@@ -2165,7 +2262,8 @@ def descrpt_dpa3_args() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_env_protection,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_env_protection,
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
@@ -2174,7 +2272,8 @@ def descrpt_dpa3_args() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_use_econf_tebd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_use_econf_tebd,
         ),
         Argument(
             "use_tebd_bias",
@@ -2442,13 +2541,13 @@ def dpa3_repflow_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
-    "se_a_ebd_v2", alias=["se_a_tpe_v2"], doc=doc_only_tf_supported
+    "se_a_ebd_v2", alias=["se_a_tpe_v2"], doc=supported_backends("tf")
 )
 def descrpt_se_a_ebd_v2_args() -> list[Argument]:
     return descrpt_se_a_args()
 
 
-@descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported + doc_se_a_mask)
+@descrpt_args_plugin.register("se_a_mask", doc=supported_backends("tf") + doc_se_a_mask)
 def descrpt_se_a_mask_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -2515,7 +2614,10 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 fitting_args_plugin = ArgsPlugin()
 
 
-@fitting_args_plugin.register("ener", doc=doc_ener)
+@fitting_args_plugin.register(
+    "ener",
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_ener,
+)
 def fitting_ener() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -2527,7 +2629,8 @@ def fitting_ener() -> list[Argument]:
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool {supported_backends('tf', 'jax', 'pt_expt', 'tf2').strip()}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1.\n\n\
+- list of bool {supported_backends('pt', 'pd').strip()}: The fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -2552,14 +2655,16 @@ def fitting_ener() -> list[Argument]:
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_dim_case_embd,
         ),
         Argument(
             "neuron",
@@ -2610,7 +2715,7 @@ def fitting_ener() -> list[Argument]:
 @fitting_args_plugin.register(
     "dpa4_ener",
     alias=["sezm_ener"],
-    doc=doc_only_pt_supported + doc_ener,
+    doc=supported_backends("pt", "pt_expt") + doc_ener,
 )
 def fitting_sezm_ener() -> list[Argument]:
     doc_numb_fparam = "Dimension of frame parameters. If set to >0, each data system should provide `fparam.npy`."
@@ -2623,7 +2728,7 @@ def fitting_sezm_ener() -> list[Argument]:
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool {supported_backends('pt', 'pt_expt').strip()}: The DPA4/SeZM fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -2648,14 +2753,14 @@ def fitting_sezm_ener() -> list[Argument]:
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "pt_expt") + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "pt_expt") + doc_dim_case_embd,
         ),
         Argument(
             "neuron",
@@ -2705,12 +2810,14 @@ def fitting_sezm_ener() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_case_film_embd,
+            doc=supported_backends("pt", "pt_expt") + doc_case_film_embd,
         ),
     ]
 
 
-@fitting_args_plugin.register("dos", doc=doc_dos)
+@fitting_args_plugin.register(
+    "dos", doc=supported_backends("tf", "pt", "pt_expt", "tf2") + doc_dos
+)
 def fitting_dos() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -2737,14 +2844,14 @@ def fitting_dos() -> list[Argument]:
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_dim_case_embd,
         ),
         Argument(
             "neuron", list[int], optional=True, default=[120, 120, 120], doc=doc_neuron
@@ -2773,7 +2880,7 @@ def fitting_dos() -> list[Argument]:
     ]
 
 
-@fitting_args_plugin.register("population", doc=doc_only_pt_supported)
+@fitting_args_plugin.register("population", doc=supported_backends("pt"))
 def fitting_population() -> list[Argument]:
     """Return the argument list for the population fitting network."""
     return [
@@ -2784,7 +2891,7 @@ def fitting_population() -> list[Argument]:
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported,
+            doc=supported_backends("pt"),
         ),
         Argument(
             "neuron",
@@ -2811,7 +2918,9 @@ def fitting_population() -> list[Argument]:
     ]
 
 
-@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
+@fitting_args_plugin.register(
+    "property", doc=supported_backends("pt", "pt_expt", "tf2")
+)
 def fitting_property() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -2839,14 +2948,14 @@ def fitting_property() -> list[Argument]:
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_dim_case_embd,
         ),
         Argument(
             "neuron",
@@ -2891,7 +3000,9 @@ def fitting_property() -> list[Argument]:
     ]
 
 
-@fitting_args_plugin.register("polar", doc=doc_polar)
+@fitting_args_plugin.register(
+    "polar", doc=supported_backends("tf", "pt", "pt_expt", "tf2") + doc_polar
+)
 def fitting_polar() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -2916,28 +3027,28 @@ def fitting_polar() -> list[Argument]:
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_numb_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_numb_fparam,
         ),
         Argument(
             "numb_aparam",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_numb_aparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_numb_aparam,
         ),
         Argument(
             "default_fparam",
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_dim_case_embd,
         ),
         Argument(
             "neuron",
@@ -2967,7 +3078,7 @@ def fitting_polar() -> list[Argument]:
             [list[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type + doc_only_tf_supported,
+            doc=supported_backends("tf") + doc_sel_type,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -2977,7 +3088,9 @@ def fitting_polar() -> list[Argument]:
 #    return fitting_polar()
 
 
-@fitting_args_plugin.register("dipole", doc=doc_dipole)
+@fitting_args_plugin.register(
+    "dipole", doc=supported_backends("tf", "pt", "pt_expt", "tf2") + doc_dipole
+)
 def fitting_dipole() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -2995,28 +3108,28 @@ def fitting_dipole() -> list[Argument]:
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_numb_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_numb_fparam,
         ),
         Argument(
             "numb_aparam",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_numb_aparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_numb_aparam,
         ),
         Argument(
             "default_fparam",
             list[float],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_default_fparam,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_dim_case_embd,
+            doc=supported_backends("pt", "pt_expt", "tf2") + doc_dim_case_embd,
         ),
         Argument(
             "neuron",
@@ -3040,7 +3153,7 @@ def fitting_dipole() -> list[Argument]:
             [list[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type + doc_only_tf_supported,
+            doc=supported_backends("tf") + doc_sel_type,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -3195,28 +3308,30 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 list,
                 optional=True,
                 default=[],
-                doc=doc_only_pt_supported + doc_pair_exclude_types,
+                doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+                + doc_pair_exclude_types,
             ),
             Argument(
                 "atom_exclude_types",
                 list,
                 optional=True,
                 default=[],
-                doc=doc_only_pt_supported + doc_atom_exclude_types,
+                doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+                + doc_atom_exclude_types,
             ),
             Argument(
                 "preset_out_bias",
                 dict[str, list[float | list[float] | None]],
                 optional=True,
                 default=None,
-                doc=doc_only_pt_supported + doc_preset_out_bias,
+                doc=supported_backends("pt", "pd") + doc_preset_out_bias,
             ),
             Argument(
                 "srtab_add_bias",
                 bool,
                 optional=True,
                 default=True,
-                doc=doc_only_tf_supported + doc_srtab_add_bias,
+                doc=supported_backends("tf") + doc_srtab_add_bias,
             ),
             Argument(
                 "type_embedding",
@@ -3224,7 +3339,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 type_embedding_args(),
                 [],
                 optional=True,
-                doc=doc_only_tf_supported + doc_type_embedding,
+                doc=supported_backends("tf") + doc_type_embedding,
             ),
             Argument(
                 "modifier",
@@ -3232,7 +3347,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [],
                 [modifier_variant_type_args()],
                 optional=True,
-                doc=doc_only_tf_supported + doc_modifier,
+                doc=supported_backends("tf") + doc_modifier,
             ),
             Argument(
                 "compress",
@@ -3240,15 +3355,23 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [],
                 [model_compression_type_args()],
                 optional=True,
-                doc=doc_only_tf_supported + doc_compress_config,
+                doc=supported_backends("tf") + doc_compress_config,
                 fold_subdoc=True,
             ),
-            Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
+            Argument(
+                "spin",
+                dict,
+                spin_args(),
+                [],
+                optional=True,
+                doc=supported_backends("tf", "pt", "pt_expt") + doc_spin,
+            ),
             Argument(
                 "finetune_head",
                 str,
                 optional=True,
-                doc=doc_only_pt_supported + doc_finetune_head,
+                doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+                + doc_finetune_head,
             ),
         ],
         [
@@ -3303,17 +3426,19 @@ def standard_model_args() -> Argument:
                 list[str],
                 optional=True,
                 default=[],
-                doc=doc_only_pt_supported + doc_model_branch_alias,
+                doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2")
+                + doc_model_branch_alias,
             ),
             Argument(
                 "info",
                 dict,
                 optional=True,
                 default={},
-                doc=doc_only_pt_supported + doc_info,
+                doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
         ],
-        doc="Standard model, which contains a descriptor and a fitting.",
+        doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+        + "Standard model, which contains a descriptor and a fitting.",
     )
     return ca
 
@@ -3324,7 +3449,12 @@ def standard_model_args() -> Argument:
 )
 def sezm_model_args() -> Argument:
     doc_descrpt = "Descriptor configuration for atomic environments. DPA4/SeZM uses the SeZM descriptor."
-    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting by default and also supports invariant `property` fitting."
+    doc_fitting = (
+        "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU "
+        "energy fitting by default. The PyTorch backend also supports invariant "
+        "`property` fitting; PyTorch Exportable currently accepts only "
+        "`dpa4_ener`."
+    )
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
@@ -3387,7 +3517,16 @@ def sezm_model_args() -> Argument:
         "are saved with LoRA deltas folded into base weights, producing plain "
         "DPA4/SeZM checkpoints suitable for deployment."
     )
-    doc_model = "DPA4/SeZM model scaffold with the SeZM descriptor and selectable energy or invariant-property fitting."
+    doc_model = (
+        "DPA4/SeZM model scaffold with the SeZM descriptor. It supports energy "
+        "fitting in PyTorch and PyTorch Exportable, plus invariant-property "
+        "fitting in PyTorch."
+    )
+
+    # ``get_argument`` constructs a fresh Argument, so narrowing this label does
+    # not change the generic property fitting used by standard models.
+    dpa4_property_fitting = fitting_args_plugin.get_argument("property")
+    dpa4_property_fitting.doc = supported_backends("pt")
 
     ca = Argument(
         "dpa4",
@@ -3406,7 +3545,7 @@ def sezm_model_args() -> Argument:
                         doc="The type of the descriptor.",
                     )
                 ],
-                doc=doc_only_pt_supported + doc_descrpt,
+                doc=supported_backends("pt", "pt_expt") + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
@@ -3417,63 +3556,63 @@ def sezm_model_args() -> Argument:
                         "type",
                         [
                             fitting_args_plugin.get_argument("dpa4_ener"),
-                            fitting_args_plugin.get_argument("property"),
+                            dpa4_property_fitting,
                         ],
                         optional=True,
                         default_tag="dpa4_ener",
                         doc="The type of the fitting.",
                     )
                 ],
-                doc=doc_only_pt_supported + doc_fitting,
+                doc=supported_backends("pt", "pt_expt") + doc_fitting,
             ),
             Argument(
                 "use_compile",
                 bool,
                 optional=True,
                 default=False,
-                doc=doc_only_pt_supported + doc_use_compile,
+                doc=supported_backends("pt") + doc_use_compile,
             ),
             Argument(
                 "enable_tf32",
                 bool,
                 optional=True,
                 default=True,
-                doc=doc_only_pt_supported + doc_enable_tf32,
+                doc=supported_backends("pt") + doc_enable_tf32,
             ),
             Argument(
                 "model_branch_alias",
                 list[str],
                 optional=True,
                 default=[],
-                doc=doc_only_pt_supported + doc_model_branch_alias,
+                doc=supported_backends("pt", "pt_expt") + doc_model_branch_alias,
             ),
             Argument(
                 "info",
                 dict,
                 optional=True,
                 default={},
-                doc=doc_only_pt_supported + doc_info,
+                doc=supported_backends("pt", "pt_expt") + doc_info,
             ),
             Argument(
                 "bridging_method",
                 str,
                 optional=True,
                 default="None",
-                doc=doc_only_pt_supported + doc_bridging_method,
+                doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
             ),
             Argument(
                 "bridging_r_inner",
                 float,
                 optional=True,
                 default=0.5,
-                doc=doc_only_pt_supported + doc_bridging_r_inner,
+                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
             ),
             Argument(
                 "bridging_r_outer",
                 float,
                 optional=True,
                 default=0.8,
-                doc=doc_only_pt_supported + doc_bridging_r_outer,
+                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
             ),
             Argument(
                 "lora",
@@ -3482,23 +3621,23 @@ def sezm_model_args() -> Argument:
                     Argument(
                         "rank",
                         int,
-                        doc=doc_only_pt_supported + doc_lora_rank,
+                        doc=supported_backends("pt") + doc_lora_rank,
                     ),
                     Argument(
                         "alpha",
                         float,
                         optional=True,
                         default=None,
-                        doc=doc_only_pt_supported + doc_lora_alpha,
+                        doc=supported_backends("pt") + doc_lora_alpha,
                     ),
                 ],
                 optional=True,
                 default=None,
-                doc=doc_only_pt_supported + doc_lora,
+                doc=supported_backends("pt") + doc_lora,
             ),
         ],
         alias=["DPA4", "SeZM", "sezm"],
-        doc=doc_only_pt_supported + doc_model,
+        doc=supported_backends("pt", "pt_expt") + doc_model,
     )
     return ca
 
@@ -3518,7 +3657,7 @@ def pairwise_dprc() -> Argument:
             qm_model_args,
             qmmm_model_args,
         ],
-        doc=doc_only_tf_supported,
+        doc=supported_backends("tf"),
     )
     return ca
 
@@ -3532,6 +3671,7 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
+        doc=supported_backends("tf", "pt", "pd", "pt_expt"),
     )
     return ca
 
@@ -3552,7 +3692,7 @@ def pairtab_model_args() -> Argument:
             Argument("rcut", float, optional=False, doc=doc_rcut),
             Argument("sel", [int, list[int], str], optional=False, doc=doc_sel),
         ],
-        doc=doc_only_tf_supported + "Pairwise tabulation energy model.",
+        doc=supported_backends("tf") + "Pairwise tabulation energy model.",
     )
     return ca
 
@@ -3586,7 +3726,7 @@ def linear_ener_model_args() -> Argument:
                 "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
             ),
         ],
-        doc=doc_only_tf_supported,
+        doc=supported_backends("tf", "pt", "pt_expt"),
     )
     return ca
 
@@ -3749,7 +3889,9 @@ def _check_wsd_args(data: dict[str, Any]) -> bool:
     return True
 
 
-@lr_args_plugin.register("exp")
+@lr_args_plugin.register(
+    "exp", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+)
 def learning_rate_exp() -> list[Argument]:
     """
     Defines an exponential-decayed learning rate schedule with optional warmup.
@@ -3787,7 +3929,9 @@ def learning_rate_exp() -> list[Argument]:
     ]
 
 
-@lr_args_plugin.register("cosine")
+@lr_args_plugin.register(
+    "cosine", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+)
 def learning_rate_cosine() -> list[Argument]:
     """
     Defines a cosine annealing learning rate schedule with optional warmup.
@@ -3800,7 +3944,9 @@ def learning_rate_cosine() -> list[Argument]:
     return []
 
 
-@lr_args_plugin.register("wsd")
+@lr_args_plugin.register(
+    "wsd", doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+)
 def learning_rate_wsd() -> list[Argument]:
     """
     Defines a warmup-stable-decay learning rate schedule with configurable
@@ -3943,14 +4089,14 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 opt_args_plugin = ArgsPlugin()
 
 
-@opt_args_plugin.register("Adam")
+@opt_args_plugin.register(
+    "Adam", doc=supported_backends("tf", "pt", "pd", "pt_expt", "tf2")
+)
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
     doc_weight_decay = (
-        "Weight decay coefficient for Adam. In PyTorch and Paddle, this is an L2 "
-        "penalty applied to gradients. TensorFlow does not support weight_decay and "
-        "requires this value to be 0."
+        "Weight decay coefficient for Adam, applied as an L2 penalty to gradients."
     )
     return [
         Argument(
@@ -3958,58 +4104,56 @@ def optimizer_adam() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=doc_adam_beta1,
+            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=doc_adam_beta2,
+            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.0,
-            doc=doc_weight_decay,
+            doc=supported_backends("pt", "pd") + doc_weight_decay,
         ),
     ]
 
 
-@opt_args_plugin.register("AdamW", doc=doc_only_pt_supported)
+@opt_args_plugin.register("AdamW", doc=supported_backends("pt", "pd", "pt_expt", "tf2"))
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
-    doc_weight_decay = (
-        "Decoupled weight decay coefficient for AdamW optimizer (PyTorch only)."
-    )
+    doc_weight_decay = "Decoupled weight decay coefficient for the AdamW optimizer."
     return [
         Argument(
             "adam_beta1",
             float,
             optional=True,
             default=0.9,
-            doc=doc_only_pt_supported + doc_adam_beta1,
+            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta1,
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.999,
-            doc=doc_only_pt_supported + doc_adam_beta2,
+            doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.001,
-            doc=doc_only_pt_supported + doc_weight_decay,
+            doc=supported_backends("pt", "pd", "pt_expt", "tf2") + doc_weight_decay,
         ),
     ]
 
 
-@opt_args_plugin.register("LKF", doc=doc_only_pt_supported)
+@opt_args_plugin.register("LKF", doc=supported_backends("pt"))
 def optimizer_lkf() -> list[Argument]:
     doc_kf_blocksize = "The blocksize for the Kalman filter."
     doc_kf_start_pref_e = (
@@ -4030,40 +4174,40 @@ def optimizer_lkf() -> list[Argument]:
             int,
             optional=True,
             default=5120,
-            doc=doc_only_pt_supported + doc_kf_blocksize,
+            doc=supported_backends("pt") + doc_kf_blocksize,
         ),
         Argument(
             "kf_start_pref_e",
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_kf_start_pref_e,
+            doc=supported_backends("pt") + doc_kf_start_pref_e,
         ),
         Argument(
             "kf_limit_pref_e",
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_kf_limit_pref_e,
+            doc=supported_backends("pt") + doc_kf_limit_pref_e,
         ),
         Argument(
             "kf_start_pref_f",
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_kf_start_pref_f,
+            doc=supported_backends("pt") + doc_kf_start_pref_f,
         ),
         Argument(
             "kf_limit_pref_f",
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported + doc_kf_limit_pref_f,
+            doc=supported_backends("pt") + doc_kf_limit_pref_f,
         ),
     ]
 
 
-@opt_args_plugin.register("AdaMuon", doc=doc_only_pt_supported)
+@opt_args_plugin.register("AdaMuon", doc=supported_backends("pt"))
 def optimizer_adamuon() -> list[Argument]:
     return [
         Argument(
@@ -4072,28 +4216,31 @@ def optimizer_adamuon() -> list[Argument]:
             optional=True,
             default=0.95,
             alias=["muon_momentum"],
-            doc=doc_only_pt_supported + "Momentum coefficient for AdaMuon optimizer.",
+            doc=supported_backends("pt")
+            + "Momentum coefficient for AdaMuon optimizer.",
         ),
         Argument(
             "adam_beta1",
             float,
             optional=True,
             default=0.9,
-            doc=doc_only_pt_supported + "Adam beta1 coefficient for AdaMuon optimizer.",
+            doc=supported_backends("pt")
+            + "Adam beta1 coefficient for AdaMuon optimizer.",
         ),
         Argument(
             "adam_beta2",
             float,
             optional=True,
             default=0.95,
-            doc=doc_only_pt_supported + "Adam beta2 coefficient for AdaMuon optimizer.",
+            doc=supported_backends("pt")
+            + "Adam beta2 coefficient for AdaMuon optimizer.",
         ),
         Argument(
             "weight_decay",
             float,
             optional=True,
             default=0.001,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
         ),
         Argument(
@@ -4101,7 +4248,7 @@ def optimizer_adamuon() -> list[Argument]:
             float,
             optional=True,
             default=10.0,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Learning rate adjustment factor for Adam (1D params). "
             "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
@@ -4111,7 +4258,7 @@ def optimizer_adamuon() -> list[Argument]:
             float,
             optional=True,
             default=0.2,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
         ),
     ]
@@ -4119,7 +4266,7 @@ def optimizer_adamuon() -> list[Argument]:
 
 @opt_args_plugin.register(
     "HybridMuon",
-    doc=doc_only_pt_supported
+    doc=supported_backends("pt")
     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
     + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
@@ -4138,7 +4285,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.95,
             alias=["muon_momentum"],
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
             "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
         ),
@@ -4147,7 +4294,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.9,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Adam beta1 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -4155,7 +4302,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.95,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Adam beta2 coefficient for 1D parameters (biases, norms).",
         ),
         Argument(
@@ -4163,7 +4310,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.001,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Weight decay coefficient. Applied to Muon-routed parameters and "
             + "the AdamW-style decay path for matrix parameters.",
         ),
@@ -4172,7 +4319,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
@@ -4183,7 +4330,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             float,
             optional=True,
             default=0.18,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
             + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
             + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
@@ -4193,7 +4340,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             str,
             optional=True,
             default="slice",
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Muon routing mode. "
             + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
             + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
@@ -4205,7 +4352,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
             + "Square matrices keep using the current standard Newton-Schulz path.",
         ),
@@ -4214,7 +4361,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
             "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
@@ -4224,7 +4371,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported
+            doc=supported_backends("pt")
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
             "per Muon block, applies EMA smoothing, and rescales Muon updates "
@@ -4246,8 +4393,7 @@ def optimizer_variant_type_args() -> Variant:
 
 def optimizer_args(fold_subdoc: bool = False) -> Argument:
     doc_optimizer = (
-        "The definition of optimizer. Supported optimizer types depend on backend: "
-        "TensorFlow/Paddle: Adam; PyTorch: Adam, AdamW, LKF, AdaMuon, HybridMuon."
+        "The optimizer definition. See each type and parameter for backend support."
     )
     return Argument(
         "optimizer",
@@ -4276,7 +4422,11 @@ def limit_pref(item: str) -> str:
 loss_args_plugin = ArgsPlugin()
 
 
-@loss_args_plugin.register("ener")
+@loss_args_plugin.register(
+    "ener",
+    alias=["ener_hess"],
+    doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2"),
+)
 def loss_ener() -> list[Argument]:
     doc_start_pref_e = start_pref("energy", abbr="e")
     doc_limit_pref_e = limit_pref("energy")
@@ -4295,9 +4445,7 @@ def loss_ener() -> list[Argument]:
     doc_use_default_pf = (
         "If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided. "
         "This allows using the prefactor force loss (pf) without requiring atom_pref.npy files in training data. "
-        "When atom_pref.npy is provided, it will be used as-is regardless of this setting. "
-        "Note: this option is only effective for the PyTorch/DPModel backends; "
-        "the TensorFlow and Paddle backends raise NotImplementedError when set to true."
+        "When atom_pref.npy is provided, it will be used as-is regardless of this setting."
     )
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
@@ -4384,14 +4532,14 @@ def loss_ener() -> list[Argument]:
             [float, int],
             optional=True,
             default=0.00,
-            doc=doc_start_pref_h,
+            doc=supported_backends("pt", "jax", "pd") + doc_start_pref_h,
         ),
         Argument(
             "limit_pref_h",
             [float, int],
             optional=True,
             default=0.00,
-            doc=doc_limit_pref_h,
+            doc=supported_backends("pt", "jax", "pd") + doc_limit_pref_h,
         ),
         Argument(
             "start_pref_ae",
@@ -4426,7 +4574,7 @@ def loss_ener() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_use_default_pf,
+            doc=supported_backends("pt", "jax", "pt_expt", "tf2") + doc_use_default_pf,
         ),
         Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
         Argument(
@@ -4469,14 +4617,14 @@ def loss_ener() -> list[Argument]:
             str,
             optional=True,
             default="mse",
-            doc=doc_loss_func,
+            doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_loss_func,
         ),
         Argument(
             "f_use_norm",
             bool,
             optional=True,
             default=False,
-            doc=doc_f_use_norm,
+            doc=supported_backends("pt", "jax", "pt_expt", "tf2") + doc_f_use_norm,
         ),
         Argument(
             "huber_delta",
@@ -4495,7 +4643,7 @@ def loss_ener() -> list[Argument]:
     ]
 
 
-@loss_args_plugin.register("dens")
+@loss_args_plugin.register("dens", doc=supported_backends("pt"))
 def loss_dens() -> list[Argument]:
     doc_start_pref_e = start_pref("energy", abbr="e")
     doc_limit_pref_e = limit_pref("energy")
@@ -4596,7 +4744,7 @@ def loss_dens() -> list[Argument]:
     ]
 
 
-@loss_args_plugin.register("ener_spin")
+@loss_args_plugin.register("ener_spin", doc=supported_backends("tf", "pt", "pt_expt"))
 def loss_ener_spin() -> list[Argument]:
     doc_start_pref_e = start_pref("energy")
     doc_limit_pref_e = limit_pref("energy")
@@ -4736,7 +4884,7 @@ def loss_ener_spin() -> list[Argument]:
     ]
 
 
-@loss_args_plugin.register("dos")
+@loss_args_plugin.register("dos", doc=supported_backends("tf", "pt", "pt_expt", "tf2"))
 def loss_dos() -> list[Argument]:
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
@@ -4810,7 +4958,7 @@ def loss_dos() -> list[Argument]:
     ]
 
 
-@loss_args_plugin.register("population")
+@loss_args_plugin.register("population", doc=supported_backends("pt"))
 def loss_population() -> list[Argument]:
     """Return the argument list for the population loss function."""
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
@@ -4911,7 +5059,7 @@ def loss_population() -> list[Argument]:
     ]
 
 
-@loss_args_plugin.register("property")
+@loss_args_plugin.register("property", doc=supported_backends("pt", "pt_expt", "tf2"))
 def loss_property() -> list[Argument]:
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
     doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
@@ -4942,7 +5090,9 @@ def loss_property() -> list[Argument]:
 
 
 # YWolfeee: Modified to support tensor type of loss args.
-@loss_args_plugin.register("tensor")
+@loss_args_plugin.register(
+    "tensor", doc=supported_backends("tf", "pt", "pt_expt", "tf2")
+)
 def loss_tensor() -> list[Argument]:
     # doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]."
     # doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well."
@@ -4971,7 +5121,7 @@ def loss_tensor() -> list[Argument]:
 
 
 def loss_variant_type_args() -> Variant:
-    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
+    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, its legacy alias `ener_hess`, `dens` (Only DPA4/SeZM supported), or left unset. Hessian supervision is configured through `start_pref_h` and `limit_pref_h` on the `ener` loss. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
     return Variant(
         "type",
@@ -4983,7 +5133,7 @@ def loss_variant_type_args() -> Variant:
 
 
 def loss_args() -> list[Argument]:
-    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset."
+    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset. The legacy `ener_hess` type is normalized to `ener`."
     ca = Argument(
         "loss", dict, [], [loss_variant_type_args()], optional=True, doc=doc_loss
     )
@@ -5023,9 +5173,8 @@ If MPI is used, the value should be considered as the batch size per task.'
         "Frames containing any atom pair closer than this distance are excluded "
         "from loss computation, as DFT labels for near-collision configurations "
         "are often unreliable. Set to 0 to disable (default). "
-        "Under distributed training (DDP/FSDP), if ALL frames in a batch are "
-        "filtered out on a given rank, one frame is retained to ensure every "
-        "rank participates in collective communication (backward all-reduce). "
+        "Under distributed training (DDP/FSDP), if any rank has no valid frame "
+        "in its current batch, every rank collectively skips that training step. "
         "Note: enabling this adds an O(N²) distance check per frame in the "
         "DataLoader workers (CPU-side), which may slow down training for large "
         "systems. To avoid the overhead, consider pre-cleaning the dataset instead."
@@ -5040,7 +5189,8 @@ If MPI is used, the value should be considered as the batch size per task.'
             [list[str]],
             optional=True,
             default=None,
-            doc=doc_patterns + doc_only_pt_supported,
+            doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_patterns,
         ),
         Argument(
             "batch_size",
@@ -5072,7 +5222,7 @@ If MPI is used, the value should be considered as the batch size per task.'
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_pt_supported + doc_min_pair_dist,
+            doc=supported_backends("pt") + doc_min_pair_dist,
         ),
     ]
 
@@ -5124,7 +5274,8 @@ def validation_data_args() -> list[
             [list[str]],
             optional=True,
             default=None,
-            doc=doc_patterns + doc_only_pt_supported,
+            doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
+            + doc_patterns,
         ),
         Argument(
             "batch_size",
@@ -5186,10 +5337,18 @@ def mixed_precision_args() -> list[Argument]:  # ! added by Denghui.
 
     args = [
         Argument(
-            "output_prec", str, optional=True, default="float32", doc=doc_output_prec
+            "output_prec",
+            str,
+            optional=True,
+            default="float32",
+            doc=supported_backends("tf") + doc_output_prec,
         ),
         Argument(
-            "compute_prec", str, optional=False, default="float16", doc=doc_compute_prec
+            "compute_prec",
+            str,
+            optional=False,
+            default="float16",
+            doc=supported_backends("tf") + doc_compute_prec,
         ),
     ]
 
@@ -5200,7 +5359,7 @@ def mixed_precision_args() -> list[Argument]:  # ! added by Denghui.
         optional=True,
         sub_fields=args,
         sub_variants=[],
-        doc=doc_mixed_precision,
+        doc=supported_backends("tf") + doc_mixed_precision,
     )
 
 
@@ -5286,9 +5445,15 @@ def training_args(
     doc_disp_avg = (
         "Display the average loss over the display interval for training sets."
     )
-    doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`. In the PyTorch backend, when enable_profiler is True, this option is ignored, since the profiling results will be saved to the TensorBoard log."
-    doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Export the profiling results to the TensorBoard log for performance analysis, driven by TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler. The log will be saved to `tensorboard_log_dir`."
+    doc_profiling = (
+        "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
+        "JSON trace; PaddlePaddle starts its Nsight Systems profiling flow."
+    )
+    doc_profiling_file = "Output file for the TensorFlow or PyTorch Chrome JSON trace."
+    doc_enable_profiler = (
+        "Enable the backend profiler. TensorFlow and PyTorch write profiler data "
+        "under `tensorboard_log_dir`; PaddlePaddle starts Nsight Systems profiling."
+    )
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
@@ -5305,7 +5470,8 @@ def training_args(
         "otherwise, a directory containing NumPy binary files are used."
     )
     doc_stat_file_mode = (
-        doc_only_pt_supported + "The access mode for `stat_file`. "
+        supported_backends("pt", "jax", "pt_expt", "tf2")
+        + "The access mode for `stat_file`. "
         "`update` creates the cache when needed and writes any missing statistics; "
         "this is the behavior used when the option is omitted. "
         "`read` requires a complete existing cache and opens it read-only, allowing "
@@ -5337,6 +5503,15 @@ def training_args(
         "Default is 0. Requires distributed launch via torchrun. "
         "Currently supports single-task training; does not support LKF or change_bias_after_training."
     )
+    doc_neighbor_graph_method = (
+        "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
+        "Experimental energy models. `auto` uses the NV builder on CUDA when "
+        "nvalchemiops is available and otherwise uses the in-tree dense builder. "
+        "`nv` requires CUDA and nvalchemiops; `dense` always uses the in-tree "
+        "all-pairs implementation. The selection is resolved once at training "
+        "startup and applies consistently to eager, compiled, and full-validation "
+        "forwards."
+    )
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -5345,7 +5520,12 @@ def training_args(
     data_args = [
         arg_training_data,
         arg_validation_data,
-        Argument("stat_file", str, optional=True, doc=doc_stat_file),
+        Argument(
+            "stat_file",
+            str,
+            optional=True,
+            doc=supported_backends("tf", "pt", "pd", "pt_expt", "tf2") + doc_stat_file,
+        ),
         Argument(
             "stat_file_mode",
             str,
@@ -5366,7 +5546,7 @@ def training_args(
                 dict,
                 optional=True,
                 default={},
-                doc=doc_num_epoch_dict,
+                doc=supported_backends("pt", "pd") + doc_num_epoch_dict,
             ),
             Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
         ]
@@ -5390,7 +5570,7 @@ def training_args(
             "numb_epoch",
             [int, float],
             optional=True,
-            doc=doc_num_epoch,
+            doc=supported_backends("tf", "pt", "pd") + doc_num_epoch,
             alias=["num_epochs", "num_epoch", "numb_epochs"],
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
@@ -5404,7 +5584,7 @@ def training_args(
             [str, None],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_save_dir,
+            doc=supported_backends("pt") + doc_save_dir,
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
@@ -5415,7 +5595,7 @@ def training_args(
             [float, None],
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_ckpt_keep_ratio,
+            doc=supported_backends("pt") + doc_ckpt_keep_ratio,
             extra_check=lambda x: x is None or 0.0 < x < 1.0,
             extra_check_errmsg="must be a fraction in the open interval (0, 1)",
         ),
@@ -5424,14 +5604,14 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_enable_ema,
+            doc=supported_backends("pt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=doc_only_pt_supported + doc_ema_decay,
+            doc=supported_backends("pt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
@@ -5440,7 +5620,7 @@ def training_args(
             int,
             optional=True,
             default=3,
-            doc=doc_only_pt_supported + doc_ema_ckpt_keep,
+            doc=supported_backends("pt") + doc_ema_ckpt_keep,
             extra_check=lambda x: x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
@@ -5462,72 +5642,90 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_disp_avg,
+            doc=supported_backends("pt") + doc_disp_avg,
         ),
         Argument(
             "profiling",
             bool,
             optional=True,
             default=False,
-            doc=doc_profiling,
+            doc=supported_backends("tf", "pt", "pd") + doc_profiling,
         ),
         Argument(
             "profiling_file",
             str,
             optional=True,
             default="timeline.json",
-            doc=doc_profiling_file,
+            doc=supported_backends("tf", "pt") + doc_profiling_file,
         ),
         Argument(
             "enable_profiler",
             bool,
             optional=True,
             default=False,
-            doc=doc_enable_profiler,
+            doc=supported_backends("tf", "pt", "pd") + doc_enable_profiler,
         ),
         Argument(
-            "tensorboard", bool, optional=True, default=False, doc=doc_tensorboard
+            "tensorboard",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard,
         ),
         Argument(
             "tensorboard_log_dir",
             str,
             optional=True,
             default="log",
-            doc=doc_tensorboard_log_dir,
+            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard_log_dir,
         ),
         Argument(
-            "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
+            "tensorboard_freq",
+            int,
+            optional=True,
+            default=1,
+            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard_freq,
         ),
         Argument(
             "gradient_max_norm",
             float,
             optional=True,
-            doc=doc_only_pt_supported + doc_gradient_max_norm,
+            doc=supported_backends("pt", "pd", "pt_expt", "tf2")
+            + doc_gradient_max_norm,
         ),
         Argument(
             "acc_freq",
             int,
             optional=True,
             default=1,
-            doc=doc_only_pd_supported + doc_acc_freq,
+            doc=supported_backends("pd") + doc_acc_freq,
         ),
         Argument(
             "zero_stage",
             int,
             optional=True,
             default=0,
-            doc=doc_only_pt_supported + doc_zero_stage,
+            doc=supported_backends("pt") + doc_zero_stage,
+        ),
+        Argument(
+            "neighbor_graph_method",
+            str,
+            optional=True,
+            default="auto",
+            extra_check=lambda x: x in {"auto", "dense", "nv"},
+            extra_check_errmsg="must be one of 'auto', 'dense', or 'nv'",
+            doc=supported_backends("pt_expt") + doc_neighbor_graph_method,
         ),
         Argument(
             "enable_compile",
             bool,
             optional=True,
             default=False,
-            doc="(Supported Backend: PyTorch Experimental, TensorFlow2) "
-            "Enable backend compiler acceleration during training. "
-            "PyTorch Experimental uses make_fx to decompose autograd into "
+            doc=supported_backends("pt_expt", "tf2")
+            + "Enable backend compiler acceleration during training. "
+            "PyTorch Exportable uses make_fx to decompose autograd into "
             "primitive ops, then compiles with torch.compile/Inductor for "
-            "kernel fusion. TensorFlow2 enables XLA jit_compile for the "
+            "kernel fusion. TensorFlow 2 enables XLA jit_compile for the "
             "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
         ),
@@ -5664,9 +5862,7 @@ def validating_args() -> Argument:
             }
         )
     )
-    doc_full_validation_supported = (
-        "(Supported Backend: PyTorch, PyTorch Experimental, JAX, TensorFlow2) "
-    )
+    doc_full_validation_supported = supported_backends("pt", "jax", "pt_expt", "tf2")
     doc_full_validation = (
         "Whether to run an additional full validation pass over the entire "
         "validation dataset during training. This flow is independent from the "
@@ -5757,7 +5953,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_ema_full_validation,
+            doc=supported_backends("pt") + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -5821,21 +6017,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_compiled_infer,
+            doc=supported_backends("pt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_tf32_infer,
+            doc=supported_backends("pt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_amp_infer,
+            doc=supported_backends("pt") + doc_amp_infer,
         ),
     ]
     return Argument(

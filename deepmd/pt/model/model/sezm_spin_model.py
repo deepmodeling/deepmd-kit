@@ -27,7 +27,7 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 from deepmd.pt.model.model.sezm_model import (
-    InterPotential,
+    InnerPotential,
     SeZMModel,
 )
 from deepmd.pt.model.model.spin_model import (
@@ -76,7 +76,7 @@ class SeZMSpinModel(SeZMModel):
         real_sel: list[int],
         **kwargs: Any,
     ) -> None:
-        # Delay InterPotential construction until ntypes_real is available.
+        # Delay InnerPotential construction until ntypes_real is available.
         bridging_method = str(kwargs.pop("bridging_method", "none")).upper()
         kwargs["bridging_method"] = "none"
 
@@ -97,7 +97,7 @@ class SeZMSpinModel(SeZMModel):
 
         self.bridging_method = bridging_method
         self.inter_potential = (
-            InterPotential(type_map=self.get_type_map(), mode=self.bridging_method)
+            InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
             if self.bridging_method != "NONE"
             else None
         )
@@ -152,6 +152,7 @@ class SeZMSpinModel(SeZMModel):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        atomic_output_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Return spin-aware SeZM predictions with internal output keys."""
         with nvtx_range("SeZMSpin/forward_common"):
@@ -219,7 +220,10 @@ class SeZMSpinModel(SeZMModel):
                 extended_coord_corr=extended_coord_corr[:, : nloc * 2, :].contiguous(),
                 charge_spin=charge_spin,
                 input_prec=input_prec,
+                atomic_output_only=atomic_output_only,
             )
+            if atomic_output_only:
+                return model_ret
             return self._split_spin_common_output(model_ret, atype, nloc)
 
     def forward_lower(
@@ -608,7 +612,16 @@ class SeZMSpinModel(SeZMModel):
 
         @functools.lru_cache
         def spin_sampled_func() -> list[dict[str, Any]]:
-            return [_pack_spin_stat_sample(self, sys) for sys in sampled_func()]
+            packed_samples = []
+            for sample in sampled_func():
+                packed = _pack_spin_stat_sample(self, sample)
+                packed["model_coord"] = sample["coord"]
+                packed["model_atype"] = sample["atype"]
+                packed["model_spin"] = sample["spin"]
+                if "aparam" in sample:
+                    packed["model_aparam"] = sample["aparam"]
+                packed_samples.append(packed)
+            return packed_samples
 
         return self.atomic_model._make_wrapped_sampler(spin_sampled_func)
 

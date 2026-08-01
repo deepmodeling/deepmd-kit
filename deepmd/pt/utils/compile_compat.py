@@ -12,10 +12,11 @@ The contents fall into two kinds:
 * helpers and workarounds common to the supported releases -- trace-shape and
   trace-input preparation, per-task buffer promotion, FX graph repair, the
   Inductor option lockdown, and the process-global configuration; and
-* a workaround specific to PyTorch 2.12, which must not be applied on 2.11.
+* a workaround for the Inductor symbolic-divisibility regression introduced in
+  PyTorch 2.12, which must not be applied on 2.11.
 
-Only PyTorch 2.11.x and 2.12.x are permitted for compilation (see
-:func:`check_compile_torch_version`).
+Only the releases listed in :data:`SUPPORTED_COMPILE_TORCH` are permitted for
+compilation (see :func:`check_compile_torch_version`).
 """
 
 from __future__ import (
@@ -35,6 +36,7 @@ from packaging.version import (
 __all__ = [
     "AM_PREFIX",
     "FIT_PREFIX",
+    "SUPPORTED_COMPILE_TORCH",
     "apply_global_compile_patches",
     "build_inductor_compile_options",
     "check_compile_torch_version",
@@ -51,17 +53,42 @@ __all__ = [
 ]
 
 
+#: ``(major, minor)`` releases explicitly enabled for SeZM compilation after
+#: validation. This runtime allowlist is not a record of which releases happen
+#: to be installed in CI.
+SUPPORTED_COMPILE_TORCH = ((2, 11), (2, 12), (2, 13))
+
+#: Releases carrying the Inductor symbolic-divisibility regression repaired by
+#: :func:`patch_inductor_symbolic_divisibility`. PyTorch 2.11 evaluates the
+#: predicate correctly and must be left alone.
+_DIVISIBILITY_REGRESSION_TORCH = ((2, 12), (2, 13))
+
+
+def _torch_release() -> tuple[int, int]:
+    """Return the ``(major, minor)`` pair of the running PyTorch release.
+
+    Returns
+    -------
+    tuple[int, int]
+        The major and minor components, or ``(0, 0)`` when the version string
+        carries fewer than two components and therefore matches no supported
+        release.
+    """
+    release = Version(torch.__version__).release
+    return (release[0], release[1]) if len(release) >= 2 else (0, 0)
+
+
 # =============================================================================
-# Common workarounds (PyTorch 2.11 and 2.12)
+# Common workarounds (every supported release)
 # =============================================================================
 def apply_global_compile_patches() -> None:
     """Apply every process-global PyTorch adjustment the compile path needs.
 
-    The adjustments are mutually independent and individually idempotent. The
-    function is intended to run exactly once, when the model module is
-    imported, so that the global state is established before the first
-    compilation. The symbolic-divisibility repair is applied only on PyTorch
-    2.12, where the regression exists.
+    The adjustments are mutually independent and individually idempotent.
+    Invoke this function before the first Dynamo or Inductor compilation in
+    each entry path; repeated calls from independent compile paths are safe.
+    The symbolic-divisibility repair is applied only on releases where the
+    regression exists.
     """
     # Silence Inductor / Triton autotune console dumps.  ``torch.compile``
     # reads these environment variables once, when its backend is first
@@ -89,10 +116,10 @@ def apply_global_compile_patches() -> None:
     # supported PyTorch versions and is independent of runtime shapes.
     patch_inductor_force_int64_indexing()
 
-    # The symbolic-divisibility regression exists only on PyTorch 2.12; the
+    # The symbolic-divisibility regression was introduced in PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
     # patched.
-    if Version(torch.__version__).release[:2] == (2, 12):
+    if _torch_release() in _DIVISIBILITY_REGRESSION_TORCH:
         patch_inductor_symbolic_divisibility()
 
 
@@ -127,11 +154,20 @@ def patch_inductor_force_int64_indexing() -> None:
 
 
 def check_compile_torch_version() -> None:
-    """Fail fast when ``torch.compile`` is requested on an unsupported PyTorch."""
-    version = Version(torch.__version__).release
-    if len(version) < 2 or (version[:2] != (2, 11) and version[:2] != (2, 12)):
+    """Fail fast when ``torch.compile`` is requested on an unsupported PyTorch.
+
+    Raises
+    ------
+    RuntimeError
+        If the running PyTorch release is absent from
+        :data:`SUPPORTED_COMPILE_TORCH`.
+    """
+    if _torch_release() not in SUPPORTED_COMPILE_TORCH:
+        supported = ", ".join(
+            f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH
+        )
         raise RuntimeError(
-            "deepmd `torch.compile` support requires PyTorch 2.11.x or 2.12.x; "
+            f"deepmd `torch.compile` support requires PyTorch {supported}; "
             f"found torch {torch.__version__}."
         )
 
@@ -512,10 +548,10 @@ def get_task_buffer_values(
 
 
 # =============================================================================
-# PyTorch 2.12-specific workarounds
+# Workarounds for PyTorch 2.12 and later
 # =============================================================================
 def patch_inductor_symbolic_divisibility() -> None:
-    """Repair the PyTorch 2.12 Inductor symbolic-divisibility regression.
+    """Repair the Inductor symbolic-divisibility regression of PyTorch 2.12+.
 
     ``SizeVarAllocator.statically_known_multiple_of`` determines whether one
     symbolic size is an exact multiple of another. ``SIMDKernel`` consults it
@@ -526,9 +562,9 @@ def patch_inductor_symbolic_divisibility() -> None:
     factors polynomials, so an expression such as ``(32*s + 64) % (s + 2)``
     reduces to ``0`` and the split proceeds. PyTorch 2.12 rewrote the helper
     and, for symbolic denominators, routes the test through Inductor's own
-    ``Mod`` implementation, which does not factor. ``Mod(32*s + 64, s + 2)``
-    therefore stays unevaluated, the test returns ``False``, and lowering
-    aborts with::
+    ``Mod`` implementation, which does not factor; 2.13 retains that behaviour.
+    ``Mod(32*s + 64, s + 2)`` therefore stays unevaluated, the test returns
+    ``False``, and lowering aborts with::
 
         CantSplit: 32*s38 + 64 not divisible by s38 + 2
 
@@ -554,7 +590,13 @@ def patch_inductor_symbolic_divisibility() -> None:
     if getattr(SizeVarAllocator, "_dp_divisibility_patched", False):
         return
 
-    original_known_multiple_of = SizeVarAllocator.statically_known_multiple_of
+    original_known_multiple_of = getattr(
+        SizeVarAllocator,
+        "statically_known_multiple_of",
+        None,
+    )
+    if not callable(original_known_multiple_of):
+        return
 
     def statically_known_multiple_of(
         self: Any, numerator: Any, denominator: Any

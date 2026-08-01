@@ -4,21 +4,44 @@
 Pure dpmodel (NumPy/lmdb) tests — no PyTorch dependency.
 """
 
+import os
+import signal
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
+from concurrent.futures import (
+    Future,
+)
+from pathlib import (
+    Path,
+)
+from types import (
+    SimpleNamespace,
+)
+from unittest import (
+    mock,
+)
 
 import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbBatchIterator,
     LmdbDataReader,
+    LmdbDecodeConfig,
     LmdbTestData,
     LmdbTestDataNlocView,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
+    _merge_lmdb_chunks,
     _remap_atom_types,
     compute_block_targets,
+    decode_lmdb_batch,
+    decode_lmdb_frame,
     is_lmdb,
     make_neighbor_stat_data,
 )
@@ -348,6 +371,230 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertIn(6, reader.nloc_groups)
         self.assertEqual(len(reader.nloc_groups[6]), 10)
 
+    def test_batch_iterator_advances_epoch_before_prefetch(self):
+        """The prefetched successor uses the next epoch's sampler state."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        iterator = LmdbBatchIterator(reader, sampler, num_workers=2)
+
+        expected_sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        expected_sampler.set_epoch(1)
+        expected_second = [
+            key for indices in expected_sampler for key in reader.original_keys(indices)
+        ]
+
+        try:
+            first = [key for _ in range(len(sampler)) for key in next(iterator)["fid"]]
+            second = [key for _ in range(len(sampler)) for key in next(iterator)["fid"]]
+        finally:
+            iterator.close()
+            reader.close()
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(second, expected_second)
+
+    def test_requirements_are_rejected_after_the_first_decode(self):
+        """Late requirements are refused so no partition can predate them.
+
+        Batches are grouped by label availability, and both the sampler
+        partition and the worker decoders capture the requirements in force
+        when they start, so a later registration would silently disagree with
+        the batches already produced.
+        """
+        requirement = [DataRequirementItem("custom", ndof=1, default=0.0)]
+
+        for label, consume in (
+            ("frame", lambda reader: reader[0]),
+            ("batch", lambda reader: reader.decode_batch([0, 1])),
+            ("worker config", lambda reader: reader.worker_decode_config()),
+        ):
+            with self.subTest(consumed=label):
+                reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+                reader.add_data_requirement(requirement)
+                consume(reader)
+                with self.assertRaisesRegex(RuntimeError, "before reading any frame"):
+                    reader.add_data_requirement(requirement)
+                reader.close()
+
+    def test_close_preserves_other_reader(self):
+        """Closing one shared-path reader leaves the other transaction valid."""
+        first = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        second = LmdbDataReader(
+            f"{self._lmdb_path}/.",
+            self._type_map,
+            batch_size=2,
+        )
+        first.close()
+        self.assertTrue(first.closed)
+        self.assertEqual(second[0]["coord"].shape, (6, 3))
+        second.close()
+        self.assertTrue(second.closed)
+        with self.assertRaisesRegex(RuntimeError, "closed LMDB reader"):
+            _ = second[0]
+
+    def test_batch_dtype_and_field_order_are_chunk_independent(self):
+        """Batch promotion and schema matching do not depend on chunking."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/mixed_dtype.lmdb",
+            nframes=2,
+            natoms=6,
+        )
+        frame0 = _make_frame(natoms=6, seed=0)
+        frame1 = _make_frame(natoms=6, seed=1)
+        frame0["custom"] = {
+            "type": "float32",
+            "shape": [1],
+            "data": np.array([1.25], dtype=np.float32).tobytes(),
+        }
+        frame1["custom"] = {
+            "type": "float64",
+            "shape": [1],
+            "data": np.array([2.5], dtype=np.float64).tobytes(),
+        }
+        frame1 = dict(reversed(tuple(frame1.items())))
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            transaction.put(
+                b"000000000000",
+                msgpack.packb(frame0, use_bin_type=True),
+            )
+            transaction.put(
+                b"000000000001",
+                msgpack.packb(frame1, use_bin_type=True),
+            )
+        environment.close()
+
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={},
+        )
+        environment = lmdb.open(path, readonly=True, lock=False)
+        with environment.begin() as transaction:
+            serial = decode_lmdb_batch(
+                transaction,
+                [0, 1],
+                "012d",
+                config,
+            )
+            chunked = _merge_lmdb_chunks(
+                [
+                    decode_lmdb_batch(transaction, [0], "012d", config),
+                    decode_lmdb_batch(transaction, [1], "012d", config),
+                ]
+            )
+        environment.close()
+
+        self.assertEqual(serial["custom"].dtype, np.float64)
+        np.testing.assert_array_equal(serial["custom"], chunked["custom"])
+
+    def test_parallel_batch_consistency_guards(self):
+        """Parallel batch decoding validates schemas, shapes, and availability."""
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={},
+        )
+        transaction = mock.Mock()
+        transaction.get.return_value = b"frame"
+        first_frame = {
+            "coord": np.zeros((6, 3)),
+            "find_energy": np.float32(1.0),
+            "fid": 0,
+        }
+        frame_cases = (
+            (
+                "fields",
+                {**first_frame, "energy": np.zeros(1), "fid": 1},
+                "inconsistent fields",
+            ),
+            (
+                "shape",
+                {**first_frame, "coord": np.zeros((7, 3)), "fid": 1},
+                "changes shape within one batch",
+            ),
+        )
+        for guard, second_frame, expected_error in frame_cases:
+            with (
+                self.subTest(guard=f"frame {guard}"),
+                mock.patch.object(
+                    lmdb_data_module,
+                    "decode_lmdb_frame",
+                    side_effect=(first_frame, second_frame),
+                ),
+                self.assertRaisesRegex(ValueError, expected_error),
+            ):
+                decode_lmdb_batch(transaction, [0, 1], "012d", config)
+
+        first_chunk = {
+            "find_energy": np.float32(1.0),
+            "coord": np.zeros((1, 6, 3)),
+            "fid": [0],
+            "sid": np.array([0], dtype=np.int64),
+        }
+        chunk_cases = (
+            (
+                "fields",
+                {key: value for key, value in first_chunk.items() if key != "coord"},
+                "inconsistent fields",
+            ),
+            (
+                "availability",
+                {**first_chunk, "find_energy": np.float32(0.0), "fid": [1]},
+                "availability changes across worker chunks",
+            ),
+        )
+        for guard, second_chunk, expected_error in chunk_cases:
+            with (
+                self.subTest(guard=f"chunk {guard}"),
+                self.assertRaisesRegex(ValueError, expected_error),
+            ):
+                _merge_lmdb_chunks([first_chunk, second_chunk])
+
+    def test_batch_rejects_mixed_label_availability(self):
+        """A scalar find flag cannot represent mixed availability in one batch."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/mixed_availability.lmdb",
+            nframes=2,
+            natoms=6,
+        )
+        frame = _make_frame(natoms=6, seed=0)
+        frame["custom"] = {
+            "type": "float64",
+            "shape": [1],
+            "data": np.array([1.0], dtype=np.float64).tobytes(),
+        }
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            transaction.put(
+                b"000000000000",
+                msgpack.packb(frame, use_bin_type=True),
+            )
+        environment.close()
+
+        requirement = DataRequirementItem("custom", ndof=1, default=0.0)
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={"custom": requirement},
+        )
+        environment = lmdb.open(path, readonly=True, lock=False)
+        with environment.begin() as transaction:
+            with self.assertRaisesRegex(
+                ValueError,
+                "availability changes within one batch",
+            ):
+                decode_lmdb_batch(
+                    transaction,
+                    [0, 1],
+                    "012d",
+                    config,
+                )
+        environment.close()
+
     def test_is_lmdb(self):
         self.assertTrue(is_lmdb(self._lmdb_path))
         self.assertTrue(is_lmdb("something.lmdb"))
@@ -385,6 +632,31 @@ class TestLmdbDataReader(unittest.TestCase):
 
         self.assertEqual(frame["find_min_pair_dist"], np.float32(1.0))
         np.testing.assert_allclose(frame["min_pair_dist"], np.array([1.0]))
+
+    def test_min_pair_dist_requirement_defaults_without_atype(self):
+        raw_frame = _make_frame(natoms=6, seed=0)
+        raw_frame.pop("atom_types")
+        requirement = DataRequirementItem(
+            "min_pair_dist",
+            ndof=1,
+            default=0.25,
+        )
+        config = LmdbDecodeConfig(
+            ntypes=2,
+            natoms=6,
+            type_remap=None,
+            data_requirements={"min_pair_dist": requirement},
+        )
+
+        frame = decode_lmdb_frame(
+            msgpack.packb(raw_frame, use_bin_type=True),
+            0,
+            config,
+            copy_arrays=True,
+        )
+
+        self.assertEqual(frame["find_min_pair_dist"], np.float32(0.0))
+        np.testing.assert_allclose(frame["min_pair_dist"], np.array([0.25]))
 
 
 # ============================================================
@@ -779,6 +1051,38 @@ class TestAutoProb(unittest.TestCase):
         all_indices = [i for batch in sampler for i in batch]
         self.assertGreater(len(all_indices), 600)
         self.assertEqual(len(set(all_indices)), 600)
+
+    def test_sampler_allocates_block_target_across_find_signatures(self):
+        """Independent signature groups must not each round the block target."""
+
+        class TwoSignatureReader:
+            """Minimal reader exposing two one-frame availability groups."""
+
+            def __init__(self):
+                self.nloc_groups = {6: [0, 1]}
+                self.frame_system_ids = [0, 0]
+
+            @staticmethod
+            def group_indices_by_find_signature(indices):
+                self.assertEqual(indices, [0, 1])
+                return {(0.0,): [0], (1.0,): [1]}
+
+            @staticmethod
+            def get_batch_size_for_nloc(nloc):
+                self.assertEqual(nloc, 6)
+                return 1
+
+        sampler = SameNlocBatchSampler(
+            TwoSignatureReader(),
+            shuffle=False,
+            block_targets=[([0], 3)],
+        )
+        batches = list(sampler)
+        counts = [sum(index in batch for batch in batches) for index in (0, 1)]
+
+        self.assertEqual(len(sampler), len(batches))
+        self.assertEqual(sum(map(len, batches)), 3)
+        self.assertEqual(sorted(counts), [1, 2])
 
     def test_sampler_without_block_targets(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
@@ -1328,6 +1632,211 @@ class TestDynamicKeysAndRepeat(unittest.TestCase):
         # atom_pref is not in the plain LMDB
         self.assertEqual(result.get("find_atom_pref", 0.0), 0.0)
         tmpdir.cleanup()
+
+
+class _StalledPool:
+    """A pool whose decoder exited, leaving its submissions unfinished.
+
+    This is what a decoder killed mid-result looks like from the parent: the
+    futures never resolve and the pool never reports itself broken.
+    """
+
+    def __init__(self) -> None:
+        self._processes = {1: SimpleNamespace(exitcode=-1)}
+        self.submissions = 0
+
+    def submit(self, *args: object, **kwargs: object) -> Future:
+        self.submissions += 1
+        return Future()
+
+
+class TestDecoderPoolFailure(unittest.TestCase):
+    """A dead decoder must not strand the run waiting for it."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self._path = _create_lmdb(
+            f"{self._tmpdir.name}/pool.lmdb", nframes=12, natoms=6
+        )
+        self._reader = LmdbDataReader(self._path, ["O", "H"], batch_size=4)
+        self.addCleanup(self._reader.close)
+        # Keep the liveness check from pacing the test.
+        patcher = mock.patch.object(
+            lmdb_data_module, "_DECODER_LIVENESS_INTERVAL", 0.01
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._entries: dict[int, object] = {}
+
+    def _iterator(self, pool: object) -> LmdbBatchIterator:
+        """Return an iterator over two four-frame batches served by ``pool``.
+
+        Every iterator built on one stand-in pool receives the same entry, as
+        the iterators of a rank share the pool registered for their worker
+        count.
+        """
+        entry = self._entries.setdefault(
+            id(pool), lmdb_data_module._LmdbPoolEntry(executor=pool, users=0)
+        )
+        entry.users += 1
+        patcher = mock.patch.object(
+            lmdb_data_module, "_acquire_lmdb_executor", return_value=entry
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # The stand-in pool was never registered, so releasing it is a no-op.
+        return LmdbBatchIterator(
+            self._reader, [[0, 1, 2, 3], [4, 5, 6, 7]], num_workers=2
+        )
+
+    def _isolated_iterator(self) -> LmdbBatchIterator:
+        """Return an iterator over a real pool that no other test shares.
+
+        The decoder pool is process-wide, so a test that kills or signals its
+        decoders is given one of its own rather than leaving the damage behind
+        for its neighbours.
+        """
+        registry: dict = {}
+        patcher = mock.patch.object(lmdb_data_module, "_LMDB_POOLS", registry)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(
+            lambda: [
+                entry.executor.shutdown(wait=False, cancel_futures=True)
+                for entry in registry.values()
+            ]
+        )
+        iterator = LmdbBatchIterator(
+            self._reader, [[0, 1, 2, 3], [4, 5, 6, 7]], num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        return iterator
+
+    def _assert_same_batch(self, batch: dict, expected: dict) -> None:
+        self.assertEqual(sorted(batch), sorted(expected))
+        for key, value in expected.items():
+            if isinstance(value, np.ndarray):
+                np.testing.assert_array_equal(batch[key], value)
+
+    def test_a_stalled_decoder_falls_back_and_is_not_retried(self) -> None:
+        pool = _StalledPool()
+        iterator = self._iterator(pool)
+
+        with self.assertLogs(lmdb_data_module.log, level="WARNING") as captured:
+            first = next(iterator)
+        submissions = pool.submissions
+        second = next(iterator)
+
+        # Each batch is the one the pool was asked for, decoded here instead,
+        # and the pool is not offered any more work.
+        self._assert_same_batch(first, self._reader.decode_batch([0, 1, 2, 3]))
+        self._assert_same_batch(second, self._reader.decode_batch([4, 5, 6, 7]))
+        self.assertIn("decoder process exited", "\n".join(captured.output))
+        self.assertEqual(pool.submissions, submissions)
+
+    def test_close_detects_a_stalled_prefetch(self) -> None:
+        """Closing an in-flight prefetch marks a lost decoder pool unhealthy."""
+        pool = _StalledPool()
+        iterator = self._iterator(pool)
+        entry = self._entries[id(pool)]
+        iterator._pool = entry
+        running = Future()
+        self.assertTrue(running.set_running_or_notify_cancel())
+        iterator._pending = lmdb_data_module._PendingBatch([0, 1], [running])
+
+        with self.assertLogs(lmdb_data_module.log, level="WARNING"):
+            iterator.close()
+
+        self.assertFalse(entry.healthy)
+
+    def test_a_second_iterator_does_not_retry_a_lost_pool(self) -> None:
+        """Pool health is shared, so the loss is discovered once for all."""
+        pool = _StalledPool()
+        first = self._iterator(pool)
+        next(first)
+        submissions = pool.submissions
+
+        second = self._iterator(pool)
+        batch = next(second)
+
+        self._assert_same_batch(batch, self._reader.decode_batch([0, 1, 2, 3]))
+        self.assertEqual(pool.submissions, submissions)
+
+    @unittest.skipUnless(
+        os.name == "posix" and sys.implementation.name == "cpython",
+        "requires CPython's POSIX process-pool pipe",
+    )
+    def test_a_run_that_lost_its_pool_still_exits(self) -> None:
+        """Losing a decoder must not leave the interpreter unable to exit.
+
+        A pool reading the partial result of a decoder killed mid-write is
+        joined by the interpreter on the way out, so a run could complete its
+        training and then hang forever instead of terminating.
+        """
+        # Spawned decoders re-import the main module, so the scenario has to
+        # live in a file rather than be passed on the command line.
+        script = Path(self._tmpdir.name) / "lose_the_pool.py"
+        script.write_text(
+            textwrap.dedent("""
+            import os
+            import struct
+
+            from deepmd.dpmodel.utils.lmdb_data import (
+                _acquire_lmdb_executor,
+                _release_lmdb_executor,
+            )
+
+
+            def idle():
+                return os.getpid()
+
+
+            if __name__ == "__main__":
+                entry = _acquire_lmdb_executor(2)
+                entry.executor.submit(idle).result()
+                # A frame header promising more bytes than ever arrive, which
+                # is what a decoder killed mid-write leaves behind.
+                os.write(
+                    entry.executor._result_queue._writer.fileno(),
+                    struct.pack("!i", 4096) + b"partial",
+                )
+                entry.healthy = False
+                _release_lmdb_executor(2)
+            """)
+        )
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+
+    @unittest.skipUnless(
+        hasattr(signal, "SIGKILL"),
+        "SIGKILL is not available on this platform",
+    )
+    def test_killing_a_real_decoder_does_not_stop_the_run(self) -> None:
+        """The pool reports itself broken, and the batch still arrives.
+
+        A decoder that dies cleanly fails every future the pool holds, which
+        is the other way the loss of a decoder reaches the iterator. Only a
+        signal it cannot ignore gets it there.
+        """
+        iterator = self._isolated_iterator()
+        next(iterator)
+        processes = list(iterator._pool.executor._processes.values())
+        self.assertTrue(processes)
+        process = processes[0]
+        self.assertTrue(process.is_alive())
+        os.kill(process.pid, signal.SIGKILL)
+        process.join(timeout=5)
+
+        batch = next(iterator)
+
+        self._assert_same_batch(batch, self._reader.decode_batch([4, 5, 6, 7]))
+        self.assertFalse(iterator._pool.healthy)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import lmdb
 import msgpack
@@ -21,6 +24,9 @@ import numpy as np
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
+)
+from deepmd.dpmodel.utils.lmdb_data import (
+    collate_lmdb_frames,
 )
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
@@ -36,6 +42,9 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -85,6 +94,33 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
         for i in range(nframes):
             key = format(i, fmt).encode()
             txn.put(key, msgpack.packb(_make_frame(natoms, i), use_bin_type=True))
+    env.close()
+
+
+def _create_partially_labeled_lmdb(path: str) -> None:
+    """Write frames split between energy-only and force-only labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    metadata = {
+        "nframes": nframes,
+        "frame_idx_fmt": fmt,
+        "system_info": {"natoms": [3, 3]},
+        "frame_nlocs": [natoms] * nframes,
+    }
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for index in range(nframes):
+            frame = _make_frame(natoms, index)
+            if index % 2 == 0:
+                frame.pop("forces")
+            else:
+                frame.pop("energies")
+            txn.put(
+                format(index, fmt).encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
     env.close()
 
 
@@ -156,6 +192,76 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         self.assertIn("force", labels)
         self.assertIn("natoms", labels)
 
+    def test_streaming_batch_matches_frame_collation(self) -> None:
+        """Preallocated decoding preserves the legacy per-frame contract."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=0,
+        )
+        indices = [1, 6]
+        expected = collate_lmdb_frames([ds._reader[index] for index in indices])
+        actual = ds._reader.decode_batch(indices)
+
+        self.assertEqual(tuple(actual), tuple(expected))
+        for key, expected_value in expected.items():
+            actual_value = actual[key]
+            if isinstance(expected_value, np.ndarray):
+                np.testing.assert_array_equal(actual_value, expected_value)
+            else:
+                self.assertEqual(actual_value, expected_value)
+
+    def test_parallel_prefetch_matches_serial_order(self) -> None:
+        """Worker processes preserve sampler order and numerical values."""
+        serial = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=7,
+            num_workers=0,
+        )
+        parallel = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=7,
+            num_workers=2,
+        )
+        try:
+            for _ in range(6):
+                expected = serial.get_batch()
+                actual = parallel.get_batch()
+                self.assertEqual(actual["fid"], expected["fid"])
+                for key, expected_value in expected.items():
+                    actual_value = actual[key]
+                    if isinstance(expected_value, np.ndarray):
+                        np.testing.assert_array_equal(actual_value, expected_value)
+                    else:
+                        self.assertEqual(actual_value, expected_value)
+                pending = parallel._batch_iterator._pending
+                self.assertIsNotNone(pending)
+                self.assertLessEqual(len(pending.futures), 2)
+        finally:
+            parallel.close()
+
+    def test_data_requirements_freeze_after_first_read(self) -> None:
+        """Batch schemas cannot change after a prefetched read."""
+        ds = LmdbDataSystem(
+            lmdb_path=self.lmdb_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+            num_workers=2,
+        )
+        ds.get_batch()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "must be registered before reading",
+        ):
+            ds.add_data_requirements([DataRequirementItem("late_label", ndof=1)])
+
     def test_get_batch_iterates_past_end(self) -> None:
         """get_batch reseeds the sampler at the end of an epoch."""
         ds = LmdbDataSystem(
@@ -169,11 +275,41 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             batch = ds.get_batch()
             self.assertEqual(batch["coord"].shape, (2, 6, 3))
 
-    def test_add_data_requirements_passthrough(self) -> None:
-        from deepmd.utils.data import (
-            DataRequirementItem,
-        )
+    def test_distributed_batches_are_sharded_with_equal_epoch_lengths(self) -> None:
+        """Ranks cover the global pass without advancing epochs at different steps."""
+        systems = [
+            LmdbDataSystem(
+                lmdb_path=self.lmdb_path,
+                type_map=["O", "H"],
+                batch_size=3,
+                seed=7,
+                num_workers=0,
+                rank=rank,
+                world_size=2,
+            )
+            for rank in range(2)
+        ]
+        try:
+            self.assertEqual([system.nbatches for system in systems], [[3], [3]])
+            self.assertEqual([len(system._sampler) for system in systems], [2, 2])
+            batches = [
+                [system.get_batch()["fid"] for _ in range(len(system._sampler))]
+                for system in systems
+            ]
+        finally:
+            for system in systems:
+                system.close()
 
+        self.assertFalse(set(batches[0][0]) & set(batches[1][0]))
+        observed = {
+            frame_id
+            for rank_batches in batches
+            for batch in rank_batches
+            for frame_id in batch
+        }
+        self.assertEqual(observed, set(range(8)))
+
+    def test_add_data_requirements_passthrough(self) -> None:
         ds = LmdbDataSystem(
             lmdb_path=self.lmdb_path,
             type_map=["O", "H"],
@@ -190,6 +326,51 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         batch = ds.get_batch()
         self.assertIn("energy", batch)
         self.assertIn("find_energy", batch)
+
+    def test_partial_labels_are_batched_by_availability(self) -> None:
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        partial_path = os.path.join(self.tmpdir, "partial.lmdb")
+        _create_partially_labeled_lmdb(partial_path)
+        ds = LmdbDataSystem(
+            lmdb_path=partial_path,
+            type_map=["O", "H"],
+            batch_size=2,
+            seed=0,
+        )
+        ds.add_data_requirements(
+            [
+                DataRequirementItem(
+                    "energy", ndof=1, atomic=False, must=False, default=7.0
+                ),
+                DataRequirementItem(
+                    "force", ndof=3, atomic=True, must=False, default=11.0
+                ),
+            ]
+        )
+
+        try:
+            batches = [ds.get_batch(), ds.get_batch()]
+            observed = {
+                (float(batch["find_energy"]), float(batch["find_force"]))
+                for batch in batches
+            }
+            self.assertEqual(observed, {(1.0, 0.0), (0.0, 1.0)})
+            self.assertTrue(all(batch["coord"].shape[0] == 2 for batch in batches))
+
+            stat_samples = make_stat_input(ds, nbatches=10)
+            stat_availability = {
+                (float(sample["find_energy"]), float(sample["find_force"]))
+                for sample in stat_samples
+            }
+            self.assertEqual(stat_availability, observed)
+            self.assertTrue(
+                all(sample["coord"].shape[0] == 2 for sample in stat_samples)
+            )
+        finally:
+            ds.close()
 
     def test_stat_input_partitions_mixed_nloc_batches(self) -> None:
         """Statistics expose each atom-count group as one logical system."""
@@ -327,6 +508,43 @@ class TestLmdbTrainingLoop(unittest.TestCase):
             trainer = get_trainer(config)
             self.assertIsInstance(trainer.training_data, LmdbDataSystem)
             trainer.run()
+        finally:
+            os.chdir(cwd)
+
+    def test_numb_epoch_counts_passes_over_the_lmdb(self) -> None:
+        """One epoch is one pass over the frames of the LMDB."""
+        config = self._make_lmdb_config()
+        del config["training"]["numb_steps"]
+        config["training"]["numb_epoch"] = 2.0
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+        finally:
+            os.chdir(cwd)
+
+        # train.lmdb holds eight frames, read one frame per batch.
+        self.assertEqual(trainer.num_steps, 2 * 8)
+
+    def test_training_closes_parallel_lmdb_pipeline(self) -> None:
+        """Trainer shutdown releases spawned decoder processes."""
+        config = self._make_lmdb_config(numb_steps=2)
+        config["training"]["training_data"]["batch_size"] = 2
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            with patch.dict(os.environ, {"DP_LMDB_NUM_WORKERS": "2"}):
+                trainer = get_trainer(config)
+                trainer.run()
+            self.assertTrue(trainer.training_data._batch_iterator.closed)
+            self.assertIsNone(trainer.training_data._batch_iterator._pool)
+            self.assertTrue(trainer.training_data._reader.closed)
         finally:
             os.chdir(cwd)
 

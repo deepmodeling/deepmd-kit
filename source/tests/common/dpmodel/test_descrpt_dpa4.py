@@ -94,12 +94,20 @@ class TestDescrptDPA4:
 
     def test_message_passing_semantics(self) -> None:
         # SeZM always resolves ghost neighbours on the lower path, so it always
-        # reports message passing; cross-rank ghost exchange is needed only when
-        # zone bridging is disabled (a BridgingSwitch cannot be reproduced by a
-        # single rank for ghost owners).
+        # reports message passing. The GRAPH lower implements the cross-rank
+        # exchange via a real per-layer border_op, so a plain (non-bridging)
+        # descriptor reports across_ranks True; its DENSE lower has no
+        # comm_dict implementation (the dense adapter raises on it), so
+        # dense_lower_supports_comm() is False and the freeze machinery
+        # skips the dead dense with-comm artifact. Source Freeze Propagation
+        # bridging is excluded from across_ranks: its per-node gate folds a
+        # node's entire outgoing-edge set, which a single rank cannot
+        # observe for ghost owners, so bridging models fail fast on
+        # multi-rank instead.
         dd = make_descriptor()
         assert dd.has_message_passing() is True
         assert dd.has_message_passing_across_ranks() is True
+        assert dd.dense_lower_supports_comm() is False
         dd_bridge = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
         assert dd_bridge.has_message_passing() is True
         assert dd_bridge.has_message_passing_across_ranks() is False
@@ -113,6 +121,24 @@ class TestDescrptDPA4:
         nf = atype.shape[0]
         out1 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
         out2 = np.asarray(dd2.call(coord.reshape(nf, -1), atype, nlist)[0])
+        np.testing.assert_array_equal(out1, out2)
+
+    def test_random_gamma_inference_deterministic(self) -> None:
+        """The dpmodel backend never applies the random local-Z roll, even when configured.
+
+        ``random_gamma`` is a training-only augmentation gated by the
+        ``_in_training_mode`` runtime hook; dpmodel has no training mode, so
+        the hook is ``False`` and two calls of a ``random_gamma=True``
+        descriptor are bit-identical (the pt_expt twin's train-mode
+        behavior is pinned in
+        ``source/tests/pt_expt/descriptor/test_dpa4.py::test_random_gamma_train_eval_gate``).
+        """
+        dd = make_descriptor(random_gamma=True)
+        assert dd._in_training_mode() is False
+        coord, atype, nlist = make_inputs()
+        nf = atype.shape[0]
+        out1 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        out2 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
         np.testing.assert_array_equal(out1, out2)
 
     def test_permutation_equivariance(self) -> None:

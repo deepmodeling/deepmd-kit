@@ -36,8 +36,6 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("ener")
-@BaseModel.register("sezm_ener")
-@BaseModel.register("dpa4_ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     r"""Energy model that predicts total energy and derived quantities.
 
@@ -75,6 +73,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.hess_fitting_def = None
 
     def enable_hessian(self) -> None:
+        """Enable Hessian outputs without changing an already-enabled model."""
+        if self._enable_hessian:
+            return
         self.hess_fitting_def = deepcopy(self.atomic_output_def())
         self.hess_fitting_def["energy"].r_hessian = True
         self._enable_hessian = True
