@@ -2,12 +2,15 @@
 
 # DeePMD-kit
 
-### From first-principles data to scalable molecular dynamics—through one open framework
+**From first-principles data to scalable molecular dynamics—through one open
+framework**
 
 [![GitHub release](https://img.shields.io/github/v/release/deepmodeling/deepmd-kit)][releases]
-[![PyPI](https://img.shields.io/pypi/v/deepmd-kit)](https://pypi.org/project/deepmd-kit/)
-[![conda-forge](https://img.shields.io/conda/vn/conda-forge/deepmd-kit)](https://anaconda.org/conda-forge/deepmd-kit)
-[![Documentation](https://img.shields.io/badge/docs-latest-4c72ff)][documentation]
+[![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)][releases]
+[![conda-forge](https://img.shields.io/conda/dn/conda-forge/deepmd-kit?color=red&label=conda-forge&logo=conda-forge)](https://anaconda.org/conda-forge/deepmd-kit)
+[![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit/)
+[![docker pull](https://img.shields.io/docker/pulls/deepmodeling/deepmd-kit)](https://hub.docker.com/r/deepmodeling/deepmd-kit)
+[![Documentation Status](https://readthedocs.org/projects/deepmd/badge/)][documentation]
 [![License](https://img.shields.io/badge/license-LGPL--3.0--or--later-00a98f)](./LICENSE)
 
 [**Documentation**][documentation] · [**Quick start**][quick-start] ·

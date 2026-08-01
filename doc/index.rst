@@ -103,10 +103,10 @@ Why DeePMD-kit
 
 .. tip::
 
-   On supported descriptors and workloads, :doc:`model compression
-   <freeze/compress>` can deliver more than **10× inference speedup** and
-   reduce memory usage by as much as **20×**. Actual gains depend on the model,
-   system, and hardware.
+   On supported descriptors and workloads,
+   :doc:`model compression <freeze/compress>` can deliver more than
+   **10× inference speedup** and reduce memory usage by as much as **20×**.
+   Actual gains depend on the model, system, and hardware.
 
 From data to dynamics
 =====================
@@ -280,7 +280,6 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 3
    :caption: Getting Started
-   :hidden:
 
    getting-started/index
 
@@ -288,8 +287,8 @@ required by the models and features used in your work.
 
 .. toctree::
    :maxdepth: 3
+   :numbered:
    :caption: User Guide
-   :hidden:
 
    backend
    install/index
@@ -312,7 +311,6 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 2
    :caption: Tutorials and Publications
-   :hidden:
 
    Tutorials <https://tutorials.deepmodeling.com/>
    Publications <https://blogs.deepmodeling.com/papers/deepmd-kit/>
@@ -322,7 +320,6 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 5
    :caption: Developer Guide
-   :hidden:
 
    development/cmake
    development/create-a-model-tf
@@ -341,7 +338,6 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 3
    :caption: Project Details
-   :hidden:
 
    license
    credits
