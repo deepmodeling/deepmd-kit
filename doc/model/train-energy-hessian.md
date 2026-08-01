@@ -1,13 +1,14 @@
-# Fit energy Hessian {{ pytorch_icon }}
+# Fit energy Hessian {{ pytorch_icon }} {{ jax_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}, JAX
+> {{ jax_icon }}
 
 To train a model that takes Hessian matrices, i.e., the second order derivatives of energies w.r.t coordinates as input, you only need to prepare full Hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
 
 ## Energy Hessian Loss
 
-If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e., {ref}`start_pref_h <loss[ener_hess]/start_pref_h>` and {ref}`limit_pref_h <loss[ener_hess]/limit_pref_h>` to the {ref}`loss <loss>` section in the `input.json`:
+If you want to train with Hessians, add the start and limit prefactors of Hessians, i.e., {ref}`start_pref_h <loss[ener]/start_pref_h>` and {ref}`limit_pref_h <loss[ener]/limit_pref_h>` to the standard energy {ref}`loss <loss>` section in the `input.json`:
 
 ```json
    "loss": {
@@ -23,13 +24,18 @@ If you want to train with Hessians, you are expected to add the start and limit 
    },
 ```
 
-The options {ref}`start_pref_e <loss[ener_hess]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_hess]/limit_pref_e>`, {ref}`start_pref_f <loss[ener_hess]/start_pref_f>`, {ref}`limit_pref_f <loss[ener_hess]/limit_pref_f>`, {ref}`start_pref_v <loss[ener_hess]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_hess]/limit_pref_v>` determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
+The legacy loss type `"ener_hess"` remains accepted as an alias of `"ener"`, but new input files should use the canonical `"ener"` type.
 
-If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_hess]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_hess]/limit_pref_v>` to 0.
+Setting either Hessian prefactor to a nonzero value enables Hessian supervision, so schedules may ramp the term up from zero or down to zero. Both prefactors must be zero to disable the term. Earlier releases could silently disable the term on some backends when exactly one endpoint was zero.
 
-## Hessian Format in PyTorch-TorchScript
+The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
 
-In the PyTorch-TorchScript backend, Hessian matrices are listed in `hessian.npy` files, and the data format may contain the following files:
+If one does not want to train with virial, set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
+
+## Hessian Data Format
+
+In the PyTorch-TorchScript and JAX backends, Hessian matrices are listed in
+`hessian.npy` files, and the data format may contain the following files:
 
 ```
 type.raw
@@ -50,7 +56,7 @@ Note that the `hessian.npy` should contain the **full** Hessian matrices with sh
 
 ## Train the Model
 
-There are two approaches to training a Hessian model. The first method involves training the model from scratch using the same command as in the `ener` mode within the PyTorch-TorchScript backend:
+There are two approaches to training a Hessian model. The first method involves training the model from scratch using the same command as in the `ener` mode:
 
 ::::{tab-set}
 
@@ -61,9 +67,16 @@ dp --pt train input.json
 ```
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax train input.json
+```
+:::
+
 ::::
 
-The second approach is to train a Hessian model from a pretrained energy model, following the same command as the `finetune` strategy within the PyTorch-TorchScript backend:
+The second approach is to train a Hessian model from a pretrained energy model, following the same command as the `finetune` strategy:
 
 ::::{tab-set}
 
@@ -71,6 +84,13 @@ The second approach is to train a Hessian model from a pretrained energy model, 
 
 ```bash
 dp --pt train input.json --finetune pretrained_energy.pt
+```
+:::
+
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax train input.json --finetune pretrained_energy.jax
 ```
 :::
 
@@ -92,12 +112,13 @@ The detailed loss can be found in `lcurve.out`:
 
 > [!WARNING]
 > The PyTorch-TorchScript freeze route does not preserve Hessian output. A
-> PyTorch-TorchScript model frozen with `dp --pt freeze` is treated as a standard energy
-> model. PyTorch-Exportable cannot construct a Hessian model for freezing or
-> inference. The JAX backend can preserve Hessian output in a frozen model
-> with `dp --jax freeze --hessian`.
+> PyTorch-TorchScript model frozen with `dp --pt freeze` is treated as a
+> standard energy model. PyTorch-Exportable cannot construct a Hessian model
+> for freezing or inference. The JAX backend can preserve Hessian output in a
+> frozen model with `dp --jax freeze --hessian`.
 
-If one freezes and tests a Hessian model through the PyTorch-TorchScript route:
+The PyTorch-TorchScript tab below tests the frozen model as a standard energy
+model, while the JAX tab preserves and tests the Hessian output:
 
 ::::{tab-set}
 
@@ -111,17 +132,26 @@ dp --pt test -m frozen_model.pth -s test_system -d ${output_prefix} -a -n 1
 ```
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax freeze -c . -o frozen_model.hlo --hessian
+
+dp --jax test -m frozen_model.hlo -s test_system -d ${output_prefix} -a -n 1
+```
+:::
+
 ::::
 
-If `dp --pt test -d ${output_prefix} -a` is specified, the output files will be the same as those in the `ener` mode, i.e.,
+For the PyTorch-TorchScript frozen-model command, the output files are the same
+as those in the `ener` mode, i.e.,
 
 ```
 ${output_prefix}.e.out   ${output_prefix}.e_peratom.out  ${output_prefix}.f.out
 ${output_prefix}.v.out   ${output_prefix}.v_peratom.out
 ```
 
-For PyTorch-TorchScript Hessian predictions, test the training checkpoint directly without
-freezing:
+The backend checkpoints can also be tested directly without freezing:
 
 ::::{tab-set}
 
@@ -133,9 +163,16 @@ dp --pt test -m model.pt -s test_system -d ${output_prefix} -a -n 1
 ```
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax test -m model.ckpt.jax -s test_system -d ${output_prefix} -a -n 1
+```
+:::
+
 ::::
 
-If `dp --pt test -d ${output_prefix} -a` is specified, the predicted Hessian for each frame are output in an additional file in the working directory:
+When either backend tests a Hessian-capable checkpoint with `-d ${output_prefix} -a`, the predicted Hessian for each frame is written to an additional file in the working directory:
 
 ```
 ${output_prefix}.h.out

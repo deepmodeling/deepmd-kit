@@ -26,6 +26,9 @@ from deepmd.dpmodel.utils.region import (
 from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
+from deepmd.pt_expt.model.graph_lower import (
+    graph_edge_dtype,
+)
 
 # ---------------------------------------------------------------------------
 # AOTInductor ``.pt2`` archive layout.
@@ -191,7 +194,7 @@ def _needs_with_comm_artifact(
 
     atomic_model = getattr(model, "atomic_model", None)
     if isinstance(atomic_model, LinearEnergyAtomicModel):
-        # Compositions (e.g. analytical bridging: learned + InterPotential)
+        # Compositions (e.g. analytical bridging: learned + InnerPotential)
         # are single-rank on the graph route: per-edge analytical terms fold
         # each node's full edge set, which a single rank cannot observe for
         # ghost owners (pt's supports_edge_parallel()==False rationale).
@@ -1015,28 +1018,6 @@ def _build_dynamic_shapes(
     return (*base, None, None, None, None, None, None, None, None)
 
 
-def _graph_edge_dtype(model: torch.nn.Module, lower_kind: str) -> str:
-    """Return the graph edge-vector dtype encoded by the deployment artifact.
-
-    Geometrically compressed DPA1 with float32 descriptor statistics evaluates
-    both descriptor directions in float32 and therefore accepts float32
-    geometry directly. Other graph descriptors retain the model-agnostic
-    float64 geometry ABI.
-    """
-    atomic_model = getattr(model, "atomic_model", None)
-    descriptor = getattr(atomic_model, "descriptor", None)
-    descriptor_block = getattr(descriptor, "se_atten", None)
-    statistics = getattr(descriptor_block, "mean", None)
-    if (
-        lower_kind in ("graph", "dpa1_canonical")
-        and bool(getattr(descriptor, "geo_compress", False))
-        and isinstance(statistics, torch.Tensor)
-        and statistics.dtype == torch.float32
-    ):
-        return "float32"
-    return "float64"
-
-
 def _supports_graph_export(model: torch.nn.Module) -> bool:
     """Whether the model has an exportable graph-lower implementation.
 
@@ -1173,7 +1154,7 @@ def _collect_metadata(
     #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
-    meta["graph_edge_dtype"] = _graph_edge_dtype(model, lower_kind)
+    meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a

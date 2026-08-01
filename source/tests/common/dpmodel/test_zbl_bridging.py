@@ -2,7 +2,7 @@
 """dpmodel ZBL bridging as COMPOSITION (review 3638077323, redesigned).
 
 ``bridging_method: ZBL`` builds a
-``LinearEnergyModel(LinearEnergyAtomicModel([dp, InterPotentialAtomicModel],
+``LinearEnergyModel(LinearEnergyAtomicModel([dp, InnerPotentialAtomicModel],
 weights="sum"))`` -- the analytical term is its own atomic model summed
 with the learned one, not a flag on it.
 """
@@ -12,8 +12,8 @@ import copy
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.atomic_model.inter_potential import (
-    InterPotentialAtomicModel,
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
 )
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
@@ -67,8 +67,8 @@ def test_builder_composes_linear_model():
     assert am.weights == "sum"
     kinds = [type(c).__name__ for c in am.models]
     assert (
-        kinds == ["EnergyAtomicModel", "InterPotentialAtomicModel"]
-        or kinds[1] == "InterPotentialAtomicModel"
+        kinds == ["EnergyAtomicModel", "InnerPotentialAtomicModel"]
+        or kinds[1] == "InnerPotentialAtomicModel"
     )
     # radii wired to the LEARNED child's descriptor InnerClamp
     dp_child = am.models[0]
@@ -147,14 +147,14 @@ def test_zbl_serialize_roundtrip_energy_identical():
 
 
 def test_zbl_atomic_dense_route_raises():
-    zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
     with pytest.raises(NotImplementedError, match="NeighborGraph route only"):
         zbl.forward_atomic(None, None, None)
 
 
-def test_inter_potential_supports_graph_lower():
+def test_inner_potential_supports_graph_lower():
     """The analytical ZBL term is graph-capable (rides the NeighborGraph)."""
-    zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
     assert zbl.uses_graph_lower() is True
 
 
@@ -168,10 +168,10 @@ def test_linear_graph_lower_requires_all_children():
     child, which does not implement it.
     """
 
-    class _GraphChild(InterPotentialAtomicModel):
+    class _GraphChild(InnerPotentialAtomicModel):
         pass  # inherits uses_graph_lower() -> True
 
-    class _DenseOnlyChild(InterPotentialAtomicModel):
+    class _DenseOnlyChild(InnerPotentialAtomicModel):
         def uses_graph_lower(self) -> bool:
             return False
 
@@ -202,7 +202,7 @@ def test_zbl_atomic_graph_values():
     )
 
     r = 0.8
-    zbl = InterPotentialAtomicModel(type_map=["O"], rcut=4.0, sel=[8])
+    zbl = InnerPotentialAtomicModel(type_map=["O"], rcut=4.0, sel=[8])
     graph = NeighborGraph(
         n_node=np.array([2], dtype=np.int64),
         edge_index=np.array([[0, 1], [1, 0]], dtype=np.int64),
@@ -239,22 +239,22 @@ def _pair_energy(model, natoms=2, r=1.0):
     return float(np.sum(out["energy"]))
 
 
-class TestInterPotentialChangeTypeMap:
+class TestInnerPotentialChangeTypeMap:
     """``change_type_map`` must rebuild the ZBL element lookup.
 
     The generic ``BaseAtomicModel.change_type_map`` only rewrites the public
     map and the stat/exclusion state; the nuclear-charge table belongs to
-    ``InterPotential`` and is rebuilt there (review 3649295675).  Without it
+    ``InnerPotential`` and is rebuilt there (review 3649295675).  Without it
     the lookup keeps the ORIGINAL elements while ``atype`` values already mean
     the new ones -- silently wrong energies, or ``IndexError`` for a longer
     map.
     """
 
     def test_reorder_matches_a_freshly_built_model(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         e_hh = _pair_energy(model)
         model.change_type_map(["O", "H"])
-        fresh = InterPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
+        fresh = InnerPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
         e_fresh = _pair_energy(fresh)
         # anti-vacuity: the two element pairs must be far apart, or a stale
         # lookup would be indistinguishable from a rebuilt one
@@ -264,7 +264,7 @@ class TestInterPotentialChangeTypeMap:
         assert model.potential.type_map == ["O", "H"]
 
     def test_added_element_extends_the_lookup(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         model.change_type_map(["H", "O", "Ni"])
         assert model.potential.ntypes_real == 3
         assert list(model.potential.atomic_numbers) == [1.0, 8.0, 28.0]
@@ -284,11 +284,11 @@ class TestInterPotentialChangeTypeMap:
         e_nini = float(
             np.sum(model.forward_common_atomic_graph(graph, graph_atype)["energy"])
         )
-        fresh = InterPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
+        fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
         np.testing.assert_allclose(e_nini, _pair_energy(fresh), rtol=1e-12)
 
     def test_dropped_element_shrinks_the_lookup(self) -> None:
-        model = InterPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
         model.change_type_map(["Ni"])
         assert model.potential.ntypes_real == 1
         assert list(model.potential.atomic_numbers) == [28.0]
@@ -304,7 +304,7 @@ class TestInterPotentialChangeTypeMap:
             BaseAtomicModel,
         )
 
-        model = InterPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
+        model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         model.change_type_map(["O", "H"])
         data = model.serialize()
         restored = BaseAtomicModel.get_class_by_type(data["type"]).deserialize(data)
@@ -324,7 +324,7 @@ class TestNativeSpinCapabilityOnAtomicModel:
     """
 
     def test_analytical_term_is_not_spin_capable(self) -> None:
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # inherits the concrete base default -- no descriptor, no spin input
         assert zbl.supports_native_spin() is False
 
@@ -338,14 +338,14 @@ class TestNativeSpinCapabilityOnAtomicModel:
         ).atomic_model
         assert learned.supports_native_spin() is True
         kinds = [type(c).__name__ for c in learned.models]
-        assert kinds[1] == "InterPotentialAtomicModel", kinds
+        assert kinds[1] == "InnerPotentialAtomicModel", kinds
         # ... and the spin-free analytical child alone is not capable
         assert learned.models[1].supports_native_spin() is False
 
     def test_composition_without_a_spin_consumer_is_not_capable(self) -> None:
         """No consumer => the magnetic force would be identically zero."""
-        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
-        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_a = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         composed = LinearEnergyAtomicModel(
             [zbl_a, zbl_b], type_map=["Ni", "O"], weights="sum"
         )
@@ -383,7 +383,7 @@ class TestCompositionForwardsConditioningCapabilities:
         assert bridged.has_chg_spin_ebd() is True
         # ... and the composition really is a composition
         assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
-            "InterPotentialAtomicModel"
+            "InnerPotentialAtomicModel"
         )
 
     def test_no_charge_spin_stays_zero(self) -> None:
@@ -434,7 +434,7 @@ class TestCompositionCarriesPairExclusion:
         # ... and the bridged one really is the composition, so the value is
         # read off the wrapper rather than accidentally off a lone child.
         assert [type(c).__name__ for c in bridged.atomic_model.models][1] == (
-            "InterPotentialAtomicModel"
+            "InnerPotentialAtomicModel"
         )
 
     def test_pair_exclusion_survives_native_spin_plus_bridging(self) -> None:
@@ -558,7 +558,7 @@ class TestCompositionDefaultsRequireAgreement:
         The analytical child consumes neither fparam nor aparam, so it is
         not a consumer and must not constrain either.
         """
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # anti-vacuity: the analytical child really is a non-consumer
         assert zbl.get_dim_fparam() == 0
         assert zbl.get_dim_aparam() == 0
@@ -578,7 +578,7 @@ class TestCompositionDefaultsRequireAgreement:
 
     def test_dimension_zero_child_is_ignored(self) -> None:
         """Learned + ZBL must still inherit the learned default."""
-        zbl = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         assert zbl.get_dim_fparam() == 0  # anti-vacuity: really a non-consumer
         m = self._compose([self._Fake(1, [0.5]), zbl])
         assert m.has_default_fparam() is True
@@ -605,8 +605,8 @@ class TestCompositionForwardsStatCapabilities:
         composition is not physically meaningful, so it should never exist
         rather than exist and answer a plausible-looking default.
         """
-        zbl_a = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
-        zbl_b = InterPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_a = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
+        zbl_b = InnerPotentialAtomicModel(type_map=["Ni", "O"], rcut=4.0, sel=[8])
         # anti-vacuity: matching children compose fine and report their value
         assert zbl_a.get_intensive() is False
         assert (

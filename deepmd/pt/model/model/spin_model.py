@@ -91,21 +91,29 @@ def _pack_spin_stat_sample(
 
 def _lookup_type_values(values: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
     """
-    Gather one scalar value per atom type.
+    Gather one scalar value per atom type, mapping virtual atom types to zero.
 
-    ``values[atype]`` is semantically equivalent, but AOTInductor may lower
-    that advanced-indexing form to a CUDA ``index.Tensor`` shim even for a CPU
-    ``.pt2`` package. ``index_select`` keeps the exported spin graph device
-    stable while preserving the same lookup semantics.
+    ``values[atype]`` is semantically equivalent for real atoms, but
+    AOTInductor may lower that advanced-indexing form to a CUDA
+    ``index.Tensor`` shim even for a CPU ``.pt2`` package. ``index_select``
+    keeps the exported spin graph device stable.
 
-    Padding ghost slots carry ``atype == -1`` (batched extended regions are
-    padded to a uniform ``nall``). Unlike advanced indexing, ``index_select``
-    rejects negative indices, so the padding entries are clamped to row 0; their
-    looked-up value is irrelevant because padding atoms carry zero spin and are
-    dropped from the per-local output downstream.
+    Padding slots carry ``atype == -1``: ``deepmd/utils/data.py`` appends it as
+    the virtual-atom padding for mixed-type systems, and batched extended
+    regions are padded to a uniform ``nall``. Those are placeholders, not
+    Python-style indices from the end of the type table, so they get zero
+    rather than row 0's value — otherwise a padded slot picks up a real spin
+    scale and mask whenever type 0 is magnetic. This matches
+    ``SpinModel._lookup_type_values`` in ``deepmd/dpmodel/model/spin_model.py``.
     """
-    flat_atype = torch.clamp_min(atype.reshape(-1).to(dtype=torch.long), 0)
-    return torch.index_select(values.to(atype.device), 0, flat_atype).view(atype.shape)
+    long_atype = atype.to(dtype=torch.long)
+    real_atom = long_atype >= 0
+    # index_select rejects negative indices, unlike advanced indexing.
+    flat_atype = torch.clamp_min(long_atype.reshape(-1), 0)
+    gathered = torch.index_select(values.to(atype.device), 0, flat_atype).view(
+        atype.shape
+    )
+    return torch.where(real_atom, gathered, torch.zeros_like(gathered))
 
 
 class SpinModel(torch.nn.Module):
@@ -140,7 +148,12 @@ class SpinModel(torch.nn.Module):
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
-        atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
+        # Keep virtual placeholders at -1 instead of offsetting them into a
+        # real type of the spin half of the type table.
+        virtual_atype = torch.where(
+            atype >= 0, atype + self.ntypes_real, torch.full_like(atype, -1)
+        )
+        atype_spin = torch.concat([atype, virtual_atype], dim=-1)
         # spin_dist = s_i * \mu_i
         spin_dist = spin * _lookup_type_values(
             self.virtual_scale_mask,
@@ -193,7 +206,11 @@ class SpinModel(torch.nn.Module):
             extended_atype,
         ).reshape([nframes, nall, 1])
         virtual_extended_coord = extended_coord + extended_spin_dist
-        virtual_extended_atype = extended_atype + self.ntypes_real
+        virtual_extended_atype = torch.where(
+            extended_atype >= 0,
+            extended_atype + self.ntypes_real,
+            torch.full_like(extended_atype, -1),
+        )
         extended_coord_updated = concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
         )

@@ -473,12 +473,12 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
         Csub +=
             repeat_count * res_grad * (enable_se_atten ? res * t + res : res);
         if (enable_se_atten) {
-          // A real neighbor owns one entry; the first sentinel owns the full
-          // padding tail. No other warp writes these dy_dtwo positions.
-          for (int ii2 = ii; ii2 < ii + repeat_count; ii2++) {
-            dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
-                    jj] = oldres * res;
-          }
+          // Forward folds the complete padding tail using only this first
+          // sentinel's two-embedding value. Its gradient therefore owns the
+          // full repeat count; later padding entries are independent of the
+          // folded output and keep the zero written before the launch.
+          dy_dtwo[block_idx * nnei * last_layer_size + ii * last_layer_size +
+                  jj] = repeat_count * oldres * res;
         }
       }
     }
@@ -555,8 +555,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
-      // dz_dy_dtwo * res * em
-      // res above should be used instead of res + res * t below
+      // For sorted padding, only the first sentinel has a nonzero
+      // two-embedding gradient. The repeat factor below applies its full tail
+      // multiplicity to this cotangent.
       two_grad = dz_dy_dtwo[block_idx * nnei * last_layer_size +
                             ii * last_layer_size + thread_idx] *
                  res;
@@ -670,30 +671,38 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
   __syncthreads();
 
   for (int ii = 0; ii < nnei_i; ii++) {
-    for (int jj = warp_idx; jj < nnei_j; jj += KTILE) {
-      FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE tmp = xx;
-      int table_idx = 0;
-      FPTYPE extrapolate_delta = (FPTYPE)0.;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
-                     extrapolate_delta);
+    // GpuSyncThreads is block-wide on ROCm, so every wavefront must execute
+    // the same number of tile iterations even when the last tile is partial.
+    for (int tile = 0; tile < nnei_j; tile += KTILE) {
+      const int jj = tile + warp_idx;
+      const bool active = jj < nnei_j;
       FPTYPE sum = (FPTYPE)0.;
       FPTYPE Csub = (FPTYPE)0.;
-      for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
-        FPTYPE var[6];
-        load_polynomial_params(var, table, table_idx, kk, last_layer_size);
-        FPTYPE res_grad = polynomial5_grad(var, xx);
-        FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
+      if (active) {
+        FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
+        FPTYPE tmp = xx;
+        int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
+        locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                       extrapolate_delta);
+        for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
+          FPTYPE var[6];
+          load_polynomial_params(var, table, table_idx, kk, last_layer_size);
+          FPTYPE res_grad = polynomial5_grad(var, xx);
+          FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
-        sum += iteratorA[kk] * res;
-        Csub += iteratorA[kk] * tmp * res_grad;
+          sum += iteratorA[kk] * res;
+          Csub += iteratorA[kk] * tmp * res_grad;
+        }
       }
       GpuSyncThreads();
-      warp_reduce(sum);
-      warp_reduce(Csub);
-      if (lane_idx == 0) {
-        dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
-        dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+      if (active) {
+        warp_reduce(sum);
+        warp_reduce(Csub);
+        if (lane_idx == 0) {
+          dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
+          dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
+        }
       }
     }
   }
@@ -721,13 +730,16 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     int mark_table_idx = -1;
+    // The cached table index and coefficients must have the same lifetime.
+    // Keeping var outside the neighbor loop makes a cache hit reuse initialized
+    // coefficients instead of a newly scoped, uninitialized local array.
+    FPTYPE var[6];
     for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       FPTYPE dz_xx =
           dz_dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE dz_em = dz_dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE var[6];
 
       int table_idx = 0;
       FPTYPE extrapolate_delta = (FPTYPE)0.;
@@ -975,27 +987,32 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
   int lane_idx = thread_idx % WARP_SIZE;
   __syncthreads();
-  for (int ii = warp_idx; ii < nnei; ii += KTILE) {
-    FPTYPE xx = em[block_idx * nnei + ii];
-
-    int table_idx = 0;
+  // Keep all wavefronts on uniform control flow around the ROCm block barrier.
+  for (int tile = 0; tile < nnei; tile += KTILE) {
+    const int ii = tile + warp_idx;
+    const bool active = ii < nnei;
     FPTYPE Csub = (FPTYPE)0.;
-    FPTYPE extrapolate_delta = (FPTYPE)0.;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
-                   extrapolate_delta);
+    if (active) {
+      FPTYPE xx = em[block_idx * nnei + ii];
+      int table_idx = 0;
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                     extrapolate_delta);
 
-    FPTYPE var[6];
-    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
-      load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      Csub +=
-          polynomial5_grad(var, xx) *
-          dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      FPTYPE var[6];
+      for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+        load_polynomial_params(var, table, table_idx, jj, last_layer_size);
+        Csub +=
+            polynomial5_grad(var, xx) *
+            dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
+      }
     }
     GpuSyncThreads();
-
-    warp_reduce(Csub);
-    if (lane_idx == 0) {
-      dy_dem[block_idx * nnei + ii] = Csub;
+    if (active) {
+      warp_reduce(Csub);
+      if (lane_idx == 0) {
+        dy_dem[block_idx * nnei + ii] = Csub;
+      }
     }
   }
 }
@@ -1056,6 +1073,13 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // The descriptor does not carry the empty neighbor dimension, so its
+    // mathematically empty reduction must be materialized explicitly.
+    DPErrcheck(gpuMemset(out, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
 #if GOOGLE_CUDA
       <<<nloc, last_layer_size>>>
@@ -1085,13 +1109,19 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nnei,
                                    const int last_layer_size,
                                    const bool is_sorted) {
-  if (nloc <= 0) {
+  if (nloc <= 0 || nnei <= 0) {
     return;
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
+  if (two_embed != nullptr && is_sorted) {
+    // The sorted-padding fast path writes only the first sentinel. Explicitly
+    // clear the unused tail because framework output buffers are uninitialized.
+    DPErrcheck(
+        gpuMemset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+  }
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
@@ -1121,6 +1151,14 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // Unlike the neighbor-shaped inputs, dz_dy remains non-empty and must be
+    // initialized to the zero second derivative of an empty reduction.
+    DPErrcheck(
+        gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
