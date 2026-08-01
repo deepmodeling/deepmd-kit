@@ -25,6 +25,40 @@ from deepmd.dpmodel.utils import (
 )
 
 
+def _reference_type_neighbor_list(
+    coord: np.ndarray,
+    atype: np.ndarray,
+    nloc: int,
+    rcut: float,
+    sel: list[int],
+) -> np.ndarray:
+    """Build a simple per-type distance-sorted neighbor-list reference."""
+    coord = np.asarray(coord).reshape(coord.shape[0], -1, 3)
+    expected = np.full((coord.shape[0], nloc, sum(sel)), -1, dtype=np.int64)
+    offsets = np.cumsum([0, *sel])
+    for frame in range(coord.shape[0]):
+        for center in range(nloc):
+            if atype[frame, center] < 0:
+                continue
+            distances = np.linalg.norm(coord[frame] - coord[frame, center], axis=-1)
+            for type_index, limit in enumerate(sel):
+                candidates = [
+                    atom
+                    for atom in range(coord.shape[1])
+                    if atom != center
+                    and atype[frame, atom] == type_index
+                    and distances[atom] <= rcut
+                ]
+                candidates.sort(key=lambda atom: (distances[atom], atom))
+                selected = candidates[:limit]
+                expected[
+                    frame,
+                    center,
+                    offsets[type_index] : offsets[type_index] + len(selected),
+                ] = selected
+    return expected
+
+
 class TestDPModelFormatNlist(unittest.TestCase):
     def setUp(self) -> None:
         # nloc == 3, nall == 4
@@ -236,10 +270,18 @@ class TestDPModelFormatNlist(unittest.TestCase):
                     sel=case["sel"],
                     distinguish_types=True,
                 )
+                reference = _reference_type_neighbor_list(
+                    case["coord"],
+                    case["atype"],
+                    case["nloc"],
+                    case["rcut"],
+                    case["sel"],
+                )
 
-                np.testing.assert_array_equal(lower_formatted, early_formatted)
+                np.testing.assert_array_equal(lower_formatted, reference)
+                np.testing.assert_array_equal(early_formatted, reference)
                 if case["expected"] is not None:
-                    np.testing.assert_array_equal(lower_formatted, case["expected"])
+                    np.testing.assert_array_equal(reference, case["expected"])
                 if name == "batched_ghost_ties_virtual_padding":
                     self.assertTrue(np.any(lower_formatted == -1))
 
