@@ -180,10 +180,11 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
     Composition, not a flag (first-principles design): the analytical
     bridging term is its own atomic model, summed with the learned one by
     the existing linear composition machinery. The ONE owner of the
-    composition build for this backend -- both :func:`get_sezm_model`
-    (``type: "dpa4"``) and :func:`get_standard_model` (``type:
-    "standard"``) route through here, mirroring the dpmodel twin
-    (``deepmd/dpmodel/model/model.py``).
+    composition build for this backend: :func:`get_sezm_model`
+    (``type: "dpa4"``/``"sezm"``) is its only caller, because bridging
+    yields a composition and so is not expressible on a non-composite
+    model type -- :func:`get_standard_model` rejects it. Issue #5948
+    tracks spelling the composition explicitly as ``linear_ener``.
 
     Parameters
     ----------
@@ -230,31 +231,46 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
 
 
 def get_standard_model(data: dict) -> Any:
-    """Build a pt_expt standard model, honoring ``bridging_method``.
+    """Build a pt_expt standard model: one descriptor plus one fitting net.
 
-    pt_expt twin of :func:`deepmd.dpmodel.model.model.get_standard_model`:
-    the analytical-bridging radii feed the DESCRIPTOR's
-    InnerClamp/BridgingSwitch and the method composes the atomic model with
-    its InnerPotential term. Without this wrapper a ``type: "standard"``
-    config with ``bridging_method`` silently dropped the bridging term
-    (backend divergence from dpmodel -- issue #5906 Task 4 audit).
+    ``bridging_method`` is rejected here rather than honored. Analytical
+    bridging is a COMPOSITION -- it yields a ``LinearEnergyModel`` over
+    ``[learned, InnerPotential]`` -- so a builder that accepted it would
+    return a model of a different kind than the one requested. pt_expt
+    keeps exactly one bridging owner, :func:`get_sezm_model`
+    (``type: "dpa4"``/``"sezm"``), so the composition and its
+    ``exclude_types`` reconciliation cannot drift between two builders.
+
+    Rejecting is deliberate over silently ignoring: dropping a bridging
+    term without a word yields a physically different model than the config
+    asks for. Issue #5948 tracks replacing the flag with an explicit
+    ``linear_ener`` composition, at which point this restriction is moot.
 
     Parameters
     ----------
     data : dict
         The data to construct the model.
+
+    Returns
+    -------
+    Any
+        The constructed standard model.
+
+    Raises
+    ------
+    ValueError
+        If ``bridging_method`` is set: bridging is not expressible on a
+        non-composite model type.
     """
-    data = copy.deepcopy(data)
     bridging_method = str(data.get("bridging_method", "none"))
-    bridging_enabled = bridging_method.lower() not in ("none", "")
-    if bridging_enabled:
-        data.setdefault("descriptor", {})
-        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
-        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
-    model = _model_factory.get_standard_model(data)
-    if not bridging_enabled:
-        return model
-    return _compose_bridging(model, data, bridging_method)
+    if bridging_method.lower() not in ("none", ""):
+        raise ValueError(
+            "`bridging_method` is not supported for a standard model in the "
+            "pt_expt backend: analytical bridging builds a linear "
+            'composition, not a standard model. Use model `type: "dpa4"` '
+            '(or `"sezm"`) with the same descriptor and fitting net.'
+        )
+    return _model_factory.get_standard_model(data)
 
 
 def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:

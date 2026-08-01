@@ -1,11 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""pt_expt ``get_standard_model`` must honor ``bridging_method`` like its
-dpmodel twin (``deepmd/dpmodel/model/model.py``) -- issue #5906 Task 4
-variant-alignment audit, gap 2: a ``type: "standard"`` config with bridging
-silently dropped the InnerPotential composition in pt_expt.
+"""Analytical bridging has exactly ONE owner per backend.
+
+Bridging builds a COMPOSITION (``LinearEnergyModel`` over
+``[learned, InnerPotential]``), so it is not expressible on a non-composite
+model type: ``type: "standard"`` would have to return a model of a
+different kind than the one requested. pt_expt therefore owns bridging on
+the DPA4/SeZM route only and REJECTS it in the standard builder -- loudly,
+because silently dropping the term yields a physically different model.
+
+Two builders accepting the flag is exactly how the routes drifted:
+``get_sezm_model`` promotes ``descriptor.exclude_types`` to model-level
+``pair_exclude_types`` and the standard route never did, which changes a
+0.9 A Ni-O dimer by ~80 eV (issue #5947). Issue #5948 replaces the flag
+with an explicit ``linear_ener`` composition, after which this restriction
+becomes moot.
 """
 
 import copy
+
+import pytest
 
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel,
@@ -42,35 +55,54 @@ def _dpa4_standard_config() -> dict:
     }
 
 
-def test_standard_model_type_builds_bridging_composition() -> None:
-    """pt_expt twin of dpmodel model.py's get_standard_model: a config with
-    bridging_method must compose [learned, InnerPotential], not silently
-    drop the bridging term.
-    """
-    data = _dpa4_standard_config()
+def _bridged(data: dict) -> dict:
     data["bridging_method"] = "ZBL"
     data["bridging_r_inner"] = 0.8
     data["bridging_r_outer"] = 1.2
-    model = get_standard_model(copy.deepcopy(data))
-    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
-    assert len(model.atomic_model.models) == 2
-    # The descriptor radii injection must ride the same seam (a composition
-    # without the inner-clamp radii would be a half-applied bridging config):
-    desc = model.atomic_model.models[0].descriptor
-    assert desc.bridging_switch is not None
-    # And the get_model router (type omitted -> "standard") reaches the same
-    # composition:
-    routed = get_model(copy.deepcopy(data))
-    assert isinstance(routed.atomic_model, LinearEnergyAtomicModel)
+    return data
 
 
-def test_standard_model_type_maps_dpa4_fitting() -> None:
-    """Dpmodel maps dpa4_ener/sezm_ener fitting under type:'standard' via the
-    model registry; pt_expt must not raise where dpmodel builds.
+def test_standard_builder_rejects_bridging() -> None:
+    """The standard builder must not hand back a composition."""
+    with pytest.raises(ValueError, match="bridging_method"):
+        get_standard_model(_bridged(_dpa4_standard_config()))
+
+
+def test_get_model_rejects_bridging_without_dpa4_model_type() -> None:
+    """Same contract through the dispatcher: an omitted model type defaults
+    to the standard route, so it must reject rather than compose.
+    """
+    with pytest.raises(ValueError, match="bridging_method"):
+        get_model(_bridged(_dpa4_standard_config()))
+
+
+def test_standard_builder_without_bridging_is_unaffected() -> None:
+    """The rejection keys on the flag, not on the DPA4 components: a plain
+    DPA4 standard model still builds and carries no bridging switch.
     """
     model = get_standard_model(_dpa4_standard_config())
-    assert model is not None
+    assert not isinstance(model.atomic_model, LinearEnergyAtomicModel)
     assert model.atomic_model.descriptor.bridging_switch is None
+
+
+@pytest.mark.parametrize(
+    "model_type",
+    [
+        "dpa4",  # canonical spelling
+        "sezm",  # pt-compatible alias
+    ],
+)
+def test_dpa4_model_type_owns_the_composition(model_type: str) -> None:
+    """The one supported spelling composes [learned, InnerPotential] and
+    injects the radii into the learned child's descriptor.
+    """
+    data = _bridged(_dpa4_standard_config())
+    data["type"] = model_type
+    model = get_model(copy.deepcopy(data))
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert len(model.atomic_model.models) == 2
+    # a composition without the inner-clamp radii would be half-applied
+    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
 
 
 def test_pt_checkpoint_eval_works_for_composition(tmp_path) -> None:
@@ -91,11 +123,8 @@ def test_pt_checkpoint_eval_works_for_composition(tmp_path) -> None:
         ModelWrapper,
     )
 
-    config = _dpa4_standard_config()
+    config = _bridged(_dpa4_standard_config())
     config["type"] = "dpa4"
-    config["bridging_method"] = "ZBL"
-    config["bridging_r_inner"] = 0.8
-    config["bridging_r_outer"] = 1.2
     model = get_model(copy.deepcopy(config)).to(torch.float64).eval()
     ckpt = str(tmp_path / "dpa4_zbl.pt")
     wrapper = ModelWrapper(model, model_params=copy.deepcopy(config))
@@ -122,8 +151,9 @@ def test_compile_attention_probe_tolerates_composition() -> None:
         _warn_compiled_attention,
     )
 
-    data = _dpa4_standard_config()
-    data["bridging_method"] = "ZBL"
-    model = get_standard_model(data)
+    data = _bridged(_dpa4_standard_config())
+    data["type"] = "dpa4"
+    model = get_model(data)
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
     # must not raise
     _warn_compiled_attention(model, "Default")
