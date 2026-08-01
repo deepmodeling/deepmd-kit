@@ -8,6 +8,21 @@ build:
       - pip install uv
     post_install:
       - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
+    build:
+      html:
+        # Custom build jobs start at the repository root, unlike Read the
+        # Docs-generated Sphinx command, which starts in the documentation
+        # directory. Preserve that working directory so the checkout does not
+        # shadow the installed package and hide its generated ``deepmd.lib``.
+        # Bound the command so a wedged extension or worker is terminated and
+        # reported as a failed build instead of occupying a builder forever.
+        # Limit Sphinx to two workers so generated API pages can be processed
+        # concurrently without multiplying backend import memory excessively.
+        - >-
+          cd doc &&
+          timeout --signal=TERM --kill-after=30s 45m
+          python -m sphinx -T -j 2 -b html -d _build/doctrees
+          -D language=en . $READTHEDOCS_OUTPUT/html
   apt_packages:
     - inkscape
 sphinx:
