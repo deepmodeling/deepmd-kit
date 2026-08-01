@@ -850,12 +850,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
+        atype_for_env = paddle.where(atype >= 0, atype, paddle.zeros_like(atype))
         nb = nframes
         nall = extended_coord.reshape([nb, -1, 3]).shape[1]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
-            atype,
+            atype_for_env,
             self.mean,
             self.stddev,
             self.rcut,

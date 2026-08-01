@@ -379,9 +379,10 @@ class DescrptDPA2(DescrptDPA2DP):
             Repinit output. shape: nf x nloc x (ng x axis_neuron)
         """
         # env_mat: nf x nloc x nnei x 4
+        atype_ext_for_env = atype_ext.clamp_min(0)
         rr, _diff, sw = self.repinit.env_mat.call(
             coord_ext,
-            atype_ext,
+            atype_ext_for_env,
             nlist,
             self.repinit.mean[...],
             self.repinit.stddev[...],

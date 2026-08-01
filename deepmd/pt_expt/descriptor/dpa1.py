@@ -107,6 +107,7 @@ def _env_mat(
     """
     se = desc.se_atten
     nf, nloc, nnei = nlist.shape
+    atype_ext_for_env = atype_ext.clamp_min(0)
     if triton_infer_level() >= 1:
         # Fused env-matrix operator, captured opaquely under the pt_expt trace and
         # resolving to the Triton kernel at CUDA runtime; identical outputs to the
@@ -114,7 +115,7 @@ def _env_mat(
         rr, _diff, sw = _env_mat_triton(
             coord_ext,
             nlist,
-            atype_ext[:, :nloc],
+            atype_ext_for_env[:, :nloc],
             se.mean[...],
             se.stddev[...],
             se.env_mat.rcut,
@@ -125,7 +126,7 @@ def _env_mat(
         )
     else:
         rr, _diff, sw = se.env_mat.call(
-            coord_ext, atype_ext, nlist, se.mean[...], se.stddev[...]
+            coord_ext, atype_ext_for_env, nlist, se.mean[...], se.stddev[...]
         )
     nf, nloc, nnei, _ = rr.shape
     ng = se.neuron[-1]

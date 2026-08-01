@@ -3,6 +3,9 @@
 from types import (
     SimpleNamespace,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import pytest
@@ -14,6 +17,7 @@ from torch.fx.experimental.proxy_tensor import (
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DPDescrptDPA1
 from deepmd.pt_expt.descriptor.dpa1 import (
     DescrptDPA1,
+    _env_mat,
     _strip_pair_index,
 )
 from deepmd.pt_expt.utils import (
@@ -97,6 +101,48 @@ def test_strip_pair_index_remaps_virtual_types() -> None:
         actual,
         torch.tensor([1, 2, 3, 5], dtype=torch.long, device=device),
     )
+
+
+def test_fused_env_prologue_clamps_virtual_center_statistics() -> None:
+    """Compressed/Triton routes sanitize centers before real-only stats."""
+    device = env.DEVICE
+    descriptor = DescrptDPA1(
+        rcut=4.0,
+        rcut_smth=0.5,
+        sel=[2, 2],
+        ntypes=2,
+        attn_layer=0,
+        axis_neuron=2,
+        neuron=[6, 12],
+        tebd_dim=2,
+        tebd_input_mode="strip",
+        type_one_side=True,
+        seed=GLOBAL_SEED,
+    ).to(device)
+    descriptor.se_atten.mean[0, :, :] = 0.25
+    descriptor.se_atten.mean[1, :, :] = -0.5
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+        dtype=torch.float64,
+        device=device,
+    )
+    nlist = torch.tensor([[[1, 2, -1, -1]]], dtype=torch.long, device=device)
+
+    with patch("deepmd.pt_expt.descriptor.dpa1.triton_infer_level", return_value=0):
+        actual = _env_mat(
+            descriptor,
+            coord,
+            torch.tensor([[-1, 1, 0]], dtype=torch.long, device=device),
+            nlist,
+        )[5]
+        expected = _env_mat(
+            descriptor,
+            coord,
+            torch.tensor([[0, 1, 0]], dtype=torch.long, device=device),
+            nlist,
+        )[5]
+
+    torch.testing.assert_close(actual, expected)
 
 
 class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
