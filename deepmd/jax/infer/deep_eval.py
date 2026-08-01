@@ -35,6 +35,7 @@ from deepmd.infer.deep_dos import (
 from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
+    _standardize_fparam_aparam,
 )
 from deepmd.infer.deep_polar import (
     DeepPolar,
@@ -277,6 +278,14 @@ class DeepEval(DeepEvalBackend):
             cells = np.array(cells)
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
+        )
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            numb_test,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
         )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
