@@ -1,4 +1,4 @@
-[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>][documentation]
+[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>][logo-guide]
 
 # DeePMD-kit
 
@@ -225,6 +225,7 @@ DeePMD-kit is licensed under the
 [ipi]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/ipi.html
 [jax-md]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/jaxmd.html
 [lammps]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/lammps-command.html
+[logo-guide]: https://docs.deepmodeling.com/projects/deepmd/en/latest/logo.html
 [model-guide]: https://docs.deepmodeling.com/projects/deepmd/en/latest/model/index.html
 [multi-task]: https://docs.deepmodeling.com/projects/deepmd/en/latest/train/multi-task-training.html
 [native-inference]: https://docs.deepmodeling.com/projects/deepmd/en/latest/inference/cxx.html
