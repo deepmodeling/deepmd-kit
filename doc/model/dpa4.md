@@ -1,10 +1,10 @@
 # Descriptor DPA4 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Descriptor backends**: PyTorch and PyTorch-Exportable
+> **Descriptor backends**: PyTorch-TorchScript and PyTorch-Exportable
 > {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 >
-> The end-to-end `model.type: dpa4` scaffold is supported by PyTorch and
+> The end-to-end `model.type: dpa4` scaffold is supported by PyTorch-TorchScript and
 > PyTorch-Exportable only. JAX support is descriptor-only and does not provide
 > the dedicated DPA4 fitting/model/trainer workflow documented on this page.
 
@@ -22,7 +22,8 @@ Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
 
 ## Quick start
 
-DPA4 is a PyTorch-only model. Train it with the standard `dp --pt` workflow:
+DPA4 is available only through the PyTorch framework backends. Train a
+PyTorch-TorchScript model with the standard `dp --pt` workflow:
 
 ```bash
 cd examples/water/dpa4
@@ -413,14 +414,14 @@ once the target system and batch size fit.
 
 ### Freeze to `.pt2`
 
-DPA4/SeZM checkpoints use the PyTorch `.pt2` (AOTInductor) export path; the
+DPA4/SeZM checkpoints use the PyTorch-TorchScript `.pt2` (AOTInductor) export path; the
 ordinary TorchScript freeze path is not used. Run the standard freeze command:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
-The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`.
+The PyTorch-TorchScript backend detects DPA4/SeZM and writes `frozen_model.pt2`.
 
 ### Single GPU
 
@@ -711,7 +712,7 @@ closed over the one-hop neighbor shell.
 ## Limitations
 
 - The end-to-end DPA4/SeZM model and training workflow is implemented for the
-  PyTorch and PyTorch-Exportable backends. JAX provides the descriptor only;
+  PyTorch-TorchScript and PyTorch-Exportable backends. JAX provides the descriptor only;
   the DP implementation is a reference component and does not train models.
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
 - Model compression is not supported.

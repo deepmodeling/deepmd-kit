@@ -2,8 +2,9 @@
 
 > [!NOTE]
 > **Supported backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
-> {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP
+> {{ dpmodel_icon }}
 
 The notation of `se_e2_a` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The `e2` stands for the embedding with two-atoms information. This descriptor was described in detail in [the DeepPot-SE paper](https://arxiv.org/abs/1805.09003).
 
@@ -102,11 +103,19 @@ Type embdding is only supported in the TensorFlow backends.
 ## Difference among different backends
 
 In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` cannot be set to a non-zero value.
+In the TensorFlow 2 backend, freezing or compressing to `.savedmodeltf`
+currently requires
+{ref}`type_one_side <model[standard]/descriptor[se_e2_a]/type_one_side>` to be
+`true`; the normalized default, `false`, is not graph-traceable during
+SavedModel export.
 In the JAX backend, {ref}`type_one_side <model[standard]/descriptor[se_e2_a]/type_one_side>` cannot be set to `false`.
 
 ## Model compression
 
 Model compression is supported when type embedding is not used.
 To use model compression with type embedding in the TensorFlow backend, use `se_a_tebd_v2` instead.
+For JAX, `.jax` is the general lossless compressed serialization format;
+StableHLO `.hlo` export additionally requires the compressed descriptor to be
+StableHLO-exportable.
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

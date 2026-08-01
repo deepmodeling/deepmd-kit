@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **Supported backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
 > {{ jax_icon }}, DP {{ dpmodel_icon }}
 
 The notation of `se_e3` is short for three-body embedding DeepPot-SE, which incorporates embedded bond-angle information.

@@ -58,7 +58,7 @@ The fitting of the following physical properties is supported
 1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions), the virial (derivative with the box tensor) and the hessian (second-order derivative with atom positions) can also be trained.
 
 > [!WARNING]
-> The PyTorch TorchScript freeze route cannot output Hessians, and
+> The PyTorch-TorchScript freeze route cannot output Hessians, and
 > PyTorch-Exportable cannot construct a Hessian model for freezing or
 > inference. The JAX backend can retain Hessian output in a frozen model with
 > `dp --jax freeze --hessian`; see [Freeze a model](../freeze/freeze.md).

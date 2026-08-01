@@ -1,9 +1,9 @@
 # Create a model in other backends {{ pytorch_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 >
-> In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
+> In the following context, we use the PyTorch-TorchScript backend as the example, while it also applies to other backends listed above.
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 
@@ -16,9 +16,9 @@ To incorporate your custom model you'll need to:
 
 ## Design a new component
 
-With DeePMD-kit v3, we have expanded support to include two additional backends alongside TensorFlow: the PyTorch backend and the framework-independent backend (dpmodel). The PyTorch backend adopts a highly modularized design to provide flexibility and extensibility. It ensures a consistent experience for both training and inference, aligning with the TensorFlow backend.
+With DeePMD-kit v3, we have expanded support to include two additional backends alongside TensorFlow: the PyTorch-TorchScript backend and the framework-independent backend (dpmodel). The PyTorch-TorchScript backend adopts a highly modularized design to provide flexibility and extensibility. It ensures a consistent experience for both training and inference, aligning with the TensorFlow backend.
 
-The framework-independent backend is implemented in pure NumPy, serving as a reference backend to ensure consistency in tests. Its design pattern closely parallels that of the PyTorch backend.
+The framework-independent backend is implemented in pure NumPy, serving as a reference backend to ensure consistency in tests. Its design pattern closely parallels that of the PyTorch-TorchScript backend.
 
 ### New descriptors
 
@@ -118,7 +118,7 @@ class SomeFittingNet(GeneralFitting):
 
 ### New models
 
-The PyTorch backend's model architecture is meticulously structured with multiple layers of abstraction, ensuring a high degree of flexibility. Typically, the process commences with an atomic model responsible for atom-wise property calculations. This atomic model inherits from both the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
+The PyTorch-TorchScript backend's model architecture is meticulously structured with multiple layers of abstraction, ensuring a high degree of flexibility. Typically, the process commences with an atomic model responsible for atom-wise property calculations. This atomic model inherits from both the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
 
 Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, which leverages the `deepmd.pt.model.model.make_model.make_model` function. The purpose of the `make_model` wrapper is to facilitate the translation between atomic property predictions and the extended property predictions and differentiation , e.g. the reduction of atomic energy contribution and the autodiff for calculating the forces and virial. The developers usually need to implement an `AtomicModel` not a `Model`.
 
@@ -217,6 +217,6 @@ When implementing an existing model in a new backend, directly apply the existin
 
 ### Consistent tests
 
-When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (NumPy) through the serialization/deserialization technique.
+When transferring features from another backend to the PyTorch-TorchScript backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch-TorchScript backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch-TorchScript, and DP (NumPy) through the serialization/deserialization technique.
 
-During the development of new components within the PyTorch backend, it is necessary to provide a DP (NumPy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
+During the development of new components within the PyTorch-TorchScript backend, it is necessary to provide a DP (NumPy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.

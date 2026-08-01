@@ -1,7 +1,7 @@
 # Descriptor `"se_e3_tebd"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch and
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
 > PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
 > {{ paddle_icon }}, DP {{ dpmodel_icon }}
 

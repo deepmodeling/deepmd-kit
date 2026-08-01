@@ -1,7 +1,7 @@
 # Descriptor DPA3 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch and
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
 > PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
 > {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
@@ -124,7 +124,7 @@ Note that all DPA3 models use `float32`, while other models use `float64` by def
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 To run the DPA3 model on LAMMPS via source code installation
 (users can skip this step if using [easy installation](../install/easy-install.md)),

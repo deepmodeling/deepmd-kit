@@ -25,12 +25,12 @@ When `-c` names a checkpoint prefix, the backend also checks the corresponding
 path with `.tf2` appended, so the example reads `model.ckpt.tf2` and writes the
 TensorFlow SavedModel to `model.savedmodeltf`. If `-c` is omitted, it defaults
 to the current directory. For a multi-task checkpoint, select a branch with
-`--head CHOSEN_BRANCH`. SavedModel export currently requires graph-traceable
-model code; an `se_e2_a`/`se_a` descriptor must set `type_one_side: true`
-because the normalized default, `false`, cannot be traced.
+`--head CHOSEN_BRANCH`. SavedModel export requires graph-traceable model code;
+descriptor-specific export requirements are documented on the corresponding
+model pages.
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt freeze -o model.pth

@@ -2,15 +2,17 @@
 
 > [!NOTE]
 > **Supported backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ tensorflow_icon }}, PyTorch-TorchScript {{ pytorch_icon }}, JAX
 > {{ jax_icon }}, DP {{ dpmodel_icon }}
 >
-> These icons report fitting/model implementation availability. JAX provides
-> the DOS implementation for model conversion and inference, but
+> JAX provides the DOS implementation for model conversion and inference, but
 > `dp --jax train` currently accepts only the energy loss and cannot train a DOS
 > model. TensorFlow 2 can train a DOS model, but a frozen `.savedmodeltf` DOS
 > model cannot yet be evaluated by `dp test`/`DeepDOS` because the export does
-> not preserve the `numb_dos` output width.
+> not preserve the `numb_dos` output width. PyTorch-Exportable is not listed
+> because its DOS export and inference have the same missing-width problem,
+> tracked in
+> [#5949](https://github.com/deepmodeling/deepmd-kit/issues/5949).
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 
@@ -106,17 +108,10 @@ dp --tf2 train input.json
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json
-```
-:::
-
-:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
-
-```bash
-dp --pt-expt train input.json
 ```
 :::
 
@@ -165,7 +160,7 @@ dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 

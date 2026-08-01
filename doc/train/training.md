@@ -24,7 +24,7 @@ dp --tf2 train input.json
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json
@@ -59,7 +59,7 @@ CINN=1 CINN_ALLOW_DYNAMIC_SHAPE=0 dp --pd train input.json
 dp --jax train input.json
 ```
 
-JAX training, introduced after DeePMD-kit v3.1.3, writes checkpoints with the
+JAX training, introduced in DeePMD-kit v3.2.0, writes checkpoints with the
 `.jax` extension. It supports fine-tuning and multi-task configurations, but
 does not currently support `--init-frz-model`.
 :::

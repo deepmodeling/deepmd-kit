@@ -1,7 +1,7 @@
 # Descriptor DPA-2 {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch and
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
 > PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle
 > {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
@@ -104,7 +104,7 @@ dp --pt-expt freeze -o model.pt2 --lower-kind graph
 As with DPA-1's graph path (see [Difference among different backends](train-se-atten.md#difference-among-different-backends)), the graph route considers all neighbors within the cutoff rather than a fixed, padded selection, so its numeric result can differ slightly (down to the AOTInductor floating-point noise floor at non-binding `sel`, larger if `sel` is binding) from the dense/`nlist` path.
 
 > [!NOTE]
-> **Default route change in pt_expt (eager & training).** For a graph-eligible DPA-2 descriptor, the pt_expt backend now defaults to the carry-all graph route not only for `--lower-kind graph` freezing but also in **eager inference/evaluation and in (compiled) training** (`neighbor_graph_method=None` resolves to the graph). This changes the numerical behavior of existing pt_expt configurations relative to the dense neighbor-list route (by the amounts described above — negligible at non-binding `sel`). The other backends (dpmodel/PyTorch/Paddle/TensorFlow/JAX) are unaffected: they keep the dense route as their only path.
+> **Default route change in pt_expt (eager & training).** For a graph-eligible DPA-2 descriptor, the pt_expt backend now defaults to the carry-all graph route not only for `--lower-kind graph` freezing but also in **eager inference/evaluation and in (compiled) training** (`neighbor_graph_method=None` resolves to the graph). This changes the numerical behavior of existing pt_expt configurations relative to the dense neighbor-list route (by the amounts described above — negligible at non-binding `sel`). The other backends (dpmodel/PyTorch-TorchScript/Paddle/TensorFlow/JAX) are unaffected: they keep the dense route as their only path.
 >
 > To retain the legacy dense route on pt_expt:
 >

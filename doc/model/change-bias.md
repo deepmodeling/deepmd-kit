@@ -1,7 +1,7 @@
 # Change the model output bias for trained model {{ tensorflow_icon }} {{ pytorch_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript {{ pytorch_icon }}
 
 The output bias of a trained model typically originates from the statistical results of the training dataset.
 
@@ -28,7 +28,7 @@ dp --tf change-bias model.ckpt -b -92.523 -187.66 -o model_updated.pb
 ```
 :::
 
-:::{tab-item} PyTorch Backend {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript Backend {{ pytorch_icon }}
 
 **Changing bias using provided systems for trained `.pt`/`.pth` models:**
 

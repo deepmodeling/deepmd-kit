@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > **Backends covered below**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
-> {{ jax_icon }}, and DP {{ dpmodel_icon }}.
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, and DP {{ dpmodel_icon }}.
 
 ## Theory
 
@@ -79,12 +79,11 @@ dp --tf2 compress -i model.ckpt.tf2 -o model-compress.savedmodeltf
 ```
 
 TensorFlow 2 compression reads a `.tf2` training checkpoint directory or a
-checkpoint prefix and writes a compressed `.savedmodeltf` model. For
-`se_e2_a`/`se_a`, SavedModel export currently requires
-`type_one_side: true`; the normalized default, `false`, is not graph-traceable.
+checkpoint prefix and writes a compressed `.savedmodeltf` model. See the
+descriptor documentation for model-specific SavedModel export requirements.
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt compress -i model.pth -o model-compress.pth
@@ -97,14 +96,10 @@ dp --pt compress -i model.pth -o model-compress.pth
 dp --pt-expt compress -i dpa1-graph.pt2 -o dpa1-graph-compress.pt2
 ```
 
-This executable compression path is currently limited to graph-lowered
-DPA1/`se_atten` strip models that are eligible for the fused CUDA table
-operator: `attn_layer: 0`, no excluded type pairs, float32 descriptor
-statistics and tables, `neuron[-1] <= 256`, and
-`axis_neuron <= min(16, neuron[-1])`. Their `.pt2` export embeds the tabulated
-operator. For other models, the command records compressed state in
-`model.json` but leaves the exported inference graph uncompressed, so the
-resulting `.pte`/`.pt2` is not a deployment compression artifact.
+This command produces an executable compressed artifact only for descriptors
+that support the PyTorch-Exportable compression path. See the
+[DPA-1 model-compression requirements](../model/train-se-atten.md#model-compression)
+for the graph-lowered `.pt2` route used in this example.
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
@@ -114,10 +109,8 @@ dp --jax compress -i frozen_model.jax -o compressed_model.jax
 ```
 
 JAX compression accepts `.jax` and `.hlo` inputs. Use `.jax` for the general,
-lossless compressed serialization path. A compressed `.hlo` can be written
-only when the descriptor is StableHLO-exportable; compressed `se_e2_a`, `se_a`,
-`dpa1`, and `se_atten` descriptors with `type_one_side: false` must remain
-`.jax` or be rebuilt with `type_one_side: true`.
+lossless compressed serialization path. Descriptor pages document whether a
+compressed model can also be exported to StableHLO `.hlo`.
 :::
 
 :::{tab-item} DP {{ dpmodel_icon }}
@@ -132,13 +125,10 @@ DP compression accepts native `.dp` and `.yaml` models.
 ::::
 
 where `-i` gives the original frozen model, `-o` gives the compressed model.
-The DP, JAX, and TensorFlow 2 entrypoints share the native-model compression
-helpers for resolving the minimum neighbor distance and tabulating the
-descriptor's embedding networks. The limited PyTorch-Exportable graph-DPA1
-path implements the same table strides and minimum-neighbor-distance fallback
-in its export-specific entrypoint. If the model does not contain a minimum
-neighbor distance, pass the training script with `-t` or `--training-script`
-so it can be computed from the training data.
+The compression entrypoints resolve the minimum neighbor distance and tabulate
+supported descriptor embedding networks. If the model does not contain a
+minimum neighbor distance, pass the training script with `-t` or
+`--training-script` so it can be computed from the training data.
 
 Several other command line options can be passed to `dp compress`, which can be checked with
 
@@ -183,7 +173,7 @@ See the documentation of a specific descriptor to see whether it supports model 
 
 ## Requirements of installation {{ pytorch_icon }}
 
-When compressing models in the PyTorch backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
+When compressing models in the PyTorch-TorchScript backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
 
 The customized OP library for the Python interface is installed by default when building DeePMD-kit from source; see the [installation guide](../install/install-from-source.md) for details.
 

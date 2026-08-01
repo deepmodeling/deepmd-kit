@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **Supported backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
 > {{ jax_icon }}, DP {{ dpmodel_icon }}
 
 The notation of `se_e2_r` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from the radial information of atomic configurations. The `e2` stands for the embedding with two-atom information.
@@ -76,7 +76,7 @@ Type embdding is only supported in the TensorFlow backends.
 ## Difference among different backends
 
 In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e2_r]/env_protection>` cannot be set to a non-zero value.
-In the PyTorch, JAX, and DP backend, {ref}`type_one_side <model[standard]/descriptor[se_e2_r]/type_one_side>` cannot be set to `false`.
+In the PyTorch-TorchScript, JAX, and DP backends, {ref}`type_one_side <model[standard]/descriptor[se_e2_r]/type_one_side>` cannot be set to `false`.
 
 ## Model compression
 

@@ -1,7 +1,7 @@
 # Fit spin energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch and
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and
 > PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 To train a model that takes additional spin information as input, you only need to modify the following sections to define the spin-specific settings,
@@ -12,7 +12,7 @@ keeping other sections the same as the normal energy model's input script.
 >
 > - In the TensorFlow backend, the `se_e2_a` descriptor will treat those atom types with spin as new (virtual) types,
 >   and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model[standard]/descriptor[se_e2_a]/sel>`) from their real atom types.
-> - In the PyTorch and PyTorch-Exportable backends, if spin settings are added, all the types (with or without spin) will have their virtual types.
+> - In the PyTorch-TorchScript and PyTorch-Exportable backends, if spin settings are added, all the types (with or without spin) will have their virtual types.
 >   The `se_e2_a` descriptor will thus double the {ref}`sel <model[standard]/descriptor[se_e2_a]/sel>` list,
 >   while in other descriptors with mixed types (such as `dpa1` or `dpa2`), the sel number will not be changed for clarity.
 >   If you are using descriptors with mixed types, to achieve better performance,
@@ -24,7 +24,7 @@ The spin settings are given by the {ref}`spin <model/spin>` section, which sets 
 
 > [!NOTE]
 > Note that the construction of spin settings is different between TensorFlow
-> and PyTorch/PyTorch-Exportable/DP.
+> and PyTorch-TorchScript/PyTorch-Exportable/DP.
 
 ### Spin settings in TensorFlow
 
@@ -43,9 +43,9 @@ The implementation in TensorFlow only supports `se_e2_a` descriptor. See example
 - {ref}`virtual_len <model/spin[ener_spin]/virtual_len>` specifies the distance between virtual atom and the belonging real atom.
 - {ref}`spin_norm <model/spin[ener_spin]/spin_norm>` gives the magnitude of the magnetic moment for each magnatic atom.
 
-### Spin settings in PyTorch/PyTorch-Exportable/DP
+### Spin settings in PyTorch-TorchScript/PyTorch-Exportable/DP
 
-In PyTorch/PyTorch-Exportable/DP, the spin implementation is more flexible and
+In PyTorch-TorchScript/PyTorch-Exportable/DP, the spin implementation is more flexible and
 so far supports the following descriptors:
 
 - `se_e2_a`
@@ -73,7 +73,7 @@ See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.
   only used when {ref}`use_spin <model/spin[ener_spin]/use_spin>` is True for each atom type.
 
 > [!NOTE]
-> It should be noted that the spin models in PyTorch/PyTorch-Exportable/DP are capable of addressing scenarios where the spin approaches zero
+> It should be noted that the spin models in PyTorch-TorchScript/PyTorch-Exportable/DP are capable of addressing scenarios where the spin approaches zero
 > (indicating the virtual atom is in close proximity to the real atom) by adjusting the non-zero
 > {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` parameter within the descriptor.
 > This parameter is set to 0.01 by default in the spin model. It appears that a value of 0.01 is generally sufficient for maintaining model stability.
@@ -147,7 +147,7 @@ If one does not want to train with virial, then he/she may set the virial prefac
 
 > [!NOTE]
 > Note that the spin data format is different between TensorFlow and
-> PyTorch/PyTorch-Exportable/DP.
+> PyTorch-TorchScript/PyTorch-Exportable/DP.
 
 ### Spin data format in TensorFlow
 
@@ -179,9 +179,9 @@ We list the details about spin system data format in TensorFlow backend:
 | force  | Atomic and magnetic forces | force.raw  | eV/Å | Nframes * (Natoms + Nspins) * 3 | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces.                                  |
 | virial | Frame virial               | virial.raw | eV   | Nframes * 9                     | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
 
-### Spin data format in PyTorch/PyTorch-Exportable/DP
+### Spin data format in PyTorch-TorchScript/PyTorch-Exportable/DP
 
-In the PyTorch, PyTorch-Exportable, and DP backends, spin and magnetic forces
+In the PyTorch-TorchScript, PyTorch-Exportable, and DP backends, spin and magnetic forces
 are listed in separate files, and the data format may contain the following
 files:
 

@@ -2,10 +2,10 @@
 
 > [!NOTE]
 > **Short-range interpolation backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
 > {{ jax_icon }}, DP {{ dpmodel_icon }}
 >
-> **Linear-combination backends**: TensorFlow {{ tensorflow_icon }}, PyTorch and
+> **Linear-combination backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and
 > PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 ## Theory

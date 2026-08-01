@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **Supported backends**: TensorFlow and TensorFlow 2
-> {{ tensorflow_icon }}, PyTorch and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
 > {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 We generate specific a type embedding vector for each atom type so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely.

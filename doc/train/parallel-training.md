@@ -92,14 +92,14 @@ optional arguments:
                         master)
 ```
 
-## PyTorch Implementation {{ pytorch_icon }}
+## PyTorch-TorchScript Implementation {{ pytorch_icon }}
 
 Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
 ### Optional ZeRO memory optimization
 
-In PyTorch backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
+In the PyTorch-TorchScript backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
 to reduce per-GPU memory usage during distributed training.
 
 | `zero_stage` | Strategy                      | Communication | Memory saving                                 |
@@ -137,7 +137,7 @@ Enable it in input config:
 
 Constraints:
 
-- Works only in PyTorch backend.
+- Works only in the PyTorch-TorchScript backend.
 - Requires distributed launch with `torchrun`.
 - Currently single-task only.
 - Not supported with `LKF` optimizer.
