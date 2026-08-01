@@ -177,6 +177,22 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertEqual(systems, systems_again)
         self.assertEqual(_FakeMultiSystems.write_count, 2)
 
+    def test_cache_cleanup_unlinks_directory_symlink(self) -> None:
+        """Cleanup must not recurse through a symlink outside the cache."""
+        target = self.root / "outside"
+        target.mkdir()
+        sentinel = target / "keep.txt"
+        sentinel.write_text("keep")
+        link = self.root / ".deepmd_dpdata_cache" / "stale.tmp"
+        link.parent.mkdir()
+        link.symlink_to(target, target_is_directory=True)
+
+        data_system._remove_path(link)
+
+        self.assertFalse(link.exists())
+        self.assertTrue(target.is_dir())
+        self.assertEqual(sentinel.read_text(), "keep")
+
     def test_process_systems_converts_to_explicit_hdf5(self) -> None:
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(

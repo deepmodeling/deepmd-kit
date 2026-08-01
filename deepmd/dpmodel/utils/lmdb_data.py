@@ -936,14 +936,23 @@ def compute_block_targets(
     # Keeping this framework-agnostic LMDB module independent of data_system
     # avoids an import cycle when the legacy adapter imports the LMDB reader.
     block_weights = np.asarray([weight for _, _, weight in blocks], dtype=float)
-    assert np.all(block_weights >= 0), "the weight of a block should be no less than 0"
-    block_probs = block_weights / np.sum(block_weights)
+    if not np.all(np.isfinite(block_weights)):
+        raise ValueError("block weights must be finite")
+    if np.any(block_weights < 0):
+        raise ValueError("the weight of a block should be no less than 0")
+    total_block_weight = np.sum(block_weights)
+    if total_block_weight <= 0:
+        raise ValueError("the sum of block weights should be greater than 0")
+    block_probs = block_weights / total_block_weight
     sys_probs = np.zeros(nsystems, dtype=np.float64)
     for block_idx, (stt, end, _weight) in enumerate(blocks):
         block_frames = np.asarray(system_nframes[stt:end], dtype=float)
-        sys_probs[stt:end] = (
-            block_frames / np.sum(block_frames) * block_probs[block_idx]
-        )
+        total_block_frames = np.sum(block_frames)
+        if total_block_frames <= 0:
+            raise ValueError(
+                f"block {stt}:{end} must contain at least one retained frame"
+            )
+        sys_probs[stt:end] = block_frames / total_block_frames * block_probs[block_idx]
 
     # Group systems by block, compute block-level frames and prob
     block_info: list[tuple[list[int], int, float]] = []  # (sys_ids, frames, prob)

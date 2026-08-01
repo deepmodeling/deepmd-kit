@@ -1206,7 +1206,11 @@ def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
 
 
 def _remove_path(path: Path) -> None:
-    if path.is_dir():
+    # Check links before directories: Path.is_dir follows a directory symlink,
+    # while cache cleanup must never recurse into a target outside the cache.
+    if path.is_symlink():
+        path.unlink()
+    elif path.is_dir():
         shutil.rmtree(path)
     elif path.exists():
         path.unlink()
