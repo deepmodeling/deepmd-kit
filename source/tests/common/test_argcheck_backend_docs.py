@@ -71,7 +71,7 @@ class TestBackendDocumentation(unittest.TestCase):
         energy_loss = argcheck.loss_args_plugin.get_argument("ener")
         self.assertTrue(
             energy_loss["start_pref_h"].doc.startswith(
-                "(Supported Backend: PyTorch, PaddlePaddle) "
+                "(Supported Backend: PyTorch, JAX, PaddlePaddle) "
             )
         )
         self.assertTrue(

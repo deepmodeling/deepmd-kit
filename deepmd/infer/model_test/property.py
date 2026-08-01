@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Testing of models fitting an arbitrary per-frame property."""
 
-import logging
-
 from deepmd.infer.model_test.base import (
     ChunkContext,
     ModelTester,
@@ -15,8 +13,6 @@ from deepmd.utils.eval_metrics import (
     mae,
     rmse,
 )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["PropertyTester"]
 
@@ -43,7 +39,7 @@ class PropertyTester(ModelTester):
                 f"atom_{var_name}",
                 dp.task_dim,
                 atomic=True,
-                must=False,
+                must=True,
                 high_prec=True,
             )
         if dp.get_dim_fparam() > 0:

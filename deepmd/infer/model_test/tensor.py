@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Testing of atomic tensor models, such as dipole and polarizability."""
 
-import logging
 from typing import (
     ClassVar,
 )
@@ -19,8 +18,6 @@ from deepmd.utils.data import (
 from deepmd.utils.eval_metrics import (
     rmse,
 )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["DipoleTester", "PolarTester", "TensorTester"]
 
@@ -129,7 +126,7 @@ class DipoleTester(TensorTester):
     """Test a dipole model."""
 
     label = "dipole"
-    atomic_label = "atomic_dipole"
+    atomic_label = "atom_dipole"
     ndof = 3
     components = ("x", "y", "z")
     report = (
@@ -145,7 +142,7 @@ class PolarTester(TensorTester):
     """Test a polarizability model."""
 
     label = "polarizability"
-    atomic_label = "atomic_polarizability"
+    atomic_label = "atom_polarizability"
     ndof = 9
     components = ("pxx", "pxy", "pxz", "pyx", "pyy", "pyz", "pzx", "pzy", "pzz")
     report = (

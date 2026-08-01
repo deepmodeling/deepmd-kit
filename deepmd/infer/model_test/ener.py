@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Testing of energy models, including those carrying spin."""
 
-import logging
 from dataclasses import (
     dataclass,
 )
@@ -39,8 +38,6 @@ if TYPE_CHECKING:
     from deepmd.infer.deep_pot import (
         DeepPot,
     )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["EnerTester", "SpinEnerTester"]
 
@@ -341,11 +338,6 @@ class _ForceDetails:
     prediction_real: np.ndarray | None = None
     reference_magnetic: np.ndarray | None = None
     prediction_magnetic: np.ndarray | None = None
-
-
-# ---------------------------------------------------------------------------
-# Density of states models
-# ---------------------------------------------------------------------------
 
 
 class EnerTester(ModelTester):

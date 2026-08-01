@@ -2,10 +2,11 @@
 """Evaluation of a trained model against labelled data.
 
 The machinery behind ``dp test``: a tester walks one system in chunks,
-evaluates each chunk and combines the errors, so that a dataset larger than
-memory can be tested. :func:`build_tester` selects the tester of a model
-class; the command-line entry point only discovers the systems and reports
-the run-level average.
+evaluates each chunk and combines the errors. Lazy data sources such as LMDB
+therefore need not fit in memory; ordinary ``DeepmdData`` systems materialize
+the complete test system before it is sliced into evaluation chunks.
+:func:`build_tester` selects the tester of a model class; the command-line
+entry point only discovers the systems and reports the run-level average.
 """
 
 import logging
@@ -90,7 +91,8 @@ def build_tester(dp: Any, *, atomic: bool) -> ModelTester:
         If no tester covers the model class.
     """
     if isinstance(dp, DeepPot):
-        tester = SpinEnerTester if dp.has_spin else EnerTester
+        has_spin = dp.has_spin or dp.get_ntypes_spin() != 0
+        tester = SpinEnerTester if has_spin else EnerTester
         return tester(dp, atomic=atomic)
     if isinstance(dp, DeepDOS):
         return DosTester(dp, atomic=atomic)

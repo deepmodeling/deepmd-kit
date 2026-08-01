@@ -46,6 +46,7 @@ from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -180,10 +181,15 @@ def _decode_frame(
 
 
 def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
-    """Remap LMDB key names to DeePMD convention, pass through unknown keys."""
+    """Remap LMDB key names to the canonical in-memory DeePMD convention."""
     out = {}
     for k, v in frame.items():
-        out[_KEY_REMAP.get(k, k)] = v
+        key = _KEY_REMAP.get(k, k)
+        if key.startswith("find_atomic_"):
+            key = "find_atom_" + key.removeprefix("find_atomic_")
+        elif key.startswith("atomic_"):
+            key = "atom_" + key.removeprefix("atomic_")
+        out[key] = v
     return out
 
 
@@ -2427,12 +2433,11 @@ class LmdbTestData:
             if max_frames is None or not np.isfinite(max_frames)
             else int(max_frames)
         )
-        rng = np.random.default_rng()
         groups: dict[int, list[int]] = {}
         for begin, end in pairwise(starts):
-            indices = order[begin:end]
+            indices = order[begin:end].copy()
             if shuffle_test:
-                indices = rng.permutation(indices)
+                dp_random.shuffle(indices)
             if keep is not None:
                 indices = indices[:keep]
             groups[int(nlocs[order[begin]])] = indices.tolist()
@@ -2741,6 +2746,8 @@ class LmdbTestData:
                     f"LMDB validation group mixes find_{key} values {availability}"
                 )
             has_key = availability[0]
+            if not has_key and req_info.get("must", False):
+                raise RuntimeError(f"Required LMDB test-data field {key!r} is missing.")
             result[f"find_{key}"] = 1.0 if has_key else 0.0
 
             # Get repeat factor from registered requirements
@@ -2827,6 +2834,15 @@ class LmdbTestDataNlocView:
         numb_test: float = float("inf"),
     ) -> Iterator[dict[str, Any]]:
         """Yield this group's frames in chunks."""
+        if self._frame_indices is not None:
+            frame_indices = self._frame_indices
+            if np.isfinite(numb_test):
+                frame_indices = frame_indices[: int(numb_test)]
+            step = max(1, int(chunk_atoms) // max(1, self._nloc))
+            return (
+                self._inner.get_test_by_indices(frame_indices[begin : begin + step])
+                for begin in range(0, len(frame_indices), step)
+            )
         return self._inner.iter_test(
             chunk_atoms=chunk_atoms, numb_test=numb_test, nloc=self._nloc
         )

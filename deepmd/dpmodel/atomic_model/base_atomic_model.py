@@ -870,7 +870,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                     graph,
                     xp.reshape(atype, (-1,)),
                     fparam=fparam,
-                    aparam=aparam,
+                    aparam=(
+                        xp.reshape(
+                            aparam,
+                            (nframes * nloc, self.get_dim_aparam()),
+                        )
+                        if aparam is not None
+                        else None
+                    ),
                     charge_spin=charge_spin,
                 )
                 # The graph route works on a flat node axis; restore the

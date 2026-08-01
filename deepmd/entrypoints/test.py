@@ -190,7 +190,8 @@ def test(
                 log.info(f"# testing sub-group : {sys_label}")
             # Only the very first tested group writes a fresh detail file; a
             # system split into sub-groups extends it like any later system.
-            append_detail = bool(err_coll)
+            detail_group = len(err_coll)
+            append_detail = bool(detail_group)
 
             err = tester.run(
                 data,
@@ -198,6 +199,7 @@ def test(
                 numb_test,
                 detail_file,
                 append_detail=append_detail,
+                detail_group=detail_group,
             )
             log.info("# ----------------------------------------------- ")
             err_coll.append(err)

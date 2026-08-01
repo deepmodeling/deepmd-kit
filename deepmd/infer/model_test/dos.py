@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Testing of density-of-states models."""
 
-import logging
-
 from deepmd.infer.model_test.base import (
     ChunkContext,
     ModelTester,
@@ -15,8 +13,6 @@ from deepmd.utils.eval_metrics import (
     mae,
     rmse,
 )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["DosTester"]
 
@@ -114,8 +110,3 @@ class DosTester(ModelTester):
                 )
 
         return errors
-
-
-# ---------------------------------------------------------------------------
-# Property models
-# ---------------------------------------------------------------------------

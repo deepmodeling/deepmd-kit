@@ -730,13 +730,16 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     int mark_table_idx = -1;
+    // The cached table index and coefficients must have the same lifetime.
+    // Keeping var outside the neighbor loop makes a cache hit reuse initialized
+    // coefficients instead of a newly scoped, uninitialized local array.
+    FPTYPE var[6];
     for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       FPTYPE dz_xx =
           dz_dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE dz_em = dz_dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
-      FPTYPE var[6];
 
       int table_idx = 0;
       FPTYPE extrapolate_delta = (FPTYPE)0.;
@@ -1070,6 +1073,13 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // The descriptor does not carry the empty neighbor dimension, so its
+    // mathematically empty reduction must be materialized explicitly.
+    DPErrcheck(gpuMemset(out, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
 #if GOOGLE_CUDA
       <<<nloc, last_layer_size>>>
@@ -1099,7 +1109,7 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nnei,
                                    const int last_layer_size,
                                    const bool is_sorted) {
-  if (nloc <= 0) {
+  if (nloc <= 0 || nnei <= 0) {
     return;
   }
   DPErrcheck(gpuGetLastError());
@@ -1141,6 +1151,14 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   }
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
+  if (nnei <= 0) {
+    // Unlike the neighbor-shaped inputs, dz_dy remains non-empty and must be
+    // initialized to the zero second derivative of an empty reduction.
+    DPErrcheck(
+        gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * MM * last_layer_size));
+    DPErrcheck(gpuDeviceSynchronize());
+    return;
+  }
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(

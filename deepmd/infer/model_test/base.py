@@ -45,11 +45,12 @@ DEFAULT_TEST_CHUNK_ATOMS = 1_000_000
 def test_chunk_atoms() -> int:
     """Return the number of atoms a test evaluates at once.
 
-    Testing walks a system in chunks so that neither the reference data nor
-    the predictions of a large system have to be held in full. The bound is
-    expressed in atoms, as the evaluation batch size is, so that it means the
-    same amount of work whatever the size of a frame. ``DP_TEST_CHUNK_ATOMS``
-    overrides it.
+    Testing bounds the number of atoms sent to the evaluator at once. Lazy
+    data sources such as LMDB also decode only this many atoms, while ordinary
+    ``DeepmdData`` systems materialize the full test system before iteration.
+    The bound is expressed in atoms, as the evaluation batch size is, so that
+    it means the same amount of work whatever the size of a frame.
+    ``DP_TEST_CHUNK_ATOMS`` overrides it.
 
     Returns
     -------
@@ -59,9 +60,6 @@ def test_chunk_atoms() -> int:
     return max(1, int(os.environ.get("DP_TEST_CHUNK_ATOMS", DEFAULT_TEST_CHUNK_ATOMS)))
 
 
-log = logging.getLogger(__name__)
-
-
 def save_txt_file(
     fname: Path, data: np.ndarray, header: str = "", append: bool = False
 ) -> None:
@@ -69,8 +67,8 @@ def save_txt_file(
 
     Parameters
     ----------
-    fname : str
-        filename
+    fname : Path
+        File to write.
     data : np.ndarray
         data to save to disk
     header : str, optional
@@ -78,9 +76,12 @@ def save_txt_file(
     append : bool, optional
         if true file will be appended instead of overwriting, by default False
     """
+    write_header = (
+        "" if append and fname.exists() and fname.stat().st_size > 0 else header
+    )
     flags = "a" if append else "w"
     with fname.open(flags, encoding="utf-8") as fp:
-        np.savetxt(fp, data, header=header)
+        np.savetxt(fp, data, header=write_header)
 
 
 @dataclass(frozen=True)
@@ -99,12 +100,17 @@ class ChunkContext:
     frame_offset : int
         Index of the first frame of the chunk within its system, which keeps
         per-frame detail files numbered consistently across chunks.
+    detail_group : int
+        Zero-based test-group index. The first group keeps the historical
+        per-frame filenames; later groups include this index to avoid mixing
+        frames from different systems or LMDB subgroups.
     """
 
     system: str
     detail_file: str | None
     append_detail: bool
     frame_offset: int
+    detail_group: int = 0
 
     @property
     def detail_path(self) -> Path | None:
@@ -115,12 +121,12 @@ class ChunkContext:
 class ModelTester(ABC):
     """Evaluate one system of one model class, one chunk at a time.
 
-    A system is walked in chunks so that neither its reference data nor the
-    predictions over it are ever held in full, which is what makes a dataset
-    larger than memory testable. The errors of the chunks combine into the
-    errors of the system exactly, because an MAE and an RMSE are both
-    recovered from partial results weighted by the number of elements each was
-    taken over; see :func:`~deepmd.utils.weight_avg.merge_weighted_errors`.
+    A system is walked in evaluation chunks. Lazy data sources such as LMDB
+    decode only the current chunk; ordinary ``DeepmdData`` systems materialize
+    the complete test system first. The errors of the chunks combine into the
+    errors of the system exactly, because an MAE and an RMSE are both recovered
+    from partial results weighted by the number of elements each was taken
+    over; see :func:`~deepmd.utils.weight_avg.merge_weighted_errors`.
 
     A subclass supplies only what distinguishes its model class: the labels a
     chunk must carry, how a chunk is evaluated, and how the resulting
@@ -189,6 +195,7 @@ class ModelTester(ABC):
         detail_file: str | None,
         *,
         append_detail: bool = False,
+        detail_group: int = 0,
     ) -> dict[str, tuple[float, float]]:
         """Test one system and report its errors.
 
@@ -205,6 +212,9 @@ class ModelTester(ABC):
             File the per-frame details are written to.
         append_detail : bool, optional
             Whether the details of this system extend an existing file.
+        detail_group : int, optional
+            Zero-based test-group index used to disambiguate per-frame detail
+            filenames across systems and LMDB subgroups.
 
         Returns
         -------
@@ -230,6 +240,7 @@ class ModelTester(ABC):
                 detail_file=detail_file,
                 append_detail=append,
                 frame_offset=frames_tested,
+                detail_group=detail_group,
             )
             chunk_errors.append(self.evaluate_chunk(data, chunk, context))
             frames_tested += chunk["box"].shape[0]
@@ -263,11 +274,6 @@ class ModelTester(ABC):
             log.info(cls.report_footer)
 
 
-# ---------------------------------------------------------------------------
-# Energy models
-# ---------------------------------------------------------------------------
-
-
 def _write_per_frame_details(
     context: ChunkContext,
     *,
@@ -292,8 +298,9 @@ def _write_per_frame_details(
     assert detail_path is not None
     for index in range(reference.shape[0]):
         frame = context.frame_offset + index
+        group = f".{context.detail_group}" if context.detail_group else ""
         save_txt_file(
-            detail_path.with_suffix(f".{suffix}.out.{frame}"),
+            detail_path.with_suffix(f".{suffix}.out{group}.{frame}"),
             np.hstack(
                 (
                     reference[index].reshape(-1, 1),
@@ -301,10 +308,5 @@ def _write_per_frame_details(
                 )
             ),
             header=f"{context.system} - {frame}: data_{suffix} pred_{suffix}",
-            append=context.append_detail,
+            append=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# Tensor models
-# ---------------------------------------------------------------------------

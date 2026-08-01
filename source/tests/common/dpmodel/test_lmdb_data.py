@@ -45,6 +45,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
     make_neighbor_stat_data,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -770,6 +771,39 @@ class TestMixedNloc(unittest.TestCase):
                 np.testing.assert_array_equal(actual_value, expected_value)
             else:
                 self.assertEqual(actual_value, expected_value)
+
+    def test_test_data_nloc_view_iterates_selected_frames(self):
+        """A label-availability view streams only its selected frame indices."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        selected = td.nloc_groups[9][::2]
+        view = LmdbTestDataNlocView(td, 9, frame_indices=selected)
+
+        chunks = list(view.iter_test(chunk_atoms=9))
+
+        self.assertEqual(len(chunks), len(selected))
+        expected = td.get_test_by_indices(selected)
+        np.testing.assert_array_equal(
+            np.concatenate([chunk["coord"] for chunk in chunks]),
+            expected["coord"],
+        )
+
+    def test_test_data_shuffle_uses_global_seed(self):
+        """The CLI random seed makes LMDB test-frame shuffling reproducible."""
+        self.addCleanup(dp_random.seed, None)
+        dp_random.seed(123)
+        first = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=True,
+        )
+        dp_random.seed(123)
+        second = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=True,
+        )
+
+        self.assertEqual(first.nloc_groups, second.nloc_groups)
 
     def test_test_data_get_test_default_mixed(self):
         td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
@@ -1632,6 +1666,37 @@ class TestDynamicKeysAndRepeat(unittest.TestCase):
         # atom_pref is not in the plain LMDB
         self.assertEqual(result.get("find_atom_pref", 0.0), 0.0)
         tmpdir.cleanup()
+
+    def test_testdata_required_key_must_exist(self):
+        """A required LMDB test label cannot be replaced by a default value."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        td.add("missing_label", 1, atomic=False, must=True)
+
+        with self.assertRaisesRegex(RuntimeError, "missing_label"):
+            td.get_test()
+
+    def test_testdata_normalizes_atomic_label_prefix(self):
+        """LMDB atomic_* labels use the same in-memory atom_* keys as NPY data."""
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        path = _create_lmdb_with_extra_keys(
+            f"{tmpdir.name}/atomic-label.lmdb",
+            nframes=2,
+            natoms=self._natoms,
+            extra_keys={
+                "atomic_dipole": (lambda n: (n, 3), np.float64),
+            },
+        )
+        td = LmdbTestData(path, type_map=self._type_map, shuffle_test=False)
+        td.add("atom_dipole", 3, atomic=True, must=True)
+
+        result = td.get_test()
+
+        self.assertEqual(result["find_atom_dipole"], 1.0)
+        self.assertEqual(
+            result["atom_dipole"].shape,
+            (2, self._natoms * 3),
+        )
 
 
 class _StalledPool:
