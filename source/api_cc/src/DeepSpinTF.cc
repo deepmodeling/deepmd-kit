@@ -647,7 +647,18 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
                        atommap, nframes);
     }
   }
-  // backward force and mag.
+  // Atomic outputs from the TensorFlow graph include the appended virtual spin
+  // atoms.  Keep a temporary copy so the public API can return the documented
+  // real-atom layout, matching the neighbor-list overload below.
+  std::vector<VALUETYPE> datom_energy_tmp, datom_virial_tmp;
+  if (atomic) {
+    datom_energy_tmp.swap(datom_energy_);
+    datom_virial_tmp.swap(datom_virial_);
+    datom_energy_.resize(static_cast<size_t>(nframes) * nloc);
+    datom_virial_.resize(static_cast<size_t>(nframes) * nloc * 9);
+  }
+
+  // Backward force, magnetic force, and optional atomic outputs.
   dforce_.resize(static_cast<size_t>(nframes) * nloc * 3);
   dforce_mag_.resize(static_cast<size_t>(nframes) * nloc * 3);
   const size_t extend_nall = extend_atype.size();
@@ -655,6 +666,9 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
     for (int ii = 0; ii < nloc; ++ii) {
       const size_t output_atom = static_cast<size_t>(ff) * nloc + ii;
       const size_t extended_atom = static_cast<size_t>(ff) * extend_nall + ii;
+      if (atomic) {
+        datom_energy_[output_atom] = datom_energy_tmp[extended_atom];
+      }
       for (int dd = 0; dd < 3; ++dd) {
         dforce_[output_atom * 3 + dd] = dforce_tmp[extended_atom * 3 + dd];
         if (datype_[ii] < ntypes_spin) {
@@ -663,6 +677,12 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
           dforce_mag_[output_atom * 3 + dd] = dforce_tmp[virtual_atom * 3 + dd];
         } else {
           dforce_mag_[output_atom * 3 + dd] = 0.0;
+        }
+      }
+      if (atomic) {
+        for (int dd = 0; dd < 9; ++dd) {
+          datom_virial_[output_atom * 9 + dd] =
+              datom_virial_tmp[extended_atom * 9 + dd];
         }
       }
     }
