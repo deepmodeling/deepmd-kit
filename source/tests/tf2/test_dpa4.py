@@ -12,6 +12,10 @@ if os.environ.get("DP_TEST_TF2_ONLY") != "1":
         allow_module_level=True,
     )
 
+from deepmd._vendors import ndtensorflow as xp
+from deepmd.dpmodel.array_api import (
+    xp_uniform,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
 )
@@ -169,22 +173,42 @@ def test_promoted_optional_parameter_lists_accept_none() -> None:
         assert name not in object.__getattribute__(module, "__dict__")
 
 
-def test_random_gamma_fails_fast_until_graph_safe_rng_is_supported() -> None:
-    """TF2 must not silently disable the default random-roll augmentation."""
-    with pytest.raises(NotImplementedError, match="random_gamma"):
-        DescrptDPA4(
-            ntypes=2,
-            sel=4,
-            rcut=4.0,
-            channels=4,
-            n_radial=4,
-            lmax=1,
-            mmax=1,
-            n_blocks=1,
-            precision="float64",
-            random_gamma=True,
-            seed=20260712,
-        )
+def test_random_gamma_supports_train_and_eval_tracing_modes() -> None:
+    """Default DPA4 configs keep augmentation train-only in TF2."""
+    descriptor = DescrptDPA4(
+        ntypes=2,
+        sel=4,
+        rcut=4.0,
+        channels=4,
+        n_radial=4,
+        lmax=1,
+        mmax=1,
+        n_blocks=1,
+        precision="float64",
+        random_gamma=True,
+        seed=20260712,
+    )
+
+    assert descriptor._in_training_mode() is False
+    descriptor.set_training_mode(True)
+    assert descriptor._in_training_mode() is True
+    restored = DescrptDPA4.deserialize(descriptor.serialize())
+    assert restored.random_gamma is True
+    assert restored._in_training_mode() is False
+
+
+def test_random_gamma_rng_advances_inside_tf_function() -> None:
+    """TensorFlow random draws must happen at execution, not trace, time."""
+    like = xp.ones((16,), dtype=xp.float64)
+
+    @tf.function
+    def draw_gamma():
+        return xp_uniform(like, 16, 0.0, 2.0 * np.pi).unwrap()
+
+    first = draw_gamma().numpy()
+    second = draw_gamma().numpy()
+
+    assert not np.array_equal(first, second)
 
 
 def test_dynamic_radial_mixer_accepts_unknown_rank_tensor_specs() -> None:

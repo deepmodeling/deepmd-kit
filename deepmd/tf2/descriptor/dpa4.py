@@ -308,14 +308,18 @@ register_dpmodel_mapping(
 class DescrptDPA4(DescrptDPA4DP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        if self.random_gamma:
-            raise NotImplementedError(
-                "TF2 DPA4 does not yet support graph-safe random_gamma; "
-                "set descriptor.random_gamma to false."
-            )
+        self._tf2_training_mode = False
         _promote_trainable_tree(self)
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA4":
         obj = super().deserialize(data)
         return _promote_trainable_tree(obj)
+
+    def set_training_mode(self, training: bool) -> None:
+        """Select train/eval graph tracing for training-only augmentation."""
+        self._tf2_training_mode = bool(training)
+
+    def _in_training_mode(self) -> bool:
+        """Return the Python trace-time training state used by TF2 graphs."""
+        return self._tf2_training_mode

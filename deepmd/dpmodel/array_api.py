@@ -399,12 +399,12 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
 def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> Array:
     """Draw ``size`` uniform samples in ``[low, high)`` on ``like``'s device.
 
-    Each backend uses its own generator: torch draws with ``torch.rand`` (as
-    pt does, so ``setup_seed`` replays it, with no host copy -- and a host
-    draw would freeze to a constant under tracing); other backends use
-    :mod:`deepmd.utils.random`, which ``setup_seed`` also seeds. Draws are
-    therefore not comparable across backends -- use only for a per-forward
-    random stream, never where a parity test looks.
+    Each backend uses its own generator: TensorFlow draws with
+    ``tf.random.uniform`` so traced graphs advance the runtime RNG, torch draws
+    with ``torch.rand`` (so ``setup_seed`` replays it without a host copy), and
+    other backends use :mod:`deepmd.utils.random`. Draws are therefore not
+    comparable across backends -- use only for a per-forward random stream,
+    never where a parity test looks.
 
     Parameters
     ----------
@@ -422,6 +422,18 @@ def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> A
     Array
         Samples of shape ``(size,)`` matching ``like``.
     """
+    xp = array_api_compat.array_namespace(like)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        sample_shape = tf.reshape(tf.cast(size, tf.int32), (1,))
+        samples = tf.random.uniform(
+            sample_shape,
+            minval=low,
+            maxval=high,
+            dtype=like.dtype,
+        )
+        return xp.asarray(samples)
     if array_api_compat.is_torch_array(like):
         import torch
 
@@ -430,7 +442,6 @@ def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> A
         )
     from deepmd.utils import random as dp_random
 
-    xp = array_api_compat.array_namespace(like)
     drawn = np.asarray(dp_random.random(size)) * (high - low) + low
     return xp.astype(
         xp_asarray_nodetach(xp, drawn, device=array_api_compat.device(like)),
