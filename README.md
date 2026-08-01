@@ -71,10 +71,11 @@ flowchart LR
 
 ## 🚀 Start in minutes
 
-DeePMD-kit requires Python 3.10 or later. The fastest installation path is:
+DeePMD-kit requires Python 3.10 or later. Choose the supported package for your
+backend and hardware in the [installation guide][installation], then verify the
+installation:
 
 ```bash
-curl -fsSL https://dp1s.deepmodeling.com | bash
 dp --version
 dp -h
 ```
