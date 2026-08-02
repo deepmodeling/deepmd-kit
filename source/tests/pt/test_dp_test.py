@@ -43,7 +43,7 @@ from .model.test_permutation import (
 
 class DPTest:
     def _run_dp_test(
-        self, use_input_json: bool, numb_test: int = 0, use_train: bool = False
+        self, use_input_json: bool, numb_test: int = 1, use_train: bool = False
     ) -> None:
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
