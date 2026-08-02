@@ -31,7 +31,7 @@ experiments to distributed training and MPI-parallel molecular dynamics.
 
 |     | Advantage                           | What it unlocks                                                                                                                                                                                             |
 | --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠  | **Modern model portfolio**          | Start with efficient DeepPot-SE descriptors or move to [DPA][model-guide] for large atomic models.              |
+| 🧠  | **Modern model portfolio**          | Start with efficient DeepPot-SE descriptors or move to [DPA][model-guide] for large atomic models.                                                                                                          |
 | 🧲  | **More than energy and force**      | Model virials, Hessians, spin and magnetic forces, dipoles, polarizabilities, electronic density of states, atomic populations, and arbitrary intensive or extensive properties.                            |
 | 🧬  | **Foundation-model workflows**      | Download [pretrained DPA models][pretrained], run [multi-task learning][multi-task], fine-tune full models or LoRA adapters, extract embeddings, or adapt models to downstream properties with [DPA-ADAPT]. |
 | 🔄  | **Backend flexibility**             | Train or run supported models with [TensorFlow, PyTorch, JAX, or Paddle][backends], with backend-aware model formats and conversion paths for compatible architectures.                                     |
@@ -133,7 +133,7 @@ dp train input.json --finetune <path-to-downloaded-model>
 ```
 
 The [fine-tuning guide][finetune] covers full-model and LoRA adaptation, and
-[DPA-ADAPT][dpa-adapt] adapts pretrained DPA representations to downstream
+[DPA-ADAPT] adapts pretrained DPA representations to downstream
 property-prediction tasks.
 
 ## 🧠 Choose a model family
