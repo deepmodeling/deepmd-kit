@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Regression tests for virtual types in dpmodel embedding gathers."""
 
-import array_api_strict
-import numpy as np
-import pytest
 from typing import (
     Any,
 )
+
+import array_api_strict
+import numpy as np
+import pytest
 
 from deepmd.dpmodel.common import (
     to_numpy_array,
