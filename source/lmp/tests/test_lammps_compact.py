@@ -327,6 +327,36 @@ def test_compact_matches_explicit_selected_subsystem(
         reference_lmp.close()
 
 
+def test_compact_packing_matches_generic_backend_selection(
+    compact_models: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LAMMPS-side packing matches the generic type-minus-one fallback."""
+    model, _ = compact_models
+    monkeypatch.delenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", raising=False)
+    packed_lmp = _make_system(
+        (model,),
+        with_inactive_molecule=True,
+        compact=True,
+        triclinic=True,
+    )
+    monkeypatch.setenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", "1")
+    generic_lmp = _make_system(
+        (model,),
+        with_inactive_molecule=True,
+        compact=True,
+        triclinic=True,
+    )
+    try:
+        packed = _snapshot(packed_lmp, 5)
+        generic = _snapshot(generic_lmp, 5)
+        assert packed[0] == pytest.approx(generic[0])
+        assert packed[1] == pytest.approx(generic[1])
+        assert packed[2] == pytest.approx(generic[2])
+    finally:
+        packed_lmp.close()
+        generic_lmp.close()
+
+
 def test_compact_model_deviation_uses_selected_atoms_only(
     compact_models: tuple[Path, Path], tmp_path: Path
 ) -> None:

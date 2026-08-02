@@ -133,6 +133,11 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
       compact_center_group_bit_(0),
       compact_environment_cutoff_(0.0),
       compact_natoms_(0),
+      compact_packing_disabled_(
+          std::getenv("DP_LAMMPS_DISABLE_COMPACT_PACKING") != nullptr),
+      compact_packing_valid_(false),
+      compact_packing_nlocal_(0),
+      compact_packing_nghost_(0),
       commdata_(nullptr) {
   print_summary("  ");
 }
@@ -372,6 +377,150 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
   return global_changed != 0;
 }
 
+bool PairDeepMD::can_use_compact_packing() const {
+  // MPI communication metadata must be remapped together with the atom and
+  // neighbor indices.  Keep the optimized path deliberately single-rank for
+  // now; all unsupported configurations retain the backend's generic compact
+  // selection implementation.
+  return compact_selection_enabled_ && !compact_packing_disabled_ && list &&
+         comm->nprocs == 1 && dim_aparam == 0 && !do_compute_aparam &&
+         aparam.empty() && !do_ttm;
+}
+
+void PairDeepMD::rebuild_compact_packing() {
+  const int nlocal = atom->nlocal;
+  const int nall = nlocal + atom->nghost;
+  if (compact_selected_.size() != static_cast<size_t>(nall)) {
+    error->all(FLERR,
+               "internal error while packing compact pair_style deepmd "
+               "selection");
+  }
+
+  compact_packing_old_to_new_.assign(nall, -1);
+  compact_packing_new_to_old_.clear();
+  compact_packing_new_to_old_.reserve(nall);
+
+  // DeepMD requires owned atoms before ghosts so nghost unambiguously defines
+  // the local/ghost boundary in the packed coordinate and type arrays.
+  for (int old_index = 0; old_index < nlocal; ++old_index) {
+    if (!compact_selected_[old_index]) {
+      continue;
+    }
+    compact_packing_old_to_new_[old_index] =
+        static_cast<int>(compact_packing_new_to_old_.size());
+    compact_packing_new_to_old_.push_back(old_index);
+  }
+  compact_packing_nlocal_ =
+      static_cast<int>(compact_packing_new_to_old_.size());
+  for (int old_index = nlocal; old_index < nall; ++old_index) {
+    if (!compact_selected_[old_index]) {
+      continue;
+    }
+    compact_packing_old_to_new_[old_index] =
+        static_cast<int>(compact_packing_new_to_old_.size());
+    compact_packing_new_to_old_.push_back(old_index);
+  }
+  compact_packing_nghost_ =
+      static_cast<int>(compact_packing_new_to_old_.size()) -
+      compact_packing_nlocal_;
+
+  compact_packing_ilist_.resize(compact_packing_nlocal_);
+  compact_packing_numneigh_.resize(compact_packing_nlocal_);
+  compact_packing_neighbors_.clear();
+  compact_packing_neighbors_.resize(compact_packing_nlocal_);
+  for (int new_index = 0; new_index < compact_packing_nlocal_; ++new_index) {
+    compact_packing_ilist_[new_index] = new_index;
+    const int old_index = compact_packing_new_to_old_[new_index];
+    const int old_numneigh = list->numneigh[old_index];
+    int* const old_neighbors = list->firstneigh[old_index];
+    auto& packed_neighbors = compact_packing_neighbors_[new_index];
+    packed_neighbors.reserve(old_numneigh);
+    for (int jj = 0; jj < old_numneigh; ++jj) {
+      const int old_neighbor = old_neighbors[jj] & NEIGHMASK;
+      if (old_neighbor < 0 || old_neighbor >= nall) {
+        error->all(FLERR,
+                   "invalid neighbor index while packing compact pair_style "
+                   "deepmd data");
+      }
+      const int new_neighbor = compact_packing_old_to_new_[old_neighbor];
+      if (new_neighbor >= 0) {
+        packed_neighbors.push_back(new_neighbor);
+      }
+    }
+    compact_packing_numneigh_[new_index] =
+        static_cast<int>(packed_neighbors.size());
+  }
+
+  compact_packing_firstneigh_.resize(compact_packing_nlocal_);
+  for (int ii = 0; ii < compact_packing_nlocal_; ++ii) {
+    compact_packing_firstneigh_[ii] = compact_packing_neighbors_[ii].data();
+  }
+
+  compact_packing_mapping_.clear();
+  if (atom->map_style != Atom::MAP_NONE) {
+    compact_packing_mapping_.assign(compact_packing_new_to_old_.size(), -1);
+    for (int new_index = 0;
+         new_index < static_cast<int>(compact_packing_new_to_old_.size());
+         ++new_index) {
+      const int old_index = compact_packing_new_to_old_[new_index];
+      const int old_owner = atom->map(atom->tag[old_index]);
+      if (old_owner >= 0 && old_owner < nall) {
+        compact_packing_mapping_[new_index] =
+            compact_packing_old_to_new_[old_owner];
+      }
+    }
+  }
+  compact_packing_valid_ = true;
+}
+
+void PairDeepMD::pack_compact_inputs(
+    const std::vector<int>& full_types,
+    std::vector<int>& packed_types,
+    std::vector<double>& packed_coordinates) const {
+  const int packed_nall = static_cast<int>(compact_packing_new_to_old_.size());
+  packed_types.resize(packed_nall);
+  packed_coordinates.resize(3 * packed_nall);
+  for (int new_index = 0; new_index < packed_nall; ++new_index) {
+    const int old_index = compact_packing_new_to_old_[new_index];
+    packed_types[new_index] = full_types[old_index];
+    for (int dd = 0; dd < 3; ++dd) {
+      packed_coordinates[3 * new_index + dd] =
+          (atom->x[old_index][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+    }
+  }
+}
+
+deepmd_compat::InputNlist PairDeepMD::make_compact_packing_nlist() {
+  deepmd_compat::InputNlist packed_list(
+      compact_packing_nlocal_, compact_packing_ilist_.data(),
+      compact_packing_numneigh_.data(), compact_packing_firstneigh_.data());
+  if (!compact_packing_mapping_.empty()) {
+    packed_list.set_mapping(compact_packing_mapping_.data());
+  }
+  return packed_list;
+}
+
+void PairDeepMD::scatter_compact_output(std::vector<double>& values,
+                                        int stride,
+                                        int full_nall) const {
+  const size_t packed_size = compact_packing_new_to_old_.size() * stride;
+  if (values.size() != packed_size) {
+    error->all(FLERR,
+               "unexpected DeepMD output size from compact packed "
+               "evaluation");
+  }
+  std::vector<double> full_values(static_cast<size_t>(full_nall) * stride, 0.0);
+  for (int new_index = 0;
+       new_index < static_cast<int>(compact_packing_new_to_old_.size());
+       ++new_index) {
+    const int old_index = compact_packing_new_to_old_[new_index];
+    for (int dd = 0; dd < stride; ++dd) {
+      full_values[stride * old_index + dd] = values[stride * new_index + dd];
+    }
+  }
+  values.swap(full_values);
+}
+
 void PairDeepMD::analyze_model_deviation(double& max,
                                          double& min,
                                          double& sum,
@@ -471,6 +620,12 @@ double PairDeepMD::eval_energy_with_fparam(
     dtype[ii] = type_idx_map[type[ii] - 1];
   }
   const bool compact_selection_changed = apply_compact_selection(dtype);
+  if (compact_selection_changed) {
+    // This auxiliary energy path deliberately keeps the generic backend
+    // representation.  Invalidate any packed topology so a following force
+    // evaluation cannot reuse atom indices from the previous selection.
+    compact_packing_valid_ = false;
+  }
 
   double dener(0);
   std::vector<double> dforce(nall * 3);
@@ -599,10 +754,21 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   const bool compact_selection_changed = apply_compact_selection(dtype);
 
+  const bool compact_packing = can_use_compact_packing();
+  if (compact_packing && (!compact_packing_valid_ ||
+                          compact_selection_changed || neighbor->ago == 0)) {
+    rebuild_compact_packing();
+  }
+  const int deepmd_nall =
+      compact_packing ? static_cast<int>(compact_packing_new_to_old_.size())
+                      : nall;
+  const int deepmd_nghost = compact_packing ? compact_packing_nghost_ : nghost;
+
   double dener(0);
-  vector<double> dforce(nall * 3);
+  vector<double> dforce(deepmd_nall * 3);
+  bool dforce_is_packed = compact_packing;
   vector<double> dvirial(9, 0);
-  vector<double> dcoord(nall * 3, 0.);
+  vector<double> dcoord;
   vector<double> dbox(9, 0);
   vector<double> daparam;
 
@@ -614,18 +780,26 @@ void PairDeepMD::compute(int eflag, int vflag) {
   dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
   dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
 
-  // get coord
-  for (int ii = 0; ii < nall; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] =
-          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+  if (compact_packing) {
+    vector<int> packed_types;
+    pack_compact_inputs(dtype, packed_types, dcoord);
+    dtype.swap(packed_types);
+  } else {
+    dcoord.resize(nall * 3, 0.0);
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        dcoord[ii * 3 + dd] =
+            (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+      }
     }
   }
 
   // Owner mapping for message-passing .pt2 models that gather ghost features
   // through the LAMMPS atom map; unused by other models.
-  std::vector<int> mapping_vec(nall, -1);
-  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+  std::vector<int> mapping_vec;
+  if (!compact_packing && comm->nprocs == 1 &&
+      atom->map_style != Atom::MAP_NONE) {
+    mapping_vec.assign(nall, -1);
     for (size_t ii = 0; ii < nall; ++ii) {
       mapping_vec[ii] = atom->map(atom->tag[ii]);
     }
@@ -672,13 +846,19 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd_compat::InputNlist lmp_list(
-        list->inum, list->ilist, list->numneigh, list->firstneigh,
-        commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
-        commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
-        commdata_->recvproc, &world, comm->nprocs);
+    deepmd_compat::InputNlist lmp_list;
+    if (compact_packing) {
+      lmp_list = make_compact_packing_nlist();
+    } else {
+      lmp_list = deepmd_compat::InputNlist(
+          list->inum, list->ilist, list->numneigh, list->firstneigh,
+          commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
+          commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
+          commdata_->recvproc, &world, comm->nprocs);
+    }
     lmp_list.set_mask(NEIGHMASK);
-    if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    if (!compact_packing && comm->nprocs == 1 &&
+        atom->map_style != Atom::MAP_NONE) {
       lmp_list.set_mapping(mapping_vec.data());
     }
     deepmd_compat::InputNlist extend_lmp_list;
@@ -686,22 +866,27 @@ void PairDeepMD::compute(int eflag, int vflag) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
-                           lmp_list, ago, fparam, daparam, charge_spin);
+          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
+                           deepmd_nghost, lmp_list, ago, fparam, daparam,
+                           charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
       }
       // do atomic energy and virial
       else {
-        vector<double> deatom(nall * 1, 0);
-        vector<double> dvatom(nall * 9, 0);
+        vector<double> deatom(deepmd_nall, 0);
+        vector<double> dvatom(deepmd_nall * 9, 0);
         try {
           deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
-                           dtype, dbox, nghost, lmp_list, ago, fparam, daparam,
-                           charge_spin);
+                           dtype, dbox, deepmd_nghost, lmp_list, ago, fparam,
+                           daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
+        }
+        if (compact_packing) {
+          scatter_compact_output(deatom, 1, nall);
+          scatter_compact_output(dvatom, 9, nall);
         }
         if (eflag_atom) {
           for (int ii = 0; ii < nlocal; ++ii) {
@@ -734,8 +919,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
       }
     } else if (multi_models_mod_devi) {
-      vector<double> deatom(nall * 1, 0);
-      vector<double> dvatom(nall * 9, 0);
+      vector<double> deatom(deepmd_nall, 0);
+      vector<double> dvatom(deepmd_nall * 9, 0);
       vector<vector<double>> all_virial;
       vector<double> all_energy;
       vector<vector<double>> all_atom_energy;
@@ -743,7 +928,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       if (!(eflag_atom || cvflag_atom)) {
         try {
           deep_pot_model_devi.compute(all_energy, all_force, all_virial, dcoord,
-                                      dtype, dbox, nghost, lmp_list, ago,
+                                      dtype, dbox, deepmd_nghost, lmp_list, ago,
                                       fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
@@ -752,7 +937,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           deep_pot_model_devi.compute(all_energy, all_force, all_virial,
                                       all_atom_energy, all_atom_virial, dcoord,
-                                      dtype, dbox, nghost, lmp_list, ago,
+                                      dtype, dbox, deepmd_nghost, lmp_list, ago,
                                       fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
@@ -763,11 +948,20 @@ void PairDeepMD::compute(int eflag, int vflag) {
       // deep_pot_model_devi.compute_avg (dvirial, all_virial);
       // deep_pot_model_devi.compute_avg (deatom, all_atom_energy);
       // deep_pot_model_devi.compute_avg (dvatom, all_atom_virial);
+      if (compact_packing) {
+        for (auto& model_force : all_force) {
+          scatter_compact_output(model_force, 3, nall);
+        }
+      }
       dener = all_energy[0];
       dforce = all_force[0];
+      dforce_is_packed = false;
       dvirial = all_virial[0];
       if (eflag_atom) {
         deatom = all_atom_energy[0];
+        if (compact_packing) {
+          scatter_compact_output(deatom, 1, nall);
+        }
         for (int ii = 0; ii < nlocal; ++ii) {
           eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
         }
@@ -776,6 +970,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
       // per-atom virial (xx, yy, zz, xy, xz, yz, yx, zx, zy).
       if (cvflag_atom) {
         dvatom = all_atom_virial[0];
+        if (compact_packing) {
+          scatter_compact_output(dvatom, 9, nall);
+        }
         for (int ii = 0; ii < nall; ++ii) {
           cvatom[ii][0] +=
               scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
@@ -922,10 +1119,25 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   }
 
-  // get force
-  for (int ii = 0; ii < nall; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      f[ii][dd] += scale[1][1] * dforce[3 * ii + dd] * force_unit_cvt_factor;
+  // Add compact forces directly on ordinary steps.  Expanding to a zero-filled
+  // full-system array is necessary only on model-deviation steps, where LAMMPS
+  // reverse communication and per-atom statistics address the native atom
+  // indices through all_force.
+  if (dforce_is_packed) {
+    for (int new_index = 0;
+         new_index < static_cast<int>(compact_packing_new_to_old_.size());
+         ++new_index) {
+      const int old_index = compact_packing_new_to_old_[new_index];
+      for (int dd = 0; dd < 3; ++dd) {
+        f[old_index][dd] +=
+            scale[1][1] * dforce[3 * new_index + dd] * force_unit_cvt_factor;
+      }
+    }
+  } else {
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        f[ii][dd] += scale[1][1] * dforce[3 * ii + dd] * force_unit_cvt_factor;
+      }
     }
   }
 
@@ -1039,6 +1251,16 @@ void PairDeepMD::settings(int narg, char** arg) {
   compact_center_group_id_.clear();
   compact_center_tags_.clear();
   compact_selected_.clear();
+  compact_packing_valid_ = false;
+  compact_packing_nlocal_ = 0;
+  compact_packing_nghost_ = 0;
+  compact_packing_old_to_new_.clear();
+  compact_packing_new_to_old_.clear();
+  compact_packing_ilist_.clear();
+  compact_packing_numneigh_.clear();
+  compact_packing_neighbors_.clear();
+  compact_packing_firstneigh_.clear();
+  compact_packing_mapping_.clear();
   bool center_group_set = false;
   bool environment_cutoff_set = false;
   bool include_molecule_set = false;
