@@ -13,6 +13,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 name: Test CUDA
+env:
+  # Temporarily disable Paddle in CUDA CI while its external downloads are
+  # unreliable. Keep this switch explicit so the coverage can be restored.
+  DP_CI_ALLOW_MISSING_PADDLE: "1"
+  DP_ENABLE_PADDLE: "0"
 jobs:
   test_python:
     name: Test Python on CUDA
@@ -53,7 +58,6 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn "paddlepaddle-gpu==3.4.0.dev20260310"
           source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
@@ -62,7 +66,7 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
-      - run: python -m pytest source/tests
+      - run: python -m pytest source/tests --ignore=source/tests/pd
         env:
           NUM_WORKERS: 0
           CUDA_VISIBLE_DEVICES: 0
@@ -106,7 +110,6 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple --trusted-host www.paddlepaddle.org.cn --trusted-host paddlepaddle.org.cn "paddlepaddle-gpu==3.4.0.dev20260310"
           source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
@@ -127,12 +130,10 @@ jobs:
           CMAKE_GENERATOR: Ninja
           DP_VARIANT: cuda
           DP_USE_MPICH2: 1
+          ENABLE_PADDLE: FALSE
       - run: |
           export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/paddle/lib/* $GITHUB_WORKSPACE/dp_test/lib/
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* $GITHUB_WORKSPACE/dp_test/lib/
-          cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* $GITHUB_WORKSPACE/dp_test/lib/
           python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
           python -m pytest source/ipi/tests
         env:
@@ -141,6 +142,7 @@ jobs:
           TF_INTER_OP_PARALLELISM_THREADS: 1
           LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
           CUDA_VISIBLE_DEVICES: 0
+          ENABLE_PADDLE: 0
   pass:
     name: Pass testing on CUDA
     needs: [test_python, test_cc]
