@@ -2217,6 +2217,19 @@ class DeepEval(DeepEvalBackend):
                 "eval_descriptor is not supported for this model type "
                 f"({type(self._dpmodel).__name__})."
             )
+        nframes = coords.shape[0]
+        natoms = len(atom_types) if len(atom_types.shape) == 1 else atom_types.shape[1]
+        # Canonicalize shared parameter shorthands before _prepare_nlist_inputs
+        # reshapes them; otherwise a shared per-atom array can be mistaken for
+        # a batch of frames.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         (
             ext_coord_t,
             ext_atype_t,
@@ -2288,6 +2301,19 @@ class DeepEval(DeepEvalBackend):
                 "eval_fitting_last_layer is not supported for this model type "
                 f"({type(self._dpmodel).__name__})."
             )
+        nframes = coords.shape[0]
+        natoms = len(atom_types) if len(atom_types.shape) == 1 else atom_types.shape[1]
+        # Canonicalize shared parameter shorthands before _prepare_nlist_inputs
+        # reshapes them; otherwise a shared per-atom array can be mistaken for
+        # a batch of frames.
+        fparam, aparam = _standardize_fparam_aparam(
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+            self.get_dim_fparam(),
+            self.get_dim_aparam(),
+        )
         (
             ext_coord_t,
             ext_atype_t,
