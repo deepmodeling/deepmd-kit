@@ -118,7 +118,7 @@ docs = [
     "sphinx-argparse<0.5.0",
     "pygments-lammps",
     "sphinxcontrib-bibtex",
-    "sphinx-autoapi>=3.0.0",
+    "sphinx-autoapi>=3.0.0,<4",
     "sphinxcontrib-programoutput",
     "sphinxcontrib-moderncmakedomain",
     "sphinx-remove-toctrees",

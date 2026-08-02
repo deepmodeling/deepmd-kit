@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils import (
     lmdb_data,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
+    _ENV_CACHE,
     DistributedSameNlocBatchSampler,
     LmdbDataReader,
     SameNlocBatchSampler,
@@ -28,6 +29,7 @@ from deepmd.pt.loss.ener import (
     EnergyStdLoss,
 )
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
     _collate_lmdb_batch,
 )
@@ -364,6 +366,101 @@ class TestDataLoaderIteration:
             batch = next(iter(ds.dataloaders[0]))
         assert batch["coord"].shape[0] == 2
 
+    def test_parallel_batch_loader_has_finite_epoch(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        sampler = SameNlocBatchSampler(ds._reader, shuffle=False)
+        loader = LmdbBatchDataLoader(
+            ds,
+            sampler,
+            pin_memory=False,
+            num_workers=2,
+        )
+        try:
+            assert sum(batch["coord"].shape[0] for batch in loader) == 10
+        finally:
+            loader.close()
+
+    def test_parallel_loaders_share_pool_for_same_dataset(self, lmdb_dir):
+        first_data = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        second_data = LmdbDataset(
+            f"{lmdb_dir}/.",
+            type_map=["O", "H"],
+            batch_size=2,
+        )
+        first = LmdbBatchDataLoader(
+            first_data,
+            SameNlocBatchSampler(first_data._reader, shuffle=True, seed=1),
+            pin_memory=False,
+            num_workers=2,
+        )
+        second = LmdbBatchDataLoader(
+            second_data,
+            SameNlocBatchSampler(second_data._reader, shuffle=True, seed=2),
+            pin_memory=False,
+            num_workers=2,
+        )
+        first_iterator = iter(first)
+        second_iterator = iter(second)
+        try:
+            next(first_iterator)
+            next(second_iterator)
+            assert first._batch_iterator._pool is second._batch_iterator._pool
+            first.close()
+            assert next(second_iterator)["coord"].shape == (2, 6, 3)
+        finally:
+            first.close()
+            second.close()
+
+    def test_small_batch_stays_synchronous(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=4,
+        )
+        try:
+            assert next(iter(loader))["coord"].shape == (2, 6, 3)
+            assert not loader._batch_iterator.started
+            assert loader._batch_iterator._pending is None
+        finally:
+            loader.close()
+
+    def test_partial_successor_is_deferred(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=4)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=4,
+        )
+        iterator = iter(loader)
+        try:
+            assert next(iterator)["coord"].shape[0] == 4
+            assert next(iterator)["coord"].shape[0] == 4
+            assert loader._batch_iterator._pending is None
+            deferred = loader._batch_iterator._deferred_indices
+            assert deferred is not None
+            assert len(deferred) == 2
+            assert next(iterator)["coord"].shape[0] == 2
+        finally:
+            loader.close()
+
+    def test_requirements_freeze_after_batch_read(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        loader = LmdbBatchDataLoader(
+            ds,
+            SameNlocBatchSampler(ds._reader, shuffle=False),
+            pin_memory=False,
+            num_workers=0,
+        )
+        try:
+            next(iter(loader))
+            with pytest.raises(RuntimeError, match="must be registered before reading"):
+                ds.add_data_requirement([DataRequirementItem("late_label", 1)])
+        finally:
+            loader.close()
+
     def test_full_epoch(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=3)
         from torch.utils.data import (
@@ -650,7 +747,7 @@ class TestDistributedSameNlocBatchSampler:
     """Test DistributedSameNlocBatchSampler (pure logic, no torch.distributed)."""
 
     def test_disjoint_batches(self, multi_nloc_lmdb):
-        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=1)
         s0 = DistributedSameNlocBatchSampler(
             reader, rank=0, world_size=2, shuffle=True, seed=42
         )
@@ -679,10 +776,14 @@ class TestDistributedSameNlocBatchSampler:
 
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
         total = len(SameNlocBatchSampler(reader, shuffle=False))
-        dist_s = DistributedSameNlocBatchSampler(
-            reader, rank=0, world_size=2, shuffle=False, seed=0
-        )
-        assert len(dist_s) == math.ceil(total / 2)
+        samplers = [
+            DistributedSameNlocBatchSampler(
+                reader, rank=rank, world_size=4, shuffle=False, seed=0
+            )
+            for rank in range(4)
+        ]
+        assert {len(sampler) for sampler in samplers} == {math.ceil(total / 4)}
+        assert all(len(list(sampler)) == len(sampler) for sampler in samplers)
 
     def test_deterministic(self, multi_nloc_lmdb):
         reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
@@ -850,7 +951,7 @@ class TestAutoProbDataset:
             block_targets=ds._block_targets,
         )
         assert len(dist_sampler_rank0) == math.ceil(global_batches / 2)
-        assert len(dist_sampler_rank1) == global_batches // 2
+        assert len(dist_sampler_rank1) == math.ceil(global_batches / 2)
         assert len(dist_sampler_rank0) == len(list(dist_sampler_rank0))
         assert len(dist_sampler_rank1) == len(list(dist_sampler_rank1))
 
@@ -884,13 +985,42 @@ class TestAutoProbDataset:
         )
 
         assert calls == 1
-        expected_len = len(ds._batch_sampler) // 2
+        expected_len = (len(ds._batch_sampler) + 1) // 2
         assert len(dist_sampler) == expected_len
         assert calls == 1
 
 
 class TestMergeLmdbSystemIds:
     """Test merge_lmdb propagates frame_system_ids."""
+
+    def test_merge_does_not_close_active_source_reader(self, tmp_path):
+        src1, src2 = str(tmp_path / "live1.lmdb"), str(tmp_path / "live2.lmdb")
+        _create_test_lmdb(src1, nframes=3, natoms=6)
+        _create_test_lmdb(src2, nframes=2, natoms=6)
+        active = LmdbDataReader(src1, ["O", "H"])
+        try:
+            merge_lmdb([src1, src2], str(tmp_path / "live_merged.lmdb"))
+            assert active[0]["coord"].shape == (6, 3)
+        finally:
+            active.close()
+
+    def test_failed_merge_releases_source_lease(self, tmp_path):
+        src = str(tmp_path / "overflow_source.lmdb")
+        _create_test_lmdb(src, nframes=3, natoms=6)
+        active = LmdbDataReader(src, ["O", "H"])
+        resolved = active.lmdb_path
+        initial_refcount = _ENV_CACHE[resolved][1]
+        try:
+            with pytest.raises(lmdb.MapFullError):
+                merge_lmdb(
+                    [src],
+                    str(tmp_path / "overflow_destination.lmdb"),
+                    map_size=4096,
+                )
+            assert _ENV_CACHE[resolved][1] == initial_refcount
+        finally:
+            active.close()
+        assert resolved not in _ENV_CACHE
 
     def test_merge_propagates_system_ids(self, tmp_path):
         src1, src2 = str(tmp_path / "src1.lmdb"), str(tmp_path / "src2.lmdb")
@@ -942,6 +1072,32 @@ class TestMergeLmdbSystemIds:
 # ============================================================
 # Multitask LMDB training
 # ============================================================
+
+
+def test_trainer_releases_lmdb_loader_after_failure() -> None:
+    """The PT trainer closes asynchronous loaders on exceptional exit."""
+    from deepmd.pt.train.training import (
+        Trainer,
+    )
+
+    class Loader:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    loader = Loader()
+    trainer = object.__new__(Trainer)
+    trainer.training_dataloader = loader
+    trainer.validation_dataloader = None
+
+    def fail() -> None:
+        raise RuntimeError("training failure")
+
+    trainer._run = fail
+    with pytest.raises(RuntimeError, match="training failure"):
+        trainer.run()
+    assert loader.closed
 
 
 @pytest.fixture
@@ -1075,6 +1231,7 @@ class TestMultitaskLmdbTraining:
 
         config, tmp_path = multitask_lmdb_setup
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "2")
         config = update_deepmd_input(deepcopy(config), warning=True)
         config["model"], shared_links = preprocess_shared_params(config["model"])
         config = normalize(config, multi_task=True)
@@ -1099,10 +1256,18 @@ class TestMultitaskLmdbTraining:
             )
             assert "coord" in input_dict
             assert "sid" in log_dict
+        assert (
+            trainer.training_dataloader["model_1"]._batch_iterator._pool
+            is trainer.training_dataloader["model_2"]._batch_iterator._pool
+        )
 
         # -- training run assertions --
         trainer.run()
         assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
+        assert trainer.training_dataloader["model_1"]._batch_iterator.closed
+        assert trainer.training_dataloader["model_2"]._batch_iterator.closed
+        assert trainer.training_dataloader["model_1"].dataset._reader.closed
+        assert trainer.training_dataloader["model_2"].dataset._reader.closed
 
         # Explicit cleanup to free memory on CI
         import gc
