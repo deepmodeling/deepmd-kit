@@ -31,7 +31,7 @@ experiments to distributed training and MPI-parallel molecular dynamics.
 
 |     | Advantage                           | What it unlocks                                                                                                                                                                                             |
 | --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠  | **Modern model portfolio**          | Start with efficient DeepPot-SE descriptors or move to [DPA-1, DPA-2, DPA-3, and DPA-4/SeZM][model-guide] for attention, message passing, large atomic models, and SO(3)-equivariant learning.              |
+| 🧠  | **Modern model portfolio**          | Start with efficient DeepPot-SE descriptors or move to [DPA][model-guide] for large atomic models.              |
 | 🧲  | **More than energy and force**      | Model virials, Hessians, spin and magnetic forces, dipoles, polarizabilities, electronic density of states, atomic populations, and arbitrary intensive or extensive properties.                            |
 | 🧬  | **Foundation-model workflows**      | Download [pretrained DPA models][pretrained], run [multi-task learning][multi-task], fine-tune full models or LoRA adapters, extract embeddings, or adapt models to downstream properties with [DPA-ADAPT]. |
 | 🔄  | **Backend flexibility**             | Train or run supported models with [TensorFlow, PyTorch, JAX, or Paddle][backends], with backend-aware model formats and conversion paths for compatible architectures.                                     |
@@ -100,8 +100,8 @@ dp --pt train input_torch.json
 Ready-to-run inputs include:
 
 - [DPA-3 water training](./examples/water/dpa3/input_torch.json)
-- [DPA-4/SeZM water training](./examples/water/dpa4/input.json)
-- [PyTorch multi-task training](./examples/water_multi_task/pytorch_example/input_torch.json)
+- [DPA-4 water training](./examples/water/dpa4/input.json)
+- [Multi-task training](./examples/water_multi_task/pytorch_example/input_torch.json)
 - [DPA-ADAPT property prediction](./examples/dpa_adapt/README.md)
 
 For a guided end-to-end example, open the [web quick-start notebook][quick-start].
@@ -122,15 +122,26 @@ from deepmd.infer import DeepPot
 potential = DeepPot("DPA-3.2-5M")
 ```
 
+### Fine-tune a pretrained model
+
+Fine-tuning adapts a pretrained checkpoint to your dataset without training
+from scratch:
+
+```bash
+dp pretrained download DPA-3.2-5M
+dp train input.json --finetune <path-to-downloaded-model>
+```
+
+The [fine-tuning guide][finetune] covers full-model and LoRA adaptation, and
+[DPA-ADAPT][dpa-adapt] adapts pretrained DPA representations to downstream
+property-prediction tasks.
+
 ## 🧠 Choose a model family
 
-| Family           | A strong starting point when you need                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **DeepPot-SE**   | An efficient, established baseline with broad backend and deployment support.                                      |
-| **DPA-1**        | Attention-based local representations and type embedding.                                                          |
-| **DPA-2**        | Multi-task pretraining, shared representations, and smooth conservative potentials.                                |
-| **DPA-3**        | Message passing over line-graph representations and broad chemical coverage.                                       |
-| **DPA-4 / SeZM** | SO(3)-equivariant learning, LoRA fine-tuning, optional ZBL bridging, spin support, and compiled `.pt2` deployment. |
+DeepPot-SE is a strong default: efficient, established, and broadly supported.
+For large atomistic models, start with [DPA-4](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html);
+its SO(3)-equivariant message passing, LoRA fine-tuning, spin support, and
+compiled deployment make it the general-purpose large atomic model.
 
 Use the [model guide][model-guide] to compare supported backends, targets, data
 formats, precision, compression, and deployment constraints.
@@ -159,9 +170,10 @@ web documentation.
 
 ### Simulation and workflow integrations
 
-- [LAMMPS], [i-PI][ipi], [ASE], [GROMACS],
+- [LAMMPS], [i-PI][ipi], [ASE],
   [JAX MD][jax-md], and [nvalchemi]
-- Ecosystem integrations for OpenMM, Amber, CP2K, ABACUS, DP-GEN, and MLatom
+- Ecosystem integrations for OpenMM, Amber, CP2K, GROMACS, ABACUS, DP-GEN, and
+  MLatom
 - External MACE and NequIP models through the DeePMD-GNN plugin
 
 See the [integration hub][integrations] for maintained interfaces, third-party
@@ -192,16 +204,17 @@ that matches the version used and the method-specific papers listed in
 
 - Wang et al., “DeePMD-kit: A deep learning package for many-body potential
   energy representation and molecular dynamics,” *Computer Physics
-  Communications* 228 (2018), 178–184.
+  Communications* 228 (2018), 178–184 (describes the initial version).
   [![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2018.03.016)
   [![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
 - Zeng et al., “DeePMD-kit v2: A software package for Deep Potential models,”
-  *The Journal of Chemical Physics* 159 (2023), 054801.
+  *The Journal of Chemical Physics* 159 (2023), 054801 (covers features until
+  v2.2.3).
   [![doi:10.1063/5.0155600](https://img.shields.io/badge/DOI-10.1063%2F5.0155600-blue)](https://doi.org/10.1063/5.0155600)
   [![Citations](https://citations.njzjz.win/10.1063/5.0155600)](https://badge.dimensions.ai/details/doi/10.1063/5.0155600)
 - Zeng et al., “DeePMD-kit v3: A Multiple-Backend Framework for Machine
   Learning Potentials,” *Journal of Chemical Theory and Computation* 21
-  (2025), 4375–4385.
+  (2025), 4375–4385 (covers features until v3.0).
   [![doi:10.1021/acs.jctc.5c00340](https://img.shields.io/badge/DOI-10.1021%2Facs.jctc.5c00340-blue)](https://doi.org/10.1021/acs.jctc.5c00340)
   [![Citations](https://citations.njzjz.win/10.1021/acs.jctc.5c00340)](https://badge.dimensions.ai/details/doi/10.1021/acs.jctc.5c00340)
 
@@ -218,8 +231,8 @@ DeePMD-kit is licensed under the
 [documentation]: https://docs.deepmodeling.com/projects/deepmd/en/latest/
 [dpa-adapt]: https://docs.deepmodeling.com/projects/deepmd/en/latest/dpa_adapt/overview.html
 [embeddings]: https://docs.deepmodeling.com/projects/deepmd/en/latest/inference/embedding.html
+[finetune]: https://docs.deepmodeling.com/projects/deepmd/en/latest/train/finetuning.html
 [freeze]: https://docs.deepmodeling.com/projects/deepmd/en/latest/freeze/freeze.html
-[gromacs]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/gromacs.html
 [installation]: https://docs.deepmodeling.com/projects/deepmd/en/latest/install/easy-install.html
 [integrations]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/index.html
 [ipi]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/ipi.html

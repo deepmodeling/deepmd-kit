@@ -34,7 +34,7 @@ Choose your path
       :link-type: doc
       :shadow: md
 
-      Compare DeepPot-SE, DPA-1, DPA-2, DPA-3, DPA-4/SeZM, and specialized
+      Compare DeepPot-SE, DPA-1, DPA-2, DPA-3, DPA-4, and specialized
       physics models.
 
    .. grid-item-card:: 🧬 Train and adapt
@@ -63,7 +63,7 @@ Why DeePMD-kit
       :shadow: sm
 
       Use efficient DeepPot-SE descriptors, attention-based DPA models, large
-      atomic models, and SO(3)-equivariant DPA-4/SeZM.
+      atomic models, and SO(3)-equivariant DPA-4.
 
    .. grid-item-card:: Broad physical targets
       :shadow: sm
@@ -164,7 +164,7 @@ Choose a model family
    * - :doc:`DPA-3 <model/dpa3>`
      - Message passing over line-graph representations and broad chemical
        coverage.
-   * - :doc:`DPA-4 / SeZM <model/dpa4>`
+   * - :doc:`DPA-4 <model/dpa4>`
      - SO(3)-equivariant learning, LoRA fine-tuning, optional ZBL bridging,
        spin support, and compiled ``.pt2`` deployment.
 
@@ -200,7 +200,7 @@ New and noteworthy
 .. grid:: 1 2 2 4
    :gutter: 3
 
-   .. grid-item-card:: DPA-4 / SeZM
+   .. grid-item-card:: DPA-4
       :link: model/dpa4
       :link-type: doc
       :shadow: sm
