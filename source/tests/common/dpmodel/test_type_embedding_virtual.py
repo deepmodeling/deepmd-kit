@@ -4,6 +4,9 @@
 import array_api_strict
 import numpy as np
 import pytest
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -215,25 +218,34 @@ def test_dpa2_virtual_neighbor_matches_explicit_padding() -> None:
 def test_dpa3_virtual_type_uses_padding_for_both_mapping_paths(
     use_loc_mapping: bool,
 ) -> None:
-    """DPA3 remaps before either local-only or full extended gathering."""
-    descriptor = DescrptDPA3(
-        ntypes=2,
-        repflow=RepFlowArgs(
-            n_dim=8,
-            e_dim=4,
-            a_dim=4,
-            nlayers=1,
-            e_rcut=4.0,
-            e_rcut_smth=0.5,
-            e_sel=4,
-            a_rcut=4.0,
-            a_rcut_smth=0.5,
-            a_sel=3,
-            axis_neuron=2,
-            update_angle=False,
-        ),
-        use_loc_mapping=use_loc_mapping,
-        seed=17,
+    """DPA3 remaps before either local-only or full extended gathering.
+
+    A virtual ``-1`` is deliberately avoided for the sentinel: under both
+    NumPy and array_api_strict, a raw ``take`` wraps ``-1`` to the final
+    (padding) row, which would coincide with a correct remap and let a
+    regression slip through. ``-2`` wraps to a real row instead, so the test
+    only passes when the negative type is explicitly remapped to padding.
+    """
+    descriptor = convert_array_api_strict_value(
+        DescrptDPA3(
+            ntypes=2,
+            repflow=RepFlowArgs(
+                n_dim=8,
+                e_dim=4,
+                a_dim=4,
+                nlayers=1,
+                e_rcut=4.0,
+                e_rcut_smth=0.5,
+                e_sel=4,
+                a_rcut=4.0,
+                a_rcut_smth=0.5,
+                a_sel=3,
+                axis_neuron=2,
+                update_angle=False,
+            ),
+            use_loc_mapping=use_loc_mapping,
+            seed=17,
+        )
     )
     table = np.vstack(
         (
@@ -242,12 +254,13 @@ def test_dpa3_virtual_type_uses_padding_for_both_mapping_paths(
             np.zeros(descriptor.tebd_dim),
         )
     )
-    descriptor.type_embedding.call = lambda: table
+    strict_table = array_api_strict.asarray(table)
+    descriptor.type_embedding.call = lambda: strict_table
 
     class CaptureRepflows:
         """Capture DPA3's initial node embeddings without later env lookups."""
 
-        node_ebd_ext: np.ndarray
+        node_ebd_ext: Any
 
         def __call__(
             self,
@@ -270,12 +283,20 @@ def test_dpa3_virtual_type_uses_padding_for_both_mapping_paths(
 
     capture = CaptureRepflows()
     descriptor.repflows = capture
-    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]])
-    nlist = np.array([[[1, 2, -1, -1], [0, 2, -1, -1]]], dtype=np.int64)
-    mapping = np.array([[0, 1, 0]], dtype=np.int64)
-    atype = np.array([[0, -1, 1] if use_loc_mapping else [0, 1, -1]], dtype=np.int64)
+    coord = array_api_strict.asarray(
+        np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]])
+    )
+    nlist = array_api_strict.asarray(
+        np.array([[[1, 2, -1, -1], [0, 2, -1, -1]]], dtype=np.int64)
+    )
+    mapping = array_api_strict.asarray(np.array([[0, 1, 0]], dtype=np.int64))
+    atype = array_api_strict.asarray(
+        np.array([[0, -2, 1] if use_loc_mapping else [0, 1, -2]], dtype=np.int64)
+    )
 
     descriptor(coord, atype, nlist, mapping)
 
     expected_rows = [0, 2] if use_loc_mapping else [0, 1, 2]
-    np.testing.assert_array_equal(capture.node_ebd_ext, table[expected_rows][None, ...])
+    np.testing.assert_array_equal(
+        to_numpy_array(capture.node_ebd_ext), table[expected_rows][None, ...]
+    )
