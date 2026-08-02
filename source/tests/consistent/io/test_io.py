@@ -315,6 +315,20 @@ class IOTest:
                 aparam=full_aparam,
             )
             self.assertEqual(actual.keys(), expected.keys())
+            # The frame-major expansion must preserve per-frame parameter
+            # variation.  Without this, a degenerate expansion that reuses one
+            # frame's parameters for every frame would also make the reference
+            # degenerate, so the allclose comparison alone could not catch it.
+            frame_key = next(
+                (key for key in ("energy_redu", "energy") if key in actual), None
+            )
+            self.assertIsNotNone(frame_key)
+            frame_values = actual[frame_key]
+            self.assertEqual(frame_values.shape[0], 2)
+            self.assertFalse(
+                np.allclose(frame_values[0], frame_values[1]),
+                msg=f"backend-direct {case_name} params collapsed across frames",
+            )
             for name in actual:
                 np.testing.assert_allclose(
                     actual[name],
