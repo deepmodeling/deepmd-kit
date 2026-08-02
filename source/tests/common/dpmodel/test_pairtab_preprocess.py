@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import os
+import tempfile
 import unittest
 from unittest.mock import (
     patch,
@@ -393,6 +395,15 @@ class TestPairTabGridSpacing(unittest.TestCase):
         )
         tab = PairTab(filename="dummy_path", rcut=0.04)
         np.testing.assert_allclose(tab.hh, 0.01)
+
+    def test_uniform_grid_rounded_text_precision(self) -> None:
+        rr = np.linspace(0.0, 6.0, 1000)
+        ee = np.exp(-rr)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "table.txt")
+            np.savetxt(path, np.stack((rr, ee), axis=1), fmt="%.6f")
+            tab = PairTab(filename=path)
+        self.assertAlmostEqual(tab.hh, rr[1] - rr[0], places=6)
 
 
 if __name__ == "__main__":

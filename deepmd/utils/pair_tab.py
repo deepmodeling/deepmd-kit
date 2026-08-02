@@ -69,13 +69,22 @@ class PairTab:
                 "on a uniform grid with distances sorted in ascending order and "
                 "without duplicated rows. Please regrid the table."
             )
-        if not np.allclose(dx, hh, rtol=1e-5, atol=0):
+        # validate against absolute node positions rather than per-interval
+        # spacing: consumers (the C++ kernel and _make_data) index by
+        # rmin + i * hh, so that is what must stay accurate, not each dx.
+        n = vdata.shape[0]
+        hh_ref = (rmax - rmin) / (n - 1)
+        deviation = np.abs(vdata[:, 0] - (rmin + hh_ref * np.arange(n)))
+        tol = 1e-2 * abs(hh_ref)
+        if np.any(deviation > tol):
+            bad_row = int(np.argmax(deviation > tol))
             raise ValueError(
                 f"The distance grid in the pairwise table {filename} is not "
                 "evenly spaced. The tabulated potential must be provided on a "
-                "uniform grid, but the stride inferred from the first two rows "
-                f"({hh}) does not match all distance intervals. Please "
-                "regrid the table to use a constant distance step."
+                f"uniform grid, but row {bad_row} (distance "
+                f"{vdata[bad_row, 0]}) does not match the constant step "
+                f"inferred from rmin and rmax ({hh_ref}). Please regrid the "
+                "table to use a constant distance step."
             )
         ncol = vdata.shape[1] - 1
         n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
