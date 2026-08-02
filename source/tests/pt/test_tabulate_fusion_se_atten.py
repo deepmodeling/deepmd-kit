@@ -1644,6 +1644,78 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             (self.em_x_tensor, self.em_tensor, self.two_embed_tensor),
         )
 
+    def test_rejects_mismatched_native_buffer_shapes(self) -> None:
+        invalid_inputs = (
+            (
+                self.em_x_tensor[:, :-1].contiguous(),
+                self.em_tensor,
+                self.two_embed_tensor,
+                "em_x must be rank 2",
+            ),
+            (
+                self.em_x_tensor,
+                self.em_tensor[..., :3].contiguous(),
+                self.two_embed_tensor,
+                "em must have shape",
+            ),
+            (
+                self.em_x_tensor,
+                self.em_tensor,
+                self.two_embed_tensor.reshape(-1)[:-1].reshape(1, -1),
+                "two_embed must contain",
+            ),
+        )
+        for em_x, em, two_embed, message in invalid_inputs:
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(RuntimeError, message),
+            ):
+                torch.ops.deepmd.tabulate_fusion_se_atten(
+                    self.table_tensor,
+                    self.table_info_tensor,
+                    em_x,
+                    em,
+                    two_embed,
+                    self.last_layer_size,
+                    self.is_sorted,
+                )
+
+    def test_accepts_flattened_em_x_layout(self) -> None:
+        result = torch.ops.deepmd.tabulate_fusion_se_atten(
+            self.table_tensor,
+            self.table_info_tensor,
+            self.em_x_tensor.reshape(-1, 1),
+            self.em_tensor,
+            self.two_embed_tensor,
+            self.last_layer_size,
+            self.is_sorted,
+        )
+        self.assertEqual(result[0].shape, self.expected_descriptor_tensor.shape)
+
+    def test_rejects_short_table_buffers(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "table_info must contain"):
+            torch.ops.deepmd.tabulate_fusion_se_atten(
+                self.table_tensor,
+                self.table_info_tensor[:4],
+                self.em_x_tensor,
+                self.em_tensor,
+                self.two_embed_tensor,
+                self.last_layer_size,
+                self.is_sorted,
+            )
+
+        short_table = self.table_tensor.reshape(-1)[:-1].reshape(1, -1)
+        with self.assertRaisesRegex(RuntimeError, "table does not contain enough"):
+            torch.ops.deepmd.tabulate_fusion_se_atten(
+                short_table,
+                self.table_info_tensor,
+                self.em_x_tensor,
+                self.em_tensor,
+                self.two_embed_tensor,
+                self.last_layer_size,
+                self.is_sorted,
+            )
+
 
 @parameterized((torch.float64, torch.float32))
 @unittest.skipIf(not ENABLE_CUSTOMIZED_OP, "PyTorch customized OPs are not built")

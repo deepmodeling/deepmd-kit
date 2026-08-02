@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "custom_op.h"
 #include "tabulate.h"
+#include "tabulate_validation.h"
 
 REGISTER_OP("TabulateFusion")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -162,6 +163,130 @@ REGISTER_OP("TabulateFusionSeRGradGrad")
     .Input("descriptor: T")
     .Output("dz_dy: T");
 
+template <typename FPTYPE>
+deepmd::tf_compat::Status ValidateTabulateTable(const Tensor& table_tensor,
+                                                const Tensor& table_info_tensor,
+                                                const int64_t last_layer_size,
+                                                const bool symmetric_range) {
+  if (table_tensor.dims() != 2) {
+    return deepmd::tf_compat::InvalidArgument("table must be rank 2");
+  }
+  if (last_layer_size <= 0) {
+    return deepmd::tf_compat::InvalidArgument(
+        "last_layer_size must be positive");
+  }
+  if (table_info_tensor.NumElements() < 5) {
+    return deepmd::tf_compat::InvalidArgument(
+        "table_info must contain at least 5 values");
+  }
+  int64_t required_rows = 0;
+  std::string error;
+  if (!deepmd::tabulate_required_table_rows<FPTYPE>(
+          table_info_tensor.flat<FPTYPE>().data(), symmetric_range,
+          required_rows, error)) {
+    return deepmd::tf_compat::InvalidArgument(error);
+  }
+  int64_t required_elements = 0;
+  if (!deepmd::tabulate_required_table_elements(required_rows, last_layer_size,
+                                                required_elements, error)) {
+    return deepmd::tf_compat::InvalidArgument(error);
+  }
+  if (table_tensor.NumElements() < required_elements) {
+    return deepmd::tf_compat::InvalidArgument(
+        "table does not contain enough coefficients for table_info and "
+        "last_layer_size");
+  }
+  return deepmd::tf_compat::Status();
+}
+
+template <typename FPTYPE>
+deepmd::tf_compat::Status ValidateTabulateSeAInputs(
+    const Tensor& table_tensor,
+    const Tensor& table_info_tensor,
+    const Tensor& em_x_tensor,
+    const Tensor& em_tensor,
+    const Tensor* two_embed_tensor,
+    const int64_t last_layer_size) {
+  auto status = ValidateTabulateTable<FPTYPE>(table_tensor, table_info_tensor,
+                                              last_layer_size, false);
+  if (!status.ok()) {
+    return status;
+  }
+  if (em_tensor.dims() != 3 || em_tensor.dim_size(2) != 4) {
+    return deepmd::tf_compat::InvalidArgument(
+        "em must have shape [nloc, nnei, 4]");
+  }
+  const int64_t neighbor_count = em_tensor.NumElements() / 4;
+  if (em_x_tensor.dims() != 2 || em_x_tensor.NumElements() != neighbor_count) {
+    return deepmd::tf_compat::InvalidArgument(
+        "em_x must be rank 2 and contain nloc * nnei values");
+  }
+  if (two_embed_tensor != nullptr) {
+    int64_t expected_two_embed_elements = 0;
+    if (!deepmd::tabulate_checked_product(neighbor_count, last_layer_size,
+                                          expected_two_embed_elements)) {
+      return deepmd::tf_compat::InvalidArgument(
+          "two_embed element count exceeds the supported integer range");
+    }
+    if (two_embed_tensor->dims() != 2 ||
+        two_embed_tensor->NumElements() != expected_two_embed_elements) {
+      return deepmd::tf_compat::InvalidArgument(
+          "two_embed must be rank 2 and contain nloc * nnei * "
+          "last_layer_size values");
+    }
+  }
+  return deepmd::tf_compat::Status();
+}
+
+template <typename FPTYPE>
+deepmd::tf_compat::Status ValidateTabulateSeTInputs(
+    const Tensor& table_tensor,
+    const Tensor& table_info_tensor,
+    const Tensor& em_x_tensor,
+    const Tensor& em_tensor,
+    const int64_t last_layer_size) {
+  auto status = ValidateTabulateTable<FPTYPE>(table_tensor, table_info_tensor,
+                                              last_layer_size, true);
+  if (!status.ok()) {
+    return status;
+  }
+  if (em_tensor.dims() != 3) {
+    return deepmd::tf_compat::InvalidArgument("em must be rank 3");
+  }
+  if (em_x_tensor.dims() != 2 ||
+      em_x_tensor.NumElements() != em_tensor.NumElements()) {
+    return deepmd::tf_compat::InvalidArgument(
+        "em_x must be rank 2 and contain the same number of values as em");
+  }
+  return deepmd::tf_compat::Status();
+}
+
+template <typename FPTYPE>
+deepmd::tf_compat::Status ValidateTabulateSeRInputs(
+    const Tensor& table_tensor,
+    const Tensor& table_info_tensor,
+    const Tensor& em_tensor,
+    const int64_t last_layer_size) {
+  auto status = ValidateTabulateTable<FPTYPE>(table_tensor, table_info_tensor,
+                                              last_layer_size, false);
+  if (!status.ok()) {
+    return status;
+  }
+  if (em_tensor.dims() != 2) {
+    return deepmd::tf_compat::InvalidArgument("em must be rank 2");
+  }
+  return deepmd::tf_compat::Status();
+}
+
+deepmd::tf_compat::Status ValidateTensorShape(const Tensor& tensor,
+                                              const TensorShape& expected,
+                                              const char* name) {
+  if (tensor.shape() != expected) {
+    return deepmd::tf_compat::InvalidArgument(name, " has an unexpected shape");
+  }
+  return deepmd::tf_compat::Status();
+}
+
 template <typename Device, typename FPTYPE>
 class TabulateFusionSeAOp : public OpKernel {
  public:
@@ -182,6 +307,9 @@ class TabulateFusionSeAOp : public OpKernel {
     const Tensor& table_info_tensor = context->input(context_input_index++);
     const Tensor& em_x_tensor = context->input(context_input_index++);
     const Tensor& em_tensor = context->input(context_input_index++);
+    OP_REQUIRES_OK(context, ValidateTabulateSeAInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, nullptr, last_layer_size));
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
@@ -245,6 +373,22 @@ class TabulateFusionSeAGradOp : public OpKernel {
 
     const Tensor& dy_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, 4, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context, ValidateTabulateSeAInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, nullptr, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(4);
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context, ValidateTensorShape(
+                                dy_tensor, expected_descriptor_shape, "dy"));
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
@@ -309,6 +453,26 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     const Tensor& dz_dy_dem_x_tensor = context->input(context_input_index++);
     const Tensor& dz_dy_dem_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, 4, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context, ValidateTabulateSeAInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, nullptr, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(4);
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context,
+                   ValidateTensorShape(dz_dy_dem_x_tensor, em_x_tensor.shape(),
+                                       "dz_dy_dem_x"));
+    OP_REQUIRES_OK(
+        context,
+        ValidateTensorShape(dz_dy_dem_tensor, em_tensor.shape(), "dz_dy_dem"));
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
@@ -379,6 +543,9 @@ class TabulateFusionSeAttenOp : public OpKernel {
     const Tensor& em_x_tensor = context->input(context_input_index++);
     const Tensor& em_tensor = context->input(context_input_index++);
     const Tensor& two_embed_tensor = context->input(context_input_index++);
+    OP_REQUIRES_OK(context, ValidateTabulateSeAInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, &two_embed_tensor, last_layer_size));
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
@@ -450,6 +617,23 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
 
     const Tensor& dy_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, 4, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context,
+                   ValidateTabulateSeAInputs<FPTYPE>(
+                       table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+                       &two_embed_tensor, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(4);
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context, ValidateTensorShape(
+                                dy_tensor, expected_descriptor_shape, "dy"));
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
@@ -526,6 +710,30 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
     const Tensor& dz_dy_dem_tensor = context->input(context_input_index++);
     const Tensor& dz_dy_dtwo_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, 4, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context,
+                   ValidateTabulateSeAInputs<FPTYPE>(
+                       table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+                       &two_embed_tensor, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(4);
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context,
+                   ValidateTensorShape(dz_dy_dem_x_tensor, em_x_tensor.shape(),
+                                       "dz_dy_dem_x"));
+    OP_REQUIRES_OK(
+        context,
+        ValidateTensorShape(dz_dy_dem_tensor, em_tensor.shape(), "dz_dy_dem"));
+    OP_REQUIRES_OK(context,
+                   ValidateTensorShape(dz_dy_dtwo_tensor,
+                                       two_embed_tensor.shape(), "dz_dy_dtwo"));
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
@@ -594,6 +802,9 @@ class TabulateFusionSeTOp : public OpKernel {
     const Tensor& table_info_tensor = context->input(context_input_index++);
     const Tensor& em_x_tensor = context->input(context_input_index++);
     const Tensor& em_tensor = context->input(context_input_index++);
+    OP_REQUIRES_OK(context, ValidateTabulateSeTInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, last_layer_size));
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
@@ -657,6 +868,21 @@ class TabulateFusionSeTGradOp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     const Tensor& dy_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 2,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(1);
+    OP_REQUIRES_OK(context, ValidateTabulateSeTInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context, ValidateTensorShape(
+                                dy_tensor, expected_descriptor_shape, "dy"));
     // set size of the sample
     OP_REQUIRES(
         context, (dy_tensor.shape().dims() == 2),
@@ -718,6 +944,25 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
     const Tensor& dz_dy_dem_x_tensor = context->input(context_input_index++);
     const Tensor& dz_dy_dem_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 2,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(1);
+    OP_REQUIRES_OK(context, ValidateTabulateSeTInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_x_tensor,
+                                em_tensor, validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context,
+                   ValidateTensorShape(dz_dy_dem_x_tensor, em_x_tensor.shape(),
+                                       "dz_dy_dem_x"));
+    OP_REQUIRES_OK(
+        context,
+        ValidateTensorShape(dz_dy_dem_tensor, em_tensor.shape(), "dz_dy_dem"));
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
@@ -782,6 +1027,9 @@ class TabulateFusionSeROp : public OpKernel {
     const Tensor& table_tensor = context->input(context_input_index++);
     const Tensor& table_info_tensor = context->input(context_input_index++);
     const Tensor& em_tensor = context->input(context_input_index++);
+    OP_REQUIRES_OK(context, ValidateTabulateSeRInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_tensor,
+                                last_layer_size));
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 2"));
@@ -839,6 +1087,23 @@ class TabulateFusionSeRGradOp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     const Tensor& dy_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, nnei, "
+                    "last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context, ValidateTabulateSeRInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_tensor,
+                                validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(1));
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(context, ValidateTensorShape(
+                                dy_tensor, expected_descriptor_shape, "dy"));
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
                 deepmd::tf_compat::InvalidArgument("Dim of table should be 3"));
@@ -888,6 +1153,24 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     const Tensor& dz_dy_dem_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
+    OP_REQUIRES(context, descriptor_tensor.dims() == 3,
+                deepmd::tf_compat::InvalidArgument(
+                    "descriptor must have shape [nloc, nnei, "
+                    "last_layer_size]"));
+    const int64_t validated_last_layer_size = descriptor_tensor.dim_size(2);
+    OP_REQUIRES_OK(context, ValidateTabulateSeRInputs<FPTYPE>(
+                                table_tensor, table_info_tensor, em_tensor,
+                                validated_last_layer_size));
+    TensorShape expected_descriptor_shape;
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(0));
+    expected_descriptor_shape.AddDim(em_tensor.dim_size(1));
+    expected_descriptor_shape.AddDim(validated_last_layer_size);
+    OP_REQUIRES_OK(
+        context, ValidateTensorShape(descriptor_tensor,
+                                     expected_descriptor_shape, "descriptor"));
+    OP_REQUIRES_OK(
+        context,
+        ValidateTensorShape(dz_dy_dem_tensor, em_tensor.shape(), "dz_dy_dem"));
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 2),
                 deepmd::tf_compat::InvalidArgument("Dim of input should be 2"));
