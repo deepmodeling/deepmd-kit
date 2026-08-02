@@ -42,7 +42,15 @@ def test_border_op_accepts_no_swaps() -> None:
 
 
 def test_border_op_self_copy_uses_cpu_place() -> None:
-    """A CUDA-enabled operator must not use a GPU copy for CPU tensors."""
+    """A CUDA-enabled operator must not use a GPU copy for CPU tensors.
+
+    NOTE: no CI job currently builds Paddle with CUDA (``test_cuda.yml``
+    disables Paddle at the workflow level and ``test_python.yml`` installs the
+    CPU build), so ``copy_local_tensor_data`` is not compiled-and-executed by
+    any pipeline. This test therefore documents the intended CPU-branch
+    behavior rather than guarding it; it should gain real coverage once a CI
+    job builds Paddle with CUDA.
+    """
     # CUDA Paddle builds otherwise create tensors on the default GPU, which
     # would leave the operator's CPU copy branch untested.
     paddle.set_device("cpu")
