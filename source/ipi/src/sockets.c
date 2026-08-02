@@ -35,6 +35,7 @@ Functions:
    read_buffer_: Reads data from the socket.
 */
 
+#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -44,6 +45,70 @@ Functions:
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include "sockets_internal.h"
+
+int deepmd_build_unix_socket_address(struct sockaddr_un* address,
+                                     const char* host) {
+  static const char prefix[] = "/tmp/ipi_";
+  size_t host_length;
+
+  if (address == NULL || host == NULL) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  host_length = strlen(host);
+  // sizeof(prefix) includes its terminator, exactly reserving the byte needed
+  // after the host.  Rejecting the name is safer than silently connecting to
+  // a truncated socket or overflowing sockaddr_un::sun_path.
+  if (host_length > sizeof(address->sun_path) - sizeof(prefix)) {
+    errno = ENAMETOOLONG;
+    return -1;
+  }
+
+  memset(address, 0, sizeof(*address));
+  address->sun_family = AF_UNIX;
+  memcpy(address->sun_path, prefix, sizeof(prefix) - 1);
+  memcpy(address->sun_path + sizeof(prefix) - 1, host, host_length + 1);
+  return 0;
+}
+
+int deepmd_write_all(int sockfd,
+                     const char* data,
+                     size_t len,
+                     deepmd_socket_write_fn write_fn) {
+  size_t written = 0;
+
+  if (write_fn == NULL || (data == NULL && len != 0)) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  while (written < len) {
+    ssize_t count = write_fn(sockfd, data + written, len - written);
+    if (count > 0) {
+      // A conforming write() cannot report more bytes than requested.  Keep
+      // this guard because tests and alternative wrappers can supply the
+      // callback, and advancing past len would turn their bug into an OOB
+      // pointer on the next iteration.
+      if ((size_t)count > len - written) {
+        errno = EIO;
+        return -1;
+      }
+      written += (size_t)count;
+    } else if (count == 0) {
+      // A zero-length progress report for a nonempty request would otherwise
+      // spin forever.  Stream peers that stop accepting data are treated as a
+      // broken connection, matching the public writebuffer_ contract.
+      errno = EPIPE;
+      return -1;
+    } else if (errno != EINTR) {
+      return -1;
+    }
+  }
+  return 0;
+}
 
 void error(const char* msg)
 // Prints an error message and then exits.
@@ -69,7 +134,7 @@ Args:
 */
 
 {
-  int sockfd, portno, n;
+  int sockfd;
   struct hostent* server;
 
   struct sockaddr* psock;
@@ -102,11 +167,13 @@ Args:
     struct sockaddr_un serv_addr;
     psock = (struct sockaddr*)&serv_addr;
     ssock = sizeof(serv_addr);
+    if (deepmd_build_unix_socket_address(&serv_addr, host) < 0) {
+      error("Error opening socket: Unix socket path is too long");
+    }
     sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    bzero((char*)&serv_addr, sizeof(serv_addr));
-    serv_addr.sun_family = AF_UNIX;
-    strcpy(serv_addr.sun_path, "/tmp/ipi_");
-    strcpy(serv_addr.sun_path + 9, host);
+    if (sockfd < 0) {
+      error("Error opening socket");
+    }
     if (connect(sockfd, psock, ssock) < 0) {
       error("Error opening socket: wrong host address, or broken connection");
     }
@@ -125,11 +192,13 @@ Args:
 */
 
 {
-  int n;
   int sockfd = *psockfd;
 
-  n = write(sockfd, data, len);
-  if (n < 0) {
+  if (len < 0) {
+    errno = EINVAL;
+    error("Error writing to socket: invalid buffer length");
+  }
+  if (deepmd_write_all(sockfd, data, (size_t)len, write) < 0) {
     error("Error writing to socket: server has quit or connection broke");
   }
 }
