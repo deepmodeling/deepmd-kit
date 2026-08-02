@@ -22,8 +22,10 @@ Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
 
 ## Quick start
 
-DPA4 is available only through the PyTorch framework backends. Train a
-PyTorch-TorchScript model with the standard `dp --pt` workflow:
+DPA4 is available only through the PyTorch framework. Train the model with the
+standard `dp --pt` workflow. DPA4/SeZM does not use TorchScript: freezing
+exports through the AOTInductor `.pt2` path instead (see
+[Freeze to `.pt2`](#freeze-to-pt2)):
 
 ```bash
 cd examples/water/dpa4
@@ -414,14 +416,15 @@ once the target system and batch size fit.
 
 ### Freeze to `.pt2`
 
-DPA4/SeZM checkpoints use the PyTorch-TorchScript `.pt2` (AOTInductor) export path; the
-ordinary TorchScript freeze path is not used. Run the standard freeze command:
+DPA4/SeZM checkpoints are exported through the AOTInductor `.pt2` path of the
+PyTorch backend; the ordinary TorchScript freeze path is not used. Run the
+standard freeze command:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
-The PyTorch-TorchScript backend detects DPA4/SeZM and writes `frozen_model.pt2`.
+The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`.
 
 ### Single GPU
 
