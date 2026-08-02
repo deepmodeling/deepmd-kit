@@ -172,7 +172,11 @@ class EnvMat(NativeOP):
         Parameters
         ----------
         nlist
-            The neighbor list. shape: nf x nloc x nnei
+            The neighbor list. shape: nf x nloc x nnei.  Entries equal to ``-1``
+            mark empty neighbor slots, and a virtual center (whose atom type is
+            negative) must have an entire neighbor row of ``-1``; the in-tree
+            builder (``deepmd.dpmodel.utils.nlist.build_neighbor_list``) fills
+            the full row of a virtual atom with ``-1`` by construction.
         coord_ext
             The extended coordinates of atoms. shape: nf x (nallx3)
         atype_ext
