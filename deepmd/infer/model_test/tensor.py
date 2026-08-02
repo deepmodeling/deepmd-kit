@@ -10,6 +10,7 @@ import numpy as np
 from deepmd.infer.model_test.base import (
     ChunkContext,
     ModelTester,
+    _detail_output_path,
     save_txt_file,
 )
 from deepmd.utils.data import (
@@ -27,7 +28,8 @@ class TensorTester(ModelTester):
 
     A tensor model is evaluated over the atoms its selected types cover, so
     both the reported error and the detail layout follow from the number of
-    such atoms.
+    such atoms. If a chunk contains none, a global tensor still has a defined
+    RMSE, but its atom-normalized errors and all atomic metrics are omitted.
     """
 
     #: Label of the per-frame quantity, and of its per-atom counterpart.
@@ -63,11 +65,10 @@ class TensorTester(ModelTester):
         atype = test_data["type"][0]
         prediction = self.dp.eval(coord, box, atype).reshape([nframes, -1])
 
-        sel_type = self.dp.get_sel_type()
-        sel_natoms = int(sum(sum(atype == ii) for ii in sel_type))
+        sel_mask = np.isin(atype, self.dp.get_sel_type())
+        sel_natoms = int(np.count_nonzero(sel_mask))
 
         if self.atomic:
-            sel_mask = np.isin(atype, sel_type)
             prediction = prediction.reshape((nframes, -1, self.ndof))[
                 :, sel_mask, :
             ].reshape((nframes, -1))
@@ -80,18 +81,21 @@ class TensorTester(ModelTester):
             prediction = np.sum(prediction.reshape((nframes, -1, self.ndof)), axis=1)
             reference = test_data[self.label]
 
+        if self.atomic and sel_natoms == 0:
+            return {}
+
         rmse_tensor = rmse(prediction - reference)
         errors: dict[str, tuple[float, float]] = {
             "rmse": (rmse_tensor, prediction.size)
         }
-        if not self.atomic:
+        if not self.atomic and sel_natoms:
             errors["rmse_sqrtn"] = (rmse_tensor / np.sqrt(sel_natoms), prediction.size)
             errors["rmse_n"] = (rmse_tensor / sel_natoms, prediction.size)
 
         if context.detail_path is not None:
             width = self.ndof * (sel_natoms if self.atomic else 1)
             save_txt_file(
-                context.detail_path.with_suffix(".out"),
+                _detail_output_path(context, ".out"),
                 np.concatenate(
                     (
                         np.reshape(reference, [-1, width]),

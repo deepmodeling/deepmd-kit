@@ -102,8 +102,8 @@ class ChunkContext:
         per-frame detail files numbered consistently across chunks.
     detail_group : int
         Zero-based test-group index. The first group keeps the historical
-        per-frame filenames; later groups include this index to avoid mixing
-        frames from different systems or LMDB subgroups.
+        detail filenames; later groups include this index to avoid mixing
+        data from different systems or LMDB subgroups.
     """
 
     system: str
@@ -213,8 +213,8 @@ class ModelTester(ABC):
         append_detail : bool, optional
             Whether the details of this system extend an existing file.
         detail_group : int, optional
-            Zero-based test-group index used to disambiguate per-frame detail
-            filenames across systems and LMDB subgroups.
+            Zero-based test-group index used to disambiguate detail filenames
+            across systems and LMDB subgroups.
 
         Returns
         -------
@@ -274,6 +274,20 @@ class ModelTester(ABC):
             log.info(cls.report_footer)
 
 
+def _detail_output_path(
+    context: ChunkContext,
+    suffix: str,
+    *,
+    frame: int | None = None,
+) -> Path:
+    """Build a detail path unique to its test group and optional frame."""
+    detail_path = context.detail_path
+    assert detail_path is not None
+    group = f".{context.detail_group}" if context.detail_group else ""
+    frame_suffix = f".{frame}" if frame is not None else ""
+    return detail_path.with_suffix(f"{suffix}{group}{frame_suffix}")
+
+
 def _write_per_frame_details(
     context: ChunkContext,
     *,
@@ -294,13 +308,11 @@ def _write_per_frame_details(
     prediction : np.ndarray
         Predicted values with shape ``(nframes, ...)``.
     """
-    detail_path = context.detail_path
-    assert detail_path is not None
+    assert context.detail_path is not None
     for index in range(reference.shape[0]):
         frame = context.frame_offset + index
-        group = f".{context.detail_group}" if context.detail_group else ""
         save_txt_file(
-            detail_path.with_suffix(f".{suffix}.out{group}.{frame}"),
+            _detail_output_path(context, f".{suffix}.out", frame=frame),
             np.hstack(
                 (
                     reference[index].reshape(-1, 1),
