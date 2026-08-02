@@ -1164,7 +1164,7 @@ void launch_tabulate_fusion_se_a_grad(FPTYPE* dy_dem_x,
     if (shared_memory > limits.standard) {
       DPErrcheck(cudaFuncSetAttribute(
           kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-          static_cast<int>(limits.opt_in)));
+          static_cast<int>(shared_memory)));
     }
     kernel<<<nloc, KK * WARP_SIZE, shared_memory>>>(
         dy_dem_x, dy_dem, dy_dtwo, table, em_x, em, two_embed, dy,
