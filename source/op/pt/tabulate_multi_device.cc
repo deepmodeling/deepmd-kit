@@ -48,6 +48,12 @@ void CheckTabulateDevices(const torch::Tensor& table_tensor,
   }
 }
 
+void CheckTabulateFusionSeABasisDimension(const int64_t ndescrpt) {
+  TORCH_CHECK(deepmd::is_supported_se_a_basis_dimension(ndescrpt),
+              "The environment basis dimension must be 4, 9, 16, or 25, got ",
+              ndescrpt);
+}
+
 template <typename FPTYPE>
 void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& table_info_tensor,
@@ -92,12 +98,14 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
 
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size,
-                                     is_sorted);
+                                     is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -106,7 +114,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size,
-                                     is_sorted);
+                                     is_sorted, ndescrpt);
   }
 }
 
@@ -155,13 +163,15 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_gpu(
         dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
-        nloc, nnei, last_layer_size, is_sorted);
+        nloc, nnei, last_layer_size, is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -170,7 +180,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_cpu(
         dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
-        nloc, nnei, last_layer_size, is_sorted);
+        nloc, nnei, last_layer_size, is_sorted, ndescrpt);
   }
 }
 
@@ -224,13 +234,15 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
           : dz_dy_dtwo_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
+  const int64_t ndescrpt = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(2);
+  CheckTabulateFusionSeABasisDimension(ndescrpt);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_grad_grad_gpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
-        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
+        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted, ndescrpt);
 #else
     throw std::runtime_error(
         "The input tensor is on the GPU, but the GPU support for the "
@@ -242,7 +254,7 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_grad_cpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
-        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
+        dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted, ndescrpt);
   }
 }
 
@@ -898,8 +910,8 @@ class TabulateFusionSeAOp
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
                        .device(table_tensor.device());
-    torch::Tensor descriptor_tensor =
-        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
+    torch::Tensor descriptor_tensor = torch::empty(
+        {em_tensor.size(0), em_tensor.size(2), last_layer_size}, options);
     // compute
     // Keep the sorted fold enabled: exclusions are uniform within each se_a
     // type-pair invocation, and compressed forward_lower sorts its nlist first.
@@ -1086,8 +1098,8 @@ class TabulateFusionSeAttenOp
     auto options = torch::TensorOptions()
                        .dtype(table_tensor.dtype())
                        .device(table_tensor.device());
-    torch::Tensor descriptor_tensor =
-        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
+    torch::Tensor descriptor_tensor = torch::empty(
+        {em_tensor.size(0), em_tensor.size(2), last_layer_size}, options);
     // compute
     TabulateFusionSeAForward<FPTYPE>(
         table_tensor, table_info_tensor, em_x_tensor, em_tensor,
