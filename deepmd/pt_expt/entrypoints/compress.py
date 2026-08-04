@@ -14,9 +14,7 @@ from deepmd.pt_expt.utils.serialization import (
 log = logging.getLogger(__name__)
 
 
-def _read_saved_min_nbor_dist(
-    model: Any, model_dict: dict
-) -> tuple[float | None, str]:
+def _read_saved_min_nbor_dist(model: Any, model_dict: dict) -> tuple[float | None, str]:
     """Read the stored minimal neighbor distance and where it was read from.
 
     ``@variables`` is the cross-backend location of this value: it is written
