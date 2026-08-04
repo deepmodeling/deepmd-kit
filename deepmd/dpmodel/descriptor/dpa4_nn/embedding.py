@@ -42,6 +42,9 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -146,6 +149,8 @@ class SeZMTypeEmbedding(NativeOP):
         # torch.embedding gather: flatten the indices to int64, take the rows,
         # then restore the original index shape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
+        if self.padding:
+            index = remap_atype_to_padding(index, self.ntypes + 1)
         out = xp.take(weight, index, axis=0)
         return xp.reshape(out, (*atype.shape, self.embed_dim))
 
