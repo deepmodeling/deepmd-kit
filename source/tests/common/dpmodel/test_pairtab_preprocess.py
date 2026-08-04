@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
+import os
+import tempfile
 import unittest
 from unittest.mock import (
     patch,
@@ -273,6 +276,134 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
             rtol=1e-03,
             atol=1e-03,
         )
+
+
+class TestPairTabGridSpacing(unittest.TestCase):
+    @patch("numpy.loadtxt")
+    def test_non_uniform_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.09, 0.3],
+                [0.16, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            PairTab(filename="dummy_path", rcut=0.16)
+
+    @patch("numpy.loadtxt")
+    def test_duplicate_distances(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.01, 1.0],
+                [0.01, 0.8],
+                [0.01, 0.6],
+                [0.01, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "strictly increasing"):
+            PairTab(filename="dummy_path", rcut=0.04)
+
+    @patch("numpy.loadtxt")
+    def test_descending_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.04, 1.0],
+                [0.03, 0.8],
+                [0.02, 0.6],
+                [0.01, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "strictly increasing"):
+            PairTab(filename="dummy_path", rcut=0.04)
+
+    @patch("numpy.loadtxt")
+    def test_non_uniform_fine_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.0, 1.0],
+                [1e-10, 0.8],
+                [1.1e-9, 0.6],
+                [2.1e-9, 0.3],
+                [3.1e-9, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            PairTab(filename="dummy_path", rcut=3.1e-9)
+
+    @patch("numpy.loadtxt")
+    def test_uniform_fine_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.0, 1.0],
+                [1e-9, 0.8],
+                [2e-9, 0.6],
+                [3e-9, 0.3],
+                [4e-9, 0.0],
+            ]
+        )
+        tab = PairTab(filename="dummy_path", rcut=4e-9)
+        self.assertAlmostEqual(tab.hh, 1e-9)
+
+    @patch("numpy.loadtxt")
+    def test_failed_reinit_keeps_state(self, mock_loadtxt) -> None:
+        uniform = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.03, 0.3],
+                [0.04, 0.0],
+            ]
+        )
+        mock_loadtxt.return_value = uniform
+        tab = PairTab(filename="dummy_path", rcut=0.04)
+        expected = copy.deepcopy(tab.serialize())
+
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.09, 0.3],
+                [0.16, 0.0],
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "evenly spaced"):
+            tab.reinit(filename="dummy_path", rcut=0.16)
+
+        actual = tab.serialize()
+        for key in ("rmin", "rmax", "hh", "ntypes", "rcut", "nspline"):
+            self.assertEqual(actual[key], expected[key])
+        for key in ("vdata", "tab_info", "tab_data"):
+            np.testing.assert_array_equal(
+                actual["@variables"][key], expected["@variables"][key]
+            )
+
+    @patch("numpy.loadtxt")
+    def test_uniform_grid(self, mock_loadtxt) -> None:
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.00, 1.0],
+                [0.01, 0.8],
+                [0.02, 0.6],
+                [0.03, 0.3],
+                [0.04, 0.0],
+            ]
+        )
+        tab = PairTab(filename="dummy_path", rcut=0.04)
+        np.testing.assert_allclose(tab.hh, 0.01)
+
+    def test_uniform_grid_rounded_text_precision(self) -> None:
+        rr = np.linspace(0.0, 6.0, 1000)
+        ee = np.exp(-rr)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "table.txt")
+            np.savetxt(path, np.stack((rr, ee), axis=1), fmt="%.6f")
+            tab = PairTab(filename=path)
+        self.assertAlmostEqual(tab.hh, rr[1] - rr[0], places=6)
 
 
 if __name__ == "__main__":
