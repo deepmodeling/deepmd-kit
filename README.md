@@ -143,12 +143,10 @@ property-prediction tasks.
 ## 🧠 Choose a model family
 
 DeepPot-SE is a strong default: efficient, established, and broadly supported.
-For large atomistic models, start with [DPA-4](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html);
-its SO(3)-equivariant message passing, LoRA fine-tuning, spin support, and
-compiled deployment make it the general-purpose large atomic model.
+For large atomistic models, start with [DPA-4](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html).
 
-Use the [model guide][model-guide] to compare supported backends, targets, data
-formats, precision, compression, and deployment constraints.
+Use the [model guide][model-guide] to compare model families, supported backends,
+targets, data formats, precision, compression, and deployment constraints.
 
 ## 🔬 Go beyond conventional force fields
 
