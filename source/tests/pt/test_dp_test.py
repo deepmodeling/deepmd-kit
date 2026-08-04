@@ -10,14 +10,19 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import torch
 
 from deepmd.entrypoints.test import test as dp_test
-from deepmd.entrypoints.test import test_ener as dp_test_ener
 from deepmd.infer.deep_eval import (
     DeepEval,
+)
+from deepmd.infer.model_test import (
+    build_tester,
 )
 from deepmd.pt.entrypoints.main import (
     get_trainer,
@@ -38,7 +43,7 @@ from .model.test_permutation import (
 
 class DPTest:
     def _run_dp_test(
-        self, use_input_json: bool, numb_test: int = 0, use_train: bool = False
+        self, use_input_json: bool, numb_test: int = 1, use_train: bool = False
     ) -> None:
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
@@ -335,13 +340,11 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
             type_map=dp.get_type_map(),
             sort_atoms=False,
         )
-        err = dp_test_ener(
-            dp,
+        err = build_tester(dp, atomic=False).run(
             data,
             self.system_dir,
             numb_test=1,
             detail_file=None,
-            has_atom_ener=False,
         )
         test_data = data.get_test()
         coord = test_data["coord"].reshape([1, -1])
@@ -402,6 +405,9 @@ class TestDPTestStress(DPTest, unittest.TestCase):
         tmp_dir = tempfile.mkdtemp()
         shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
         set_dir = Path(tmp_dir) / "set.000"
+        for data_file in set_dir.glob("*.npy"):
+            values = np.load(data_file)
+            np.save(data_file, np.repeat(values, 3, axis=0))
         nframes = np.load(set_dir / "box.npy").shape[0]
         rng = np.random.default_rng(0)
         np.save(set_dir / "virial.npy", rng.standard_normal((nframes, 9)))
@@ -416,26 +422,56 @@ class TestDPTestStress(DPTest, unittest.TestCase):
         os.close(tmp_fd)
         torch.jit.save(model, tmp_model_path)
         dp = DeepEval(tmp_model_path)
-        data = DeepmdData(
-            self.system_dir,
-            set_prefix="set",
-            shuffle_test=False,
-            type_map=dp.get_type_map(),
-            sort_atoms=False,
-        )
-        numb_test = 1
-        err = dp_test_ener(
-            dp,
-            data,
-            self.system_dir,
-            numb_test=numb_test,
-            detail_file=self.detail_file,
-            has_atom_ener=False,
-        )
+
+        def run_test(detail_file: str) -> tuple[dict, DeepmdData]:
+            data = DeepmdData(
+                self.system_dir,
+                set_prefix="set",
+                shuffle_test=False,
+                type_map=dp.get_type_map(),
+                sort_atoms=False,
+            )
+            errors = build_tester(dp, atomic=False).run(
+                data,
+                self.system_dir,
+                numb_test=3,
+                detail_file=detail_file,
+            )
+            return errors, data
+
+        single_detail = f"{self.detail_file}_single_chunk"
+        with mock.patch.dict(os.environ, clear=False):
+            os.environ.pop("DP_TEST_CHUNK_ATOMS", None)
+            single_err, _ = run_test(single_detail)
+        with mock.patch.dict(
+            os.environ,
+            {"DP_TEST_CHUNK_ATOMS": "192"},
+            clear=False,
+        ):
+            err, data = run_test(self.detail_file)
         os.unlink(tmp_model_path)
 
+        self.assertEqual(single_err.keys(), err.keys())
+        for key in err:
+            np.testing.assert_allclose(single_err[key][0], err[key][0])
+            self.assertEqual(single_err[key][1], err[key][1])
+        for suffix in ("e", "f", "v", "s"):
+            single_path = Path(f"{single_detail}.{suffix}.out")
+            chunked_path = Path(f"{self.detail_file}.{suffix}.out")
+            np.testing.assert_allclose(
+                np.loadtxt(single_path, ndmin=2),
+                np.loadtxt(chunked_path, ndmin=2),
+            )
+            self.assertEqual(
+                sum(
+                    line.startswith("#")
+                    for line in chunked_path.read_text().splitlines()
+                ),
+                1,
+            )
+
         test_data = data.get_test()
-        box = test_data["box"][:numb_test].reshape(-1, 3, 3)
+        box = test_data["box"][:3].reshape(-1, 3, 3)
         volume = np.abs(np.linalg.det(box)).reshape(-1, 1)
 
         stress_out = np.loadtxt(self.detail_file + ".s.out", ndmin=2)
@@ -465,13 +501,38 @@ class TestDPTestPropertySeA(unittest.TestCase):
             self.config = json.load(f)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
-        data_file = [str(Path(__file__).parent / "property/single")]
+        self.system_tmpdir = tempfile.TemporaryDirectory()
+        shutil.copytree(
+            Path(__file__).parent / "property/single",
+            self.system_tmpdir.name,
+            dirs_exist_ok=True,
+        )
+        set_dir = Path(self.system_tmpdir.name) / "set.000000"
+        global_property = np.load(set_dir / "band_property.npy")
+        atom_types = np.load(set_dir / "real_atom_types.npy")
+        np.save(
+            set_dir / "atom_band_property.npy",
+            np.zeros(
+                (
+                    global_property.shape[0],
+                    atom_types.shape[1],
+                    global_property.shape[1],
+                ),
+                dtype=global_property.dtype,
+            ),
+        )
+        data_file = [self.system_tmpdir.name]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_property)
         self.config["model"]["type_map"] = [
             self.config["model"]["type_map"][i] for i in [1, 0, 3, 2]
         ]
+        self.datafile = "test_dp_test_property_systems.txt"
+        Path(self.datafile).write_text(
+            "\n".join(data_file * 2) + "\n",
+            encoding="utf-8",
+        )
         self.input_json = "test_dp_test_property.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
@@ -488,8 +549,8 @@ class TestDPTestPropertySeA(unittest.TestCase):
         torch.jit.save(model, tmp_model_path)
         dp_test(
             model=tmp_model_path,
-            system=self.config["training"]["validation_data"]["systems"][0],
-            datafile=None,
+            system=None,
+            datafile=self.datafile,
             set_prefix="set",
             numb_test=0,
             rand_seed=None,
@@ -499,6 +560,7 @@ class TestDPTestPropertySeA(unittest.TestCase):
         )
         os.unlink(tmp_model_path)
         pred_property = np.loadtxt(self.detail_file + ".property.out.0")[:, 1]
+        self.assertTrue(os.path.exists(self.detail_file + ".property.out.1.0"))
         np.testing.assert_almost_equal(
             pred_property,
             to_numpy_array(result[model.get_var_name()])[0],
@@ -510,10 +572,11 @@ class TestDPTestPropertySeA(unittest.TestCase):
                 os.remove(f)
             if f.startswith(self.detail_file):
                 os.remove(f)
-            if f in ["lcurve.out", self.input_json]:
+            if f in ["lcurve.out", self.input_json, self.datafile]:
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+        self.system_tmpdir.cleanup()
 
 
 if __name__ == "__main__":

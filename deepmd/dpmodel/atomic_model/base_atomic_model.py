@@ -805,9 +805,22 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_std = out_std_data
 
     def _get_forward_wrapper_func(self) -> Callable[..., dict[str, np.ndarray]]:
-        """Get a forward wrapper of the atomic model for output bias calculation."""
+        """Get a forward wrapper of the atomic model for output bias calculation.
+
+        The wrapper starts from raw coordinates and therefore has to construct
+        the neighbor representation itself. It builds the one this model
+        declares through :meth:`uses_graph_lower`: a carry-all
+        ``NeighborGraph`` for graph-native models, whose neighbor count follows
+        the geometry, or the fixed-capacity neighbor list sized by
+        :meth:`get_sel` otherwise. Sizing a dense list from ``get_sel`` is not
+        merely wasteful for a graph-native model -- such a model reports no
+        finite capacity, so the allocation is unbounded.
+        """
         import array_api_compat
 
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
         from deepmd.dpmodel.utils.nlist import (
             extend_input_and_build_neighbor_list,
         )
@@ -841,31 +854,64 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             if charge_spin is not None:
                 charge_spin = xp.asarray(charge_spin, device=device)
 
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord,
-                atype,
-                self.get_rcut(),
-                self.get_sel(),
-                mixed_types=self.mixed_types(),
-                box=box,
-                # exclusion is a nlist-BUILD transform (decision #18/A4);
-                # forward_common_atomic consumes a pre-excluded nlist.
-                pair_excl=self.pair_excl,
-            )
-            atomic_ret = self.forward_common_atomic(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping=mapping,
-                fparam=fparam,
-                aparam=aparam,
-                charge_spin=charge_spin,
-            )
+            if self.uses_graph_lower():
+                nframes, nloc = atype.shape
+                # Pair exclusion is a neighbor-BUILD transform (decision
+                # #18/A4) on both routes; the graph builder folds it into
+                # ``edge_mask``.
+                graph = build_neighbor_graph(
+                    coord,
+                    atype,
+                    box,
+                    self.get_rcut(),
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic_graph(
+                    graph,
+                    xp.reshape(atype, (-1,)),
+                    fparam=fparam,
+                    aparam=(
+                        xp.reshape(
+                            aparam,
+                            (nframes * nloc, self.get_dim_aparam()),
+                        )
+                        if aparam is not None
+                        else None
+                    ),
+                    charge_spin=charge_spin,
+                )
+                # The graph route works on a flat node axis; restore the
+                # per-frame layout the dense route returns.
+                atomic_ret = {
+                    kk: xp.reshape(vv, (nframes, nloc, *vv.shape[1:]))
+                    for kk, vv in atomic_ret.items()
+                }
+            else:
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    coord,
+                    atype,
+                    self.get_rcut(),
+                    self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    box=box,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # forward_common_atomic consumes a pre-excluded nlist.
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
             # Convert outputs back to numpy arrays
             return {kk: to_numpy_array(vv) for kk, vv in atomic_ret.items()}
 
