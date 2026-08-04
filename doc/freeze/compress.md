@@ -119,7 +119,7 @@ compressed model can also be exported to StableHLO `.hlo`.
 dp --dp compress -i model.dp -o model-compress.dp
 ```
 
-DP compression accepts native `.dp` and `.yaml` models.
+DP compression accepts native `.dp`, `.yaml`, and `.yml` models.
 :::
 
 ::::

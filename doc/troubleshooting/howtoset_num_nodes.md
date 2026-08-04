@@ -15,9 +15,10 @@ Parallelism for MPI is optional and used for multiple nodes, multiple GPU cards,
 To enable MPI support for training in the TensorFlow interface, one should [install horovod](../install/install-from-source.md#install-horovod-and-mpi4py) in advance.
 :::
 
-:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}
 
-Multiprocessing support for training in the PyTorch-TorchScript backend is implemented with [torchrun](https://pytorch.org/docs/stable/elastic/run.html).
+Multiprocessing support for training in the PyTorch-TorchScript and
+PyTorch-Exportable backends is implemented with [torchrun](https://pytorch.org/docs/stable/elastic/run.html).
 :::
 
 ::::

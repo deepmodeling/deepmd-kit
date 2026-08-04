@@ -76,7 +76,7 @@ Type embdding is only supported in the TensorFlow backends.
 ## Difference among different backends
 
 In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e2_r]/env_protection>` cannot be set to a non-zero value.
-In the PyTorch-TorchScript, JAX, and DP backends, {ref}`type_one_side <model[standard]/descriptor[se_e2_r]/type_one_side>` cannot be set to `false`.
+In the PyTorch-TorchScript, PyTorch-Exportable, JAX, and DP backends, {ref}`type_one_side <model[standard]/descriptor[se_e2_r]/type_one_side>` cannot be set to `false`.
 
 ## Model compression
 
