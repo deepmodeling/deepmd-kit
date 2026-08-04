@@ -88,6 +88,15 @@
 
 #include "dpa1_graph_common.cuh"
 
+#ifndef DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#define DEEPMD_ENABLE_DPA1_HIGH_LMAX 0
+#endif
+
+// Degree-two and higher implementations remain available for future
+// experiments, but production builds intentionally omit their template
+// instantiations. DPA1 deployment currently uses lmax=1; the CMake option
+// restores the retained kernels when that contract changes.
+
 namespace {
 
 // Activation codes follow deepmd.kernels.triton.dpa1.activation.ACT_CODES:
@@ -160,9 +169,9 @@ __global__ void pair_table_kernel(int n_pairs,
 // the gather streams coalesced 16-byte words. Strip mode has no per-pair
 // layer-1 term (the type embedding enters through the gate instead), so the
 // table degenerates to its single bias row.
-template <int N1, int ACT, int TILE, int STRIDE>
+template <int N1, int ACT, int TILE, int STRIDE, int BASIS_DIM>
 DEV_INLINE void layer1_tile(int tid,
-                            const EdgeTablesT<TILE>& T,
+                            const EdgeTablesT<TILE, BASIS_DIM>& T,
                             int strip,
                             const float* __restrict__ pair_table,
                             const float* __restrict__ w1,
@@ -200,7 +209,7 @@ DEV_INLINE void layer1_tile(int tid,
 //      tile rows with all four moment components, one atomicAdd per
 //      (run, component, channel)
 // ======================================================================
-template <int N1, int N2, int NG, int TILE>
+template <int N1, int N2, int NG, int TILE, int BASIS_DIM>
 struct FwdSmem {
   static constexpr int STRIDE = TILE + 4;
   // The g tile overlays the (dead) h1 tile; NG >= N1, so the union is sized
@@ -211,13 +220,13 @@ struct FwdSmem {
     float g[NG][STRIDE];   // stages 3-4 (walk view)
   } u;
   float h2[N2][STRIDE];
-  EdgeTablesT<TILE> T;
+  EdgeTablesT<TILE, BASIS_DIM> T;
 };
 
-static_assert(sizeof(FwdSmem<32, 64, 128, 128>) > 96 * 1024);
-static_assert(sizeof(FwdSmem<32, 64, 128, 64>) <= 96 * 1024);
+static_assert(sizeof(FwdSmem<32, 64, 128, 128, 4>) > 96 * 1024);
+static_assert(sizeof(FwdSmem<32, 64, 128, 64, 4>) <= 96 * 1024);
 
-template <int N1, int N2, int NG, int ACT, int STRIP, int EPT>
+template <int N1, int N2, int NG, int ACT, int STRIP, int EPT, int BASIS_DIM>
 __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_forward_kernel(
     long n_edge,
     int ntypes,
@@ -253,7 +262,7 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_forward_kernel(
   constexpr int TILE = 16 * EPT;  // edges per tile (16 edge-lanes x EPT)
   constexpr int STRIDE = TILE + 4;
   extern __shared__ char smem_raw[];
-  auto& S = *reinterpret_cast<FwdSmem<N1, N2, NG, TILE>*>(smem_raw);
+  auto& S = *reinterpret_cast<FwdSmem<N1, N2, NG, TILE, BASIS_DIM>*>(smem_raw);
   const int tid = threadIdx.x;
   const int tx = tid % 16, ty = tid / 16;
   const int erow = tx * EPT;
@@ -264,11 +273,12 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_forward_kernel(
     const long tile_base = tile * TILE;
     const int rows = (int)min((long)TILE, n_edge - tile_base);
 
-    stage_tile<TILE>(tid, tile_base, rows, n_edge, ntypes, one_side, rcut,
-                     rcut_smth, protection, inv_nnei, edge_vec, edge_index,
-                     edge_mask, atype, davg, inv_dstd, order, S.T);
-    layer1_tile<N1, ACT, TILE, STRIDE>(tid, S.T, strip, pair_table, w1, idt1,
-                                       S.u.h1);
+    stage_tile<TILE, BASIS_DIM>(tid, tile_base, rows, n_edge, ntypes, one_side,
+                                rcut, rcut_smth, protection, inv_nnei, edge_vec,
+                                edge_index, edge_mask, atype, davg, inv_dstd,
+                                order, S.T);
+    layer1_tile<N1, ACT, TILE, STRIDE, BASIS_DIM>(tid, S.T, strip, pair_table,
+                                                  w1, idt1, S.u.h1);
     __syncthreads();
 
     // === Step 2. GEMM2 -> h2 tile; spill pre2 (transposed (N2, E)) ===
@@ -413,28 +423,21 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_forward_kernel(
         const int span = re - rb;
         const int beg = rb + span * slice / kSlices;
         const int end = rb + span * (slice + 1) / kSlices;
-        float a0 = 0.f, a1 = 0.f, a2 = 0.f, a3 = 0.f;
+        float accum[BASIS_DIM] = {};
         for (int r = beg; r < end; ++r) {
-          const float4 rv = *reinterpret_cast<const float4*>(&S.T.rr[r][0]);
           const float gv = gcol[r];
-          a0 = fmaf(rv.x, gv, a0);
-          a1 = fmaf(rv.y, gv, a1);
-          a2 = fmaf(rv.z, gv, a2);
-          a3 = fmaf(rv.w, gv, a3);
+#pragma unroll
+          for (int k = 0; k < BASIS_DIM; ++k) {
+            accum[k] = fmaf(S.T.basis[r][k], gv, accum[k]);
+          }
         }
         if (node >= 0) {
-          const long base = ((long)node * 4) * NG + c;
-          if (a0 != 0.f) {
-            atomicAdd(&gr[base + 0 * NG], a0);
-          }
-          if (a1 != 0.f) {
-            atomicAdd(&gr[base + 1 * NG], a1);
-          }
-          if (a2 != 0.f) {
-            atomicAdd(&gr[base + 2 * NG], a2);
-          }
-          if (a3 != 0.f) {
-            atomicAdd(&gr[base + 3 * NG], a3);
+          const long base = ((long)node * BASIS_DIM) * NG + c;
+#pragma unroll
+          for (int k = 0; k < BASIS_DIM; ++k) {
+            if (accum[k] != 0.f) {
+              atomicAdd(&gr[base + k * NG], accum[k]);
+            }
           }
         }
       }
@@ -473,21 +476,32 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_forward_kernel(
 //      shared memory
 //   5. analytic environment backward -> d_edge_vec
 // ======================================================================
-template <int N1, int N2, int NG, int TILE>
+template <int N1, int N2, int NG, int TILE, int BASIS_DIM>
 struct BwdSmem {
-  static constexpr int kResidentRuns = 4;
+  static constexpr int kResidentRuns =
+      BASIS_DIM <= 9 ? 4 : (BASIS_DIM == 16 ? 2 : 1);
   static constexpr int STRIDE = TILE + 4;
-  float h2[N2][STRIDE];         // act(pre2) tile; raw dh2 after stage 3
-  float x_t[N2][STRIDE];        // dpre3 block tile; dpre2 rows [0, N2)
-  float drr_banks[8][4][TILE];  // per-warp env-gradient banks
+  float h2[N2][STRIDE];   // act(pre2) tile; raw dh2 after stage 3
+  float x_t[N2][STRIDE];  // dpre3 block tile; dpre2 rows [0, N2)
+  float drr_banks[8][BASIS_DIM][TILE];
   float d_radial[TILE];
   float d_sw[TILE];  // strip gate: dE/d(sw) through gate * sw
-  float dgr_rows[kResidentRuns][4 * NG];
+  float dgr_rows[kResidentRuns][BASIS_DIM * NG];
   int run_slot[TILE];  // resident dgr slot per row (-1: global read)
-  EdgeTablesT<TILE> T;
+  EdgeTablesT<TILE, BASIS_DIM> T;
 };
 
-template <int N1, int N2, int NG, int ACT, int STRIP, int EPT, int PIPE>
+static_assert(sizeof(BwdSmem<32, 64, 128, 64, 9>) > 64 * 1024);
+static_assert(sizeof(BwdSmem<32, 64, 128, 32, 9>) <= 48 * 1024);
+
+template <int N1,
+          int N2,
+          int NG,
+          int ACT,
+          int STRIP,
+          int EPT,
+          int PIPE,
+          int BASIS_DIM>
 __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
     long n_edge,
     int ntypes,
@@ -523,9 +537,10 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
     long e_pad) {
   constexpr int kBlocks = NG / N2;  // channel blocks: 1 (identity) or 2
   constexpr int TILE = 16 * EPT;    // edges per tile (16 edge-lanes x EPT)
-  constexpr int kResidentRuns = BwdSmem<N1, N2, NG, TILE>::kResidentRuns;
+  constexpr int kResidentRuns =
+      BwdSmem<N1, N2, NG, TILE, BASIS_DIM>::kResidentRuns;
   extern __shared__ char smem_raw[];
-  auto& S = *reinterpret_cast<BwdSmem<N1, N2, NG, TILE>*>(smem_raw);
+  auto& S = *reinterpret_cast<BwdSmem<N1, N2, NG, TILE, BASIS_DIM>*>(smem_raw);
   const int tid = threadIdx.x;
   const int tx = tid % 16, ty = tid / 16;
   const int erow = tx * EPT;
@@ -536,15 +551,16 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
     const long tile_base = tile * TILE;
     const int rows = (int)min((long)TILE, n_edge - tile_base);
 
-    stage_tile<TILE>(tid, tile_base, rows, n_edge, ntypes, one_side, rcut,
-                     rcut_smth, protection, inv_nnei, edge_vec, edge_index,
-                     edge_mask, atype, davg, inv_dstd, order, S.T);
+    stage_tile<TILE, BASIS_DIM>(tid, tile_base, rows, n_edge, ntypes, one_side,
+                                rcut, rcut_smth, protection, inv_nnei, edge_vec,
+                                edge_index, edge_mask, atype, davg, inv_dstd,
+                                order, S.T);
     if (tid < TILE) {
       S.run_slot[tid] = S.T.run_of[tid] < kResidentRuns ? S.T.run_of[tid] : -1;
       S.d_radial[tid] = 0.f;
       S.d_sw[tid] = 0.f;
     }
-    for (int t = tid; t < 8 * 4 * TILE; t += kThreads) {
+    for (int t = tid; t < 8 * BASIS_DIM * TILE; t += kThreads) {
       (&S.drr_banks[0][0][0])[t] = 0.f;
     }
     {
@@ -554,8 +570,8 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
         if (d < 0) {
           continue;
         }
-        for (int t = tid; t < 4 * NG; t += kThreads) {
-          S.dgr_rows[s][t] = __ldg(dgr + d * 4 * NG + t);
+        for (int t = tid; t < BASIS_DIM * NG; t += kThreads) {
+          S.dgr_rows[s][t] = __ldg(dgr + d * BASIS_DIM * NG + t);
         }
       }
     }
@@ -602,15 +618,13 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
 
     // Per-edge moment weights, hoisted to registers once per tile (the dgv /
     // drr / residual-fold loops otherwise re-read the float4 per channel).
-    float rr_frag[EPT][4];
+    float rr_frag[EPT][BASIS_DIM];
 #pragma unroll
-    for (int i = 0; i < EPT; ++i) {
-      const float4 rv = *reinterpret_cast<const float4*>(&S.T.rr[erow + i][0]);
-      rr_frag[i][0] = rv.x;
-      rr_frag[i][1] = rv.y;
-      rr_frag[i][2] = rv.z;
-      rr_frag[i][3] = rv.w;
-    }
+    for (int i = 0; i < EPT; ++i)
+#pragma unroll
+      for (int k = 0; k < BASIS_DIM; ++k) {
+        rr_frag[i][k] = S.T.basis[erow + i][k];
+      }
 #define RR_(i, k) (rr_frag[i][k])
 
     // === Step 2. N2-channel blocks: moment backward + dgrad3 ===
@@ -637,10 +651,14 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
           const int slot0 = S.run_slot[erow];
           const bool uniform_run =
               S.T.run_of[erow] == S.T.run_of[erow + EPT - 1] && slot0 >= 0;
-          float dr0[EPT], dr1[EPT], dr2[EPT], dr3[EPT], dsw[EPT];
+          float dr[BASIS_DIM][EPT], dsw[EPT];
 #pragma unroll
           for (int i = 0; i < EPT; ++i) {
-            dr0[i] = dr1[i] = dr2[i] = dr3[i] = dsw[i] = 0.f;
+            dsw[i] = 0.f;
+#pragma unroll
+            for (int k = 0; k < BASIS_DIM; ++k) {
+              dr[k][i] = 0.f;
+            }
           }
           // Optional prefetch (PIPE): issue the group's four channel fragments
           // of the g / pre3 spill together so their (L2-missing) global
@@ -674,12 +692,18 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
             }
             if (uniform_run) {
               const float* row = S.dgr_rows[slot0];
-              const float d0 = row[0 * NG + c], d1 = row[1 * NG + c];
-              const float d2 = row[2 * NG + c], d3 = row[3 * NG + c];
+              float dval[BASIS_DIM];
+#pragma unroll
+              for (int k = 0; k < BASIS_DIM; ++k) {
+                dval[k] = row[k * NG + c];
+              }
 #pragma unroll
               for (int i = 0; i < EPT; ++i) {
-                dgv[i] = RR_(i, 0) * d0 + RR_(i, 1) * d1 + RR_(i, 2) * d2 +
-                         RR_(i, 3) * d3;
+                dgv[i] = 0.f;
+#pragma unroll
+                for (int k = 0; k < BASIS_DIM; ++k) {
+                  dgv[i] = fmaf(RR_(i, k), dval[k], dgv[i]);
+                }
               }
 #pragma unroll
               for (int i = 0; i < EPT; ++i) {
@@ -720,10 +744,10 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
                   dgv[i] *= 1.f + geff;
                 }
                 dp[i] = dgv[i] * is * aprime;
-                dr0[i] = fmaf(gg, d0, dr0[i]);
-                dr1[i] = fmaf(gg, d1, dr1[i]);
-                dr2[i] = fmaf(gg, d2, dr2[i]);
-                dr3[i] = fmaf(gg, d3, dr3[i]);
+#pragma unroll
+                for (int k = 0; k < BASIS_DIM; ++k) {
+                  dr[k][i] = fmaf(gg, dval[k], dr[k][i]);
+                }
               }
             } else {
 #pragma unroll
@@ -732,11 +756,14 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
                 const int slot = S.run_slot[e];
                 const float* row =
                     slot >= 0 ? S.dgr_rows[slot]
-                              : dgr + (long)max(S.T.dst[e], 0) * 4 * NG;
-                const float d0 = row[0 * NG + c], d1 = row[1 * NG + c];
-                const float d2 = row[2 * NG + c], d3 = row[3 * NG + c];
-                dgv[i] = RR_(i, 0) * d0 + RR_(i, 1) * d1 + RR_(i, 2) * d2 +
-                         RR_(i, 3) * d3;
+                              : dgr + (long)max(S.T.dst[e], 0) * BASIS_DIM * NG;
+                float dval[BASIS_DIM];
+                dgv[i] = 0.f;
+#pragma unroll
+                for (int k = 0; k < BASIS_DIM; ++k) {
+                  dval[k] = row[k * NG + c];
+                  dgv[i] = fmaf(RR_(i, k), dval[k], dgv[i]);
+                }
                 float gval, aprime;
                 if constexpr (ACT == 0) {
                   gval = gv[i];
@@ -770,10 +797,10 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
                   dgv[i] *= 1.f + geff;
                 }
                 dp[i] = dgv[i] * is * aprime;
-                dr0[i] = fmaf(gg, d0, dr0[i]);
-                dr1[i] = fmaf(gg, d1, dr1[i]);
-                dr2[i] = fmaf(gg, d2, dr2[i]);
-                dr3[i] = fmaf(gg, d3, dr3[i]);
+#pragma unroll
+                for (int k = 0; k < BASIS_DIM; ++k) {
+                  dr[k][i] = fmaf(gg, dval[k], dr[k][i]);
+                }
               }
             }
             // Layer-3 residual fold: dh2[c mod N2] accumulates dgs over the
@@ -793,25 +820,20 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
           // fragment), then accumulate race-free into this warp's bank.
 #pragma unroll
           for (int i = 0; i < EPT; ++i) {
-            dr0[i] += __shfl_xor_sync(0xffffffffu, dr0[i], 16);
-            dr1[i] += __shfl_xor_sync(0xffffffffu, dr1[i], 16);
-            dr2[i] += __shfl_xor_sync(0xffffffffu, dr2[i], 16);
-            dr3[i] += __shfl_xor_sync(0xffffffffu, dr3[i], 16);
+#pragma unroll
+            for (int k = 0; k < BASIS_DIM; ++k) {
+              dr[k][i] += __shfl_xor_sync(0xffffffffu, dr[k][i], 16);
+            }
             dsw[i] += __shfl_xor_sync(0xffffffffu, dsw[i], 16);
           }
           if ((ty & 1) == 0) {
             const int w = tid >> 5;
-            float* b0 = &S.drr_banks[w][0][erow];
-            float* b1 = &S.drr_banks[w][1][erow];
-            float* b2v = &S.drr_banks[w][2][erow];
-            float* b3v = &S.drr_banks[w][3][erow];
 #pragma unroll
-            for (int i = 0; i < EPT; ++i) {
-              b0[i] += dr0[i];
-              b1[i] += dr1[i];
-              b2v[i] += dr2[i];
-              b3v[i] += dr3[i];
-            }
+            for (int k = 0; k < BASIS_DIM; ++k)
+#pragma unroll
+              for (int i = 0; i < EPT; ++i) {
+                S.drr_banks[w][k][erow + i] += dr[k][i];
+              }
             if (strip && smooth) {
 #pragma unroll
               for (int i = 0; i < EPT; ++i) {
@@ -962,32 +984,19 @@ __global__ __launch_bounds__(kThreads, 2) void dpa1_graph_backward_kernel(
         const float y = edge_vec[(long)e * 3 + 1];
         const float z = edge_vec[(long)e * 3 + 2];
         const float len = sqrtf(x * x + y * y + z * z);
-        const float q = len + protection;
         const float sw = switch_val(len, rcut_smth, rcut);
         const float dsw = switch_deriv(len, rcut_smth, rcut);
         const float* isd = inv_dstd + (long)atype[S.T.dst[tid]] * 4;
-        float dr[4] = {0.f, 0.f, 0.f, 0.f};
+        float d_basis[BASIS_DIM] = {};
 #pragma unroll
         for (int w = 0; w < 8; ++w)
 #pragma unroll
-          for (int k = 0; k < 4; ++k) {
-            dr[k] += S.drr_banks[w][k][tid];
+          for (int k = 0; k < BASIS_DIM; ++k) {
+            d_basis[k] += S.drr_banks[w][k][tid];
           }
-        const float g0 = (dr[0] * inv_nnei + S.d_radial[tid]) * isd[0];
-        const float gx = dr[1] * inv_nnei * isd[1];
-        const float gy = dr[2] * inv_nnei * isd[2];
-        const float gz = dr[3] * inv_nnei * isd[3];
-        const float inv_len = len > 0.f ? 1.f / len : 0.f;
-        const float rq = 1.f / q;
-        const float gdot = gx * x + gy * y + gz * z;
-        const float coef =
-            (g0 * rq * (dsw - sw * rq) +
-             gdot * rq * rq * (dsw - 2.f * sw * rq) + S.d_sw[tid] * dsw) *
-            inv_len;
-        const float s2 = sw * rq * rq;
-        d_edge_vec[(long)e * 3 + 0] = coef * x + s2 * gx;
-        d_edge_vec[(long)e * 3 + 1] = coef * y + s2 * gy;
-        d_edge_vec[(long)e * 3 + 2] = coef * z + s2 * gz;
+        moment_basis_edge_gradient<BASIS_DIM>(
+            d_basis, S.d_radial[tid], S.d_sw[tid], x, y, z, len, protection, sw,
+            dsw, inv_nnei, isd, d_edge_vec + (long)e * 3);
       }
     }
     __syncthreads();
@@ -1072,14 +1081,15 @@ struct LaunchArgs {
   cudaStream_t stream;
 };
 
-template <int N1, int N2, int NG, int ACT, int STRIP, int EPT>
+template <int N1, int N2, int NG, int ACT, int STRIP, int EPT, int BASIS_DIM>
 void launch_forward(const LaunchArgs& a,
                     torch::Tensor& gr,
                     torch::Tensor& pre2_saved,
                     torch::Tensor& g_saved) {
   constexpr int TILE = 16 * EPT;
-  auto kernel = dpa1_graph_forward_kernel<N1, N2, NG, ACT, STRIP, EPT>;
-  const size_t smem = sizeof(FwdSmem<N1, N2, NG, TILE>);
+  auto kernel =
+      dpa1_graph_forward_kernel<N1, N2, NG, ACT, STRIP, EPT, BASIS_DIM>;
+  const size_t smem = sizeof(FwdSmem<N1, N2, NG, TILE, BASIS_DIM>);
   const cudaError_t attribute_error = cudaFuncSetAttribute(
       kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
   TORCH_CHECK(
@@ -1101,7 +1111,7 @@ void launch_forward(const LaunchArgs& a,
   DPA1_CHECK_LAUNCH("dpa1_graph_descriptor forward");
 }
 
-template <int N1, int N2, int NG, int ACT, int STRIP>
+template <int N1, int N2, int NG, int ACT, int STRIP, int BASIS_DIM>
 void launch_forward_portable(const LaunchArgs& a,
                              torch::Tensor& gr,
                              torch::Tensor& pre2_saved,
@@ -1109,10 +1119,11 @@ void launch_forward_portable(const LaunchArgs& a,
   constexpr int kWideEdgesPerThread = 8;
   constexpr int kNarrowEdgesPerThread = 4;
   constexpr int kWideTile = 16 * kWideEdgesPerThread;
-  constexpr size_t kWideSharedMemory = sizeof(FwdSmem<N1, N2, NG, kWideTile>);
+  constexpr size_t kWideSharedMemory =
+      sizeof(FwdSmem<N1, N2, NG, kWideTile, BASIS_DIM>);
   constexpr size_t kPortableSharedMemoryFloor = 48 * 1024;
   if constexpr (kWideSharedMemory <= kPortableSharedMemoryFloor) {
-    launch_forward<N1, N2, NG, ACT, STRIP, kWideEdgesPerThread>(
+    launch_forward<N1, N2, NG, ACT, STRIP, kWideEdgesPerThread, BASIS_DIM>(
         a, gr, pre2_saved, g_saved);
     return;
   }
@@ -1120,30 +1131,38 @@ void launch_forward_portable(const LaunchArgs& a,
   const size_t device_limit = std::max(properties->sharedMemPerBlock,
                                        properties->sharedMemPerBlockOptin);
   if (kWideSharedMemory <= device_limit) {
-    launch_forward<N1, N2, NG, ACT, STRIP, kWideEdgesPerThread>(
+    launch_forward<N1, N2, NG, ACT, STRIP, kWideEdgesPerThread, BASIS_DIM>(
         a, gr, pre2_saved, g_saved);
   } else {
     constexpr int kNarrowTile = 16 * kNarrowEdgesPerThread;
     constexpr size_t kNarrowSharedMemory =
-        sizeof(FwdSmem<N1, N2, NG, kNarrowTile>);
+        sizeof(FwdSmem<N1, N2, NG, kNarrowTile, BASIS_DIM>);
     TORCH_CHECK(kNarrowSharedMemory <= device_limit,
                 "dpa1_graph_descriptor forward requires ", kNarrowSharedMemory,
                 " bytes of dynamic shared memory, but the device supports ",
                 device_limit);
-    launch_forward<N1, N2, NG, ACT, STRIP, kNarrowEdgesPerThread>(
+    launch_forward<N1, N2, NG, ACT, STRIP, kNarrowEdgesPerThread, BASIS_DIM>(
         a, gr, pre2_saved, g_saved);
   }
 }
 
-template <int N1, int N2, int NG, int ACT, int STRIP, int EPT, int PIPE>
+template <int N1,
+          int N2,
+          int NG,
+          int ACT,
+          int STRIP,
+          int EPT,
+          int PIPE,
+          int BASIS_DIM>
 void launch_backward(const LaunchArgs& a,
                      const torch::Tensor& dgr,
                      const torch::Tensor& pre2_saved,
                      const torch::Tensor& g_saved,
                      torch::Tensor& d_edge_vec) {
   constexpr int TILE = 16 * EPT;
-  auto kernel = dpa1_graph_backward_kernel<N1, N2, NG, ACT, STRIP, EPT, PIPE>;
-  const size_t smem = sizeof(BwdSmem<N1, N2, NG, TILE>);
+  auto kernel =
+      dpa1_graph_backward_kernel<N1, N2, NG, ACT, STRIP, EPT, PIPE, BASIS_DIM>;
+  const size_t smem = sizeof(BwdSmem<N1, N2, NG, TILE, BASIS_DIM>);
   const cudaError_t attribute_error = cudaFuncSetAttribute(
       kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
   TORCH_CHECK(
@@ -1166,12 +1185,51 @@ void launch_backward(const LaunchArgs& a,
   DPA1_CHECK_LAUNCH("dpa1_graph_descriptor backward");
 }
 
-// The backward uses four edges per thread once N1 reaches 16 to bound the
-// register footprint of widening stacks. The N1 == 8 specialisation keeps
-// eight edges per thread to avoid doubling the tile count. NG >= 128
-// prefetches saved g / pre3 rows into the available registers.
+// The four-row backward keeps eight edges per thread for N1 == 8 and otherwise
+// uses four. Nine-row specializations use four to bound register pressure and
+// fall back to two only when the device cannot host the preferred shared tile.
+// Four-row NG >= 128 specializations prefetch saved g / pre3 fragments.
 constexpr int backward_edges_per_thread(int n1) { return n1 >= 16 ? 4 : 8; }
 constexpr int backward_prefetch(int ng) { return ng >= 128 ? 1 : 0; }
+
+template <int N1, int N2, int NG, int ACT, int STRIP, int BASIS_DIM>
+void launch_backward_portable(const LaunchArgs& a,
+                              const torch::Tensor& dgr,
+                              const torch::Tensor& pre2_saved,
+                              const torch::Tensor& g_saved,
+                              torch::Tensor& d_edge_vec) {
+  if constexpr (BASIS_DIM == 4) {
+    constexpr int kEdgesPerThread = backward_edges_per_thread(N1);
+    constexpr int kPrefetch = backward_prefetch(NG);
+    launch_backward<N1, N2, NG, ACT, STRIP, kEdgesPerThread, kPrefetch,
+                    BASIS_DIM>(a, dgr, pre2_saved, g_saved, d_edge_vec);
+  } else {
+    constexpr int kPreferredEdgesPerThread = BASIS_DIM == 25 ? 2 : 4;
+    constexpr int kPreferredTile = 16 * kPreferredEdgesPerThread;
+    constexpr size_t kPreferredSharedMemory =
+        sizeof(BwdSmem<N1, N2, NG, kPreferredTile, BASIS_DIM>);
+    const auto* properties = at::cuda::getCurrentDeviceProperties();
+    const size_t device_limit = std::max(properties->sharedMemPerBlock,
+                                         properties->sharedMemPerBlockOptin);
+    if (kPreferredSharedMemory <= device_limit) {
+      launch_backward<N1, N2, NG, ACT, STRIP, kPreferredEdgesPerThread, 0,
+                      BASIS_DIM>(a, dgr, pre2_saved, g_saved, d_edge_vec);
+      return;
+    }
+
+    constexpr int kFallbackEdgesPerThread = 2;
+    constexpr int kFallbackTile = 16 * kFallbackEdgesPerThread;
+    constexpr size_t kFallbackSharedMemory =
+        sizeof(BwdSmem<N1, N2, NG, kFallbackTile, BASIS_DIM>);
+    TORCH_CHECK(kFallbackSharedMemory <= device_limit,
+                "dpa1_graph_descriptor backward requires at least ",
+                kFallbackSharedMemory,
+                " bytes of dynamic shared memory, but the device supports ",
+                device_limit);
+    launch_backward<N1, N2, NG, ACT, STRIP, kFallbackEdgesPerThread, 0,
+                    BASIS_DIM>(a, dgr, pre2_saved, g_saved, d_edge_vec);
+  }
+}
 
 }  // namespace
 
@@ -1239,6 +1297,7 @@ dpa1_graph_descriptor(torch::Tensor edge_vec,
                       torch::Tensor type_embedding,
                       torch::Tensor davg,
                       torch::Tensor dstd,
+                      torch::Tensor degree_gain,
                       torch::Tensor w1,
                       torch::Tensor b1,
                       torch::Tensor idt1,
@@ -1260,7 +1319,8 @@ dpa1_graph_descriptor(torch::Tensor edge_vec,
                       double rcut,
                       double rcut_smth,
                       double protection,
-                      double nnei) {
+                      double nnei,
+                      int64_t basis_dim) {
   const auto widths = check_widths(w1, w2, w3);
   const long n_edge = edge_vec.size(0);
   const long n_node = atype.size(0);
@@ -1285,6 +1345,22 @@ dpa1_graph_descriptor(torch::Tensor edge_vec,
               "dpa1_graph_descriptor: edge_mask must be bool");
   TORCH_CHECK(act == 0 || act == 1,
               "dpa1_graph_descriptor: act must be 0 (tanh) or 1 (silu)");
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+  TORCH_CHECK(basis_dim == 4 || basis_dim == 9,
+              "dpa1_graph_descriptor: basis_dim must be 4 or 9");
+#else
+  TORCH_CHECK(basis_dim == 4,
+              "dpa1_graph_descriptor: this build instantiates only lmax=1; "
+              "rebuild with DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON for lmax=2");
+#endif
+  const int degree_gain_size = basis_dim == 4 ? 0 : 1;
+  TORCH_CHECK(
+      degree_gain.is_contiguous() &&
+          degree_gain.scalar_type() == torch::kFloat32 &&
+          degree_gain.numel() == degree_gain_size,
+      "dpa1_graph_descriptor: degree_gain has an invalid shape or dtype");
+  const float* degree_gain_ptr =
+      degree_gain.numel() ? degree_gain.data_ptr<float>() : nullptr;
   auto stream = at::cuda::getCurrentCUDAStream();
 
   auto [order, pair_table] = build_order_and_pair_table(
@@ -1294,7 +1370,7 @@ dpa1_graph_descriptor(torch::Tensor edge_vec,
 
   auto f32 =
       torch::TensorOptions().dtype(torch::kFloat32).device(edge_vec.device());
-  auto gr = torch::zeros({n_node, 4, NG}, f32);
+  auto gr = torch::zeros({n_node, basis_dim, NG}, f32);
   // Backward operands, spilled transposed so both directions stream
   // coalesced rows. E_pad rounds up to the tile size so partial-tile float4
   // stores stay in bounds; for silu the g slot holds pre3 (its derivative
@@ -1335,22 +1411,50 @@ dpa1_graph_descriptor(torch::Tensor edge_vec,
                         order,
                         stream};
 
-#define DPA1_LAUNCH_FWD(N1, N2, NG, ACT, STRIP) \
-  launch_forward_portable<N1, N2, NG, ACT, STRIP>(args, gr, pre2_saved, g_saved)
+#define DPA1_LAUNCH_FWD4(N1, N2, NG, ACT, STRIP)                           \
+  launch_forward_portable<N1, N2, NG, ACT, STRIP, 4>(args, gr, pre2_saved, \
+                                                     g_saved)
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#define DPA1_LAUNCH_FWD9(N1, N2, NG, ACT, STRIP)                           \
+  launch_forward_portable<N1, N2, NG, ACT, STRIP, 9>(args, gr, pre2_saved, \
+                                                     g_saved)
+#endif
   if (n_edge > 0) {
-    DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_FWD);
+    if (basis_dim == 4) {
+      DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_FWD4);
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else {
+      DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_FWD9);
+#endif
+    }
   }
-#undef DPA1_LAUNCH_FWD
+#undef DPA1_LAUNCH_FWD4
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#undef DPA1_LAUNCH_FWD9
+#endif
 
   const int out_dim = NG * (int)axis + (concat_tebd ? tebd_dim : 0);
   auto grrg = torch::empty({n_node, out_dim}, f32);
   auto rot_mat = torch::empty({write_rotation ? n_node : 0, NG, 3}, f32);
   if (n_node > 0) {
-    gram_kernel<<<(int)n_node, 128, 4 * NG * sizeof(float), stream>>>(
-        (int)n_node, NG, (int)axis, tebd_dim, (int)concat_tebd,
-        gr.data_ptr<float>(), type_embedding.data_ptr<float>(),
-        atype.data_ptr<long>(), grrg.data_ptr<float>(),
-        write_rotation ? rot_mat.data_ptr<float>() : nullptr);
+    const size_t smem = basis_dim * NG * sizeof(float);
+    if (basis_dim == 4) {
+      gram_kernel<4><<<(int)n_node, 128, smem, stream>>>(
+          (int)n_node, NG, (int)axis, tebd_dim, (int)concat_tebd,
+          gr.data_ptr<float>(), degree_gain_ptr,
+          type_embedding.data_ptr<float>(), atype.data_ptr<long>(),
+          grrg.data_ptr<float>(),
+          write_rotation ? rot_mat.data_ptr<float>() : nullptr);
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else {
+      gram_kernel<9><<<(int)n_node, 128, smem, stream>>>(
+          (int)n_node, NG, (int)axis, tebd_dim, (int)concat_tebd,
+          gr.data_ptr<float>(), degree_gain_ptr,
+          type_embedding.data_ptr<float>(), atype.data_ptr<long>(),
+          grrg.data_ptr<float>(),
+          write_rotation ? rot_mat.data_ptr<float>() : nullptr);
+#endif
+    }
     DPA1_CHECK_LAUNCH("dpa1_graph_descriptor gram");
   }
   return {grrg, rot_mat, gr, order, pair_table, pre2_saved, g_saved};
@@ -1373,6 +1477,7 @@ torch::Tensor dpa1_graph_descriptor_backward(
     torch::Tensor atype,
     torch::Tensor davg,
     torch::Tensor dstd,
+    torch::Tensor degree_gain,
     torch::Tensor w1,
     torch::Tensor b1,
     torch::Tensor idt1,
@@ -1397,12 +1502,24 @@ torch::Tensor dpa1_graph_descriptor_backward(
   const long n_edge = edge_vec.size(0);
   const long n_node = atype.size(0);
   const int NG = widths.ng;
+  const int basis_dim = (int)gr.size(1);
   const bool strip = gate_table.numel() > 0;
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+  TORCH_CHECK(basis_dim == 4 || basis_dim == 9,
+              "dpa1_graph_descriptor_backward: basis dimension must be 4 or 9");
+#else
+  TORCH_CHECK(
+      basis_dim == 4,
+      "dpa1_graph_descriptor_backward: this build instantiates only lmax=1; "
+      "rebuild with DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON for lmax=2");
+#endif
+  const float* degree_gain_ptr =
+      degree_gain.numel() ? degree_gain.data_ptr<float>() : nullptr;
   auto stream = at::cuda::getCurrentCUDAStream();
   auto f32 =
       torch::TensorOptions().dtype(torch::kFloat32).device(edge_vec.device());
 
-  auto dgr = torch::empty({n_node, 4, NG}, f32);
+  auto dgr = torch::empty({n_node, basis_dim, NG}, f32);
   auto d_grrg_c = d_grrg.to(torch::kFloat32).contiguous();
   torch::Tensor d_rot_c;
   const float* d_rot_ptr = nullptr;
@@ -1411,11 +1528,20 @@ torch::Tensor dpa1_graph_descriptor_backward(
     d_rot_ptr = d_rot_c.data_ptr<float>();
   }
   if (n_node > 0) {
-    const size_t smem = (4 * NG + NG * (int)axis) * sizeof(float);
-    gram_backward_kernel<<<(int)n_node, 128, smem, stream>>>(
-        (int)n_node, NG, (int)axis, (int)d_grrg_c.size(1),
-        d_grrg_c.data_ptr<float>(), d_rot_ptr, gr.data_ptr<float>(),
-        dgr.data_ptr<float>());
+    const size_t smem = (basis_dim * NG + NG * (int)axis) * sizeof(float);
+    if (basis_dim == 4) {
+      gram_backward_kernel<4><<<(int)n_node, 128, smem, stream>>>(
+          (int)n_node, NG, (int)axis, (int)d_grrg_c.size(1),
+          d_grrg_c.data_ptr<float>(), d_rot_ptr, gr.data_ptr<float>(),
+          degree_gain_ptr, dgr.data_ptr<float>());
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else {
+      gram_backward_kernel<9><<<(int)n_node, 128, smem, stream>>>(
+          (int)n_node, NG, (int)axis, (int)d_grrg_c.size(1),
+          d_grrg_c.data_ptr<float>(), d_rot_ptr, gr.data_ptr<float>(),
+          degree_gain_ptr, dgr.data_ptr<float>());
+#endif
+    }
     DPA1_CHECK_LAUNCH("dpa1_graph_descriptor gram backward");
   }
 
@@ -1460,28 +1586,46 @@ torch::Tensor dpa1_graph_descriptor_backward(
                         order,
                         stream};
 
-#define DPA1_LAUNCH_BWD(N1, N2, NG, ACT, STRIP)                          \
-  launch_backward<N1, N2, NG, ACT, STRIP, backward_edges_per_thread(N1), \
-                  backward_prefetch(NG)>(args, dgr, pre2_saved, g_saved, \
-                                         d_edge_vec)
+#define DPA1_LAUNCH_BWD4(N1, N2, NG, ACT, STRIP)                             \
+  launch_backward_portable<N1, N2, NG, ACT, STRIP, 4>(args, dgr, pre2_saved, \
+                                                      g_saved, d_edge_vec)
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#define DPA1_LAUNCH_BWD9(N1, N2, NG, ACT, STRIP)                             \
+  launch_backward_portable<N1, N2, NG, ACT, STRIP, 9>(args, dgr, pre2_saved, \
+                                                      g_saved, d_edge_vec)
+#endif
   if (n_edge > 0) {
-    DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_BWD);
+    if (basis_dim == 4) {
+      DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_BWD4);
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+    } else {
+      DPA1_DISPATCH_WIDTH_ACT(DPA1_LAUNCH_BWD9);
+#endif
+    }
   }
-#undef DPA1_LAUNCH_BWD
+#undef DPA1_LAUNCH_BWD4
+#if DEEPMD_ENABLE_DPA1_HIGH_LMAX
+#undef DPA1_LAUNCH_BWD9
+#endif
   // Return the gradient in the coordinate's precision (a no-op when fp32).
   return d_edge_vec.to(edge_vec.scalar_type());
 }
+
+#undef DPA1_DISPATCH_WIDTH_ACT
+#undef DPA1_DISPATCH_ONE
 
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.def(
       "dpa1_graph_descriptor(Tensor edge_vec, Tensor edge_index, "
       "Tensor edge_mask, Tensor atype, Tensor type_embedding, Tensor davg, "
-      "Tensor dstd, Tensor w1, Tensor b1, Tensor idt1, Tensor w2, Tensor b2, "
+      "Tensor dstd, Tensor degree_gain, Tensor w1, Tensor b1, Tensor idt1, "
+      "Tensor w2, Tensor b2, "
       "Tensor idt2, Tensor w3, Tensor b3, Tensor idt3, Tensor gate_table, "
       "int act, int type_one_side, int concat_tebd, int write_rotation, int "
       "smooth, int axis, int resnet2, int resnet3, float rcut, float "
       "rcut_smth, "
-      "float protection, float nnei) -> (Tensor grrg, Tensor rot_mat, "
+      "float protection, float nnei, int basis_dim) -> (Tensor grrg, Tensor "
+      "rot_mat, "
       "Tensor gr, Tensor edge_order, Tensor pair_table, Tensor pre2_saved, "
       "Tensor g_saved)");
   m.impl("dpa1_graph_descriptor", torch::kCUDA, &dpa1_graph_descriptor);
@@ -1489,7 +1633,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "dpa1_graph_descriptor_backward(Tensor d_grrg, Tensor? d_rot_mat, "
       "Tensor gr, Tensor edge_order, Tensor pair_table, Tensor pre2_saved, "
       "Tensor g_saved, Tensor edge_vec, Tensor edge_index, Tensor edge_mask, "
-      "Tensor atype, Tensor davg, Tensor dstd, Tensor w1, Tensor b1, "
+      "Tensor atype, Tensor davg, Tensor dstd, Tensor degree_gain, Tensor w1, "
+      "Tensor b1, "
       "Tensor idt1, Tensor w2, Tensor b2, Tensor idt2, Tensor w3, Tensor b3, "
       "Tensor idt3, Tensor gate_table, int act, int type_one_side, "
       "int smooth, int axis, int resnet2, int resnet3, float rcut, "

@@ -172,7 +172,11 @@ class EnvMat(NativeOP):
         Parameters
         ----------
         nlist
-            The neighbor list. shape: nf x nloc x nnei
+            The neighbor list. shape: nf x nloc x nnei.  Entries equal to ``-1``
+            mark empty neighbor slots, and a virtual center (whose atom type is
+            negative) must have an entire neighbor row of ``-1``; the in-tree
+            builder (``deepmd.dpmodel.utils.nlist.build_neighbor_list``) fills
+            the full row of a virtual atom with ``-1`` by construction.
         coord_ext
             The extended coordinates of atoms. shape: nf x (nallx3)
         atype_ext
@@ -200,10 +204,34 @@ class EnvMat(NativeOP):
         em, diff, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
         atype = xp_take_first_n(atype_ext, 1, nloc)
+        center_is_real = atype >= 0
+        # Virtual atoms use a negative type sentinel.  Never pass that sentinel to
+        # ``take``: NumPy treats -1 as the final real type, while stricter array
+        # namespaces may reject it.  Type zero is only a safe placeholder because
+        # the gathered rows are neutralized below.
+        safe_atype = xp.where(center_is_real, atype, xp.zeros_like(atype))
+        center_mask = xp.reshape(center_is_real, (nf, nloc, 1, 1))
+        # ``_make_env_mat`` already zeroes em, diff and sw wherever ``nlist < 0``,
+        # so a virtual center -- whose neighbor row is empty by the neighbor-list
+        # contract -- leaves this function at zero as long as normalization does
+        # not shift it.  Neutralizing the offset and the scale is therefore the
+        # whole fix; masking em/diff/sw again afterwards would make the
+        # descriptor depend on ``atype_ext``, which the compiled pt_expt DPA2
+        # lower miscompiles into wrong forces.
         if davg is not None:
-            em -= xp.reshape(xp.take(davg, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            center_avg = xp.reshape(
+                xp.take(davg, xp.reshape(safe_atype, (-1,)), axis=0), em.shape
+            )
+            center_avg = xp.where(center_mask, center_avg, xp.zeros_like(center_avg))
+            em -= center_avg
         if dstd is not None:
-            em /= xp.reshape(xp.take(dstd, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            center_std = xp.reshape(
+                xp.take(dstd, xp.reshape(safe_atype, (-1,)), axis=0), em.shape
+            )
+            # A neutral scale avoids hidden divide-by-zero/NaN values in the
+            # masked branch, which is important for differentiable backends.
+            center_std = xp.where(center_mask, center_std, xp.ones_like(center_std))
+            em /= center_std
         return em, diff, sw
 
     def _call(

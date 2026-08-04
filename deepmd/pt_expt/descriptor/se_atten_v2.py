@@ -22,6 +22,24 @@ class DescrptSeAttenV2(DescrptSeAttenV2DP):
 
     _update_sel_cls = UpdateSel
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        DescrptDPA1._promote_degree_gain(self)
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
+        obj = super().deserialize(data)
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        DescrptDPA1._promote_degree_gain(obj)
+        return obj
+
     def share_params(self, *args: Any, **kwargs: Any) -> None:
         from deepmd.pt_expt.descriptor.dpa1 import (
             DescrptDPA1,

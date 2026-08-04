@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # pyright: reportMissingImports=false
-# ruff: noqa: ANN001, ANN202
+# ruff: noqa: ANN001, ANN202, RUF005
 """Fused environment convolution for the DPA1 (``se_atten``) descriptor.
 
 For the attention-free (``attn_layer == 0``), strip-embedding ``se_atten`` path
@@ -8,17 +8,17 @@ the per-edge descriptor tail is
 
     ``h2   = act(z2) * idt + resnet(h1)``    (last embedding layer + resnet)
     ``gg   = h2 * (1 + tt[idx] * sw)``        (type-pair gate + smooth cutoff)
-    ``xyz[k, c] = sum_j rr[j, k] * gg[j, c]`` (moment accumulation)
+    ``moment[k, c] = sum_j basis[j, k] * gg[j, c]`` (moment accumulation)
 
 where ``act`` is the last layer's activation (``tanh`` or ``silu``), ``z2`` is
 the last embedding pre-activation ``h1 @ W2 + b2``, ``h1`` is the
 penultimate activation feeding the resnet, ``idt`` is the last layer's per-
 channel timestep (all ones when ``resnet_dt`` is off), ``tt`` is the type-pair
 embedding table with per-edge row index ``idx``, ``sw`` is the smooth radial
-cutoff, and ``rr`` is the ``(s, s*x/r, s*y/r, s*z/r)`` environment matrix. The
+cutoff, and ``basis`` is the 4/9/16/25-row angular moment basis. The
 ``1 / nnei`` normalization of the moment is applied by the descriptor after this
 operator (matching the eager and tabulated paths), so the operator returns the
-unnormalized moment ``rr^T @ gg``.
+unnormalized moment ``basis^T @ gg``.
 
 The last-layer resnet takes one of three shapes, selected by ``resnet_mult``
 (``= ng // H1`` when the layer adds a residual, else ``0``):
@@ -32,15 +32,15 @@ one backward fold (summing the ``ng // H1`` residual copies), so a single kernel
 covers both; the no-residual case skips the ``h1`` read.
 
 The eager path materializes three ``(E, ng)`` tensors (``h2``, the gathered type
-feature, and ``gg``) and then runs a batched ``rr^T @ gg`` matmul whose ``M = 4``
-contraction uses cuBLAS poorly. This operator fuses the whole tail into one
+feature, and ``gg``) and then runs a batched ``basis^T @ gg`` matmul whose small
+geometric contraction uses cuBLAS poorly. This operator fuses the whole tail into one
 node-parallel kernel: each program owns one node, streams its neighbors, forms
 ``gg`` in registers (never materializing any ``(E, ng)`` tensor, and gathering
-the type feature inline) and accumulates the four moment rows. The two embedding
+the type feature inline) and accumulates all moment rows. The two embedding
 GEMMs (``h0 @ W1`` and ``h1 @ W2``) stay on cuBLAS -- in the fp32 regime this
 descriptor runs in, Triton ``tl.dot`` has no tensor-core path and cannot beat
 cuBLAS, so only the memory-bound, non-GEMM tail is fused. The trailing
-``ng x ng x 4`` Gram contraction that forms the final descriptor is likewise
+small-axis Gram contraction that forms the final descriptor is likewise
 left on cuBLAS.
 
 Design notes and pitfalls
@@ -68,7 +68,7 @@ Design notes and pitfalls
   :func:`.tile_configs.resolve_conv_config`, whose default is deliberately
   small.
 - **Inference-only autograd.** The registered backward returns gradients for
-  the coordinate-bearing inputs (``z2``, ``h1``, ``sw``, ``rr``) that carry the
+  the coordinate-bearing inputs (``z2``, ``h1``, ``sw``, ``basis``) that carry the
   force; the timestep, type table and index do not depend on coordinates.
   Training keeps the dense reference path (the gate is inference-only), so their
   gradients are never required here.
@@ -128,7 +128,7 @@ def _se_conv_reference(
     tt: Tensor,
     idx: Tensor,
     sw: Tensor,
-    rr: Tensor,
+    basis: Tensor,
     resnet_mult: int,
     act: int,
     gated: int,
@@ -151,24 +151,24 @@ def _se_conv_reference(
         gg = h2 * (1.0 + gg_t * sw.unsqueeze(-1))
     else:
         gg = h2
-    return torch.matmul(rr.transpose(1, 2), gg)
+    return torch.matmul(basis.transpose(1, 2), gg)
 
 
 def _se_conv_reference_backward(
-    grad_xyz: Tensor,
+    grad_moment: Tensor,
     z2: Tensor,
     h1: Tensor,
     idt: Tensor,
     tt: Tensor,
     idx: Tensor,
     sw: Tensor,
-    rr: Tensor,
+    basis: Tensor,
     resnet_mult: int,
     act: int,
     gated: int,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     """Closed-form gradient of :func:`_se_conv_reference` w.r.t. the coordinate-
-    bearing inputs ``(z2, h1, sw, rr)``.
+    bearing inputs ``(z2, h1, sw, basis)``.
 
     A closed form (rather than a nested ``torch.autograd.grad``) is used so the
     fallback composes under ``make_fx`` / ``torch.export``: the tracer runs this
@@ -195,9 +195,9 @@ def _se_conv_reference_backward(
     else:
         fac = torch.ones_like(h2)
     gg = h2 * fac
-    # d(xyz = rr^T @ gg): grad_gg = rr @ grad_xyz, grad_rr = gg @ grad_xyz^T.
-    grad_gg = torch.matmul(rr, grad_xyz)
-    grad_rr = torch.matmul(gg, grad_xyz.transpose(1, 2))
+    # d(moment = basis^T @ gg): contract each factor with the upstream tensor.
+    grad_gg = torch.matmul(basis, grad_moment)
+    grad_basis = torch.matmul(gg, grad_moment.transpose(1, 2))
     grad_h2 = grad_gg * fac
     grad_z2 = grad_h2 * idt * act_grad
     # fac = 1 + gg_t * sw, so d gg / d sw = h2 * gg_t (zero without the gate).
@@ -212,7 +212,7 @@ def _se_conv_reference_backward(
         grad_h1 = grad_h2
     else:
         grad_h1 = torch.zeros_like(h1)
-    return grad_z2, grad_h1, grad_sw, grad_rr
+    return grad_z2, grad_h1, grad_sw, grad_basis
 
 
 # ======================================================================
@@ -235,18 +235,19 @@ if TRITON_AVAILABLE:
         tt_ptr,  # (P, NG) type-pair embedding table
         idx_ptr,  # (N * NNEI,) per-edge type-pair row index
         sw_ptr,  # (N, NNEI) smooth radial cutoff
-        rr_ptr,  # (N, NNEI, 4) environment matrix
-        out_ptr,  # (N, 4, NG) accumulated moments
+        basis_ptr,  # (N, NNEI, BASIS_DIM) angular moment basis
+        out_ptr,  # (N, BASIS_DIM, NG) accumulated moments
         NNEI,
         H1: tl.constexpr,
         NG: tl.constexpr,
         NGP: tl.constexpr,
+        BASIS_DIM: tl.constexpr,
         RESNET_MULT: tl.constexpr,
         ACT: tl.constexpr,
         GATED: tl.constexpr,
         BN: tl.constexpr,
     ):
-        """Accumulate the four unnormalized moment rows over a node's neighbors.
+        """Accumulate the unnormalized moment rows over a node's neighbors.
 
         ``gg`` is formed in registers per neighbor block and never written to
         global memory; the type feature is gathered inline through ``idx``. The
@@ -272,21 +273,25 @@ if TRITON_AVAILABLE:
         # Accumulate in the input precision so the kernel serves both fp32
         # (the eager DPA1 path) and fp64 (the float64 pt_expt / export path).
         acc_ty = z2_ptr.dtype.element_ty
-        acc0 = tl.zeros((NGP,), dtype=acc_ty)
-        acc1 = tl.zeros((NGP,), dtype=acc_ty)
-        acc2 = tl.zeros((NGP,), dtype=acc_ty)
-        acc3 = tl.zeros((NGP,), dtype=acc_ty)
+        accumulators = ()
+        for _ in tl.static_range(BASIS_DIM):
+            accumulators = accumulators + (tl.zeros((NGP,), dtype=acc_ty),)
         for n0 in range(0, NNEI, BN):
             offs = n0 + tl.arange(0, BN)
             nmask = offs < NNEI
             m = (nmask[:, None] & cm[None, :]) if NGP != NG else nmask[:, None]
             e = node * NNEI + offs
             z2 = tl.load(z2_ptr + e[:, None] * NG + rc[None, :], mask=m, other=0.0)
-            base = e * 4
-            s = tl.load(rr_ptr + base + 0, mask=nmask, other=0.0)
-            rx = tl.load(rr_ptr + base + 1, mask=nmask, other=0.0)
-            ry = tl.load(rr_ptr + base + 2, mask=nmask, other=0.0)
-            rz = tl.load(rr_ptr + base + 3, mask=nmask, other=0.0)
+            basis_base = e * BASIS_DIM
+            basis_rows = ()
+            for row in tl.static_range(BASIS_DIM):
+                basis_rows = basis_rows + (
+                    tl.load(
+                        basis_ptr + basis_base + row,
+                        mask=nmask,
+                        other=0.0,
+                    ),
+                )
             h2 = activation(z2, ACT) * idt[None, :]
             if RESNET_MULT > 0:
                 # concat[h1, h1] (doubling) and identity share one addressing
@@ -304,35 +309,40 @@ if TRITON_AVAILABLE:
                 gg = h2 * (1.0 + ggt * sw[:, None])
             else:
                 gg = h2
-            acc0 += tl.sum(s[:, None] * gg, axis=0)
-            acc1 += tl.sum(rx[:, None] * gg, axis=0)
-            acc2 += tl.sum(ry[:, None] * gg, axis=0)
-            acc3 += tl.sum(rz[:, None] * gg, axis=0)
-        ob = node * 4 * NG
-        tl.store(out_ptr + ob + 0 * NG + rc, acc0, mask=cm)
-        tl.store(out_ptr + ob + 1 * NG + rc, acc1, mask=cm)
-        tl.store(out_ptr + ob + 2 * NG + rc, acc2, mask=cm)
-        tl.store(out_ptr + ob + 3 * NG + rc, acc3, mask=cm)
+            updated_accumulators = ()
+            for row in tl.static_range(BASIS_DIM):
+                updated_accumulators = updated_accumulators + (
+                    accumulators[row] + tl.sum(basis_rows[row][:, None] * gg, axis=0),
+                )
+            accumulators = updated_accumulators
+        output_base = node * BASIS_DIM * NG
+        for row in tl.static_range(BASIS_DIM):
+            tl.store(
+                out_ptr + output_base + row * NG + rc,
+                accumulators[row],
+                mask=cm,
+            )
 
     @triton.jit
     def _se_conv_bwd_kernel(
-        gout_ptr,  # (N, 4, NG) upstream gradient of the moments
+        gout_ptr,  # (N, BASIS_DIM, NG) upstream gradient of the moments
         z2_ptr,
         h1_ptr,
         idt_ptr,
         tt_ptr,
         idx_ptr,
         sw_ptr,
-        rr_ptr,
+        basis_ptr,
         dz2_ptr,  # (N, NNEI, NG)
         dh1_ptr,  # (N, NNEI, H1); written only when RESNET_MULT > 0
         dsw_ptr,  # (N, NNEI)
-        drr_ptr,  # (N, NNEI, 4)
+        dbasis_ptr,  # (N, NNEI, BASIS_DIM)
         NNEI,
         H1: tl.constexpr,
         NG: tl.constexpr,
         NGP: tl.constexpr,
         H1P: tl.constexpr,
+        BASIS_DIM: tl.constexpr,
         RESNET_MULT: tl.constexpr,
         ACT: tl.constexpr,
         GATED: tl.constexpr,
@@ -355,24 +365,38 @@ if TRITON_AVAILABLE:
         rc = tl.arange(0, NGP)
         cm = rc < NG
         idt = tl.load(idt_ptr + rc, mask=cm, other=0.0)
-        gb = node * (4 * NG)
-        g0 = tl.load(gout_ptr + gb + 0 * NG + rc, mask=cm, other=0.0)
-        g1 = tl.load(gout_ptr + gb + 1 * NG + rc, mask=cm, other=0.0)
-        g2 = tl.load(gout_ptr + gb + 2 * NG + rc, mask=cm, other=0.0)
-        g3 = tl.load(gout_ptr + gb + 3 * NG + rc, mask=cm, other=0.0)
+        gb = node * BASIS_DIM * NG
+        moment_gradients = ()
+        for row in tl.static_range(BASIS_DIM):
+            moment_gradients = moment_gradients + (
+                tl.load(
+                    gout_ptr + gb + row * NG + rc,
+                    mask=cm,
+                    other=0.0,
+                ),
+            )
         # Doubling with padded H1 needs the moment gradient at both residual
         # halves; hoist the per-node loads at columns ``rj`` and ``rj + H1``.
         if RESNET_MULT == 2 and H1P != H1:
             rj = tl.arange(0, H1P)
             hm = rj < H1
-            g0lo = tl.load(gout_ptr + gb + 0 * NG + rj, mask=hm, other=0.0)
-            g1lo = tl.load(gout_ptr + gb + 1 * NG + rj, mask=hm, other=0.0)
-            g2lo = tl.load(gout_ptr + gb + 2 * NG + rj, mask=hm, other=0.0)
-            g3lo = tl.load(gout_ptr + gb + 3 * NG + rj, mask=hm, other=0.0)
-            g0hi = tl.load(gout_ptr + gb + 0 * NG + rj + H1, mask=hm, other=0.0)
-            g1hi = tl.load(gout_ptr + gb + 1 * NG + rj + H1, mask=hm, other=0.0)
-            g2hi = tl.load(gout_ptr + gb + 2 * NG + rj + H1, mask=hm, other=0.0)
-            g3hi = tl.load(gout_ptr + gb + 3 * NG + rj + H1, mask=hm, other=0.0)
+            moment_gradients_lo = ()
+            moment_gradients_hi = ()
+            for row in tl.static_range(BASIS_DIM):
+                moment_gradients_lo = moment_gradients_lo + (
+                    tl.load(
+                        gout_ptr + gb + row * NG + rj,
+                        mask=hm,
+                        other=0.0,
+                    ),
+                )
+                moment_gradients_hi = moment_gradients_hi + (
+                    tl.load(
+                        gout_ptr + gb + row * NG + rj + H1,
+                        mask=hm,
+                        other=0.0,
+                    ),
+                )
         for n0 in range(0, NNEI, BN):
             offs = n0 + tl.arange(0, BN)
             nmask = offs < NNEI
@@ -380,11 +404,16 @@ if TRITON_AVAILABLE:
             e = node * NNEI + offs
             ec = e[:, None] * NG + rc[None, :]
             z2 = tl.load(z2_ptr + ec, mask=m, other=0.0)
-            base = e * 4
-            s = tl.load(rr_ptr + base + 0, mask=nmask, other=0.0)
-            rx = tl.load(rr_ptr + base + 1, mask=nmask, other=0.0)
-            ry = tl.load(rr_ptr + base + 2, mask=nmask, other=0.0)
-            rz = tl.load(rr_ptr + base + 3, mask=nmask, other=0.0)
+            basis_base = e * BASIS_DIM
+            basis_rows = ()
+            for row in tl.static_range(BASIS_DIM):
+                basis_rows = basis_rows + (
+                    tl.load(
+                        basis_ptr + basis_base + row,
+                        mask=nmask,
+                        other=0.0,
+                    ),
+                )
             a, ad = activation_grad(z2, ACT)
             h2 = a * idt[None, :]
             if RESNET_MULT > 0:
@@ -402,12 +431,9 @@ if TRITON_AVAILABLE:
             else:
                 fac = 1.0
             gg = h2 * fac
-            dgg = (
-                s[:, None] * g0[None, :]
-                + rx[:, None] * g1[None, :]
-                + ry[:, None] * g2[None, :]
-                + rz[:, None] * g3[None, :]
-            )
+            dgg = tl.zeros((BN, NGP), dtype=z2_ptr.dtype.element_ty)
+            for row in tl.static_range(BASIS_DIM):
+                dgg += basis_rows[row][:, None] * moment_gradients[row][None, :]
             grad_h2 = dgg * fac
             tl.store(
                 dz2_ptr + ec,
@@ -427,18 +453,15 @@ if TRITON_AVAILABLE:
             elif RESNET_MULT == 2:
                 # Padded doubling: recompute the two residual halves directly.
                 hmask = nmask[:, None] & (rj < H1)[None, :]
-                dgg_lo = (
-                    s[:, None] * g0lo[None, :]
-                    + rx[:, None] * g1lo[None, :]
-                    + ry[:, None] * g2lo[None, :]
-                    + rz[:, None] * g3lo[None, :]
-                )
-                dgg_hi = (
-                    s[:, None] * g0hi[None, :]
-                    + rx[:, None] * g1hi[None, :]
-                    + ry[:, None] * g2hi[None, :]
-                    + rz[:, None] * g3hi[None, :]
-                )
+                dgg_lo = tl.zeros((BN, H1P), dtype=z2_ptr.dtype.element_ty)
+                dgg_hi = tl.zeros((BN, H1P), dtype=z2_ptr.dtype.element_ty)
+                for row in tl.static_range(BASIS_DIM):
+                    dgg_lo += (
+                        basis_rows[row][:, None] * moment_gradients_lo[row][None, :]
+                    )
+                    dgg_hi += (
+                        basis_rows[row][:, None] * moment_gradients_hi[row][None, :]
+                    )
                 if GATED:
                     ggt_lo = tl.load(
                         tt_ptr + idx[:, None] * NG + rj[None, :], mask=hmask, other=0.0
@@ -457,10 +480,12 @@ if TRITON_AVAILABLE:
             if GATED:
                 # sw enters only through the gate; concat has no sw gradient.
                 tl.store(dsw_ptr + e, tl.sum(dgg * h2 * ggt, axis=1), mask=nmask)
-            tl.store(drr_ptr + base + 0, tl.sum(gg * g0[None, :], axis=1), mask=nmask)
-            tl.store(drr_ptr + base + 1, tl.sum(gg * g1[None, :], axis=1), mask=nmask)
-            tl.store(drr_ptr + base + 2, tl.sum(gg * g2[None, :], axis=1), mask=nmask)
-            tl.store(drr_ptr + base + 3, tl.sum(gg * g3[None, :], axis=1), mask=nmask)
+            for row in tl.static_range(BASIS_DIM):
+                tl.store(
+                    dbasis_ptr + basis_base + row,
+                    tl.sum(gg * moment_gradients[row][None, :], axis=1),
+                    mask=nmask,
+                )
 
 
 # ======================================================================
@@ -481,7 +506,7 @@ def _se_conv_fwd_impl(
     tt: Tensor,
     idx: Tensor,
     sw: Tensor,
-    rr: Tensor,
+    basis: Tensor,
     resnet_mult: int,
     act: int,
     gated: int,
@@ -489,9 +514,12 @@ def _se_conv_fwd_impl(
     num_warps: int,
 ) -> Tensor:
     if not _use_triton(z2):
-        return _se_conv_reference(z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated)
+        return _se_conv_reference(
+            z2, h1, idt, tt, idx, sw, basis, resnet_mult, act, gated
+        )
     nfnl, nnei, ng = z2.shape
-    out = torch.empty((nfnl, 4, ng), dtype=z2.dtype, device=z2.device)
+    basis_dim = basis.shape[-1]
+    out = torch.empty((nfnl, basis_dim, ng), dtype=z2.dtype, device=z2.device)
     wrap_triton(_se_conv_fwd_kernel)[(nfnl,)](
         z2,
         h1,
@@ -499,12 +527,13 @@ def _se_conv_fwd_impl(
         tt,
         idx,
         sw,
-        rr,
+        basis,
         out,
         nnei,
         H1=h1.shape[-1],
         NG=ng,
         NGP=triton.next_power_of_2(ng),
+        BASIS_DIM=basis_dim,
         RESNET_MULT=resnet_mult,
         ACT=act,
         GATED=gated,
@@ -515,14 +544,14 @@ def _se_conv_fwd_impl(
 
 
 def _se_conv_bwd_impl(
-    grad_xyz: Tensor,
+    grad_moment: Tensor,
     z2: Tensor,
     h1: Tensor,
     idt: Tensor,
     tt: Tensor,
     idx: Tensor,
     sw: Tensor,
-    rr: Tensor,
+    basis: Tensor,
     resnet_mult: int,
     act: int,
     gated: int,
@@ -531,7 +560,17 @@ def _se_conv_bwd_impl(
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     if not _use_triton(z2):
         return _se_conv_reference_backward(
-            grad_xyz, z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated
+            grad_moment,
+            z2,
+            h1,
+            idt,
+            tt,
+            idx,
+            sw,
+            basis,
+            resnet_mult,
+            act,
+            gated,
         )
     nfnl, nnei, ng = z2.shape
     dz2 = torch.empty_like(z2)
@@ -541,32 +580,33 @@ def _se_conv_bwd_impl(
     # Concat (gated == 0) uses no sw gate; the kernel skips the dsw store, so
     # pre-zero it here.
     dsw = torch.empty_like(sw) if gated else torch.zeros_like(sw)
-    drr = torch.empty_like(rr)
+    dbasis = torch.empty_like(basis)
     wrap_triton(_se_conv_bwd_kernel)[(nfnl,)](
-        grad_xyz.contiguous(),
+        grad_moment.contiguous(),
         z2,
         h1,
         idt,
         tt,
         idx,
         sw,
-        rr,
+        basis,
         dz2,
         dh1,
         dsw,
-        drr,
+        dbasis,
         nnei,
         H1=h1.shape[-1],
         NG=ng,
         NGP=triton.next_power_of_2(ng),
         H1P=triton.next_power_of_2(h1.shape[-1]),
+        BASIS_DIM=basis.shape[-1],
         RESNET_MULT=resnet_mult,
         ACT=act,
         GATED=gated,
         BN=block_n,
         num_warps=num_warps,
     )
-    return dz2, dh1, dsw, drr
+    return dz2, dh1, dsw, dbasis
 
 
 _se_conv_op = triton_op("dpa1_triton::se_conv", mutates_args=())(_se_conv_fwd_impl)
@@ -576,25 +616,39 @@ _se_conv_bwd_op = triton_op("dpa1_triton::se_conv_bwd", mutates_args=())(
 
 
 @_se_conv_op.register_fake
-def _(z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated, block_n, num_warps):
-    return z2.new_empty((z2.shape[0], 4, z2.shape[2]))
+def _(z2, h1, idt, tt, idx, sw, basis, resnet_mult, act, gated, block_n, num_warps):
+    return z2.new_empty((z2.shape[0], basis.shape[2], z2.shape[2]))
 
 
 @_se_conv_bwd_op.register_fake
 def _(
-    grad_xyz, z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated, block_n, num_warps
+    grad_moment,
+    z2,
+    h1,
+    idt,
+    tt,
+    idx,
+    sw,
+    basis,
+    resnet_mult,
+    act,
+    gated,
+    block_n,
+    num_warps,
 ):
     return (
         torch.empty_like(z2),
         torch.empty_like(h1),
         torch.empty_like(sw),
-        torch.empty_like(rr),
+        torch.empty_like(basis),
     )
 
 
 def _se_conv_setup_context(ctx, inputs, output):
-    z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated, block_n, num_warps = inputs
-    ctx.save_for_backward(z2, h1, idt, tt, idx, sw, rr)
+    z2, h1, idt, tt, idx, sw, basis, resnet_mult, act, gated, block_n, num_warps = (
+        inputs
+    )
+    ctx.save_for_backward(z2, h1, idt, tt, idx, sw, basis)
     ctx.resnet_mult = resnet_mult
     ctx.act = act
     ctx.gated = gated
@@ -602,17 +656,17 @@ def _se_conv_setup_context(ctx, inputs, output):
     ctx.num_warps = num_warps
 
 
-def _se_conv_backward(ctx, grad_xyz):
-    z2, h1, idt, tt, idx, sw, rr = ctx.saved_tensors
-    grad_z2, grad_h1, grad_sw, grad_rr = _se_conv_bwd_op(
-        grad_xyz.contiguous(),
+def _se_conv_backward(ctx, grad_moment):
+    z2, h1, idt, tt, idx, sw, basis = ctx.saved_tensors
+    grad_z2, grad_h1, grad_sw, grad_basis = _se_conv_bwd_op(
+        grad_moment.contiguous(),
         z2,
         h1,
         idt,
         tt,
         idx,
         sw,
-        rr,
+        basis,
         ctx.resnet_mult,
         ctx.act,
         ctx.gated,
@@ -627,7 +681,7 @@ def _se_conv_backward(ctx, grad_xyz):
         None,
         None,
         grad_sw,
-        grad_rr,
+        grad_basis,
         None,
         None,
         None,
@@ -673,7 +727,7 @@ def se_conv(
     tt: Tensor,
     idx: Tensor,
     sw: Tensor,
-    rr: Tensor,
+    basis: Tensor,
     resnet_mult: int,
     act: int,
     gated: int,
@@ -697,8 +751,9 @@ def se_conv(
         Per-edge row index into ``tt`` with shape (N * nnei,), dtype int64.
     sw : Tensor
         Smooth radial cutoff with shape (N, nnei).
-    rr : Tensor
-        Environment matrix ``(s, s*x/r, s*y/r, s*z/r)`` with shape (N, nnei, 4).
+    basis : Tensor
+        Angular moment basis with shape (N, nnei, basis_dim), where
+        ``basis_dim`` is ``(lmax + 1) ** 2`` for ``lmax`` from 1 through 4.
     resnet_mult : int
         Residual structure of the last layer: ``2`` (width doubling), ``1``
         (identity), or ``0`` (no residual).
@@ -714,8 +769,8 @@ def se_conv(
     Returns
     -------
     Tensor
-        Unnormalized moments ``xyz`` with shape (N, 4, ng), equal to
-        ``rr^T @ gg``. The ``1 / nnei`` normalization is applied by the
+        Unnormalized moments with shape (N, basis_dim, ng), equal to
+        ``basis^T @ gg``. The ``1 / nnei`` normalization is applied by the
         descriptor after this operator.
 
     Notes
@@ -726,10 +781,24 @@ def se_conv(
     gradient through the registered backward.
     """
     block_n, num_warps = resolve_conv_config(
-        int(z2.shape[-1]), int(h1.shape[-1]), triton_infer_level()
+        int(z2.shape[-1]),
+        int(h1.shape[-1]),
+        int(basis.shape[-1]),
+        triton_infer_level(),
     )
     return _se_conv_op(
-        z2, h1, idt, tt, idx, sw, rr, resnet_mult, act, gated, block_n, num_warps
+        z2,
+        h1,
+        idt,
+        tt,
+        idx,
+        sw,
+        basis,
+        resnet_mult,
+        act,
+        gated,
+        block_n,
+        num_warps,
     )
 
 
@@ -739,7 +808,7 @@ def se_atten_conv(
     tt: Tensor | None,
     idx: Tensor | None,
     sw: Tensor | None,
-    rr: Tensor,
+    basis: Tensor,
     gated: int,
 ) -> Tensor:
     """Fuse the embedding net's final layer, type gate and moment accumulation.
@@ -771,15 +840,15 @@ def se_atten_conv(
         concat.
     sw : Tensor or None
         Smooth radial cutoff with shape (N, nnei); ``None`` for concat.
-    rr : Tensor
-        Environment matrix with shape (N, nnei, 4).
+    basis : Tensor
+        Angular moment basis with shape (N, nnei, basis_dim).
     gated : int
         ``1`` (strip) applies the type-pair gate; ``0`` (concat) skips it.
 
     Returns
     -------
     Tensor
-        Unnormalized moments ``xyz`` with shape (N, 4, ng).
+        Unnormalized moments with shape (N, basis_dim, ng).
     """
     *head, last = embedding_net.layers
     h = ss
@@ -798,7 +867,16 @@ def se_atten_conv(
     if not gated:
         tt, idx, sw = concat_gate_placeholders(z2, ng)
     return se_conv(
-        z2.contiguous(), h.contiguous(), idt, tt, idx, sw, rr, resnet_mult, act, gated
+        z2.contiguous(),
+        h.contiguous(),
+        idt,
+        tt,
+        idx,
+        sw,
+        basis,
+        resnet_mult,
+        act,
+        gated,
     )
 
 
@@ -808,7 +886,7 @@ def se_atten_conv(
 def _autotune_conv(model: torch.nn.Module, level: int, device: torch.device) -> None:
     """Sweep the fused-convolution launch table for a model about to be frozen.
 
-    Collects the ``(ng, H1)`` shape key of every eligible ``se_atten``
+    Collects the ``(ng, H1, basis_dim)`` shape key of every eligible ``se_atten``
     descriptor in ``model`` and sweeps the keys the built-in / freeze-time
     tables do not yet cover on the target GPU, registering the winners so the
     ``resolve_conv_config`` lookups made while tracing bake tuned launches into
@@ -819,22 +897,28 @@ def _autotune_conv(model: torch.nn.Module, level: int, device: torch.device) -> 
     )
 
     device_name = torch.cuda.get_device_name(device)
-    keys: set[tuple[int, int]] = set()
+    keys: set[tuple[int, int, int]] = set()
     for module in model.modules():
         eligible = getattr(module, "_fused_eligible", None)
         if not (callable(eligible) and eligible("triton")):
             continue
         weight = module.se_atten.embeddings[0].layers[-1].w
-        keys.add((int(weight.shape[1]), int(weight.shape[0])))
-    tuned: dict[tuple[int, int], tuple[int, int]] = {}
-    for ng, h1 in sorted(keys):
+        keys.add(
+            (
+                int(weight.shape[1]),
+                int(weight.shape[0]),
+                (int(getattr(module.se_atten, "lmax", 1)) + 1) ** 2,
+            )
+        )
+    tuned: dict[tuple[int, int, int], tuple[int, int]] = {}
+    for ng, h1, basis_dim in sorted(keys):
         # The sweep needs a residual last layer (ng in {H1, 2*H1}); other shapes
         # keep the default. Skip keys the tables already cover.
-        if has_conv_config(ng, h1) or ng not in (h1, 2 * h1):
+        if has_conv_config(ng, h1, basis_dim) or ng not in (h1, 2 * h1):
             continue
-        config = sweep(ng, h1, device=device)
-        register_conv_config(device_name, ng, h1, config)
-        tuned[(ng, h1)] = config
+        config = sweep(ng, h1, basis_dim=basis_dim, device=device)
+        register_conv_config(device_name, ng, h1, basis_dim, config)
+        tuned[(ng, h1, basis_dim)] = config
     if tuned:
         log.info("DPA1 se_conv: tuned launch configs %s on %s.", tuned, device_name)
     else:

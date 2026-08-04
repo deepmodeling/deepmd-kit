@@ -44,6 +44,35 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         )
         assert dd.get_numb_attn_layer() == attn
 
+    @pytest.mark.parametrize("trainable", [True, False])
+    def test_degree_gain_preserves_trainable_after_deserialization(
+        self, trainable: bool
+    ) -> None:
+        descriptor = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            lmax=4,
+            attn_layer=0,
+            precision="float64",
+            seed=GLOBAL_SEED,
+            trainable=trainable,
+        )
+        restored = DescrptDPA1.deserialize(descriptor.serialize())
+        key = "se_atten.adam_degree_gain_raw"
+        assert key in dict(descriptor.named_parameters())
+        assert key in dict(restored.named_parameters())
+        assert restored.se_atten.trainable is trainable
+        assert dict(restored.named_parameters())[key].requires_grad is trainable
+        assert all(
+            parameter.requires_grad is trainable for parameter in restored.parameters()
+        )
+        torch.testing.assert_close(
+            dict(restored.named_parameters())[key],
+            dict(descriptor.named_parameters())[key],
+        )
+
     @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
     @pytest.mark.parametrize("sm", [False, True])  # smooth_type_embedding
     @pytest.mark.parametrize("to", [False, True])  # type_one_side

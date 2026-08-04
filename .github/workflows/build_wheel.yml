@@ -56,7 +56,9 @@ jobs:
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
       - name: Install uv
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.24/uv-installer.sh | sh
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.0"
         if: runner.os != 'Linux'
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.1
@@ -68,6 +70,9 @@ jobs:
           CUDA_VERSION: ${{ matrix.cuda_version }}
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
           CIBW_BUILD_FRONTEND: "build[uv]"
+          # uv defaults to 50 concurrent downloads, which can exhaust the
+          # macOS runner's socket buffers while installing wheel test extras.
+          UV_CONCURRENT_DOWNLOADS: ${{ startsWith(matrix.platform_id, 'macosx_') && '8' || '50' }}
       - uses: actions/upload-artifact@v7
         with:
           name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
