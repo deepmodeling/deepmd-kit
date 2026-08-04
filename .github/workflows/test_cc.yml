@@ -14,9 +14,16 @@ name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' && 'cpu' || 'ubuntu-22.04' }}
+    # Paddle's external interface download is occasionally unavailable. Keep
+    # exercising these configurations without making that outage blocking.
+    continue-on-error: ${{ matrix.enable_paddle }}
     strategy:
+      # An allowed Paddle failure must not cancel the other backend jobs.
+      fail-fast: false
       matrix:
+        # Only regular jobs run the LAMMPS tests. Use self-hosted CPU runners
+        # for those jobs in deepmodeling, with a hosted fallback for forks.
         include:
           - check_memleak: true
             enable_tensorflow: true
@@ -36,7 +43,12 @@ jobs:
             enable_paddle: true
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential
+        if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"

@@ -3,8 +3,10 @@
 
 #include <iostream>
 #include <limits>
+#include <string>
 
 #include "device.h"
+#include "errors.h"
 // #include <iomanip>
 
 // using namespace std;
@@ -988,10 +990,30 @@ template int deepmd::build_nlist_cpu<float>(InputNlist& nlist,
                                             const int* type);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+int deepmd::validate_nlist_gpu_capacity(const InputNlist& nlist,
+                                        const int row_capacity) {
+  int max_numneigh = 0;
+  for (int ii = 0; ii < nlist.inum; ++ii) {
+    const int row_size = nlist.numneigh[ii];
+    if (row_size > row_capacity) {
+      throw deepmd::deepmd_exception_nlist_capacity(
+          "Neighbor list row " + std::to_string(ii) + " contains " +
+          std::to_string(row_size) +
+          " neighbors, exceeding the allocated GPU row capacity " +
+          std::to_string(row_capacity));
+    }
+    max_numneigh = std::max(max_numneigh, row_size);
+  }
+  return max_numneigh;
+}
+
 void deepmd::convert_nlist_gpu_device(InputNlist& gpu_nlist,
                                       InputNlist& cpu_nlist,
                                       int*& gpu_memory,
                                       const int& max_nbor_size) {
+  // Validate all rows before mutating gpu_nlist or starting device work.  This
+  // also keeps an invalid input from leaving partially allocated GPU state.
+  validate_nlist_gpu_capacity(cpu_nlist, max_nbor_size);
   const int inum = cpu_nlist.inum;
   gpu_nlist.inum = inum;
   malloc_device_memory(gpu_nlist.ilist, inum);

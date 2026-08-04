@@ -2,8 +2,8 @@
 # ruff: noqa: T201
 r"""Sweep the launch configuration of a DPA1 fused environment convolution.
 
-Both fused kernels have a two-parameter launch configuration resolved per
-``(ng, H1)`` by :mod:`.tile_configs`: ``se_conv`` (node-parallel) is keyed by
+Both fused kernels have a two-parameter launch configuration resolved by
+:mod:`.tile_configs`: ``se_conv`` (node-parallel) is keyed by
 the per-neighbor block width ``BLOCK_N`` and a warp count; ``edge_conv``
 (edge-parallel) by the per-block edge count ``BLOCK_E`` and a warp count. This
 module measures the candidate configurations for one channel width on synthetic
@@ -20,16 +20,17 @@ Usage
 ::
 
     python -m deepmd.kernels.triton.dpa1.sweep_tile_configs \\
-        --kind {conv,edge} --ng NG --h1 H1 [--device cuda:0]
+        --kind {conv,edge} --ng NG --h1 H1 [--basis-dim {4,9,16,25}] [--device cuda:0]
 
-The printed ``(ng, h1): (BLOCK, num_warps)`` line is appended, under the device
-name from ``torch.cuda.get_device_name``, to the relevant built-in table in
+The printed key is ``(ng, h1, basis_dim)`` for ``se_conv`` and ``(ng, h1)`` for
+``edge_conv``. Append it under the device name from
+``torch.cuda.get_device_name`` to the relevant built-in table in
 :mod:`.tile_configs` (``_CONV_BUILTIN`` / ``_EDGE_BUILTIN``).
 
 Regeneration note
 -----------------
 Any change to a kernel body invalidates its existing table entries; rerun the
-sweep for every covered ``(ng, H1)`` and refresh the table.
+sweep for every covered key and refresh the table.
 """
 
 from __future__ import (
@@ -81,7 +82,12 @@ _EDGE_WIN_RATIO = 0.95
 
 
 def _make_inputs(
-    nodes: int, nnei: int, ng: int, h1: int, device: torch.device
+    nodes: int,
+    nnei: int,
+    ng: int,
+    h1: int,
+    basis_dim: int,
+    device: torch.device,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     p = 4096
     z2 = torch.randn(nodes, nnei, ng, dtype=torch.float32, device=device)
@@ -90,8 +96,8 @@ def _make_inputs(
     tt = torch.randn(p, ng, dtype=torch.float32, device=device) * 0.3
     idx = torch.randint(0, p, (nodes * nnei,), dtype=torch.int64, device=device)
     sw = torch.rand(nodes, nnei, dtype=torch.float32, device=device)
-    rr = torch.randn(nodes, nnei, 4, dtype=torch.float32, device=device)
-    return z2, h1t, idt, tt, idx, sw, rr
+    basis = torch.randn(nodes, nnei, basis_dim, dtype=torch.float32, device=device)
+    return z2, h1t, idt, tt, idx, sw, basis
 
 
 def _bench(fn: Callable[[], object], iters: int = 40, warmup: int = 15) -> float:
@@ -110,6 +116,7 @@ def _bench(fn: Callable[[], object], iters: int = 40, warmup: int = 15) -> float
 def sweep(
     ng: int,
     h1: int,
+    basis_dim: int = 4,
     nnei: int = 181,
     nodes: int = 4096,
     device: torch.device | None = None,
@@ -122,6 +129,8 @@ def sweep(
         Embedding channel width.
     h1 : int
         Penultimate embedding width; ``ng == 2 * h1`` is required.
+    basis_dim : int
+        Angular moment width. Supported values are 4, 9, 16, and 25.
     nnei : int
         Neighbor count used to size the synthetic input.
     nodes : int
@@ -138,34 +147,61 @@ def sweep(
         raise ValueError(
             "se_conv sweep requires a residual last layer (ng in {h1, 2*h1})"
         )
+    if basis_dim not in (4, 9, 16, 25):
+        raise ValueError("se_conv sweep requires basis_dim in {4, 9, 16, 25}")
     resnet_mult = ng // h1
     device = device or torch.device("cuda")
     torch.backends.cuda.matmul.allow_tf32 = False
-    # The launch configuration is memory/register bound and keyed by (ng, H1)
-    # only; the activation adds a few cheap elementwise ops and does not shift
+    # The launch configuration is memory/register bound and keyed by
+    # (ng, H1, basis_dim); the activation adds cheap elementwise ops and does not shift
     # the optimum, so the sweep times the ``tanh`` path (act = 0).
     act = 0
-    # The launch configuration is keyed by (ng, H1) and is independent of the
+    # The launch configuration is independent of the
     # tebd-input mode; the strip gate (gated = 1) is the register-heaviest case,
     # so its optimum is a safe upper bound for concat (gated = 0).
     gated = 1
-    z2, h1t, idt, tt, idx, sw, rr = _make_inputs(nodes, nnei, ng, h1, device)
-    ref = _se_conv_reference(z2, h1t, idt, tt, idx, sw, rr, resnet_mult, act, gated)
+    z2, h1t, idt, tt, idx, sw, basis = _make_inputs(
+        nodes, nnei, ng, h1, basis_dim, device
+    )
+    ref = _se_conv_reference(z2, h1t, idt, tt, idx, sw, basis, resnet_mult, act, gated)
     gout = torch.randn_like(ref)
 
     def fwd_bwd(bn: int, nw: int) -> None:
         _se_conv_fwd_impl(
-            z2, h1t, idt, tt, idx, sw, rr, resnet_mult, act, gated, bn, nw
+            z2, h1t, idt, tt, idx, sw, basis, resnet_mult, act, gated, bn, nw
         )
         _se_conv_bwd_impl(
-            gout, z2, h1t, idt, tt, idx, sw, rr, resnet_mult, act, gated, bn, nw
+            gout,
+            z2,
+            h1t,
+            idt,
+            tt,
+            idx,
+            sw,
+            basis,
+            resnet_mult,
+            act,
+            gated,
+            bn,
+            nw,
         )
 
     results: list[tuple[float, int, int]] = []
     for bn, nw in itertools.product(_BLOCK_N_CANDIDATES, _WARP_CANDIDATES):
         try:
             out = _se_conv_fwd_impl(
-                z2, h1t, idt, tt, idx, sw, rr, resnet_mult, act, gated, bn, nw
+                z2,
+                h1t,
+                idt,
+                tt,
+                idx,
+                sw,
+                basis,
+                resnet_mult,
+                act,
+                gated,
+                bn,
+                nw,
             )
             rel = (out - ref).abs().max().item() / ref.abs().max().item()
             if rel > _REL_TOL:
@@ -287,6 +323,7 @@ def main() -> None:
     parser.add_argument("--kind", choices=("conv", "edge"), default="conv")
     parser.add_argument("--ng", type=int, required=True)
     parser.add_argument("--h1", type=int, required=True)
+    parser.add_argument("--basis-dim", type=int, choices=(4, 9, 16, 25), default=4)
     parser.add_argument("--nnei", type=int, default=181)
     parser.add_argument("--nodes", type=int, default=4096)
     parser.add_argument("--device", type=str, default="cuda:0")
@@ -296,9 +333,21 @@ def main() -> None:
     if args.kind == "edge":
         block, nw = sweep_edge(args.ng, args.h1, device=device)
     else:
-        block, nw = sweep(args.ng, args.h1, args.nnei, args.nodes, device)
+        block, nw = sweep(
+            args.ng,
+            args.h1,
+            basis_dim=args.basis_dim,
+            nnei=args.nnei,
+            nodes=args.nodes,
+            device=device,
+        )
     print(f'\n"{torch.cuda.get_device_name()}": {{')
-    print(f"    ({args.ng}, {args.h1}): ({block}, {nw}),")
+    key = (
+        f"({args.ng}, {args.h1}, {args.basis_dim})"
+        if args.kind == "conv"
+        else f"({args.ng}, {args.h1})"
+    )
+    print(f"    {key}: ({block}, {nw}),")
     print("}")
 
 

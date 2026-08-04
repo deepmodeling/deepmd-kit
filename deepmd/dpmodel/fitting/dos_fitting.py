@@ -32,6 +32,12 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("dos")
 class DOSFittingNet(InvarFitting):
+    # Compose rather than replace the base documentation so AutoAPI/numpydoc
+    # retains the fitting equations and complete Parameters section.
+    __doc__ = r"""Fit DOS vectors :math:`\mathbf D_i=F_\theta(\mathcal D_i)`.
+
+        """ + (InvarFitting.__doc__ or "")
+
     def __init__(
         self,
         ntypes: int,

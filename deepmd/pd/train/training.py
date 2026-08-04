@@ -1330,10 +1330,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += aparam_requirement_items
-    has_spin = getattr(_model, "has_spin", False)
-    if callable(has_spin):
-        has_spin = has_spin()
-    if has_spin:
+    if _model.has_spin():
         spin_requirement_items = [
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]
@@ -1356,8 +1353,12 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 
 
 def whether_hessian(loss_params: dict[str, Any]) -> bool:
+    """Return whether either Hessian schedule endpoint enables supervision."""
     loss_type = loss_params.get("type", "ener")
-    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+    return loss_type in {"ener", "ener_hess"} and (
+        loss_params.get("start_pref_h", 0.0) != 0.0
+        or loss_params.get("limit_pref_h", 0.0) != 0.0
+    )
 
 
 def get_loss(

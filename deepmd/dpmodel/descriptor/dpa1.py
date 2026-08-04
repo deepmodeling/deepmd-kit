@@ -86,6 +86,8 @@ from .descriptor import (
     extend_descrpt_stat,
 )
 
+_DEGREE_GAIN_INIT_STD = 0.1
+
 
 def np_softmax(x: Array, axis: int = -1) -> Array:
     xp = array_api_compat.array_namespace(x)
@@ -98,6 +100,121 @@ def np_softmax(x: Array, axis: int = -1) -> Array:
 def np_normalize(x: Array, axis: int = -1) -> Array:
     xp = array_api_compat.array_namespace(x)
     return x / xp.linalg.vector_norm(x, axis=axis, keepdims=True)
+
+
+def build_dpa1_moment_basis(
+    rr: Array,
+    diff: Array,
+    switch: Array,
+    radial_stddev: Array,
+    valid_mask: Array,
+    lmax: int,
+    protection: float,
+) -> Array:
+    """Build the DPA1 Cartesian moment basis through angular degree ``lmax``.
+
+    Parameters
+    ----------
+    rr
+        Normalized environment matrix with shape ``(..., 4)``.
+    diff
+        Neighbor displacement vectors with shape ``(..., 3)``.
+    switch
+        Smooth cutoff values with shape ``(..., 1)``.
+    radial_stddev
+        Scalar environment standard deviation with shape ``(..., 1)``.
+    valid_mask
+        Valid non-excluded neighbor mask with shape ``(...)``.
+    lmax
+        Maximum angular degree. Supported values are 1 through 4.
+    protection
+        Distance protection added to the radial denominator.
+
+    Returns
+    -------
+    Array
+        Moment basis with shape ``(..., (lmax + 1) ** 2)``.
+    """
+    if lmax == 1:
+        return rr
+
+    xp = array_api_compat.array_namespace(rr, diff, switch, radial_stddev)
+    distance_squared = xp.sum(diff * diff, axis=-1, keepdims=True)
+    direction_mask = distance_squared > 0.0
+    safe_distance = xp.sqrt(
+        xp.where(direction_mask, distance_squared, xp.ones_like(distance_squared))
+    )
+    basis_mask = valid_mask[..., None] & direction_mask
+    denominator = xp.where(
+        basis_mask,
+        safe_distance + protection,
+        xp.ones_like(safe_distance),
+    )
+    direction = diff / denominator * xp.astype(basis_mask, diff.dtype)
+    radial = switch / denominator / radial_stddev * xp.astype(basis_mask, switch.dtype)
+
+    x, y, z = direction[..., 0], direction[..., 1], direction[..., 2]
+    q = x * x + y * y + z * z
+    sqrt_three = math.sqrt(3.0)
+    degree_two = xp.stack(
+        [
+            sqrt_three * x * y,
+            sqrt_three * y * z,
+            0.5 * (3.0 * z * z - q),
+            sqrt_three * x * z,
+            0.5 * sqrt_three * (x * x - y * y),
+        ],
+        axis=-1,
+    )
+    blocks = [rr, radial * degree_two]
+    if lmax >= 3:
+        degree_three = xp.stack(
+            [
+                math.sqrt(5.0 / 8.0) * y * (3.0 * x * x - y * y),
+                math.sqrt(15.0) * x * y * z,
+                math.sqrt(3.0 / 8.0) * y * (5.0 * z * z - q),
+                0.5 * z * (5.0 * z * z - 3.0 * q),
+                math.sqrt(3.0 / 8.0) * x * (5.0 * z * z - q),
+                0.5 * math.sqrt(15.0) * z * (x * x - y * y),
+                math.sqrt(5.0 / 8.0) * x * (x * x - 3.0 * y * y),
+            ],
+            axis=-1,
+        )
+        blocks.append(radial * degree_three)
+    if lmax >= 4:
+        z2 = z * z
+        x2_minus_y2 = x * x - y * y
+        degree_four = xp.stack(
+            [
+                0.5 * math.sqrt(35.0) * x * y * x2_minus_y2,
+                0.25 * math.sqrt(70.0) * y * z * (3.0 * x * x - y * y),
+                0.5 * math.sqrt(5.0) * x * y * (7.0 * z2 - q),
+                0.25 * math.sqrt(10.0) * y * z * (7.0 * z2 - 3.0 * q),
+                0.125 * (35.0 * z2 * z2 - 30.0 * z2 * q + 3.0 * q * q),
+                0.25 * math.sqrt(10.0) * x * z * (7.0 * z2 - 3.0 * q),
+                0.25 * math.sqrt(5.0) * x2_minus_y2 * (7.0 * z2 - q),
+                0.25 * math.sqrt(70.0) * x * z * (x * x - 3.0 * y * y),
+                0.125 * math.sqrt(35.0) * (x**4 - 6.0 * x * x * y * y + y**4),
+            ],
+            axis=-1,
+        )
+        blocks.append(radial * degree_four)
+    return xp.concat(blocks, axis=-1)
+
+
+def build_dpa1_degree_weights(
+    raw_gain: Array,
+    lmax: int,
+    reference: Array,
+) -> Array:
+    """Expand non-negative per-degree Gram weights to packed moment rows."""
+    xp = array_api_compat.array_namespace(raw_gain, reference)
+    device = array_api_compat.device(reference)
+    blocks = [xp.ones((4,), dtype=reference.dtype, device=device)]
+    for degree in range(2, lmax + 1):
+        weight = raw_gain[degree - 2] * raw_gain[degree - 2]
+        blocks.append(xp.broadcast_to(weight, (2 * degree + 1,)))
+    return xp.concat(blocks)
 
 
 @BaseDescriptor.register("se_atten")
@@ -235,6 +352,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use bias in the type embedding layer.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    lmax: int
+            Maximum angular degree of the Cartesian moment basis. Supported
+            values are 1 through 4.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -291,6 +411,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_map: list[str] | None = None,
         # consistent with argcheck, not used though
         seed: int | list[int] | None = None,
+        lmax: int = 1,
     ) -> None:
         ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -335,6 +456,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             ln_eps=ln_eps,
             seed=child_seed(seed, 0),
             trainable=trainable,
+            lmax=lmax,
         )
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
@@ -460,6 +582,33 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
                 and not self.se_atten.exclude_types
             )
         return self.se_atten.tebd_input_mode in ("concat", "strip")
+
+    def graph_type_embedding_table(self) -> Array:
+        """Full type-embedding table consumed by the graph-route forward.
+
+        Returns
+        -------
+        Array
+            The ``(ntypes + 1, tebd_dim)`` table from ``type_embedding``.
+        """
+        return self.type_embedding.call()
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Returns whether the graph lower traces compact edge pairs.
+
+        The transformer attention lower (``attn_layer > 0``) enumerates
+        neighbor pairs via the compact ``center_edge_pairs`` realization
+        (unbacked-SymInt ``nonzero``/``repeat`` sizes, ``pairs.py``);
+        the factorizable lower (``attn_layer == 0``) traces with backed
+        symbols only.  ``check_graph_trace_torch_version`` keys its
+        torch >= 2.6 requirement on this capability.
+
+        Returns
+        -------
+        bool
+            Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
+        """
+        return self.se_atten.attn_layer > 0
 
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.
@@ -783,6 +932,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype: Array,
         type_embedding: Array | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward.
 
@@ -819,6 +969,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (N,) flat LOCAL atom types where ``N = sum(n_node)``.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        comm_dict
+            MPI communication metadata. Accepted for ABI parity with
+            :meth:`DescrptDPA2.call_graph` (uniform ``forward_atomic_graph``
+            call site), but UNUSED: a single se_atten descriptor has no
+            cross-rank message passing (``has_message_passing_across_ranks()``
+            is ``False``), so this is always ``None`` in practice.
 
         Returns
         -------
@@ -948,7 +1104,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 3 if self.compress else 2,
+            "@version": 4 if obj.lmax != 1 else (3 if self.compress else 2),
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -991,6 +1147,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "spin": None,
         }
+        if obj.lmax != 1:
+            data["lmax"] = obj.lmax
+            data["@variables"]["degree_gain_raw"] = to_numpy_array(
+                obj.adam_degree_gain_raw
+            )
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
         if self.compress:
@@ -1029,7 +1190,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -1046,10 +1207,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]
         obj.se_atten["dstd"] = variables["dstd"]
+        if obj.se_atten.lmax > 1:
+            obj.se_atten.adam_degree_gain_raw = np.asarray(
+                variables["degree_gain_raw"],
+                dtype=PRECISION_DICT[obj.se_atten.precision],
+            )
         obj.se_atten.embeddings = NetworkCollection.deserialize(embeddings)
         if tebd_input_mode in ["strip"]:
             obj.se_atten.embeddings_strip = NetworkCollection.deserialize(
@@ -1190,6 +1357,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         Random seed for parameter initialization.
     trainable : bool, optional
         If the parameters are trainable.
+    lmax : int, optional
+        Maximum angular degree of the Cartesian moment basis. Supported values
+        are 1 through 4.
     """
 
     def __init__(
@@ -1221,6 +1391,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         smooth: bool = True,
         seed: int | list[int] | None = None,
         trainable: bool = True,
+        lmax: int = 1,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -1233,6 +1404,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
+        if lmax not in (1, 2, 3, 4):
+            raise ValueError(f"`lmax` must be between 1 and 4, got {lmax}")
+        self.lmax = int(lmax)
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
         self.resnet_dt = resnet_dt
@@ -1252,6 +1426,16 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.normalize = normalize
         self.temperature = temperature
         self.smooth = smooth
+        self.trainable = bool(trainable)
+        if self.lmax > 1:
+            gain_rng = np.random.default_rng(child_seed(seed, 3))
+            self.adam_degree_gain_raw = gain_rng.normal(
+                loc=0.0,
+                scale=_DEGREE_GAIN_INIT_STD,
+                size=(self.lmax - 1,),
+            ).astype(PRECISION_DICT[self.precision])
+        else:
+            self.adam_degree_gain_raw = None
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -1429,15 +1613,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self, use_graph=True)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
@@ -1614,6 +1790,23 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         rr = rr * xp.astype(exclude_mask[:, :, None], rr.dtype)
         # nfnl x nnei x 1
         ss = rr[..., 0:1]
+        moment_basis = rr
+        if self.lmax > 1:
+            diff_flat = xp.reshape(diff, (nf * nloc, nnei, 3))
+            radial_stddev = xp.take(
+                self.stddev,
+                xp.reshape(atype, (-1,)),
+                axis=0,
+            )[..., 0:1]
+            moment_basis = build_dpa1_moment_basis(
+                rr,
+                diff_flat,
+                sw,
+                radial_stddev,
+                nlist_mask,
+                self.lmax,
+                self.env_protection,
+            )
         geo_gr = None
         if self.tebd_input_mode in ["concat"]:
             # nfnl x tebd_dim
@@ -1710,7 +1903,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                     self.compress_data[0],
                     self.compress_info[0],
                     ss_scalar,
-                    rr,
+                    moment_basis,
                     gg_t,
                     self.filter_neuron[-1],
                 )
@@ -1733,15 +1926,21 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             gg = self.dpa1_attention(
                 gg, nlist_mask, input_r=input_r, sw=sw
             )  # shape is [nframes*nloc, self.neei, out_size]
-            # nfnl x ng x 4
-            # gr = xp.einsum("lni,lnj->lij", gg, rr)
-            gr = xp.sum(gg[:, :, :, None] * rr[:, :, None, :], axis=1)
+            # nfnl x ng x moment_dim
+            gr = xp.sum(gg[:, :, :, None] * moment_basis[:, :, None, :], axis=1)
             g2 = xp.reshape(gg, (nf, nloc, self.nnei, self.filter_neuron[-1]))
         else:
             gr = xp.permute_dims(geo_gr, (0, 2, 1))
             g2 = None
         gr /= self.nnei
         gr1 = gr[:, : self.axis_neuron, :]
+        if self.lmax > 1:
+            degree_weights = build_dpa1_degree_weights(
+                self.adam_degree_gain_raw,
+                self.lmax,
+                gr,
+            )
+            gr1 = gr1 * degree_weights[None, None, :]
         # nfnl x ng x ng1
         # grrg = xp.einsum("lid,ljd->lij", gr, gr1)
         grrg = xp.sum(gr[:, :, None, :] * gr1[:, None, :, :], axis=3)
@@ -1753,7 +1952,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             xp.reshape(grrg, (nf, nloc, self.filter_neuron[-1] * self.axis_neuron)),
             g2,
             xp.reshape(dmatrix, (nf, nloc, self.nnei, 4))[..., 1:],
-            xp.reshape(gr[..., 1:], (nf, nloc, self.filter_neuron[-1], 3)),
+            xp.reshape(gr[..., 1:4], (nf, nloc, self.filter_neuron[-1], 3)),
             xp.reshape(sw, (nf, nloc, nnei, 1)),
         )
 
@@ -1853,6 +2052,18 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )  # (E, 4), (E, 1) sw zeroed on padding
         # radial channel
         ss = rr[:, 0:1]  # (E, 1)
+        moment_basis = rr
+        if self.lmax > 1:
+            radial_stddev = xp.take(self.stddev[:, 0, 0:1], center_type, axis=0)
+            moment_basis = build_dpa1_moment_basis(
+                rr,
+                graph.edge_vec,
+                sw_e,
+                radial_stddev,
+                graph.edge_mask,
+                self.lmax,
+                self.env_protection,
+            )
         if self.tebd_input_mode == "concat":
             # neighbor / center type embeddings; ghost type == owner type so
             # gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
@@ -1881,11 +2092,18 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             )
         # zero padding/guard edges BEFORE the segment sum
         gg = gg * xp.astype(graph.edge_mask[:, None], gg.dtype)
-        # outer product (replaces the dense gg[:,:,:,None] * rr[:,:,None,:])
-        outer = gg[:, :, None] * rr[:, None, :]  # (E, ng, 4)
+        # outer product (replaces the dense neighbor-axis moment reduction)
+        outer = gg[:, :, None] * moment_basis[:, None, :]  # (E, ng, moment_dim)
         # neighbor-axis reduction -> segment_sum over centers; divide by nnei
-        gr = segment_sum(outer, dst, n_total) / self.nnei  # (N, ng, 4)
+        gr = segment_sum(outer, dst, n_total) / self.nnei
         gr1 = gr[:, : self.axis_neuron, :]
+        if self.lmax > 1:
+            degree_weights = build_dpa1_degree_weights(
+                self.adam_degree_gain_raw,
+                self.lmax,
+                gr,
+            )
+            gr1 = gr1 * degree_weights[None, None, :]
         # nf x nloc x (ng x ng1)
         grrg = xp.sum(gr[:, :, None, :] * gr1[:, None, :, :], axis=3)  # (N, ng, ng1)
         ng = self.neuron[-1]
@@ -1896,7 +2114,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # equivariant single-particle representation, dense-ABI slice gr[..., 1:]
         # (N, ng, 3); not cast, mirroring the dense block which leaves rot_mat in
         # the working precision before the descriptor-level @cast_precision.
-        rot_mat = gr[:, :, 1:]
+        rot_mat = gr[:, :, 1:4]
         return grrg, rot_mat
 
     def _graph_edge_gg_strip(
@@ -2119,7 +2337,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         data = {
             "@class": "DescriptorBlock",
             "type": "dpa1",
-            "@version": 1,
+            "@version": 2 if obj.lmax != 1 else 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -2141,6 +2359,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             "trainable_ln": obj.trainable_ln,
             "ln_eps": obj.ln_eps,
             "smooth": obj.smooth,
+            "trainable": obj.trainable,
             "type_one_side": obj.type_one_side,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
@@ -2154,6 +2373,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 "dstd": to_numpy_array(obj["dstd"]),
             },
         }
+        if obj.lmax != 1:
+            data["lmax"] = obj.lmax
+            data["@variables"]["degree_gain_raw"] = to_numpy_array(
+                obj.adam_degree_gain_raw
+            )
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
         return data
@@ -2162,7 +2386,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -2174,10 +2398,16 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
+        if obj.lmax > 1:
+            obj.adam_degree_gain_raw = np.asarray(
+                variables["degree_gain_raw"],
+                dtype=PRECISION_DICT[obj.precision],
+            )
         obj.embeddings = NetworkCollection.deserialize(embeddings)
         if tebd_input_mode in ["strip"]:
             obj.embeddings_strip = NetworkCollection.deserialize(embeddings_strip)
@@ -2186,6 +2416,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
 
 class NeighborGatedAttention(NativeOP):
+    r"""Gated neighbor aggregation :math:`h_i'=h_i+\sum_j a_{ij}v_{ij}`."""
+
     def __init__(
         self,
         layer_num: int,
@@ -2319,6 +2551,21 @@ class NeighborGatedAttention(NativeOP):
 
 
 class NeighborGatedAttentionLayer(NativeOP):
+    r"""Single gated neighbor-attention residual layer.
+
+    For neighbor features :math:`\mathbf X`, the layer applies gated attention,
+    adds a residual connection, and normalizes the result:
+
+    .. math::
+        \mathbf X' = \operatorname{LayerNorm}\!\left(
+        \mathbf X + \operatorname{GatedAttention}
+        (\mathbf X, \mathbf M, \mathbf R, \mathbf S)\right),
+
+    where :math:`\mathbf M` is the neighbor mask and the optional
+    :math:`\mathbf R` and :math:`\mathbf S` supply directional and switching
+    information.
+    """
+
     def __init__(
         self,
         nnei: int,
@@ -2378,6 +2625,12 @@ class NeighborGatedAttentionLayer(NativeOP):
         input_r: Array | None = None,
         sw: Array | None = None,
     ) -> Array:
+        r"""Apply attention, its residual connection, and layer normalization.
+
+        .. math::
+            H_{\mathrm{out}}=\operatorname{LayerNorm}
+            \left(H+\operatorname{GatedAttention}(H,M,R,S)\right).
+        """
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -2427,6 +2680,35 @@ class NeighborGatedAttentionLayer(NativeOP):
 
 
 class GatedAttentionLayer(NativeOP):
+    r"""Projected gated self-attention output.
+
+    With projected queries, keys, and values, the layer returns only the
+    attention output (the residual connection is applied by
+    :class:`NeighborGatedAttentionLayer`):
+
+    .. math::
+        Q,K,V=\operatorname{split}(H W_{\mathrm{in}}),\qquad
+        L=\alpha\,\widetilde Q\widetilde K^T,\qquad
+        S_{ij}=s_i s_j,
+
+    .. math::
+
+        \overline L_{ij}=(L_{ij}+c)S_{ij}-c,\qquad
+        \overline A_{ij}=\operatorname{softmax}_{j}(\overline L_{ij}),
+        \qquad A_{ij}=S_{ij}\overline A_{ij},
+
+        O=\operatorname{reshape}((A\odot R)V)W_{\mathrm{out}}.
+
+    Here the tildes denote optional per-vector normalization of :math:`Q`,
+    :math:`K`, and :math:`V`.  The implementation uses
+    :math:`\alpha=(d\,s)^{-1/2}` for ``scaling_factor`` :math:`s`, or the
+    configured ``temperature`` value when it is provided.  Neighbor masks and
+    cutoff smoothing modifies both the logits before softmax and, through
+    :math:`S`, the attention amplitude afterward.  Without smoothing, invalid
+    keys are masked before softmax and invalid query rows are zeroed.  The
+    optional angular matrix :math:`R` is applied after these operations.
+    """
+
     def __init__(
         self,
         nnei: int,

@@ -1,7 +1,29 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
+#include <string>
+
+#include "errors.h"
+
 namespace deepmd {
+
+inline bool is_supported_se_a_basis_dimension(
+    const std::int64_t ndescrpt) noexcept {
+  return ndescrpt == 4 || ndescrpt == 9 || ndescrpt == 16 || ndescrpt == 25;
+}
+
+namespace detail {
+
+inline void check_se_a_basis_dimension(const std::int64_t ndescrpt) {
+  if (!is_supported_se_a_basis_dimension(ndescrpt)) {
+    throw deepmd_exception(
+        "The environment basis dimension must be 4, 9, 16, or 25, got " +
+        std::to_string(ndescrpt));
+  }
+}
+
+}  // namespace detail
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_cpu(FPTYPE* out,
@@ -13,7 +35,8 @@ void tabulate_fusion_se_a_cpu(FPTYPE* out,
                               const int nloc,
                               const int nnei,
                               const int last_layer_size,
-                              const bool is_sorted = true);
+                              const bool is_sorted = true,
+                              const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
@@ -28,7 +51,8 @@ void tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size,
-                                   const bool is_sorted = true);
+                                   const bool is_sorted = true,
+                                   const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
@@ -43,7 +67,8 @@ void tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size,
-                                        const bool is_sorted = true);
+                                        const bool is_sorted = true,
+                                        const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_cpu(FPTYPE* out,
@@ -157,7 +182,8 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
                               const int nloc,
                               const int nnei,
                               const int last_layer_size,
-                              const bool is_sorted = true);
+                              const bool is_sorted = true,
+                              const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
@@ -172,7 +198,8 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size,
-                                   const bool is_sorted = true);
+                                   const bool is_sorted = true,
+                                   const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
@@ -187,7 +214,8 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size,
-                                        const bool is_sorted = true);
+                                        const bool is_sorted = true,
+                                        const int ndescrpt = 4);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_gpu(FPTYPE* out,

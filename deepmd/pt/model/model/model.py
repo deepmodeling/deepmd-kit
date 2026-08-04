@@ -49,6 +49,48 @@ class BaseModel(torch.nn.Module, make_base_model()):
         """
         raise NotImplementedError
 
+    def predict_atomic_outputs_for_stat(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Return complete atomic outputs used by residual output statistics.
+
+        Final model classes own this prediction contract because only they know
+        the complete physical forward, including model-level preprocessing and
+        analytical contributions. Implementations must not compute derivatives
+        or mutate compile caches.
+
+        Parameters
+        ----------
+        coord
+            Local coordinates with shape (nf, nloc, 3).
+        atype
+            Local atom types with shape (nf, nloc).
+        box
+            Simulation cells with shape (nf, 9), or ``None``.
+        fparam
+            Optional frame parameters.
+        aparam
+            Optional atomic parameters.
+        charge_spin
+            Optional frame-level charge and spin conditions.
+        spin
+            Optional native per-atom spin vectors.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Complete atomic outputs for output-statistics regression.
+        """
+        raise NotImplementedError
+
     @torch.jit.export
     def get_observed_type_list(self) -> list[str]:
         """Get observed types (elements) of the model during data statistics.

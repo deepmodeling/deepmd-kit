@@ -21,7 +21,46 @@ from deepmd.dpmodel.utils import (
     extend_coord_with_ghosts,
     get_multiple_nlist_key,
     inter2phys,
+    nlist_distinguish_types,
 )
+
+
+def _reference_type_neighbor_list(
+    coord: np.ndarray,
+    atype: np.ndarray,
+    nloc: int,
+    rcut: float,
+    sel: list[int],
+) -> np.ndarray:
+    """Build a distance-sorted reference with the runtime global cap."""
+    coord = np.asarray(coord).reshape(coord.shape[0], -1, 3)
+    expected = np.full((coord.shape[0], nloc, sum(sel)), -1, dtype=np.int64)
+    offsets = np.cumsum([0, *sel])
+    for frame in range(coord.shape[0]):
+        for center in range(nloc):
+            if atype[frame, center] < 0:
+                continue
+            distances = np.linalg.norm(coord[frame] - coord[frame, center], axis=-1)
+            candidates = [
+                atom
+                for atom in range(coord.shape[1])
+                if atom != center
+                and atype[frame, atom] >= 0
+                and distances[atom] <= rcut
+            ]
+            candidates.sort(key=lambda atom: (distances[atom], atom))
+            candidates = candidates[: sum(sel)]
+            for type_index, limit in enumerate(sel):
+                selected = [
+                    atom for atom in candidates if atype[frame, atom] == type_index
+                ]
+                selected = selected[:limit]
+                expected[
+                    frame,
+                    center,
+                    offsets[type_index] : offsets[type_index] + len(selected),
+                ] = selected
+    return expected
 
 
 class TestDPModelFormatNlist(unittest.TestCase):
@@ -152,6 +191,123 @@ class TestDPModelFormatNlist(unittest.TestCase):
             nlist,
         )
         np.testing.assert_allclose(self.expected_nlist, nlist1)
+
+    def test_lower_type_split_matches_early_type_split(self) -> None:
+        """Global candidate selection and early type splits must be equivalent.
+
+        The matrix covers same-type truncation, real batch axes, multiple local
+        atoms, ghosts, exact distance ties, virtual atoms, the global candidate
+        cap, and padded buckets.
+        Keeping it on the shared formatting fixture makes the contract visible
+        beside the other short/equal/long neighbor-list cases.
+        """
+        cases = {
+            "same_type_nearest": {
+                "coord": np.array(
+                    [
+                        [
+                            [0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            [1.5, 0.0, 0.0],
+                            [2.5, 0.0, 0.0],
+                            [2.0, 0.0, 0.0],
+                        ]
+                    ],
+                    dtype=np.float64,
+                ),
+                "atype": np.array([[0, 0, 0, 0, 1]], dtype=np.int64),
+                "nloc": 1,
+                "sel": [2, 1],
+                "rcut": 3.0,
+                "expected": np.array([[[1, 2, 4]]], dtype=np.int64),
+            },
+            "global_cap_excludes_far_type": {
+                "coord": np.array(
+                    [
+                        [
+                            [0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            [1.5, 0.0, 0.0],
+                            [2.0, 0.0, 0.0],
+                            [2.5, 0.0, 0.0],
+                        ]
+                    ],
+                    dtype=np.float64,
+                ),
+                "atype": np.array([[0, 0, 0, 0, 1]], dtype=np.int64),
+                "nloc": 1,
+                "sel": [1, 2],
+                "rcut": 3.0,
+                "expected": np.array([[[1, -1, -1]]], dtype=np.int64),
+            },
+            "batched_ghost_ties_virtual_padding": {
+                "coord": np.array(
+                    [
+                        [
+                            [0.0, 0.0, 0.0],
+                            [0.0, 2.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            [-1.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0],
+                            [0.5, 0.5, 0.0],
+                        ],
+                        [
+                            [0.0, 0.0, 0.0],
+                            [0.0, 2.5, 0.0],
+                            [1.2, 0.0, 0.0],
+                            [-1.2, 0.0, 0.0],
+                            [0.0, 1.1, 0.0],
+                            [0.4, 0.4, 0.0],
+                        ],
+                    ],
+                    dtype=np.float64,
+                ),
+                "atype": np.array(
+                    [[0, 1, 0, 0, 1, -1], [0, 1, 0, 0, 1, -1]],
+                    dtype=np.int64,
+                ),
+                "nloc": 2,
+                "sel": [3, 2],
+                "rcut": 3.0,
+                "expected": None,
+            },
+        }
+
+        for name, case in cases.items():
+            with self.subTest(name=name):
+                merged = build_neighbor_list(
+                    case["coord"],
+                    case["atype"],
+                    nloc=case["nloc"],
+                    rcut=case["rcut"],
+                    sel=case["sel"],
+                    distinguish_types=False,
+                )
+                lower_formatted = nlist_distinguish_types(
+                    merged, case["atype"], case["sel"]
+                )
+                early_formatted = build_neighbor_list(
+                    case["coord"],
+                    case["atype"],
+                    nloc=case["nloc"],
+                    rcut=case["rcut"],
+                    sel=case["sel"],
+                    distinguish_types=True,
+                )
+                reference = _reference_type_neighbor_list(
+                    case["coord"],
+                    case["atype"],
+                    case["nloc"],
+                    case["rcut"],
+                    case["sel"],
+                )
+
+                np.testing.assert_array_equal(lower_formatted, reference)
+                np.testing.assert_array_equal(early_formatted, reference)
+                if case["expected"] is not None:
+                    np.testing.assert_array_equal(reference, case["expected"])
+                if name == "batched_ghost_ties_virtual_padding":
+                    self.assertTrue(np.any(lower_formatted == -1))
 
 
 dtype = np.float64

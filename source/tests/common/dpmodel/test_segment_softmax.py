@@ -2,6 +2,7 @@
 """segment_max / segment_softmax (NeighborGraph PR-D segment toolkit)."""
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     segment_max,
@@ -110,3 +111,597 @@ def test_masked_entry_larger_than_unmasked_max_no_nan() -> None:
     ref = np.exp([1.0, 2.0]) / np.exp([1.0, 2.0]).sum()
     np.testing.assert_allclose(out[:2], ref, rtol=1e-12)
     assert out[2] == 0.0
+
+
+class TestSignedPhantomStrictPositivity:
+    """The phantom denominator must stay strictly positive AND
+    cutoff-continuous for arbitrary finite logits (OutisLi / njzjz-bot
+    review, rounds 2-5).
+
+    Real logits are not bounded below by ``phantom_logit``: the smooth
+    envelope maps pre-shift logits ``raw < -attnw_shift`` to
+    ``l < phantom_logit`` whenever ``sw > 0``.  With a negative count the
+    raw signed denominator ``sum exp(l) + (sel - n) exp(ph)`` then crosses
+    zero (e.g. ``sel=1``, logits ``[-21, -21]``, ``ph=-20``) -- a pole.  A
+    count-gated denominator floor fixed the pole but switched on
+    DISCONTINUOUSLY when a boundary edge flipped the count from 0 to -1
+    (round 5).  The soft slot-occupancy denominator (capped water-filling
+    of the ``slot_weight`` envelope, see ``segment_softmax`` Notes) is
+    strictly positive by construction, bit-exact dense for
+    ``n_real <= sel``, equal to the signed formula in-design, and
+    continuous at every crossing because an entering entry has BOTH
+    ``exp(l) -> exp(phantom_logit)`` and occupancy ``theta -> 0``.
+    """
+
+    def test_reviewer_repro_finite_positive(self) -> None:
+        # sel=1, two real entries below the phantom logit -> raw signed
+        # denominator < 0 (the old pole / where-guard regime).
+        data = np.array([-21.0, -21.0])
+        seg = np.array([0, 0])
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([-1.0]),  # sel - n_real = 1 - 2
+            phantom_logit=-20.0,
+            slot_weight=np.ones(2),
+        )
+        assert np.all(np.isfinite(w))
+        assert np.all(w >= 0.0)
+        # occupancy bound: theta = 1/2 each, bracket >= theta*(1-1/e)*ex
+        # -> w <= (e/(e-1))/theta ~= 3.2 (the old where-guard's [1, 1] came
+        # from a ZERO denominator instead)
+        assert np.all(w <= 3.2)
+
+    def test_njzjz_repro_three_entries(self) -> None:
+        data = np.array([-100.0, -100.0, -100.0])
+        seg = np.array([0, 0, 0])
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([-2.0]),  # sel=1, n_real=3
+            phantom_logit=-20.0,
+            slot_weight=np.ones(3),
+        )
+        assert np.all(np.isfinite(w))
+        assert np.all(w >= 0.0)
+        # theta = 1/3 each: every deep-suppressed entry sees the denominator
+        # it would see alone (dense n=1=sel gives w=1); bounded by n/sel.
+        np.testing.assert_allclose(w, [1.0, 1.0, 1.0], rtol=1e-12)
+
+    def test_missing_slot_weight_raises(self) -> None:
+        with pytest.raises(ValueError, match="slot_weight"):
+            segment_softmax(
+                np.array([-21.0, -21.0]),
+                np.array([0, 0]),
+                1,
+                phantom_count=np.array([-1.0]),
+                phantom_logit=-20.0,
+            )
+
+    def test_cutoff_crossing_continuous_below_phantom(self) -> None:
+        """OutisLi round 5: a boundary edge flipping the count 0 -> -1 must
+        not jump the OTHER (deep-suppressed) entry's weight.
+
+        sel=1; a fixed edge at logit -30 (below phantom_logit -20) and a
+        crossing edge with raw pre-shift logit -30 entering through the
+        smooth envelope: ``l_c = (raw + shift) * s - shift = -20 - 10 s``,
+        slot weight ``s``.  Outside (s=0, edge absent, count 0) the fixed
+        edge's weight is exactly 1.  The count-gated floor gave 0.00181599
+        just inside (limiting jump -0.998); the occupancy denominator must
+        converge to the outside value.
+        """
+        outside = segment_softmax(
+            np.array([-30.0]),
+            np.array([0]),
+            1,
+            phantom_count=np.array([0.0]),
+            phantom_logit=-20.0,
+            slot_weight=np.ones(1),
+        )
+        np.testing.assert_array_equal(outside, [1.0])
+        prev_gap = None
+        # gap decays linearly in s (slope ~ exp(10), the fixed edge's own
+        # denominator share), so drive s deep enough to see convergence
+        for s in [1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12]:
+            w = segment_softmax(
+                np.array([-30.0, -20.0 - 10.0 * s]),
+                np.array([0, 0]),
+                1,
+                phantom_count=np.array([-1.0]),
+                phantom_logit=-20.0,
+                slot_weight=np.array([1.0, s]),
+            )
+            assert np.all(np.isfinite(w))
+            gap = abs(float(w[0]) - 1.0)
+            if prev_gap is not None:
+                assert gap < prev_gap  # converging, not plateauing at a jump
+            prev_gap = gap
+        assert prev_gap < 1e-7  # the fixed edge recovers its outside weight
+
+    def test_smooth_across_former_zero_crossing(self) -> None:
+        """Sweep a logit through the raw denominator's zero crossing: the
+        weights must stay finite and BOUNDED (<= 1/theta = n_real/sel),
+        and their increments must SCALE with the sweep resolution -- the
+        smoothness signature a pole cannot fake (at a pole, refining the
+        grid does not shrink the largest step).
+        """
+
+        def _sweep(lo: float, hi: float, num: int) -> np.ndarray:
+            outs = []
+            for l2 in np.linspace(lo, hi, num):
+                w = segment_softmax(
+                    np.array([-21.0, float(l2)]),
+                    np.array([0, 0]),
+                    1,
+                    phantom_count=np.array([-1.0]),
+                    phantom_logit=-20.0,
+                    slot_weight=np.ones(2),
+                )
+                assert np.all(np.isfinite(w))
+                assert np.all(w >= 0.0)
+                # occupancy bound: (e/(e-1))/theta ~= 3.2 here (theta=1/2)
+                assert np.all(w <= 3.2)
+                outs.append(w)
+            return np.stack(outs)
+
+        # D_raw(l) = exp(-21) + exp(l) - exp(-20) crosses zero at l = ln(
+        # exp(-20) - exp(-21)) ~= -20.4587 (the LocalAtten sw-sweep pole
+        # from the review, expressed directly in logit space).
+        crossing = np.log(np.exp(-20.0) - np.exp(-21.0))
+        coarse = _sweep(crossing - 0.5, crossing + 0.5, 201)
+        step_coarse = np.abs(np.diff(coarse, axis=0)).max()
+        # refine 10x: a smooth function's largest step shrinks ~10x; a pole
+        # (or the old where-guard plateau jump) would keep an O(1) step.
+        fine = _sweep(crossing - 0.5, crossing + 0.5, 2001)
+        step_fine = np.abs(np.diff(fine, axis=0)).max()
+        assert step_fine < 0.2 * step_coarse, (
+            f"steps do not shrink under refinement (coarse {step_coarse:.4f} "
+            f"-> fine {step_fine:.4f}): discontinuity or pole at the crossing"
+        )
+
+    def test_zero_phantom_count_below_phantom_exact_dense(self) -> None:
+        """OutisLi review: ``phantom_count == 0`` means ``n_real == sel`` --
+        no phantom term exists and the denominator is a plain positive
+        softmax sum, so the output must be the EXACT dense softmax even
+        when every logit sits far below ``phantom_logit`` (the always-on
+        floor used to return ~0.0009 instead of 0.5 here).
+        """
+        data = np.array([-30.0, -30.0])
+        seg = np.array([0, 0], dtype=np.int64)
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([0.0]),
+            phantom_logit=-20.0,
+            slot_weight=np.ones(2),
+        )
+        np.testing.assert_array_equal(w, [0.5, 0.5])
+        # and BIT-equal to the phantom-free primitive on generic data
+        rng = np.random.default_rng(11)
+        data = rng.normal(size=9) * 30.0  # spans far below AND above -20
+        seg = np.array([0, 0, 0, 1, 1, 1, 1, 2, 2], dtype=np.int64)
+        w_zero = segment_softmax(
+            data,
+            seg,
+            3,
+            phantom_count=np.zeros(3),
+            phantom_logit=-20.0,
+            slot_weight=np.ones(9),
+        )
+        w_none = segment_softmax(data, seg, 3)
+        np.testing.assert_array_equal(w_zero, w_none)
+
+    def test_positive_count_below_phantom_exact_dense(self) -> None:
+        """Count > 0 with all real logits below ``phantom_logit``: the
+        denominator is positive (phantom terms only ADD), so the fixed-width
+        dense softmax must be reproduced exactly -- the floor must not fire.
+        """
+        data = np.array([-30.0, -30.0])
+        seg = np.array([0, 0], dtype=np.int64)
+        w = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([1.0]),
+            phantom_logit=-20.0,
+            slot_weight=np.ones(2),
+        )
+        full = np.array([-30.0, -30.0, -20.0])
+        ref = np.exp(full - full.max())
+        ref = ref / ref.sum()
+        np.testing.assert_allclose(w, ref[:2], rtol=1e-15, atol=0.0)
+
+    def test_float32_torch_backward_finite(self) -> None:
+        """OutisLi review: with a tiny ``delta`` the floor's backward forms
+        ``D / delta**2`` -> inf, and ``0 * inf = NaN`` poisons the gradients
+        in float32 even though the forward is exact.  The gated safe-where
+        construction must keep float32 autodiff finite and correct, in both
+        the inactive (reviewer repro) and active (deep-deficit) regimes.
+        """
+        import torch
+
+        # inactive-floor regime: logits far above phantom_logit
+        data = torch.tensor([20.0, 21.0], dtype=torch.float32, requires_grad=True)
+        ids = torch.tensor([0, 0], dtype=torch.int64)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+            slot_weight=torch.ones(2, dtype=torch.float32),
+        )
+        v = torch.tensor([1.0, 2.0])
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+        # analytic softmax-jacobian reference: g_i = w_i * (v_i - sum_j w_j v_j)
+        # (the phantom term exp(-41) is negligible at float32 resolution)
+        w64 = np.exp([20.0, 21.0] - np.float64(21.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(data.grad.numpy(), ref, rtol=1e-4)
+        assert np.abs(ref).max() > 0.1  # nontrivial gradient, not all-zero
+
+        # active-floor regime: signed denominator below the floor threshold
+        data = torch.tensor([-21.0, -21.0], dtype=torch.float32, requires_grad=True)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([-1.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+            slot_weight=torch.ones(2, dtype=torch.float32),
+        )
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+
+    def test_float32_jax_backward_finite(self) -> None:
+        """Same float32 autodiff guarantee through JAX (the reviewer
+        reproduced the NaN gradient there as well).
+        """
+        jax = pytest.importorskip("jax")
+        jnp = jax.numpy
+
+        ids = np.array([0, 0], dtype=np.int64)
+        v = np.array([1.0, 2.0], dtype=np.float32)
+
+        def loss(x):
+            w = segment_softmax(
+                x,
+                jnp.asarray(ids),
+                1,
+                phantom_count=jnp.asarray([-1.0], dtype=jnp.float32),
+                phantom_logit=-20.0,
+                slot_weight=jnp.ones(2, dtype=jnp.float32),
+            )
+            return (w * jnp.asarray(v)).sum()
+
+        # inactive-floor regime (reviewer repro)
+        g = jax.grad(loss)(jnp.asarray([20.0, 21.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+        w64 = np.exp([20.0, 21.0] - np.float64(21.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(np.asarray(g), ref, rtol=1e-4)
+        # active-floor regime
+        g = jax.grad(loss)(jnp.asarray([-21.0, -21.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+
+    def test_floor_does_not_disturb_dense_parity_regime(self) -> None:
+        """In the in-design regime (all logits >= phantom_logit, count >= 0)
+        the floor never fires (its gate excludes non-negative counts), so
+        the fixed-width dense softmax is reproduced exactly.
+        """
+        rng = np.random.default_rng(3)
+        data = rng.normal(size=7)  # normal-scale logits, shift 20 below
+        seg = np.zeros(7, dtype=np.int64)
+        w_floor = segment_softmax(
+            data,
+            seg,
+            1,
+            phantom_count=np.array([3.0]),
+            phantom_logit=-20.0,
+            slot_weight=np.ones(7),
+        )
+        # reference: the exact fixed-width softmax with 3 phantom slots
+        full = np.concatenate([data, np.full(3, -20.0)])
+        ref = np.exp(full - full.max())
+        ref = ref / ref.sum()
+        np.testing.assert_allclose(w_floor, ref[:7], rtol=1e-12, atol=1e-15)
+
+
+class TestSlotOccupancy:
+    """Capped water-filling occupancy (the phantom-denominator slot model)."""
+
+    @staticmethod
+    def _h(t: np.ndarray) -> np.ndarray:
+        # C1 plateau saturator: t(2 - t) below the plateau, 1 above
+        return np.where(t >= 1.0, 1.0, t * (2.0 - t))
+
+    @classmethod
+    def _brute_force(cls, sw: np.ndarray, cap: float) -> np.ndarray:
+        # bisection on the inverse water level u: sum h(sw * u) == cap
+        if np.count_nonzero(sw) <= cap:
+            return (sw > 0).astype(np.float64)
+        lo, hi = 0.0, 2.0 * float(cap / max(sw.sum(), 1e-300))
+        while cls._h(sw * hi).sum() < cap:
+            hi *= 2.0
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            if cls._h(sw * mid).sum() < cap:
+                lo = mid
+            else:
+                hi = mid
+        return cls._h(sw * hi)
+
+    def test_unbinding_capacity_is_bitwise_one(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        rng = np.random.default_rng(5)
+        sw = rng.uniform(0.01, 1.0, size=6)
+        seg = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+        theta = _slot_occupancy(sw, seg, 2, np.array([3.0, 5.0]))
+        np.testing.assert_array_equal(theta, np.ones(6))  # bitwise
+
+    def test_binding_matches_bisection(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        rng = np.random.default_rng(7)
+        for cap0, cap1 in [(1.0, 2.0), (2.0, 3.0), (1.0, 1.0)]:
+            sw = rng.uniform(0.0, 1.0, size=9)
+            seg = np.array([0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=np.int64)
+            theta = _slot_occupancy(sw, seg, 2, np.array([cap0, cap1]))
+            ref = np.concatenate(
+                [self._brute_force(sw[:4], cap0), self._brute_force(sw[4:], cap1)]
+            )
+            np.testing.assert_allclose(theta, ref, atol=1e-10)
+            # capacity respected
+            assert theta[:4].sum() <= cap0 + 1e-10
+            assert theta[4:].sum() <= cap1 + 1e-10
+
+    def test_ties_and_zeros(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        sw = np.array([1.0, 1.0, 1.0, 0.0])
+        seg = np.zeros(4, dtype=np.int64)
+        theta = _slot_occupancy(sw, seg, 1, np.array([1.0]))
+        np.testing.assert_allclose(theta, [1 / 3, 1 / 3, 1 / 3, 0.0], rtol=1e-12)
+
+    def test_empty_segment_no_nan(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        theta = _slot_occupancy(
+            np.array([0.5]), np.array([1], dtype=np.int64), 3, np.full(3, 2.0)
+        )
+        assert np.all(np.isfinite(theta))
+        np.testing.assert_array_equal(theta, [1.0])
+
+    def test_torch_matches_numpy(self) -> None:
+        import torch
+
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        rng = np.random.default_rng(11)
+        sw = rng.uniform(0.0, 1.0, size=8)
+        seg = np.array([0, 0, 0, 0, 0, 1, 1, 1], dtype=np.int64)
+        cap = np.array([2.0, 1.0])
+        ref = _slot_occupancy(sw, seg, 2, cap)
+        out = _slot_occupancy(
+            torch.from_numpy(sw), torch.from_numpy(seg), 2, torch.from_numpy(cap)
+        )
+        np.testing.assert_allclose(out.numpy(), ref, atol=1e-14)
+
+
+class TestGradientContinuity:
+    """C1 regressions (OutisLi round 6): the denominator must carry no
+    first-derivative jump at the below-phantom surface ``e == P`` or at the
+    water-filling active-set transitions -- logits vary smoothly with
+    coordinates, so a weight-gradient kink is a force discontinuity.
+    """
+
+    @staticmethod
+    def _w(l0: float) -> np.ndarray:
+        return segment_softmax(
+            np.array([l0, -18.0]),
+            np.array([0, 0]),
+            1,
+            phantom_count=np.array([-1.0]),  # sel=1, n=2: binding, theta=1/2
+            phantom_logit=-20.0,
+            slot_weight=np.ones(2),
+        )
+
+    def test_left_right_slope_match_at_phantom_logit(self) -> None:
+        """FD slopes of BOTH weights w.r.t. the crossing logit agree across
+        l = phantom_logit (the relu bracket jumped them by 1/theta = 2x).
+        """
+        d = 1e-6
+        left = (self._w(-20.0 - d) - self._w(-20.0 - 3.0 * d)) / (2.0 * d)
+        right = (self._w(-20.0 + 3.0 * d) - self._w(-20.0 + d)) / (2.0 * d)
+        assert np.all(np.abs(left) > 1e-4)  # nontrivial slopes
+        np.testing.assert_allclose(left, right, rtol=5e-3)
+
+    def test_theta_derivative_smooth_across_active_set_change(self) -> None:
+        """The occupancy's water-filling active-set transition (an entry
+        crossing the saturation plateau) is C1: the plateau's zero slope
+        makes the FD derivative of theta continuous.  A pole or kink would
+        keep an O(1) derivative step under grid refinement.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        seg = np.zeros(3, dtype=np.int64)
+        cap = np.array([2.0])
+
+        def dtheta(s: float, d: float = 1e-7) -> np.ndarray:
+            hi = _slot_occupancy(np.array([1.0, 0.2, s + d]), seg, 1, cap)
+            lo = _slot_occupancy(np.array([1.0, 0.2, s - d]), seg, 1, cap)
+            return (hi - lo) / (2.0 * d)
+
+        # the k*=1 <-> k*=0 transition sits near s ~ 0.40 for sw=[1, 0.2, s]
+        def max_step(num: int) -> float:
+            grid = np.linspace(0.2, 0.6, num)
+            ds = np.stack([dtheta(float(s)) for s in grid])
+            return float(np.abs(np.diff(ds, axis=0)).max())
+
+        coarse = max_step(41)
+        fine = max_step(401)
+        assert fine < 0.3 * coarse, (
+            f"theta derivative steps do not shrink under refinement "
+            f"({coarse:.5f} -> {fine:.5f}): active-set transition is not C1"
+        )
+
+
+class TestFloat32HighLogitBackward:
+    """OutisLi round 7: in-design HIGH logits (count >= 0) make
+    ``ph_e = exp(phantom_logit - segment_max)`` subnormal in float32; a
+    ``log(ex_t / ph_e)`` tail -- even with the numerator where-substituted
+    -- overflows ``1 / ph_e`` (torch) or ``ph_e**2`` (jax) in the UNSELECTED
+    branch's backward, and 0 * inf poisons the selected gradient.  The
+    log-space chi must keep float32 gradients finite and exactly dense.
+    """
+
+    def test_torch_high_logits_backward_finite(self) -> None:
+        import torch
+
+        data = torch.tensor([68.0, 69.0], dtype=torch.float32, requires_grad=True)
+        ids = torch.tensor([0, 0], dtype=torch.int64)
+        w = segment_softmax(
+            data,
+            ids,
+            1,
+            phantom_count=torch.tensor([0.0], dtype=torch.float32),
+            phantom_logit=-20.0,
+            slot_weight=torch.ones(2, dtype=torch.float32),
+        )
+        v = torch.tensor([1.0, 2.0])
+        (w * v).sum().backward()
+        assert torch.all(torch.isfinite(data.grad))
+        w64 = np.exp([68.0, 69.0] - np.float64(69.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(data.grad.numpy(), ref, rtol=1e-4)
+
+    def test_jax_high_logits_backward_finite(self) -> None:
+        jax = pytest.importorskip("jax")
+        jnp = jax.numpy
+
+        ids = np.array([0, 0], dtype=np.int64)
+        v = np.array([1.0, 2.0], dtype=np.float32)
+
+        def loss(x):
+            w = segment_softmax(
+                x,
+                jnp.asarray(ids),
+                1,
+                phantom_count=jnp.asarray([0.0], dtype=jnp.float32),
+                phantom_logit=-20.0,
+                slot_weight=jnp.ones(2, dtype=jnp.float32),
+            )
+            return (w * jnp.asarray(v)).sum()
+
+        # the reviewer's jax repro threshold: ph_e**2 underflows already here
+        g = jax.grad(loss)(jnp.asarray([24.0, 25.0], dtype=jnp.float32))
+        assert np.all(np.isfinite(np.asarray(g)))
+        w64 = np.exp([24.0, 25.0] - np.float64(25.0))
+        w64 = w64 / w64.sum()
+        ref = w64 * (np.array([1.0, 2.0]) - (w64 * [1.0, 2.0]).sum())
+        np.testing.assert_allclose(np.asarray(g), ref, rtol=1e-4)
+
+
+class TestFloat32WaterFillingStability:
+    """OutisLi round 8: the active-set selection must survive float32 weights
+    spanning ordinary decades.  ``total - prefix`` suffix moments and the
+    ``S**2 - Q*room`` discriminant are ill-conditioned subtractions; in
+    float32 they rounded away a small positive discriminant, rejected the
+    valid saturated cut, and returned theta violating the defining capacity
+    equation (sum theta = 1.52 instead of 3.0 on the reviewer's repro).
+    The selection now runs in float64 internally (comparison-only, so no
+    gradient or export cost).
+    """
+
+    @staticmethod
+    def _bisect_theta(sw: np.ndarray, cap: float) -> np.ndarray:
+        def h(t):
+            return np.where(t >= 1.0, 1.0, t * (2.0 - t))
+
+        if np.count_nonzero(sw) <= cap:
+            return (sw > 0).astype(np.float64)
+        lo, hi = 0.0, 2.0 * cap / max(sw.sum(), 1e-300)
+        while h(sw * hi).sum() < cap:
+            hi *= 2.0
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            if h(sw * mid).sum() < cap:
+                lo = mid
+            else:
+                hi = mid
+        return h(sw * hi)
+
+    def test_reviewer_repro_float32(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        sw = np.array([1.0, 0.1, 0.01, 5e-7], dtype=np.float32)
+        seg = np.zeros(4, dtype=np.int64)
+        theta = _slot_occupancy(sw, seg, 1, np.array([3.0], dtype=np.float32))
+        ref = self._bisect_theta(sw.astype(np.float64), 3.0)
+        # float64 bisection: [1, 1, 0.9999010, 0.0000990], sum 3.0; the old
+        # float32 selection returned sum 1.5208207
+        np.testing.assert_allclose(theta.astype(np.float64), ref, atol=1e-5)
+        np.testing.assert_allclose(float(theta.sum()), 3.0, rtol=1e-5)
+
+    def test_log_spaced_float32_weights_match_bisection(self) -> None:
+        from deepmd.dpmodel.utils.neighbor_graph.segment import (
+            _slot_occupancy,
+        )
+
+        rng = np.random.default_rng(17)
+        for cap in (1.0, 2.0, 5.0):
+            # weights log-spaced over 8 decades, the reviewer's failure mode
+            sw = (10.0 ** rng.uniform(-8, 0, size=12)).astype(np.float32)
+            seg = np.zeros(12, dtype=np.int64)
+            theta = _slot_occupancy(sw, seg, 1, np.array([cap], dtype=np.float32))
+            ref = self._bisect_theta(sw.astype(np.float64), cap)
+            np.testing.assert_allclose(theta.astype(np.float64), ref, atol=1e-4)
+            np.testing.assert_allclose(float(theta.sum()), cap, rtol=1e-4)
+
+    def test_float32_forward_matches_float64_reference(self) -> None:
+        """The reviewer's forward repro: float32 vs float64 evaluation of the
+        same quantized inputs must agree (the broken selection gave 0.0612
+        vs the 0.0792 reference through LocalAtten, ~23% error).
+        """
+        data32 = np.full(4, -30.0, dtype=np.float32)
+        sw32 = np.array([1.0, 0.1, 0.01, 5e-7], dtype=np.float32)
+        seg = np.zeros(4, dtype=np.int64)
+        w32 = segment_softmax(
+            data32,
+            seg,
+            1,
+            phantom_count=np.array([-1.0], dtype=np.float32),  # sel=3, n=4
+            phantom_logit=-20.0,
+            slot_weight=sw32,
+        )
+        w64 = segment_softmax(
+            data32.astype(np.float64),
+            seg,
+            1,
+            phantom_count=np.array([-1.0]),
+            phantom_logit=-20.0,
+            slot_weight=sw32.astype(np.float64),
+        )
+        np.testing.assert_allclose(w32.astype(np.float64), w64, rtol=1e-3, atol=1e-6)

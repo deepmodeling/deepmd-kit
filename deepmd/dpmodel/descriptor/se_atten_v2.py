@@ -122,6 +122,9 @@ class DescrptSeAttenV2(DescrptDPA1):
             A list of strings. Give the name to each type of atoms.
     seed : int, Optional
             Random seed for initializing the network parameters.
+    lmax : int
+            Maximum angular degree of the Cartesian moment basis. Supported
+            values are 1 through 4.
     """
 
     def __init__(
@@ -158,6 +161,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         type_map: list[str] | None = None,
         # consistent with argcheck, not used though
         seed: int | list[int] | None = None,
+        lmax: int = 1,
     ) -> None:
         DescrptDPA1.__init__(
             self,
@@ -195,6 +199,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             type_map=type_map,
             # consistent with argcheck, not used though
             seed=seed,
+            lmax=lmax,
         )
         self.compress = False
 
@@ -204,7 +209,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 3 if self.compress else 2,
+            "@version": 4 if obj.lmax != 1 else (3 if self.compress else 2),
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -246,6 +251,11 @@ class DescrptSeAttenV2(DescrptDPA1):
             "trainable": self.trainable,
             "spin": None,
         }
+        if obj.lmax != 1:
+            data["lmax"] = obj.lmax
+            data["@variables"]["degree_gain_raw"] = to_numpy_array(
+                obj.adam_degree_gain_raw
+            )
         if self.compress:
             type_embd_data = (
                 self.type_embd_data
@@ -282,7 +292,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -295,10 +305,16 @@ class DescrptSeAttenV2(DescrptDPA1):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        data.setdefault("lmax", 1)
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]
         obj.se_atten["dstd"] = variables["dstd"]
+        if obj.se_atten.lmax > 1:
+            obj.se_atten.adam_degree_gain_raw = np.asarray(
+                variables["degree_gain_raw"],
+                dtype=PRECISION_DICT[obj.se_atten.precision],
+            )
         obj.se_atten.embeddings = NetworkCollection.deserialize(embeddings)
         obj.se_atten.embeddings_strip = NetworkCollection.deserialize(embeddings_strip)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)

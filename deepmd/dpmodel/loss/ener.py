@@ -13,6 +13,7 @@ from deepmd.dpmodel.loss.loss import (
 )
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
+    masked_pair_mean,
     per_frame_component_mean,
 )
 from deepmd.utils.data import (
@@ -27,6 +28,17 @@ from deepmd.utils.version import (
 
 
 def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) -> Array:
+    r"""Return the mean Huber loss.
+
+    For residual :math:`e=y-\hat y`, the elementwise loss is
+
+    .. math::
+
+       H_\delta(e)=\begin{cases}
+       \tfrac12 e^2,& |e|\le\delta,\\
+       \delta(|e|-\tfrac12\delta),& |e|>\delta.
+       \end{cases}
+    """
     xp = array_api_compat.array_namespace(predictions, targets)
     error = targets - predictions
     abs_error = xp.abs(error)
@@ -38,6 +50,27 @@ def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) ->
 
 class EnergyLoss(Loss):
     r"""Construct a layer to compute loss on energy, force and virial.
+
+    The total objective is a weighted sum of the enabled error terms,
+
+    .. math::
+
+       L=p_E L_E+p_F L_F+p_\Xi L_\Xi+p_{E_i}L_{E_i}
+       +p_{PF}L_{PF}+p_{GF}L_{GF}.
+
+    Each prefactor is interpolated using the current learning rate
+    :math:`\eta` as
+
+    .. math::
+
+       p(\eta)=p_{\mathrm{limit}}+
+       (p_{\mathrm{start}}-p_{\mathrm{limit}})
+       \frac{\eta}{\eta_0}.
+
+    The individual terms are mean squared, mean absolute, or Huber errors as
+    configured.  In relative-force mode, each force residual is divided by
+    :math:`\lVert\hat{\mathbf F}_i\rVert+\nu`, where :math:`\nu` is
+    ``relative_f``.
 
     Parameters
     ----------
@@ -75,6 +108,10 @@ class EnergyLoss(Loss):
         The prefactor of generalized force loss at the end of the training.
     numb_generalized_coord : int
         The dimension of generalized coordinates.
+    start_pref_h : float
+        The prefactor of Hessian loss at the start of the training.
+    limit_pref_h : float
+        The prefactor of Hessian loss at the end of the training.
     use_default_pf : bool
         If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided.
         This allows using the prefactor force loss (pf) without requiring atom_pref.npy files.
@@ -127,6 +164,8 @@ class EnergyLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
         use_huber: bool = False,
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
@@ -159,12 +198,15 @@ class EnergyLoss(Loss):
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
         self.numb_generalized_coord = numb_generalized_coord
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_f = self.start_pref_f != 0.0 or self.limit_pref_f != 0.0
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
         self.has_pf = self.start_pref_pf != 0.0 or self.limit_pref_pf != 0.0
         self.has_gf = self.start_pref_gf != 0.0 or self.limit_pref_gf != 0.0
+        self.has_h = self.start_pref_h != 0.0 or self.limit_pref_h != 0.0
         if self.has_gf and self.numb_generalized_coord < 1:
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
@@ -187,8 +229,10 @@ class EnergyLoss(Loss):
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
             raise RuntimeError(
-                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force."
             )
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian.")
 
     def call(
         self,
@@ -198,7 +242,16 @@ class EnergyLoss(Loss):
         label_dict: dict[str, Array],
         mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
-        """Calculate loss from model results and labeled results."""
+        r"""Calculate the weighted energy-model objective.
+
+        This evaluates the objective and learning-rate-dependent prefactors
+        defined in :class:`EnergyLoss`.  The diagnostics contain per-term RMSE
+        values in MSE/Huber mode and per-term MAE values when ``loss_func`` is
+        ``"mae"`` or ``mae=True``.  RMSE diagnostics remain ordinary residual
+        RMSEs when the optimized objective uses Huber loss.  The aggregate
+        ``rmse`` entry is :math:`\sqrt{L}` for the fully weighted objective,
+        including all enabled prefactors and any configured Huber terms.
+        """
         energy = model_dict["energy"]
         force = model_dict["force"]
         virial = model_dict["virial"]
@@ -287,6 +340,7 @@ class EnergyLoss(Loss):
         pref_pf = find_atom_pref * (
             self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
         )
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * lr_ratio
 
         loss = 0
         more_loss = {}
@@ -700,6 +754,42 @@ class EnergyLoss(Loss):
             more_loss["rmse_gf"] = self.display_if_exist(
                 xp.sqrt(l2_gen_force_loss), find_drdq
             )
+        hessian = model_dict.get("hessian", model_dict.get("energy_derv_r_derv_r"))
+        if self.has_h and hessian is not None and "hessian" in label_dict:
+            find_hessian = label_dict.get("find_hessian", 0.0)
+            if maskf is not None:
+                hessian_shape = (_nf, _nloc * 3, _nloc * 3)
+                diff_h = xp.reshape(label_dict["hessian"], hessian_shape) - xp.reshape(
+                    hessian, hessian_shape
+                )
+                # A Hessian element couples two Cartesian atom components, so
+                # it is valid only when both corresponding atoms are real.
+                l2_hessian_loss = masked_pair_mean(xp.square(diff_h), maskf, ncomp=3)
+            else:
+                diff_h = xp.reshape(label_dict["hessian"], (-1,)) - xp.reshape(
+                    hessian,
+                    (-1,),
+                )
+                l2_hessian_loss = xp.mean(xp.square(diff_h))
+            mae_h = None
+            if self.loss_func == "mae" or mae:
+                if maskf is not None:
+                    mae_h = masked_pair_mean(xp.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = xp.mean(xp.abs(diff_h))
+            if self.loss_func == "mse":
+                loss += pref_h * find_hessian * l2_hessian_loss
+            elif self.loss_func == "mae":
+                loss += pref_h * find_hessian * mae_h
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for hessian loss."
+                )
+            more_loss["rmse_h"] = self.display_if_exist(
+                xp.sqrt(l2_hessian_loss), find_hessian
+            )
+            if mae:
+                more_loss["mae_h"] = self.display_if_exist(mae_h, find_hessian)
 
         self.l2_l = loss
         more_loss["rmse"] = xp.sqrt(loss)
@@ -778,6 +868,17 @@ class EnergyLoss(Loss):
                     default=1.0,
                 )
             )
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                    special_shape="hessian",
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:
@@ -788,9 +889,12 @@ class EnergyLoss(Loss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
-            "@version": 4,
+            # Version 5 identifies the opt-in Hessian fields. Keep ordinary
+            # energy losses at version 4 so readers that already support the
+            # standard schema remain interoperable across backends.
+            "@version": 5 if self.has_h else 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -814,6 +918,12 @@ class EnergyLoss(Loss):
             "use_default_pf": self.use_default_pf,
             "intensive_ener_virial": self.intensive_ener_virial,
         }
+        if self.has_h:
+            # Keep the established cross-backend serialization unchanged for
+            # ordinary energy losses; Hessian-only fields are an opt-in schema.
+            data["start_pref_h"] = self.start_pref_h
+            data["limit_pref_h"] = self.limit_pref_h
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "Loss":
@@ -831,9 +941,15 @@ class EnergyLoss(Loss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         # Backward compatibility: version 1-2 used legacy normalization
         if version < 3:
             data.setdefault("intensive_ener_virial", False)
+        # Version 5 introduced explicit Hessian prefactors. Older payloads
+        # represent an ordinary energy loss unless these development fields
+        # were already present.
+        if version < 5:
+            data.setdefault("start_pref_h", 0.0)
+            data.setdefault("limit_pref_h", 0.0)
         return cls(**data)

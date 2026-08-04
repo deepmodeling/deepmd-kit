@@ -494,15 +494,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
@@ -1070,6 +1062,8 @@ def symmetrization_op_dynamic(
 
 
 class RepFlowLayer(NativeOP):
+    r"""Residual node/edge/angle update :math:`(n,e,a)^{l+1}=\Phi_l(n,e,a)`."""
+
     # Mirrors the descriptor-block internal switch.  The owning block writes the
     # instance value during construction/deserialization.
     _use_static_dynamic_sel: bool = False

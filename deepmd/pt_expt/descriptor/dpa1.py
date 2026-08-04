@@ -10,6 +10,10 @@ from deepmd.dpmodel.common import (
     cast_precision,
 )
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+from deepmd.dpmodel.descriptor.dpa1 import (
+    build_dpa1_degree_weights,
+    build_dpa1_moment_basis,
+)
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
@@ -98,12 +102,10 @@ def _env_mat(
 ) -> tuple:
     """Environment-matrix prologue shared by every fused path (strip / concat).
 
-    Returns ``(nf, nloc, nnei, ng, nfnl, rr, ss, sw, nlist_masked,
-    type_embedding)``: ``rr`` the ``(nfnl, nnei, 4)`` environment matrix
-    (excluded edges zeroed), ``ss`` its radial channel ``(nfnl, nnei, 1)``,
-    ``sw`` the ``(nfnl, nnei, 1)`` smooth cutoff (zeroed on excluded/padding
-    edges), and ``nlist_masked`` the neighbor indices with excluded/padding
-    entries mapped to ``0`` (for downstream gathers).
+    Returns ``(nf, nloc, nnei, ng, nfnl, rr, moment_basis, ss, sw,
+    nlist_masked, type_embedding)``. ``rr`` is the four-component environment
+    matrix, while ``moment_basis`` has four or nine components according to
+    ``lmax``. Excluded and padding edges are zeroed in both tensors.
     """
     se = desc.se_atten
     nf, nloc, nnei = nlist.shape
@@ -112,7 +114,7 @@ def _env_mat(
         # Fused env-matrix operator, captured opaquely under the pt_expt trace and
         # resolving to the Triton kernel at CUDA runtime; identical outputs to the
         # array-API ``EnvMat.call`` below.
-        rr, _diff, sw = _env_mat_triton(
+        rr, diff, sw = _env_mat_triton(
             coord_ext,
             nlist,
             atype_ext_for_env[:, :nloc],
@@ -125,7 +127,7 @@ def _env_mat(
             use_exp_switch=se.env_mat.use_exp_switch,
         )
     else:
-        rr, _diff, sw = se.env_mat.call(
+        rr, diff, sw = se.env_mat.call(
             coord_ext, atype_ext_for_env, nlist, se.mean[...], se.stddev[...]
         )
     nf, nloc, nnei, _ = rr.shape
@@ -148,9 +150,36 @@ def _env_mat(
     )
     rr = rr.view(nfnl, nnei, 4) * exclude_mask[:, :, None].to(rr.dtype)
     ss = rr[:, :, :1]
+    moment_basis = rr
+    if se.lmax > 1:
+        diff = diff.view(nfnl, nnei, 3)
+        radial_stddev = se.stddev[:, :, :1][atype_ext_for_env[:, :nloc]].view(
+            nfnl, nnei, 1
+        )
+        moment_basis = build_dpa1_moment_basis(
+            rr,
+            diff,
+            sw,
+            radial_stddev,
+            nlist_mask,
+            se.lmax,
+            se.env_protection,
+        )
 
     type_embedding = desc.type_embedding.call()
-    return nf, nloc, nnei, ng, nfnl, rr, ss, sw, nlist_masked, type_embedding
+    return (
+        nf,
+        nloc,
+        nnei,
+        ng,
+        nfnl,
+        rr,
+        moment_basis,
+        ss,
+        sw,
+        nlist_masked,
+        type_embedding,
+    )
 
 
 def _strip_pair_index(
@@ -229,15 +258,22 @@ def _grrg_from_moment(
 ) -> Any:
     """Strip-mode epilogue: symmetry-invariant contraction of the moment.
 
-    Consumes the unnormalized moment ``xyz_scatter`` (nfnl, 4, ng), applies the
-    ``1 / nnei`` normalization, forms the ``G^T G`` descriptor and the rotation
-    matrix, and appends the center type embedding when ``concat_output_tebd``.
+    Consumes the unnormalized moment, applies the ``1 / nnei`` normalization,
+    forms the ``G^T G`` descriptor and the rotation matrix, and appends the
+    center type embedding when ``concat_output_tebd``.
     """
     se = desc.se_atten
     xyz_scatter = xyz_scatter / se.nnei
     xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
     rot_mat = xyz_scatter_1[:, :, 1:4]
     xyz_scatter_2 = xyz_scatter[:, :, 0 : se.axis_neuron]
+    if se.lmax > 1:
+        degree_weights = build_dpa1_degree_weights(
+            se.adam_degree_gain_raw,
+            se.lmax,
+            xyz_scatter,
+        )
+        xyz_scatter_2 = xyz_scatter_2 * degree_weights.view(1, -1, 1)
     result = torch.matmul(xyz_scatter_1, xyz_scatter_2)
     result = result.view(nf, nloc, ng * se.axis_neuron)
     rot_mat = rot_mat.view(nf, nloc, ng, 3)
@@ -277,6 +313,77 @@ def _type_pair_table(desc: Any, type_embedding: torch.Tensor) -> torch.Tensor:
 @torch_module
 class DescrptDPA1(DescrptDPA1DP):
     _update_sel_cls = UpdateSel
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._promote_degree_gain()
+        # Persisted graph-routing knob (first-class training configuration):
+        # ``disable_graph_lower()`` used to flip only the plain dpmodel bool,
+        # which a Trainer checkpoint restart silently reset (the fresh model
+        # is rebuilt from config before ``load_state_dict``, and neither the
+        # state-dict keys nor ``_extra_state.model_params`` carried the
+        # choice) -- on a binding-sel system that switched the training
+        # equation and gradients without warning.  A persistent buffer rides
+        # every pt_expt state_dict, so save/restart round-trips it.
+        torch.nn.Module.register_buffer(
+            self,
+            "graph_lower_disabled",
+            torch.zeros((), dtype=torch.bool, device="cpu"),
+        )
+
+    def _promote_degree_gain(self) -> None:
+        """Promote the dpmodel raw degree gains from a buffer to a Parameter."""
+        block = self.se_atten
+        raw = block._buffers.get("adam_degree_gain_raw")
+        if raw is None:
+            return
+        del block._buffers["adam_degree_gain_raw"]
+        block.adam_degree_gain_raw = torch.nn.Parameter(
+            raw,
+            requires_grad=bool(block.trainable),
+        )
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptDPA1":
+        obj = super().deserialize(data)
+        obj._promote_degree_gain()
+        return obj
+
+    def disable_graph_lower(self) -> None:
+        """Persisted variant of the dpmodel escape hatch (see base class).
+
+        The buffer (and the routing bool) are PER-TASK state: multi-task
+        ``share_params`` shares network submodules, not this buffer, so
+        disabling the graph lower on one task branch does not propagate to
+        branches sharing the same descriptor weights -- each branch owns
+        its routing decision.
+        """
+        super().disable_graph_lower()
+        self.graph_lower_disabled.fill_(True)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written before the knob was persisted lack
+        # the buffer; default to the fresh module's value (graph enabled)
+        # instead of failing the strict load.
+        key = prefix + "graph_lower_disabled"
+        if key not in state_dict:
+            state_dict[key] = self.graph_lower_disabled.detach().clone()
+        else:
+            # Re-sync the dpmodel-side routing bool from the RESTORED value
+            # here, at load time, where the incoming tensor is real.  The
+            # routing predicate itself must stay a plain python bool:
+            # ``uses_graph_lower()`` runs inside traced forwards (the dense
+            # adapter gate), and reading the buffer there would emit a
+            # data-dependent ``bool(FakeTensor)`` guard that breaks
+            # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
+            self._graph_lower_disabled = bool(state_dict[key])
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def share_params(
         self,
@@ -456,6 +563,7 @@ class DescrptDPA1(DescrptDPA1DP):
         atype: torch.Tensor,
         type_embedding: torch.Tensor | None = None,
         static_nnei: int | None = None,
+        comm_dict: dict | None = None,
     ) -> Any:
         """Graph-native forward, routed through the fused edge kernel when eligible.
 
@@ -504,10 +612,16 @@ class DescrptDPA1(DescrptDPA1DP):
             graph = dataclasses.replace(graph, edge_vec=graph.edge_vec.to(prec))
         # Triton edge convolution: serves the uncompressed concat / strip lower;
         # a tabulated (geo_compress) descriptor stays on the table path below.
+        # Descriptor-level exclusions stay on the reference path: the fused
+        # edge kernel bypasses the reference ``apply_pair_exclusion(graph,
+        # atype, emask)`` (descriptor exclude_types is independent of the
+        # model-level pair_exclude_types already applied at graph build).
         if (
             fused
             and triton_infer_level() >= 1
             and not self.geo_compress
+            and self.se_atten.lmax == 1
+            and not self.se_atten.exclude_types
             and self._fused_eligible("triton")
         ):
             return self._call_graph_triton(graph, atype, type_embedding)
@@ -516,7 +630,12 @@ class DescrptDPA1(DescrptDPA1DP):
         if self.geo_compress:
             return self._call_graph_compress_reference(graph, atype, type_embedding)
         return DescrptDPA1DP.call_graph(
-            self, graph, atype, type_embedding=type_embedding, static_nnei=static_nnei
+            self,
+            graph,
+            atype,
+            type_embedding=type_embedding,
+            static_nnei=static_nnei,
+            comm_dict=comm_dict,
         )
 
     def _fused_eligible(self, backend: str) -> bool:
@@ -541,6 +660,11 @@ class DescrptDPA1(DescrptDPA1DP):
             precomputed outside the kernel). ``triton`` serves any layer
             stack (the head layers run on cuBLAS), so only the last
             activation must be inlined.
+
+            Production CUDA binaries currently instantiate only ``lmax=1``.
+            The lmax 2/3/4 kernel sources are retained behind the
+            ``DEEPMD_ENABLE_DPA1_HIGH_LMAX`` CMake option and use the portable
+            reference path unless a dedicated experimental build enables them.
         """
         se = self.se_atten
         if se.attn_layer != 0:
@@ -553,6 +677,7 @@ class DescrptDPA1(DescrptDPA1DP):
                 # matters, served up to 256 by the padded bucket dispatch.
                 return (
                     se.tebd_input_mode == "strip"
+                    and se.lmax == 1
                     and not se.exclude_types
                     and se.mean.dtype == torch.float32
                     and self.compress_data[0].dtype == torch.float32
@@ -561,6 +686,8 @@ class DescrptDPA1(DescrptDPA1DP):
                     and 0 < int(se.axis_neuron) <= min(16, int(se.neuron[-1]))
                     and cuda_compress_available()
                 )
+            if se.lmax != 1:
+                return False
             widths = [int(layer.w.shape[1]) for layer in layers]
             first = layers[0]
             first_has_residual = bool(first.resnet) and first.w.shape[1] in (
@@ -594,6 +721,12 @@ class DescrptDPA1(DescrptDPA1DP):
         return (
             TRITON_AVAILABLE
             and se.tebd_input_mode in ("strip", "concat")
+            # No exclude_types condition here: exclusion handling differs per
+            # dispatch site.  The dense ``_call_triton`` applies the descriptor
+            # emask itself (``_env_mat`` masks nlist / sw / rr), so it serves
+            # excluded models; the graph ``_call_graph_triton`` bypasses the
+            # reference ``apply_pair_exclusion`` and is gated at its dispatch
+            # site in :meth:`call_graph` instead.
             and str(layers[-1].activation_function).lower() in ACT_CODES
         )
 
@@ -613,9 +746,19 @@ class DescrptDPA1(DescrptDPA1DP):
         Composes under ``make_fx`` / ``torch.export`` so the operator is baked
         into the pt_expt ``.pt2``.
         """
-        nf, nloc, nnei, ng, nfnl, rr, ss, sw, nlist_masked, type_embedding = _env_mat(
-            self, coord_ext, atype_ext, nlist
-        )
+        (
+            nf,
+            nloc,
+            nnei,
+            ng,
+            nfnl,
+            rr,
+            moment_basis,
+            ss,
+            sw,
+            nlist_masked,
+            type_embedding,
+        ) = _env_mat(self, coord_ext, atype_ext, nlist)
         se = self.se_atten
         strip = se.tebd_input_mode == "strip"
         # Embedding-net input: the radial channel (strip) or the radial-plus-
@@ -663,7 +806,7 @@ class DescrptDPA1(DescrptDPA1DP):
             # unused by the kernel (``gated == 0``).
             gated = 0
             tt_full, tebd_idx, sw_eff = concat_gate_placeholders(z2, ng)
-        # Unnormalized moment (nfnl, 4, ng); _grrg_from_moment applies 1 / nnei.
+        # Unnormalized moment; _grrg_from_moment applies 1 / nnei.
         xyz_scatter = se_conv(
             z2.contiguous(),
             h.contiguous(),
@@ -671,7 +814,7 @@ class DescrptDPA1(DescrptDPA1DP):
             tt_full,
             tebd_idx,
             sw_eff,
-            rr,
+            moment_basis,
             resnet_mult,
             act,
             gated,
@@ -696,9 +839,19 @@ class DescrptDPA1(DescrptDPA1DP):
         nlist: torch.Tensor,
     ) -> Any:
         """Compressed forward for DPA1 descriptor (strip only)."""
-        nf, nloc, nnei, ng, nfnl, rr, ss, sw, nlist_masked, type_embedding = _env_mat(
-            self, coord_ext, atype_ext, nlist
-        )
+        (
+            nf,
+            nloc,
+            nnei,
+            ng,
+            nfnl,
+            rr,
+            moment_basis,
+            ss,
+            sw,
+            nlist_masked,
+            type_embedding,
+        ) = _env_mat(self, coord_ext, atype_ext, nlist)
         tebd_idx = _strip_pair_index(
             self, atype_ext, nlist_masked, type_embedding, nf, nloc, nnei
         )
@@ -713,7 +866,7 @@ class DescrptDPA1(DescrptDPA1DP):
                 self.compress_data[0].contiguous(),
                 self.compress_info[0].cpu().contiguous(),
                 ss.reshape(-1, 1).contiguous(),
-                rr.contiguous(),
+                moment_basis.contiguous(),
                 gg_t.reshape(-1, gg_t.size(-1)).contiguous(),
                 self.se_atten.neuron[-1],
                 is_sorted,
@@ -731,7 +884,7 @@ class DescrptDPA1(DescrptDPA1DP):
                 rr.view(-1, self.se_atten.nnei, 4)[:, :, 1:4], dim=-1
             )
             gg = self.se_atten.dpa1_attention(gg, nlist_mask, input_r=input_r, sw=sw)
-            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+            xyz_scatter = torch.matmul(moment_basis.permute(0, 2, 1), gg)
 
         return _grrg_from_moment(
             self,
@@ -758,7 +911,8 @@ class DescrptDPA1(DescrptDPA1DP):
         Evaluates the tabulated geometric embedding with the original fused
         table operator ``deepmd::tabulate_fusion_se_atten``, treating each edge
         as a one-neighbor block (``nloc = E``, ``nnei = 1``) so the operator
-        returns the per-edge moment outer product ``(E, 4, ng)``; a
+        returns the per-edge moment outer product with four or nine basis
+        rows; a
         ``segment_sum`` over edge centers then forms the per-node moment. This
         matches the dense :meth:`DescrptDPA1._call_compressed` (same table, same
         gate) to the fp32 summation-order floor, and composes under autograd so
@@ -802,6 +956,17 @@ class DescrptDPA1(DescrptDPA1DP):
         rr = (em - se.mean[:, 0, :][center_type_for_stats]) / se.stddev[:, 0, :][
             center_type_for_stats
         ]
+        moment_basis = rr
+        if se.lmax > 1:
+            moment_basis = build_dpa1_moment_basis(
+                rr,
+                ev,
+                sw,
+                se.stddev[:, 0, 0:1][center_type_for_stats],
+                graph.edge_mask,
+                se.lmax,
+                se.env_protection,
+            )
 
         # === Step 2. Strip type-pair gate from the precomputed table ===
         ntypes = type_embedding.shape[0]
@@ -820,7 +985,7 @@ class DescrptDPA1(DescrptDPA1DP):
             self.compress_data[0].contiguous(),
             self.compress_info[0].cpu().contiguous(),
             rr[:, 0:1].contiguous(),
-            rr.reshape(-1, 1, 4).contiguous(),
+            moment_basis.reshape(-1, 1, moment_basis.shape[-1]).contiguous(),
             gate.contiguous(),
             ng,
             is_sorted,
@@ -828,12 +993,25 @@ class DescrptDPA1(DescrptDPA1DP):
 
         # === Step 4. Moment reduction and G^T G contraction ===
         outer = outer * graph.edge_mask[:, None, None].to(outer.dtype)
-        gr = torch.zeros(n_total, 4, ng, dtype=outer.dtype, device=outer.device)
+        gr = torch.zeros(
+            n_total,
+            moment_basis.shape[-1],
+            ng,
+            dtype=outer.dtype,
+            device=outer.device,
+        )
         gr.index_add_(0, dst, outer)
         gr = gr / se.nnei
-        gr_perm = gr.permute(0, 2, 1)  # (N, ng, 4)
+        gr_perm = gr.permute(0, 2, 1)
         rot_mat = gr_perm[:, :, 1:4]
-        gr_sub = gr[:, :, : se.axis_neuron]  # (N, 4, axis)
+        gr_sub = gr[:, :, : se.axis_neuron]
+        if se.lmax > 1:
+            degree_weights = build_dpa1_degree_weights(
+                se.adam_degree_gain_raw,
+                se.lmax,
+                gr,
+            )
+            gr_sub = gr_sub * degree_weights.view(1, -1, 1)
         grrg = torch.matmul(gr_perm, gr_sub).reshape(n_total, ng * se.axis_neuron)
         grrg = grrg.to(graph.edge_vec.dtype)
         if self.concat_output_tebd:

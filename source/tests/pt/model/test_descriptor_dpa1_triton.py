@@ -68,7 +68,17 @@ _GPU = unittest.skipUnless(
 )
 
 
-def _rand_conv_inputs(nfnl, nnei, ng, resnet_mult, has_idt, ntype_pair, device, seed=0):
+def _rand_conv_inputs(
+    nfnl,
+    nnei,
+    ng,
+    resnet_mult,
+    has_idt,
+    ntype_pair,
+    device,
+    seed=0,
+    basis_dim=4,
+):
     gen = torch.Generator(device=device).manual_seed(seed)
     h1_dim = ng // resnet_mult if resnet_mult > 0 else ng
     z2 = torch.randn(nfnl, nnei, ng, device=device, generator=gen)
@@ -81,22 +91,31 @@ def _rand_conv_inputs(nfnl, nnei, ng, resnet_mult, has_idt, ntype_pair, device, 
     tt = torch.randn(ntype_pair, ng, device=device, generator=gen) * 0.3
     idx = torch.randint(0, ntype_pair, (nfnl * nnei,), device=device, generator=gen)
     sw = torch.rand(nfnl, nnei, device=device, generator=gen)
-    rr = torch.randn(nfnl, nnei, 4, device=device, generator=gen)
-    return z2, h1, idt, tt, idx, sw, rr
+    basis = torch.randn(nfnl, nnei, basis_dim, device=device, generator=gen)
+    return z2, h1, idt, tt, idx, sw, basis
 
 
 class TestSeConvConfig(unittest.TestCase):
     """Launch-configuration resolution (CPU-safe, no kernel launch)."""
 
     def test_level1_returns_default(self) -> None:
-        self.assertEqual(resolve_conv_config(128, 64, level=1), DEFAULT_CONFIG)
+        self.assertEqual(resolve_conv_config(128, 64, 4, level=1), DEFAULT_CONFIG)
 
     def test_level0_returns_default(self) -> None:
-        self.assertEqual(resolve_conv_config(128, 64, level=0), DEFAULT_CONFIG)
+        self.assertEqual(resolve_conv_config(128, 64, 4, level=0), DEFAULT_CONFIG)
 
     def test_level2_unknown_shape_falls_back(self) -> None:
         # An unswept channel width can only fall back to the universal default.
-        self.assertEqual(resolve_conv_config(777, 333, level=2), DEFAULT_CONFIG)
+        self.assertEqual(resolve_conv_config(777, 333, 9, level=2), DEFAULT_CONFIG)
+
+    def test_level2_distinguishes_basis_width(self) -> None:
+        if (
+            not torch.cuda.is_available()
+            or torch.cuda.get_device_name() != "NVIDIA H20"
+        ):
+            self.skipTest("The built-in launch configurations are H20-specific.")
+        self.assertEqual(resolve_conv_config(64, 32, 4, level=2), (16, 2))
+        self.assertEqual(resolve_conv_config(64, 32, 9, level=2), (32, 2))
 
 
 @_GPU
@@ -115,36 +134,69 @@ class TestSeConvOp(unittest.TestCase):
         # path (padded to 128) and the direct doubling fold at the true ``H1``.
         # ``act`` selects the inlined activation: 0 = tanh, 1 = silu.
         self.cases = [
-            (ng, mult, has_idt, act, gated)
+            (ng, mult, has_idt, act, gated, basis_dim)
             for ng in (128, 100)
             for mult in (2, 1, 0)
             for has_idt in (False, True)
             for act in (0, 1)
             for gated in (1, 0)
+            for basis_dim in (4, 9, 16, 25)
         ]
 
     def test_forward_matches_reference(self) -> None:
-        for ng, mult, has_idt, act, gated in self.cases:
-            with self.subTest(ng=ng, mult=mult, has_idt=has_idt, act=act, gated=gated):
-                z2, h1, idt, tt, idx, sw, rr = _rand_conv_inputs(
-                    512, 47, ng, mult, has_idt, 169, self.device
+        for ng, mult, has_idt, act, gated, basis_dim in self.cases:
+            with self.subTest(
+                ng=ng,
+                mult=mult,
+                has_idt=has_idt,
+                act=act,
+                gated=gated,
+                basis_dim=basis_dim,
+            ):
+                z2, h1, idt, tt, idx, sw, basis = _rand_conv_inputs(
+                    512,
+                    47,
+                    ng,
+                    mult,
+                    has_idt,
+                    169,
+                    self.device,
+                    basis_dim=basis_dim,
                 )
-                ref = _se_conv_reference(z2, h1, idt, tt, idx, sw, rr, mult, act, gated)
-                got = se_conv(z2, h1, idt, tt, idx, sw, rr, mult, act, gated)
+                ref = _se_conv_reference(
+                    z2, h1, idt, tt, idx, sw, basis, mult, act, gated
+                )
+                got = se_conv(z2, h1, idt, tt, idx, sw, basis, mult, act, gated)
                 rel = (got - ref).abs().max() / ref.abs().max()
                 self.assertLess(rel.item(), 1e-5)
 
     def test_backward_matches_reference(self) -> None:
-        for ng, mult, has_idt, act, gated in self.cases:
-            with self.subTest(ng=ng, mult=mult, has_idt=has_idt, act=act, gated=gated):
-                z2, h1, idt, tt, idx, sw, rr = _rand_conv_inputs(
-                    512, 47, ng, mult, has_idt, 169, self.device
+        for ng, mult, has_idt, act, gated, basis_dim in self.cases:
+            with self.subTest(
+                ng=ng,
+                mult=mult,
+                has_idt=has_idt,
+                act=act,
+                gated=gated,
+                basis_dim=basis_dim,
+            ):
+                z2, h1, idt, tt, idx, sw, basis = _rand_conv_inputs(
+                    512,
+                    47,
+                    ng,
+                    mult,
+                    has_idt,
+                    169,
+                    self.device,
+                    basis_dim=basis_dim,
                 )
                 gout = torch.randn_like(
-                    _se_conv_reference(z2, h1, idt, tt, idx, sw, rr, mult, act, gated)
+                    _se_conv_reference(
+                        z2, h1, idt, tt, idx, sw, basis, mult, act, gated
+                    )
                 )
                 ref_in = [
-                    t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, rr)
+                    t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, basis)
                 ]
                 _se_conv_reference(
                     ref_in[0],
@@ -159,7 +211,7 @@ class TestSeConvOp(unittest.TestCase):
                     gated,
                 ).backward(gout)
                 got_in = [
-                    t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, rr)
+                    t.detach().clone().requires_grad_(True) for t in (z2, h1, sw, basis)
                 ]
                 se_conv(
                     got_in[0],
@@ -174,7 +226,7 @@ class TestSeConvOp(unittest.TestCase):
                     gated,
                 ).backward(gout)
                 for name, a, b in zip(
-                    ("z2", "h1", "sw", "rr"),
+                    ("z2", "h1", "sw", "basis"),
                     (t.grad for t in ref_in),
                     (t.grad for t in got_in),
                     strict=True,
@@ -189,27 +241,29 @@ class TestSeConvOp(unittest.TestCase):
                     self.assertLess(rel.item(), 1e-5, msg=f"grad {name}")
 
     def test_make_fx_force_trace(self) -> None:
-        z2, h1, idt, tt, idx, sw, rr = _rand_conv_inputs(
-            512, 47, 128, 2, False, 169, self.device
+        z2, h1, idt, tt, idx, sw, basis = _rand_conv_inputs(
+            512, 47, 128, 2, False, 169, self.device, basis_dim=25
         )
         gout = torch.randn_like(
-            _se_conv_reference(z2, h1, idt, tt, idx, sw, rr, 2, 0, 1)
+            _se_conv_reference(z2, h1, idt, tt, idx, sw, basis, 2, 0, 1)
         )
 
-        def force_fn(z2, h1, idt, tt, idx, sw, rr):
+        def force_fn(z2, h1, idt, tt, idx, sw, basis):
             z2r = z2.detach().requires_grad_(True)
-            out = se_conv(z2r, h1, idt, tt, idx, sw, rr, 2, 0, 1)
-            (grad_z2,) = torch.autograd.grad(out, z2r, gout)
-            return out, grad_z2
+            basisr = basis.detach().requires_grad_(True)
+            out = se_conv(z2r, h1, idt, tt, idx, sw, basisr, 2, 0, 1)
+            grad_z2, grad_basis = torch.autograd.grad(out, (z2r, basisr), gout)
+            return out, grad_z2, grad_basis
 
-        traced = make_fx(force_fn)(z2, h1, idt, tt, idx, sw, rr)
+        traced = make_fx(force_fn)(z2, h1, idt, tt, idx, sw, basis)
         n_fwd = sum(1 for n in traced.graph.nodes if "se_conv.default" in str(n.target))
         n_bwd = sum(1 for n in traced.graph.nodes if "se_conv_bwd" in str(n.target))
         self.assertEqual(n_fwd, 1)
         self.assertEqual(n_bwd, 1)
-        out_ref, _ = force_fn(z2, h1, idt, tt, idx, sw, rr)
-        out_traced, _ = traced(z2, h1, idt, tt, idx, sw, rr)
-        torch.testing.assert_close(out_traced, out_ref)
+        reference = force_fn(z2, h1, idt, tt, idx, sw, basis)
+        actual = traced(z2, h1, idt, tt, idx, sw, basis)
+        for actual_value, reference_value in zip(actual, reference, strict=True):
+            torch.testing.assert_close(actual_value, reference_value)
 
 
 def _rand_edge_inputs(
@@ -445,6 +499,7 @@ def _build_dpa1(
     resnet_dt=False,
     activation_function="tanh",
     tebd_input_mode="strip",
+    lmax=1,
 ):
     des = DescrptDPA1(
         rcut=6.0,
@@ -461,6 +516,7 @@ def _build_dpa1(
         activation_function=activation_function,
         precision="float32",
         seed=1,
+        lmax=lmax,
     ).to(device)
     des.eval()
     return des
@@ -515,6 +571,27 @@ class TestSeAttenRouting(unittest.TestCase):
 
     def test_parity_identity(self) -> None:
         self._assert_parity(_build_dpa1(self.device, [8, 16, 16]))
+
+    def test_parity_lmax_two(self) -> None:
+        saved = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_TRITON_INFER"] = "2"
+        try:
+            self._assert_parity(_build_dpa1(self.device, [8, 16, 32], lmax=2))
+        finally:
+            if saved is None:
+                os.environ.pop("DP_TRITON_INFER", None)
+            else:
+                os.environ["DP_TRITON_INFER"] = saved
+
+    def test_parity_lmax_two_concat(self) -> None:
+        self._assert_parity(
+            _build_dpa1(
+                self.device,
+                [8, 16, 32],
+                tebd_input_mode="concat",
+                lmax=2,
+            )
+        )
 
     def test_parity_resnet_dt(self) -> None:
         self._assert_parity(_build_dpa1(self.device, [8, 16, 32], resnet_dt=True))

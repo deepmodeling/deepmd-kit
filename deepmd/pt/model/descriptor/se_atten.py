@@ -52,6 +52,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.utils import (
+    get_generator,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -80,6 +83,168 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_atten"):
 
     # Note: this hack cannot actually save a model that can be runned using LAMMPS.
     torch.ops.deepmd.tabulate_fusion_se_atten = tabulate_fusion_se_atten
+
+
+_DEGREE_GAIN_INIT_STD = 0.1
+
+
+def _safe_direction(
+    diff: torch.Tensor,
+    protection: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Scale displacements by the protected distance denominator.
+
+    Parameters
+    ----------
+    diff
+        Neighbor displacement vectors with shape ``(..., 3)``.
+    protection
+        Distance protection added to the denominator.
+
+    Returns
+    -------
+    torch.Tensor
+        Protected displacement coordinates with shape ``(..., 3)``.
+    torch.Tensor
+        Unprotected distances with shape ``(..., 1)``.
+    torch.Tensor
+        Nonzero-distance mask with shape ``(..., 1)``.
+    """
+    distance_squared = torch.sum(diff * diff, dim=-1, keepdim=True)
+    direction_mask = distance_squared > 0.0
+    safe_distance = torch.sqrt(
+        torch.where(
+            direction_mask,
+            distance_squared,
+            torch.ones_like(distance_squared),
+        )
+    )
+    denominator = torch.where(
+        direction_mask,
+        safe_distance + protection,
+        torch.ones_like(safe_distance),
+    )
+    return diff / denominator, safe_distance, direction_mask
+
+
+def _compute_angular_radial(
+    distance: torch.Tensor,
+    direction_mask: torch.Tensor,
+    switch: torch.Tensor,
+    stddev: torch.Tensor,
+    valid_mask: torch.Tensor,
+    protection: float,
+) -> torch.Tensor:
+    """Compute the zero-mean radial factor for non-scalar moments.
+
+    Non-scalar SO(3) components cannot carry an additive statistical mean. The
+    factor therefore applies the scalar environment standard deviation without
+    subtracting its mean, which keeps every angular component zero at the
+    cutoff.
+    """
+    basis_mask = valid_mask.unsqueeze(-1) & direction_mask
+    safe_distance = torch.where(
+        basis_mask,
+        distance + protection,
+        torch.ones_like(distance),
+    )
+    return switch / safe_distance / stddev * basis_mask.to(dtype=switch.dtype)
+
+
+def _build_moment_basis(
+    rr: torch.Tensor,
+    direction: torch.Tensor,
+    radial: torch.Tensor,
+    lmax: int,
+) -> torch.Tensor:
+    """Build the Cartesian moment basis through angular degree ``lmax``.
+
+    The first four rows preserve the existing scalar and vector environment
+    matrix exactly. Higher-degree rows are norm-normalized real spherical
+    harmonics in the ``m=-l,...,l`` order:
+
+    ``Y_l(u) @ Y_l(v) = P_l(u @ v)``.
+
+    Parameters
+    ----------
+    rr
+        Normalized environment matrix with shape ``(ncenter, nnei, 4)``.
+    direction
+        Protected displacement coordinates with shape
+        ``(ncenter, nnei, 3)``.
+    radial
+        Zero-mean normalized radial amplitude with shape
+        ``(ncenter, nnei, 1)``. Invalid and excluded neighbors are zero.
+    lmax
+        Maximum angular degree. Supported values are ``1`` through ``4``.
+
+    Returns
+    -------
+    torch.Tensor
+        Moment basis with shape ``(ncenter, nnei, (lmax + 1) ** 2)``.
+    """
+    if lmax == 1:
+        return rr
+
+    x, y, z = direction.unbind(dim=-1)
+    q = x * x + y * y + z * z
+    sqrt_three = 3.0**0.5
+    degree_two = torch.stack(
+        (
+            sqrt_three * x * y,
+            sqrt_three * y * z,
+            0.5 * (3.0 * z * z - q),
+            sqrt_three * x * z,
+            0.5 * sqrt_three * (x * x - y * y),
+        ),
+        dim=-1,
+    )
+    blocks = [rr, radial * degree_two]
+    if lmax >= 3:
+        degree_three = torch.stack(
+            (
+                (5.0 / 8.0) ** 0.5 * y * (3.0 * x * x - y * y),
+                15.0**0.5 * x * y * z,
+                (3.0 / 8.0) ** 0.5 * y * (5.0 * z * z - q),
+                0.5 * z * (5.0 * z * z - 3.0 * q),
+                (3.0 / 8.0) ** 0.5 * x * (5.0 * z * z - q),
+                0.5 * 15.0**0.5 * z * (x * x - y * y),
+                (5.0 / 8.0) ** 0.5 * x * (x * x - 3.0 * y * y),
+            ),
+            dim=-1,
+        )
+        blocks.append(radial * degree_three)
+    if lmax >= 4:
+        z2 = z * z
+        x2_minus_y2 = x * x - y * y
+        degree_four = torch.stack(
+            (
+                0.5 * 35.0**0.5 * x * y * x2_minus_y2,
+                0.25 * 70.0**0.5 * y * z * (3.0 * x * x - y * y),
+                0.5 * 5.0**0.5 * x * y * (7.0 * z2 - q),
+                0.25 * 10.0**0.5 * y * z * (7.0 * z2 - 3.0 * q),
+                0.125 * (35.0 * z2 * z2 - 30.0 * z2 * q + 3.0 * q * q),
+                0.25 * 10.0**0.5 * x * z * (7.0 * z2 - 3.0 * q),
+                0.25 * 5.0**0.5 * x2_minus_y2 * (7.0 * z2 - q),
+                0.25 * 70.0**0.5 * x * z * (x * x - 3.0 * y * y),
+                0.125 * 35.0**0.5 * (x**4 - 6.0 * x * x * y * y + y**4),
+            ),
+            dim=-1,
+        )
+        blocks.append(radial * degree_four)
+    return torch.cat(blocks, dim=-1)
+
+
+def _build_degree_weights(
+    raw_gain: torch.Tensor,
+    lmax: int,
+    reference: torch.Tensor,
+) -> torch.Tensor:
+    """Expand non-negative per-degree Gram weights to packed moment rows."""
+    blocks = [torch.ones(4, dtype=reference.dtype, device=reference.device)]
+    for degree in range(2, lmax + 1):
+        blocks.append(raw_gain[degree - 2].square().expand(2 * degree + 1))
+    return torch.cat(blocks)
 
 
 @DescriptorBlock.register("se_atten")
@@ -114,6 +279,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         seed: int | list[int] | None = None,
         type: str | None = None,
         trainable: bool = True,
+        lmax: int = 1,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
@@ -132,6 +298,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
         axis_neuron : int
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+        lmax : int
+            Maximum angular degree of the aggregated moment basis. Supported
+            values are 1 through 4.
         tebd_dim : int
             Dimension of the type embedding
         tebd_input_mode : str
@@ -189,6 +358,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
+        if lmax not in (1, 2, 3, 4):
+            raise ValueError(f"`lmax` must be between 1 and 4, got {lmax}")
+        self.lmax = int(lmax)
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
         self.set_davg_zero = set_davg_zero
@@ -208,6 +380,23 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.env_protection = env_protection
         self.trainable_ln = trainable_ln
         self.seed = seed
+        if self.lmax > 1:
+            self.adam_degree_gain_raw = nn.Parameter(
+                torch.empty(
+                    self.lmax - 1,
+                    dtype=self.prec,
+                    device=env.DEVICE,
+                ),
+                requires_grad=trainable,
+            )
+            nn.init.normal_(
+                self.adam_degree_gain_raw,
+                mean=0.0,
+                std=_DEGREE_GAIN_INIT_STD,
+                generator=get_generator(child_seed(seed, 3)),
+            )
+        else:
+            self.register_parameter("adam_degree_gain_raw", None)
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
@@ -424,15 +613,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -620,6 +801,30 @@ class DescrptBlockSeAtten(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
         ss = rr[:, :, :1]
+        diff_flat = diff.view(nfnl, nnei, 3)
+        nlist_mask_flat = nlist_mask.view(nfnl, nnei)
+        moment_radial = rr[..., :1]
+        direction = diff_flat
+        if self.lmax > 1:
+            direction, distance, direction_mask = _safe_direction(
+                diff_flat,
+                self.env_protection,
+            )
+            radial_stddev = self.stddev[atype][..., :1].view(nfnl, nnei, 1)
+            moment_radial = _compute_angular_radial(
+                distance,
+                direction_mask,
+                sw.view(nfnl, nnei, 1),
+                radial_stddev,
+                nlist_mask_flat,
+                self.env_protection,
+            )
+        moment_basis = _build_moment_basis(
+            rr,
+            direction,
+            moment_radial,
+            self.lmax,
+        )
         # Whether the pair representation ``g2`` is produced this pass. The
         # compressed and fused strip paths form only the moment tensor and
         # leave ``g2`` empty; the flag drives the return below.
@@ -659,19 +864,19 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # embedding layer (its timestep and residual) and the moment
                 # reduction collapse into one node-parallel Triton kernel while
                 # the two embedding GEMMs stay on cuBLAS.
-                xyz_scatter = se_atten_conv(
+                moment = se_atten_conv(
                     self.filter_layers.networks[0],
                     ss,
                     None,
                     None,
                     None,
-                    rr,
+                    moment_basis,
                     gated=0,
                 )
                 # ``gg`` (the pair representation g2) is not formed on this path;
                 # it is returned as ``None``, so a zero-element placeholder keeps
                 # ``gg`` a tensor without the full (nf, nloc, nnei, ng) allocation.
-                gg = xyz_scatter.new_empty(0)
+                gg = moment.new_empty(0)
                 g2_is_none = True
             else:
                 # nfnl x nnei x ng
@@ -682,8 +887,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 gg = self.dpa1_attention(
                     gg, nlist_mask, input_r=input_r, sw=sw
                 )  # shape is [nframes*nloc, self.neei, out_size]
-                # nfnl x 4 x ng
-                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+                # nfnl x moment_dim x ng
+                moment = torch.matmul(moment_basis.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
             assert self.filter_layers_strip is not None
             assert type_embedding is not None
@@ -755,19 +960,19 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # the operator is a ``triton_op`` composable only under eager
                 # and ``make_fx`` / ``torch.compile``.
                 sw_eff = sw if self.smooth else torch.ones_like(sw)
-                xyz_scatter = se_atten_conv(
+                moment = se_atten_conv(
                     self.filter_layers.networks[0],
                     ss,
                     tt_full,
                     tebd_idx,
                     sw_eff.reshape(nfnl, self.nnei),
-                    rr,
+                    moment_basis,
                     gated=1,
                 )
                 # ``gg`` (the pair representation g2) is not formed on this path;
                 # it is returned as ``None``, so a zero-element placeholder keeps
                 # ``gg`` a tensor without the full (nf, nloc, nnei, ng) allocation.
-                gg = xyz_scatter.new_empty(0)
+                gg = moment.new_empty(0)
                 g2_is_none = True
             else:
                 # (nf x nl) x nnei x ng
@@ -777,11 +982,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 if self.geo_compress:
                     ss = ss.reshape(-1, 1)
                     gg_t = gg_t.reshape(-1, gg_t.size(-1))
-                    xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
+                    moment = torch.ops.deepmd.tabulate_fusion_se_atten(
                         self.compress_data[0].contiguous(),
                         self.compress_info[0].cpu().contiguous(),
                         ss.contiguous(),
-                        rr.contiguous(),
+                        moment_basis.contiguous(),
                         gg_t.contiguous(),
                         self.filter_neuron[-1],
                         self.is_sorted,
@@ -806,17 +1011,25 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     gg = self.dpa1_attention(
                         gg, nlist_mask, input_r=input_r, sw=sw
                     )  # shape is [nframes*nloc, self.neei, out_size]
-                    # nfnl x 4 x ng
-                    xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+                    # nfnl x moment_dim x ng
+                    moment = torch.matmul(moment_basis.permute(0, 2, 1), gg)
         else:
             raise NotImplementedError
 
-        xyz_scatter = xyz_scatter / self.nnei
-        xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
-        rot_mat = xyz_scatter_1[:, :, 1:4]
-        xyz_scatter_2 = xyz_scatter[:, :, 0 : self.axis_neuron]
+        moment = moment / self.nnei
+        moment_t = moment.permute(0, 2, 1)
+        rot_mat = moment_t[:, :, 1:4]
+        moment_axis = moment[:, :, 0 : self.axis_neuron]
+        if self.lmax > 1:
+            assert self.adam_degree_gain_raw is not None
+            degree_weights = _build_degree_weights(
+                self.adam_degree_gain_raw,
+                self.lmax,
+                moment,
+            )
+            moment_axis = moment_axis * degree_weights.view(1, -1, 1)
         result = torch.matmul(
-            xyz_scatter_1, xyz_scatter_2
+            moment_t, moment_axis
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
 
         return (
@@ -835,7 +1048,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return False
+        # Geometric compression uses the tabulate op's sorted-neighbor fold,
+        # which assumes padding and out-of-cutoff neighbors are trailing.
+        # `forward_lower` may receive an unsorted rcut+skin list from LAMMPS,
+        # so request the filtering/sorting pass whenever that op is active.
+        return self.geo_compress
 
 
 class NeighborGatedAttention(nn.Module):

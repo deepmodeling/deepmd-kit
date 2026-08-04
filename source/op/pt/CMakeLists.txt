@@ -12,6 +12,9 @@ option(
 # only within its own subtree, which does not cover this target.
 if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  option(DEEPMD_ENABLE_DPA1_HIGH_LMAX
+         "Instantiate experimental DPA1 CUDA kernels for lmax greater than one"
+         OFF)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # CUDA 12.9 CCCL fails to compile CUB/Thrust with -arch=all.
     if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9" AND CUDAToolkit_VERSION
@@ -22,11 +25,16 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     endif()
   endif()
   enable_language(CUDA)
+  set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
+      dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
+      dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
+      dpa1_graph_compress_c128.cu dpa1_graph_compress_c256.cu)
   list(
     APPEND
     OP_SRC
     dpa1_graph_descriptor.cu
     dpa1_graph_compress.cu
+    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC}
     graph_fitting.cu
     edge_force_virial.cu
     dpa1_graph_energy_force.cu)
@@ -56,7 +64,14 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # libtorch headers require C++17; the CUDA sources must match.
   set_target_properties(deepmd_op_pt PROPERTIES CUDA_STANDARD 17
                                                 CUDA_STANDARD_REQUIRED ON)
-  set_source_files_properties(dpa1_graph_compress.cu
+  if(DEEPMD_ENABLE_DPA1_HIGH_LMAX)
+    target_compile_definitions(deepmd_op_pt
+                               PRIVATE DEEPMD_ENABLE_DPA1_HIGH_LMAX=1)
+  endif()
+  # The compressed DPA1 kernels are instantiated one translation unit per
+  # channel width so their topology and angular-degree variants compile in
+  # parallel.
+  set_source_files_properties(${DPA1_GRAPH_COMPRESS_KERNEL_SRC}
                               PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})

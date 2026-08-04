@@ -25,6 +25,11 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.stat_file import (
+    load_paired_items,
+    load_required_items,
+    replace_paired_items,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +48,8 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
     Returns
     -------
     list[str]
-        Sorted list of observed element symbols.
+        Sorted list of observed element symbols. Negative virtual atom types
+        and indices outside ``type_map`` are ignored.
     """
     from deepmd.utils.econf_embd import (
         sort_element_type,
@@ -54,7 +60,7 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
         atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
         observed_indices.update(np.unique(atype).tolist())
     observed_types = [
-        type_map[i] for i in sorted(observed_indices) if i < len(type_map)
+        type_map[i] for i in sorted(observed_indices) if 0 <= i < len(type_map)
     ]
     return sort_element_type(observed_types)
 
@@ -63,14 +69,12 @@ def _restore_observed_type_from_file(
     stat_file_path: DPPath | None,
 ) -> list[str] | None:
     """Try to load observed_type from stat file."""
-    if stat_file_path is None:
+    items = load_required_items(stat_file_path, ["observed_type"])
+    if items is None:
         return None
-    fp = stat_file_path / "observed_type"
-    if fp.is_file():
-        arr = fp.load_numpy()
-        # Decode bytes back to str if stored as bytes (for h5py compatibility)
-        return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
-    return None
+    arr = items["observed_type"]
+    # HDF5 string datasets may return bytes instead of str.
+    return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
 
 
 def _save_observed_type_to_file(
@@ -86,46 +90,34 @@ def _save_observed_type_to_file(
 
 
 def _restore_from_file(
-    stat_file_path: DPPath,
+    stat_file_path: DPPath | None,
     keys: list[str],
 ) -> tuple[dict | None, dict | None]:
     """Restore bias and std from stat file."""
-    if stat_file_path is None:
+    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
+    items = load_paired_items(stat_file_path, pairs)
+    if items is None:
         return None, None
-    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-
-    ret_bias = {}
-    ret_std = {}
-    for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}"
-        if fp.is_file():
-            ret_bias[kk] = fp.load_numpy()
-    for kk in keys:
-        fp = stat_file_path / f"std_atom_{kk}"
-        if fp.is_file():
-            ret_std[kk] = fp.load_numpy()
+    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
+    ret_bias = {key: items[f"bias_atom_{key}"] for key in cached_keys}
+    ret_std = {key: items[f"std_atom_{key}"] for key in cached_keys}
     return ret_bias, ret_std
 
 
 def _save_to_file(
     stat_file_path: DPPath,
+    requested_keys: list[str],
     bias_out: dict,
     std_out: dict,
 ) -> None:
     """Save bias and std to stat file."""
     assert stat_file_path is not None
-    stat_file_path.mkdir(exist_ok=True, parents=True)
-    for kk, vv in bias_out.items():
-        fp = stat_file_path / f"bias_atom_{kk}"
-        fp.save_numpy(vv)
-    for kk, vv in std_out.items():
-        fp = stat_file_path / f"std_atom_{kk}"
-        fp.save_numpy(vv)
+    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in requested_keys]
+    items = {
+        **{f"bias_atom_{key}": value for key, value in bias_out.items()},
+        **{f"std_atom_{key}": value for key, value in std_out.items()},
+    }
+    replace_paired_items(stat_file_path, pairs, items)
 
 
 def _post_process_stat(
@@ -276,6 +268,7 @@ def compute_output_stats(
     # normalize keys to list
     keys = [keys] if isinstance(keys, str) else keys
     assert isinstance(keys, list)
+    requested_keys = list(keys)
 
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -390,7 +383,12 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
-            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+            _save_to_file(
+                stat_file_path,
+                requested_keys,
+                bias_atom_e,
+                std_atom_e,
+            )
 
     return bias_atom_e, std_atom_e
 
