@@ -28,7 +28,7 @@ holds vacuously -- see ``test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity``.
 
 Reference values are computed LIVE at test-setup time via
 ``deepmd.infer.DeepPot.eval`` on the archive itself, mirroring
-``test_lammps_dpa4_spin_graph_pt2.py``'s ``_compute_expected`` (which explains
+``dpa4_spin_harness.compute_expected`` (which explains
 the reasoning in full).  Two reasons, both load-bearing here:
 
 - A hardcoded array goes stale the moment DPA4 numerics shift, and this

@@ -23,7 +23,7 @@ BOTH components -- see the generator's module docstring).
 
 Reference values are computed LIVE at test-setup time via
 ``deepmd.infer.DeepPot.eval`` on the archive itself (mirroring
-``test_lammps_dpa4_spin_graph_pt2.py``'s ``_compute_expected``, which
+``dpa4_spin_harness.compute_expected``, which
 explains the reasoning in full) rather than read from the generator's
 ``.expected`` sidecar: the sidecar's evaluation uses a 6x6x6 A cell whose
 edge length equals DPA4's LAMMPS ghost cutoff exactly

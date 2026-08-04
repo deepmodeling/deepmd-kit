@@ -29,30 +29,32 @@ fixed 4-atom NiO system reused from ``test_lammps_dpa4_spin_graph_pt2.py``
 hardcoded (a hardcoded reference goes stale the moment DPA4 numerics shift)
 and NOT read from the generator's ``.expected`` sidecar (its own 6-atom
 system sits in a 6x6x6 box whose edge exactly equals DPA4's ghost cutoff --
-not a safe geometry for a LAMMPS periodic run).  ``_compute_expected`` runs
+not a safe geometry for a LAMMPS periodic run).  ``dpa4_spin_harness.compute_expected`` runs
 in a subprocess so importing ``deepmd``'s Python package does not share a
 process with the LAMMPS plugin's own loaded ``libdeepmd_op_pt.so`` (see
 ``test_lammps_model_devi_pt2.py``).
 """
 
 import importlib.util
-import json
 import os
 import shutil
-import signal
-import subprocess as sp
-import sys
-import tempfile
-import textwrap
 from pathlib import (
     Path,
 )
 
-import constants
 import numpy as np
 import pytest
-from lammps import (
-    PyLammps,
+from dpa4_spin_harness import (
+    BOX,
+    COORD,
+    SPIN,
+    TYPE_NIO,
+    assert_mpi_matches_single_rank,
+    check_single_rank_energy_force,
+    check_single_rank_virial,
+    compute_expected,
+    make_lammps,
+    run_mpi_spin_runner,
 )
 from write_lmp_data import (
     write_lmp_data_spin,
@@ -72,35 +74,11 @@ data_file_close_pair = Path(__file__).parent / "data_dpa4_spin_zbl_close_pair_pt
 # native-spin runner is reused verbatim -- only the archive differs.
 mpi_runner = Path(__file__).parent / "run_mpi_pair_deepmd_spin_graph_dpa4_pt2.py"
 
-_MPI_DEFAULT_TIMEOUT = 120.0
-
-# Same 4-atom NiO system as test_lammps_dpa4_spin_graph_pt2.py (box,
-# coordinates, and LAMMPS type ordering all reused verbatim): 2 Ni atoms
-# (LAMMPS type 1, deepmd atype 0, spin-active) + 2 O atoms (LAMMPS type 2,
-# deepmd atype 1, non-magnetic) -- matches the archive's
-# ``type_map=["Ni", "O"]`` and ``use_spin=[True, False]``
-# (gen_dpa4_spin_zbl.py inherits both from gen_dpa4_spin.py).  The Ni-Ni
-# pair (atoms 0 and 1) sits ~0.978 A apart -- inside the bridging
-# transition zone (0.8, 1.2), so the ZBL channel is active even in the
-# single-rank tests.
-box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
-coord = np.array(
-    [
-        [12.83, 2.56, 2.18],
-        [12.09, 2.87, 2.74],
-        [3.51, 2.51, 2.60],
-        [4.27, 3.22, 1.56],
-    ]
-)
-spin = np.array(
-    [
-        [0, 0, 1.2737],
-        [0, 0, 1.2737],
-        [0, 0, 0],
-        [0, 0, 0],
-    ]
-)
-type_NiO = np.array([1, 1, 2, 2])
+# The shared 4-atom NiO system (dpa4_spin_harness): the Ni-Ni pair (atoms 0
+# and 1) sits ~0.978 A apart -- inside this variant's bridging transition
+# zone (0.8, 1.2), so the ZBL channel is active even in the single-rank
+# tests.
+box, coord, spin, type_NiO = BOX, COORD, SPIN, TYPE_NIO
 
 # Close-pair geometry for the MPI-parity test: the SAME 4-atom system
 # shifted along x by -5.9, so the ~0.978 A Ni-Ni pair lands at x = 6.93 /
@@ -113,116 +91,10 @@ _CLOSE_PAIR_SHIFT_X = -5.9
 coord_close_pair = coord.copy()
 coord_close_pair[:, 0] = np.mod(coord[:, 0] + _CLOSE_PAIR_SHIFT_X, box[1])
 
-# LAMMPS's ``fm`` (what ``compute property/atom fmx fmy fmz`` reports) is
-# NOT the raw DeepEval force_mag: pair_deepspin.cpp scales it by
-# ``spin_norm / hbar`` per atom (metal-units ``hbar = 6.5821191e-04``, see
-# ``source/lmp/pair_deepspin.cpp:531,535``).  ``spin_norm`` is 0 for the two
-# non-magnetic O atoms, so the scaling is a no-op there (0 stays 0).
-_HBAR_METAL = 6.5821191e-04
-
-# Reference values (energy / atom-energy / force / force_mag / virial),
-# populated by ``_compute_expected`` in ``setup_module`` -- see the module
-# docstring for why these are computed live via a DeepPot subprocess call
-# rather than hardcoded or read from a sidecar file.
-expected_e = None
-expected_ae = None
-expected_f = None
-expected_fm = None
-expected_v = None
-
-
-def _cell_from_lammps_box(lmp_box: np.ndarray) -> np.ndarray:
-    """Convert a LAMMPS ``xlo xhi ylo yhi zlo zhi xy xz yz`` box spec to a
-    flat, row-major 3x3 cell matrix (deepmd's ``box`` convention).
-    """
-    xlo, xhi, ylo, yhi, zlo, zhi, xy, xz, yz = lmp_box
-    return np.array(
-        [
-            xhi - xlo,
-            0.0,
-            0.0,
-            xy,
-            yhi - ylo,
-            0.0,
-            xz,
-            yz,
-            zhi - zlo,
-        ]
-    )
-
-
-def _compute_expected() -> None:
-    """Load ``deeppot_dpa4_spin_zbl_graph.pt2`` via ``DeepPot`` and evaluate
-    the module's fixed 4-atom NiO system to obtain the Python reference.
-
-    Runs in a subprocess to avoid importing ``deepmd`` in the LAMMPS test
-    process (see ``test_lammps_model_devi_pt2.py``'s ``_compute_expected``
-    for the same precaution: the LAMMPS plugin already loads
-    ``libdeepmd_op_pt.so`` at the C++ level, and importing the Python
-    package on top of that can segfault).
-    """
-    global expected_e, expected_ae, expected_f, expected_fm, expected_v
-
-    cell = _cell_from_lammps_box(box)
-    atype = (type_NiO - 1).tolist()  # LAMMPS 1-based -> deepmd 0-based (Ni=0, O=1)
-
-    # The archive lives in ``source/tests/infer`` next to ``gen_common.py``,
-    # whose ``load_custom_ops()`` loads the build-tree ``libdeepmd_op_pt.so``
-    # (registering ``deepmd::edge_force_virial``, which the graph ``.pt2``
-    # inference needs). ``import deepmd.pt`` alone only loads the op library
-    # from SHARED_LIB_DIR, which the build-test env does not populate -- so
-    # the subprocess reuses that fallback (after importing ``deepmd.pt``, per
-    # its docstring) before constructing ``DeepPot``.
-    infer_dir = str(pb_file.resolve().parent)
-    script = textwrap.dedent(f"""\
-        import json
-        import sys
-        import numpy as np
-
-        sys.path.insert(0, {infer_dir!r})
-        import deepmd.pt  # noqa: F401  (triggers the base op-library load)
-        from gen_common import load_custom_ops
-
-        load_custom_ops()
-        from deepmd.infer import DeepPot
-
-        dp = DeepPot({str(pb_file.resolve())!r})
-        e, f, v, ae, av, fm, mm = dp.eval(
-            np.array({coord.tolist()!r}).reshape(1, -1, 3),
-            np.array({cell.tolist()!r}).reshape(1, 9),
-            {atype!r},
-            atomic=True,
-            spin=np.array({spin.tolist()!r}).reshape(1, -1, 3),
-        )
-        print(json.dumps({{
-            "e": float(e[0, 0]),
-            "ae": np.asarray(ae[0]).reshape(-1).tolist(),
-            "f": np.asarray(f[0]).tolist(),
-            "fm": np.asarray(fm[0]).tolist(),
-            "av": np.asarray(av[0]).tolist(),
-        }}))
-    """)
-    proc = sp.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    result = json.loads(proc.stdout.strip())
-
-    expected_e = result["e"]
-    expected_ae = np.array(result["ae"])
-    expected_f = np.array(result["f"])
-    # Raw DeepEval force_mag (dE/dspin), scaled by LAMMPS's own
-    # spin_norm / hbar unit convention (see the comment on ``_HBAR_METAL``
-    # above) before comparison.
-    fm_raw = np.array(result["fm"])
-    spin_norm = np.linalg.norm(spin, axis=1)
-    expected_fm = fm_raw * (spin_norm / _HBAR_METAL)[:, None]
-    # Per-atom virial, sign-flipped (LAMMPS convention) relative to DeepPot's
-    # atomic virial output (mirrors test_lammps_spin_pt2.py's convention).
-    expected_v = -np.array(result["av"])
+# Reference values, populated by ``compute_expected`` in ``setup_module`` --
+# see the module docstring for why these are computed live via a DeepPot
+# subprocess call rather than hardcoded or read from a sidecar file.
+expected: dict = {}
 
 
 def setup_module() -> None:
@@ -232,7 +104,7 @@ def setup_module() -> None:
         )
     if not pb_file.exists():
         pytest.skip("deeppot_dpa4_spin_zbl_graph.pt2 not found")
-    _compute_expected()
+    expected.update(compute_expected(pb_file))
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
     write_lmp_data_spin(box, coord_close_pair, spin, type_NiO, data_file_close_pair)
 
@@ -243,137 +115,27 @@ def teardown_module() -> None:
             os.remove(path)
 
 
-def _lammps(data_file, units="metal") -> PyLammps:
-    """Standard DeepSpin LAMMPS system, plus ``atom_modify map yes``.
-
-    Mirrors ``lammps_test_utils.make_spin_lammps`` (not reused directly: it
-    does not set ``atom_modify``), with the map turned on -- the native-spin
-    DPA4 GRAPH ``.pt2`` needs the LAMMPS atom-map to resolve ghost-atom
-    indices to local owners for single-rank inference (same requirement as
-    the energy graph route; see ``pair_deepspin.cpp``'s
-    ``DeePMD-kit Error: Single-rank LAMMPS .pt2 inference requires
-    `atom_modify map yes``` check).
-    """
-    if units != "metal":
-        raise ValueError("units for spin should be metal")
-
-    lammps = PyLammps()
-    lammps.units(units)
-    lammps.boundary("p p p")
-    lammps.atom_style("spin")
-    lammps.atom_modify("map yes")
-    lammps.neighbor("2.0 bin")
-    lammps.neigh_modify("every 10 delay 0 check no")
-    lammps.read_data(data_file.resolve())
-    lammps.mass("1 58")
-    lammps.mass("2 16")
-    lammps.timestep(0.0005)
-    lammps.fix("1 all nve")
-    return lammps
-
-
 @pytest.fixture
 def lammps():
-    lmp = _lammps(data_file=data_file)
+    lmp = make_lammps(data_file)
     yield lmp
     lmp.close()
 
 
-def _gather_force_mag(lammps: PyLammps, natoms: int) -> np.ndarray:
-    """Extract per-atom force_mag in atom-id order.
-
-    LAMMPS does not expose ``fm`` through the legacy ``extract``/
-    ``gather_atoms`` registry (see ``run_mpi_pair_deepmd_spin_dpa3_pt2.py``'s
-    module docstring), so go via ``compute property/atom fmx fmy fmz`` +
-    ``gather`` (id-ordered on every rank, single-rank included).
-    """
-    fm_global = lammps.lmp.gather("c_fmprop", 1, 3)
-    return np.array(fm_global, dtype=np.float64).reshape(natoms, 3)
-
-
 def test_pair_deepspin(lammps) -> None:
     """Single-rank LAMMPS energy + force + force_mag vs the Python DeepEval
-    reference on the spin+ZBL archive, on the same 4-atom NiO system.
+    reference on the spin+ZBL archive.
+
+    The shared check also pins force_mag == 0 on the two non-spin (O)
+    atoms: the analytical ZBL child, which knows nothing about spin, must
+    not leak into that channel.
     """
-    lammps.pair_style(f"deepspin {pb_file.resolve()}")
-    lammps.pair_coeff("* *")
-    lammps.compute("fmprop all property/atom fmx fmy fmz")
-    lammps.run(0)
-
-    assert lammps.eval("pe") == pytest.approx(expected_e)
-
-    forces = np.array([lammps.atoms[ii].force for ii in range(4)], dtype=np.float64)
-    ids = np.array([lammps.atoms[ii].id for ii in range(4)])
-    order = np.argsort(ids)
-    forces = forces[order]
-    np.testing.assert_allclose(forces, expected_f, atol=1e-8, rtol=0)
-
-    force_mag = _gather_force_mag(lammps, coord.shape[0])
-    np.testing.assert_allclose(force_mag, expected_fm, atol=1e-8, rtol=0)
-    # Anti-vacuity / native-spin design invariant: force_mag on the two
-    # non-spin (O) atoms must be exactly zero, both in the Python reference
-    # (baked into expected_fm above) and as produced by LAMMPS.  The
-    # analytical ZBL child, which knows nothing about spin, must not leak
-    # into this channel either.
-    np.testing.assert_array_equal(force_mag[2:], np.zeros((2, 3)))
-
-    lammps.run(1)
+    check_single_rank_energy_force(lammps, pb_file, expected)
 
 
 def test_pair_deepspin_virial(lammps) -> None:
-    """Single-rank per-atom pe/pressure/virial via
-    ``pe/atom`` / ``pressure`` / ``centroid/stress/atom``, atol=1e-8,
-    rtol=1e-8.
-    """
-    lammps.pair_style(f"deepspin {pb_file.resolve()}")
-    lammps.pair_coeff("* *")
-    lammps.compute("peatom all pe/atom pair")
-    lammps.compute("pressure all pressure NULL pair")
-    lammps.compute("virial all centroid/stress/atom NULL pair")
-    lammps.variable("eatom atom c_peatom")
-    for ii in range(9):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"pressure{jj} equal c_pressure[{ii + 1}]")
-    for ii in range(9):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"virial{jj} atom c_virial[{ii + 1}]")
-    lammps.dump(
-        "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
-    )
-    lammps.run(0)
-
-    assert lammps.eval("pe") == pytest.approx(expected_e)
-
-    forces = np.array([lammps.atoms[ii].force for ii in range(4)], dtype=np.float64)
-    ids = np.array([lammps.atoms[ii].id for ii in range(4)])
-    order = np.argsort(ids)
-    forces = forces[order]
-    np.testing.assert_allclose(forces, expected_f, atol=1e-8, rtol=0)
-
-    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
-    np.testing.assert_allclose(
-        np.array(lammps.variables["eatom"].value),
-        expected_ae[idx_map],
-        atol=1e-8,
-        rtol=1e-8,
-    )
-
-    vol = box[1] * box[3] * box[5]
-    for ii in range(6):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        pressure_jj = np.array(lammps.variables[f"pressure{jj}"].value) / (
-            constants.nktv2p
-        )
-        expected_pressure_jj = -expected_v[idx_map, jj].sum(axis=0) / vol
-        np.testing.assert_allclose(
-            pressure_jj, expected_pressure_jj, atol=1e-8, rtol=1e-8
-        )
-    for ii in range(9):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        virial_jj = np.array(lammps.variables[f"virial{jj}"].value) / (constants.nktv2p)
-        np.testing.assert_allclose(
-            virial_jj, expected_v[idx_map, jj], atol=1e-8, rtol=1e-8
-        )
+    """Single-rank per-atom pe/pressure/virial on the spin+ZBL archive."""
+    check_single_rank_virial(lammps, pb_file, expected)
 
 
 # ---------------------------------------------------------------------------
@@ -384,120 +146,10 @@ def test_pair_deepspin_virial(lammps) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_mpi_subprocess(
-    extra_args: list[str] | None = None,
-    nprocs: int = 2,
-    data_path: Path | None = None,
-    processors: str | None = None,
-    capture: bool = False,
-    timeout: float | None = None,
-) -> dict:
-    """Invoke the graph-spin MPI runner under ``mpirun -n <nprocs>`` against
-    the spin+ZBL DPA4 graph ``.pt2``.
-
-    Copied (module-global closure, not imported) from
-    ``test_lammps_dpa4_spin_graph_pt2.py``'s twin. With ``capture=True``,
-    return raw subprocess info (``returncode``, ``stdout``, ``stderr``,
-    ``timed_out``); every invocation is bounded by ``timeout`` (default
-    ``_MPI_DEFAULT_TIMEOUT``) so a should-fail-but-doesn't run cannot hang
-    the suite, and on expiry the WHOLE mpirun process group is SIGKILLed.
-    """
-    if data_path is None:
-        data_path = data_file
-    if timeout is None:
-        timeout = _MPI_DEFAULT_TIMEOUT
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        argv = [
-            "mpirun",
-            "-n",
-            str(nprocs),
-            sys.executable,
-            str(mpi_runner),
-            str(data_path.resolve()),
-            str(pb_file.resolve()),
-            out_path,
-        ]
-        if processors is not None:
-            argv.extend(["--processors", processors])
-        elif nprocs == 1:
-            argv.extend(["--processors", "1 1 1"])
-        if extra_args:
-            argv.extend(extra_args)
-        proc = sp.Popen(
-            argv,
-            stdout=sp.PIPE if capture else None,
-            stderr=sp.PIPE if capture else None,
-            text=True,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except sp.TimeoutExpired:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            stdout, stderr = proc.communicate()
-            if capture:
-                return {
-                    "returncode": None,
-                    "stdout": stdout or "",
-                    "stderr": stderr or "",
-                    "timed_out": True,
-                }
-            raise RuntimeError(
-                f"mpirun timed out after {timeout}s (process group killed); "
-                "a should-succeed MPI regression is deadlocked."
-            ) from None
-        if capture:
-            return {
-                "returncode": proc.returncode,
-                "stdout": stdout,
-                "stderr": stderr,
-                "timed_out": False,
-            }
-        if proc.returncode != 0:
-            raise sp.CalledProcessError(proc.returncode, argv)
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe = float(lines[0])
-        rows = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        return {"pe": pe, "rows": rows}
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
-
-
-def _assert_mpi_matches_single_rank(single: dict, multi: dict) -> None:
-    """Compare a 2-rank MPI result against the 1-rank one: pe, per-atom
-    force and per-atom force_mag, all at rtol=atol=1e-10 (the sibling's MPI
-    tolerances).  Both runs report LAMMPS's own ``fm`` (already scaled by
-    ``spin_norm / _HBAR_METAL`` inside pair_deepspin.cpp), so the scaling
-    cancels and the rows compare directly.
-    """
-    # anti-vacuity: a degenerate fixture (all-zero forces) would make the
-    # comparison pass for the wrong reason.
-    assert np.abs(multi["rows"][:, :3]).max() > 1e-6, "forces are trivially zero"
-    assert np.abs(multi["rows"][:, 3:6]).max() > 1e-6, "force_mag is trivially zero"
-
-    np.testing.assert_allclose(
-        multi["pe"], single["pe"], rtol=1e-10, atol=1e-10, err_msg="energy"
-    )
-    np.testing.assert_allclose(
-        multi["rows"][:, :3],
-        single["rows"][:, :3],
-        rtol=1e-10,
-        atol=1e-10,
-        err_msg="force",
-    )
-    np.testing.assert_allclose(
-        multi["rows"][:, 3:6],
-        single["rows"][:, 3:6],
-        rtol=1e-10,
-        atol=1e-10,
-        err_msg="force_mag",
+def _run_mpi(data_path: Path, nprocs: int, processors: str) -> dict:
+    """This module's binding of the shared runner (archive + runner fixed)."""
+    return run_mpi_spin_runner(
+        mpi_runner, pb_file, data_path, nprocs=nprocs, processors=processors
     )
 
 
@@ -523,9 +175,9 @@ def test_pair_deepspin_mpi_matches_single_rank() -> None:
     the boundary-straddling bridging-zone pair is exercised by
     ``test_pair_deepspin_mpi_close_pair_across_ranks`` below.
     """
-    single = _run_mpi_subprocess(nprocs=1, processors="1 1 1")
-    multi = _run_mpi_subprocess(nprocs=2, processors="2 1 1")
-    _assert_mpi_matches_single_rank(single, multi)
+    single = _run_mpi(data_file, 1, "1 1 1")
+    multi = _run_mpi(data_file, 2, "2 1 1")
+    assert_mpi_matches_single_rank(single, multi)
 
 
 @pytest.mark.skipif(
@@ -557,10 +209,6 @@ def test_pair_deepspin_mpi_close_pair_across_ranks() -> None:
         f"boundary: Ni x = {x_lo}, {x_hi}, lx/2 = {half_lx}"
     )
 
-    single = _run_mpi_subprocess(
-        nprocs=1, processors="1 1 1", data_path=data_file_close_pair
-    )
-    multi = _run_mpi_subprocess(
-        nprocs=2, processors="2 1 1", data_path=data_file_close_pair
-    )
-    _assert_mpi_matches_single_rank(single, multi)
+    single = _run_mpi(data_file_close_pair, 1, "1 1 1")
+    multi = _run_mpi(data_file_close_pair, 2, "2 1 1")
+    assert_mpi_matches_single_rank(single, multi)
