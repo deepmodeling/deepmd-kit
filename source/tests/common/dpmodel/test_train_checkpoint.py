@@ -177,3 +177,42 @@ def test_built_stores_share_a_directory_and_split_the_pointer(
 
     store.publish(_write(store.path_for(2)))
     assert Path("checkpoint").read_text() == str(store.path_for(2))
+
+
+def test_ema_store_inherits_regular_retention_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    store, ema_store = build_checkpoint_stores(
+        {
+            "save_ckpt": "model.ckpt",
+            "max_ckpt_keep": 7,
+            "ema_ckpt_keep": None,
+        },
+        num_steps=10,
+        ema_prefix="model_ema.ckpt",
+    )
+
+    assert store.max_keep == ema_store.max_keep == 7
+
+
+def test_ema_store_accepts_an_explicit_retention_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    store, ema_store = build_checkpoint_stores(
+        {
+            "save_ckpt": "model.ckpt",
+            "max_ckpt_keep": 7,
+            "ema_ckpt_keep": 2,
+        },
+        num_steps=10,
+        ema_prefix="model_ema.ckpt",
+    )
+
+    assert store.max_keep == 7
+    assert ema_store.max_keep == 2

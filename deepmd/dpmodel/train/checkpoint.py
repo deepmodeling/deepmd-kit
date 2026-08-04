@@ -253,7 +253,8 @@ def build_checkpoint_stores(
     training_params : Mapping[str, Any]
         The normalized ``training`` section. ``save_ckpt``, ``save_dir``,
         ``save_freq``, ``max_ckpt_keep``, ``ckpt_keep_ratio`` and
-        ``ema_ckpt_keep`` are read from it.
+        ``ema_ckpt_keep`` are read from it. When ``ema_ckpt_keep`` is unset,
+        the EMA family inherits ``max_ckpt_keep``.
     num_steps : int
         The resolved run length, needed to turn ``ckpt_keep_ratio`` into a
         keep count.
@@ -272,7 +273,10 @@ def build_checkpoint_stores(
     save_dir = training_params.get("save_dir")
     save_freq = int(training_params.get("save_freq", 1000))
     max_keep = int(training_params.get("max_ckpt_keep", 5))
-    ema_max_keep = int(training_params.get("ema_ckpt_keep", 3))
+    configured_ema_max_keep = training_params.get("ema_ckpt_keep")
+    ema_max_keep = (
+        max_keep if configured_ema_max_keep is None else int(configured_ema_max_keep)
+    )
     ckpt_keep_ratio = training_params.get("ckpt_keep_ratio")
 
     keep_ckpt_count = resolve_keep_ckpt_count(ckpt_keep_ratio, num_steps, save_freq)

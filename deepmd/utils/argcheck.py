@@ -5440,7 +5440,9 @@ def training_args(
     doc_ema_ckpt_keep = (
         "The maximum number of periodic EMA checkpoints to keep. "
         "EMA checkpoints use the same prefix-based cleanup rule as regular "
-        "training checkpoints, but with an EMA-specific checkpoint prefix."
+        "training checkpoints, but with an EMA-specific checkpoint prefix. "
+        "When unset, it inherits `max_ckpt_keep`, so both checkpoint families "
+        "retain the same number by default."
     )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
@@ -5626,11 +5628,11 @@ def training_args(
         ),
         Argument(
             "ema_ckpt_keep",
-            int,
+            [int, None],
             optional=True,
-            default=3,
+            default=None,
             doc=supported_backends("pt", "pt_expt") + doc_ema_ckpt_keep,
-            extra_check=lambda x: x > 0,
+            extra_check=lambda x: x is None or x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
         Argument(
