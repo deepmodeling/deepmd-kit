@@ -92,7 +92,6 @@ data_file = Path(__file__).parent / "data_dpa4_spin_graph_pt2.lmp"
 # phantom path and none trips the genuinely-empty fail-fast.  The shifted
 # coordinates (``coord_empty_rank``) are defined below, after ``coord``.
 data_file_empty_rank = Path(__file__).parent / "data_dpa4_spin_graph_pt2_empty_rank.lmp"
-data_file_empty_rank = Path(__file__).parent / "data_dpa4_spin_graph_pt2_empty_rank.lmp"
 # The MPI runner is graph-spin-specific (no aparam / no NULL-type
 # extras, unlike run_mpi_pair_deepmd_spin_dpa3_pt2.py's virtual-atom-scheme
 # runner): the native-spin DPA4 fixture takes no fparam/aparam.

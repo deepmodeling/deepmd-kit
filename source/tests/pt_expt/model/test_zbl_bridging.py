@@ -275,10 +275,12 @@ def _spin_system():
 class TestNativeSpinWithBridging:
     """Native spin + analytical bridging compose (review 3649276109).
 
-    ``get_standard_model`` OWNS assembling the atomic model, bridging
-    composition included, and the native-spin wrapper re-classes whatever it
-    returns -- so the two features combine with no special case: the learned
-    child consumes ``spin``, the analytical child accepts and ignores it.
+    ``get_sezm_model`` OWNS the bridging composition (``get_standard_model``
+    rejects ``bridging_method``: a composition is not expressible on a
+    non-composite model type). ``get_native_spin_model`` routes DPA4/SeZM
+    configs there and then RE-CLASSES the returned composition -- so the two
+    features combine with no special case: the learned child consumes
+    ``spin``, the analytical child accepts and ignores it.
     """
 
     def test_construction_composes_and_keeps_spin(self) -> None:
