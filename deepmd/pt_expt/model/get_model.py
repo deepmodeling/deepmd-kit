@@ -9,7 +9,7 @@ constructed objects are ``torch.nn.Module`` subclasses.
 import copy
 import logging
 from typing import (
-    Any,
+    TYPE_CHECKING,
 )
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
@@ -36,9 +36,6 @@ from deepmd.pt_expt.model.dp_zbl_model import (
 from deepmd.pt_expt.model.dpa4_model import (
     DPA4EnergyModel,
 )
-from deepmd.pt_expt.model.ener_model import (
-    EnergyModel,
-)
 from deepmd.pt_expt.model.model import (
     BaseModel,
 )
@@ -52,6 +49,11 @@ from deepmd.utils.spin import (
     Spin,
     normalize_spin_use_spin,
 )
+
+if TYPE_CHECKING:
+    from deepmd.pt_expt.model.dp_linear_model import (
+        LinearEnergyModel,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +73,7 @@ _model_factory = BackendModelFactory(
 get_zbl_model = _model_factory.get_zbl_model
 
 
-def get_sezm_model(data: dict) -> EnergyModel:
+def get_sezm_model(data: dict) -> BaseModel:
     """Build a pt_expt energy model from a DPA4/SeZM model config.
 
     Mirrors :func:`deepmd.pt.model.model.get_sezm_model` so that dpa4/sezm
@@ -174,7 +176,9 @@ def get_sezm_model(data: dict) -> EnergyModel:
     return model
 
 
-def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
+def _compose_bridging(
+    model: BaseModel, data: dict, bridging_method: str
+) -> "LinearEnergyModel":
     """Compose the learned model with its analytical bridging term.
 
     Composition, not a flag (first-principles design): the analytical
@@ -198,8 +202,8 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
 
     Returns
     -------
-    Any
-        A :class:`LinearEnergyModel` over ``[learned, InnerPotential]``.
+    LinearEnergyModel
+        A composition over ``[learned, InnerPotential]``.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotentialAtomicModel,
@@ -230,7 +234,7 @@ def _compose_bridging(model: Any, data: dict, bridging_method: str) -> Any:
     return LinearEnergyModel(atomic_model_=composed)
 
 
-def get_standard_model(data: dict) -> Any:
+def get_standard_model(data: dict) -> BaseModel:
     """Build a pt_expt standard model: one descriptor plus one fitting net.
 
     ``bridging_method`` is rejected here rather than honored. Analytical
@@ -253,7 +257,7 @@ def get_standard_model(data: dict) -> Any:
 
     Returns
     -------
-    Any
+    BaseModel
         The constructed standard model.
 
     Raises

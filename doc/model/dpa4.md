@@ -462,8 +462,13 @@ spin). The Source Freeze Propagation gate folds each node's full
 *outgoing*-edge set, which no single rank observes for ghost owners; the
 with-comm artifact completes the gate's per-node `[log eta, zero count]`
 partials across ranks with one reverse-accumulate plus one forward-broadcast
-border exchange of an `(N, 2)` tensor per forward pass — negligible next to
-the per-block feature exchanges that already run. Native spin
+border exchange of an `(N, 2)` tensor per forward pass. The payload is
+narrow, but the cost is not bandwidth alone: both kernels end in an
+`MPI_Barrier`, and the force graph differentiates through them, so their
+transposes add a matching pair of round trips to the force evaluation. On
+small systems or at high rank counts those synchronizations can dominate;
+the exchange has not been benchmarked across system sizes and rank counts.
+Native spin
 (`scheme: "native"`) and charge/spin conditioning likewise support
 multi-rank: native spin reuses the `edge_vec` interface on PT and the
 NeighborGraph lower on pt_expt. The remainder of this subsection describes
