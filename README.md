@@ -129,12 +129,13 @@ from scratch:
 
 ```bash
 dp pretrained download DPA-3.2-5M
-dp --pt train input.json --finetune <path-to-downloaded-model> --model-branch <branch>
+dp --pt train input.json --finetune ~/.cache/deepmd/pretrained/models/DPA-3.2-5M.pt --model-branch <branch>
 ```
 
 `DPA-3.2-5M` is a PyTorch multi-task checkpoint: run the trainer in PyTorch
 mode with `dp --pt` and select the branch that matches your system with
-`--model-branch` (list them with `dp --pt show <path> model-branch`).
+`--model-branch` (list them with
+`dp --pt show ~/.cache/deepmd/pretrained/models/DPA-3.2-5M.pt model-branch`).
 
 The [fine-tuning guide][finetune] covers full-model and LoRA adaptation, and
 [DPA-ADAPT] adapts pretrained DPA representations to downstream
