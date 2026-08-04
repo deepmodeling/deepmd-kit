@@ -84,7 +84,7 @@ uses the dense `nlist` ABI instead. A graph model frozen with
 PyTorch-Exportable runtime, which reads this metadata to select the correct
 input path. The `--lower-kind` option controls only the PyTorch-Exportable
 freeze route; see the [DPA4 export documentation](model/dpa4.md#freeze-to-pt2)
-for the separate PyTorch-TorchScript route.
+for the separate DPA4/SeZM AOTInductor export route.
 
 ### JAX {{ jax_icon }}
 
