@@ -401,22 +401,8 @@ class GridBranch(NativeOP):
         router = self.router(scalar_pair)
         router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
         router = router / xp.sum(router, axis=-1, keepdims=True)
-        # einsum "ngfhc,nfh->ngfc", expressed as a batched matmul.
-        #
-        # NOT as ``xp.sum(value * router[:, None, :, :, None], axis=3)``: that
-        # broadcast-then-reduce materialises the whole (N, G, F, H, C) product
-        # -- ~0.8 GB at this example's grid resolution -- and reads it straight
-        # back, which measured as the single most expensive kernel of a DPA4
-        # training step. ``matmul`` contracts H in place, so only the
-        # (N, G, F, C) result is written. ``matmul`` broadcasts its leading
-        # batch axes, so the router's (N, 1, F, 1, H) view lines up with
-        # value's (N, G, F, H, C) without permuting (a permute here would
-        # reintroduce the very copy this avoids).
-        router_row = xp.reshape(
-            router, (n_batch, 1, n_focus, 1, self.n_branches)
-        )  # (N, 1, F, 1, H)
-        out = xp.matmul(router_row, value)  # (N, G, F, 1, C)
-        out = xp.reshape(out, (n_batch, n_grid, n_focus, self.channels))
+        # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
+        out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
 
         # === Step 3. Project back to coefficients and mix output channels ===
         return _project_frames(from_grid(out), self.out_proj, self.n_frames)
