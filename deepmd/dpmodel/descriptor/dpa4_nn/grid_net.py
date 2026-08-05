@@ -99,6 +99,41 @@ def _build_frame_degree_index(
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
+def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
+    """Contract ``einsum("ndfi,dio->ndfo")`` batched over the degree axis.
+
+    Parameters
+    ----------
+    xp : Any
+        The array namespace of ``coeff``.
+    coeff : Array
+        Coefficients with shape ``(N, D, F, i)``.
+    weight : Array
+        Per-degree weights with shape ``(D, i, o)``.
+
+    Returns
+    -------
+    Array
+        Contracted coefficients with shape ``(N, D, F, o)``.
+
+    Notes
+    -----
+    The obvious spelling ``matmul(coeff, weight[None, ...])`` puts ``N`` in the
+    matmul batch, so ``weight`` is broadcast to ``(N, D, i, o)`` and autograd
+    must reduce that expanded gradient back to the parameter shape every step.
+    Batching over the small degree axis keeps ``N`` as matmul ROWS, so the
+    weight is used in place; the transposes touch only ``coeff``, which is far
+    smaller than the expanded weight would be.
+    """
+    n_batch, coeff_dim, n_focus, _ = coeff.shape
+    coeff_d = xp.reshape(
+        xp.permute_dims(coeff, (1, 0, 2, 3)), (coeff_dim, n_batch * n_focus, -1)
+    )  # (D, N*F, i)
+    out = xp.matmul(coeff_d, weight)  # (D, N*F, o)
+    out = xp.reshape(out, (coeff_dim, n_batch, n_focus, -1))
+    return xp.permute_dims(out, (1, 0, 2, 3))  # (N, D, F, o)
+
+
 def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
     """
     Apply a channel-only linear map to each Wigner-D frame independently.
@@ -401,8 +436,18 @@ class GridBranch(NativeOP):
         router = self.router(scalar_pair)
         router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
         router = router / xp.sum(router, axis=-1, keepdims=True)
-        # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
-        out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
+        # einsum "ngfhc,nfh->ngfc" as a batched matmul.
+        #
+        # NOT as ``xp.sum(value * router[:, None, :, :, None], axis=3)``: that
+        # materialises the whole (N, G, F, H, C) product just to reduce it away,
+        # H times the size of the result.  ``matmul`` broadcasts its leading
+        # batch axes, so the router's (N, 1, F, 1, H) view contracts H in place
+        # against value's (N, G, F, H, C) with no permute and no intermediate.
+        router_row = xp.reshape(
+            router, (n_batch, 1, n_focus, 1, self.n_branches)
+        )  # (N, 1, F, 1, H)
+        out = xp.matmul(router_row, value)  # (N, G, F, 1, C)
+        out = xp.reshape(out, (n_batch, n_grid, n_focus, self.channels))
 
         # === Step 3. Project back to coefficients and mix output channels ===
         return _project_frames(from_grid(out), self.out_proj, self.n_frames)
@@ -493,9 +538,13 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a broadcast batched matmul:
-        # (N, D, F, i) @ (1, D, i, o) -> (N, D, F, o)
-        return xp.matmul(coeff, weight[None, ...])
+        # einsum "ndfi,dio->ndfo" as a matmul batched over the DEGREE axis.
+        #
+        # NOT as ``matmul(coeff, weight[None, ...])``: that puts N in the matmul
+        # batch, so the weight broadcasts to (N, D, i, o) and autograd has to
+        # reduce that whole expanded gradient back to the parameter shape.  See
+        # the same fix in so3.py, where it was the costliest kernel of a step.
+        return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameContract to a dict."""
@@ -575,9 +624,9 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a broadcast batched matmul:
-        # (N, D, F, i) @ (1, D, i, o) -> (N, D, F, o)
-        return xp.matmul(coeff, weight[None, ...])
+        # einsum "ndfi,dio->ndfo" as a matmul batched over the DEGREE axis; see
+        # the note in FrameContract.call for why N must not be the batch axis.
+        return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameExpand to a dict."""
