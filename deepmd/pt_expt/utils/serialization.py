@@ -137,19 +137,19 @@ def _needs_with_comm_artifact(
     ``use_loc_mapping=True`` keep all per-layer messaging local to each
     rank's owned atoms; they need only the regular artifact.
 
-    Delegates to ``descriptor.has_message_passing_across_ranks()``, which
-    descriptor classes implement explicitly. Returns ``False`` defensively
-    when the model has no single descriptor (linear/zbl/frozen) or when
-    the method is somehow missing or raises.
+    Capabilities are answered by the atomic model
+    (``has_message_passing_across_ranks`` / ``supports_edge_parallel`` /
+    ``dense_lower_supports_comm``); compositions aggregate over children,
+    so linear/zbl models answer for themselves instead of being denied by
+    wrapper type (issue #5906 Task 4).
 
     Not every lower path that needs cross-rank exchange implements it: DPA4's
     graph lower carries a real per-layer ``border_op`` exchange, but its
     dense (nlist) lower's adapter raises on ``comm_dict``. ``lower_kind``
     selects which lower is being traced so the gate can consult the
     per-lower capability instead of assuming both lowers agree. Non-graph
-    kinds additionally check ``descriptor.dense_lower_supports_comm()``
-    (absent on descriptors, such as dpa2/dpa3, whose dense lower always
-    supports comm — treated as ``True``).
+    kinds additionally check ``dense_lower_supports_comm()`` (``True`` for
+    dpa2/dpa3, whose dense lower is the production multi-rank path).
 
     Native spin participates on the GRAPH lower, matching pt's
     ``SeZMModel.supports_edge_parallel`` (which ``SeZMNativeSpinModel`` does
@@ -184,34 +184,17 @@ def _needs_with_comm_artifact(
     if isinstance(model, NativeSpinModelKind) and lower_kind != "graph":
         return False
 
-    # Analytical bridging models are single-rank only (pt's
-    # ``supports_edge_parallel() == False`` contract: ZBL + SFPG fold each
-    # node's full outgoing-edge set, which a single rank cannot observe for
-    # ghost owners) -- never compile a with-comm artifact for them.
-    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
-    )
-
-    atomic_model = getattr(model, "atomic_model", None)
-    if isinstance(atomic_model, LinearEnergyAtomicModel):
-        # Compositions (e.g. analytical bridging: learned + InnerPotential)
-        # are single-rank on the graph route: per-edge analytical terms fold
-        # each node's full edge set, which a single rank cannot observe for
-        # ghost owners (pt's supports_edge_parallel()==False rationale).
-        return False
-
-    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    if desc is None or not desc.has_message_passing_across_ranks():
+    atomic_model = model.atomic_model
+    if not (
+        atomic_model.has_message_passing_across_ranks()
+        and atomic_model.supports_edge_parallel()
+    ):
         return False
     if lower_kind == "graph":
         return True
-    # Non-graph kinds trace the DENSE with-comm wrapper; a descriptor whose
-    # dense lower has no comm implementation (DPA4: the dense adapter raises
-    # on comm_dict) must not emit a dead or untraceable dense artifact.
-    # Descriptors without the method (dpa2/dpa3/...) implement dense comm —
-    # it is their production multi-rank path.
-    dense_ok = getattr(desc, "dense_lower_supports_comm", None)
-    return True if dense_ok is None else bool(dense_ok())
+    # Non-graph kinds trace the DENSE with-comm wrapper; a model whose dense
+    # lower has no comm implementation (DPA4) must not emit a dead artifact.
+    return bool(atomic_model.dense_lower_supports_comm())
 
 
 def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
@@ -238,9 +221,10 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
         ``attn_layer > 0`` and for dpa2 with ``update_g2_has_attn`` or
         ``update_h2`` (keying on ``get_numb_attn_layer()`` alone missed
         dpa2, whose repformer attention rides ``center_edge_pairs`` without
-        implementing that dpa1 accessor).  Models without a single
-        descriptor (linear/zbl/frozen) pass the check (they take the dense
-        route anyway), as do descriptors without the capability method.
+        implementing that dpa1 accessor).  Compositions answer by
+        aggregation (ANY child emitting compact pairs trips the guard);
+        since graph-capable models auto-resolve onto the graph route,
+        linear/zbl compositions are NOT exempt.
 
     Raises
     ------
@@ -248,8 +232,7 @@ def check_graph_trace_torch_version(model: torch.nn.Module) -> None:
         If the descriptor's graph lower traces compact edge pairs and the
         running torch is older than 2.6.
     """
-    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    if desc is None or not desc.uses_compact_edge_pairs():
+    if not model.atomic_model.uses_compact_edge_pairs():
         return
     version = torch.__version__.split("+")[0]
     major_minor = tuple(int(p) for p in version.split(".")[:2] if p.isdigit())
@@ -1019,17 +1002,8 @@ def _build_dynamic_shapes(
 
 
 def _supports_graph_export(model: torch.nn.Module) -> bool:
-    """Whether the model has an exportable graph-lower implementation.
-
-    A compressed descriptor must use its opaque graph operator during export;
-    tracing through the reference tabulation kernel is unsupported.
-    """
-    atomic_model = getattr(model, "atomic_model", None)
-    descriptor = getattr(atomic_model, "descriptor", None)
-    if not bool(getattr(descriptor, "geo_compress", False)):
-        return True
-    eligible = getattr(descriptor, "_fused_eligible", None)
-    return callable(eligible) and bool(eligible("cuda"))
+    """Whether the model has an exportable graph-lower implementation."""
+    return bool(model.atomic_model.supports_graph_export())
 
 
 def _collect_metadata(

@@ -226,6 +226,49 @@ class DescrptDPA4(DescrptDPA4DP):
         """
         return bool(self.training)
 
+    def _gate_partial_exchange(
+        self,
+        partials: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Reverse-accumulate ghost partials to owners, then broadcast back.
+
+        ``border_op_backward`` sums each ghost row into its owner across
+        ranks and zeroes the ghost rows; ``border_op`` refills them with the
+        completed owner values. Both ops carry autograd (the two are
+        transposes), so gate gradients cross ranks (issue #5906).
+
+        Parameters
+        ----------
+        partials
+            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
+        comm_dict
+            The border-exchange control tensors.
+
+        Returns
+        -------
+        torch.Tensor
+            The globally completed (n_nodes, 2) tensor.
+        """
+        # border_op exchanges rows by raw pointer arithmetic; a strided
+        # view would corrupt the exchange.
+        p = partials.contiguous()
+        comm_args = (
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+        )
+        tail = (
+            comm_dict["communicator"],
+            comm_dict["nlocal"],
+            comm_dict["nghost"],
+        )
+        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
+        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
+        return p
+
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
 

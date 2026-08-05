@@ -3117,18 +3117,17 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def supports_edge_parallel(self) -> bool:
         """Whether the edge-based LAMMPS multi-rank with-comm artifact applies.
 
-        Cross-rank ghost-feature exchange is well-defined only for the
-        conservative non-bridging path: analytical ZBL bridging and its Source
-        Freeze Propagation gate fold each node's full outgoing-edge set, which a
-        single rank cannot observe for ghost owners. The native spin scheme
-        reuses the edge_vec interface and therefore participates; only the
-        deepspin (virtual-atom) scheme uses the nlist interface and is excluded
-        by the freeze entry point's edge_vec gate.
+        Delegates to the descriptor capability. Bridging participates since
+        issue #5906: the Source Freeze Propagation Gate's per-node partials
+        are completed across ranks (``_gate_partial_exchange``) and the
+        analytical ZBL injection reads extended types, so the parallel path
+        reproduces the folded one. The native spin scheme reuses the
+        edge_vec interface and therefore participates; only the deepspin
+        (virtual-atom) scheme uses the nlist interface and is excluded by
+        the freeze entry point's edge_vec gate.
         """
-        if self.inter_potential is not None:
-            return False
         descriptor = self.atomic_model.descriptor
-        return bool(descriptor.has_message_passing_across_ranks())
+        return bool(descriptor.supports_edge_parallel())
 
     def export_lower_input_kind(self) -> str:
         """Return the ABI consumed by the exported ``.pt2`` lower graph.

@@ -137,6 +137,17 @@ def make_base_descriptor(
             """
             return False
 
+        def supports_edge_parallel(self) -> bool:
+            """Whether this descriptor can run under MPI domain decomposition.
+
+            Distinct from :meth:`has_message_passing_across_ranks` (whether
+            multi-rank inference NEEDS a per-block ghost exchange): this asks
+            whether any part of the computation folds state that a single
+            rank cannot observe. Default ``True``: an ordinary descriptor
+            reads only rank-local neighbourhoods.
+            """
+            return True
+
         def supports_native_spin(self) -> bool:
             """Returns whether the descriptor natively conditions on per-atom spin.
 
@@ -208,6 +219,32 @@ def make_base_descriptor(
             :meth:`uses_graph_lower` can return ``True``.
             """
             return False
+
+        def dense_lower_supports_comm(self) -> bool:
+            """Whether the DENSE (nlist) lower implements comm_dict exchange.
+
+            Default ``True`` — dense comm is the production multi-rank path
+            for dpa2/dpa3 (previously this was probed by method absence in
+            the freeze machinery); a descriptor whose dense adapter raises
+            on ``comm_dict`` (DPA4) overrides to ``False``.
+            """
+            return True
+
+        def graph_edge_dtype(self) -> str:
+            """Edge-geometry dtype the graph deployment artifact accepts.
+
+            ``"float64"`` is the model-agnostic ABI; geometrically
+            compressed float32 descriptors override to ``"float32"``.
+            """
+            return "float64"
+
+        def supports_graph_export(self) -> bool:
+            """Whether an exportable graph-lower implementation exists.
+
+            A compressed descriptor without its fused opaque operator cannot
+            be traced through the reference tabulation kernel.
+            """
+            return True
 
         def graph_type_embedding_table(self) -> Any | None:
             """Full type-embedding table consumed by the graph-route forward.

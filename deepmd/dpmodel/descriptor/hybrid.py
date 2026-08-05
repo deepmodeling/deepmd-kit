@@ -212,6 +212,24 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
         )
 
+    def supports_edge_parallel(self) -> bool:
+        """Returns whether the hybrid can run under domain decomposition.
+
+        A veto by any child vetoes the whole concatenation: the hybrid
+        output contains that child's block, so the composite is only as
+        parallel-capable as its least capable member.
+        """
+        return all(descrpt.supports_edge_parallel() for descrpt in self.descrpt_list)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Returns whether every child's DENSE lower implements comm_dict.
+
+        ALL rather than ANY: the dense with-comm trace passes ``comm_dict``
+        to every child, so one child whose dense adapter raises on it (DPA4)
+        makes the whole hybrid's dense comm path non-viable.
+        """
+        return all(descrpt.dense_lower_supports_comm() for descrpt in self.descrpt_list)
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True
