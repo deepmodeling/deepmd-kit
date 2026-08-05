@@ -10,11 +10,14 @@ Before this fixture, ZBL bridging had NO C++ or LAMMPS coverage at all; its
 only end-to-end test drove the ``.pt2`` through the PYTHON ``DeepPot``, which
 never touches ``DeepPotPTExpt``.
 
-Single-rank only: bridging enables the descriptor's Source Freeze
-Propagation Gate, whose per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a
-node's FULL outgoing-edge set.  Edges exist only for owned centres, so eta is
-incomplete on every rank and a with-comm artifact is not exported
-(``has_comm_artifact=false``, asserted below).
+Multi-rank capable (issue #5906): bridging enables the descriptor's Source
+Freeze Propagation Gate, whose per-node ``eta_j = prod_{e: src_e = j} w_e``
+folds a node's FULL outgoing-edge set.  Edges exist only for owned centres,
+so the per-node ``[log_eta, zero_count]`` partials are rank-incomplete; the
+with-comm artifact completes them via one reverse-accumulate
+(``border_op_backward``) + forward-broadcast (``border_op``) exchange before
+the gate is applied, so the nested ``forward_lower_with_comm.pt2`` is
+embedded (``has_comm_artifact=true``, asserted below).
 
 Generation mirrors ``gen_dpa4_spin.py``: the dpmodel is built in-process from
 the inline config with a fixed weight-init seed, its zero-initialised
@@ -150,10 +153,10 @@ def main():
     )
     assert md["type_map"] == ZBL_CONFIG["type_map"]
     assert md["lower_input_kind"] == "graph"
-    # Single-rank only -- see the module docstring (SFPG eta is incomplete
-    # per rank), so no nested with-comm artifact may be present.
-    assert md["has_comm_artifact"] is False
-    assert "model/extra/forward_lower_with_comm.pt2" not in names
+    # Multi-rank capable (issue #5906): the SFPG per-node partials are
+    # completed across ranks, so the nested with-comm artifact is embedded.
+    assert md["has_comm_artifact"] is True
+    assert "model/extra/forward_lower_with_comm.pt2" in names
 
     # ---- 4. Evaluate (PBC + NoPbc) ----
     dp = DeepPot(pt2_path)

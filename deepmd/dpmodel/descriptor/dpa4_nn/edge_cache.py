@@ -131,6 +131,7 @@ def compute_edge_src_gate(
     n_nodes: int,
     bridging_switch: Callable[[Any], Any],
     edge_keep_f: Any = None,
+    node_partial_exchange: Callable[[Any], Any] | None = None,
 ) -> Any:
     """
     Compute the per-edge source gate for SFPG from edge lengths.
@@ -182,6 +183,14 @@ def compute_edge_src_gate(
         Optional per-edge keep weights with shape (E, 1), with ``0`` on
         masked edges and ``1`` on kept edges. If provided, masked edges
         are rewritten to ``w = 1`` before the product reduction.
+    node_partial_exchange
+        Optional cross-rank completion hook for the per-node partials
+        (issue #5906). Receives the ``(n_nodes, 2)`` float tensor
+        ``[log_eta, zero_count]`` and returns the globally completed one
+        (reverse-accumulate ghost rows into owners, then broadcast the
+        completed owner values back onto ghosts). ``None`` (the default)
+        is the single-process path where the local partials are already
+        complete.
 
     Returns
     -------
@@ -209,18 +218,33 @@ def compute_edge_src_gate(
     log_eta = xp_add_at(
         xp.zeros((n_nodes,), dtype=edge_w.dtype, device=device), src, log_safe
     )
-    eta_nonzero_path = xp.exp(log_eta)
 
     # === Step 3. Exact-zero indicator per source node ===
-    # ``scatter_add`` over an ``int64`` cast of the zero mask counts how
-    # many frozen edges each source node owns. A strictly positive count
-    # means the product is 0 by the hard-freeze rule.
+    # ``scatter_add`` over the zero mask counts how many frozen edges each
+    # source node owns. A strictly positive count means the product is 0 by
+    # the hard-freeze rule. Float count (values are small integers, exact
+    # in fp) so both partials ride ONE border-exchange tensor when
+    # completing across ranks.
     zero_count = xp_add_at(
-        xp.zeros((n_nodes,), dtype=xp.int64, device=device),
+        xp.zeros((n_nodes,), dtype=edge_w.dtype, device=device),
         src,
-        xp.astype(is_zero, xp.int64),
+        xp.astype(is_zero, edge_w.dtype),
     )
-    any_zero = zero_count > 0
+
+    # === Step 3b. Cross-rank completion of the per-node partials ===
+    # A rank only holds edges whose dst is owned, so the src-keyed sums
+    # above are PARTIAL for every node under domain decomposition. The hook
+    # (reverse-accumulate ghost->owner, then forward-broadcast owner->ghost)
+    # completes them; log-products are additive and each edge lives on
+    # exactly one rank, so nothing double-counts (issue #5906).
+    if node_partial_exchange is not None:
+        packed = xp.stack([log_eta, zero_count], axis=-1)  # (n_nodes, 2)
+        packed = node_partial_exchange(packed)
+        log_eta = packed[..., 0]
+        zero_count = packed[..., 1]
+
+    eta_nonzero_path = xp.exp(log_eta)
+    any_zero = zero_count > 0.5
 
     # === Step 4. Combine and broadcast back to edges via source ===
     eta = xp.where(any_zero, xp.zeros_like(eta_nonzero_path), eta_nonzero_path)
@@ -244,6 +268,7 @@ def _edge_cache_from_arrays(
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
     gamma: Any = None,
+    node_partial_exchange: Callable[[Any], Any] | None = None,
 ) -> EdgeCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -295,6 +320,10 @@ def _edge_cache_from_arrays(
         ``random_gamma`` is True. When None, drawn with the backend's RNG
         (:func:`~deepmd.dpmodel.array_api.xp_uniform`) uniformly in
         ``[0, 2*pi)``; callers may inject angles to pin a draw.
+    node_partial_exchange
+        Optional cross-rank completion hook forwarded to
+        :func:`compute_edge_src_gate` (issue #5906); only meaningful when
+        ``bridging_switch`` is provided.
 
     Returns
     -------
@@ -358,6 +387,7 @@ def _edge_cache_from_arrays(
             n_nodes=n_nodes,
             bridging_switch=bridging_switch,
             edge_keep_f=edge_keep_f,
+            node_partial_exchange=node_partial_exchange,
         )
 
     return _finalize_edge_cache(

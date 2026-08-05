@@ -262,3 +262,29 @@ class TestDpa1BlockCallGraphStrip:
         """attn_layer=2, smooth=False: bit-exact (avoids by-design smooth softmax divergence)."""
         dd = self._make(type_one_side, smooth=False, attn_layer=2)
         self._assert_parity(dd, compact=False)
+
+    def test_virtual_center_uses_real_type_for_graph_statistics(self) -> None:
+        """Graph normalization clamps virtual centers before real-only stats."""
+        dd = self._make(type_one_side=True, smooth=False, attn_layer=0)
+        dd.se_atten.mean[0, :, :] = 0.25
+        dd.se_atten.mean[1, :, :] = -0.5
+        coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])
+        nlist = np.array([[[1, -1], [0, -1]]], dtype=np.int64)
+        mapping = np.array([[0, 1]], dtype=np.int64)
+        graph = from_dense_quartet(coord, nlist, mapping, compact=False)
+        type_embedding = dd.type_embedding.call()
+
+        actual, _ = dd.se_atten.call_graph(
+            graph,
+            np.array([-1, 1], dtype=np.int64),
+            type_embedding=type_embedding,
+        )
+        expected, _ = dd.se_atten.call_graph(
+            graph,
+            np.array([0, 1], dtype=np.int64),
+            type_embedding=type_embedding,
+        )
+
+        self_value = actual[0]
+        assert np.isfinite(self_value).all()
+        np.testing.assert_allclose(self_value, expected[0])

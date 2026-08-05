@@ -769,12 +769,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
+        atype_for_env = atype.clamp_min(0)
         nb = nframes
         nall = extended_coord.view(nb, -1, 3).shape[1]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
-            atype,
+            atype_for_env,
             self.mean,
             self.stddev,
             self.rcut,
@@ -897,6 +898,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape(nb, nloc * nnei)
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
+            # Only padded type/type-pair tables use the final-row sentinel.
+            # Remap before both one- and two-side indexing so negative virtual
+            # types cannot wrap into an unrelated pair row.
+            nei_type = torch.where(
+                nei_type >= 0,
+                nei_type,
+                torch.full_like(nei_type, ntypes_with_padding - 1),
+            )
             # Per-edge row index into the (padded) type-pair embedding table.
             if self.type_one_side:
                 if self.tebd_compress:
@@ -906,8 +915,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     tt_full = self.filter_layers_strip.networks[0](type_embedding)
                 tebd_idx = nei_type.view(-1).to(torch.long)
             else:
+                center_type = torch.where(
+                    atype >= 0,
+                    atype,
+                    torch.full_like(atype, ntypes_with_padding - 1),
+                )
                 idx_i = torch.tile(
-                    atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
+                    center_type.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
                 tebd_idx = (idx_i + nei_type.view(-1)).to(torch.long)
                 if self.tebd_compress:

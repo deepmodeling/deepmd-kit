@@ -7,6 +7,7 @@ import functools
 import logging
 from collections.abc import (
     Iterable,
+    Iterator,
 )
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -349,6 +350,44 @@ class DeepmdData:
         if self.modifier is not None:
             self.modifier.modify_data(ret, self)
         return ret
+
+    def iter_test(
+        self,
+        *,
+        chunk_atoms: int,
+        numb_test: float = float("inf"),
+    ) -> Iterator[dict]:
+        """Yield the test data in chunks of at most ``chunk_atoms`` atoms.
+
+        The complete test system is materialized first, so chunking here bounds
+        the evaluation batch and its predictions rather than source-data memory.
+
+        Parameters
+        ----------
+        chunk_atoms : int
+            Upper bound on the number of atoms per chunk. A chunk always
+            carries at least one frame, however many atoms it has.
+        numb_test : float, optional
+            Upper bound on the number of frames served. A non-finite bound
+            serves the whole test set.
+
+        Yields
+        ------
+        dict
+            One chunk of test data, keyed as :meth:`get_test`.
+        """
+        if not hasattr(self, "test_set"):
+            self._load_test_set(self.shuffle_test)
+        total = int(self.test_set["type"].shape[0])
+        if np.isfinite(numb_test):
+            total = min(total, int(numb_test))
+        step = max(1, int(chunk_atoms) // max(1, self.natoms))
+        for begin in range(0, total, step):
+            idx = np.arange(begin, min(begin + step, total), dtype=np.int64)
+            chunk = self._get_subdata(self.test_set, idx=idx)
+            if self.modifier is not None:
+                self.modifier.modify_data(chunk, self)
+            yield chunk
 
     def get_ntypes(self) -> int:
         """Number of atom types in the system."""

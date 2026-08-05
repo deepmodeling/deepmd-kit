@@ -12,22 +12,23 @@ coverage at all; the pair style is a distinct consumer (its own nlist/ghost
 handling, per-atom virial accumulation and unit conversion), so a regression
 confined to it was invisible.
 
-Single-rank only, deliberately
-------------------------------
+Multi-rank correctness (issue #5906)
+------------------------------------
 Bridging enables the descriptor's Source Freeze Propagation Gate, whose
 per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a node's FULL outgoing-edge
-set.  Edges exist only for owned centres, so eta is incomplete on every rank
-and the freeze exports NO with-comm artifact (``gen_dpa4_zbl.py`` asserts
-``has_comm_artifact is False`` and that no nested
-``forward_lower_with_comm.pt2`` entry exists).  There is therefore no
-correct multi-rank answer to compare against; what this file pins instead is
-that a multi-rank run FAILS LOUDLY rather than silently returning
-wrong-but-plausible numbers -- see
-``test_pair_deepmd_mpi_dpa4_zbl_fails_fast``.
+set.  Edges exist only for owned centres, so the per-node partials are
+rank-incomplete; the with-comm artifact completes them with one
+reverse-accumulate + forward-broadcast border exchange before the gate is
+applied (``gen_dpa4_zbl.py`` asserts ``has_comm_artifact is True`` and that
+the nested ``forward_lower_with_comm.pt2`` entry exists).  This file pins the
+end-to-end contract with a 2-rank vs 1-rank parity run whose sub-``r_outer``
+close pair STRADDLES the ``processors 2 1 1`` x-boundary -- without that
+geometry every cross-rank gate contribution is ``log w = 0`` and the parity
+holds vacuously -- see ``test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity``.
 
 Reference values are computed LIVE at test-setup time via
 ``deepmd.infer.DeepPot.eval`` on the archive itself, mirroring
-``test_lammps_dpa4_spin_graph_pt2.py``'s ``_compute_expected`` (which explains
+``dpa4_spin_harness.compute_expected`` (which explains
 the reasoning in full).  Two reasons, both load-bearing here:
 
 - A hardcoded array goes stale the moment DPA4 numerics shift, and this
@@ -72,13 +73,13 @@ pb_file = (
 data_file = Path(__file__).parent / "data_dpa4_zbl_pt2.lmp"
 # The MPI runner is backend-agnostic (DATAFILE PB_FILE OUTPUT + flags); reuse
 # the DPA3 driver verbatim rather than duplicate it (same pattern as
-# test_lammps_dpa4_graph_pt2.py).  Only the fail-fast test below uses it.
+# test_lammps_dpa4_graph_pt2.py).  Only the multi-rank tests below use it.
 mpi_runner = Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"
 
-# Ceiling for the mpirun invocation.  The fail-fast under test is expected to
-# throw on EVERY rank before any collective, so a timeout means the guard
-# regressed into a deadlock -- which is a test failure, not a slow machine.
-_MPI_DEFAULT_TIMEOUT = 300.0
+# Ceiling for every mpirun invocation: a with-comm desync hangs the
+# collective forever, so an unbounded should-succeed regression would hang
+# the whole suite -- a timeout is a test failure, not a slow machine.
+_MPI_DEFAULT_TIMEOUT = 600.0
 
 # 6-atom NiO system, coordinates verbatim from
 # ``source/tests/infer/gen_dpa4_zbl.py``'s ``_COORDS``: atoms 0 and 1 sit
@@ -100,6 +101,31 @@ coord = np.array(
 # Model ``type_map`` is ["Ni", "O"]; gen_dpa4_zbl.py's atype [0,0,0,1,1,1]
 # -> LAMMPS types [1,1,1,2,2,2] under identity ``pair_coeff * *``.
 type_NiO = np.array([1, 1, 1, 2, 2, 2])
+
+# Close-pair variant for the 2-rank parity test (issue #5906): the SAME
+# 6-atom geometry shifted along x so the 0.9 A Ni-Ni pair (inside the
+# bridging window, r_inner=0.8 < 0.9 < r_outer=1.2) STRADDLES the
+# ``processors 2 1 1`` boundary at lx/2 = 6.5.  Atom 0 lands at x = 6.3
+# (rank 0) and atom 1 at x = 7.2 (rank 1), so the pair's SFPG gate
+# contribution crosses the rank boundary -- the load-bearing geometry.
+_CLOSE_PAIR_X_SHIFT = 5.3
+coord_close_pair = coord + np.array([_CLOSE_PAIR_X_SHIFT, 0.0, 0.0])
+data_file_close_pair = Path(__file__).parent / "data_dpa4_zbl_close_pair_pt2.lmp"
+
+# Wide-box, 3-way x-split variant for the genuinely-empty-rank MPI corner
+# (``processors 3 1 1``), same construction as
+# ``test_lammps_dpa4_graph_pt2.py``'s ``data_file_empty_rank`` fixture (issue
+# #5906 Task 12b: the ZBL composition must fail-fast exactly like standard
+# DPA4).  The 6 NiO atoms stay at x in [0.4, 3.6] near the left edge of a
+# [0, 90] box.  With 3 even x-slabs of width 30, rank 0 owns [0, 30) (all
+# atoms), rank 2 owns [60, 90) (empty of local atoms but picks up periodic
+# ghosts of the x < 6 atoms wrapped around the box's x=90/x=0 seam, all
+# within DPA4's ghost cutoff rcut(4.0)+skin(2.0)=6.0), and rank 1 (the
+# MIDDLE slab, [30, 60)) borders neither the real atoms directly (nearest
+# real atom at distance 30-3.6 = 26.4 > 6) nor the periodic seam -- so
+# rank 1 is the genuinely empty rank (zero owned AND zero ghost atoms) this
+# fixture is built to produce.
+data_file_empty_rank = Path(__file__).parent / "data_dpa4_zbl_pt2_empty_rank.lmp"
 
 # Reference values, populated by ``_compute_expected`` in ``setup_module``.
 expected_e = None
@@ -192,11 +218,15 @@ def setup_module() -> None:
         )
     _compute_expected()
     write_lmp_data(box, coord, type_NiO, data_file)
+    write_lmp_data(box, coord_close_pair, type_NiO, data_file_close_pair)
+    box_empty_rank = np.array([0, 90, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data(box_empty_rank, coord, type_NiO, data_file_empty_rank)
 
 
 def teardown_module() -> None:
-    if data_file.exists():
-        os.remove(data_file)
+    for f in (data_file, data_file_close_pair, data_file_empty_rank):
+        if f.exists():
+            os.remove(f)
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
@@ -295,17 +325,32 @@ def test_pair_deepmd_atom_energy_and_virial(lammps) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-rank: NOT a correctness test -- a fail-fast test.
+# Multi-rank: 2-rank vs 1-rank close-pair parity (issue #5906 Task 2 E2E).
 # ---------------------------------------------------------------------------
 
 
-def _run_mpi_subprocess(nprocs: int, processors: str, timeout: float) -> dict:
+def _run_mpi_subprocess(
+    nprocs: int,
+    processors: str,
+    timeout: float = _MPI_DEFAULT_TIMEOUT,
+    data_path: Path | None = None,
+    capture: bool = False,
+) -> dict:
     """Run the (backend-agnostic) DPA3 MPI runner against the bridged archive
-    and return ``{"returncode", "stdout", "stderr", "timed_out"}``.
+    and return the parsed ``{"pe", "forces", "virials"}`` output.
 
     Always bounded: on expiry the WHOLE mpirun process group is SIGKILLed
     (killing only mpirun can leave orphaned ranks blocking in a collective).
+
+    With ``capture=True`` (mirroring ``test_lammps_dpa4_graph_pt2.py``'s
+    helper), return raw subprocess info (``returncode``, ``stdout``,
+    ``stderr``, ``timed_out``) instead of parsed output -- used by the
+    fail-fast test below; a timeout there returns ``timed_out=True`` with
+    ``returncode=None`` for the caller to assert on, and a nonzero exit is
+    returned rather than raised.
     """
+    if data_path is None:
+        data_path = data_file
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -315,7 +360,7 @@ def _run_mpi_subprocess(nprocs: int, processors: str, timeout: float) -> dict:
             str(nprocs),
             sys.executable,
             str(mpi_runner),
-            str(data_file.resolve()),
+            str(data_path.resolve()),
             str(pb_file.resolve()),
             out_path,
             "--processors",
@@ -329,18 +374,39 @@ def _run_mpi_subprocess(nprocs: int, processors: str, timeout: float) -> dict:
         except sp.TimeoutExpired:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             stdout, stderr = proc.communicate()
+            if capture:
+                return {
+                    "returncode": None,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                    "timed_out": True,
+                }
+            raise RuntimeError(
+                f"mpirun timed out after {timeout}s (process group killed); "
+                "a should-succeed MPI regression is deadlocked.\n"
+                f"stdout:\n{(stdout or '')[-2000:]}\n"
+                f"stderr:\n{(stderr or '')[-2000:]}"
+            ) from None
+        if capture:
             return {
-                "returncode": None,
-                "stdout": stdout or "",
-                "stderr": stderr or "",
-                "timed_out": True,
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "timed_out": False,
             }
-        return {
-            "returncode": proc.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "timed_out": False,
-        }
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"mpirun exited {proc.returncode}.\n"
+                f"stdout:\n{stdout[-2000:]}\nstderr:\n{stderr[-2000:]}"
+            )
+        with open(out_path) as fh:
+            lines = fh.read().strip().splitlines()
+        pe = float(lines[0])
+        rows = np.array(
+            [list(map(float, line.split())) for line in lines[1:]],
+            dtype=np.float64,
+        )
+        return {"pe": pe, "forces": rows[:, :3], "virials": rows[:, 3:]}
     finally:
         if os.path.exists(out_path):
             os.remove(out_path)
@@ -352,40 +418,88 @@ def _run_mpi_subprocess(nprocs: int, processors: str, timeout: float) -> dict:
 @pytest.mark.skipif(
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
-def test_pair_deepmd_mpi_dpa4_zbl_fails_fast() -> None:
-    """A multi-rank run of a BRIDGED archive must fail loudly, not answer.
+def test_pair_deepmd_mpi_dpa4_zbl_close_pair_parity() -> None:
+    """Issue #5906 Task 2 E2E: a bridged model, 2 ranks, with a 0.9 A
+    contact STRADDLING the ``processors 2 1 1`` x-boundary.
 
-    The bridged model is single-rank only by construction (see the module
-    docstring), so its freeze exports no with-comm artifact while still
-    declaring ``has_message_passing``.  ``DeepPotPTExpt::compute_inner``'s
-    dispatch reads exactly that combination -- graph lower + ``nprocs > 1`` +
-    message passing + no with-comm artifact -- and throws before building any
-    tensors.  Without the guard the run would fall through to the plain
-    single-rank artifact on a per-rank subdomain, where the bridging gate's
-    per-node eta is incomplete: wrong, finite, plausible numbers.
+    Without the cross-boundary close pair this test is vacuous (edges at
+    ``r >= r_outer`` contribute ``log w = 0``); the geometry guard below
+    pins that the pair actually straddles the split.  The 2-rank run
+    exercises the with-comm artifact's SFPG completion (reverse-accumulate
+    + broadcast of the per-node ``[log_eta, zero_count]`` partials), the
+    per-block ghost exchange, and the reverse-comm force fold; the 1-rank
+    run is the plain-artifact reference on the same trajectory.
+    """
+    lx = float(box[1] - box[0])
+    x_lo, x_hi = float(coord_close_pair[0, 0]), float(coord_close_pair[1, 0])
+    assert x_lo < lx / 2.0 < x_hi, (
+        "the close pair no longer straddles the processors 2 1 1 boundary; "
+        "the parity below would be vacuous for the SFPG exchange"
+    )
+    ref = _run_mpi_subprocess(
+        nprocs=1, processors="1 1 1", data_path=data_file_close_pair
+    )
+    par = _run_mpi_subprocess(
+        nprocs=2, processors="2 1 1", data_path=data_file_close_pair
+    )
+    assert par["pe"] == pytest.approx(ref["pe"], rel=1e-8, abs=1e-10)
+    np.testing.assert_allclose(par["forces"], ref["forces"], atol=1e-8, rtol=0)
+    # Same tolerance rationale as test_lammps_dpa4_graph_pt2.py's twin: the
+    # relative component absorbs CUDA atomic-scatter ordering noise without
+    # loosening the CPU-exact case.
+    np.testing.assert_allclose(par["virials"], ref["virials"], atol=1e-8, rtol=1e-8)
 
-    The failure is uniform across ranks (every rank evaluates the same
-    metadata-only predicate before any collective), so a TIMEOUT is a failure
-    of this test: it would mean the guard regressed into a deadlock.
 
-    This is deliberately the ONLY multi-rank test in this file; there is no
-    correct multi-rank reference for a bridged model to compare against.
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa4_zbl_empty_rank_does_not_silently_succeed() -> None:
+    """A genuinely empty rank (zero owned AND zero ghost atoms) under the
+    message-passing with-comm graph route must NOT silently produce
+    wrong-but-plausible numbers -- for the ZBL COMPOSITION exactly as for
+    standard DPA4 (issue #5906 Task 12b: variant/standard alignment).
+
+    The bridged archive routes through the SAME model-agnostic C++ guard as
+    the plain-DPA4 twin (``test_lammps_dpa4_graph_pt2.py``'s
+    ``test_pair_deepmd_mpi_dpa4_graph_empty_rank_does_not_silently_succeed``,
+    which documents the mechanism in full): every rank preflights a
+    communicator-wide min-reduction of its node count
+    (``deepmd_export::allreduce_min_int``) BEFORE entering the per-layer
+    ``border_op`` collectives, so the non-empty peers detect the empty rank
+    and throw the documented error instead of blocking forever.  A timeout
+    is therefore a FAILURE of this test, and the documented error message
+    must appear on a nonzero exit.  What this pins for the composition
+    specifically: the linear/ZBL wrapping must not swallow or bypass the
+    guard on its way into the graph forward.
+
+    ``data_file_empty_rank`` (3-way x-split, ``processors 3 1 1``) was
+    verified (see the module-level comment above the fixture) to put the
+    MIDDLE rank in a genuinely empty state, using DPA4's own ghost cutoff
+    (rcut(4.0)+skin(2.0)=6.0).
     """
     out = _run_mpi_subprocess(
-        nprocs=2, processors="2 1 1", timeout=_MPI_DEFAULT_TIMEOUT
+        nprocs=3,
+        processors="3 1 1",
+        data_path=data_file_empty_rank,
+        capture=True,
+        timeout=120,
     )
     assert not out["timed_out"], (
-        "Multi-rank run of the bridged archive timed out instead of failing "
-        "promptly; the dispatch guard must throw on every rank BEFORE any "
-        "collective."
+        "Multi-rank ZBL-bridged graph run with an empty rank timed out "
+        "instead of failing promptly: the collective empty-rank preflight "
+        "(allreduce_min_int) must make every rank throw BEFORE the "
+        "per-layer border_op collectives."
     )
     assert out["returncode"] != 0, (
-        "Expected the multi-rank run of a bridged (no with-comm artifact) "
-        "archive to fail loudly, but it exited 0.\n"
+        "Expected the multi-rank message-passing ZBL-bridged run to fail "
+        "loudly on a genuinely empty rank, but it exited 0.\n"
         f"stdout:\n{out['stdout'][-2000:]}\nstderr:\n{out['stderr'][-2000:]}"
     )
     combined = out["stdout"] + out["stderr"]
-    assert "with-comm artifact" in combined, (
-        "Expected the documented fail-loud message (mentioning the missing "
-        f"'with-comm artifact'), got:\n{combined[-2000:]}"
+    assert "zero owned+ghost atoms" in combined, (
+        "Expected the documented fail-loud message ('zero owned+ghost "
+        f"atoms'), got:\n{combined[-2000:]}"
     )

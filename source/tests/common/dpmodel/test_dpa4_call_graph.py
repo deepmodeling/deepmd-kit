@@ -468,6 +468,31 @@ def test_dpa4_ener_fitting_call_graph_matches_dense() -> None:
     np.testing.assert_allclose(got.reshape(ref.shape), ref, rtol=1e-12, atol=1e-14)
 
 
+def test_output_stat_graph_wrapper_flattens_aparam() -> None:
+    """The output-stat graph route passes atomic parameters on the flat node axis."""
+    descriptor = make_descriptor()
+    fitting = SeZMEnergyFittingNet(
+        ntypes=3,
+        dim_descrpt=descriptor.get_dim_out(),
+        neuron=[16],
+        numb_aparam=2,
+        precision="float64",
+        seed=5,
+    )
+    model = DPAtomicModel(descriptor, fitting, type_map=["A", "B", "C"])
+    coord, atype, _ = make_inputs()
+    aparam = np.random.default_rng(17).normal(size=(*atype.shape, 2))
+
+    output = model._get_forward_wrapper_func()(
+        coord,
+        atype,
+        box=None,
+        aparam=aparam,
+    )
+
+    assert output["energy"].shape == (*atype.shape, 1)
+
+
 def make_bridging_descriptor(seed: int = 99) -> DescrptDPA4:
     """A SFPG-bridging variant of ``make_message_sensitive_descriptor()``.
 

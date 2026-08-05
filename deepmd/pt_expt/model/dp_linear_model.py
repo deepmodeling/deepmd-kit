@@ -41,6 +41,12 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     # identical for any energy model -- reuse EnergyModel's verbatim so
     # compositions (e.g. analytical bridging) freeze like standard models.
     forward_lower_graph_exportable = EnergyModel.forward_lower_graph_exportable
+    # Same ownership for the with-comm twin: it is the SAME energy contract
+    # plus the border-exchange inputs, so a bridged composition gets the
+    # multi-rank artifact through the same alias (issue #5906).
+    forward_lower_graph_exportable_with_comm = (
+        EnergyModel.forward_lower_graph_exportable_with_comm
+    )
 
     def __init__(
         self,

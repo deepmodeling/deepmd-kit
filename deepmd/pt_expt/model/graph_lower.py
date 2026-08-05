@@ -5,16 +5,20 @@ from typing import (
     Any,
 )
 
-import torch
-
 
 def graph_edge_dtype(model: Any, lower_kind: str) -> str:
     """Return the graph edge-vector dtype encoded by a deployment artifact.
 
+    The dtype itself is the atomic model's capability, so compositions
+    answer by aggregation instead of by a reach-in through a single
+    ``.descriptor`` (a ``LinearEnergyAtomicModel`` has none). Only the
+    lower-kind applicability -- which artifact kinds carry edge geometry at
+    all -- is decided here.
+
     Parameters
     ----------
     model : Any
-        Model exposing an atomic-model descriptor.
+        Model exposing the atomic-model capability interface.
     lower_kind : str
         Concrete lower-forward schema.
 
@@ -24,18 +28,9 @@ def graph_edge_dtype(model: Any, lower_kind: str) -> str:
         ``"float32"`` for eligible geometrically compressed DPA1 graph
         lowers, otherwise ``"float64"``.
     """
-    atomic_model = getattr(model, "atomic_model", None)
-    descriptor = getattr(atomic_model, "descriptor", None)
-    descriptor_block = getattr(descriptor, "se_atten", None)
-    statistics = getattr(descriptor_block, "mean", None)
-    if (
-        lower_kind in ("graph", "dpa1_canonical")
-        and bool(getattr(descriptor, "geo_compress", False))
-        and isinstance(statistics, torch.Tensor)
-        and statistics.dtype == torch.float32
-    ):
-        return "float32"
-    return "float64"
+    if lower_kind not in ("graph", "dpa1_canonical"):
+        return "float64"
+    return str(model.atomic_model.graph_edge_dtype())
 
 
 def model_uses_graph_lower(model: Any) -> bool:
