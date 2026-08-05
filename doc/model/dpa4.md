@@ -572,11 +572,14 @@ inference](#multi-gpu-mpi-inference).
   is graph-eligible. `dp --pt-expt freeze --lower-kind graph` on a
   `deepspin`-scheme model raises an error at freeze time, per the dense/graph
   eligibility rule above.
-- **Graph route only, no dense fallback.** Unlike a plain-energy DPA4/SeZM
-  descriptor -- which can freeze to either the dense or the graph lower --
-  a native-spin descriptor has only the graph lower. `--lower-kind auto`
-  (the default) resolves to `graph`; `--lower-kind nlist` is not a valid
-  option for a native-spin model.
+- **Graph route only, no dense fallback.** `--lower-kind` accepts only
+  `nlist` (the default) and `graph`; `auto` is not a valid value. Because
+  the dense lower is deprecated in the pt_expt backend, a graph-capable
+  model -- which an ordinary DPA4/SeZM descriptor is, and a native-spin
+  descriptor as well -- is always frozen to the graph lower: the freeze
+  entrypoint overrides an `nlist` request (including the default) to `graph`
+  with a warning. A native-spin descriptor additionally has no dense (nlist)
+  lower at all, so `--lower-kind` cannot produce a dense artifact for it.
 - **Multi-rank graph inference.** When the descriptor communicates across
   ranks, the frozen archive records `has_comm_artifact=true` and embeds
   `model/extra/forward_lower_with_comm.pt2`. `DeepSpinPTExpt` selects that

@@ -151,26 +151,18 @@ ${output_prefix}.e.out   ${output_prefix}.e_peratom.out  ${output_prefix}.f.out
 ${output_prefix}.v.out   ${output_prefix}.v_peratom.out
 ```
 
-The backend checkpoints can also be tested directly without freezing:
-
-::::{tab-set}
-
-:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
+The PyTorch-TorchScript checkpoint can also be tested directly without
+freezing:
 
 ```bash
 
 dp --pt test -m model.pt -s test_system -d ${output_prefix} -a -n 1
 ```
-:::
 
-:::{tab-item} JAX {{ jax_icon }}
-
-```bash
-dp --jax test -m model.ckpt.jax -s test_system -d ${output_prefix} -a -n 1
-```
-:::
-
-::::
+The JAX training checkpoint (`.jax`) cannot be tested directly: the JAX
+`dp test` route accepts only frozen `.hlo` or `.savedmodel` artifacts, so a
+JAX Hessian model must be frozen with `dp --jax freeze --hessian` (as shown
+above) before testing.
 
 When either backend tests a Hessian-capable checkpoint with `-d ${output_prefix} -a`, the predicted Hessian for each frame is written to an additional file in the working directory:
 

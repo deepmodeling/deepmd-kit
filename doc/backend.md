@@ -80,7 +80,10 @@ ABI. A DPA4/SeZM model frozen with `dp --pt freeze` normally uses the legacy
 `edge_vec` ABI (`lower_input_kind: edge_vec`); its deepspin virtual-atom variant
 uses the dense `nlist` ABI instead. A graph model frozen with
 `dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph ABI
-(`lower_input_kind: graph`). All variants are loaded for inference by the
+(`lower_input_kind: graph`). The `dp --pt-expt compress` workflow can instead
+export a compressed DPA-1 model through the compact canonical
+`dpa1_canonical` ABI (`lower_input_kind: dpa1_canonical`) when the canonical
+compression is eligible. All variants are loaded for inference by the
 PyTorch-Exportable runtime, which reads this metadata to select the correct
 input path. The `--lower-kind` option controls only the PyTorch-Exportable
 freeze route; see the [DPA4 export documentation](model/dpa4.md#freeze-to-pt2)
@@ -145,7 +148,8 @@ The same detection covers TensorFlow 2 `.savedmodeltf` models and
 PyTorch-Exportable `.pte` and `.pt2` runtime formats. In particular, `.pt2`
 selects the PyTorch-Exportable inference loader even when the file was produced
 by the DPA4/SeZM `dp --pt freeze` route described above; the archive metadata
-then selects its `edge_vec`, dense `nlist`, or NeighborGraph ABI.
+then selects its `edge_vec`, dense `nlist`, NeighborGraph, or compact
+`dpa1_canonical` ABI.
 
 ## Convert model files between backends
 
