@@ -1,7 +1,7 @@
 # Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
 
@@ -92,14 +92,14 @@ optional arguments:
                         master)
 ```
 
-## PyTorch Implementation {{ pytorch_icon }}
+## PyTorch-TorchScript Implementation {{ pytorch_icon }}
 
 Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
 ### Optional ZeRO memory optimization
 
-In PyTorch backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
+In the PyTorch-TorchScript backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
 to reduce per-GPU memory usage during distributed training.
 
 | `zero_stage` | Strategy                      | Communication | Memory saving                                 |
@@ -137,7 +137,7 @@ Enable it in input config:
 
 Constraints:
 
-- Works only in PyTorch backend.
+- Works only in the PyTorch-TorchScript backend.
 - Requires distributed launch with `torchrun`.
 - Currently single-task only.
 - Not supported with `LKF` optimizer.
@@ -236,6 +236,28 @@ torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=1
 > for developers: `torchrun` by default passes settings as environment variables [(list here)](https://pytorch.org/docs/stable/elastic/run.html#environment-variables).
 
 > To check forward, backward, and communication time, please set env var `TORCH_CPP_LOG_LEVEL=INFO TORCH_DISTRIBUTED_DEBUG=DETAIL`. More details can be found [here](https://pytorch.org/docs/stable/distributed.html#logging).
+
+## PyTorch-Exportable Implementation {{ pytorch_icon }}
+
+The PyTorch-Exportable backend also trains in parallel with PyTorch
+Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+It initializes the process group automatically when launched with
+[`torchrun`](https://pytorch.org/docs/stable/elastic/run.html#usage) (which
+exports the `LOCAL_RANK` environment variable), and wraps both single-task and
+multi-task models in `DistributedDataParallel`.
+
+### How to use
+
+Launch a DDP training session with `torchrun`, the same as for the
+PyTorch-TorchScript backend:
+
+```bash
+torchrun --nproc_per_node=4 --no-python dp --pt-expt train input.json
+```
+
+Unlike the PyTorch-TorchScript backend, the ZeRO/FSDP2 memory-optimization
+options described above are not available here; PyTorch-Exportable uses
+standard DDP only.
 
 ## Paddle Implementation {{ paddle_icon }}
 
