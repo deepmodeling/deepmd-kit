@@ -216,6 +216,29 @@ class TestDescrptDPA4:
         out2 = np.asarray(dd2.call(coord.reshape(nf, -1), atype, nlist)[0])
         np.testing.assert_array_equal(out1, out2)
 
+    @pytest.mark.parametrize(
+        "use_amp",
+        [
+            True,  # the constructor default; must not be clobbered either
+            False,  # the value that was silently lost, re-enabling autocast
+        ],
+    )
+    def test_use_amp_survives_roundtrip(self, use_amp) -> None:
+        """``use_amp`` must round-trip through serialize/deserialize.
+
+        It was absent from the serialized config, so any backend that rebuilds
+        the descriptor from that dict (pt_expt does) silently reset a
+        configured ``use_amp: false`` to the True default and kept training
+        under bfloat16 autocast.  The forward-output round-trip test cannot
+        catch this: dpmodel never autocasts, so the outputs match either way --
+        only the attribute itself pins the contract.
+        """
+        dd = make_descriptor(use_amp=use_amp)
+        assert dd.use_amp is use_amp
+        assert dd.serialize()["config"]["use_amp"] is use_amp
+        dd2 = DescrptDPA4.deserialize(dd.serialize())
+        assert dd2.use_amp is use_amp
+
     def test_value_errors(self) -> None:
         with pytest.raises(ValueError):  # kmax must be <= lmax
             make_descriptor(kmax=4, lmax=3)
