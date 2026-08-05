@@ -17,6 +17,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
 from deepmd.dpmodel.utils.env_mat_stat import (
     merge_env_stat,
 )
+from deepmd.dpmodel.utils.type_embed import (
+    remap_atype_to_padding,
+)
 from deepmd.pt_expt.common import (
     torch_module,
 )
@@ -48,6 +51,10 @@ class DescrptDPA2(DescrptDPA2DP):
             "graph_lower_disabled",
             torch.zeros((), dtype=torch.bool, device="cpu"),
         )
+
+    def supports_graph_export(self) -> bool:
+        """Compressed DPA2 has no fused graph operator yet."""
+        return not self.geo_compress
 
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
@@ -428,9 +435,10 @@ class DescrptDPA2(DescrptDPA2DP):
             Repinit output. shape: nf x nloc x (ng x axis_neuron)
         """
         # env_mat: nf x nloc x nnei x 4
+        atype_ext_for_env = atype_ext.clamp_min(0)
         rr, _diff, sw = self.repinit.env_mat.call(
             coord_ext,
-            atype_ext,
+            atype_ext_for_env,
             nlist,
             self.repinit.mean[...],
             self.repinit.stddev[...],
@@ -466,12 +474,13 @@ class DescrptDPA2(DescrptDPA2DP):
         nlist_index = nlist_masked.view(nf, nloc_r * nnei)
         # nf x (nloc x nnei)
         nei_type = torch.gather(atype_ext, dim=1, index=nlist_index)
+        nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
 
         if self.repinit.type_one_side:
             # (nf*nl*nnei,) -> (nf*nl*nnei, ng)
             gg_t = self.type_embd_data[nei_type.view(-1).to(torch.long)]
         else:
-            atype = atype_ext[:, :nloc_r]
+            atype = remap_atype_to_padding(atype_ext[:, :nloc_r], ntypes_with_padding)
             idx_i = torch.tile(
                 atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
             ).view(-1)

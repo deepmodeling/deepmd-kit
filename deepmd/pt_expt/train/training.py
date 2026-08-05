@@ -173,6 +173,48 @@ def _detect_task_buffers(
     return result
 
 
+def _warn_compiled_attention(model: torch.nn.Module, task_key: str) -> None:
+    """Warn when compiling DPA1/se_atten_v2 attention (hardware-sensitive).
+
+    Compiled DPA1/se_atten_v2 attention is numerically more sensitive than
+    other descriptors: the inductor-fused and eager force/grad outputs can
+    diverge above 1e-10 on multi-threaded CPU hosts because parallel
+    reduction order is hardware-dependent. Warn but do not reject —
+    energies remain well within training tolerance and the user may accept
+    the trade-off for compile speed.
+
+    Compositions (``LinearEnergyAtomicModel``) have no single descriptor to
+    probe; ``enable_compile`` must degrade gracefully for them instead of
+    crashing on the reach-in (issue #5906 Task 4 audit).
+
+    Parameters
+    ----------
+    model
+        The per-task model about to be compiled.
+    task_key
+        The task label used in the warning message.
+    """
+    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+    try:
+        descriptor = model.get_descriptor()
+    except AttributeError:
+        return
+    if isinstance(descriptor, DescrptDPA1DP):
+        n_attn = descriptor.get_numb_attn_layer()
+        if n_attn > 0:
+            log.warning(
+                "Compiling DPA1/se_atten_v2 with %d attention "
+                "layer(s) (task=%s): the compiled forces/grads "
+                "are slightly hardware-sensitive (multi-thread "
+                "reduction order), and may not match the eager "
+                "path bit-for-bit.  Use 'enable_compile: false' "
+                "or 'attn_layer: 0' for fully reproducible runs.",
+                n_attn,
+                task_key,
+            )
+
+
 def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
@@ -652,7 +694,7 @@ def _trace_and_compile_graph(
         make_fx,
     )
 
-    from deepmd.pt_expt.model.ener_model import (
+    from deepmd.pt_expt.model.make_model import (
         _translate_energy_keys,
     )
 
@@ -2038,8 +2080,6 @@ class Trainer(AbstractTrainer):
             defaultdict,
         )
 
-        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
-
         # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
         # Grouping is needed so _detect_task_buffers can diff buffer identities
         # across all tasks that share the same compiled graph.
@@ -2088,27 +2128,7 @@ class Trainer(AbstractTrainer):
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
-            # Compiled DPA1/se_atten_v2 attention is numerically more
-            # sensitive than other descriptors: the inductor-fused and
-            # eager force/grad outputs can diverge above 1e-10 on
-            # multi-threaded CPU hosts because parallel reduction order
-            # is hardware-dependent.  Warn but do not reject — energies
-            # remain well within training tolerance and the user may
-            # accept the trade-off for compile speed.
-            descriptor = model.get_descriptor()
-            if isinstance(descriptor, DescrptDPA1DP):
-                n_attn = descriptor.get_numb_attn_layer()
-                if n_attn > 0:
-                    log.warning(
-                        "Compiling DPA1/se_atten_v2 with %d attention "
-                        "layer(s) (task=%s): the compiled forces/grads "
-                        "are slightly hardware-sensitive (multi-thread "
-                        "reduction order), and may not match the eager "
-                        "path bit-for-bit.  Use 'enable_compile: false' "
-                        "or 'attn_layer: 0' for fully reproducible runs.",
-                        n_attn,
-                        task_key,
-                    )
+            _warn_compiled_attention(model, task_key)
 
             structure_key = _key_for[task_key]
             task_bufs = _task_bufs_for[task_key]

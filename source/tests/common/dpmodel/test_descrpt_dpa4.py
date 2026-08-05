@@ -95,22 +95,71 @@ class TestDescrptDPA4:
     def test_message_passing_semantics(self) -> None:
         # SeZM always resolves ghost neighbours on the lower path, so it always
         # reports message passing. The GRAPH lower implements the cross-rank
-        # exchange via a real per-layer border_op, so a plain (non-bridging)
-        # descriptor reports across_ranks True; its DENSE lower has no
+        # exchange via a real per-layer border_op, so every SeZM descriptor
+        # (bridged or not) reports across_ranks True; its DENSE lower has no
         # comm_dict implementation (the dense adapter raises on it), so
         # dense_lower_supports_comm() is False and the freeze machinery
-        # skips the dead dense with-comm artifact. Source Freeze Propagation
-        # bridging is excluded from across_ranks: its per-node gate folds a
-        # node's entire outgoing-edge set, which a single rank cannot
-        # observe for ghost owners, so bridging models fail fast on
-        # multi-rank instead.
+        # skips the dead dense with-comm artifact. Whether multi-rank is
+        # POSSIBLE at all is supports_edge_parallel (see
+        # test_capability_split_needs_vs_supports).
         dd = make_descriptor()
         assert dd.has_message_passing() is True
         assert dd.has_message_passing_across_ranks() is True
         assert dd.dense_lower_supports_comm() is False
         dd_bridge = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
         assert dd_bridge.has_message_passing() is True
-        assert dd_bridge.has_message_passing_across_ranks() is False
+        assert dd_bridge.has_message_passing_across_ranks() is True
+
+    def test_capability_split_needs_vs_supports(self) -> None:
+        """has_message_passing_across_ranks = NEEDS exchange (always True for
+        SeZM); supports_edge_parallel = CAN run multi-rank (True for bridged
+        models too since the SFPG cross-rank completion -- issue #5906).
+        """
+        dd_plain = make_descriptor()
+        dd_bridged = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        assert dd_plain.has_message_passing_across_ranks() is True
+        assert dd_bridged.has_message_passing_across_ranks() is True
+        assert dd_plain.supports_edge_parallel() is True
+        assert dd_bridged.supports_edge_parallel() is True
+
+    def test_gate_partial_exchange_dpmodel_raises(self) -> None:
+        """The dpmodel backend is the single-process reference; comm on a
+        bridged model must raise, never silently compute a partial gate.
+        """
+        dd = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        with pytest.raises(NotImplementedError, match="dpmodel"):
+            dd._gate_partial_exchange(np.zeros((4, 2)), {"nlocal": 2})
+
+    def test_edge_src_gate_identity_exchange_is_noop(self) -> None:
+        """The hook seam: an identity exchange reproduces the no-hook gate
+        bit-exactly (pins the pack/unpack layout [log_eta, zero_count]).
+        """
+        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+            compute_edge_src_gate,
+        )
+
+        dd = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        sw = dd.bridging_switch
+        # 4 nodes, 5 edges; one edge inside r_inner (w=0, hard-freezes its
+        # src node), the rest spread across the transition zone and beyond.
+        el = np.array([[0.3], [0.7], [0.9], [1.5], [0.75]], dtype=np.float64)
+        src = np.array([0, 0, 1, 2, 3], dtype=np.int64)
+        gate_ref = compute_edge_src_gate(
+            edge_len=el, src=src, n_nodes=4, bridging_switch=sw
+        )
+        gate_hook = compute_edge_src_gate(
+            edge_len=el,
+            src=src,
+            n_nodes=4,
+            bridging_switch=sw,
+            node_partial_exchange=lambda p: p,
+        )
+        np.testing.assert_array_equal(gate_ref, gate_hook)
+        # geometry sanity: node 0 is hard-frozen, node 3 is inside the
+        # transition zone (0 < gate < 1) -- the test data actually
+        # exercises both gate branches.
+        assert gate_ref[0, 0] == 0.0
+        assert 0.0 < gate_ref[4, 0] < 1.0
 
     def test_serialize_roundtrip_exact(self) -> None:
         dd = make_descriptor()

@@ -52,6 +52,8 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    remap_atype_to_padding,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -540,6 +542,21 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         return False
 
+    def graph_edge_dtype(self) -> str:
+        """float32 edges iff geometric compression runs float32 statistics.
+
+        Compressed DPA1 evaluates both descriptor directions in the
+        statistics dtype and accepts float32 geometry directly.
+        """
+        mean = getattr(self.se_atten, "mean", None)
+        if (
+            self.geo_compress
+            and mean is not None
+            and str(mean.dtype).endswith("float32")
+        ):
+            return "float32"
+        return "float64"
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return self.se_atten.need_sorted_nlist_for_lower()
@@ -904,7 +921,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -1006,7 +1023,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             # gradient so the tebd net never trains; type_embedding already lives
             # on the model device, so the device cast was redundant anyway.
             atype_local = xp.asarray(atype, device=dev)
-            atype_embd = xp.take(type_embedding, atype_local, axis=0)  # (N, tebd_dim)
+            atype_embd = take_type_embedding(type_embedding, atype_local)
             grrg = xp.concat([grrg, atype_embd], axis=-1)
         if in_dtype != prec:
             grrg = xp.astype(grrg, in_dtype)
@@ -1839,6 +1856,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # Gather neighbor types: (nf, nall) -> (nf, nloc*nnei)
             nei_type = xp_take_along_axis(atype_ext, nlist_2d, axis=1)
             nei_type = xp.reshape(nei_type, (-1,))  # (nf * nloc * nnei,)
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
@@ -1853,9 +1871,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, nei_type_index, axis=0)
             else:
+                center_type = remap_atype_to_padding(atype, ntypes_with_padding)
                 idx_i = xp.reshape(
                     xp.tile(
-                        (xp.reshape(atype, (-1, 1)) * ntypes_with_padding), (1, nnei)
+                        (xp.reshape(center_type, (-1, 1)) * ntypes_with_padding),
+                        (1, nnei),
                     ),
                     (-1,),
                 )
@@ -2016,22 +2036,27 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # value so the kernel stays jit/export-traceable (no concretize of n_node).
         n_total = atype.shape[0]
         atype = xp.asarray(atype, device=dev)
+        # Padded embedding tables reserve their final row, whereas exclusion
+        # and normalization tables contain only real types. Keep both forms so
+        # each downstream lookup receives the sentinel convention it expects.
+        safe_real_atype = xp.where(atype >= 0, atype, xp.zeros_like(atype))
         # descriptor-level pair exclusion: same canonical transform as the
         # model-level ``pair_exclude_types`` (decision #18). Masked edges
         # contribute zero to every segment_sum below; the dense path's
         # nlist-erasure + env-mat zeroing is reproduced exactly.
         # apply_pair_exclusion is a no-op when self.emask has no exclusions.
-        graph = apply_pair_exclusion(graph, atype, self.emask)
+        graph = apply_pair_exclusion(graph, safe_real_atype, self.emask)
         src = graph.edge_index[0, :]
         dst = graph.edge_index[1, :]
         center_type = xp.take(atype, dst, axis=0)  # (E,)
         nei_type = xp.take(atype, src, axis=0)  # (E,)
+        center_type_for_stats = xp.take(safe_real_atype, dst, axis=0)
         # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
         # self.mean/self.stddev are slot-independent (ntypes, nnei, 4); slot 0 is
         # the canonical per-type vector.
         rr, sw_e = edge_env_mat(
             graph.edge_vec,
-            center_type,
+            center_type_for_stats,
             self.mean[:, 0, :],
             self.stddev[:, 0, :],
             self.rcut,
@@ -2061,9 +2086,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # under torch and severs the type-embedding weight gradient (the tebd
             # net would never train); type_embedding already lives on the device.
             tebd = type_embedding
-            atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+            atype_embd_nlist = take_type_embedding(tebd, nei_type)
             if not self.type_one_side:
-                atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+                atype_embd_nnei = take_type_embedding(tebd, center_type)
                 ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
             else:
                 ss = xp.concat([ss, atype_embd_nlist], axis=-1)
@@ -2147,6 +2172,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         xp = array_api_compat.array_namespace(ss)
         nt = self.tebd_dim
         ntypes_with_padding = type_embedding.shape[0]
+        center_type = remap_atype_to_padding(center_type, ntypes_with_padding)
+        nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
         # geometric net on the radial channel only (dense: gg_s = cal_g(ss_scalar))
         gg_s = self.embeddings[0].call(ss)  # (E, ng)
         if self.type_one_side:

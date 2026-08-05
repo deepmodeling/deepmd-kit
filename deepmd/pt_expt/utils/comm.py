@@ -190,6 +190,79 @@ def _border_op_backward(
     )
 
 
+def _border_op_backward_grad_setup_context(
+    ctx: torch.autograd.function.FunctionCtx,
+    inputs: tuple,
+    output: torch.Tensor,
+) -> None:
+    (
+        sendlist,
+        sendproc,
+        recvproc,
+        sendnum,
+        recvnum,
+        _grad_g1,
+        communicator,
+        nlocal,
+        nghost,
+    ) = inputs
+    ctx.save_for_backward(
+        sendlist,
+        sendproc,
+        recvproc,
+        sendnum,
+        recvnum,
+        communicator,
+        nlocal,
+        nghost,
+    )
+
+
+def _border_op_backward_grad(
+    ctx: torch.autograd.function.FunctionCtx,
+    grad_output: torch.Tensor,
+) -> tuple:
+    """Gradient of the reverse-accumulate: the forward broadcast.
+
+    ``border_op_backward`` is the exact transpose of ``border_op`` as a
+    linear map over node rows, so its vector-Jacobian product IS
+    ``border_op``'s forward walk (issue #5906: this closes the autograd
+    loop for the SFPG completion so gate gradients cross ranks).
+    """
+    (
+        sendlist,
+        sendproc,
+        recvproc,
+        sendnum,
+        recvnum,
+        communicator,
+        nlocal,
+        nghost,
+    ) = ctx.saved_tensors
+    grad_in = torch.ops.deepmd_export.border_op(
+        sendlist,
+        sendproc,
+        recvproc,
+        sendnum,
+        recvnum,
+        grad_output.contiguous(),
+        communicator,
+        nlocal,
+        nghost,
+    )
+    return (
+        None,
+        None,
+        None,
+        None,
+        None,  # sendlist..recvnum
+        grad_in,  # grad_g1
+        None,
+        None,
+        None,  # communicator, nlocal, nghost
+    )
+
+
 def ensure_comm_registered() -> None:
     """Load libdeepmd_op_pt.so and register fake/autograd metadata for border_op.
 
@@ -222,5 +295,10 @@ def ensure_comm_registered() -> None:
         "deepmd_export::border_op",
         _border_op_backward,
         setup_context=_border_op_setup_context,
+    )
+    torch.library.register_autograd(
+        "deepmd_export::border_op_backward",
+        _border_op_backward_grad,
+        setup_context=_border_op_backward_grad_setup_context,
     )
     _registered = True
