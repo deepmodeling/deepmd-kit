@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import math
 import types
+from collections.abc import (
+    Generator,
+)
 from typing import (
     Any,
 )
@@ -434,6 +438,59 @@ def make_model(
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
+
+        # === TF32 matmul precision ===================================
+        # Mirrors the pt backend's ``SeZMModel`` policy (see
+        # ``deepmd.pt.model.model.sezm_model.SeZMModel.tf32_precision_ctx``):
+        # TRAINING forwards follow ``model.enable_tf32`` and EVAL forwards
+        # follow ``DP_TF32_INFER``.  Both attributes are set by the DPA4/SeZM
+        # builders in ``deepmd.pt_expt.model.get_model``; every other pt_expt
+        # model keeps these defaults, which select full fp32 in both modes and
+        # therefore leave its numerics untouched.
+        enable_tf32: bool = False
+        tf32_infer_precision: str = "highest"
+
+        @contextlib.contextmanager
+        def tf32_precision_ctx(self) -> Generator[None, None, None]:
+            """Select the matmul precision for one forward, then restore it.
+
+            Yields
+            ------
+            None
+                With ``torch.set_float32_matmul_precision`` set for the
+                duration of the block.
+            """
+            if not torch.cuda.is_available():
+                yield
+                return
+            prev_precision = torch.get_float32_matmul_precision()
+            try:
+                if self.training:
+                    precision = "high" if self.enable_tf32 else "highest"
+                else:
+                    precision = self.tf32_infer_precision
+                torch.set_float32_matmul_precision(precision)
+                yield
+            finally:
+                torch.set_float32_matmul_precision(prev_precision)
+
+        def call_common(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
+            """Run the shared dense/graph forward under the TF32 policy.
+
+            This is the ONE owner of matmul precision for eager forwards: every
+            pt_expt model's ``forward`` reaches the backbone through here, and
+            the export trace roots at ``call_common_lower`` instead, so the
+            precision switch never enters an exported graph.  The compiled
+            training path bypasses this method entirely and applies the same
+            policy at its own entry point (``_CompiledModel.forward``).
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                The backbone's output dict, unchanged.
+            """
+            with self.tf32_precision_ctx():
+                return super().call_common(*args, **kwargs)
 
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
