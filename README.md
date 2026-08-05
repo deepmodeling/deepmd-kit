@@ -27,6 +27,8 @@ Use DeePMD-kit across molecular and materials science—from finite molecules an
 covalent systems to periodic solids and metals—and scale from laptop
 experiments to distributed training and MPI-parallel molecular dynamics.
 
+![DPA-4 delivers competitive energy and force accuracy at high throughput](./doc/_static/dpa4-performance.webp)
+
 ## ⚡ Why DeePMD-kit
 
 |     | Advantage                           | What it unlocks                                                                                                                                                                                             |
