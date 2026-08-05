@@ -6030,7 +6030,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
+            doc=supported_backends("pt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",

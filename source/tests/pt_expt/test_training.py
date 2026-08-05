@@ -11,6 +11,7 @@ Verifies that:
 import copy
 import math
 import os
+import platform
 import shutil
 import tempfile
 import unittest
@@ -2250,7 +2251,10 @@ class TestEmaCheckpoints(unittest.TestCase):
 
             ema_ckpt = os.path.join(tmpdir, "model_ema.ckpt-4.pt")
             self.assertTrue(os.path.exists(ema_ckpt))
-            self.assertTrue(os.path.islink(os.path.join(tmpdir, "model_ema.ckpt.pt")))
+            ema_alias = os.path.join(tmpdir, "model_ema.ckpt.pt")
+            self.assertTrue(os.path.exists(ema_alias))
+            if platform.system() != "Windows":
+                self.assertTrue(os.path.islink(ema_alias))
 
             ema_state = torch.load(ema_ckpt, weights_only=True)
             live_state = torch.load(

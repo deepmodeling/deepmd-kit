@@ -72,7 +72,7 @@ class TrainingTimer:
         self._start_step = int(start_step)
         self._num_steps = int(num_steps)
         self._disp_freq = max(1, int(disp_freq))
-        self._interval_start = time.time()
+        self._interval_start = time.monotonic()
         self._last_display_step = self._start_step
         self._timed_time = 0.0
         self._timed_steps = 0
@@ -91,10 +91,10 @@ class TrainingTimer:
         DisplayInterval
             Wall-clock summary of the interval that just ended.
         """
-        now = time.time()
-        wall_time = now - self._interval_start
+        interval_end = time.monotonic()
+        wall_time = interval_end - self._interval_start
         steps = max(1, display_step - self._last_display_step)
-        self._interval_start = now
+        self._interval_start = interval_end
         self._last_display_step = display_step
         if self._counts_toward_average(display_step):
             self._timed_time += wall_time
@@ -111,9 +111,7 @@ class TrainingTimer:
             eta=int((self._num_steps - display_step) * wall_time / steps)
             if forecasts
             else None,
-            timestamp=datetime.datetime.fromtimestamp(
-                now, tz=datetime.timezone.utc
-            ).astimezone(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).astimezone(),
         )
 
     def format_average(self) -> str | None:

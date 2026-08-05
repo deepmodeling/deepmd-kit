@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for the backend-independent checkpoint layout and retention."""
 
+import platform
 from pathlib import (
     Path,
 )
@@ -18,6 +19,16 @@ def _write(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("")
     return path
+
+
+def _assert_prefix_alias(alias: Path, target: Path, relative_target: str) -> None:
+    assert alias.exists()
+    if platform.system() == "Windows":
+        assert alias.read_bytes() == target.read_bytes()
+        return
+    assert alias.is_symlink()
+    assert alias.resolve() == target
+    assert alias.readlink().as_posix() == relative_target
 
 
 def test_numbered_paths_follow_save_dir(tmp_path: Path) -> None:
@@ -39,9 +50,7 @@ def test_publish_links_the_prefix_relative_to_its_directory(tmp_path: Path) -> N
     store.publish(path)
 
     latest = tmp_path / "model.ckpt.pt"
-    assert latest.is_symlink()
-    assert latest.resolve() == path
-    assert latest.readlink().as_posix() == "model.ckpt-3.pt"
+    _assert_prefix_alias(latest, path, "model.ckpt-3.pt")
     assert (tmp_path / "checkpoint").read_text() == str(path)
 
 
@@ -53,8 +62,7 @@ def test_publish_reaches_across_save_dir(tmp_path: Path) -> None:
     store.publish(path)
 
     latest = tmp_path / "model.ckpt.pt"
-    assert latest.resolve() == path
-    assert latest.readlink().as_posix() == "ckpts/model.ckpt-3.pt"
+    _assert_prefix_alias(latest, path, "ckpts/model.ckpt-3.pt")
 
 
 def test_prune_keeps_the_newest_checkpoints(tmp_path: Path) -> None:
@@ -69,6 +77,16 @@ def test_prune_keeps_the_newest_checkpoints(tmp_path: Path) -> None:
     assert store.path_for(2).exists()
     assert store.path_for(3).exists()
     assert (tmp_path / "model.ckpt.pt").exists()
+
+
+def test_prune_keeps_every_checkpoint_below_the_window(tmp_path: Path) -> None:
+    store = CheckpointStore(tmp_path / "model.ckpt", max_keep=10)
+    for step in range(1, 10):
+        _write(store.path_for(step))
+
+    store.prune(store.path_for(9))
+
+    assert all(store.path_for(step).exists() for step in range(1, 10))
 
 
 def test_prune_drops_checkpoints_left_by_a_longer_run(tmp_path: Path) -> None:
@@ -102,7 +120,7 @@ def test_prune_ignores_foreign_names_and_symlinks(tmp_path: Path) -> None:
 
     assert other.exists()
     assert unnumbered.exists()
-    assert (tmp_path / "model.ckpt.pt").is_symlink()
+    _assert_prefix_alias(tmp_path / "model.ckpt.pt", current, "model.ckpt-2.pt")
 
 
 def test_prune_without_a_window_keeps_every_checkpoint(tmp_path: Path) -> None:

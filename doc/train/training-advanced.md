@@ -124,6 +124,11 @@ An explanation will be provided
 **`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the path prefix of checkpoint files `model.ckpt`, the network architectures should match.
 
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
+For the PyTorch and PyTorch Exportable backends, when checkpoint retention is
+enabled, writing the next periodic or EMA checkpoint at step `N` removes
+checkpoints from the same family numbered above `N`. This prevents remnants of
+a longer earlier run from displacing the newly written checkpoint from the
+retention window.
 
 **`--init-frz-model frozen_model.pb`**, initializes the training with an existing model that is stored in `frozen_model.pb`.
 

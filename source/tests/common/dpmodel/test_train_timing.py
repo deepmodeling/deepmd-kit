@@ -28,7 +28,7 @@ class FakeClock:
 def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
     """Replace the clock the timer reads, leaving the stdlib one untouched."""
     fake = FakeClock()
-    monkeypatch.setattr(timing_module, "time", types.SimpleNamespace(time=fake))
+    monkeypatch.setattr(timing_module, "time", types.SimpleNamespace(monotonic=fake))
     return fake
 
 

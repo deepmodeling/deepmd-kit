@@ -181,11 +181,12 @@ class ModelEMA:
         model: torch.nn.Module | dict[str, torch.nn.Module],
     ) -> Iterator[None]:
         """Temporarily replace model parameters with the EMA shadow state."""
-        backups: dict[str, torch.Tensor] = {}
+        named_parameters = self._named_model_parameters(model)
+        with torch.no_grad():
+            backups = {name: param.detach().clone() for name, param in named_parameters}
         try:
             with torch.no_grad():
-                for name, param in self._named_model_parameters(model):
-                    backups[name] = param.detach().clone()
+                for name, param in named_parameters:
                     param.copy_(
                         self.shadow_params[name].to(
                             device=param.device,
@@ -195,6 +196,5 @@ class ModelEMA:
             yield
         finally:
             with torch.no_grad():
-                for name, param in self._named_model_parameters(model):
-                    if name in backups:
-                        param.copy_(backups[name])
+                for name, param in named_parameters:
+                    param.copy_(backups[name])

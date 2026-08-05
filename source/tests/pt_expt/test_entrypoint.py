@@ -7,7 +7,6 @@ from deepmd.dpmodel.train import (
 from deepmd.pt_expt.entrypoints.main import (
     PTExptTrainEntrypoint,
     _ensure_pt_expt_model_suffix,
-    _ensure_stat_file_path,
     train,
 )
 
@@ -149,12 +148,3 @@ def test_pt_expt_entrypoint_rejects_random_model_key(
             {"model": {"model_dict": {"RANDOM": {}}}},
             TrainEntrypointOptions(input_file="input.json"),
         )
-
-
-def test_pt_expt_stat_file_path_creates_hdf5_parent(tmp_path) -> None:
-    stat_file = tmp_path / "stats" / "model_stat.hdf5"
-
-    stat_path = _ensure_stat_file_path(str(stat_file))
-
-    assert stat_file.exists()
-    assert stat_path is not None

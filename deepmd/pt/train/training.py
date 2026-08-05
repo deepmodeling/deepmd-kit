@@ -813,8 +813,11 @@ class Trainer:
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
                     pretrained_model_params = state_dict["_extra_state"]["model_params"]
-                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
-                    pretrained_model_wrapper = ModelWrapper(pretrained_model)
+                    with scoped_env_defaults(eval_env_defaults):
+                        pretrained_model = get_model_for_wrapper(
+                            pretrained_model_params
+                        )
+                        pretrained_model_wrapper = ModelWrapper(pretrained_model)
                     pretrained_model_wrapper.load_state_dict(state_dict)
                     # update type related params
                     for model_key in self.model_keys:

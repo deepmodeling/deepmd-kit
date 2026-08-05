@@ -193,7 +193,8 @@ class CheckpointStore:
         # The current checkpoint occupies one slot of the window when this
         # store holds it.
         occupied = 1 if current_step is not None else 0
-        for _, path in retained[: len(retained) + occupied - self.max_keep]:
+        excess = max(0, len(retained) + occupied - self.max_keep)
+        for _, path in retained[:excess]:
             path.unlink(missing_ok=True)
 
 
