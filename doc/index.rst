@@ -17,11 +17,11 @@ covalent systems to periodic solids and metals—and scale from laptop
 experiments to distributed training and MPI-parallel molecular dynamics.
 
 .. figure:: _static/dpa4-performance.webp
-   :alt: DPA-4 delivers competitive energy and force accuracy at high throughput
+   :alt: DPA4 delivers competitive energy and force accuracy at high throughput
    :width: 100%
    :align: center
 
-   DPA-4 delivers competitive energy and force accuracy at high throughput.
+   DPA4 delivers competitive energy and force accuracy at high throughput.
 
 Choose your path
 ================
