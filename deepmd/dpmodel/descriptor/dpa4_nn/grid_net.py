@@ -436,18 +436,17 @@ class GridBranch(NativeOP):
         router = self.router(scalar_pair)
         router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
         router = router / xp.sum(router, axis=-1, keepdims=True)
-        # einsum "ngfhc,nfh->ngfc" as a batched matmul.
+        # einsum "ngfhc,nfh->ngfc" as a broadcast multiply and reduction.
         #
-        # NOT as ``xp.sum(value * router[:, None, :, :, None], axis=3)``: that
-        # materialises the whole (N, G, F, H, C) product just to reduce it away,
-        # H times the size of the result.  ``matmul`` broadcasts its leading
-        # batch axes, so the router's (N, 1, F, 1, H) view contracts H in place
-        # against value's (N, G, F, H, C) with no permute and no intermediate.
-        router_row = xp.reshape(
-            router, (n_batch, 1, n_focus, 1, self.n_branches)
-        )  # (N, 1, F, 1, H)
-        out = xp.matmul(router_row, value)  # (N, G, F, 1, C)
-        out = xp.reshape(out, (n_batch, n_grid, n_focus, self.channels))
+        # NOT as ``matmul(reshape(router, (N, 1, F, 1, H)), value)``: the branch
+        # count H is a handful, so that spelling is a batched GEMM with M=1 and
+        # K=H, which cuBLAS serves from its small-N (``gemmSN_*`` /
+        # ``gemmk1``) kernels.  At the shapes a compiled DPA4 step actually
+        # runs -- N=1152, G=104, F=1, C=96, H=1 -- the matmul measured 7.52 ms
+        # forward+backward against 1.83 ms for this form, and it was the single
+        # largest GEMM of the step; at H=3 the two are equal (4.44 vs 4.45 ms).
+        # The intermediate this form materialises is only H times the result.
+        out = xp.sum(value * router[:, None, :, :, None], axis=3)
 
         # === Step 3. Project back to coefficients and mix output channels ===
         return _project_frames(from_grid(out), self.out_proj, self.n_frames)
