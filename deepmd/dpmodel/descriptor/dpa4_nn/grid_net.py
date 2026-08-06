@@ -433,12 +433,8 @@ class GridBranch(NativeOP):
         router = self.router(scalar_pair)
         router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
         router = router / xp.sum(router, axis=-1, keepdims=True)
-        # einsum "ngfhc,nfh->ngfc" as a broadcast multiply and reduction.
-        # Spelling it as a matmul over H gives a batched GEMM with M=1, K=H,
-        # which cuBLAS serves from its slow small-N kernels: 7.5 ms vs 1.8 ms
-        # here at H=1, and no better at H=3.  The intermediate this form
-        # materialises is only H (a handful) times the result.
-        out = xp.sum(value * router[:, None, :, :, None], axis=3)
+        # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
+        out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
 
         # === Step 3. Project back to coefficients and mix output channels ===
         return _project_frames(from_grid(out), self.out_proj, self.n_frames)

@@ -131,9 +131,10 @@ class FocusLinear(NativeOP):
             xp, self.weight[...], device=array_api_compat.device(x)
         )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
-        # einsum "bfi,ifo->bfo", batched over the small focus axis F.
-        # Batching over B instead would broadcast the weight to (B, F, Cin, Cout)
-        # and force autograd to reduce that expansion on every backward.
+        # einsum "bfi,ifo->bfo" as F independent (B, Cin) x (Cin, Cout) GEMMs.
+        # B stays the GEMM rows so the weight is used in place; making B the
+        # batch axis would broadcast it to (B, F, Cin, Cout) and leave autograd
+        # reducing that expansion.  At n_focus=1 both permutes are free views.
         weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
         out = xp.matmul(xp.permute_dims(x, (1, 0, 2)), weight)  # (F, B, Cout)
         out = xp.permute_dims(out, (1, 0, 2))  # (B, F, Cout)
