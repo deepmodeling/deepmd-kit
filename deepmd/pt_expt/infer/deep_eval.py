@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import logging
 import warnings
 from collections.abc import (
     Callable,
@@ -79,8 +78,6 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
-
-log = logging.getLogger(__name__)
 
 
 # Public output keys emitted by graph-lower forwards, keyed by the
@@ -192,15 +189,17 @@ class DeepEval(DeepEvalBackend):
     neighbor_graph_method : str, default: "auto"
         Carry-all graph builder for graph-form ``.pt2`` artifacts and
         graph-routed ``.pt`` checkpoints
-        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects
-        ``"nv"`` on CUDA when nvalchemiops is available and otherwise falls
-        back to ``"dense"``. ``"vesin"`` remains explicit opt-in because it
-        loops over frames in Python. Explicit
+        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        at each eval call (CUDA: ``nv`` if importable; else ``vesin`` only when
+        ``nf == 1`` and importable; else ``dense``). Explicit
         ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
         A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
-        choice is performance-only. Consolidating the two knobs into a single
+        choice is performance-only. Training keeps a separate auto policy
+        (:func:`~deepmd.pt_expt.utils.graph_builder.resolve_neighbor_graph_method`)
+        that never selects ``vesin``. Consolidating the two knobs into a single
         backend-selection API is deferred to the dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
@@ -271,8 +270,13 @@ class DeepEval(DeepEvalBackend):
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @staticmethod
-    def _resolve_neighbor_graph_method(method: str) -> str:
-        """Resolve the graph builder once for the active device."""
+    def _resolve_neighbor_graph_method(method: str, nf: int | None = None) -> str:
+        """Validate and optionally resolve the graph builder for the active device.
+
+        ``"auto"`` is left unresolved when ``nf`` is omitted so construction-
+        time setup can defer to :meth:`_build_eval_graph`, where the frame
+        count is known and vesin can be gated on ``nf == 1``.
+        """
         if method not in ("auto", "dense", "ase", "vesin", "nv"):
             raise ValueError(
                 f"Unknown neighbor_graph_method {method!r}; "
@@ -280,24 +284,17 @@ class DeepEval(DeepEvalBackend):
             )
         if method != "auto":
             return method
+        if nf is None:
+            return "auto"
 
-        from deepmd.pt.utils.nv_nlist import (
-            is_nv_available,
-        )
         from deepmd.pt_expt.utils.env import (
             DEVICE,
         )
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_auto_graph_builder,
+        )
 
-        if DEVICE.type == "cuda":
-            if is_nv_available():
-                return "nv"
-            log.warning(
-                "nvalchemi-toolkit-ops is unavailable; falling back from "
-                "neighbor_graph_method='auto' to the dense graph builder. "
-                "Install it with `pip install nvalchemi-toolkit-ops` to enable "
-                "the NV graph builder."
-            )
-        return "dense"
+        return resolve_auto_graph_builder(DEVICE, nf)
 
     def _setup_neighbor_backend(self, nlist_backend: str) -> None:
         """Resolve the graph or neighbor-list construction strategy.
@@ -2316,14 +2313,21 @@ class DeepEval(DeepEvalBackend):
     ) -> "NeighborGraph":
         """Build the carry-all NeighborGraph for graph-lower inference.
 
-        Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
-        backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
-        All backends emit the SAME neighbor set (carry-all, sel-free), so the
-        selection is a pure performance choice and results are unchanged. The
-        result is canonicalized to the destination-major graph-form ``.pt2``
-        ABI after construction.
+        Dispatches on ``self._neighbor_graph_method``: ``auto`` is resolved
+        call-time via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        using the batch frame count (vesin only when ``nf == 1``);
+        ``dense``/``ase`` run backend-agnostic (numpy); ``vesin``/``nv`` run
+        on-device (torch, O(N)). All backends emit the SAME neighbor set
+        (carry-all, sel-free), so the selection is a pure performance choice
+        and results are unchanged. The result is canonicalized to the
+        destination-major graph-form ``.pt2`` ABI after construction.
         """
         method = self._neighbor_graph_method
+        if method == "auto":
+            coord_arr = np.asarray(coord_input)
+            nf = int(coord_arr.shape[0]) if coord_arr.ndim >= 2 else 1
+            method = self._resolve_neighbor_graph_method("auto", nf=nf)
         # Model-level ``pair_exclude_types`` is a graph-BUILD transform
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
@@ -2392,7 +2396,7 @@ class DeepEval(DeepEvalBackend):
             )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
-            "use 'dense', 'ase', 'vesin', or 'nv'"
+            "use 'auto', 'dense', 'ase', 'vesin', or 'nv'"
         )
 
     def _model_pair_excl(self) -> "PairExcludeMask | None":
