@@ -2,6 +2,7 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
+import logging
 import unittest
 
 import pytest
@@ -270,109 +271,51 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsInstance(model, EnergyModel)
 
 
-# === TF32 matmul precision ===
-# Same policy as pt: training follows ``enable_tf32`` (default True), eval
-# follows ``DP_TF32_INFER``.  Like pt, the knob is DPA4/SeZM-scoped.
+# `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
+# (always "highest" precision); a truthy value must emit a warn-once message.
+@pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
+def test_enable_tf32_warns_once(enable_tf32, monkeypatch) -> None:
+    import importlib
 
+    # the package __init__ rebinds the name ``get_model`` to the function, so
+    # ``import ...get_model as`` would shadow the submodule; load it explicitly
+    gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
 
-@pytest.mark.parametrize(
-    "enable_tf32",
-    [
-        True,  # the argcheck default; training must select TF32 ("high")
-        False,  # opt-out; training must stay at full fp32
-    ],
-)
-def test_enable_tf32_is_stored(enable_tf32) -> None:
-    """The config knob reaches the model instead of being warned away."""
-    model = get_model(_make_raw_model_config(enable_tf32=enable_tf32))
-    assert model.enable_tf32 is enable_tf32
+    # reset the warn-once set so the assertion is deterministic regardless of
+    # test ordering (other get_sezm_model calls may have already warned)
+    monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
 
+    # Count emissions on the EMITTING logger with our own handler rather than
+    # through caplog: caplog reads a root handler, so whatever global logging
+    # state earlier tests left behind (set_log_handles flips the ``deepmd``
+    # logger's propagate off and installs its own handlers) changes how many
+    # records reach it -- zero when propagation is off, more than one when the
+    # record is seen through several attached handlers.  A handler on the
+    # emitting logger sees exactly one record per ``log.warning`` call.
+    records: list[logging.LogRecord] = []
 
-def test_enable_tf32_defaults_true() -> None:
-    """An absent key follows pt's ``default=True`` (argcheck.py `enable_tf32`)."""
-    raw = _make_raw_model_config()
-    assert "enable_tf32" not in raw
-    assert get_model(raw).enable_tf32 is True
+    class _Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
 
-
-@pytest.mark.parametrize(
-    ("env_value", "expected"),
-    [
-        (None, "highest"),  # unset -> pt's "0" default, full fp32
-        ("0", "highest"),
-        ("1", "high"),
-        ("2", "medium"),
-    ],
-)
-def test_tf32_infer_precision_from_env(env_value, expected, monkeypatch) -> None:
-    """Eval precision follows ``DP_TF32_INFER``, as in the pt backend."""
-    if env_value is None:
-        monkeypatch.delenv("DP_TF32_INFER", raising=False)
-    else:
-        monkeypatch.setenv("DP_TF32_INFER", env_value)
-    assert get_model(_make_raw_model_config()).tf32_infer_precision == expected
-
-
-def test_tf32_infer_precision_rejects_garbage(monkeypatch) -> None:
-    """An unusable ``DP_TF32_INFER`` fails fast rather than silently defaulting."""
-    monkeypatch.setenv("DP_TF32_INFER", "yes")
-    with pytest.raises(ValueError, match="DP_TF32_INFER"):
-        get_model(_make_raw_model_config())
-
-
-@pytest.mark.parametrize(
-    ("enable_tf32", "training", "expected"),
-    [
-        (True, True, "high"),  # the only combination that selects TF32
-        (False, True, "highest"),  # opt-out keeps training at full fp32
-        (True, False, "highest"),  # eval ignores enable_tf32 (uses DP_TF32_INFER)
-        (False, False, "highest"),
-    ],
-)
-def test_tf32_precision_ctx_selects_and_restores(
-    enable_tf32, training, expected, monkeypatch
-) -> None:
-    """The context picks the right precision per mode, then restores it.
-
-    ``set_float32_matmul_precision`` is a process global, so a leaked setting
-    would change every later matmul; restoring matters as much as selecting.
-    """
-    if not torch.cuda.is_available():
-        pytest.skip("tf32_precision_ctx is a no-op without CUDA")
-    monkeypatch.delenv("DP_TF32_INFER", raising=False)
-    model = get_model(_make_raw_model_config(enable_tf32=enable_tf32))
-    model.train(training)
-
-    torch.set_float32_matmul_precision("highest")
+    handler = _Collect(level=logging.WARNING)
+    old_level = gm_mod.log.level
+    gm_mod.log.setLevel(logging.WARNING)
+    gm_mod.log.addHandler(handler)
     try:
-        with model.tf32_precision_ctx():
-            assert torch.get_float32_matmul_precision() == expected
-        assert torch.get_float32_matmul_precision() == "highest"
+        gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
+        matches = [r for r in records if "enable_tf32" in r.getMessage()]
+        if enable_tf32:
+            assert len(matches) == 1, [r.getMessage() for r in records]
+            # a second call must NOT warn again (warn-once per process)
+            records.clear()
+            gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
+            assert not [r for r in records if "enable_tf32" in r.getMessage()]
+        else:
+            assert not matches, [r.getMessage() for r in records]
     finally:
-        torch.set_float32_matmul_precision("highest")
-
-
-def test_non_sezm_model_keeps_full_precision() -> None:
-    """The knob is DPA4/SeZM-scoped: other pt_expt models are untouched.
-
-    pt wires ``enable_tf32`` only in its sezm builders, so a plain se_e2_a
-    model keeps the class defaults: full fp32 in both train and eval.
-    """
-    model = get_model(
-        {
-            "type_map": ["O", "H"],
-            "descriptor": {
-                "type": "se_e2_a",
-                "sel": [4, 4],
-                "rcut": 4.0,
-                "rcut_smth": 3.5,
-                "seed": 1,
-            },
-            "fitting_net": {"seed": 1},
-        }
-    )
-    assert model.enable_tf32 is False
-    assert model.tf32_infer_precision == "highest"
+        gm_mod.log.removeHandler(handler)
+        gm_mod.log.setLevel(old_level)
 
 
 class TestNativeSpinErrorTranslation(unittest.TestCase):

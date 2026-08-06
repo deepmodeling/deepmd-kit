@@ -961,23 +961,7 @@ class _CompiledModel(torch.nn.Module):
         except AttributeError:
             return getattr(self.original_model, name)
 
-    def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
-        """Run the compiled forward under the wrapped model's TF32 policy.
-
-        This path never reaches ``call_common``, where eager forwards set their
-        precision, so it applies the same policy here.  The context also covers
-        the lazy compile below: Inductor picks its GEMM backend while lowering,
-        so setting precision only around the call would miss the kernels.
-
-        Returns
-        -------
-        dict[str, torch.Tensor]
-            The model prediction dict.
-        """
-        with self.original_model.tf32_precision_ctx():
-            return self._forward_dispatch(*args, **kwargs)
-
-    def _forward_dispatch(
+    def forward(
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,

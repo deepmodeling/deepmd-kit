@@ -8,7 +8,6 @@ constructed objects are ``torch.nn.Module`` subclasses.
 
 import copy
 import logging
-import os
 from typing import (
     TYPE_CHECKING,
 )
@@ -58,46 +57,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-#: ``DP_TF32_INFER`` -> eval-time matmul precision.  Same table as the pt
-#: backend's ``sezm_model._TF32_INFER_PRECISION_CHOICES``.
-_TF32_INFER_PRECISION_CHOICES = {
-    "0": "highest",
-    "1": "high",
-    "2": "medium",
-}
-
-
-def _apply_tf32_policy(model: BaseModel, data: dict) -> BaseModel:
-    """Attach the DPA4/SeZM TF32 matmul-precision policy to a built model.
-
-    As in pt: training forwards follow ``enable_tf32`` (default ``True``),
-    eval forwards follow ``DP_TF32_INFER``.  The policy is applied in
-    ``call_common``, and in ``_CompiledModel.forward`` when compiled.
-
-    Parameters
-    ----------
-    model : BaseModel
-        The freshly built model to configure.
-    data : dict
-        The model config section, read for ``enable_tf32``.
-
-    Returns
-    -------
-    BaseModel
-        The same model, with the precision policy attached.
-
-    Raises
-    ------
-    ValueError
-        If ``DP_TF32_INFER`` is set to anything other than ``0``, ``1``, or
-        ``2``.
-    """
-    model.enable_tf32 = bool(data.get("enable_tf32", True))
-    tf32_infer_env = os.environ.get("DP_TF32_INFER", "0").strip().lower()
-    if tf32_infer_env not in _TF32_INFER_PRECISION_CHOICES:
-        raise ValueError(f"DP_TF32_INFER must be one of 0/1/2, got {tf32_infer_env!r}")
-    model.tf32_infer_precision = _TF32_INFER_PRECISION_CHOICES[tf32_infer_env]
-    return model
+# Warn at most once per process for backend-ignored switches (keyed by name).
+_WARNED_ONCE: set[str] = set()
 
 
 _model_factory = BackendModelFactory(
@@ -129,11 +90,17 @@ def get_sezm_model(data: dict) -> BaseModel:
 
     Notes
     -----
-    ``enable_tf32`` behaves as in pt: training forwards run at TF32 ("high")
-    precision when set (the default), eval forwards follow ``DP_TF32_INFER``.
-    See :func:`_apply_tf32_policy`.
+    ``enable_tf32`` is accepted but ignored: the pt backend uses it to toggle
+    TF32 matmul precision, while the pt_expt backend always runs at full
+    ("highest") matmul precision, which is numerically conservative.
     """
     data = copy.deepcopy(data)
+    if bool(data.get("enable_tf32", True)) and "enable_tf32" not in _WARNED_ONCE:
+        log.warning(
+            "`enable_tf32` has no effect on the pt_expt backend, which "
+            "always runs at full ('highest') matmul precision; ignoring it."
+        )
+        _WARNED_ONCE.add("enable_tf32")
     if "spin" in data:
         if str(data["spin"].get("scheme", "deepspin")) != "native":
             raise NotImplementedError(
@@ -205,9 +172,8 @@ def get_sezm_model(data: dict) -> BaseModel:
         pair_exclude_types=pair_exclude_types,
     )
     if bridging_enabled:
-        # The TF32 policy attaches to whichever model is returned.
-        return _apply_tf32_policy(_compose_bridging(model, data, bridging_method), data)
-    return _apply_tf32_policy(model, data)
+        return _compose_bridging(model, data, bridging_method)
+    return model
 
 
 def _compose_bridging(
@@ -372,10 +338,7 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
             "spin scheme 'native' requires an atomic model declaring "
             "supports_native_spin()"
         )
-    return _apply_tf32_policy(
-        NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin),
-        data,
-    )
+    return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)
 
 
 def get_linear_model(model_params: dict) -> BaseModel:

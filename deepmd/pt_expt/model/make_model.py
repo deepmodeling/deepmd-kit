@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import contextlib
 import math
 import types
-from collections.abc import (
-    Generator,
-)
 from typing import (
     Any,
 )
@@ -473,55 +469,6 @@ def make_model(
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
-
-        # === TF32 matmul precision ===
-        # Same policy as pt's SeZMModel: training follows ``enable_tf32``,
-        # eval follows ``DP_TF32_INFER``.  The DPA4/SeZM builders in
-        # ``get_model`` set both; every other model keeps these defaults,
-        # which mean full fp32 either way.
-        enable_tf32: bool = False
-        tf32_infer_precision: str = "highest"
-
-        @contextlib.contextmanager
-        def tf32_precision_ctx(self) -> Generator[None, None, None]:
-            """Select the matmul precision for one forward, then restore it.
-
-            Yields
-            ------
-            None
-                With ``torch.set_float32_matmul_precision`` set for the
-                duration of the block.
-            """
-            if not torch.cuda.is_available():
-                yield
-                return
-            prev_precision = torch.get_float32_matmul_precision()
-            try:
-                if self.training:
-                    precision = "high" if self.enable_tf32 else "highest"
-                else:
-                    precision = self.tf32_infer_precision
-                torch.set_float32_matmul_precision(precision)
-                yield
-            finally:
-                torch.set_float32_matmul_precision(prev_precision)
-
-        def call_common(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
-            """Run the shared dense/graph forward under the TF32 policy.
-
-            Every model's ``forward`` reaches the backbone through here, so
-            this is where eager forwards pick their matmul precision.  Export
-            traces root at ``call_common_lower``, so the switch stays out of
-            exported graphs.  Compiled training skips this method and applies
-            the policy in ``_CompiledModel.forward`` instead.
-
-            Returns
-            -------
-            dict[str, torch.Tensor]
-                The backbone's output dict, unchanged.
-            """
-            with self.tf32_precision_ctx():
-                return super().call_common(*args, **kwargs)
 
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
