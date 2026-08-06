@@ -2,7 +2,6 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
-import logging
 import unittest
 
 import pytest
@@ -271,11 +270,9 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsInstance(model, EnergyModel)
 
 
-# === TF32 matmul precision ==================================================
-# pt_expt mirrors the pt backend (``SeZMModel.tf32_precision_ctx``): TRAINING
-# forwards follow ``model.enable_tf32`` (default True) and EVAL forwards follow
-# ``DP_TF32_INFER``.  The knob is DPA4/SeZM-scoped, matching pt, where argcheck
-# declares it inside the dpa4 model arg block.
+# === TF32 matmul precision ===
+# Same policy as pt: training follows ``enable_tf32`` (default True), eval
+# follows ``DP_TF32_INFER``.  Like pt, the knob is DPA4/SeZM-scoped.
 
 
 @pytest.mark.parametrize(
@@ -335,11 +332,10 @@ def test_tf32_infer_precision_rejects_garbage(monkeypatch) -> None:
 def test_tf32_precision_ctx_selects_and_restores(
     enable_tf32, training, expected, monkeypatch
 ) -> None:
-    """The context selects pt's precision for the mode and restores the old one.
+    """The context picks the right precision per mode, then restores it.
 
-    ``torch.set_float32_matmul_precision`` is a process global, so a forward
-    that leaked its setting would silently change every later matmul in the
-    process; the restore is as much of the contract as the selection.
+    ``set_float32_matmul_precision`` is a process global, so a leaked setting
+    would change every later matmul; restoring matters as much as selecting.
     """
     if not torch.cuda.is_available():
         pytest.skip("tf32_precision_ctx is a no-op without CUDA")
@@ -359,9 +355,8 @@ def test_tf32_precision_ctx_selects_and_restores(
 def test_non_sezm_model_keeps_full_precision() -> None:
     """The knob is DPA4/SeZM-scoped: other pt_expt models are untouched.
 
-    pt declares ``enable_tf32`` inside the dpa4 model arg block and wires it
-    only in its sezm builders, so a plain se_e2_a model must keep the class
-    defaults -- full fp32 in both train and eval.
+    pt wires ``enable_tf32`` only in its sezm builders, so a plain se_e2_a
+    model keeps the class defaults: full fp32 in both train and eval.
     """
     model = get_model(
         {

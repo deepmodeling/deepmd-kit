@@ -474,14 +474,11 @@ def make_model(
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
-        # === TF32 matmul precision ===================================
-        # Mirrors the pt backend's ``SeZMModel`` policy (see
-        # ``deepmd.pt.model.model.sezm_model.SeZMModel.tf32_precision_ctx``):
-        # TRAINING forwards follow ``model.enable_tf32`` and EVAL forwards
-        # follow ``DP_TF32_INFER``.  Both attributes are set by the DPA4/SeZM
-        # builders in ``deepmd.pt_expt.model.get_model``; every other pt_expt
-        # model keeps these defaults, which select full fp32 in both modes and
-        # therefore leave its numerics untouched.
+        # === TF32 matmul precision ===
+        # Same policy as pt's SeZMModel: training follows ``enable_tf32``,
+        # eval follows ``DP_TF32_INFER``.  The DPA4/SeZM builders in
+        # ``get_model`` set both; every other model keeps these defaults,
+        # which mean full fp32 either way.
         enable_tf32: bool = False
         tf32_infer_precision: str = "highest"
 
@@ -512,12 +509,11 @@ def make_model(
         def call_common(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Run the shared dense/graph forward under the TF32 policy.
 
-            This is the ONE owner of matmul precision for eager forwards: every
-            pt_expt model's ``forward`` reaches the backbone through here, and
-            the export trace roots at ``call_common_lower`` instead, so the
-            precision switch never enters an exported graph.  The compiled
-            training path bypasses this method entirely and applies the same
-            policy at its own entry point (``_CompiledModel.forward``).
+            Every model's ``forward`` reaches the backbone through here, so
+            this is where eager forwards pick their matmul precision.  Export
+            traces root at ``call_common_lower``, so the switch stays out of
+            exported graphs.  Compiled training skips this method and applies
+            the policy in ``_CompiledModel.forward`` instead.
 
             Returns
             -------

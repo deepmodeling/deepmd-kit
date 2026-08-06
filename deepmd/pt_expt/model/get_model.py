@@ -58,9 +58,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-#: ``DP_TF32_INFER`` -> eval-time matmul precision, copied from the pt backend's
-#: ``deepmd.pt.model.model.sezm_model._TF32_INFER_PRECISION_CHOICES`` so the two
-#: backends read the same environment variable the same way.
+#: ``DP_TF32_INFER`` -> eval-time matmul precision.  Same table as the pt
+#: backend's ``sezm_model._TF32_INFER_PRECISION_CHOICES``.
 _TF32_INFER_PRECISION_CHOICES = {
     "0": "highest",
     "1": "high",
@@ -71,11 +70,9 @@ _TF32_INFER_PRECISION_CHOICES = {
 def _apply_tf32_policy(model: BaseModel, data: dict) -> BaseModel:
     """Attach the DPA4/SeZM TF32 matmul-precision policy to a built model.
 
-    Mirrors the pt backend: TRAINING forwards follow ``model.enable_tf32``
-    (default ``True``) and EVAL forwards follow ``DP_TF32_INFER``.  The model
-    layer applies the policy -- see ``call_common`` in
-    :func:`deepmd.pt_expt.model.make_model.make_model` and
-    ``_CompiledModel.forward`` for the compiled path.
+    As in pt: training forwards follow ``enable_tf32`` (default ``True``),
+    eval forwards follow ``DP_TF32_INFER``.  The policy is applied in
+    ``call_common``, and in ``_CompiledModel.forward`` when compiled.
 
     Parameters
     ----------
@@ -132,9 +129,9 @@ def get_sezm_model(data: dict) -> BaseModel:
 
     Notes
     -----
-    ``enable_tf32`` follows the pt backend: TRAINING forwards run at TF32
-    ("high") matmul precision when it is true (the default), while EVAL
-    forwards follow ``DP_TF32_INFER``.  See :func:`_apply_tf32_policy`.
+    ``enable_tf32`` behaves as in pt: training forwards run at TF32 ("high")
+    precision when set (the default), eval forwards follow ``DP_TF32_INFER``.
+    See :func:`_apply_tf32_policy`.
     """
     data = copy.deepcopy(data)
     if "spin" in data:
@@ -208,8 +205,7 @@ def get_sezm_model(data: dict) -> BaseModel:
         pair_exclude_types=pair_exclude_types,
     )
     if bridging_enabled:
-        # Upstream factored the bridging composition into ``_compose_bridging``;
-        # the TF32 policy attaches to whichever model is returned.
+        # The TF32 policy attaches to whichever model is returned.
         return _apply_tf32_policy(_compose_bridging(model, data, bridging_method), data)
     return _apply_tf32_policy(model, data)
 

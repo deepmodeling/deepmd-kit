@@ -964,11 +964,10 @@ class _CompiledModel(torch.nn.Module):
     def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
         """Run the compiled forward under the wrapped model's TF32 policy.
 
-        The compiled path never reaches ``call_common`` -- which owns matmul
-        precision for eager forwards -- so it applies the same policy here, at
-        its own entry point.  The context also spans the LAZY compile below:
-        Inductor selects its GEMM backend while lowering, so a precision set
-        only around the call would never reach the generated kernels.
+        This path never reaches ``call_common``, where eager forwards set their
+        precision, so it applies the same policy here.  The context also covers
+        the lazy compile below: Inductor picks its GEMM backend while lowering,
+        so setting precision only around the call would miss the kernels.
 
         Returns
         -------

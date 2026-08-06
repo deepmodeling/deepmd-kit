@@ -2748,12 +2748,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "mlp_bias": self.mlp_bias,
                 "exclude_types": self.exclude_types,
                 "eps": self.eps,
-                # ``use_amp`` must round-trip: the pt_expt backend rebuilds the
-                # descriptor from this dict, so omitting it silently reset a
-                # configured ``use_amp: false`` back to the True default and
-                # kept training in bfloat16 autocast.  Reading older records
-                # that lack the key still works -- deserialize passes config
-                # straight to __init__, which defaults it.
+                # Must round-trip: pt_expt rebuilds the descriptor from this
+                # dict, so omitting the key silently reset a configured
+                # ``use_amp: false`` to True and kept training in bfloat16.
+                # Older records without it still load (__init__ defaults it).
                 "use_amp": self.use_amp,
                 "trainable": self.trainable,
                 "seed": self.seed,

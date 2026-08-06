@@ -275,12 +275,10 @@ class TestDescrptDPA4:
     def test_use_amp_survives_roundtrip(self, use_amp) -> None:
         """``use_amp`` must round-trip through serialize/deserialize.
 
-        It was absent from the serialized config, so any backend that rebuilds
-        the descriptor from that dict (pt_expt does) silently reset a
-        configured ``use_amp: false`` to the True default and kept training
-        under bfloat16 autocast.  The forward-output round-trip test cannot
-        catch this: dpmodel never autocasts, so the outputs match either way --
-        only the attribute itself pins the contract.
+        The key was missing from the config, so a backend that rebuilds from
+        it (pt_expt does) reset ``use_amp: false`` to True and kept training in
+        bfloat16.  The forward-output round-trip test can't catch this --
+        dpmodel never autocasts, so outputs match either way.
         """
         dd = make_descriptor(use_amp=use_amp)
         assert dd.use_amp is use_amp

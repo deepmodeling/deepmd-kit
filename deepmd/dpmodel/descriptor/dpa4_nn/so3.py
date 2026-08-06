@@ -131,16 +131,9 @@ class FocusLinear(NativeOP):
             xp, self.weight[...], device=array_api_compat.device(x)
         )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
-        # einsum "bfi,ifo->bfo" as a matmul batched over the FOCUS axis.
-        #
-        # NOT as ``matmul(x[:, :, None, :], weight[None, ...])``: that makes B a
-        # batch axis, so matmul broadcasts the weight to (B, F, Cin, Cout) --
-        # inflating a few-hundred-KB parameter into hundreds of millions of
-        # elements per call, whose gradient autograd must then reduce back down
-        # (an ``ExpandBackward0`` reduce that measured as the single most
-        # expensive kernel of a DPA4 training step). Batching over F instead
-        # keeps B as matmul ROWS, so the weight is used in place and its
-        # gradient is an ordinary matmul.
+        # einsum "bfi,ifo->bfo", batched over the small focus axis F.
+        # Batching over B instead would broadcast the weight to (B, F, Cin, Cout)
+        # and force autograd to reduce that expansion on every backward.
         weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
         out = xp.matmul(xp.permute_dims(x, (1, 0, 2)), weight)  # (F, B, Cout)
         out = xp.permute_dims(out, (1, 0, 2))  # (B, F, Cout)
@@ -448,16 +441,11 @@ class SO3Linear(NativeOP):
         weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
-        # einsum "ndfi,difo->ndfo" as a matmul batched over the (D, F) axes.
-        #
-        # NOT as ``matmul(x[:, :, :, None, :], weight_expanded[None, ...])``:
-        # that makes N a batch axis, so matmul broadcasts the weight to
-        # (N, D, F, Cin, Cout) -- for the water DPA4 example, a 165K-element
-        # parameter expanded to 191M elements (~0.8 GB) on every call, whose
-        # gradient autograd then reduces back down. That ``ExpandBackward0``
-        # reduce measured at 45.6 ms per call, three calls per training step:
-        # the most expensive kernel in the run. Batching over the small (D, F)
-        # axes keeps N as matmul ROWS, so the weight is never expanded.
+        # einsum "ndfi,difo->ndfo", batched over the small (D, F) axes.
+        # Batching over the node axis N instead would broadcast the weight to
+        # (N, D, F, Cin, Cout) -- for the water example a 165K-element parameter
+        # blown up to 191M elements per call -- and autograd would then reduce
+        # that expansion back down.  It was the costliest kernel of a step.
         weight_expanded = xp.permute_dims(
             weight_expanded, (0, 2, 1, 3)
         )  # (D, F, Cin, Cout)

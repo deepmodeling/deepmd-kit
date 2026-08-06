@@ -118,12 +118,9 @@ def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
 
     Notes
     -----
-    The obvious spelling ``matmul(coeff, weight[None, ...])`` puts ``N`` in the
-    matmul batch, so ``weight`` is broadcast to ``(N, D, i, o)`` and autograd
-    must reduce that expanded gradient back to the parameter shape every step.
-    Batching over the small degree axis keeps ``N`` as matmul ROWS, so the
-    weight is used in place; the transposes touch only ``coeff``, which is far
-    smaller than the expanded weight would be.
+    Batching over the degree axis, not over ``N``: the latter would broadcast
+    ``weight`` to ``(N, D, i, o)`` and make autograd reduce that expansion on
+    every backward.  The transposes touch only ``coeff``, which is smaller.
     """
     n_batch, coeff_dim, n_focus, _ = coeff.shape
     coeff_d = xp.reshape(
@@ -437,15 +434,10 @@ class GridBranch(NativeOP):
         router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
         router = router / xp.sum(router, axis=-1, keepdims=True)
         # einsum "ngfhc,nfh->ngfc" as a broadcast multiply and reduction.
-        #
-        # NOT as ``matmul(reshape(router, (N, 1, F, 1, H)), value)``: the branch
-        # count H is a handful, so that spelling is a batched GEMM with M=1 and
-        # K=H, which cuBLAS serves from its small-N (``gemmSN_*`` /
-        # ``gemmk1``) kernels.  At the shapes a compiled DPA4 step actually
-        # runs -- N=1152, G=104, F=1, C=96, H=1 -- the matmul measured 7.52 ms
-        # forward+backward against 1.83 ms for this form, and it was the single
-        # largest GEMM of the step; at H=3 the two are equal (4.44 vs 4.45 ms).
-        # The intermediate this form materialises is only H times the result.
+        # Spelling it as a matmul over H gives a batched GEMM with M=1, K=H,
+        # which cuBLAS serves from its slow small-N kernels: 7.5 ms vs 1.8 ms
+        # here at H=1, and no better at H=3.  The intermediate this form
+        # materialises is only H (a handful) times the result.
         out = xp.sum(value * router[:, None, :, :, None], axis=3)
 
         # === Step 3. Project back to coefficients and mix output channels ===
@@ -537,12 +529,7 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a matmul batched over the DEGREE axis.
-        #
-        # NOT as ``matmul(coeff, weight[None, ...])``: that puts N in the matmul
-        # batch, so the weight broadcasts to (N, D, i, o) and autograd has to
-        # reduce that whole expanded gradient back to the parameter shape.  See
-        # the same fix in so3.py, where it was the costliest kernel of a step.
+        # Batched over the degree axis, never over N -- see the helper's note.
         return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
@@ -623,8 +610,7 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a matmul batched over the DEGREE axis; see
-        # the note in FrameContract.call for why N must not be the batch axis.
+        # Batched over the degree axis, never over N -- see the helper's note.
         return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
