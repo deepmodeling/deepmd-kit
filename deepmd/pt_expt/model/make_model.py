@@ -45,6 +45,41 @@ from .transform_output import (
 )
 
 
+def _translate_energy_keys(
+    model_ret: dict[str, torch.Tensor],
+    *,
+    do_grad_r: bool,
+    do_grad_c: bool,
+    do_atomic_virial: bool,
+    local: bool,
+) -> dict[str, torch.Tensor]:
+    """Map internal fitting keys -> public energy-model keys (shared by the
+    dense and graph ``forward_lower`` export traces).
+
+    Operates on plain dicts (make_fx-safe). ``local=True`` is the GRAPH path
+    (per-node ``N == sum(n_node)`` local atoms, no ghost/extended region) and
+    emits ``force``/``atom_virial``; ``local=False`` is the DENSE extended-region
+    path and emits ``extended_force``/``extended_virial`` (folded to local by
+    ``communicate_extended_output`` at inference).
+    """
+    out: dict[str, torch.Tensor] = {}
+    out["atom_energy"] = model_ret["energy"]
+    out["energy"] = model_ret["energy_redu"]
+    if do_grad_r:
+        out["force" if local else "extended_force"] = model_ret[
+            "energy_derv_r"
+        ].squeeze(-2)
+    if do_grad_c:
+        out["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+        if do_atomic_virial:
+            out["atom_virial" if local else "extended_virial"] = model_ret[
+                "energy_derv_c"
+            ].squeeze(-2)
+    if "mask" in model_ret:
+        out["mask"] = model_ret["mask"]
+    return out
+
+
 def _fused_energy_force_graph(
     model: Any,
     graph: Any,

@@ -431,9 +431,9 @@ class TestSeZMNativeSpinParallelParity(unittest.TestCase):
 class TestSeZMEdgeParallelCapability(unittest.TestCase):
     """The with-comm export predicate admits the edge_vec contract.
 
-    Plain energy and native spin both use the edge_vec lower interface and are
-    rank-decomposable, so they support the with-comm artifact; only analytical
-    bridging (Source Freeze Propagation) is gated out.
+    Plain energy, native spin, and analytical bridging all use the edge_vec
+    lower interface and are rank-decomposable; bridging participates since
+    the SFPG cross-rank completion (issue #5906).
     """
 
     def test_plain_model_supports_edge_parallel(self) -> None:
@@ -452,7 +452,10 @@ class TestSeZMEdgeParallelCapability(unittest.TestCase):
         self.assertTrue(model.supports_edge_parallel())
         self.assertEqual(model.export_lower_input_kind(), "edge_vec")
 
-    def test_bridging_model_fails_fast(self) -> None:
+    def test_bridging_model_supports_edge_parallel(self) -> None:
+        """Bridging is multi-rank since the SFPG exchange (issue #5906);
+        parity is pinned in test_sezm_parallel_bridging_parity.py.
+        """
         # ZBL needs real element symbols for its analytical pair potential.
         model = _build_model(
             torch.device("cpu"),
@@ -461,7 +464,7 @@ class TestSeZMEdgeParallelCapability(unittest.TestCase):
             bridging_r_inner=0.5,
             bridging_r_outer=1.0,
         )
-        self.assertFalse(model.supports_edge_parallel())
+        self.assertTrue(model.supports_edge_parallel())
 
 
 class TestSeZMExchangeSchedule(unittest.TestCase):

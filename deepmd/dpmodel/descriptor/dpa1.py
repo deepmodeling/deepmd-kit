@@ -542,6 +542,21 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         return False
 
+    def graph_edge_dtype(self) -> str:
+        """float32 edges iff geometric compression runs float32 statistics.
+
+        Compressed DPA1 evaluates both descriptor directions in the
+        statistics dtype and accepts float32 geometry directly.
+        """
+        mean = getattr(self.se_atten, "mean", None)
+        if (
+            self.geo_compress
+            and mean is not None
+            and str(mean.dtype).endswith("float32")
+        ):
+            return "float32"
+        return "float64"
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return self.se_atten.need_sorted_nlist_for_lower()

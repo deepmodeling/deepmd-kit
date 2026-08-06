@@ -117,6 +117,7 @@ def compute_edge_src_gate(
     n_nodes: int,
     bridging_switch: Callable[[torch.Tensor], torch.Tensor],
     edge_keep_f: torch.Tensor | None = None,
+    node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """
     Compute the per-edge source gate for SFPG from edge lengths.
@@ -168,6 +169,14 @@ def compute_edge_src_gate(
         Optional per-edge keep weights with shape (E, 1), with ``0`` on
         masked edges and ``1`` on kept edges. If provided, masked edges
         are rewritten to ``w = 1`` before the product reduction.
+    node_partial_exchange
+        Optional cross-rank completion hook for the per-node partials
+        (issue #5906). Receives the ``(n_nodes, 2)`` float tensor
+        ``[log_eta, zero_count]`` and returns the globally completed one
+        (reverse-accumulate ghost rows into owners, then broadcast the
+        completed owner values back onto ghosts). ``None`` (the default)
+        is the single-process path where the local partials are already
+        complete.
 
     Returns
     -------
@@ -193,16 +202,31 @@ def compute_edge_src_gate(
     log_eta = torch.zeros(
         n_nodes, dtype=edge_w.dtype, device=edge_w.device
     ).scatter_add(0, src, log_safe)
-    eta_nonzero_path = torch.exp(log_eta)
 
     # === Step 3. Exact-zero indicator per source node ===
-    # ``scatter_add`` over an ``int64`` cast of the zero mask counts how
-    # many frozen edges each source node owns. A strictly positive count
-    # means the product is 0 by the hard-freeze rule.
+    # ``scatter_add`` over the zero mask counts how many frozen edges each
+    # source node owns. A strictly positive count means the product is 0 by
+    # the hard-freeze rule. Float count (values are small integers, exact
+    # in fp) so both partials ride ONE border-exchange tensor when
+    # completing across ranks.
     zero_count = torch.zeros(
-        n_nodes, dtype=torch.int64, device=edge_w.device
-    ).scatter_add(0, src, is_zero.to(torch.int64))
-    any_zero = zero_count > 0
+        n_nodes, dtype=edge_w.dtype, device=edge_w.device
+    ).scatter_add(0, src, is_zero.to(edge_w.dtype))
+
+    # === Step 3b. Cross-rank completion of the per-node partials ===
+    # A rank only holds edges whose dst is owned, so the src-keyed sums
+    # above are PARTIAL for every node under domain decomposition. The hook
+    # (reverse-accumulate ghost->owner, then forward-broadcast owner->ghost)
+    # completes them; log-products are additive and each edge lives on
+    # exactly one rank, so nothing double-counts (issue #5906).
+    if node_partial_exchange is not None:
+        packed = torch.stack([log_eta, zero_count], dim=-1)  # (n_nodes, 2)
+        packed = node_partial_exchange(packed)
+        log_eta = packed[..., 0]
+        zero_count = packed[..., 1]
+
+    eta_nonzero_path = torch.exp(log_eta)
+    any_zero = zero_count > 0.5
 
     # === Step 4. Combine and broadcast back to edges via source ===
     eta = torch.where(any_zero, torch.zeros_like(eta_nonzero_path), eta_nonzero_path)
@@ -389,6 +413,7 @@ def build_edge_cache_from_edges(
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
+    node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -499,6 +524,7 @@ def build_edge_cache_from_edges(
                 n_nodes=n_nodes,
                 bridging_switch=bridging_switch,
                 edge_keep_f=edge_keep_f,
+                node_partial_exchange=node_partial_exchange,
             )
 
     return _finalize_edge_cache(

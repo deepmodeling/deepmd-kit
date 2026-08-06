@@ -72,12 +72,10 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
         do_atomic_virial
             If calculate the atomic virial.
         charge_spin
-            Frame-level charge/spin conditioning, shape nf x 2. Accepted for
-            call-signature compatibility with ``ModelWrapper.forward`` (which
-            always forwards this keyword); charge-spin FiLM combined with
-            native spin is rejected at construction time
-            (``add_chg_spin_ebd`` on the descriptor), so this is always
-            ``None`` in practice for a model this class can build.
+            Frame-level charge/spin conditioning, shape nf x 2. Forwarded to
+            the backbone like every other conditioning input; native spin and
+            charge-spin FiLM combine freely (DPA4 declares both
+            capabilities).
 
         Returns
         -------

@@ -32,6 +32,7 @@ from __future__ import (
     annotations,
 )
 
+import functools
 import math
 from contextlib import (
     contextmanager,
@@ -1509,6 +1510,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     type_ebed, spin, atype_flat, n_nodes=n_nodes
                 )
 
+        # Cross-rank SFPG completion (issue #5906): only a bridged model
+        # under domain decomposition needs it -- the gate's src-keyed
+        # per-node partials are rank-incomplete then.
+        node_partial_exchange = None
+        if parallel and self.bridging_switch is not None:
+            node_partial_exchange = functools.partial(
+                self._gate_partial_exchange, comm_dict=comm_dict
+            )
         # === Step 3. Build edge cache once (sparse edges) ===
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache_from_edges(
@@ -1533,6 +1542,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._need_full_wigner,
+                node_partial_exchange=node_partial_exchange,
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -2280,16 +2290,67 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return True
 
     def has_message_passing_across_ranks(self) -> bool:
-        """Whether multi-rank inference needs cross-rank ghost-feature exchange.
+        """SeZM reads ghost-neighbour features at every interaction block.
 
-        SeZM reads ghost-neighbour features at every interaction block, so a
-        domain-decomposed run must exchange them through ``border_op``. Source
-        Freeze Propagation bridging is excluded: its per-node gate folds a
-        node's entire outgoing-edge set, which a single rank cannot observe for
-        ghost owners, so the edge-based with-comm artifact is not exported for
-        bridging models and multi-rank inference fails fast instead.
+        A domain-decomposed run must exchange them through ``border_op``, so
+        multi-rank inference always needs the with-comm exchange. Whether
+        multi-rank is POSSIBLE at all is :meth:`supports_edge_parallel`,
+        which is ``True`` for every configuration including bridging: the
+        SFPG partials are completed by ``_gate_partial_exchange``.
         """
-        return self.bridging_switch is None
+        return True
+
+    def supports_edge_parallel(self) -> bool:
+        """Bridging included: multi-rank is supported for every SeZM config.
+
+        The SFPG per-node partials are completed across ranks by
+        ``_gate_partial_exchange`` (reverse-accumulate + broadcast) before
+        the gate is applied (issue #5906).
+        """
+        return True
+
+    def _gate_partial_exchange(
+        self,
+        partials: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Reverse-accumulate ghost partials to owners, then broadcast back.
+
+        ``border_op_backward`` sums each ghost row into its owner across
+        ranks and zeroes the ghost rows; ``border_op`` refills them with the
+        completed owner values. Both ops carry autograd (the two are
+        transposes), so gate gradients cross ranks (issue #5906).
+
+        Parameters
+        ----------
+        partials
+            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
+        comm_dict
+            The border-exchange control tensors.
+
+        Returns
+        -------
+        torch.Tensor
+            The globally completed (n_nodes, 2) tensor.
+        """
+        # border_op exchanges rows by raw pointer arithmetic; a strided
+        # view would corrupt the exchange.
+        p = partials.contiguous()
+        comm_args = (
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+        )
+        tail = (
+            comm_dict["communicator"],
+            comm_dict["nlocal"],
+            comm_dict["nghost"],
+        )
+        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
+        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
+        return p
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False
