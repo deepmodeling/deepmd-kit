@@ -52,6 +52,10 @@ class DescrptDPA2(DescrptDPA2DP):
             torch.zeros((), dtype=torch.bool, device="cpu"),
         )
 
+    def supports_graph_export(self) -> bool:
+        """Compressed DPA2 has no fused graph operator yet."""
+        return not self.geo_compress
+
     def disable_graph_lower(self) -> None:
         """Persisted variant of the dpmodel escape hatch (see base class).
 

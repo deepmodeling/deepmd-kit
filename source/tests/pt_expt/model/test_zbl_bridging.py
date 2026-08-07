@@ -220,15 +220,15 @@ class TestZBLBridgingPtExpt:
             out["energy"], out2["energy"], rtol=1e-12, atol=1e-12
         )
 
-    def test_with_comm_gate_off_for_composition(self) -> None:
-        """Compositions never compile a with-comm artifact (single-rank)."""
+    def test_with_comm_gate_on_for_composition(self) -> None:
+        """The SFPG exchange makes bridged compositions multi-rank
+        (issue #5906 Task 2): the graph with-comm artifact is compiled.
+        """
         from deepmd.pt_expt.utils.serialization import (
             _needs_with_comm_artifact,
         )
 
-        assert (
-            _needs_with_comm_artifact(self.pt_expt_model, lower_kind="graph") is False
-        )
+        assert _needs_with_comm_artifact(self.pt_expt_model, lower_kind="graph") is True
 
     def test_pt_bridging_checkpoint_rejected(self) -> None:
         """Reject pt's flag-serialized bridging checkpoints.
@@ -275,10 +275,12 @@ def _spin_system():
 class TestNativeSpinWithBridging:
     """Native spin + analytical bridging compose (review 3649276109).
 
-    ``get_standard_model`` OWNS assembling the atomic model, bridging
-    composition included, and the native-spin wrapper re-classes whatever it
-    returns -- so the two features combine with no special case: the learned
-    child consumes ``spin``, the analytical child accepts and ignores it.
+    ``get_sezm_model`` OWNS the bridging composition (``get_standard_model``
+    rejects ``bridging_method``: a composition is not expressible on a
+    non-composite model type). ``get_native_spin_model`` routes DPA4/SeZM
+    configs there and then RE-CLASSES the returned composition -- so the two
+    features combine with no special case: the learned child consumes
+    ``spin``, the analytical child accepts and ignores it.
     """
 
     def test_construction_composes_and_keeps_spin(self) -> None:
@@ -414,8 +416,11 @@ class TestZBLBridgingExportAndTraining:
 
         with zipfile.ZipFile(model_file) as z:
             md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
-        # single-rank contract: compositions never get a with-comm artifact
-        assert md["has_comm_artifact"] is False
+        # multi-rank contract (issue #5906): the SFPG partials are completed
+        # across ranks, so a bridged composition DOES get a with-comm twin
+        assert md["has_comm_artifact"] is True
+        with zipfile.ZipFile(model_file) as z:
+            assert "model/extra/forward_lower_with_comm.pt2" in z.namelist()
 
         dp = DeepPot(str(model_file))
         e, f, v = dp.eval(
@@ -643,14 +648,17 @@ def test_native_spin_with_bridging_graph_freeze_and_deep_eval(tmp_path) -> None:
 
     model_file = tmp_path / "dpa4_native_spin_zbl_graph.pt2"
     # native spin has no dense lower at all, so the graph kind is the only
-    # valid one here; the composition additionally forbids a with-comm twin.
+    # valid one here; since issue #5906 the graph lower additionally carries
+    # a with-comm twin (only the dense lower stays single-rank for spin).
     deserialize_to_file(
         str(model_file), {"model": model.serialize()}, lower_kind="graph"
     )
     with zipfile.ZipFile(model_file) as z:
         md = json.loads(z.read("model/extra/metadata.json").decode("utf-8"))
+        names = z.namelist()
     assert md["is_spin"] is True
-    assert md["has_comm_artifact"] is False
+    assert md["has_comm_artifact"] is True
+    assert "model/extra/forward_lower_with_comm.pt2" in names
     assert md["use_spin"] == [True, False]
 
     dp = DeepPot(str(model_file))

@@ -167,6 +167,30 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.has_message_passing_across_ranks())
+
+    def supports_edge_parallel(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.supports_edge_parallel())
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.dense_lower_supports_comm())
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.uses_compact_edge_pairs())
+
+    def graph_edge_dtype(self) -> str:
+        """Delegates to this model's own descriptor."""
+        return str(self.descriptor.graph_edge_dtype())
+
+    def supports_graph_export(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.supports_graph_export())
+
     def supports_native_spin(self) -> bool:
         """Delegates to this model's own descriptor (cached at construction)."""
         return self._supports_native_spin

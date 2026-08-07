@@ -638,6 +638,12 @@ class DescrptDPA1(DescrptDPA1DP):
             comm_dict=comm_dict,
         )
 
+    def supports_graph_export(self) -> bool:
+        """Compressed DPA1 must trace its fused opaque operator."""
+        if not self.geo_compress:
+            return True
+        return self._fused_eligible("cuda")
+
     def _fused_eligible(self, backend: str) -> bool:
         """Whether a fused descriptor kernel can serve this block.
 

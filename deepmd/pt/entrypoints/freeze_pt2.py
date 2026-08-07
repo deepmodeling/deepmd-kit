@@ -951,9 +951,11 @@ def freeze_sezm_to_pt2(
     # Second artifact: the LAMMPS multi-rank with-comm graph. It threads the
     # eight border_op communication tensors so cross-rank ghost features are
     # exchanged between interaction blocks. Gated on the edge_vec lower contract
-    # (energy and native spin), so virtual spin (nlist interface) is excluded;
-    # bridging models report supports_edge_parallel()=False (Source Freeze
-    # Propagation is not rank-decomposable). Both fall back to single-rank.
+    # (energy and native spin), so virtual spin (nlist interface) is excluded
+    # and falls back to single-rank. Bridging models DO take this path: they
+    # report supports_edge_parallel()=True since the Source Freeze Propagation
+    # gate's per-node partials are completed across ranks by
+    # DescrptSeZM._gate_partial_exchange (issue #5906).
     with_comm = (
         model.export_lower_input_kind() == "edge_vec" and model.supports_edge_parallel()
     )
