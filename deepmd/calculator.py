@@ -152,13 +152,17 @@ class DP(Calculator):
         # see https://gitlab.com/ase/ase/-/merge_requests/2485
         self.results["free_energy"] = e[0][0]
         self.results["forces"] = f[0]
-        self.results["virial"] = v[0].reshape(3, 3)
+        virial = v[0].reshape(3, 3)
+        self.results["virial"] = virial
 
         # convert virial into stress for lattice relaxation
         if cell is not None:
             # the usual convention (tensile stress is positive)
             # stress = -virial / volume
-            stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
+            # ASE represents Cauchy stress as a symmetric tensor.  Reshape the
+            # flat model output before transposing; ``.T`` on the original
+            # one-dimensional virial array would otherwise be a no-op.
+            stress = -0.5 * (virial + virial.T) / atoms.get_volume()
             # Voigt notation
             self.results["stress"] = stress.flat[[0, 4, 8, 5, 2, 1]]
         elif "stress" in properties:
