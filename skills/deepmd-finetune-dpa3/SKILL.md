@@ -1,11 +1,11 @@
 ---
 name: deepmd-finetune-dpa3
-description: Fine-tune a DPA3 model in DeePMD-kit using the PyTorch backend. Use when the user wants to adapt a pre-trained DPA3 model to a new downstream dataset. Supports fine-tuning from a self-trained DPA3 model (.pt checkpoint), from a multi-task pre-trained model, or from a built-in pretrained model downloaded via `dp pretrained download`. Do not select this skill from the .pt suffix alone; inspect the stored descriptor first.
+description: Fine-tune a DPA3 model in DeePMD-kit using the PyTorch backend. Use when the user wants to adapt a pre-trained DPA3 model to a new downstream dataset. Supports fine-tuning from a self-trained DPA3 model (.pt checkpoint), from a multi-task pre-trained model, or from a built-in pretrained model downloaded via `dp pretrained download` (e.g., DPA-3.1-3M, DPA-3.2-5M, DPA-3.3-1M). Covers single-task and multi-task fine-tuning workflows.
 compatibility: Requires deepmd-kit with PyTorch backend installed. GPU strongly recommended.
 license: LGPL-3.0-or-later
 metadata:
   author: iProzd
-  version: '1.1'
+  version: '1.0'
   repository: https://github.com/deepmodeling/deepmd-kit
 ---
 
@@ -16,17 +16,6 @@ Fine-tune a pre-trained DPA3 model on a downstream dataset. This skill covers th
 1. Fine-tuning from a self-trained single-task DPA3 model
 1. Fine-tuning from a multi-task pre-trained DPA3 model
 1. Fine-tuning from a built-in pretrained model (e.g., DPA-3.1-3M, DPA-3.2-5M, DPA-3.3-1M) downloaded via `dp pretrained download`
-
-Both DPA3 and DPA4 checkpoints use the `.pt` suffix. If the user has not
-already established the model family, inspect it before proceeding:
-
-```bash
-dp --pt show pretrained.pt descriptor fitting-net type-map
-```
-
-Use this skill only when the stored descriptor identifies DPA3. Use
-`deepmd-finetune-dpa4` for DPA4/SeZM, and stop when the family cannot be
-established from the checkpoint.
 
 ## Quick Start
 
