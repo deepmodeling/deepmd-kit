@@ -1652,10 +1652,6 @@ def compute_block_targets(
         Each element is ``(system_indices_in_block, target_frame_count)``.
         Returns empty list if no expansion is needed (all targets == actual).
     """
-    from deepmd.utils.data_system import (
-        prob_sys_size_ext,
-    )
-
     # Parse block definitions from the auto_prob string
     # Format: "prob_sys_size;stt:end:weight;stt:end:weight;..."
     block_str = auto_prob_style.split(";")[1:]
@@ -1701,8 +1697,27 @@ def compute_block_targets(
         )
         blocks = nonempty
 
-    # Compute per-system probabilities using the standard function
-    sys_probs = prob_sys_size_ext(auto_prob_style, nsystems, system_nframes)
+    # Compute the same per-system probabilities as prob_sys_size_ext locally.
+    # Keeping this framework-agnostic LMDB module independent of data_system
+    # avoids an import cycle when the legacy adapter imports the LMDB reader.
+    block_weights = np.asarray([weight for _, _, weight in blocks], dtype=float)
+    if not np.all(np.isfinite(block_weights)):
+        raise ValueError("block weights must be finite")
+    if np.any(block_weights < 0):
+        raise ValueError("the weight of a block should be no less than 0")
+    total_block_weight = np.sum(block_weights)
+    if total_block_weight <= 0:
+        raise ValueError("the sum of block weights should be greater than 0")
+    block_probs = block_weights / total_block_weight
+    sys_probs = np.zeros(nsystems, dtype=np.float64)
+    for block_idx, (stt, end, _weight) in enumerate(blocks):
+        block_frames = np.asarray(system_nframes[stt:end], dtype=float)
+        total_block_frames = np.sum(block_frames)
+        if total_block_frames <= 0:
+            raise ValueError(
+                f"block {stt}:{end} must contain at least one retained frame"
+            )
+        sys_probs[stt:end] = block_frames / total_block_frames * block_probs[block_idx]
 
     # Group systems by block, compute block-level frames and prob
     block_info: list[tuple[list[int], int, float]] = []  # (sys_ids, frames, prob)

@@ -1022,6 +1022,22 @@ class TestAutoProb(unittest.TestCase):
         self.assertTrue(any("empty blocks" in msg for msg in cm.output))
         self.assertEqual(result, [])
 
+    def test_compute_block_targets_rejects_invalid_weights(self):
+        """Weights must define a finite, nonnegative probability mass."""
+        invalid_styles = (
+            ("prob_sys_size;0:1:-0.1;1:2:1.1", "no less than 0"),
+            ("prob_sys_size;0:1:0;1:2:0", "greater than 0"),
+            ("prob_sys_size;0:1:nan;1:2:1", "finite"),
+        )
+        for style, message in invalid_styles:
+            with self.subTest(style=style):
+                with self.assertRaisesRegex(ValueError, message):
+                    compute_block_targets(
+                        style,
+                        nsystems=2,
+                        system_nframes=[100, 100],
+                    )
+
     def test_expand_indices_basic(self):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
