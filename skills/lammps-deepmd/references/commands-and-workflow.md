@@ -32,7 +32,7 @@ Then replace the short run with the intended production length.
 
 - `input.lammps`: input script
 - `data.system`: atomic structure and box
-- `graph.pb` or `graph_compressed.pb`: DeePMD model
+- a supported DeePMD deployment artifact such as `.pb`, `.pth`, or DPA4/SeZM `.pt2`; see `model-deployment.md`
 - `log.lammps`: main textual log
 - `traj.lammpstrj`: trajectory output
 

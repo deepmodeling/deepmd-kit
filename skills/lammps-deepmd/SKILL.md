@@ -2,12 +2,12 @@
 name: lammps-deepmd
 description: >
   A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and job execution via `uv` or offline binaries.
-  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (e.g., `graph.pb`).
+  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (for example `.pb`, `.pth`, or DPA4/SeZM `.pt2`).
 compatibility: Requires LAMMPS with DeePMD-kit support. Online mode prefers `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp`; offline mode requires a user-provided LAMMPS executable or module.
 license: LGPL-3.0-or-later
 metadata:
   author: OpenClaw
-  version: '1.0'
+  version: '1.1'
   repository: https://github.com/deepmodeling/deepmd-kit
   lammps_docs: https://docs.lammps.org/
 ---
@@ -24,7 +24,7 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
    - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
 1. Confirm the minimum simulation inputs:
    - structure/data file (for example `data.system`)
-   - DeePMD model file (for example `graph.pb` or compressed model)
+  - DeePMD model artifact; read `references/model-deployment.md` for a training checkpoint, DPA4/SeZM, or an unclear export path
    - atom type to element mapping, including required per-type masses if the data file does not define them
    - target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
    - temperature, pressure if applicable, timestep, and total number of steps
@@ -81,6 +81,7 @@ Ask only for what is missing:
 ## Recommended workflow
 
 1. Inspect available files in the working directory.
+1. Read `references/model-deployment.md` when the model needs export, its artifact type is unclear, or explicit element mapping is required.
 1. Draft `input.lammps`.
 1. Explain the script to the user if they asked for an explanation or if the script is nontrivial.
 1. Run a short smoke test first when reasonable.
@@ -321,3 +322,4 @@ After a run, report at least:
 - DeePMD-kit: https://github.com/deepmodeling/deepmd-kit
 - User-provided tutorial reference: https://github.com/tongzhugroup/Chapter13-tutorial/blob/master/input.lammps
 - Detailed notes: `references/commands-and-workflow.md`
+- Model artifact, export, and type-mapping notes: `references/model-deployment.md`
