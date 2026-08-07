@@ -48,7 +48,7 @@ uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' l
 If you need to inspect the local command-line help:
 
 ```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
 ```
 
 Notes:
@@ -291,7 +291,7 @@ uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' l
 ### Online help
 
 ```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
 ```
 
 ### Offline run
