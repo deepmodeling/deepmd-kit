@@ -1,6 +1,6 @@
 ---
 name: deepmd-python-inference
-description: Run Python inference with DeePMD-kit models using the DeepPot API. Use when the user wants to load a checkpoint, frozen model (.pb, .pth, or DPA4 .pt2), or built-in pretrained model in Python; predict energy/force/virial; evaluate descriptors; calculate model deviation; or use `dp test` against labeled data.
+description: Run Python inference with DeePMD-kit models using the DeepPot API. Use when the user wants to load a checkpoint, frozen model (.pb or .pth), DPA4/SeZM AOTInductor deployment archive (.pt2), or built-in pretrained model in Python; predict energy/force/virial; evaluate supported descriptors; calculate model deviation; or use `dp test` against labeled data.
 compatibility: Requires deepmd-kit installed with the backend required by the selected model artifact.
 license: LGPL-3.0-or-later
 metadata:
@@ -39,6 +39,9 @@ e, f, v = dp.eval(coord, cell, atype)
    - Descriptor evaluation
    - Model deviation calculation
    - CLI-based testing against labeled data
+1. Before using descriptor or embedding hooks, confirm that the selected
+    artifact supports them; a loadable `.pt2` does not necessarily contain the
+    serialized model required by those hooks.
 1. Help the user prepare input arrays in the correct format.
 1. Run inference and report results.
 
@@ -291,6 +294,7 @@ dp pretrained download DPA-3.2-5M --cache-dir ./models
 
 - [ ] Model file exists and is accessible (`.pb`, `.pth`, `.pt`, `.pt2`, or valid pretrained name)
 - [ ] An ambiguous `.pt` checkpoint was classified from its stored configuration, not its filename
+- [ ] The requested descriptor or embedding operation is supported by the specific artifact, not inferred from its suffix
 - [ ] `coord` array is shaped (nframes, natoms\*3) and in Angstrom
 - [ ] `cell` array is shaped (nframes, 9) or `None` for non-periodic systems
 - [ ] `atype` indices match the model's `type_map` ordering
