@@ -1,6 +1,6 @@
 ---
 name: deepmd-finetune-dpa4
-description: Fine-tune a DPA4/SeZM model in DeePMD-kit with the PyTorch backend. Use for standard or LoRA fine-tuning from a DPA4/SeZM .pt checkpoint, then validation and .pt2 export. Do not select this skill from the .pt suffix alone; inspect the stored descriptor first.
+description: Fine-tune a DPA4 model in DeePMD-kit. Use for standard or LoRA fine-tuning from a DPA4/SeZM .pt checkpoint, validation and .pt2 export.
 compatibility: Requires deepmd-kit with the PyTorch backend. DPA4/SeZM training is GPU-oriented.
 license: LGPL-3.0-or-later
 metadata:
