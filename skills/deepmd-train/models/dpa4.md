@@ -83,6 +83,16 @@ The command detects DPA4/SeZM and appends `.pt2`. DPA4 does not use the ordinary
 TorchScript `.pth` freeze path and does not support model compression. Validate
 the exported archive in the target inference or LAMMPS environment.
 
+If the checkpoint is multi-task, inspect its branches and pass the selected
+head during export:
+
+```bash
+dp --pt show model.ckpt.pt model-branch descriptor type-map
+dp --pt freeze -c model.ckpt.pt -o frozen_model --head SELECTED_BRANCH
+```
+
+The frozen `.pt2` is a selected single-head artifact.
+
 ## DPA4 checklist
 
 - [ ] The PyTorch backend is available.

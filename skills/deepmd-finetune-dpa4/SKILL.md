@@ -55,6 +55,18 @@ pretrained-script mechanism is deliberately used:
 dp --pt train input.json --finetune pretrained.pt
 ```
 
+When fine-tuning a single-task target from a multi-task checkpoint and the
+intent is to preserve a particular pretrained fitting head, pass the branch
+selected above:
+
+```bash
+dp --pt train input.json --finetune pretrained.pt --model-branch SELECTED_BRANCH
+```
+
+If `--model-branch` is omitted, the fitting net may be initialized from the
+`RANDOM` branch instead. A multi-task target uses `finetune_head` in each target
+branch rather than the command-line option.
+
 If the architecture is unknown, `--use-pretrain-script` can inherit the stored
 model configuration except for `type_map`:
 
@@ -90,7 +102,7 @@ dp --pt train lora_ft.json --finetune pretrained.pt
 ```
 
 The JSON fragment above is not a complete training input. Adapt the full public
-example at `examples/water/dpa4/lora_ft.json`. Do not add
+example at `../../examples/water/dpa4/lora_ft.json`. Do not add
 `--use-pretrain-script` to this LoRA command unless a targeted test confirms that
 the intended LoRA configuration is retained.
 
@@ -113,6 +125,15 @@ dp test -m finetuned_model.pt2 -s /path/to/test_system -n 30
 
 The freeze command detects DPA4/SeZM and writes `finetuned_model.pt2`. Validate
 the exported archive in the target environment before deployment.
+
+For a multi-task checkpoint, freeze the selected head explicitly:
+
+```bash
+dp --pt freeze -c ckpt/model.ckpt.pt -o finetuned_model --head SELECTED_BRANCH
+```
+
+The resulting `.pt2` contains the selected single head; do not pass a branch
+again when loading that archive.
 
 ## Checklist
 

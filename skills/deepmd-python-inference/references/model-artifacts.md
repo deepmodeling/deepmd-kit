@@ -34,6 +34,8 @@ dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
 The command writes `frozen_model.pt2` for a detected DPA4/SeZM checkpoint.
+For a multi-task checkpoint, select the head during export with
+`--head SELECTED_BRANCH`; the resulting `.pt2` is already single-head.
 Evaluate the archive with:
 
 ```python
