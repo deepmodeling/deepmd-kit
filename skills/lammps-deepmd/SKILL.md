@@ -3,7 +3,7 @@ name: lammps-deepmd
 description: >
   A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and job execution via `uv` or offline binaries.
   USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (for example `.pb`, `.pth`, or DPA4/SeZM `.pt2`).
-compatibility: Requires LAMMPS with DeePMD-kit support. Online mode prefers `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp`; offline mode requires a user-provided LAMMPS executable or module.
+compatibility: Requires LAMMPS with DeePMD-kit support. Online mode uses `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp`; offline mode requires a user-provided LAMMPS executable or module.
 license: LGPL-3.0-or-later
 metadata:
   author: OpenClaw
@@ -20,7 +20,7 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 
 1. Confirm the available execution mode:
    - **Online mode**: if internet access is available and `uv` is installed, prefer
-     `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp ...`
+     `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp ...`
    - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
 1. Confirm the minimum simulation inputs:
    - structure/data file (for example `data.system`)
@@ -42,19 +42,21 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 Use:
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
 ```
 
 If you need to inspect the local command-line help:
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h | tee /dev/tty
 ```
 
 Notes:
 
 - This is the preferred path because it can provision LAMMPS and DeePMD-kit on demand.
-- The `gpu,torch,lmp` extras match the requested runtime pattern from the user.
+- The pins match the LAMMPS dependency declared by the DPA4-capable
+  `deepmd-kit==3.2.0b0` release. Update both pins together after validating a
+  newer pair.
 - If the environment is slow or the packages are large, warn the user that the first run may take time.
 
 ### Offline mode
@@ -283,13 +285,13 @@ When using NPT, it is often useful to keep `vol`, `lx`, `ly`, and `lz` in the th
 ### Online run
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
 ```
 
 ### Online help
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h | tee /dev/tty
 ```
 
 ### Offline run
