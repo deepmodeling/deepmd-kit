@@ -24,10 +24,12 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
    - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
 1. Confirm the minimum simulation inputs:
    - structure/data file (for example `data.system`)
-  - DeePMD model artifact; read `references/model-deployment.md` for a training checkpoint, DPA4/SeZM, or an unclear export path
-   - atom type to element mapping, including required per-type masses if the data file does not define them
-   - target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
-   - temperature, pressure if applicable, timestep, and total number of steps
+
+- DeePMD model artifact; read `references/model-deployment.md` for a training checkpoint, DPA4/SeZM, or an unclear export path
+- atom type to element mapping, including required per-type masses if the data file does not define them
+- target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
+- temperature, pressure if applicable, timestep, and total number of steps
+
 1. Write the LAMMPS input script yourself instead of asking the user to hand-write it.
 1. Keep the example readable and fully explained. If you include an example input script, explain what **every command** does.
 1. When possible, validate command availability against the LAMMPS docs or local `lmp -h` output before execution.

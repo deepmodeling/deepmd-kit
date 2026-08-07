@@ -4,9 +4,9 @@ description: Run Python inference with DeePMD-kit models using the DeepPot API. 
 compatibility: Requires deepmd-kit installed with the backend required by the selected model artifact.
 license: LGPL-3.0-or-later
 metadata:
-    author: iProzd
-    version: '1.1'
-    repository: https://github.com/deepmodeling/deepmd-kit
+  author: iProzd
+  version: '1.1'
+  repository: https://github.com/deepmodeling/deepmd-kit
 ---
 
 # DeePMD-kit Python Inference

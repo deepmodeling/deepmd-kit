@@ -14,12 +14,12 @@ PyTorch checkpoint before choosing an export path:
 dp --pt show model.pt descriptor fitting-net type-map
 ```
 
-| Model artifact | Deployment route |
-| --- | --- |
-| TensorFlow frozen `.pb` | Use directly with a compatible `pair_style deepmd`. |
-| Conventional PyTorch frozen `.pth` | Use directly with a compatible DeePMD-enabled LAMMPS build. |
-| PyTorch checkpoint `.pt` | Inspect the stored model configuration and freeze using its model-specific route. |
-| DPA4/SeZM archive `.pt2` | Use with a compatible DeePMD-enabled LAMMPS build. |
+| Model artifact                     | Deployment route                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| TensorFlow frozen `.pb`            | Use directly with a compatible `pair_style deepmd`.                               |
+| Conventional PyTorch frozen `.pth` | Use directly with a compatible DeePMD-enabled LAMMPS build.                       |
+| PyTorch checkpoint `.pt`           | Inspect the stored model configuration and freeze using its model-specific route. |
+| DPA4/SeZM archive `.pt2`           | Use with a compatible DeePMD-enabled LAMMPS build.                                |
 
 Do not call a DPA4 `.pt2` archive a compressed model: DPA4 does not support
 `dp compress`.
