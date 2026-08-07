@@ -14,12 +14,12 @@ configuration when needed:
 dp --pt show model.pt descriptor fitting-net type-map
 ```
 
-| Artifact | Typical role                             | Inference guidance                                                                                                                                |
-| -------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.pb`    | TensorFlow frozen model                  | Load with `DeepPot` or use `dp test`.                                                                                                             |
-| `.pth`   | Conventional PyTorch frozen model        | Load with `DeepPot` or use `dp test`.                                                                                                             |
-| `.pt`    | PyTorch training checkpoint              | Inspect before use. DPA4 supports eager Python evaluation and embedding extraction from a checkpoint; deployment normally uses a frozen artifact. |
-| `.pt2`   | AOTInductor deployment archive           | Use supported inference paths in a compatible runtime; the suffix alone does not imply descriptor hooks, portability, or multi-rank support.     |
+| Artifact | Typical role                      | Inference guidance                                                                                                                                |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.pb`    | TensorFlow frozen model           | Load with `DeepPot` or use `dp test`.                                                                                                             |
+| `.pth`   | Conventional PyTorch frozen model | Load with `DeepPot` or use `dp test`.                                                                                                             |
+| `.pt`    | PyTorch training checkpoint       | Inspect before use. DPA4 supports eager Python evaluation and embedding extraction from a checkpoint; deployment normally uses a frozen artifact. |
+| `.pt2`   | AOTInductor deployment archive    | Use supported inference paths in a compatible runtime; the suffix alone does not imply descriptor hooks, portability, or multi-rank support.      |
 
 Backend selection for inference is normally determined from the model artifact.
 Do not add a backend flag merely from the assumed model family.

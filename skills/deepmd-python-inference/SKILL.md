@@ -40,8 +40,8 @@ e, f, v = dp.eval(coord, cell, atype)
    - Model deviation calculation
    - CLI-based testing against labeled data
 1. Before using descriptor or embedding hooks, confirm that the selected
-    artifact supports them; a loadable `.pt2` does not necessarily contain the
-    serialized model required by those hooks.
+   artifact supports them; a loadable `.pt2` does not necessarily contain the
+   serialized model required by those hooks.
 1. Help the user prepare input arrays in the correct format.
 1. Run inference and report results.
 
