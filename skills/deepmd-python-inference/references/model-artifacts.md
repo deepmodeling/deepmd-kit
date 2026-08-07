@@ -52,9 +52,11 @@ dp test -m frozen_model.pt2 -s /path/to/system -n 30
 ```
 
 `DeepPot.eval` on DPA4/SeZM `.pt2` archives is covered for energy, force,
-virial, atomic energy, and atomic virial. `dp test` uses the same model dispatch.
-Both require an installed DeePMD-kit/PyTorch runtime compatible with the
-compiled archive.
+virial, and atomic energy. Atomic virial is available only when the archive
+metadata reports `do_atomic_virial=true`; the ordinary non-spin
+`dp --pt freeze` route enables it, but specialized spin or conversion routes
+may not. `dp test` uses the same model dispatch. Both require an installed
+DeePMD-kit/PyTorch runtime compatible with the compiled archive.
 
 Check that `atype` follows the model `type_map` and that coordinates/cells use
 the units and shapes documented by `DeepPot`.
@@ -75,6 +77,11 @@ dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
 ```
 
 `dp embed` supports the DPA4/SeZM `.pt` checkpoint and does not support `.pt2`.
+For a multi-task checkpoint, preserve the selected head explicitly:
+
+```bash
+dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5 --head SELECTED_BRANCH
+```
 
 ## Validation
 
