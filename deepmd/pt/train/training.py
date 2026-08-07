@@ -1741,9 +1741,11 @@ class Trainer:
                     ),
                 )
 
-            should_save_checkpoint = (
-                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
-            ) or (display_step_id) == self.num_steps
+            should_save_checkpoint = display_step_id == self.num_steps or (
+                self.save_freq > 0
+                and display_step_id % self.save_freq == 0
+                and _step_id != self.start_step
+            )
             if should_save_checkpoint:
                 # Abort before writing if any gradient norm since the previous
                 # checkpoint was non-finite.

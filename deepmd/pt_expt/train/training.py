@@ -1915,6 +1915,8 @@ class Trainer(AbstractTrainer):
 
         # Optimiser -----------------------------------------------------------
         opt_type = optimizer_params.get("type", "Adam")
+        if opt_type not in ("Adam", "AdamW", "HybridMuon"):
+            raise ValueError(f"Unsupported optimizer type: {opt_type}")
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
@@ -1933,7 +1935,7 @@ class Trainer(AbstractTrainer):
                 betas=adam_betas,
                 weight_decay=weight_decay,
             )
-        elif opt_type == "HybridMuon":
+        else:
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
                 lr=initial_lr,
@@ -1958,8 +1960,6 @@ class Trainer(AbstractTrainer):
             self._local_optimizer.set_param_names(
                 tuple(self.wrapper.named_parameters())
             )
-        else:
-            raise ValueError(f"Unsupported optimizer type: {opt_type}")
 
         if optimizer_state_dict is not None:
             self._load_optimizer_state(optimizer_state_dict)

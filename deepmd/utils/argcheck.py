@@ -5417,8 +5417,10 @@ def training_args(
         "set, checkpoints are written to the working directory."
     )
     doc_max_ckpt_keep = (
-        "The maximum number of checkpoints to keep. "
-        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "The maximum number of recent periodic checkpoints to keep for the "
+        "regular checkpoint family. The EMA checkpoint family inherits this "
+        "value by default unless `ema_ckpt_keep` overrides it. The oldest "
+        "checkpoints are deleted when a family's retention window is exceeded. "
         "Defaults to 5."
     )
     doc_ckpt_keep_ratio = (
