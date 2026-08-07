@@ -58,6 +58,42 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/deepmd_version.h.in"
 file(GLOB DEEPMD_LMP_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp)
 
 find_package(DeePMD REQUIRED)
+
+function(_deepmd_lammps_link_torch target_name)
+  if(NOT DeePMD_ENABLE_PYTORCH)
+    return()
+  endif()
+
+  if(DeePMD_PYTORCH_CMAKE_PREFIX_PATH)
+    list(APPEND CMAKE_PREFIX_PATH ${DeePMD_PYTORCH_CMAKE_PREFIX_PATH})
+  endif()
+
+  find_package(Torch QUIET)
+  if(Torch_FOUND)
+    target_link_libraries(${target_name} PUBLIC ${TORCH_LIBRARIES})
+    return()
+  endif()
+
+  set(_deepmd_torch_libraries)
+  foreach(_deepmd_torch_library IN LISTS DeePMD_TORCH_LIBRARIES)
+    if(TARGET "${_deepmd_torch_library}"
+       OR EXISTS "${_deepmd_torch_library}"
+       OR "${_deepmd_torch_library}" MATCHES "^-")
+      list(APPEND _deepmd_torch_libraries "${_deepmd_torch_library}")
+    endif()
+  endforeach()
+  if(_deepmd_torch_libraries)
+    target_link_libraries(${target_name} PUBLIC ${_deepmd_torch_libraries})
+  else()
+    message(
+      WARNING
+        "DeePMD-kit was built with the PyTorch backend, but Torch was not "
+        "found while configuring LAMMPS. Set CMAKE_PREFIX_PATH to PyTorch's "
+        "CMake prefix path if linking lmp reports unresolved torch/c10 "
+        "symbols.")
+  endif()
+endfunction()
+
 target_sources(
   lammps
   PRIVATE ${DEEPMD_LMP_SRC}
@@ -69,6 +105,7 @@ target_sources(
           ${LAMMPS_SOURCE_DIR}/EXTRA-FIX/fix_ttm.cpp # for ttm
 )
 target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
+_deepmd_lammps_link_torch(lammps)
 target_include_directories(
   lammps PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_LIST_DIR}
                  ${LAMMPS_SOURCE_DIR}/KSPACE ${LAMMPS_SOURCE_DIR}/EXTRA-FIX)
