@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import paddle
@@ -35,6 +38,49 @@ dtype = env.GLOBAL_PD_FLOAT_PRECISION
 class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
+
+    def test_non_trainable_parameters_stop_gradient(self) -> None:
+        """A non-trainable descriptor must disable Paddle autograd parameters."""
+        # Paddle 3.0 does not expose the newer ``requires_grad`` compatibility
+        # alias. Ignore writes to that alias so this test retains minimum-version
+        # semantics when the CI environment uses a newer Paddle release.
+        requires_grad_alias = property(
+            lambda parameter: not parameter.stop_gradient,
+            lambda _parameter, _value: None,
+        )
+        with patch.object(
+            paddle.Tensor, "requires_grad", requires_grad_alias, create=True
+        ):
+            descriptor = DescrptDPA3(
+                self.nt,
+                repflow=RepFlowArgs(
+                    n_dim=4,
+                    e_dim=4,
+                    a_dim=4,
+                    nlayers=1,
+                    e_sel=2,
+                    a_sel=1,
+                    axis_neuron=2,
+                ),
+                trainable=False,
+                add_chg_spin_ebd=True,
+                seed=GLOBAL_SEED,
+            )
+            deserialized_descriptor = DescrptDPA3.deserialize(descriptor.serialize())
+
+        for stage, checked_descriptor in (
+            ("constructed", descriptor),
+            ("deserialized", deserialized_descriptor),
+        ):
+            with self.subTest(stage=stage):
+                parameters = list(checked_descriptor.named_parameters())
+                self.assertTrue(parameters)
+                parameters_with_grad = [
+                    name
+                    for name, parameter in parameters
+                    if not parameter.stop_gradient
+                ]
+                self.assertEqual([], parameters_with_grad)
 
     def test_consistency(
         self,
