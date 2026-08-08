@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Unit tests for LmdbDataReader, LmdbTestData, SameNlocBatchSampler, etc.
+"""Unit tests for LmdbDataReader, LmdbTestData, LmdbBatchSampler, etc.
 
 Pure dpmodel (NumPy/lmdb) tests — no PyTorch dependency.
 """
 
+import gc
 import os
 import signal
 import subprocess
@@ -13,6 +14,9 @@ import textwrap
 import unittest
 from concurrent.futures import (
     Future,
+)
+from itertools import (
+    pairwise,
 )
 from pathlib import (
     Path,
@@ -30,15 +34,19 @@ import numpy as np
 
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.lmdb_data import (
+    DistributedLmdbBatchSampler,
     LmdbBatchIterator,
+    LmdbBatchSampler,
     LmdbDataReader,
     LmdbDecodeConfig,
     LmdbTestData,
     LmdbTestDataNlocView,
-    SameNlocBatchSampler,
+    _chop_mixed_nloc,
     _expand_indices_by_blocks,
     _merge_lmdb_chunks,
     _remap_atom_types,
+    collate_lmdb_frames,
+    collect_lmdb_sampling_groups,
     compute_block_targets,
     decode_lmdb_batch,
     decode_lmdb_frame,
@@ -157,6 +165,46 @@ def _create_mixed_nloc_lmdb(path: str) -> str:
                     ),
                 )
                 idx += 1
+    env.close()
+    return path
+
+
+def _create_mix_probe_lmdb(path: str) -> str:
+    """Create an LMDB whose frame-level fields collide in shape with the atom axis.
+
+    Frames alternate between 2 and 9 atoms and carry a two-component
+    ``fparam`` alongside a nine-component ``virials``. A padding rule that
+    guessed the atom axis from a leading dimension would misclassify
+    ``fparam`` on the 2-atom frames and ``virials`` on the 9-atom ones, so this
+    fixture pins the classification down to the exact ambiguous shapes.
+    """
+    nlocs = [2, 9, 2, 9, 2, 9]
+    rng = np.random.RandomState(7)
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": len(nlocs),
+            "frame_idx_fmt": "012d",
+            "frame_nlocs": nlocs,
+            "system_info": {"natoms": [1, 1], "formula": "probe"},
+        }
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        for idx, natoms in enumerate(nlocs):
+            frame = _make_frame(natoms=natoms, seed=idx)
+            frame["virials"] = {
+                "type": "<f8",
+                "shape": (9,),
+                "data": rng.randn(9).astype(np.float64).tobytes(),
+            }
+            frame["fparam"] = {
+                "type": "<f8",
+                "shape": (2,),
+                "data": rng.randn(2).astype(np.float64).tobytes(),
+            }
+            txn.put(
+                format(idx, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
     env.close()
     return path
 
@@ -375,10 +423,10 @@ class TestLmdbDataReader(unittest.TestCase):
     def test_batch_iterator_advances_epoch_before_prefetch(self):
         """The prefetched successor uses the next epoch's sampler state."""
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        sampler = LmdbBatchSampler(reader, shuffle=True, seed=7)
         iterator = LmdbBatchIterator(reader, sampler, num_workers=2)
 
-        expected_sampler = SameNlocBatchSampler(reader, shuffle=True, seed=7)
+        expected_sampler = LmdbBatchSampler(reader, shuffle=True, seed=7)
         expected_sampler.set_epoch(1)
         expected_second = [
             key for indices in expected_sampler for key in reader.original_keys(indices)
@@ -416,6 +464,70 @@ class TestLmdbDataReader(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "before reading any frame"):
                     reader.add_data_requirement(requirement)
                 reader.close()
+
+    def test_mandatory_fields_reject_missing_and_explicitly_unavailable_sources(self):
+        """Mandatory LMDB inputs fail at the shared frame-resolution boundary."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/mandatory_spin.lmdb",
+            nframes=3,
+            natoms=6,
+        )
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            unavailable_key = format(1, "012d").encode()
+            unavailable_frame = msgpack.unpackb(
+                transaction.get(unavailable_key), raw=False
+            )
+            unavailable_frame["spin"] = {
+                "type": "<f8",
+                "shape": (6, 3),
+                "data": np.zeros((6, 3), dtype=np.float64).tobytes(),
+            }
+            unavailable_frame["find_spin"] = 0.0
+            transaction.put(
+                unavailable_key,
+                msgpack.packb(unavailable_frame, use_bin_type=True),
+            )
+
+            inconsistent_key = format(2, "012d").encode()
+            inconsistent_frame = msgpack.unpackb(
+                transaction.get(inconsistent_key), raw=False
+            )
+            inconsistent_frame["find_spin"] = 1.0
+            transaction.put(
+                inconsistent_key,
+                msgpack.packb(inconsistent_frame, use_bin_type=True),
+            )
+        environment.close()
+
+        requirement = [DataRequirementItem("spin", 3, atomic=True, must=True)]
+        reader = LmdbDataReader(path, self._type_map, batch_size=1)
+        reader.add_data_requirement(requirement)
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            side_effect=AssertionError("mandatory fields must fail during decode"),
+        ):
+            self.assertEqual(len(collect_lmdb_sampling_groups(reader)), 1)
+        for frame_index, reason in (
+            (0, "field is absent"),
+            (1, "find_spin=0"),
+            (2, "despite find_spin=1"),
+        ):
+            with self.subTest(frame_index=frame_index):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    rf"spin.*frame {frame_index}.*mandatory_spin\.lmdb.*{reason}",
+                ):
+                    reader[frame_index]
+
+        test_data = LmdbTestData(path, type_map=self._type_map, shuffle_test=False)
+        test_data.add_data_requirement(requirement)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"spin.*frame 0.*mandatory_spin\.lmdb.*field is absent",
+        ):
+            test_data.get_test_by_indices([0])
 
     def test_close_preserves_other_reader(self):
         """Closing one shared-path reader leaves the other transaction valid."""
@@ -507,13 +619,13 @@ class TestLmdbDataReader(unittest.TestCase):
         }
         frame_cases = (
             (
-                "fields",
-                {**first_frame, "energy": np.zeros(1), "fid": 1},
-                "inconsistent fields",
+                "atom count",
+                {**first_frame, "coord": np.zeros((7, 3)), "fid": 1},
+                "the batch layout gives frame 1 6 atoms, but it holds 7",
             ),
             (
                 "shape",
-                {**first_frame, "coord": np.zeros((7, 3)), "fid": 1},
+                {**first_frame, "coord": np.zeros((6, 4)), "fid": 1},
                 "changes shape within one batch",
             ),
         )
@@ -529,33 +641,35 @@ class TestLmdbDataReader(unittest.TestCase):
             ):
                 decode_lmdb_batch(transaction, [0, 1], "012d", config)
 
+    def test_merged_chunks_demote_partial_labels(self):
+        """Merging keeps only what every worker chunk supplies."""
         first_chunk = {
             "find_energy": np.float32(1.0),
             "coord": np.zeros((1, 6, 3)),
             "fid": [0],
             "sid": np.array([0], dtype=np.int64),
         }
-        chunk_cases = (
-            (
-                "fields",
-                {key: value for key, value in first_chunk.items() if key != "coord"},
-                "inconsistent fields",
-            ),
-            (
-                "availability",
-                {**first_chunk, "find_energy": np.float32(0.0), "fid": [1]},
-                "availability changes across worker chunks",
-            ),
-        )
-        for guard, second_chunk, expected_error in chunk_cases:
-            with (
-                self.subTest(guard=f"chunk {guard}"),
-                self.assertRaisesRegex(ValueError, expected_error),
-            ):
-                _merge_lmdb_chunks([first_chunk, second_chunk])
 
-    def test_batch_rejects_mixed_label_availability(self):
-        """A scalar find flag cannot represent mixed availability in one batch."""
+        without_coord = {
+            key: value for key, value in first_chunk.items() if key != "coord"
+        }
+        merged = _merge_lmdb_chunks([first_chunk, {**without_coord, "fid": [1]}])
+        self.assertNotIn("coord", merged)
+
+        merged = _merge_lmdb_chunks(
+            [first_chunk, {**first_chunk, "find_energy": np.float32(0.0), "fid": [1]}]
+        )
+        self.assertEqual(float(merged["find_energy"]), 0.0)
+        self.assertEqual(merged["coord"].shape, (2, 6, 3))
+
+    def test_batch_demotes_mixed_label_availability(self):
+        """A label only some frames carry is unavailable to the whole batch.
+
+        A scalar ``find_*`` flag cannot say "available for frame 0 only", so
+        the batch reports the label absent and falls back to the requirement's
+        default fill. That keeps the fill out of the loss, which is what a
+        partial label would otherwise be mistaken for.
+        """
         path = _create_lmdb(
             f"{self._tmpdir.name}/mixed_availability.lmdb",
             nframes=2,
@@ -584,17 +698,477 @@ class TestLmdbDataReader(unittest.TestCase):
         )
         environment = lmdb.open(path, readonly=True, lock=False)
         with environment.begin() as transaction:
-            with self.assertRaisesRegex(
-                ValueError,
-                "availability changes within one batch",
-            ):
-                decode_lmdb_batch(
-                    transaction,
-                    [0, 1],
-                    "012d",
+            batch = decode_lmdb_batch(transaction, [0, 1], "012d", config)
+            single = decode_lmdb_batch(transaction, [0], "012d", config)
+            frames = [
+                decode_lmdb_frame(
+                    transaction.get(format(index, "012d").encode()),
+                    index,
                     config,
+                    copy_arrays=True,
+                )
+                for index in (0, 1)
+            ]
+        environment.close()
+
+        self.assertEqual(float(batch["find_custom"]), 0.0)
+        # The label survives in a batch where every frame carries it.
+        self.assertEqual(float(single["find_custom"]), 1.0)
+
+        # The generic collation path must reach the same verdict, so that a
+        # batch is the same mapping whichever path decoded it.
+        collated = collate_lmdb_frames(frames)
+        self.assertEqual(float(collated["find_custom"]), 0.0)
+        self.assertEqual(sorted(collated), sorted(batch))
+        np.testing.assert_allclose(collated["custom"], batch["custom"])
+
+    def test_availability_probe_is_deferred_until_requirements_are_registered(self):
+        """Reader construction must not inspect labels before their use is known.
+
+        The trainer registers loss and model requirements after constructing
+        the data system. Inspecting raw labels earlier both performs needless
+        I/O and lets fields unused by the run influence the partition.
+        """
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            wraps=lmdb_data_module._raw_frame_availability,
+        ) as probe:
+            reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+            self.assertEqual(probe.call_count, 0)
+            reader.add_data_requirement(
+                [
+                    DataRequirementItem("energy", 1, atomic=False),
+                    DataRequirementItem("force", 3, atomic=True),
+                ]
+            )
+            groups = collect_lmdb_sampling_groups(reader)
+            batches = list(LmdbBatchSampler(reader, shuffle=False))
+
+        self.assertLessEqual(
+            probe.call_count, lmdb_data_module._AVAILABILITY_PROBE_FRAMES
+        )
+        self.assertEqual(
+            sorted(index for _nloc, indices in groups for index in indices),
+            list(range(len(reader))),
+        )
+        self.assertEqual(
+            sorted(index for batch in batches for index in batch),
+            list(range(len(reader))),
+        )
+
+    def test_availability_probe_samples_a_bounded_number_of_frames(self):
+        """The construction-time probe must not scale with the dataset."""
+        nframes = lmdb_data_module._AVAILABILITY_PROBE_FRAMES * 3
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/probe_bound.lmdb", nframes=nframes, natoms=6
+        )
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            wraps=lmdb_data_module._raw_frame_availability,
+        ) as probe:
+            reader = LmdbDataReader(path, self._type_map, batch_size=2)
+            self.assertEqual(probe.call_count, 0)
+            reader.add_data_requirement(
+                [DataRequirementItem("energy", 1, atomic=False)]
+            )
+            collect_lmdb_sampling_groups(reader)
+        self.assertEqual(len(reader), nframes)
+        self.assertLessEqual(
+            probe.call_count, lmdb_data_module._AVAILABILITY_PROBE_FRAMES
+        )
+
+    def test_valid_default_does_not_trigger_exact_partition(self):
+        """Present values and valid defaults may share one batch safely."""
+        nframes = lmdb_data_module._AVAILABILITY_PROBE_FRAMES * 3
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/valid_default.lmdb",
+            nframes=nframes,
+            natoms=6,
+        )
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            for index in range(0, nframes, 2):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["atom_pref"] = {
+                    "type": "<f8",
+                    "shape": (6,),
+                    "data": np.full(6, 2.0, dtype=np.float64).tobytes(),
+                }
+                frame["fparam"] = {
+                    "type": "<f8",
+                    "shape": (2,),
+                    "data": np.array([2.0, 3.0], dtype=np.float64).tobytes(),
+                }
+                frame["charge_spin"] = {
+                    "type": "<f8",
+                    "shape": (2,),
+                    "data": np.array([4.0, 5.0], dtype=np.float64).tobytes(),
+                }
+                if index == 2:
+                    frame["find_atom_pref"] = 0.0
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+        requirements = [
+            DataRequirementItem("energy", 1, atomic=False),
+            DataRequirementItem("force", 3, atomic=True),
+            DataRequirementItem(
+                "atom_pref",
+                1,
+                atomic=True,
+                repeat=3,
+                default=1.0,
+                source_policy="default",
+            ),
+            DataRequirementItem(
+                "fparam",
+                2,
+                atomic=False,
+                default=np.array([0.0, 1.0]),
+                source_policy="default",
+            ),
+            DataRequirementItem(
+                "charge_spin",
+                2,
+                atomic=False,
+                default=np.array([0.0, 1.0]),
+                source_policy="default",
+            ),
+        ]
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            wraps=lmdb_data_module._raw_frame_availability,
+        ) as inspect_availability:
+            reader = LmdbDataReader(path, self._type_map, batch_size=2)
+            self.assertEqual(inspect_availability.call_count, 0)
+            reader.add_data_requirement(requirements)
+            groups = collect_lmdb_sampling_groups(reader)
+            batch = reader.decode_batch([0, 1, 2])
+
+        self.assertLessEqual(
+            inspect_availability.call_count,
+            lmdb_data_module._AVAILABILITY_PROBE_FRAMES,
+        )
+        self.assertEqual(len(groups), 1)
+        np.testing.assert_array_equal(groups[0][1], np.arange(nframes))
+        np.testing.assert_array_equal(batch["atom_pref"][0], np.full(18, 2.0))
+        np.testing.assert_array_equal(batch["atom_pref"][1], np.ones(18))
+        np.testing.assert_array_equal(batch["atom_pref"][2], np.ones(18))
+        np.testing.assert_array_equal(
+            batch["fparam"], [[2.0, 3.0], [0.0, 1.0], [2.0, 3.0]]
+        )
+        np.testing.assert_array_equal(
+            batch["charge_spin"],
+            [[4.0, 5.0], [0.0, 1.0], [4.0, 5.0]],
+        )
+        self.assertEqual(float(batch["find_fparam"]), 1.0)
+        self.assertEqual(float(batch["find_charge_spin"]), 1.0)
+
+        test_data = LmdbTestData(path, type_map=self._type_map, shuffle_test=False)
+        test_data.add_data_requirement(requirements)
+        frame_indices = next(iter(test_data.nloc_groups.values()))
+        self.assertEqual(len(test_data.availability_groups(frame_indices)), 1)
+        stacked = test_data.get_test_by_indices([0, 1, 2])
+        np.testing.assert_array_equal(stacked["atom_pref"][0], np.full(18, 2.0))
+        np.testing.assert_array_equal(stacked["atom_pref"][1], np.ones(18))
+        np.testing.assert_array_equal(stacked["atom_pref"][2], np.ones(18))
+        np.testing.assert_array_equal(
+            stacked["fparam"],
+            [[2.0, 3.0], [0.0, 1.0], [2.0, 3.0]],
+        )
+        np.testing.assert_array_equal(
+            stacked["charge_spin"],
+            [[4.0, 5.0], [0.0, 1.0], [4.0, 5.0]],
+        )
+        self.assertEqual(float(stacked["find_fparam"]), 1.0)
+        self.assertEqual(float(stacked["find_charge_spin"]), 1.0)
+
+    def test_mixed_dataset_is_partitioned_by_label_availability(self):
+        """A dataset the probe finds mixed still groups by availability.
+
+        Demoting a mixed batch keeps it correct but costs the label for
+        training, so a dataset that genuinely interleaves labels is worth
+        partitioning exactly.
+        """
+        path = f"{self._tmpdir.name}/interleaved.lmdb"
+        environment = lmdb.open(path, map_size=10 * 1024 * 1024)
+        nframes = 8
+        with environment.begin(write=True) as transaction:
+            transaction.put(
+                b"__metadata__",
+                msgpack.packb(
+                    {
+                        "nframes": nframes,
+                        "frame_idx_fmt": "012d",
+                        "system_info": {"natoms": [2, 4]},
+                        "frame_nlocs": [6] * nframes,
+                    },
+                    use_bin_type=True,
+                ),
+            )
+            for index in range(nframes):
+                frame = _make_frame(natoms=6, seed=index)
+                # Alternate frames drop the forces, so exactly half the
+                # dataset supplies that label.
+                if index % 2:
+                    frame.pop("forces")
+                    if index == 1:
+                        frame["find_force"] = 1.0
+                transaction.put(
+                    format(index, "012d").encode(),
+                    msgpack.packb(frame, use_bin_type=True),
                 )
         environment.close()
+
+        reader = LmdbDataReader(path, self._type_map, batch_size=2)
+        sampler = LmdbBatchSampler(reader, shuffle=False)
+        sampler.batches()
+        reader.add_data_requirement(
+            [DataRequirementItem("force", 3, atomic=True, must=False)]
+        )
+        opens = []
+        real_open = lmdb.open
+
+        def recording_open(path, **kwargs):
+            opens.append(kwargs.get("readahead"))
+            return real_open(path, **kwargs)
+
+        with mock.patch.object(lmdb_data_module.lmdb, "open", recording_open):
+            with mock.patch.object(
+                lmdb_data_module,
+                "_raw_frame_availability",
+                wraps=lmdb_data_module._raw_frame_availability,
+            ) as inspect_availability:
+                with self.assertLogs(lmdb_data_module.log, level="INFO") as captured:
+                    groups = collect_lmdb_sampling_groups(reader)
+                exact_scan_reads = inspect_availability.call_count
+                batches = list(sampler)
+                self.assertEqual(inspect_availability.call_count, exact_scan_reads)
+        self.assertGreaterEqual(exact_scan_reads, nframes)
+        self.assertLessEqual(
+            exact_scan_reads,
+            nframes + lmdb_data_module._AVAILABILITY_PROBE_FRAMES,
+        )
+        self.assertFalse(reader._uniform_availability)
+        self.assertIsNotNone(reader._availability_index)
+        self.assertEqual(reader._availability_index.ids.dtype, np.uint8)
+        self.assertEqual(reader._availability_index.ids.nbytes, nframes)
+        self.assertEqual(reader._availability_index.signature_count, 2)
+        self.assertEqual(opens, [True, False])
+        self.assertFalse(reader._env.flags()["readahead"])
+        self.assertTrue(
+            any(
+                "label-availability scan started" in message
+                and "frames=8" in message
+                and "force" in message
+                for message in captured.output
+            )
+        )
+        self.assertEqual(
+            sorted(sorted(indices) for _nloc, indices in groups),
+            [[0, 2, 4, 6], [1, 3, 5, 7]],
+        )
+        # Every batch therefore agrees on the label, and none is demoted.
+        for batch in batches:
+            self.assertEqual(len({index % 2 for index in batch}), 1)
+        reader.close()
+
+        test_data = LmdbTestData(path, type_map=self._type_map, shuffle_test=False)
+        test_data.add_data_requirement(
+            [DataRequirementItem("force", 3, atomic=True, must=False)]
+        )
+        frame_indices = next(iter(test_data.nloc_groups.values()))
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            wraps=lmdb_data_module._raw_frame_availability,
+        ) as inspect_test_availability:
+            first_groups = test_data.availability_groups(frame_indices)
+            first_scan_reads = inspect_test_availability.call_count
+            second_groups = test_data.availability_groups(frame_indices)
+            self.assertEqual(
+                inspect_test_availability.call_count,
+                first_scan_reads,
+            )
+        self.assertGreaterEqual(first_scan_reads, nframes)
+        self.assertEqual(
+            [indices.tolist() for indices in first_groups],
+            [indices.tolist() for indices in second_groups],
+        )
+
+    def test_failed_exact_scan_restores_random_read_environment(self):
+        """A failed sequential scan leaves the reader usable for training I/O."""
+        path = _create_lmdb(
+            f"{self._tmpdir.name}/failed_exact_scan.lmdb",
+            nframes=2,
+            natoms=6,
+        )
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            key = format(1, "012d").encode()
+            frame = msgpack.unpackb(transaction.get(key), raw=False)
+            frame.pop("forces")
+            transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+        reader = LmdbDataReader(path, self._type_map, batch_size=1)
+        reader.add_data_requirement(
+            [DataRequirementItem("force", 3, atomic=True, must=False)]
+        )
+        with mock.patch.object(
+            lmdb_data_module,
+            "_scan_availability_index",
+            side_effect=RuntimeError("scan failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "scan failed"):
+                reader.availability_groups(np.arange(len(reader)))
+
+        self.assertIsNotNone(reader._env)
+        self.assertFalse(reader._env.flags()["readahead"])
+        self.assertEqual(reader[0]["coord"].shape, (6, 3))
+
+    def test_exact_scan_logs_only_on_node_local_rank_zero(self):
+        """Nonzero local ranks suppress duplicate node-local scan progress."""
+        raw = msgpack.packb(_make_frame(natoms=6, seed=0), use_bin_type=True)
+        with mock.patch.dict(os.environ, {"LOCAL_RANK": "1"}):
+            with mock.patch.object(lmdb_data_module.log, "info") as log_info:
+                index = lmdb_data_module._scan_availability_index(
+                    1,
+                    lambda _position: raw,
+                    ("force",),
+                    "ranked.lmdb",
+                )
+
+        self.assertEqual(index.signature_count, 1)
+        log_info.assert_not_called()
+
+    def test_metadata_is_read_with_readahead_enabled(self):
+        """``__metadata__`` must not be read under ``MDB_NORDAHEAD``.
+
+        It is one contiguous run of overflow pages that grows with the frame
+        count. Reading it with readahead disabled costs one synchronous fault
+        per 4 KiB page, measured at 1.8 MiB/s against NFS against 81 MiB/s
+        with readahead left on -- minutes rather than seconds once a writer
+        records a per-frame table.
+        """
+        opens = []
+        real_open = lmdb.open
+
+        def recording_open(path, **kwargs):
+            opens.append(kwargs.get("readahead"))
+            return real_open(path, **kwargs)
+
+        with mock.patch.object(lmdb_data_module.lmdb, "open", recording_open):
+            reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+
+        self.assertEqual(len(reader), 10)
+        # The first open serves the metadata and keeps readahead; the second
+        # serves frames and drops it so random reads stay precise.
+        self.assertEqual(opens, [True, False])
+
+    def test_readahead_follows_the_access_pattern(self):
+        """Each reader asks for the readahead its access pattern wants.
+
+        Training draws frames in shuffled order, where readahead fetches
+        neighbours it will not use. ``LmdbTestData`` walks a group in
+        ascending key order, where the same setting turns many small faults
+        into few large reads -- 45 000 frames/s against 1 300 over NFS.
+        """
+        opens = []
+        real_open = lmdb.open
+
+        def recording_open(path, **kwargs):
+            opens.append(kwargs.get("readahead"))
+            return real_open(path, **kwargs)
+
+        with mock.patch.object(lmdb_data_module.lmdb, "open", recording_open):
+            LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+            # Metadata first with readahead, then the shuffled-order frames
+            # without it.
+            self.assertEqual(opens, [True, False])
+
+            opens.clear()
+            LmdbTestData(self._lmdb_path, type_map=self._type_map)
+            self.assertEqual(opens, [True, True])
+
+    def test_frame_tables_are_arrays_not_python_lists(self):
+        """The per-frame tables must not be Python lists.
+
+        A list of boxed integers costs about 36 bytes an entry, so the two
+        tables alone reach tens of gigabytes on a dataset of 10^8 frames.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        self.assertIsInstance(reader.frame_nlocs, np.ndarray)
+        self.assertIsInstance(reader._retained_keys, np.ndarray)
+        for indices in reader.nloc_groups.values():
+            self.assertIsInstance(indices, np.ndarray)
+
+    def test_sampling_does_not_disturb_the_reader_index_tables(self):
+        """Shuffling a pass must not permute the reader's own groups.
+
+        The sampler receives the reader's index arrays directly, so an
+        in-place shuffle would silently corrupt every later pass.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        before = {nloc: idx.copy() for nloc, idx in reader.nloc_groups.items()}
+        for _ in range(2):
+            list(LmdbBatchSampler(reader, shuffle=True, seed=5))
+        for nloc, indices in before.items():
+            np.testing.assert_array_equal(reader.nloc_groups[nloc], indices)
+
+    def test_availability_groups_skip_an_empty_group(self):
+        """An empty group names no frames to stack, so it is not a group.
+
+        ``LmdbTestData`` retains an empty group when ``max_frames`` rounds a
+        group down to nothing, and full validation stacks whatever group it
+        is handed.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        self.assertEqual(reader.availability_groups(np.array([], dtype=np.int64)), [])
+
+        empty = LmdbTestData(
+            self._lmdb_path, type_map=self._type_map, max_frames=0, shuffle_test=False
+        )
+        for indices in empty.nloc_groups.values():
+            self.assertEqual(empty.availability_groups(indices), [])
+
+    def test_test_data_releases_only_a_reference_it_took(self):
+        """A failed construction must not close another reader's environment."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+
+        with mock.patch.object(
+            lmdb_data_module,
+            "_read_metadata_of",
+            side_effect=RuntimeError("metadata unreadable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "metadata unreadable"):
+                LmdbTestData(self._lmdb_path, type_map=self._type_map)
+        gc.collect()
+
+        # The reader that does hold the environment still reads through it.
+        self.assertIn("coord", reader[0])
+
+    def test_view_iterates_the_frames_it_stacks(self):
+        """``iter_test`` and ``get_test`` must serve one view the same frames."""
+        data = LmdbTestData(
+            self._lmdb_path, type_map=self._type_map, shuffle_test=False
+        )
+        data.add("energy", 1, atomic=False, must=False, high_prec=True)
+        nloc = next(iter(data.nloc_groups))
+        subset = data.nloc_groups[nloc][:3]
+        view = LmdbTestDataNlocView(data, nloc, subset)
+
+        whole = view.get_test()
+        chunked = list(view.iter_test(chunk_atoms=nloc))
+        self.assertEqual(whole["coord"].shape[0], len(subset))
+        self.assertEqual(sum(c["coord"].shape[0] for c in chunked), len(subset))
+        np.testing.assert_allclose(
+            np.concatenate([c["coord"] for c in chunked]), whole["coord"]
+        )
 
     def test_is_lmdb(self):
         self.assertTrue(is_lmdb(self._lmdb_path))
@@ -625,6 +1199,7 @@ class TestLmdbDataReader(unittest.TestCase):
                     atomic=False,
                     must=False,
                     high_prec=False,
+                    source_policy="derived",
                 )
             ]
         )
@@ -641,6 +1216,7 @@ class TestLmdbDataReader(unittest.TestCase):
             "min_pair_dist",
             ndof=1,
             default=0.25,
+            source_policy="derived",
         )
         config = LmdbDecodeConfig(
             ntypes=2,
@@ -659,6 +1235,47 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(frame["find_min_pair_dist"], np.float32(0.0))
         np.testing.assert_allclose(frame["min_pair_dist"], np.array([0.25]))
 
+    def test_derived_min_pair_dist_ignores_raw_presence_for_grouping(self):
+        """Derived fields neither partition frames nor trust stored values."""
+        path = _create_grid_lmdb(
+            f"{self._tmpdir.name}/derived_min_pair.lmdb",
+            nframes=2,
+        )
+        environment = lmdb.open(path, readonly=False, lock=False)
+        with environment.begin(write=True) as transaction:
+            key = format(0, "012d").encode()
+            frame = msgpack.unpackb(transaction.get(key), raw=False)
+            frame["min_pair_dist"] = {
+                "type": "<f8",
+                "shape": (1,),
+                "data": np.array([99.0], dtype=np.float64).tobytes(),
+            }
+            transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+        reader = LmdbDataReader(path, ["TYPE"], batch_size=1)
+        reader.add_data_requirement(
+            [
+                DataRequirementItem(
+                    "min_pair_dist",
+                    ndof=1,
+                    atomic=False,
+                    default=0.0,
+                    source_policy="derived",
+                )
+            ]
+        )
+        with mock.patch.object(
+            lmdb_data_module,
+            "_raw_frame_availability",
+            side_effect=AssertionError("derived fields must not probe raw presence"),
+        ):
+            groups = collect_lmdb_sampling_groups(reader)
+
+        self.assertEqual(len(groups), 1)
+        np.testing.assert_allclose(reader[0]["min_pair_dist"], [1.0])
+        np.testing.assert_allclose(reader[1]["min_pair_dist"], [1.0])
+
 
 # ============================================================
 # Mixed nloc tests
@@ -666,7 +1283,7 @@ class TestLmdbDataReader(unittest.TestCase):
 
 
 class TestMixedNloc(unittest.TestCase):
-    """Tests for mixed-nloc datasets and SameNlocBatchSampler."""
+    """Tests for mixed-nloc datasets and LmdbBatchSampler."""
 
     @classmethod
     def setUpClass(cls):
@@ -702,18 +1319,20 @@ class TestMixedNloc(unittest.TestCase):
 
     def test_frame_nlocs(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        self.assertEqual(reader.frame_nlocs, [6, 6, 6, 6, 9, 9, 9, 9, 12, 12])
+        np.testing.assert_array_equal(
+            reader.frame_nlocs, [6, 6, 6, 6, 9, 9, 9, 9, 12, 12]
+        )
 
     def test_sampler_all_batches_same_nloc(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        sampler = SameNlocBatchSampler(reader, shuffle=False, seed=42)
+        sampler = LmdbBatchSampler(reader, shuffle=False, seed=42)
         for batch_indices in sampler:
             nlocs = [reader.frame_nlocs[i] for i in batch_indices]
             self.assertTrue(all(n == nlocs[0] for n in nlocs))
 
     def test_sampler_covers_all_frames(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        sampler = SameNlocBatchSampler(reader, shuffle=False, seed=42)
+        sampler = LmdbBatchSampler(reader, shuffle=False, seed=42)
         all_indices = [i for batch in sampler for i in batch]
         self.assertEqual(sorted(all_indices), list(range(10)))
 
@@ -725,14 +1344,412 @@ class TestMixedNloc(unittest.TestCase):
 
     def test_sampler_shuffle_deterministic(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        s1 = SameNlocBatchSampler(reader, shuffle=True, seed=123)
-        s2 = SameNlocBatchSampler(reader, shuffle=True, seed=123)
+        s1 = LmdbBatchSampler(reader, shuffle=True, seed=123)
+        s2 = LmdbBatchSampler(reader, shuffle=True, seed=123)
+        # A seed reproduces the whole sequence of passes, not just the first.
         self.assertEqual(list(s1), list(s2))
+        self.assertEqual(list(s1), list(s2))
+
+    def test_sampler_reshuffles_between_passes(self):
+        """Every pass draws a fresh shuffle while still covering each frame once.
+
+        Training re-iterates the sampler whenever it exhausts it, so a pass
+        that repeated the previous one would show the model the same batches
+        for the whole run.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
+        sampler = LmdbBatchSampler(reader, shuffle=True, seed=5)
+        first = [list(batch) for batch in sampler]
+        second = [list(batch) for batch in sampler]
+        self.assertNotEqual(first, second)
+        self.assertEqual(
+            sorted(index for batch in first for index in batch),
+            sorted(index for batch in second for index in batch),
+        )
 
     def test_sampler_len(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        sampler = SameNlocBatchSampler(reader, shuffle=False)
+        sampler = LmdbBatchSampler(reader, shuffle=False)
         self.assertEqual(len(sampler), len(list(sampler)))
+
+    def test_mix_batches_span_several_nlocs(self):
+        """``mix:N`` puts frames of different atom counts in one batch.
+
+        Frames are sorted by atom count before batches are filled, so a batch
+        spans several counts exactly where a budget boundary falls inside the
+        sorted run. The budget here is chosen to land on such a boundary.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:18")
+        self.assertTrue(reader.mixed_nloc)
+        batches = list(LmdbBatchSampler(reader, shuffle=False))
+        spanned = max(len({reader.frame_nlocs[i] for i in batch}) for batch in batches)
+        self.assertGreater(spanned, 1)
+
+    def test_mix_merges_small_neighbouring_atom_count_groups(self):
+        """Nearby atom counts share a batch instead of one tiny batch each.
+
+        This is what ``mix:N`` buys over ``max:N``: an atom-count group too
+        small to fill a batch on its own no longer forces an under-filled
+        step. The gain needs the counts to be close, since padding costs
+        ``nframes * max_nloc``; a lone outlier size still batches alone.
+        """
+        path = f"{self._tmpdir.name}/graded.lmdb"
+        _create_mixed_sid_nloc_lmdb(
+            path,
+            system_specs=[(2, 6), (2, 7), (2, 8)],
+            type_map=self._type_map,
+        )
+        costs = {}
+        for spec in ("max:72", "mix:72"):
+            reader = LmdbDataReader(path, self._type_map, batch_size=spec)
+            costs[spec] = [
+                len(b) * reader.batch_pad_nloc(b)
+                for b in LmdbBatchSampler(reader, shuffle=False)
+            ]
+        # One under-filled batch per atom-count group, against a single full one.
+        self.assertEqual(len(costs["max:72"]), 3)
+        self.assertEqual(costs["mix:72"], [6 * 8])
+
+    def test_mix_respects_the_atom_budget(self):
+        """A batch's padded cost stays within the budget above one frame."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        for batch in LmdbBatchSampler(reader, shuffle=True, seed=3):
+            cost = len(batch) * reader.batch_pad_nloc(batch)
+            self.assertTrue(len(batch) == 1 or cost <= 36, (len(batch), cost))
+
+    def test_mix_covers_every_frame_once(self):
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        indices = [
+            i for batch in LmdbBatchSampler(reader, shuffle=True, seed=5) for i in batch
+        ]
+        self.assertEqual(sorted(indices), list(range(len(reader))))
+
+    def test_mix_len_matches_iteration(self):
+        """The batch count depends on the shuffle, so ``len`` must reuse it."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        sampler = LmdbBatchSampler(reader, shuffle=True, seed=9)
+        self.assertEqual(len(sampler), len(list(sampler)))
+
+    def test_mix_shuffle_deterministic(self):
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        s1 = LmdbBatchSampler(reader, shuffle=True, seed=17)
+        s2 = LmdbBatchSampler(reader, shuffle=True, seed=17)
+        self.assertEqual(list(s1), list(s2))
+
+    def test_mix_pads_the_atom_axis_only(self):
+        """Padding widens per-atom fields and leaves frame-level ones alone."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [
+                DataRequirementItem("energy", 1, atomic=False, must=False),
+                DataRequirementItem("force", 3, atomic=True, must=False),
+            ]
+        )
+        # Frames 0 and 8 hold 6 and 12 atoms respectively.
+        batch = reader.decode_batch([0, 8])
+        self.assertEqual(batch["coord"].shape, (2, 12, 3))
+        self.assertEqual(batch["atype"].shape, (2, 12))
+        self.assertEqual(batch["force"].shape, (2, 12, 3))
+        self.assertEqual(batch["box"].shape, (2, 9))
+        self.assertEqual(batch["energy"].shape, (2, 1))
+
+        # The short frame keeps its six atoms; the tail is inert.
+        np.testing.assert_array_equal(batch["atype"][0, 6:], -1)
+        self.assertTrue(np.all(batch["atype"][0, :6] >= 0))
+        np.testing.assert_array_equal(batch["coord"][0, 6:], 0.0)
+        np.testing.assert_array_equal(batch["force"][0, 6:], 0.0)
+        np.testing.assert_array_equal(batch["atype"][1], reader[8]["atype"])
+
+        # Atom counts stay the real per-frame values, not the padded width.
+        self.assertEqual(batch["natoms"][0, 0], 6)
+        self.assertEqual(batch["natoms"][1, 0], 12)
+
+    def test_mix_pads_repeated_per_atom_fields(self):
+        """A ``repeat != 1`` requirement is stored flat but still padded by atom.
+
+        ``atom_pref`` spends ``repeat`` leading entries per atom instead of
+        one, so its padded width is ``pad_nloc * repeat``.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [DataRequirementItem("atom_pref", 1, atomic=True, must=False, repeat=3)]
+        )
+        # Frames 0 and 8 hold 6 and 12 atoms respectively.
+        batch = reader.decode_batch([0, 8])
+        self.assertEqual(batch["atom_pref"].shape, (2, 12 * 3))
+        np.testing.assert_array_equal(batch["atom_pref"][0, 6 * 3 :], 0.0)
+
+    def test_mix_chunked_decode_matches_in_process_decode(self):
+        """Splitting a padded batch across workers reproduces it exactly.
+
+        Each chunk pads and lays out its fields independently, so a mixed-nloc
+        batch is the case where the chunks can disagree: they start on frames
+        of different atom counts.
+        """
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [
+                DataRequirementItem("force", 3, atomic=True, must=False),
+                DataRequirementItem("atom_pref", 1, atomic=True, must=False, repeat=3),
+            ]
+        )
+        # Frames 0 and 8 hold 6 and 12 atoms; one per chunk puts the wide
+        # frame second, so a per-chunk layout would size the chunks differently.
+        indices = [0, 8]
+        layout = reader.batch_layout(indices)
+        chunks = [
+            lmdb_data_module.decode_lmdb_batch(
+                reader._transaction(),
+                [key],
+                reader.frame_format,
+                reader._decode_config,
+                layout.chunk(position, position + 1),
+            )
+            for position, key in enumerate(reader.original_keys(indices))
+        ]
+        merged = lmdb_data_module._merge_lmdb_chunks(chunks)
+        expected = reader.decode_batch(indices)
+        self.assertEqual(sorted(merged), sorted(expected))
+        for field, value in expected.items():
+            np.testing.assert_array_equal(merged[field], value, err_msg=field)
+
+    def test_mix_keeps_frame_fields_of_ambiguous_shape(self):
+        """``fparam`` and ``virial`` are never padded, whatever the atom count."""
+        path = _create_mix_probe_lmdb(f"{self._tmpdir.name}/probe.lmdb")
+        reader = LmdbDataReader(path, self._type_map, batch_size="mix:36")
+        reader.add_data_requirement(
+            [
+                DataRequirementItem("virial", 9, atomic=False, must=False),
+                DataRequirementItem("fparam", 2, atomic=False, must=False),
+                DataRequirementItem("force", 3, atomic=True, must=False),
+            ]
+        )
+        # A 2-atom frame makes fparam (2,) ambiguous; a 9-atom one does the
+        # same for virial (9,). Batching them together exercises both.
+        batch = reader.decode_batch([0, 1])
+        self.assertEqual(batch["fparam"].shape, (2, 2))
+        self.assertEqual(batch["virial"].shape, (2, 9))
+        self.assertEqual(batch["coord"].shape, (2, 9, 3))
+        np.testing.assert_array_equal(batch["fparam"][0], reader[0]["fparam"])
+        np.testing.assert_array_equal(batch["virial"][0], reader[0]["virial"])
+
+    def test_mix_tracks_the_atom_proportional_weighting(self):
+        """Packing to a budget must not distort how much each frame counts.
+
+        A batch is one optimizer step, and its frame-level terms (energy,
+        virial) average over the frames present, so a frame's weight in them
+        is ``1 / k_b``. An atom budget asks for ``k_b ~ budget / nloc``, that
+        is a weight proportional to atom count, matching what the pooled
+        per-atom terms give those frames unconditionally.
+        Same-nloc batching misses that ideal wherever an atom-count group is
+        too small to fill a batch: its few frames form a short batch and each
+        of them is over-weighted many times over. Filling batches across atom
+        counts removes that failure mode, and the residual error is the
+        padding, so both goals improve together.
+        """
+        path = f"{self._tmpdir.name}/skewed.lmdb"
+        # A few dominant atom counts plus a tail of groups too small to fill a
+        # batch, down to one holding a single frame. This is the shape of a
+        # real merged dataset in miniature, and the tail is where same-nloc
+        # batching goes wrong.
+        _create_mixed_sid_nloc_lmdb(
+            path,
+            system_specs=[
+                (120, 6),
+                (80, 8),
+                (60, 10),
+                (3, 12),
+                (2, 14),
+                (2, 16),
+                (1, 20),
+            ],
+            type_map=self._type_map,
+        )
+        budget = 120
+
+        def weighting_error(spec):
+            """Log-spread of the frame weight against the ideal, and its worst case."""
+            reader = LmdbDataReader(path, self._type_map, batch_size=spec)
+            nlocs = np.asarray(reader.frame_nlocs, dtype=np.float64)
+            batches = LmdbBatchSampler(reader, shuffle=True, seed=0).batches()
+            weight = np.empty(len(nlocs))
+            for batch in batches:
+                weight[batch] = 1.0 / len(batch)
+            slots = sum(len(b) * reader.batch_pad_nloc(b) for b in batches)
+            # Weights matter only up to a global scale, which is the learning
+            # rate, so normalize both sides to mean 1 before comparing.
+            ratio = (weight / weight.mean()) / (nlocs / nlocs.mean())
+            return np.std(np.log(ratio)), ratio.max(), nlocs.sum() / slots
+
+        same_spread, same_worst, same_efficiency = weighting_error(f"max:{budget}")
+        mix_spread, mix_worst, mix_efficiency = weighting_error(f"mix:{budget}")
+
+        self.assertEqual(same_efficiency, 1.0)
+        self.assertGreater(mix_efficiency, 0.95)
+        # Both the typical and the worst-case deviation shrink by a wide
+        # margin; the thresholds leave room for the packing to change.
+        self.assertLess(mix_spread, 0.5 * same_spread)
+        self.assertLess(mix_worst, 0.5 * same_worst)
+
+    def test_mix_cuts_a_batch_only_when_the_next_frame_does_not_fit(self):
+        """No batch is closed early, which is what keeps batches full.
+
+        Sorting a sliding window instead of the whole group would break this:
+        each window boundary closes a batch regardless of how full it is, and
+        an under-filled batch over-weights every frame it holds.
+        """
+        budget = 36
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:36")
+        # Chop the group directly, which keeps the batches in the atom-count
+        # order the greedy produced them in.
+        batches = _chop_mixed_nloc(reader, list(range(len(reader))))
+        for batch, following in pairwise(batches):
+            next_nloc = min(reader.frame_nlocs[index] for index in following)
+            self.assertGreater((len(batch) + 1) * next_nloc, budget)
+
+    def _ragged_reader(self, batch_size="mix:36"):
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=batch_size)
+        reader.add_data_requirement(
+            [
+                DataRequirementItem("force", 3, atomic=True, must=False),
+                DataRequirementItem("energy", 1, atomic=False, must=False),
+            ]
+        )
+        reader.use_ragged_batches(True)
+        return reader
+
+    def test_ragged_layout_concatenates_the_frames(self):
+        """The ragged layout carries the same rows on a flat, unpadded axis."""
+        rectangular = LmdbDataReader(
+            self._lmdb_path, self._type_map, batch_size="mix:36"
+        )
+        rectangular.add_data_requirement(
+            [
+                DataRequirementItem("force", 3, atomic=True, must=False),
+                DataRequirementItem("energy", 1, atomic=False, must=False),
+            ]
+        )
+        ragged = self._ragged_reader()
+
+        # Frames 0 and 8 hold 6 and 12 atoms respectively.
+        indices = [0, 8]
+        padded = rectangular.decode_batch(indices)
+        flat = ragged.decode_batch(indices)
+
+        self.assertEqual(padded["coord"].shape, (2, 12, 3))
+        self.assertEqual(flat["coord"].shape, (18, 3))
+        self.assertEqual(flat["atype"].shape, (18,))
+        self.assertEqual(flat["force"].shape, (18, 3))
+        np.testing.assert_array_equal(flat["n_node"], [6, 12])
+        self.assertTrue((flat["atype"] >= 0).all(), "a ragged batch pads nothing")
+        # Frame-level fields keep their frame axis under either layout.
+        self.assertEqual(flat["energy"].shape, padded["energy"].shape)
+        self.assertEqual(flat["box"].shape, padded["box"].shape)
+
+        offset = 0
+        for row, count in enumerate(flat["n_node"].tolist()):
+            for field in ("coord", "atype", "force"):
+                np.testing.assert_array_equal(
+                    padded[field][row, :count],
+                    flat[field][offset : offset + count],
+                    err_msg=field,
+                )
+            offset += count
+
+    def test_ragged_chunked_decode_matches_in_process_decode(self):
+        """Chunks concatenate on the flat axis, so a split decode is the same."""
+        reader = self._ragged_reader()
+        indices = [0, 8]
+        layout = reader.batch_layout(indices)
+        chunks = [
+            lmdb_data_module.decode_lmdb_batch(
+                reader._transaction(),
+                [key],
+                reader.frame_format,
+                reader._decode_config,
+                layout.chunk(position, position + 1),
+            )
+            for position, key in enumerate(reader.original_keys(indices))
+        ]
+        merged = lmdb_data_module._merge_lmdb_chunks(chunks)
+        expected = reader.decode_batch(indices)
+        self.assertEqual(sorted(merged), sorted(expected))
+        for field, value in expected.items():
+            np.testing.assert_array_equal(merged[field], value, err_msg=field)
+
+    def test_ragged_packing_fills_on_real_atoms_and_keeps_the_caller_order(self):
+        """Without padding the budget counts real atoms, and sorting is dropped.
+
+        Sorting exists only to keep a rectangular batch's padded width close to
+        its frames. A ragged batch has no width, so sorting would merely make
+        each optimizer step homogeneous in system size.
+        """
+        budget = 36
+        ragged = self._ragged_reader(batch_size=f"mix:{budget}")
+        nlocs = np.asarray(ragged.frame_nlocs)
+        # The fixture stores its frames in ascending atom count, so hand them
+        # over reversed: only then does sorting leave a visible trace.
+        group = list(reversed(range(len(ragged))))
+        batches = _chop_mixed_nloc(ragged, group)
+
+        for batch in batches:
+            if len(batch) > 1:
+                self.assertLessEqual(int(nlocs[batch].sum()), budget)
+        self.assertEqual(sorted(index for b in batches for index in b), sorted(group))
+        # The frames arrive in the order they were handed over, not sorted.
+        self.assertEqual([index for batch in batches for index in batch], group)
+
+        rectangular = LmdbDataReader(
+            self._lmdb_path, self._type_map, batch_size=f"mix:{budget}"
+        )
+        padded = _chop_mixed_nloc(rectangular, group)
+        self.assertEqual(
+            [int(nlocs[index]) for batch in padded for index in batch],
+            sorted(nlocs[group].tolist()),
+            "the rectangular layout must still sort by atom count",
+        )
+
+    def test_mix_uses_the_fewest_batches_possible(self):
+        """The packing attains the minimum batch count, not merely a good one.
+
+        The minimum is computed by dynamic programming over the sorted atom
+        counts. Its correctness rests on being free to take every batch
+        contiguous in that order: the batch holding the widest frame may be
+        given the widest frames outright, since its capacity ``budget // nloc``
+        does not depend on which frames fill it. The recurrence then closes
+        each batch at its widest frame,
+
+            steps[i] = 1 + steps[max(0, i - budget // nloc[i - 1])],
+
+        whereas the implementation opens each batch at its narrowest. The two
+        must agree.
+        """
+        for budget in (18, 36, 72):
+            with self.subTest(budget=budget):
+                reader = LmdbDataReader(
+                    self._lmdb_path, self._type_map, batch_size=f"mix:{budget}"
+                )
+                nlocs = sorted(reader.frame_nlocs)
+                steps = [0] * (len(nlocs) + 1)
+                for i in range(1, len(nlocs) + 1):
+                    capacity = max(1, budget // nlocs[i - 1])
+                    steps[i] = 1 + steps[max(0, i - capacity)]
+                batches = _chop_mixed_nloc(reader, list(range(len(reader))))
+                self.assertEqual(len(batches), steps[len(nlocs)])
+
+    def test_mix_distributed_partition_is_disjoint_and_complete(self):
+        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="mix:24")
+        ranks = [
+            DistributedLmdbBatchSampler(
+                reader, rank=rank, world_size=2, shuffle=True, seed=4
+            )
+            for rank in (0, 1)
+        ]
+        batches = [list(sampler) for sampler in ranks]
+        for sampler, own in zip(ranks, batches, strict=True):
+            self.assertEqual(len(sampler), len(own))
+        indices = [i for own in batches for batch in own for i in batch]
+        self.assertEqual(sorted(indices), list(range(len(reader))))
 
     # --- LmdbTestData mixed-nloc tests ---
 
@@ -803,7 +1820,9 @@ class TestMixedNloc(unittest.TestCase):
             shuffle_test=True,
         )
 
-        self.assertEqual(first.nloc_groups, second.nloc_groups)
+        self.assertEqual(set(first.nloc_groups), set(second.nloc_groups))
+        for nloc, first_indices in first.nloc_groups.items():
+            np.testing.assert_array_equal(first_indices, second.nloc_groups[nloc])
 
     def test_test_data_get_test_default_mixed(self):
         td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
@@ -941,7 +1960,7 @@ class TestTypeMapRemapping(unittest.TestCase):
 
 class TestAutoProb(unittest.TestCase):
     """Test auto_prob support: frame_system_ids, compute_block_targets,
-    _expand_indices_by_blocks, and SameNlocBatchSampler with block_targets.
+    _expand_indices_by_blocks, and LmdbBatchSampler with block_targets.
     """
 
     @classmethod
@@ -1079,9 +2098,7 @@ class TestAutoProb(unittest.TestCase):
             nsystems=3,
             system_nframes=[100, 200, 300],
         )
-        sampler = SameNlocBatchSampler(
-            reader, shuffle=True, block_targets=block_targets
-        )
+        sampler = LmdbBatchSampler(reader, shuffle=True, block_targets=block_targets)
         all_indices = [i for batch in sampler for i in batch]
         self.assertGreater(len(all_indices), 600)
         self.assertEqual(len(set(all_indices)), 600)
@@ -1092,21 +2109,25 @@ class TestAutoProb(unittest.TestCase):
         class TwoSignatureReader:
             """Minimal reader exposing two one-frame availability groups."""
 
+            mixed_nloc = False
+            data_requirements_revision = 0
+
             def __init__(self):
                 self.nloc_groups = {6: [0, 1]}
                 self.frame_system_ids = [0, 0]
+                self.frame_nlocs = [6, 6]
 
             @staticmethod
-            def group_indices_by_find_signature(indices):
+            def availability_groups(indices):
                 self.assertEqual(indices, [0, 1])
-                return {(0.0,): [0], (1.0,): [1]}
+                return [[0], [1]]
 
             @staticmethod
             def get_batch_size_for_nloc(nloc):
                 self.assertEqual(nloc, 6)
                 return 1
 
-        sampler = SameNlocBatchSampler(
+        sampler = LmdbBatchSampler(
             TwoSignatureReader(),
             shuffle=False,
             block_targets=[([0], 3)],
@@ -1118,9 +2139,29 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(sum(map(len, batches)), 3)
         self.assertEqual(sorted(counts), [1, 2])
 
+    def test_sampler_tolerates_blocks_that_omit_a_system(self):
+        """A system no auto_prob block names is passed through, not rejected.
+
+        ``prob_sys_size`` slices name a prefix of the systems, so the tail is
+        routinely unnamed. Those frames belong to no block and are neither
+        expanded nor dropped.
+        """
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
+        block_targets = compute_block_targets(
+            "prob_sys_size;0:1:0.5;1:2:0.5",
+            nsystems=3,
+            system_nframes=[100, 200, 300],
+        )
+        sampler = LmdbBatchSampler(reader, shuffle=False, block_targets=block_targets)
+        indices = [index for batch in sampler for index in batch]
+        # Every frame of the unnamed third system survives exactly once.
+        third = [index for index in indices if reader.frame_system_ids[index] == 2]
+        self.assertEqual(sorted(third), sorted(set(third)))
+        self.assertEqual(len(third), 300)
+
     def test_sampler_without_block_targets(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
-        sampler = SameNlocBatchSampler(reader, shuffle=False)
+        sampler = LmdbBatchSampler(reader, shuffle=False)
         all_indices = [i for batch in sampler for i in batch]
         self.assertEqual(sorted(all_indices), list(range(600)))
 
@@ -1295,7 +2336,7 @@ class TestMaxFilterBatchSize(unittest.TestCase):
         )
         self.assertEqual(len(reader), 8)
         self.assertEqual(len(reader._retained_keys), 8)
-        self.assertEqual(reader._retained_keys, [0, 1, 2, 3, 4, 5, 6, 7])
+        np.testing.assert_array_equal(reader._retained_keys, [0, 1, 2, 3, 4, 5, 6, 7])
 
         seen_fids = []
         for i in range(len(reader)):
@@ -1317,11 +2358,11 @@ class TestMaxFilterBatchSize(unittest.TestCase):
             reader[-1]
 
     def test_sampler_with_filter(self):
-        """SameNlocBatchSampler only emits retained, same-nloc frames."""
+        """LmdbBatchSampler only emits retained, same-nloc frames."""
         reader = LmdbDataReader(
             self._mixed_path, self._type_map, batch_size="filter:10"
         )
-        sampler = SameNlocBatchSampler(reader, shuffle=False, seed=0)
+        sampler = LmdbBatchSampler(reader, shuffle=False, seed=0)
         all_batches = list(sampler)
         all_indices = [idx for batch in all_batches for idx in batch]
 
@@ -1354,22 +2395,6 @@ class TestMaxFilterBatchSize(unittest.TestCase):
                 LmdbDataReader(self._uniform_path, self._type_map, batch_size=spec)
             self.assertIn("positive", str(ctx.exception))
 
-    def test_filter_with_mixed_batch_rejected(self):
-        """``filter:N`` + ``mixed_batch=True`` must fail loudly.
-
-        The mixed-batch fast path skips the per-frame nloc scan, so
-        filter:N cannot honour its documented ``nloc > N`` drop.
-        """
-        with self.assertRaises(ValueError) as ctx:
-            LmdbDataReader(
-                self._mixed_path,
-                self._type_map,
-                batch_size="filter:10",
-                mixed_batch=True,
-            )
-        self.assertIn("filter", str(ctx.exception))
-        self.assertIn("mixed_batch", str(ctx.exception))
-
     def test_auto_prob_with_filter_still_works(self):
         """compute_block_targets + sampler survive a fully-dropped block."""
         path = f"{self._tmpdir.name}/auto_prob_filter.lmdb"
@@ -1399,7 +2424,7 @@ class TestMaxFilterBatchSize(unittest.TestCase):
         # Block 0 under-represented relative to weight → expansion needed.
         self.assertGreater(len(block_targets), 0)
 
-        sampler = SameNlocBatchSampler(
+        sampler = LmdbBatchSampler(
             reader, shuffle=False, seed=0, block_targets=block_targets
         )
         all_batches = list(sampler)

@@ -81,11 +81,26 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 
 - The key {ref}`batch_size <training/training_data/batch_size>` specifies the number of frames used to train or validate the model in a training step. It can be set to
   - `list`: the length of which is the same as the {ref}`systems`. The batch size of each system is given by the elements of the list.
+
   - `int`: all systems use the same batch size.
+
   - `"auto"`: the same as `"auto:32"`, see `"auto:N"`
+
   - `"auto:N"`: automatically determines the batch size so that the {ref}`batch_size <training/training_data/batch_size>` times the number of atoms in the system is **no less than** `N`.
+
   - `"max:N"`: automatically determines the batch size so that the {ref}`batch_size <training/training_data/batch_size>` times the number of atoms in the system is **no more than** `N`. The minimum batch size is 1. **Supported backends**: PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
+
   - `"filter:N"`: the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set. Throws an error if no system is left in a dataset. **Supported backends**: PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
+
+  - `"mix:N"`: mixed-nloc batching for LMDB data sets. Frames of different atom counts share a batch, which is closed only when the next frame would push its atom axis past `N`. How that axis is laid out follows from the model and needs no configuration of its own:
+
+    - A descriptor reading a **flat** node axis — the graph route of the PyTorch Exportable backend — takes the frames of a batch concatenated. `N` counts real atoms, nothing is padded, and the frames are packed in the shuffled order they arrive in, so one batch stays mixed in system size.
+
+    - Every other descriptor reads a **rectangular** `(nframes, nloc, ...)` axis, on which the frames of a batch must share one atom count. Frames are therefore sorted by atom count and padded up to the widest one of their batch, which makes `N` the padded-slot count `nframes * max_nloc`. The padded slots hold phantom atoms marked `atype = -1`, which the neighbor list, the model and the loss all skip. Sorting is what keeps their number small, and it also makes the packing optimal: no arrangement of the same frames under the same budget yields fewer batches.
+
+    Either way, a lone frame with more than `N` atoms still forms a batch of its own. Every other rule keeps a batch uniform in atom count, which leaves batches under-filled wherever an atom-count group is small; `"mix:N"` keeps them all close to `N` atoms instead. **Supported backends**: PyTorch {{ pytorch_icon }} (rectangular layout only), PyTorch Exportable
+
+    Filling batches also makes the *sampling weight* more faithful. Per-atom loss terms (force, atomic energy) pool over a batch's real labels, so a frame already counts in proportion to its atom count there. Frame-level terms (energy, virial) weigh the frames of a batch equally, so a frame counts for `1 / nframes`, and an atom budget makes `nframes` follow the atom count. `"max:N"` distorts that wherever an atom-count group is too small to fill a batch — its few frames form a short batch and each is over-weighted many times over — while `"mix:N"` packs them with their neighbours and lands much closer to the intended weighting.
 - The key {ref}`numb_batch <training/validation_data/numb_btch>` in {ref}`validate_data <training/validation_data>` gives the number of batches of model validation. Note that the batches may not be from the same system
 
 The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixed precision settings, which will enable the mixed precision training workflow for DeePMD-kit. The keys are explained below:

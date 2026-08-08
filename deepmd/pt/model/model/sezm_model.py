@@ -770,6 +770,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # Forward Methods
     # =========================================================================
 
+    def _sanitize_atom_types(
+        self,
+        atype: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return lookup-safe atom types and the physical-atom mask.
+
+        Phantom atoms use a negative type sentinel for rectangular mixed-nloc
+        padding. Every type-table lookup receives the safe tensor, while the
+        mask keeps the substituted row from acquiring physical meaning.
+        """
+        real_atom = self.atomic_model.make_atom_mask(atype)
+        safe_atype = torch.where(real_atom, atype, torch.zeros_like(atype))
+        return safe_atype, real_atom
+
     def forward(
         self,
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
@@ -1497,9 +1511,30 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ):
             spin = spin.detach().requires_grad_(True)
 
-        descriptor_atype = extended_atype if comm_dict is not None else atype
-        if descriptor_atype is None:
+        # === Atom mask ===
+        # Phantom atoms (atype < 0) pad a mixed-nloc batch to a rectangular
+        # shape and stand for no physical site. The edge builders keep them out
+        # of every edge, so the networks see them as isolated nodes, and the
+        # mask below zeroes whatever those nodes produce. Their type is still
+        # read as a table index by the type embedding, the fitting bias and the
+        # exclusion masks, none of which has a row for it. ``atype`` is
+        # therefore rebound to a sanitized copy for the remainder of this
+        # method, which is where a phantom would otherwise reach such a table.
+        # The substitute type is immaterial: it reaches no real atom through
+        # any edge, and the mask discards everything it produces.
+        atype, real_atom = self._sanitize_atom_types(atype)
+        atom_mask = real_atom.to(torch.int32)
+        if self.atomic_model.atom_excl is not None:
+            atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
+
+        if comm_dict is None:
+            descriptor_atype = atype
+        elif extended_atype is None:
             raise ValueError("`extended_atype` is required with `comm_dict`.")
+        else:
+            # Ghost atoms carry the type of the local atom they image, so this
+            # sanitizes the phantoms among them on the same grounds as above.
+            descriptor_atype, _ = self._sanitize_atom_types(extended_atype)
         inter_potential_edge_mask = self._make_inter_potential_edge_mask(
             descriptor_atype,
             edge_index,
@@ -1526,11 +1561,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 nloc=nloc,
             )
 
-        # === Atom mask ===
-        atom_mask = self.atomic_model.make_atom_mask(atype).to(torch.int32)
-        if self.atomic_model.atom_excl is not None:
-            atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
-
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
         # it to also return the last hidden activation.
@@ -1555,9 +1585,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             structural_feature = (
                 atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
             ).sum(dim=1)
+            # The per-atom outputs are zeroed on the phantom rows alone, so
+            # that a padded batch reports nothing for a slot holding no atom.
+            # Excluded atoms, which ``atom_mask`` also covers, keep their
+            # per-atom embeddings and are dropped from the pooled sum only.
+            real = real_atom[:, :, None]
             return {
-                "descriptor": descriptor,
-                "atomic_feature": atomic_feature,
+                "descriptor": descriptor * real.to(descriptor.dtype),
+                "atomic_feature": atomic_feature * real.to(atomic_feature.dtype),
                 "structural_feature": structural_feature,
             }
 
@@ -3239,8 +3274,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         atom_excl = self.atomic_model.atom_excl
         if atom_excl is not None:
-            atom_is_present = self.atomic_model.make_atom_mask(atype)
-            safe_atype = torch.where(atom_is_present, atype, 0)
+            safe_atype, atom_is_present = self._sanitize_atom_types(atype)
             atom_is_included = atom_is_present & atom_excl(safe_atype).to(torch.bool)
             atom_is_included = atom_is_included.reshape(-1)
             keep = (

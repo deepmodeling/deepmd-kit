@@ -148,6 +148,7 @@ class ModelWrapper(torch.nn.Module):
         task_key: str | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        n_node: torch.Tensor | None = None,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None, dict | None]:
         if not self.multi_task:
             task_key = "Default"
@@ -164,6 +165,7 @@ class ModelWrapper(torch.nn.Module):
             "fparam": fparam,
             "aparam": aparam,
             "charge_spin": charge_spin,
+            "n_node": n_node,
         }
         # ``spin`` (native or virtual-atom magnetic moment) is only accepted
         # by spin-capable model forward()s; mirrors
@@ -182,6 +184,10 @@ class ModelWrapper(torch.nn.Module):
         if label is None:
             return model_pred, None, None
 
+        # The width a rectangular batch pads its frames to. A ragged batch has
+        # none, so this is its whole atom count and the loss reads each frame's
+        # own from ``model_pred["n_node"]``; the terms that cannot express
+        # themselves per frame refuse such a batch rather than read this.
         natoms = atype.shape[-1]
         loss, more_loss = self.loss[task_key](
             cur_lr,
@@ -219,8 +225,17 @@ class ModelWrapper(torch.nn.Module):
         task_key: str,
         input_dict: dict[str, Any],
     ) -> dict[str, torch.Tensor]:
-        """Return model predictions without constructing a loss."""
-        return self.model[task_key](**input_dict)
+        """Return model predictions without constructing a loss.
+
+        ``n_node`` marks a batch whose frames are concatenated rather than
+        padded to a common atom count. Its node axis is already the one the
+        graph lower works on, so it takes the entry that skips the padding
+        round trip; ``forward`` accepts only the rectangular shape.
+        """
+        model = self.model[task_key]
+        if input_dict.get("n_node") is None:
+            return model(**{k: v for k, v in input_dict.items() if k != "n_node"})
+        return model.forward_ragged(**input_dict)
 
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state.get("model_params", {})

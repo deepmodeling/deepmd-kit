@@ -963,6 +963,7 @@ class TestNativeSpinConfigFormsPtExpt:
         spin_req = next(rr for rr in reqs if rr.key == "spin")
         assert spin_req.must is expected_must
         assert spin_req.default == 0.0
+        assert spin_req.source_policy == ("default" if allow_missing else "tracked")
 
 
 class TestPublicBaseModelRoundTrip:
