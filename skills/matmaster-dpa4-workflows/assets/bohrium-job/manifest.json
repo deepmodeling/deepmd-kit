@@ -1,0 +1,30 @@
+{
+  "run_id": "__RUN_ID__",
+  "workflow": "__TRAIN_FINETUNE_INFERENCE_OR_LAMMPS__",
+  "prepared_by": "__DEEPMD_SKILL__",
+  "project_id": "__PROJECT_ID__",
+  "image_address": "__FULL_IMAGE_ADDRESS__",
+  "machine_type": "__MACHINE_TYPE__",
+  "cases": [
+    {
+      "case_id": "__CASE_ID__",
+      "case_dir": "__RELATIVE_CASE_DIR__",
+      "entry_command": "bash run.sh",
+      "input_checksums": {},
+      "declared_outputs": [],
+      "attempts": [
+        {
+          "attempt": 0,
+          "job_id": null,
+          "group_id": null,
+          "retry_of": null,
+          "platform_status": "prepared",
+          "platform_verdict": null,
+          "reason": null,
+          "changed_platform_fields": [],
+          "result_dir": null
+        }
+      ]
+    }
+  ]
+}

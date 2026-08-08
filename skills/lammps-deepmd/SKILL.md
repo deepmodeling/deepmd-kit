@@ -2,12 +2,12 @@
 name: lammps-deepmd
 description: >
   A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and job execution via `uv` or offline binaries.
-  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (e.g., `graph.pb`).
-compatibility: Requires LAMMPS with DeePMD-kit support. Online mode prefers `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp`; offline mode requires a user-provided LAMMPS executable or module.
+  USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (for example `.pb`, `.pth`, or DPA4/SeZM `.pt2`).
+compatibility: Requires LAMMPS with DeePMD-kit support. Online mode uses `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp`; offline mode requires a user-provided LAMMPS executable or module.
 license: LGPL-3.0-or-later
 metadata:
   author: OpenClaw
-  version: '1.0'
+  version: '1.1'
   repository: https://github.com/deepmodeling/deepmd-kit
   lammps_docs: https://docs.lammps.org/
 ---
@@ -20,14 +20,16 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 
 1. Confirm the available execution mode:
    - **Online mode**: if internet access is available and `uv` is installed, prefer
-     `uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp ...`
+     `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp ...`
    - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
 1. Confirm the minimum simulation inputs:
    - structure/data file (for example `data.system`)
-   - DeePMD model file (for example `graph.pb` or compressed model)
-   - atom type to element mapping, including required per-type masses if the data file does not define them
-   - target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
-   - temperature, pressure if applicable, timestep, and total number of steps
+
+- DeePMD model artifact; read `references/model-deployment.md` for a training checkpoint, DPA4/SeZM, or an unclear export path
+- atom type to element mapping, including required per-type masses if the data file does not define them
+- target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
+- temperature, pressure if applicable, timestep, and total number of steps
+
 1. Write the LAMMPS input script yourself instead of asking the user to hand-write it.
 1. Keep the example readable and fully explained. If you include an example input script, explain what **every command** does.
 1. When possible, validate command availability against the LAMMPS docs or local `lmp -h` output before execution.
@@ -40,19 +42,21 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 Use:
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
 ```
 
 If you need to inspect the local command-line help:
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
 ```
 
 Notes:
 
 - This is the preferred path because it can provision LAMMPS and DeePMD-kit on demand.
-- The `gpu,torch,lmp` extras match the requested runtime pattern from the user.
+- The pins match the LAMMPS dependency declared by the DPA4-capable
+  `deepmd-kit==3.2.0b0` release. Update both pins together after validating a
+  newer pair.
 - If the environment is slow or the packages are large, warn the user that the first run may take time.
 
 ### Offline mode
@@ -81,6 +85,7 @@ Ask only for what is missing:
 ## Recommended workflow
 
 1. Inspect available files in the working directory.
+1. Read `references/model-deployment.md` when the model needs export, its artifact type is unclear, or explicit element mapping is required.
 1. Draft `input.lammps`.
 1. Explain the script to the user if they asked for an explanation or if the script is nontrivial.
 1. Run a short smoke test first when reasonable.
@@ -280,13 +285,13 @@ When using NPT, it is often useful to keep `vol`, `lx`, `ly`, and `lz` in the th
 ### Online run
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -in input.lammps
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
 ```
 
 ### Online help
 
 ```bash
-uvx --from lammps --with deepmd-kit[gpu,torch,lmp] lmp -h | tee /dev/tty
+uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
 ```
 
 ### Offline run
@@ -321,3 +326,4 @@ After a run, report at least:
 - DeePMD-kit: https://github.com/deepmodeling/deepmd-kit
 - User-provided tutorial reference: https://github.com/tongzhugroup/Chapter13-tutorial/blob/master/input.lammps
 - Detailed notes: `references/commands-and-workflow.md`
+- Model artifact, export, and type-mapping notes: `references/model-deployment.md`
