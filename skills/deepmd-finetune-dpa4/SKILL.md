@@ -37,38 +37,16 @@ DPA3, and stop when the family cannot be established.
 
 ## Obtain a pretrained checkpoint
 
-Fine-tuning requires a DPA4/SeZM **training checkpoint** (`.pt`), not a compiled
-`.pt2` deployment archive. First check the registry exposed by the installed
-version:
+Fine-tuning requires a DPA4/SeZM training checkpoint (`.pt`), not a `.pt2`
+deployment archive. Check whether the installed version provides one:
 
 ```bash
 dp pretrained download -h
 ```
 
-Use a built-in model only when an exact DPA4/SeZM name is listed there. Do not
-guess `dp pretrained download DPA4`: some releases have no registered DPA4
-checkpoint.
-
-For a workflow smoke test, a DeePMD-kit source checkout contains:
-
-```text
-examples/water/dpa4/lmp/pretrained.pt
-```
-
-Use that file directly:
-
-```bash
-cp examples/water/dpa4/lmp/pretrained.pt ./pretrained.pt
-dp --pt show pretrained.pt descriptor fitting-net type-map
-```
-
-It is a compact O/H smoke-test model, not a general-purpose pretrained
-potential. For scientific fine-tuning, obtain a checkpoint from its documented
-publisher or train one with the same DeePMD-kit revision that will perform the
-fine-tuning. Pin and record the model source, checksum, DeePMD-kit revision,
-architecture, task branch, and `type_map`. Reject a checkpoint whose descriptor,
-element set/order, or architecture does not match the intended target. Prefer a
-bounded one-step compatibility run before a long job.
+Use only a listed model or a checkpoint supplied by the user or its publisher.
+Record its source and DeePMD-kit version, then verify its descriptor, branch,
+architecture, and `type_map` before use.
 
 ## Before fine-tuning
 
@@ -83,83 +61,15 @@ bounded one-step compatibility run before a long job.
 
 ## Decide whether to use LoRA
 
-Use **standard fine-tuning** by default when the target is multi-task, the domain
-shift is large, all parameters should adapt, or the workflow combines untested
-spin/property/denoising/ZBL changes. Use **LoRA** when the target is single-task,
-parameter-efficient adaptation is desired, the downstream domain is reasonably
-close to pretraining, and the exact base architecture is known. DPA4 LoRA is
-supported by `dp --pt`; do not use it with the exportable training backend.
+Use standard fine-tuning by default. Use LoRA only for a single-task target when
+parameter-efficient adaptation is wanted and the exact base architecture is
+known. LoRA is enabled by a non-null `model.lora` block in the new input; the
+pretrained checkpoint does not need to contain LoRA. Multi-task LoRA targets are
+unsupported.
 
-The pretrained checkpoint does not need to contain LoRA. LoRA is enabled by the
-new fine-tuning input through a non-null `model.lora` block. Check an input with:
-
-```bash
-python - input.json <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    config = json.load(stream)
-
-model = config.get("model", {})
-branches = model.get("model_dict")
-lora = model.get("lora")
-print("multi_task =", isinstance(branches, dict))
-print("lora =", lora)
-print("use_lora =", lora is not None)
-if isinstance(branches, dict) and lora is not None:
-    raise SystemExit("DPA4 LoRA targets must be single-task")
-PY
-```
-
-Interpretation:
-
-- absent or `null` `model.lora` means standard fine-tuning;
-- a `model.lora` mapping means LoRA fine-tuning;
-- a multi-task target plus LoRA is unsupported.
-
-To diagnose whether a `.pt` file still contains **active, unmerged** LoRA state,
-inspect its saved model parameters and adapter tensors without executing pickled
-code:
-
-```bash
-python - pretrained.pt <<'PY'
-import sys
-import torch
-
-raw = torch.load(sys.argv[1], map_location="cpu", weights_only=True)
-state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
-if not isinstance(state, dict):
-    raise TypeError(f"Unsupported checkpoint payload: {type(state).__name__}")
-
-extra = state.get("_extra_state", {})
-params = extra.get("model_params", {}) if isinstance(extra, dict) else {}
-configured = params.get("lora") if isinstance(params, dict) else None
-markers = (".A_by_l", ".B_by_l", ".A_m0", ".B_m0", ".A_m.", ".B_m.", ".lora_scaling")
-adapter_keys = sorted(
-  key for key in state if any(marker in key for marker in markers)
-)
-
-print("configured_lora =", configured)
-print("adapter_tensor_count =", len(adapter_keys))
-for key in adapter_keys[:20]:
-    print("adapter_tensor =", key)
-
-if configured is not None and adapter_keys:
-    print("classification = active/unmerged LoRA checkpoint")
-elif configured is not None or adapter_keys:
-    print("classification = inconsistent or transitional; inspect before use")
-else:
-    print("classification = plain checkpoint or merged LoRA checkpoint")
-PY
-```
-
-Do not infer training history from the last classification. Validation-selected
-best LoRA checkpoints fold adapter deltas into ordinary DPA4 weights and remove
-LoRA metadata/tensors, so they intentionally look plain. Such merged checkpoints
-are suitable for evaluation, new fine-tuning, and `.pt2` export, but do not carry
-the optimizer/EMA state needed to resume the same LoRA run. Periodic/final LoRA
-checkpoints retain active adapters and are the resumable form.
+Periodic LoRA checkpoints retain adapters and can resume training. Best
+checkpoints may merge the adapters into ordinary DPA4 weights, so absence of
+LoRA metadata does not prove LoRA was never used.
 
 ## Standard fine-tuning
 
@@ -217,12 +127,9 @@ dp --pt train lora_ft.json --finetune pretrained.pt
 ```
 
 The JSON fragment above is not a complete training input. Adapt the full public
-example at `../../examples/water/dpa4/lora_ft.json`, but copy the architecture
-from the actual source checkpoint before adding `model.lora`. The compact
-`examples/water/dpa4/lmp/pretrained.pt` does not match the larger architecture
-in the maintained `lora_ft.json` and must not be paired with it unchanged. Do
-not add `--use-pretrain-script` to this LoRA command unless a targeted test
-confirms that the intended LoRA configuration is retained.
+example at `../../examples/water/dpa4/lora_ft.json`, but copy the exact
+architecture from the source checkpoint before adding `model.lora`. Do not add
+`--use-pretrain-script` unless a targeted test confirms that LoRA is retained.
 
 ## Monitor and validate
 
@@ -256,12 +163,12 @@ again when loading that archive.
 ## Checklist
 
 - [ ] The stored descriptor identifies DPA4/SeZM; the `.pt` suffix was not used as proof.
-- [ ] The checkpoint source, checksum, DeePMD-kit revision, architecture, and type map are recorded.
+- [ ] The checkpoint source, DeePMD-kit revision, architecture, and type map are recorded.
 - [ ] The intended branch is explicit for a multi-task checkpoint.
 - [ ] Training, validation, and held-out test systems are separate.
 - [ ] The input architecture is compatible with the checkpoint.
 - [ ] Standard fine-tuning versus LoRA was selected from the task layout and domain shift.
-- [ ] Active LoRA state versus a merged best checkpoint is interpreted correctly.
+- [ ] A resumable LoRA checkpoint is distinguished from a merged best checkpoint.
 - [ ] LoRA uses a complete base configuration and is not silently overwritten.
 - [ ] Training and held-out metrics are finite and reported with units.
 - [ ] The selected `.pt` checkpoint was exported to and tested as `.pt2`.
