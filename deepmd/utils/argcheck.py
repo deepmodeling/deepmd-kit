@@ -5417,8 +5417,10 @@ def training_args(
         "set, checkpoints are written to the working directory."
     )
     doc_max_ckpt_keep = (
-        "The maximum number of checkpoints to keep. "
-        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "The maximum number of recent periodic checkpoints to keep for the "
+        "regular checkpoint family. The EMA checkpoint family inherits this "
+        "value by default unless `ema_ckpt_keep` overrides it. The oldest "
+        "checkpoints are deleted when a family's retention window is exceeded. "
         "Defaults to 5."
     )
     doc_ckpt_keep_ratio = (
@@ -5440,7 +5442,9 @@ def training_args(
     doc_ema_ckpt_keep = (
         "The maximum number of periodic EMA checkpoints to keep. "
         "EMA checkpoints use the same prefix-based cleanup rule as regular "
-        "training checkpoints, but with an EMA-specific checkpoint prefix."
+        "training checkpoints, but with an EMA-specific checkpoint prefix. "
+        "When unset, it inherits `max_ckpt_keep`, so both checkpoint families "
+        "retain the same number by default."
     )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
@@ -5508,7 +5512,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
+        "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
     doc_neighbor_graph_method = (
         "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
@@ -5591,7 +5597,7 @@ def training_args(
             [str, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_save_dir,
+            doc=supported_backends("pt", "pt_expt") + doc_save_dir,
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
@@ -5602,7 +5608,7 @@ def training_args(
             [float, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_ckpt_keep_ratio,
+            doc=supported_backends("pt", "pt_expt") + doc_ckpt_keep_ratio,
             extra_check=lambda x: x is None or 0.0 < x < 1.0,
             extra_check_errmsg="must be a fraction in the open interval (0, 1)",
         ),
@@ -5611,24 +5617,24 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_enable_ema,
+            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt") + doc_ema_decay,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
         Argument(
             "ema_ckpt_keep",
-            int,
+            [int, None],
             optional=True,
-            default=3,
-            doc=supported_backends("pt") + doc_ema_ckpt_keep,
-            extra_check=lambda x: x > 0,
+            default=None,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_ckpt_keep,
+            extra_check=lambda x: x is None or x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
         Argument(
@@ -5712,7 +5718,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt") + doc_zero_stage,
+            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",
@@ -5936,7 +5942,9 @@ def validating_args() -> Argument:
         "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
-        "which are controlled by `model.enable_tf32`."
+        "which are controlled by `model.enable_tf32`. The PyTorch Exportable "
+        "backend always runs at full ('highest') matmul precision, so the "
+        "option has no effect there."
     )
     doc_amp_infer = (
         "Whether to enable bf16 automatic mixed precision for eval-time forwards "
@@ -5960,7 +5968,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_ema_full_validation,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -6038,7 +6046,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_amp_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(
