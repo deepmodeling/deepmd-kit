@@ -2561,6 +2561,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "mlp_bias": self.mlp_bias,
                 "exclude_types": self.exclude_types,
                 "eps": self.eps,
+                # Kept in step with the dpmodel serialize contract so both
+                # backends' records carry the same keys.
+                "use_amp": self.use_amp,
                 "trainable": self.trainable,
                 "seed": self.seed,
                 "inner_clamp_r_inner": self.inner_clamp_r_inner,
