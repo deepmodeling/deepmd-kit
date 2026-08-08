@@ -211,6 +211,8 @@ class SpinChannels(NativeOP):
         If ``use_spin`` does not have one entry per real atom type.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
     def __init__(
         self,
         ntypes: int,
@@ -234,8 +236,9 @@ class SpinChannels(NativeOP):
         precision_dtype = PRECISION_DICT[self.precision.lower()]
 
         # === Per-type spin gate ===
-        # Deterministic from the configuration, so it is rebuilt rather than
-        # serialized. The trailing row is the padding type.
+        # Deterministic from the configuration (hence ``CONFIG_DERIVED_ARRAYS``),
+        # so it is rebuilt rather than serialized. The trailing row is the
+        # padding type.
         self.spin_mask = np.asarray(
             [1.0 if flag else 0.0 for flag in self.use_spin] + [0.0],
             dtype=precision_dtype,
@@ -257,6 +260,18 @@ class SpinChannels(NativeOP):
         self.adam_spin_quadrupole_weight = rng.normal(
             0.0, 1.0, size=(self.ntypes + 1,)
         ).astype(precision_dtype)
+
+        # === Branch gate ===
+        # One scalar on the whole branch, the only place all of it passes
+        # through: the families reach the fitting network by several routes
+        # and at two spin orders, so no weight inside the branch gates all of
+        # them, and a factor applied to the conditioned moment instead would
+        # enter the invariants quadratically and leave zero a stationary
+        # point. The descriptor applies it to the CALIBRATED block (see
+        # ``DescrptDPA4C._readout``), so a closed gate contributes exactly
+        # zero whatever the measured calibration is, and the compressed path
+        # carries it as a factor on the inverse deviation alone.
+        self.spin_gate = np.zeros((1,), dtype=precision_dtype)
 
         # Isometric half-vectorization of the two spin Grams. The quadrupole
         # block drops entry zero, its on-site self-term: the harmonic blocks
@@ -651,6 +666,7 @@ class SpinChannels(NativeOP):
                 "adam_spin_quadrupole_weight": to_numpy_array(
                     self.adam_spin_quadrupole_weight
                 ),
+                "spin_gate": to_numpy_array(self.spin_gate),
             },
         }
 
@@ -677,7 +693,7 @@ class SpinChannels(NativeOP):
         check_version_compatibility(data.pop("@version"), 1, 1)
         if data.pop("@class") != "SpinChannels":
             raise ValueError("Invalid serialized class for SpinChannels")
-        variables = data.pop("@variables")
+        variables = dict(data.pop("@variables"))
         obj = cls(**data)
         obj.set_variables(variables)
         return obj
@@ -700,6 +716,7 @@ class SpinChannels(NativeOP):
         self.adam_spin_quadrupole_weight = np.asarray(
             variables["adam_spin_quadrupole_weight"], dtype=precision_dtype
         )
+        self.spin_gate = np.asarray(variables["spin_gate"], dtype=precision_dtype)
 
     def set_spin_reference(self, reference: np.ndarray) -> None:
         """Store the per-type reference magnitudes.

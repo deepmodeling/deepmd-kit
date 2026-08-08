@@ -21,6 +21,9 @@ from deepmd.dpmodel.descriptor.dpa4c_nn import (
     enumerate_degree_triples,
     packed_l2_to_stf,
 )
+from deepmd.dpmodel.descriptor.dpa4c_nn.spin import (
+    SpinChannels,
+)
 from deepmd.dpmodel.utils import (
     neighbor_graph,
 )
@@ -778,7 +781,12 @@ SPIN_ATYPE = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
 
 
 def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
-    """Build a descriptor whose first atom type carries a magnetic moment."""
+    """Build a descriptor whose first atom type carries a magnetic moment.
+
+    The branch gate is opened, since a fresh descriptor starts spin-free by
+    design and the tests below are about the branch behind the gate. The gate
+    itself is covered by :class:`TestDPA4CSpinGate`.
+    """
     config: dict[str, Any] = {
         "rcut": 3.0,
         "ntypes": 2,
@@ -790,7 +798,10 @@ def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
         "use_spin": [True, False],
     }
     config.update(overrides)
-    return DescrptDPA4C(**config)
+    descriptor = DescrptDPA4C(**config)
+    if descriptor.spin is not None:
+        descriptor.spin.spin_gate[...] = 1.0
+    return descriptor
 
 
 def spin_reference_terms(
@@ -880,6 +891,89 @@ def vector_gram_selectors(descriptor: DescrptDPA4C) -> dict[str, np.ndarray]:
         "two_ion_anisotropy": (row == 0) & (column > channels),
         "bond": (row > channels) | (column > channels),
     }
+
+
+class TestDPA4CSpinGate:
+    """The scalar gate that carries the whole spin branch.
+
+    Activating a magnetic type on a spin-free pretraining releases weights
+    that never received a gradient, so the branch must start at the zero
+    function instead. No weight inside the branch can do that: the families
+    reach the fitting network by several routes and at two spin orders, and a
+    factor on the conditioned moment would enter the invariants quadratically
+    and leave zero a stationary point.
+    """
+
+    def setup_method(self) -> None:
+        self.descriptor = make_spin_descriptor()
+        rng = np.random.default_rng(5)
+        self.spin = rng.normal(size=(SPIN_ATYPE.size, 3))
+        self.graph = neighbor_graph.build_neighbor_graph(
+            SPIN_COORD,
+            SPIN_ATYPE,
+            None,
+            self.descriptor.get_rcut(),
+        )
+        self.atype = SPIN_ATYPE.reshape(-1)
+
+    def evaluate(self, spin: np.ndarray | None) -> np.ndarray:
+        return self.descriptor.call_graph(self.graph, self.atype, spin=spin)[0]
+
+    def test_fresh_descriptor_starts_spin_free(self) -> None:
+        """A freshly built descriptor closes the gate."""
+        fresh = DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float64",
+            seed=23,
+            use_spin=[True, False],
+        )
+        np.testing.assert_array_equal(fresh.spin.spin_gate, 0.0)
+
+    def spin_block(self, output: np.ndarray) -> np.ndarray:
+        start = self.descriptor.readout.get_dim_out()
+        return output[:, start : start + self.descriptor.spin.get_dim_out()]
+
+    def test_closed_gate_erases_the_whole_branch(self) -> None:
+        """A closed gate zeroes every family, for arbitrary moments.
+
+        Zero moments are not the spin-free reference here: the magnetic
+        effective coordination weighs the per-type mask rather than the
+        moment, so it survives ``s = 0`` and naming a type magnetic moves the
+        descriptor on its own. Only the gate removes that term as well.
+        """
+        assert np.any(self.spin_block(self.evaluate(np.zeros_like(self.spin))))
+        self.descriptor.spin.spin_gate[...] = 0.0
+        for moments in (self.spin, np.zeros_like(self.spin)):
+            np.testing.assert_array_equal(self.spin_block(self.evaluate(moments)), 0.0)
+
+    def test_invariants_are_linear_in_the_gate(self) -> None:
+        """Linearity is what leaves the closed gate a nonzero gradient.
+
+        A factor applied to the conditioned moment instead would reach the
+        degree-one Grams squared and the quadrupole Grams to the fourth
+        power, so its derivative would vanish with the gate itself.
+        """
+        unit = self.spin_block(self.evaluate(self.spin))
+        for gate in (0.25, -1.5, 3.0):
+            self.descriptor.spin.spin_gate[...] = gate
+            np.testing.assert_allclose(
+                self.spin_block(self.evaluate(self.spin)),
+                gate * unit,
+                rtol=1e-12,
+                atol=1e-14,
+            )
+
+    def test_serialization_carries_the_gate(self) -> None:
+        """The gate is trained state and therefore round-trips."""
+        self.descriptor.spin.spin_gate[...] = 0.42
+        payload = self.descriptor.spin.serialize()
+        np.testing.assert_allclose(
+            SpinChannels.deserialize(payload).spin_gate, 0.42, rtol=1e-12
+        )
 
 
 class TestDPA4CSpin:

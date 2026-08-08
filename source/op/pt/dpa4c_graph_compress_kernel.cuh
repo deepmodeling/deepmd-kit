@@ -904,10 +904,11 @@ __device__ __forceinline__ void accumulate_coupling_gradient(
 // Four independent lane groups share one warp. An incomplete final block
 // aliases inactive groups to the last valid node so every thread reaches each
 // block-wide barrier; stores from those groups are suppressed.
-template <int Channels, int Lmax, bool HasSpin>
-__global__ __launch_bounds__(Profile<Channels, Lmax, HasSpin>::Threads,
-                             2) void node_backward_kernel(Arguments args) {
-  using P = Profile<Channels, Lmax, HasSpin>;
+template <int Channels, int Lmax, bool HasSpin, int NodeLanes>
+__global__ __launch_bounds__(
+    Profile<Channels, Lmax, HasSpin, NodeLanes>::Threads,
+    2) void node_backward_kernel(Arguments args) {
+  using P = Profile<Channels, Lmax, HasSpin, NodeLanes>;
   constexpr int MaxComponents = 9;
   const int thread = threadIdx.x;
   const int group = thread / P::NodeWidth;
@@ -1957,12 +1958,63 @@ template <int Channels,
           bool Canonical,
           typename index_t>
 struct BackwardLauncher {
+  // Pick the node-group width from what the running device grants the two
+  // compiled kernels rather than from its architecture: the six shared arrays
+  // of the node backward scale with the group count and the scalar width, so
+  // the same source is shared-memory bound on a part with a 100 KB budget per
+  // multiprocessor and register bound on one with more than twice that.
+  //
+  // Widening the group halves that footprint and so buys resident warps, but
+  // every lane of a group reloads its node's shared state, so it also doubles
+  // the redundant load work. Measured across the scalar widths, the trade pays
+  // only where the narrow variant is starved of warps outright: at a quarter of
+  // the device's warp capacity the wide variant wins by 2.1 % of the whole
+  // backward, at a third the two are within noise, and above that the narrow
+  // variant wins by up to 3.6 %. The threshold is therefore stated against the
+  // device's own warp capacity, and the query is made once per configuration.
+  static bool prefer_wide_nodes() {
+    static const bool wide = [] {
+      using Narrow = Profile<Channels, Lmax, HasSpin, kNodeLanesNarrow>;
+      using Wide = Profile<Channels, Lmax, HasSpin, kNodeLanesWide>;
+      int narrow_blocks = 0;
+      int wide_blocks = 0;
+      cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &narrow_blocks,
+          node_backward_kernel<Channels, Lmax, HasSpin, kNodeLanesNarrow>,
+          Narrow::Threads, 0);
+      cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &wide_blocks,
+          node_backward_kernel<Channels, Lmax, HasSpin, kNodeLanesWide>,
+          Wide::Threads, 0);
+      int device = 0;
+      cudaGetDevice(&device);
+      int threads_per_sm = 0;
+      cudaDeviceGetAttribute(&threads_per_sm,
+                             cudaDevAttrMaxThreadsPerMultiProcessor, device);
+      const int warps_per_sm = threads_per_sm / kWarpSize;
+      const int narrow_warps = narrow_blocks * (Narrow::Threads / kWarpSize);
+      return wide_blocks > narrow_blocks && narrow_warps * 4 < warps_per_sm;
+    }();
+    return wide;
+  }
+
+  template <int NodeLanes>
+  static void launch_node_backward(const Arguments& args, cudaStream_t stream) {
+    using NodeProfile = Profile<Channels, Lmax, HasSpin, NodeLanes>;
+    const int node_blocks =
+        static_cast<int>((args.node_count + NodeProfile::NodeGroups - 1) /
+                         NodeProfile::NodeGroups);
+    node_backward_kernel<Channels, Lmax, HasSpin, NodeLanes>
+        <<<node_blocks, NodeProfile::Threads, 0, stream>>>(args);
+  }
+
   static void run(const Arguments& args, cudaStream_t stream) {
     using P = Profile<Channels, Lmax, HasSpin>;
-    const int node_blocks =
-        static_cast<int>((args.node_count + P::NodeGroups - 1) / P::NodeGroups);
-    node_backward_kernel<Channels, Lmax, HasSpin>
-        <<<node_blocks, P::Threads, 0, stream>>>(args);
+    if (prefer_wide_nodes()) {
+      launch_node_backward<kNodeLanesWide>(args, stream);
+    } else {
+      launch_node_backward<kNodeLanesNarrow>(args, stream);
+    }
     edge_backward_kernel<Channels, Lmax, HasModes, HasSpin, Canonical, index_t>
         <<<static_cast<int>(args.node_count), P::Threads, 0, stream>>>(args);
     // The reserved edge slots beyond the physical count are only known on the

@@ -1144,7 +1144,28 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         descriptor = xp.concat(blocks, axis=-1)
         mean = xp_asarray_nodetach(xp, self.mean, device=device)
         stddev = xp_asarray_nodetach(xp, self.stddev, device=device)
-        return (descriptor - mean[None, :]) / stddev[None, :]
+        calibrated = (descriptor - mean[None, :]) / stddev[None, :]
+        if self.spin is None:
+            return calibrated
+        # === Spin branch gate ===
+        # Applied to the CALIBRATED block, so a closed gate feeds the fitting
+        # network exactly zero whatever calibration was measured, and the
+        # compressed path reproduces it by scaling the inverse deviation of
+        # these columns alone -- an affine map that stays exact at zero.
+        gate = xp.astype(
+            xp_asarray_nodetach(xp, self.spin.spin_gate[...], device=device),
+            calibrated.dtype,
+        )
+        start = self.readout.get_dim_out()
+        stop = start + self.spin.get_dim_out()
+        return xp.concat(
+            [
+                calibrated[:, :start],
+                calibrated[:, start:stop] * gate,
+                calibrated[:, stop:],
+            ],
+            axis=-1,
+        )
 
     # === Backend primitives ===
     # A backend wrapper overrides these to reach native kernels; the equations
@@ -1491,29 +1512,31 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         geometric = np.zeros(geometry_dim, dtype=bool)
         geometric[: self.readout.get_dim_out()] = True
         geometric[geometry_dim - 2 :] = True
-        degenerate = geometric & (
-            ~np.isfinite(feature_rms) | (feature_rms <= self._STAT_EPS)
+        finite_positive = np.isfinite(feature_rms) & (feature_rms > 0.0)
+        invalid = measured & (
+            ~np.isfinite(feature_rms) | (geometric & ~finite_positive)
         )
-        if np.any(degenerate):
+        if np.any(invalid):
             raise ValueError(
-                "DPA4C output calibration requires non-degenerate finite "
-                f"geometric features, got RMS values {feature_rms.tolist()}"
+                "DPA4C output calibration requires finite measured feature "
+                "RMS values and strictly positive geometric RMS values, got "
+                "invalid output indices "
+                f"{np.array2string(np.flatnonzero(invalid), threshold=16)}"
             )
         type_table = to_numpy_array(self.type_embedding.call())[: self.ntypes]
         target_rms = float(np.sqrt(np.mean(np.square(type_table, dtype=np.float64))))
-        if not math.isfinite(target_rms) or target_rms <= self._STAT_EPS:
+        if not math.isfinite(target_rms) or target_rms <= 0.0:
             raise ValueError(
                 f"DPA4C type embedding has a degenerate calibration RMS {target_rms}"
             )
-        # A coordinate earns a preconditioner only where its measured scale is
-        # meaningful. The geometric block is already required to be
-        # non-degenerate above; the spin block is not, because a corpus whose
-        # moments are uniformly weak drives the quartic spin coordinates to a
-        # vanishing root mean square, and dividing by it would hand them an
-        # unbounded gain. Those coordinates keep the identity instead, which is
-        # the same treatment a coordinate that never activates receives.
-        conditioned = measured & np.isfinite(feature_rms)
-        conditioned &= feature_rms > self._STAT_EPS
+        # Geometric polynomial families span different degrees and therefore
+        # have no common absolute RMS threshold. Every positive finite
+        # geometric coordinate is calibrated. Weak spin coordinates retain
+        # the identity scale because their sampled magnitude can reflect the
+        # magnetic population rather than geometric degeneracy. The complete
+        # preconditioner is validated in storage precision below.
+        conditioned = measured & finite_positive
+        conditioned &= geometric | (feature_rms > self._STAT_EPS)
         geometry_stddev = np.ones(geometry_dim, dtype=np.float64)
         geometry_stddev[conditioned] = feature_rms[conditioned] / target_rms
         geometry_mean = np.zeros(geometry_dim, dtype=np.float64)
@@ -1539,12 +1562,40 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         geometry_stddev[mass] = mass_stddev / target_rms
 
         tail = np.zeros(self.channels, dtype=np.float64)
-        self.mean = np.concatenate([geometry_mean, tail]).astype(
-            PRECISION_DICT[self.precision]
+        output_mean = np.concatenate([geometry_mean, tail])
+        output_stddev = np.concatenate([geometry_stddev, tail + 1.0])
+        storage_dtype = np.dtype(PRECISION_DICT[self.precision])
+        with np.errstate(
+            divide="ignore",
+            invalid="ignore",
+            over="ignore",
+            under="ignore",
+        ):
+            stored_mean = output_mean.astype(storage_dtype)
+            stored_stddev = output_stddev.astype(storage_dtype)
+            inverse_stddev = np.reciprocal(stored_stddev)
+        invalid_mean = ~np.isfinite(stored_mean)
+        invalid_scale = (
+            ~np.isfinite(stored_stddev)
+            | (stored_stddev <= 0.0)
+            | ~np.isfinite(inverse_stddev)
+            | (inverse_stddev <= 0.0)
         )
-        self.stddev = np.concatenate([geometry_stddev, tail + 1.0]).astype(
-            PRECISION_DICT[self.precision]
-        )
+        if np.any(invalid_mean):
+            raise ValueError(
+                "DPA4C output calibration produced non-representable means "
+                f"in {storage_dtype.name} at output indices "
+                f"{np.array2string(np.flatnonzero(invalid_mean), threshold=16)}"
+            )
+        if np.any(invalid_scale):
+            raise ValueError(
+                "DPA4C output calibration produced scales that are not "
+                f"positive, finite, and invertible in {storage_dtype.name} "
+                "at output indices "
+                f"{np.array2string(np.flatnonzero(invalid_scale), threshold=16)}"
+            )
+        self.mean = stored_mean
+        self.stddev = stored_stddev
 
     def _calibration_frames(self, system: dict) -> list[dict]:
         """Draw the calibration frames of one sampled system.

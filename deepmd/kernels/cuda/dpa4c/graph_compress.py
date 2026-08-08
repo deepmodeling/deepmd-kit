@@ -201,6 +201,26 @@ class DescriptorProfile:
         """Return whether the compiled profile carries the spin families."""
         return self.spin_channels > 0
 
+    @property
+    def spin_slice(self) -> slice:
+        """Return the descriptor columns holding the spin invariants.
+
+        The layout closes with the spin invariants, the two moment divisors
+        and the center type tail, so the block is addressed from the end and
+        is empty for a spin-free profile.
+        """
+        stop = self.output_width - 2 - self.degree_channels[0]
+        vector_width = 1 + 2 * self.spin_channels
+        width = (
+            0
+            if not self.has_spin
+            else vector_width * (vector_width + 1) // 2
+            + 2
+            + 2 * self.degree_channels[2]
+            + 2 * self.spin_channels
+        )
+        return slice(stop - width, stop)
+
 
 def descriptor_profile(
     channels: int,
@@ -628,6 +648,17 @@ def build_compression_artifacts(
         output_inv_std = torch.reciprocal(
             descriptor.stddev.to(device=device, dtype=torch.float32)
         )
+        if profile.has_spin:
+            # The operator assembles the spin invariants without reading the
+            # branch gate, which the portable path applies to the calibrated
+            # block. Scaling the inverse deviation of those columns carries
+            # the gate exactly, in the forward and in the backward alike:
+            # the kernel pulls every output cotangent back through that same
+            # array. A closed gate is a zero slope, so the gate never
+            # restricts what may be compressed.
+            output_inv_std[profile.spin_slice] *= float(
+                torch.as_tensor(descriptor.spin.spin_gate).reshape(())
+            )
 
     records, coupling_entry, coupling_value = coupling_records(
         profile.channels,

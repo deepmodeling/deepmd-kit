@@ -54,6 +54,76 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
+    def _to_public_keys(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Rename one ``call_common`` result to the public energy-model keys.
+
+        The renaming is a property of the output definition, not of the node
+        axis, so it serves the rectangular and the ragged entry alike.
+
+        Parameters
+        ----------
+        model_ret : dict[str, torch.Tensor]
+            A ``call_common`` result, in internal ``<var>_<derivative>`` keys.
+        do_atomic_virial : bool
+            Whether the per-atom virial was requested and should be carried.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            The same tensors under the public names.
+        """
+        model_predict = {}
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad_r("energy"):
+            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
+        for key in ("mask", "n_node"):
+            if key in model_ret:
+                model_predict[key] = model_ret[key]
+        if self.atomic_output_def()["energy"].r_hessian:
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
+        return model_predict
+
+    def _translate_eager_call(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        atype: torch.Tensor,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Translate internal energy outputs at the public model boundary.
+
+        Parameters
+        ----------
+        model_ret : dict[str, torch.Tensor]
+            Result returned by a ``call_common`` entry.
+        atype : torch.Tensor
+            Atom types on the same node axis as the atomic outputs.
+        do_atomic_virial : bool, default: False
+            Whether the per-atom virial was requested.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model outputs.
+
+        Notes
+        -----
+        Native-spin models override this translation to add ``force_mag`` and
+        ``mask_mag``. Keeping the dispatch here lets rectangular and ragged
+        forwards share one implementation without duplicating a spin-specific
+        ``forward_ragged``.
+        """
+        del atype
+        return self._to_public_keys(model_ret, do_atomic_virial)
+
     def forward_lower_canonical_graph(
         self,
         atype: torch.Tensor,
@@ -297,45 +367,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             do_atomic_virial=do_atomic_virial,
             neighbor_list=neighbor_list,
         )
-        return self._to_public_keys(model_ret, do_atomic_virial)
-
-    def _to_public_keys(
-        self,
-        model_ret: dict[str, torch.Tensor],
-        do_atomic_virial: bool,
-    ) -> dict[str, torch.Tensor]:
-        """Rename one ``call_common`` result to the public energy-model keys.
-
-        The renaming is a property of the output definition, not of the node
-        axis, so it serves the rectangular and the ragged entry alike.
-
-        Parameters
-        ----------
-        model_ret : dict[str, torch.Tensor]
-            A ``call_common`` result, in internal ``<var>_<derivative>`` keys.
-        do_atomic_virial : bool
-            Whether the per-atom virial was requested and should be carried.
-
-        Returns
-        -------
-        dict[str, torch.Tensor]
-            The same tensors under the public names.
-        """
-        model_predict = {}
-        model_predict["atom_energy"] = model_ret["energy"]
-        model_predict["energy"] = model_ret["energy_redu"]
-        if self.do_grad_r("energy"):
-            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
-        if self.do_grad_c("energy"):
-            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-            if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
-        for key in ("mask", "n_node"):
-            if key in model_ret:
-                model_predict[key] = model_ret[key]
-        if self.atomic_output_def()["energy"].r_hessian:
-            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
-        return model_predict
+        return self._translate_eager_call(
+            model_ret,
+            atype,
+            do_atomic_virial=do_atomic_virial,
+        )
 
     def forward_ragged(
         self,
@@ -347,6 +383,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate the energy model over a batch whose node axis is flat.
 
@@ -373,6 +410,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Whether to return per-atom virials.
         charge_spin : torch.Tensor or None, optional
             Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+        spin : torch.Tensor or None, optional
+            Per-atom native spin with shape ``(N, 3)``.
 
         Returns
         -------
@@ -389,8 +428,13 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin,
+            spin=spin,
         )
-        return self._to_public_keys(model_ret, do_atomic_virial)
+        return self._translate_eager_call(
+            model_ret,
+            atype,
+            do_atomic_virial=do_atomic_virial,
+        )
 
     def forward_lower(
         self,

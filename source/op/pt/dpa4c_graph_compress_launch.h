@@ -204,6 +204,19 @@ constexpr int coupling_record_count(int lmax) {
 // recompute that a wider group amortizes. A group wider than the scalar width
 // leaves a tile empty and does not compile, which bounds the narrow profiles
 // from above.
+// Node-group width candidates. The node kernels hold six shared arrays whose
+// extent is the product of the resident node groups and the scalar width: the
+// three geometric quantities of the recompute and their three cotangents. That
+// footprint, not the register file, is what bounds the backward's resident
+// blocks once the scalar width grows, and how soon it binds depends on the
+// device's shared-memory capacity rather than on its architecture generation.
+// Both widths are compiled and :func:`BackwardLauncher::prefer_wide_nodes`
+// picks between them from what the occupancy API reports for the running
+// device. A width is a lane count, so it must be a power of two and must not
+// exceed the warp.
+constexpr int kNodeLanesNarrow = 8;
+constexpr int kNodeLanesWide = 16;
+
 template <int Channels>
 struct EdgeMap;
 
@@ -246,7 +259,10 @@ struct EdgeMap<128> {
 // ``HasSpin`` is deliberately without a default. It changes the moment
 // layout and the descriptor width, so an instantiation that omits it would
 // silently read a spin-free layout out of a spin-conditioned buffer.
-template <int Channels, int Lmax, bool HasSpin>
+// ``NodeLanes`` overrides the node-group width; zero selects the narrow
+// candidate. Only the node kernels instantiate the override, so the edge
+// kernels and every existing use of ``Profile`` are unaffected.
+template <int Channels, int Lmax, bool HasSpin, int NodeLanes = 0>
 struct Profile {
   static constexpr int C0 = Channels;
   static constexpr int C1 = degree_one_width(Channels);
@@ -344,7 +360,8 @@ struct Profile {
       HasSpin ? EdgeMap<Channels>::SpinForward : EdgeMap<Channels>::Forward;
   static constexpr int BackwardEdgeWidth =
       HasSpin ? EdgeMap<Channels>::SpinBackward : EdgeMap<Channels>::Backward;
-  static constexpr int NodeWidth = 8;
+  static constexpr int NodeWidth =
+      NodeLanes != 0 ? NodeLanes : kNodeLanesNarrow;
   static constexpr int NodeGroups = kWarpSize / NodeWidth;
   static constexpr int Threads = kWarpSize;
 

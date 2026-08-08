@@ -1142,92 +1142,6 @@ class _CompiledModel(torch.nn.Module):
             )
         return self.original_model(coord, atype, **kwargs)
 
-    def forward_ragged(
-        self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
-        n_node: torch.Tensor,
-        box: torch.Tensor | None = None,
-        fparam: torch.Tensor | None = None,
-        aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
-        charge_spin: torch.Tensor | None = None,
-        spin: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Compiled forward over a batch whose node axis is already flat.
-
-        The compiled lower works on that axis in either case -- its trace keeps
-        the frame count, the node count and the edge count as independent
-        symbols -- so a ragged batch simply skips the padding round trip the
-        rectangular :meth:`forward` performs around it.
-
-        Parameters
-        ----------
-        coord : torch.Tensor
-            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
-        atype : torch.Tensor
-            Local atom types with shape ``(N,)``.
-        n_node : torch.Tensor
-            Atoms per frame with shape ``(nf,)``.
-        box : torch.Tensor or None, optional
-            Simulation cell, ``(nf, 3, 3)`` or ``(nf, 9)``.
-        fparam : torch.Tensor or None, optional
-            Frame parameters with shape ``(nf, ndf)``.
-        aparam : torch.Tensor or None, optional
-            Atomic parameters with shape ``(N, nda)``.
-        do_atomic_virial : bool, default: False
-            Whether to return per-atom virials.
-        charge_spin : torch.Tensor or None, optional
-            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
-        spin : torch.Tensor or None, optional
-            Native spin with shape ``(N, 3)``.
-
-        Returns
-        -------
-        dict[str, torch.Tensor]
-            Public model keys; per-atom entries keep the flat axis.
-
-        Raises
-        ------
-        NotImplementedError
-            If the model reads a rectangular node axis, which cannot represent
-            frames of unequal atom count without padding.
-        """
-        if not self.training and not self._compile_eval:
-            return self._forward_eager(
-                coord,
-                atype,
-                box,
-                fparam,
-                aparam,
-                do_atomic_virial,
-                charge_spin,
-                spin,
-                n_node,
-            )
-        del do_atomic_virial
-        if self._graph_eligible is None:
-            self._graph_eligible = model_uses_graph_lower(self.original_model)
-        if not self._graph_eligible:
-            raise NotImplementedError(
-                "a flat node axis requires a model whose descriptor reads one; "
-                "this model compiles the dense (nlist) lower, whose batches "
-                "must be padded to a common atom count"
-            )
-        return self._forward_graph(
-            coord,
-            atype,
-            box,
-            fparam,
-            aparam,
-            charge_spin,
-            spin,
-            int(n_node.shape[0]),
-            0,
-            self.original_model.get_rcut(),
-            n_node=n_node,
-        )
-
     def forward(
         self,
         coord: torch.Tensor,
@@ -1473,6 +1387,93 @@ class _CompiledModel(torch.nn.Module):
             if key not in translated_extended_keys:
                 out[key] = val
         return out
+
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compiled forward over a batch whose node axis is already flat.
+
+        The compiled lower works on that axis in either case -- its trace keeps
+        the frame count, the node count and the edge count as independent
+        symbols -- so a ragged batch simply skips the padding round trip the
+        rectangular :meth:`forward` performs around it.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
+        atype : torch.Tensor
+            Local atom types with shape ``(N,)``.
+        n_node : torch.Tensor
+            Atoms per frame with shape ``(nf,)``.
+        box : torch.Tensor or None, optional
+            Simulation cell, ``(nf, 3, 3)`` or ``(nf, 9)``.
+        fparam : torch.Tensor or None, optional
+            Frame parameters with shape ``(nf, ndf)``.
+        aparam : torch.Tensor or None, optional
+            Atomic parameters with shape ``(N, nda)``.
+        do_atomic_virial : bool, default: False
+            Whether to return per-atom virials.
+        charge_spin : torch.Tensor or None, optional
+            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+        spin : torch.Tensor or None, optional
+            Native spin with shape ``(N, 3)``. Virtual-atom spin models do
+            not expose this ragged entry.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model keys; per-atom entries keep the flat axis.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model reads a rectangular node axis, which cannot represent
+            frames of unequal atom count without padding.
+        """
+        if not self.training and not self._compile_eval:
+            return self._forward_eager(
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                charge_spin,
+                spin,
+                n_node,
+            )
+        del do_atomic_virial
+        if self._graph_eligible is None:
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
+        if not self._graph_eligible:
+            raise NotImplementedError(
+                "a flat node axis requires a model whose descriptor reads one; "
+                "this model compiles the dense (nlist) lower, whose batches "
+                "must be padded to a common atom count"
+            )
+        return self._forward_graph(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+            charge_spin,
+            spin,
+            int(n_node.shape[0]),
+            0,
+            self.original_model.get_rcut(),
+            n_node=n_node,
+        )
 
     def _forward_graph(
         self,

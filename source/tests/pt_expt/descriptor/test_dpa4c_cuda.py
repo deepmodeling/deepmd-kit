@@ -1216,7 +1216,9 @@ def _build_spin_descriptor(
 
     A reference magnitude other than one makes the conditioning factor visible
     in the magnetic gradient, so a missing chain factor shows up as a constant
-    ratio rather than cancelling.
+    ratio rather than cancelling. The branch gate is opened, since a fresh
+    descriptor starts spin-free by design and these tests are about the branch
+    behind the gate; the gate itself is covered in ``test_dpa4c.py``.
     """
     descriptor = (
         DescrptDPA4C(
@@ -1234,6 +1236,8 @@ def _build_spin_descriptor(
         .eval()
     )
     descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(1.0)
     return descriptor
 
 

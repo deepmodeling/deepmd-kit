@@ -41,6 +41,7 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     "SpinChannels": (
         "adam_spin_vector_weight",
         "adam_spin_quadrupole_weight",
+        "spin_gate",
     ),
 }
 

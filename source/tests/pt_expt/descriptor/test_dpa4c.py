@@ -428,6 +428,63 @@ class TestDPA4C:
             )
 
 
+class TestDPA4CSpinGate:
+    """Torch-side contracts of the spin branch gate."""
+
+    def make_descriptor(self) -> DescrptDPA4C:
+        return DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=4,
+            precision="float64",
+            seed=23,
+            use_spin=[True, False],
+        ).to(env.DEVICE)
+
+    def test_fresh_descriptor_starts_spin_free(self) -> None:
+        assert float(self.make_descriptor().spin.spin_gate.detach()) == 0.0
+
+    def test_closed_gate_still_receives_a_gradient(self) -> None:
+        """Zero is a starting point, not a fixed point.
+
+        The invariants are linear in the gate, so its gradient there is the
+        branch itself. A factor on the conditioned moment would reach the
+        Grams at second and fourth order and could never reopen.
+        """
+        descriptor = self.make_descriptor()
+        generator = torch.Generator(device="cpu").manual_seed(7)
+        coord = (
+            torch.randn(1, 6, 3, dtype=torch.float64, generator=generator).to(
+                env.DEVICE
+            )
+            * 1.4
+        )
+        atype = torch.tensor([[0, 1, 0, 1, 0, 1]], dtype=torch.long, device=env.DEVICE)
+        spin = torch.randn(6, 3, dtype=torch.float64, generator=generator).to(
+            env.DEVICE
+        )
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        graph = build_neighbor_graph(coord, atype, None, 3.0)
+        output, _ = descriptor.call_graph(graph, atype.reshape(-1), spin=spin)
+        output.sum().backward()
+        gradient = descriptor.spin.spin_gate.grad
+        assert gradient is not None
+        assert float(gradient.abs().max()) > 1e-8
+
+    def test_a_stored_gate_round_trips(self) -> None:
+        descriptor = self.make_descriptor()
+        with torch.no_grad():
+            descriptor.spin.spin_gate.fill_(0.37)
+        restored = self.make_descriptor()
+        restored.load_state_dict(descriptor.state_dict())
+        assert float(restored.spin.spin_gate.detach()) == pytest.approx(0.37)
+
+
 class TestDPA4CSpin:
     """Torch-side contracts of the native spin branch."""
 
@@ -443,6 +500,10 @@ class TestDPA4CSpin:
             use_spin=[True, False],
         ).to(env.DEVICE)
         self.descriptor.eval()
+        # A fresh descriptor starts spin-free by design; these tests are about
+        # the branch behind the gate, which ``TestDPA4CSpinGate`` covers.
+        with torch.no_grad():
+            self.descriptor.spin.spin_gate.fill_(1.0)
         generator = torch.Generator(device="cpu").manual_seed(5)
         self.coord = (
             torch.randn(1, 6, 3, dtype=torch.float64, generator=generator).to(
@@ -475,7 +536,9 @@ class TestDPA4CSpin:
         names = {name for name, _ in self.descriptor.named_parameters()}
         assert "spin.adam_spin_vector_weight" in names
         assert "spin.adam_spin_quadrupole_weight" in names
-        # The gate and the reference are state, not learned quantities.
+        assert "spin.spin_gate" in names
+        # The per-type mask and the reference magnitudes are state, not
+        # learned quantities.
         buffers = {name for name, _ in self.descriptor.named_buffers()}
         assert {"spin.spin_mask", "spin.spin_reference"} <= buffers
 

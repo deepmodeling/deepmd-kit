@@ -4,6 +4,7 @@ from types import (
     SimpleNamespace,
 )
 
+import numpy as np
 import pytest
 import torch
 
@@ -117,6 +118,227 @@ def test_graph_lower_energy_force_are_finite() -> None:
     ):
         assert key in result
         assert torch.isfinite(result[key]).all(), key
+
+
+def test_phantom_atoms_leave_energy_and_force_unchanged() -> None:
+    """A mixed-nloc batch's padding must not perturb its real atoms.
+
+    Frames of unequal atom count only share a batch when the shorter ones are
+    padded to a rectangular shape, with the padded slots marked ``atype = -1``.
+    Such a phantom atom stands for no physical site: the graph builders drop it
+    from the edge set and the atomic model zeroes its output, so the padded
+    batch has to reproduce, frame by frame, what the frames give on their own.
+    """
+    torch.manual_seed(1234)
+    model = get_model(_config()).to(env.DEVICE)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+    model.eval()
+
+    rng = np.random.default_rng(0)
+    nlocs = (4, 7, 3)
+    pad_nloc = max(nlocs)
+    box = (np.eye(3) * 10.0).reshape(9)
+    coords = [rng.uniform(0.0, 6.0, (nloc, 3)) for nloc in nlocs]
+    atypes = [rng.integers(0, 2, nloc) for nloc in nlocs]
+
+    padded_coord = np.zeros((len(nlocs), pad_nloc, 3))
+    padded_atype = np.full((len(nlocs), pad_nloc), -1, dtype=np.int64)
+    for index, (frame_coord, frame_atype) in enumerate(
+        zip(coords, atypes, strict=True)
+    ):
+        padded_coord[index, : len(frame_atype)] = frame_coord
+        padded_atype[index, : len(frame_atype)] = frame_atype
+
+    def run(coord: np.ndarray, atype: np.ndarray) -> dict[str, torch.Tensor]:
+        nframes = coord.shape[0]
+        return model(
+            torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+            torch.tensor(atype, dtype=torch.long, device=env.DEVICE),
+            box=torch.tensor(
+                np.tile(box, (nframes, 1)), dtype=torch.float64, device=env.DEVICE
+            ),
+        )
+
+    batched = run(padded_coord, padded_atype)
+    for index, (frame_coord, frame_atype) in enumerate(
+        zip(coords, atypes, strict=True)
+    ):
+        alone = run(frame_coord[None], frame_atype[None].astype(np.int64))
+        torch.testing.assert_close(
+            batched["energy"].reshape(-1)[index],
+            alone["energy"].reshape(-1)[0],
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
+        torch.testing.assert_close(
+            batched["force"][index, : len(frame_atype)],
+            alone["force"][0],
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
+    # Padded slots receive no gradient at all.
+    phantom = torch.tensor(padded_atype, device=env.DEVICE) < 0
+    assert bool(phantom.any()), "fixture must exercise padding"
+    assert bool(torch.all(batched["force"][phantom] == 0.0))
+
+
+def test_padding_never_reaches_the_network() -> None:
+    """The node axis the graph lower receives holds the real atoms alone.
+
+    The equivalence test above holds whether or not the phantom atoms are
+    dropped, since the atomic model masks their output either way. What is
+    asserted here is that they are dropped: the padded slots must cost no
+    descriptor, no fitting-net evaluation and no gradient, which is the whole
+    point of packing frames of unequal atom count into one batch.
+    """
+    model = get_model(_config()).to(env.DEVICE).eval()
+
+    seen: list[int] = []
+    lower = model.forward_common_lower_graph
+
+    def spy(atype, *args, **kwargs):
+        seen.append(int(atype.shape[0]))
+        return lower(atype, *args, **kwargs)
+
+    model.forward_common_lower_graph = spy
+
+    rng = np.random.default_rng(5)
+    nlocs = (4, 7, 3)
+    pad_nloc = max(nlocs)
+    padded_coord = np.zeros((len(nlocs), pad_nloc, 3))
+    padded_atype = np.full((len(nlocs), pad_nloc), -1, dtype=np.int64)
+    for index, nloc in enumerate(nlocs):
+        padded_coord[index, :nloc] = rng.uniform(0.0, 6.0, (nloc, 3))
+        padded_atype[index, :nloc] = rng.integers(0, 2, nloc)
+
+    out = model(
+        torch.tensor(padded_coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(padded_atype, dtype=torch.long, device=env.DEVICE),
+        box=torch.tensor(
+            np.tile((np.eye(3) * 10.0).reshape(9), (len(nlocs), 1)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        ),
+    )
+
+    assert seen == [sum(nlocs)], (
+        f"the lower saw {seen} nodes; the batch holds {sum(nlocs)} real atoms "
+        f"padded to {len(nlocs) * pad_nloc} slots"
+    )
+    # The public output still carries the padded shape the callers expect.
+    assert out["force"].shape == (len(nlocs), pad_nloc, 3)
+
+
+def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
+    """The compiled artifact must not carry ``N == nframes * nloc`` as a guard.
+
+    Its trace is taken on a uniform system, where the flat node axis happens to
+    be the product of the frame count and the atom count. Dropping the padding
+    breaks that relation, so this exercises the compiled lower on a batch where
+    it no longer holds, and holds the result against the eager graph path,
+    which takes the same compaction.
+    """
+    from deepmd.pt_expt.train.training import (
+        _CompiledModel,
+        _get_model_structure_key,
+    )
+
+    torch.manual_seed(0)
+    config = _config()
+    config["descriptor"]["channels"] = 8
+    config["fitting_net"]["neuron"] = [8, 8]
+    model = get_model(config).to(env.DEVICE).train()
+    compiled = _CompiledModel(model, _get_model_structure_key(model))
+
+    rng = np.random.default_rng(0)
+    nlocs = (4, 7, 3)
+    pad_nloc = max(nlocs)
+    padded_coord = np.zeros((len(nlocs), pad_nloc, 3))
+    padded_atype = np.full((len(nlocs), pad_nloc), -1, dtype=np.int64)
+    for index, nloc in enumerate(nlocs):
+        padded_coord[index, :nloc] = rng.uniform(0.0, 6.0, (nloc, 3))
+        padded_atype[index, :nloc] = rng.integers(0, 2, nloc)
+
+    args = (
+        torch.tensor(padded_coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(padded_atype, dtype=torch.long, device=env.DEVICE),
+        torch.tensor(
+            np.tile((np.eye(3) * 10.0).reshape(1, 3, 3), (len(nlocs), 1, 1)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        ),
+    )
+    got = compiled(*args)
+    expected = model(*args)
+
+    assert got["force"].shape == (len(nlocs), pad_nloc, 3)
+    torch.testing.assert_close(got["energy"], expected["energy"])
+    torch.testing.assert_close(got["force"], expected["force"])
+    phantom = args[1] < 0
+    assert bool(torch.all(got["force"][phantom] == 0.0))
+
+
+def test_ragged_and_padded_batches_agree() -> None:
+    """The two layouts are two spellings of one batch, so they must agree.
+
+    This is the invariant the whole flat-node-axis path rests on: concatenating
+    the frames rather than padding them to a common width changes how the batch
+    is stored, and nothing about the physics it describes.
+    """
+    torch.manual_seed(11)
+    model = get_model(_config()).to(env.DEVICE)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+    model.eval()
+
+    rng = np.random.default_rng(0)
+    nlocs = (4, 7, 3)
+    pad_nloc, boxlen = max(nlocs), 10.0
+    padded_coord = np.zeros((len(nlocs), pad_nloc, 3))
+    padded_atype = np.full((len(nlocs), pad_nloc), -1, dtype=np.int64)
+    flat_coord, flat_atype = [], []
+    for index, nloc in enumerate(nlocs):
+        coord = rng.uniform(0.0, 6.0, (nloc, 3))
+        atype = rng.integers(0, 2, nloc)
+        padded_coord[index, :nloc] = coord
+        padded_atype[index, :nloc] = atype
+        flat_coord.append(coord)
+        flat_atype.append(atype)
+
+    padded = model(
+        torch.tensor(padded_coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(padded_atype, dtype=torch.long, device=env.DEVICE),
+        box=torch.tensor(
+            np.tile((np.eye(3) * boxlen).reshape(9), (len(nlocs), 1)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        ),
+    )
+    ragged = model.forward_ragged(
+        torch.tensor(
+            np.concatenate(flat_coord), dtype=torch.float64, device=env.DEVICE
+        ),
+        torch.tensor(np.concatenate(flat_atype), dtype=torch.long, device=env.DEVICE),
+        torch.tensor(nlocs, dtype=torch.long, device=env.DEVICE),
+        torch.tensor(
+            np.tile(np.eye(3)[None] * boxlen, (len(nlocs), 1, 1)),
+            dtype=torch.float64,
+            device=env.DEVICE,
+        ),
+    )
+
+    torch.testing.assert_close(ragged["energy"], padded["energy"])
+    offset = 0
+    for index, nloc in enumerate(nlocs):
+        torch.testing.assert_close(
+            ragged["force"][offset : offset + nloc],
+            padded["force"][index, :nloc],
+        )
+        offset += nloc
+    assert offset == ragged["force"].shape[0], "the ragged axis holds real atoms only"
 
 
 def test_graph_force_loss_trains_descriptor() -> None:
@@ -366,8 +588,10 @@ def _spin_sample(model: torch.nn.Module) -> tuple:
 @pytest.mark.skipif(
     not torch.cuda.is_available(), reason="the fused spin path is CUDA only"
 )
+@pytest.mark.parametrize("gate", [0.8, 0.0])
 def test_compressed_spin_lowers_match_autograd(
     monkeypatch: pytest.MonkeyPatch,
+    gate: float,
 ) -> None:
     """Both fused lowers reproduce the autograd magnetic force.
 
@@ -376,12 +600,21 @@ def test_compressed_spin_lowers_match_autograd(
     neighbour half is emitted per edge and reduced onto source nodes. Checking
     it against the autograd lower covers the fused generic composition and the
     compact canonical deployment path in the same comparison.
+
+    The operator assembles the spin invariants without reading the branch
+    gate, which the portable path applies to the calibrated block; compression
+    carries it as a factor on the inverse deviation of those columns. A
+    non-unit value is what makes this comparison check that fold, and the
+    closed gate pins the case an affine mean-and-deviation fold could not
+    express -- a trained gate may legitimately reach zero.
     """
     import numpy as np
 
     model = get_model(_spin_config()).to(env.DEVICE).eval()
     descriptor = model.get_descriptor()
     descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(gate)
     graph, atype, spin = _spin_sample(model)
     descriptor.enable_compression(min_nbor_dist=0.5)
 
