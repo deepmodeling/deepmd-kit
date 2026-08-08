@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Read-only Bohrium OpenAPI probes using only Python's standard library."""
 
 # ruff: noqa: T201 -- stdout is this command-line tool's result interface.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
@@ -11,7 +14,6 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-
 
 BASE = os.environ.get("BOHR_OPENAPI_BASE", "https://open.bohrium.com/openapi").rstrip(
     "/"

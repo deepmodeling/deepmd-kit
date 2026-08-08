@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Run a non-destructive first-pass audit of DPA4 workflow case folders."""
 
 # ruff: noqa: T201 -- stdout is this command-line tool's result interface.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
 import math
 import re
-from pathlib import Path
-
+from pathlib import (
+    Path,
+)
 
 FATAL_PATTERNS = {
     "unknown_dpa4": re.compile(r"Unknown model type:\s*dpa4", re.I),

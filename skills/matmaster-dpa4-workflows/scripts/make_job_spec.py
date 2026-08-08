@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate and validate a Bohrium container job specification."""
 
 # ruff: noqa: T201 -- stdout is this command-line tool's result interface.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
 import shlex
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 
 def main() -> int:

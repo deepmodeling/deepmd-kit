@@ -3,12 +3,12 @@
 ## Contents
 
 1. Compatibility policy
-2. Environment inventory
-3. Job-spec generation
-4. Bohrium CLI adapter
-5. Read-only OpenAPI probe
-6. Job template
-7. Missing prerequisites
+1. Environment inventory
+1. Job-spec generation
+1. Bohrium CLI adapter
+1. Read-only OpenAPI probe
+1. Job template
+1. Missing prerequisites
 
 ## Compatibility policy
 
@@ -20,9 +20,9 @@ skill does not bundle the proprietary MatMaster UI, Bohrium credentials, the
 Use capabilities in this order:
 
 1. installed MatMaster built-in skill/tool;
-2. bundled helper using an installed `bohr` CLI;
-3. bundled read-only OpenAPI probe;
-4. explicit prerequisite installation or user/platform intervention.
+1. bundled helper using an installed `bohr` CLI;
+1. bundled read-only OpenAPI probe;
+1. explicit prerequisite installation or user/platform intervention.
 
 Never fabricate a missing submission API. The bundled OpenAPI helper is intentionally read-only.
 
@@ -51,13 +51,13 @@ Generate a concrete `job.json` without editing a placeholder manually:
 
 ```bash
 python scripts/make_job_spec.py case-0001 \
-  --output case-0001/job.json \
-  --project-id 123 \
-  --image registry.dp.tech/path/to/validated-dpa4:tag \
-  --machine 'CURRENT_VALID_GPU_SKU' \
-  --name dpa4-workflow-case-0001 \
-  --backward run.log --backward logs/ --backward results/ \
-  --max-run-time 1440 --max-reschedule-times 1
+    --output case-0001/job.json \
+    --project-id 123 \
+    --image registry.dp.tech/path/to/validated-dpa4:tag \
+    --machine 'CURRENT_VALID_GPU_SKU' \
+    --name dpa4-workflow-case-0001 \
+    --backward run.log --backward logs/ --backward results/ \
+    --max-run-time 1440 --max-reschedule-times 1
 ```
 
 The script rejects incomplete image addresses, guessed `/root/input` commands, missing case directories, and absent `run.sh` for the default command.
@@ -88,11 +88,11 @@ python scripts/bohr_cli.py group-create --name run-v1 --project-id 123
 python scripts/bohr_cli.py group-create --name run-v1 --project-id 123 --execute
 
 python scripts/bohr_cli.py job-submit \
-  --spec case-0001/job.json --input case-0001 --group-id GROUP_ID
+    --spec case-0001/job.json --input case-0001 --group-id GROUP_ID
 python scripts/bohr_cli.py job-submit \
-  --spec case-0001/job.json --input case-0001 --group-id GROUP_ID --validate
+    --spec case-0001/job.json --input case-0001 --group-id GROUP_ID --validate
 python scripts/bohr_cli.py job-submit \
-  --spec case-0001/job.json --input case-0001 --group-id GROUP_ID --execute
+    --spec case-0001/job.json --input case-0001 --group-id GROUP_ID --execute
 ```
 
 The first form only prints a copy-safe command, `--validate` invokes Bohrium's native dry run without submission, and `--execute` performs the submission. Local validation rejects unresolved placeholders in the job spec and default `run.sh`. The sibling skill owns validation of scientific input files referenced by that wrapper. `job-terminate` and `job-kill` also require `--execute`. Resolve exact job IDs and preserve outputs before lifecycle changes.

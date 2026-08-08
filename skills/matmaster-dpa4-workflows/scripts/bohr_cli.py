@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Safe adapter for common Bohrium job and group operations."""
 
 # ruff: noqa: T201 -- stdout is this command-line tool's result interface.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
@@ -12,7 +15,9 @@ import re
 import shlex
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 
 def executable(required: bool = True) -> str:

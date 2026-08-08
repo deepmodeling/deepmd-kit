@@ -3,10 +3,10 @@
 ## Contents
 
 1. Common contract
-2. Training and fine-tuning
-3. Inference
-4. LAMMPS execution
-5. Handoff back to the owning skill
+1. Training and fine-tuning
+1. Inference
+1. LAMMPS execution
+1. Handoff back to the owning skill
 
 ## Common contract
 

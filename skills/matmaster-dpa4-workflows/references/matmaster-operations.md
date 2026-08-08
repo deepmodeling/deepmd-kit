@@ -3,23 +3,23 @@
 ## Contents
 
 1. Platform model
-2. Capability priority
-3. Session node and storage
-4. Images and resources
-5. Job packaging and submission
-6. Monitoring, collection, and lifecycle
-7. Authentication and safety
+1. Capability priority
+1. Session node and storage
+1. Images and resources
+1. Job packaging and submission
+1. Monitoring, collection, and lifecycle
+1. Authentication and safety
 
 ## Platform model
 
 Keep four layers distinct:
 
-| Layer | Purpose | Persistent? |
-|---|---|---|
-| MatMaster session node | prepare inputs, debug, inspect, and analyze | system disk: no guarantee; mounted data disks: yes |
-| `/personal` | user-scoped durable files | yes |
-| `/share` | project-shared durable files | yes, project permissions apply |
-| Bohrium container job | isolated production compute with chosen image/resource | job workspace is temporary; declared/downloaded outputs persist |
+| Layer                  | Purpose                                                | Persistent?                                                     |
+| ---------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
+| MatMaster session node | prepare inputs, debug, inspect, and analyze            | system disk: no guarantee; mounted data disks: yes              |
+| `/personal`            | user-scoped durable files                              | yes                                                             |
+| `/share`               | project-shared durable files                           | yes, project permissions apply                                  |
+| Bohrium container job  | isolated production compute with chosen image/resource | job workspace is temporary; declared/downloaded outputs persist |
 
 The session node and submitted job are different resources with different lifecycles and billing. Do not assume a package installed on the session node exists inside the job image.
 
@@ -28,21 +28,21 @@ The session node and submitted job are different resources with different lifecy
 Use this order:
 
 1. MatMaster built-in skill/tool for the exact operation;
-2. bundled helper scripts over an installed `bohr` CLI;
-3. bundled read-only OpenAPI probe for discovery;
-4. raw CLI/OpenAPI only when the packaged helpers lack the required operation.
+1. bundled helper scripts over an installed `bohr` CLI;
+1. bundled read-only OpenAPI probe for discovery;
+1. raw CLI/OpenAPI only when the packaged helpers lack the required operation.
 
 Expected MatMaster platform capability families:
 
-| Need | Capability |
-|---|---|
-| prepare/inspect files | workspace shell and file tools |
-| submit a job or batch | built-in `bohrium-submit` skill |
-| list/query jobs and groups | Bohrium query/list action |
-| view/download logs and results | Bohrium log/download action |
-| stop wrong work | Bohrium terminate/kill action after resolving exact IDs |
-| list machine/SKU availability | Bohrium resource-list action |
-| track long execution | planning/todo and monitoring capability |
+| Need                           | Capability                                              |
+| ------------------------------ | ------------------------------------------------------- |
+| prepare/inspect files          | workspace shell and file tools                          |
+| submit a job or batch          | built-in `bohrium-submit` skill                         |
+| list/query jobs and groups     | Bohrium query/list action                               |
+| view/download logs and results | Bohrium log/download action                             |
+| stop wrong work                | Bohrium terminate/kill action after resolving exact IDs |
+| list machine/SKU availability  | Bohrium resource-list action                            |
+| track long execution           | planning/todo and monitoring capability                 |
 
 Discover the installed schemas at runtime. Historical names are evidence, not an API contract.
 
@@ -82,7 +82,12 @@ Bohrium expands the uploaded input into an unpredictable work directory. Use rel
   "job_name": "dpa4-workflow-case-0001",
   "command": "bash run.sh",
   "log_file": "run.log",
-  "backward_files": ["run.log", "logs/", "results/", "provenance.json"],
+  "backward_files": [
+    "run.log",
+    "logs/",
+    "results/",
+    "provenance.json"
+  ],
   "project_id": 123,
   "machine_type": "CURRENT_VALID_GPU_SKU",
   "image_address": "registry.dp.tech/.../validated-dpa4:tag",
@@ -124,19 +129,19 @@ result.
 For every group:
 
 1. list all members and compare unique case IDs with the manifest;
-2. inspect logs for representative running and failed jobs;
-3. wait through expected image-cache/runtime-initialization startup before calling a job hung;
-4. download both finished and failed terminal jobs;
-5. audit platform/files, then route workflow-quality acceptance to the owning skill;
-6. retry only invalid cases.
+1. inspect logs for representative running and failed jobs;
+1. wait through expected image-cache/runtime-initialization startup before calling a job hung;
+1. download both finished and failed terminal jobs;
+1. audit platform/files, then route workflow-quality acceptance to the owning skill;
+1. retry only invalid cases.
 
 Actions differ:
 
-| Action | Outputs | Record | Use |
-|---|---|---|---|
-| terminate | normally retained | retained | stop while preserving recoverable state |
-| kill | may not be retained | retained | force-stop an unrecoverable run |
-| delete | removed | removed | destructive cleanup only when explicitly required |
+| Action    | Outputs             | Record   | Use                                               |
+| --------- | ------------------- | -------- | ------------------------------------------------- |
+| terminate | normally retained   | retained | stop while preserving recoverable state           |
+| kill      | may not be retained | retained | force-stop an unrecoverable run                   |
+| delete    | removed             | removed  | destructive cleanup only when explicitly required |
 
 Resolve exact individual job IDs before lifecycle actions. Web UI group IDs and CLI-created group IDs may differ.
 

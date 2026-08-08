@@ -3,19 +3,19 @@
 ## Contents
 
 1. Acceptance boundary
-2. Platform and file checks
-3. Batch and attempt checks
-4. Failure routing
-5. Minimum ledger
+1. Platform and file checks
+1. Batch and attempt checks
+1. Failure routing
+1. Minimum ledger
 
 ## Acceptance boundary
 
 This skill accepts only the platform portion of a case:
 
 1. scheduler identity and terminal state are reconciled with the manifest;
-2. submitted inputs and runtime metadata are traceable;
-3. declared results and failure evidence are recovered;
-4. batch counts and retry lineage are internally consistent.
+1. submitted inputs and runtime metadata are traceable;
+1. declared results and failure evidence are recovered;
+1. batch counts and retry lineage are internally consistent.
 
 Training convergence and checkpoint selection, inference accuracy, model
 deployment, atom mapping, ensemble behavior, minimization/MD validity, and
@@ -68,6 +68,6 @@ Route to the owning DeepMD skill:
 
 ## Minimum ledger
 
-| Case | Attempt | Job/group | Terminal | Files | Platform verdict | Evidence |
-|---|---|---|---|---|---|---|
-| case_id | 0 | IDs | state | pass/fail | valid/retry/excluded | concise paths/log lines |
+| Case    | Attempt | Job/group | Terminal | Files     | Platform verdict     | Evidence                |
+| ------- | ------- | --------- | -------- | --------- | -------------------- | ----------------------- |
+| case_id | 0       | IDs       | state    | pass/fail | valid/retry/excluded | concise paths/log lines |

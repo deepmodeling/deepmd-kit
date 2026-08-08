@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Inventory a MatMaster/Bohrium job environment without exposing secrets."""
 
 # ruff: noqa: T201 -- stdout is this command-line tool's result interface.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import hashlib
@@ -11,8 +14,9 @@ import json
 import os
 import shutil
 import subprocess
-from pathlib import Path
-
+from pathlib import (
+    Path,
+)
 
 COMMANDS = {
     "bohr": ["bohr", "version"],
