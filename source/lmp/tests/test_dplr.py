@@ -375,6 +375,19 @@ def test_pair_deepmd_sr(lammps) -> None:
     lammps.run(1)
 
 
+def test_pair_deepmd_hybrid_long_range(lammps) -> None:
+    """A model cutoff must not masquerade as a hybrid Coulomb cutoff."""
+    # The model cutoff is 4 A and the actual Coulomb cutoff is 5 A.  Plain
+    # PPPM must obtain the latter from coul/long without treating the DeepMD
+    # neighbor cutoff as a conflicting electrostatic cutoff.
+    lammps.pair_style(f"hybrid/overlay deepmd {pb_file.resolve()} coul/long 5.0")
+    lammps.pair_coeff("* * deepmd")
+    lammps.pair_coeff("* * coul/long")
+    lammps.kspace_style("pppm 1e-5")
+    lammps.run(0)
+    assert np.isfinite(lammps.eval("pe"))
+
+
 def test_pair_deepmd_sr_virial(lammps) -> None:
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")

@@ -47,9 +47,12 @@ class PairDeepMD : public PairDeepBaseModel {
   void settings(int, char**) override;
   void coeff(int, char**) override;
   void compute(int, int) override;
+  void init_style() override;
+  double init_one(int, int) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
+  bool compact_selection_enabled() const { return compact_selection_enabled_; }
 
  protected:
   deepmd_compat::DeepPot deep_pot;
@@ -60,6 +63,59 @@ class PairDeepMD : public PairDeepBaseModel {
   deepmd_compat::InputNlist make_comm_nlist();
 
  private:
+  // Compact evaluation is implemented by assigning type -1 to atoms outside
+  // the selected subsystem. Every supported DeepPot backend already compacts
+  // such atoms, remaps its neighbor/communication data, and scatters outputs
+  // back to the original atom order.
+  bool compact_selection_enabled_;
+  bool compact_include_molecule_;
+  bool compact_center_group_dynamic_;
+  int compact_center_group_bit_;
+  double compact_environment_cutoff_;
+  bigint compact_natoms_;
+  std::string compact_center_group_id_;
+  std::vector<tagint> compact_center_tags_;
+  // Center membership is stable between neighbor rebuilds for a static
+  // group.  Cache it in LAMMPS atom order so the per-step cutoff search can
+  // walk only the pair neighbor rows owned by center atoms.
+  std::vector<unsigned char> compact_is_center_;
+  std::vector<unsigned char> compact_selected_;
+
+  // Single-rank compact packing removes atoms excluded by compact selection
+  // before crossing the LAMMPS/DeepMD API boundary.  The atom map and filtered
+  // neighbor rows are stable until LAMMPS rebuilds its neighbor list; only the
+  // compact coordinate buffer must be refreshed on ordinary MD steps.
+  bool compact_packing_disabled_;
+  bool compact_packing_valid_;
+  int compact_packing_nlocal_;
+  int compact_packing_nghost_;
+  std::vector<int> compact_packing_old_to_new_;
+  std::vector<int> compact_packing_new_to_old_;
+  std::vector<int> compact_packing_ilist_;
+  std::vector<int> compact_packing_numneigh_;
+  std::vector<std::vector<int> > compact_packing_neighbors_;
+  std::vector<int*> compact_packing_firstneigh_;
+  std::vector<int> compact_packing_mapping_;
+
+  std::vector<tagint> allgather_unique_tagints(
+      std::vector<tagint> local_values) const;
+  void refresh_compact_center_tags();
+  bool apply_compact_selection(std::vector<int>& model_types);
+  bool can_use_compact_packing() const;
+  void rebuild_compact_packing();
+  void pack_compact_inputs(const std::vector<int>& full_types,
+                           std::vector<int>& packed_types,
+                           std::vector<double>& packed_coordinates) const;
+  deepmd_compat::InputNlist make_compact_packing_nlist();
+  void scatter_compact_output(std::vector<double>& values,
+                              int stride,
+                              int full_nall) const;
+  void analyze_model_deviation(double& max,
+                               double& min,
+                               double& sum,
+                               const std::vector<double>& deviation,
+                               int nlocal) const;
+
   CommBrickDeepMD* commdata_;
 };
 
