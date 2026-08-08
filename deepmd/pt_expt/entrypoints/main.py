@@ -928,6 +928,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             extrapolate=FLAGS.extrapolate,
             check_frequency=FLAGS.frequency,
             training_script=FLAGS.training_script,
+            recompute_min_nbor_dist=FLAGS.recompute_min_nbor_dist,
         )
     else:
         raise RuntimeError(
