@@ -1,0 +1,19 @@
+{
+  "job_name": "__JOB_NAME__",
+  "command": "bash run.sh",
+  "log_file": "run.log",
+  "backward_files": [
+    "run.log",
+    "runtime.txt",
+    "logs/",
+    "results/",
+    "provenance.json"
+  ],
+  "project_id": "__PROJECT_ID__",
+  "machine_type": "__MACHINE_TYPE__",
+  "image_address": "__FULL_IMAGE_ADDRESS__",
+  "job_type": "container",
+  "max_reschedule_times": 0,
+  "max_run_time": "__MINUTES__",
+  "nnode": 1
+}

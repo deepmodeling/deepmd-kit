@@ -29,6 +29,11 @@ in the DeePMD-kit repository under `skills/`.
 - `lammps-deepmd`: Prepare, explain, and run LAMMPS simulations with DeePMD-kit
   potentials, including DPA4/SeZM `.pt2` deployment and common NVE, NVT, and
   NPT setups.
+- `matmaster-dpa4-workflows`: Orchestrate DPA4 training, fine-tuning,
+  inference, and LAMMPS jobs on MatMaster/Bohrium. The skill delegates
+  scientific setup and acceptance to the sibling DeePMD-kit skills while
+  handling storage, resources, submission, monitoring, recovery, and platform
+  provenance.
 
 ## Related reference
 
@@ -85,3 +90,5 @@ without launching an expensive calculation. For example:
   a LoRA fine-tuning input, but do not start training.”
 - “Use the `lammps-deepmd` skill to prepare an NVT LAMMPS input file for a
   DeePMD-kit model, and explain each command.”
+- “Use the `matmaster-dpa4-workflows` skill to turn a prepared DPA4 training
+  case into a Bohrium job-spec preview, but do not submit it.”
