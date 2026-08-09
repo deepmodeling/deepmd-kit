@@ -1529,14 +1529,18 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         if comm_dict is None:
             descriptor_atype = atype
+            descriptor_real_atom = real_atom
         elif extended_atype is None:
             raise ValueError("`extended_atype` is required with `comm_dict`.")
         else:
             # Ghost atoms carry the type of the local atom they image, so this
             # sanitizes the phantoms among them on the same grounds as above.
-            descriptor_atype, _ = self._sanitize_atom_types(extended_atype)
+            descriptor_atype, descriptor_real_atom = self._sanitize_atom_types(
+                extended_atype
+            )
         inter_potential_edge_mask = self._make_inter_potential_edge_mask(
             descriptor_atype,
+            descriptor_real_atom,
             edge_index,
             edge_mask,
         )
@@ -3241,6 +3245,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def _make_inter_potential_edge_mask(
         self,
         atype: torch.Tensor,
+        real_atom: torch.Tensor,
         edge_index: torch.Tensor,
         edge_mask: torch.Tensor,
     ) -> torch.Tensor:
@@ -3249,7 +3254,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Parameters
         ----------
         atype
-            Atom types with shape (nf, nall).
+            Lookup-safe atom types with shape (nf, nall).
+        real_atom
+            Physical-atom mask with shape (nf, nall).
         edge_index
             Edge source and destination indices with shape (2, E).
         edge_mask
@@ -3266,7 +3273,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         src = edge_index[0]
         dst = edge_index[1]
         atype_flat = atype.reshape(-1)
-        keep = edge_mask
+        real_atom_flat = real_atom.reshape(-1)
+        keep = (
+            edge_mask
+            & real_atom_flat.index_select(0, src)
+            & real_atom_flat.index_select(0, dst)
+        )
 
         descriptor = self.atomic_model.descriptor
         if descriptor.exclude_types:
@@ -3274,9 +3286,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         atom_excl = self.atomic_model.atom_excl
         if atom_excl is not None:
-            safe_atype, atom_is_present = self._sanitize_atom_types(atype)
-            atom_is_included = atom_is_present & atom_excl(safe_atype).to(torch.bool)
-            atom_is_included = atom_is_included.reshape(-1)
+            atom_is_included = atom_excl(atype).to(torch.bool).reshape(-1)
             keep = (
                 keep
                 & atom_is_included.index_select(0, src)

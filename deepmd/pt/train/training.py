@@ -298,6 +298,11 @@ class Trainer:
                 )
 
                 _block_targets = getattr(_data, "_block_targets", None)
+                _sampler_kwargs = {
+                    "shuffle": True,
+                    "seed": _training_params.get("seed"),
+                    "block_targets": _block_targets,
+                }
 
                 if self.world_size > 1:
                     from deepmd.dpmodel.utils.lmdb_data import (
@@ -308,15 +313,12 @@ class Trainer:
                         _data._reader,
                         rank=self.rank,
                         world_size=self.world_size,
-                        shuffle=True,
-                        seed=_training_params.get("seed"),
-                        block_targets=_block_targets,
+                        **_sampler_kwargs,
                     )
                 else:
                     _inner_sampler = LmdbBatchSampler(
                         _data._reader,
-                        shuffle=True,
-                        block_targets=_block_targets,
+                        **_sampler_kwargs,
                     )
 
                 _dataloader = LmdbBatchDataLoader(
