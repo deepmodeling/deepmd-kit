@@ -161,9 +161,7 @@ def test_explicit_nv_rejects_cpu():
 def test_resolve_auto_graph_builder_ladder(
     device: str, nv: bool, vesin: bool, nf: int, expected: str
 ) -> None:
-    from deepmd.pt_expt.utils import (
-        graph_builder as gb,
-    )
+    from deepmd.pt_expt.utils import graph_builder as gb
 
     gb._warned_auto_no_nv = False
     with (
@@ -178,9 +176,7 @@ def test_resolve_auto_graph_builder_ladder(
 
 def test_resolve_auto_graph_builder_warns_once(caplog) -> None:
     """CUDA-without-nv warning is once per process, not once per batch."""
-    from deepmd.pt_expt.utils import (
-        graph_builder as gb,
-    )
+    from deepmd.pt_expt.utils import graph_builder as gb
 
     gb._warned_auto_no_nv = False
     with (
