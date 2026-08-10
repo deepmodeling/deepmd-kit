@@ -94,6 +94,9 @@ class ProdForceSeAOp : public OpKernel {
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int ndescrpt;
     int nnei;
+    OP_REQUIRES(context, (nall >= nloc),
+                deepmd::tf_compat::InvalidArgument(
+                    "number of all atoms should be at least nloc"));
     OP_REQUIRES_OK(context,
                    deepmd::tf_compat::GetPerAtomWidth(
                        &ndescrpt, net_deriv_tensor.shape(), nloc, "net deriv"));
@@ -209,6 +212,9 @@ class ProdForceSeROp : public OpKernel {
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int ndescrpt;
     int nnei;
+    OP_REQUIRES(context, (nall >= nloc),
+                deepmd::tf_compat::InvalidArgument(
+                    "number of all atoms should be at least nloc"));
     OP_REQUIRES_OK(context,
                    deepmd::tf_compat::GetPerAtomWidth(
                        &ndescrpt, net_deriv_tensor.shape(), nloc, "net deriv"));
