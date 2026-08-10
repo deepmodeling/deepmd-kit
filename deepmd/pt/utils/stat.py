@@ -176,7 +176,11 @@ def make_stat_input(
                     stat_data = select_batch_frames(stat_data, frame_mask)
                 accepted_batches += 1
                 _append_stat_data(sys_stat, stat_data)
-            _append_missing_type_frames(sys_stat, datasets[system_index])
+            _append_missing_type_frames(
+                sys_stat,
+                datasets[system_index],
+                min_pair_dist=min_pair_dist,
+            )
 
         if not sys_stat:
             if min_pair_dist > 0.0:
@@ -226,7 +230,9 @@ def _append_stat_data(sys_stat: dict[str, Any], stat_data: dict[str, Any]) -> No
             sys_stat[dd] = value
 
 
-def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
+def _append_missing_type_frames(
+    sys_stat: dict[str, Any], dataset: Any, min_pair_dist: float = 0.0
+) -> None:
     """Add representative mixed-type frames for atom types missed by sampling.
 
     Global output statistics solve a per-type linear regression from the sampled
@@ -245,8 +251,8 @@ def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
     if len(sampled_natoms_vec) == 0:
         return
     sampled_counts = torch.cat(sampled_natoms_vec, dim=0)[:, 2:].sum(dim=0)
-    dataset_counts, first_frame_for_type = _mixed_type_coverage(dataset)
-    if dataset_counts is None or first_frame_for_type is None:
+    dataset_counts, candidate_frames = _mixed_type_coverage(dataset)
+    if dataset_counts is None or candidate_frames is None:
         return
 
     missing_types = np.flatnonzero((dataset_counts > 0) & (sampled_counts.numpy() == 0))
@@ -260,19 +266,33 @@ def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
 
     used_frames: set[int] = set()
     while len(missing_types) > 0:
-        frame_idx: int | None = None
+        extra_batch: dict[str, Any] | None = None
         for type_i in missing_types:
-            candidate = int(first_frame_for_type[int(type_i)])
-            if candidate >= 0 and candidate not in used_frames:
-                frame_idx = candidate
+            for frame_idx in candidate_frames[int(type_i)]:
+                if frame_idx in used_frames:
+                    continue
+                used_frames.add(frame_idx)
+                # Reuse the dataset and collate path so augmented frames have
+                # exactly the same tensor layout as DataLoader batches.
+                with torch.device("cpu"):
+                    candidate_batch = collate_batch([dataset[frame_idx]])
+                frame_mask = min_pair_dist_frame_mask(candidate_batch, min_pair_dist)
+                if frame_mask is not None and not torch.any(frame_mask):
+                    continue
+                if frame_mask is not None:
+                    candidate_batch = select_batch_frames(candidate_batch, frame_mask)
+                extra_batch = candidate_batch
                 break
-        if frame_idx is None:
+            if extra_batch is not None:
+                break
+        if extra_batch is None:
+            log.warning(
+                "No frame containing atom types %s satisfies "
+                "min_pair_dist=%s; statistics will not cover these types.",
+                missing_types.tolist(),
+                min_pair_dist,
+            )
             break
-        used_frames.add(frame_idx)
-        # Reuse the dataset and collate path so that augmented frames have
-        # exactly the same tensor layout as ordinary DataLoader batches.
-        with torch.device("cpu"):
-            extra_batch = collate_batch([dataset[frame_idx]])
         _append_stat_data(sys_stat, extra_batch)
         sampled_counts += extra_batch["real_natoms_vec"][:, 2:].sum(dim=0)
         missing_types = np.flatnonzero(
@@ -280,14 +300,16 @@ def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
         )
 
 
-def _mixed_type_coverage(dataset: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Return full-dataset type counts and one representative frame per type."""
+def _mixed_type_coverage(
+    dataset: Any,
+) -> tuple[np.ndarray | None, list[list[int]] | None]:
+    """Return full-dataset type counts and candidate frames for every type."""
     data_system = dataset.data_system
     if not getattr(data_system, "mixed_type", False):
         return None, None
     ntypes = data_system.get_ntypes()
     counts = np.zeros(ntypes, dtype=np.int64)
-    first_frame_for_type = np.full(ntypes, -1, dtype=np.int64)
+    candidate_frames: list[list[int]] = [[] for _ in range(ntypes)]
     frame_offset = 0
     for set_dir, frame_end in zip(
         data_system.dirs, data_system.prefix_sum, strict=True
@@ -300,10 +322,11 @@ def _mixed_type_coverage(dataset: Any) -> tuple[np.ndarray | None, np.ndarray | 
         for type_i in range(ntypes):
             frame_hits = np.flatnonzero((real_type == type_i).any(axis=1))
             counts[type_i] += int((real_type == type_i).sum())
-            if first_frame_for_type[type_i] < 0 and len(frame_hits) > 0:
-                first_frame_for_type[type_i] = frame_offset + int(frame_hits[0])
+            candidate_frames[type_i].extend(
+                frame_offset + int(frame_idx) for frame_idx in frame_hits
+            )
         frame_offset = frame_end
-    return counts, first_frame_for_type
+    return counts, candidate_frames
 
 
 def _restore_from_file(

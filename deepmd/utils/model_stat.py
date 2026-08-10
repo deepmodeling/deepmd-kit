@@ -115,13 +115,19 @@ def _append_missing_type_frames(
     """
     if "real_natoms_vec" not in sys_stat or not hasattr(data, "data_systems"):
         return
-    if getattr(data, "mixed_systems", False):
-        # In mixed-system batching sys_idx is intentionally ignored by get_batch;
-        # keep the historical sampling behaviour rather than guessing ownership.
-        return
-    data_system = data.data_systems[sys_idx]
-    dataset_counts, first_frame_for_type = _mixed_type_coverage(data_system)
-    if dataset_counts is None or first_frame_for_type is None:
+    mixed_systems = getattr(data, "mixed_systems", False)
+    if mixed_systems:
+        dataset_counts, candidate_frames = _mixed_system_coverage(data)
+    else:
+        data_system = data.data_systems[sys_idx]
+        dataset_counts, first_frame_for_type = _mixed_type_coverage(data_system)
+        if dataset_counts is None or first_frame_for_type is None:
+            return
+        candidate_frames = [
+            [] if frame_idx < 0 else [(sys_idx, int(frame_idx))]
+            for frame_idx in first_frame_for_type
+        ]
+    if dataset_counts is None or candidate_frames is None:
         return
     sampled_counts = np.concatenate(sys_stat["real_natoms_vec"], axis=0)[:, 2:].sum(
         axis=0
@@ -130,32 +136,116 @@ def _append_missing_type_frames(
     if len(missing_types) == 0:
         return
 
-    used_frames: set[int] = set()
+    used_frames: set[tuple[int, int]] = set()
     while len(missing_types) > 0:
-        frame_idx: int | None = None
+        appended = False
         for type_i in missing_types:
-            candidate = int(first_frame_for_type[int(type_i)])
-            if candidate >= 0 and candidate not in used_frames:
-                frame_idx = candidate
+            for system_idx, frame_idx in candidate_frames[int(type_i)]:
+                candidate = (system_idx, frame_idx)
+                if candidate in used_frames:
+                    continue
+                used_frames.add(candidate)
+                extra_batch = _get_representative_batch(
+                    data,
+                    system_idx,
+                    frame_idx,
+                    merge_mixed=mixed_systems,
+                )
+                if not _append_compatible_batch(sys_stat, extra_batch):
+                    continue
+                sampled_counts += (
+                    extra_batch["real_natoms_vec"].reshape(1, -1)[:, 2:].sum(axis=0)
+                )
+                appended = True
                 break
-        if frame_idx is None:
+            if appended:
+                break
+        if not appended:
+            if mixed_systems:
+                log.warning(
+                    "Cannot add shape-compatible representative frames for atom "
+                    "types %s in mixed-system statistics.",
+                    missing_types.tolist(),
+                )
             break
-        used_frames.add(frame_idx)
-        extra_batch = data_system.get_single_frame(frame_idx, num_worker=1)
-        extra_batch["natoms_vec"] = data.natoms_vec[sys_idx].astype(np.int32)
-        extra_batch["default_mesh"] = data.default_mesh[sys_idx]
-        for key, value in extra_batch.items():
-            if (
-                key not in {"natoms_vec", "default_mesh"}
-                and isinstance(value, np.ndarray)
-                and value.ndim >= 1
-            ):
-                value = value.reshape((1, *value.shape))
-            sys_stat[key].append(value)
-        sampled_counts += (
-            extra_batch["real_natoms_vec"].reshape(1, -1)[:, 2:].sum(axis=0)
-        )
         missing_types = np.flatnonzero((dataset_counts > 0) & (sampled_counts == 0))
+
+
+def _get_representative_batch(
+    data: Any,
+    system_idx: int,
+    frame_idx: int,
+    *,
+    merge_mixed: bool,
+) -> dict[str, Any]:
+    """Load one frame and give it the same layout as an ordinary batch."""
+    data_system = data.data_systems[system_idx]
+    extra_batch = data_system.get_single_frame(frame_idx, num_worker=1)
+    extra_batch["natoms_vec"] = data.natoms_vec[system_idx].astype(np.int32)
+    extra_batch["default_mesh"] = data.default_mesh[system_idx]
+    for key, value in list(extra_batch.items()):
+        if (
+            key not in {"natoms_vec", "default_mesh"}
+            and isinstance(value, np.ndarray)
+            and value.ndim >= 1
+        ):
+            extra_batch[key] = value.reshape((1, *value.shape))
+    if not merge_mixed:
+        return extra_batch
+
+    # Reuse the production mixed-batch merger so atomic labels and input arrays
+    # follow exactly the same padding rules as randomly sampled mixed batches.
+    merged_batch = data._merge_batch_data([extra_batch])
+    if "real_natoms_vec" in extra_batch:
+        # _merge_batch_data derives this field from fixed system composition;
+        # preserve the actual per-frame composition for mixed-type systems.
+        merged_batch["real_natoms_vec"] = extra_batch["real_natoms_vec"]
+    return merged_batch
+
+
+def _append_compatible_batch(
+    sys_stat: dict[str, list[Any]], extra_batch: dict[str, Any]
+) -> bool:
+    """Append a batch without changing the sampled schema or array widths."""
+    selected: dict[str, Any] = {}
+    for key, value in extra_batch.items():
+        if key not in sys_stat:
+            continue
+        reference = sys_stat[key][0]
+        if isinstance(reference, np.ndarray) and isinstance(value, np.ndarray):
+            reference_shape = (
+                reference.shape[1:] if reference.ndim >= 2 else reference.shape
+            )
+            value_shape = value.shape[1:] if value.ndim >= 2 else value.shape
+            if reference_shape != value_shape:
+                return False
+        selected[key] = value
+    if "real_natoms_vec" not in selected:
+        return False
+    for key, value in selected.items():
+        sys_stat[key].append(value)
+    return True
+
+
+def _mixed_system_coverage(
+    data: Any,
+) -> tuple[np.ndarray | None, list[list[tuple[int, int]]] | None]:
+    """Aggregate type counts and representative frames across mixed systems."""
+    if not hasattr(data, "data_systems") or len(data.data_systems) == 0:
+        return None, None
+    ntypes = int(data.get_ntypes())
+    counts = np.zeros(ntypes, dtype=np.int64)
+    candidate_frames: list[list[tuple[int, int]]] = [[] for _ in range(ntypes)]
+    for system_idx, data_system in enumerate(data.data_systems):
+        system_counts, first_frame_for_type = _mixed_type_coverage(data_system)
+        if system_counts is None or first_frame_for_type is None:
+            system_counts = np.asarray(data.natoms_vec[system_idx][2:], dtype=np.int64)
+            first_frame_for_type = np.where(system_counts > 0, 0, -1)
+        counts[: len(system_counts)] += system_counts
+        for type_i, frame_idx in enumerate(first_frame_for_type):
+            if frame_idx >= 0:
+                candidate_frames[type_i].append((system_idx, int(frame_idx)))
+    return counts, candidate_frames
 
 
 def _mixed_type_coverage(
