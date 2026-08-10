@@ -66,7 +66,14 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 add_chg_spin_ebd=True,
                 seed=GLOBAL_SEED,
             )
-            deserialized_descriptor = DescrptDPA3.deserialize(descriptor.serialize())
+            serialized_descriptor = descriptor.serialize()
+            deserialized_descriptor = DescrptDPA3.deserialize(serialized_descriptor)
+
+        # Optional charge/spin layers must serialize their effective frozen
+        # state so cross-backend deserializers do not re-enable gradients.
+        self.assertFalse(serialized_descriptor["chg_embedding"]["trainable"])
+        self.assertFalse(serialized_descriptor["spin_embedding"]["trainable"])
+        self.assertFalse(serialized_descriptor["mix_cs_mlp"]["trainable"])
 
         for stage, checked_descriptor in (
             ("constructed", descriptor),
@@ -81,6 +88,33 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     if not parameter.stop_gradient
                 ]
                 self.assertEqual([], parameters_with_grad)
+
+    def test_non_trainable_change_type_map_stays_frozen(self) -> None:
+        """Type remapping must not make a frozen embedding trainable again."""
+        descriptor = DescrptDPA3(
+            self.nt,
+            repflow=RepFlowArgs(
+                n_dim=4,
+                e_dim=4,
+                a_dim=4,
+                nlayers=1,
+                e_sel=2,
+                a_sel=1,
+                axis_neuron=2,
+            ),
+            trainable=False,
+            type_map=["O", "H"],
+            seed=GLOBAL_SEED,
+        )
+
+        descriptor.change_type_map(["H", "O"])
+
+        parameters_with_grad = [
+            name
+            for name, parameter in descriptor.named_parameters()
+            if not parameter.stop_gradient
+        ]
+        self.assertEqual([], parameters_with_grad)
 
     def test_consistency(
         self,

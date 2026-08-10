@@ -215,6 +215,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 3),
+                trainable=trainable,
             )
             # 100 is a conservative upper bound
             self.spin_embedding = TypeEmbedNet(
@@ -222,12 +223,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 4),
+                trainable=trainable,
             )
             self.mix_cs_mlp = MLPLayer(
                 2 * self.tebd_dim,
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
         else:
             self.chg_embedding = None
@@ -387,6 +390,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)
+        # Type remapping replaces the first embedding matrix with a newly
+        # created parameter, so restore the descriptor-level frozen state.
+        self._apply_trainable()
         self.exclude_types = map_pair_exclude_types(self.exclude_types, remap_index)
         self.ntypes = len(type_map)
         repflow = self.repflows
