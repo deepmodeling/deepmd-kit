@@ -863,6 +863,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         :meth:`get_sel` otherwise. Sizing a dense list from ``get_sel`` is not
         merely wasteful for a graph-native model -- such a model reports no
         finite capacity, so the allocation is unbounded.
+
+        A native-spin model conditions on a per-atom magnetic moment, which the
+        wrapper forwards on the graph route alone: that scheme implements only
+        the graph lower, so the dense route never carries a moment.
         """
         import array_api_compat
 
@@ -880,6 +884,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam: np.ndarray | None = None,
             aparam: np.ndarray | None = None,
             charge_spin: np.ndarray | None = None,
+            spin: np.ndarray | None = None,
         ) -> dict[str, np.ndarray]:
             # Get reference array to determine the target array type and device
             # Use out_bias as reference since it's always present
@@ -901,6 +906,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 aparam = xp.asarray(aparam, device=device)
             if charge_spin is not None:
                 charge_spin = xp.asarray(charge_spin, device=device)
+            if spin is not None:
+                spin = xp.asarray(spin, device=device)
 
             if self.uses_graph_lower():
                 nframes, nloc = atype.shape
@@ -927,6 +934,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                         else None
                     ),
                     charge_spin=charge_spin,
+                    spin=None if spin is None else xp.reshape(spin, (-1, 3)),
                 )
                 # The graph route works on a flat node axis; restore the
                 # per-frame layout the dense route returns.

@@ -55,6 +55,8 @@ class SpinModel(NativeOP):
         \boldsymbol{\tau}_i = \mathbf{F}_i^{\mathrm{virtual}} \times \boldsymbol{\sigma}_i.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask", "virtual_scale_mask")
+
     def __init__(
         self,
         backbone_model: DPAtomicModel,
@@ -76,6 +78,8 @@ class SpinModel(NativeOP):
                 # concrete default).
                 descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
+        # Both per-type tables follow from ``use_spin`` and ``virtual_scale``,
+        # so they are rebuilt here rather than adopted from a checkpoint.
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
 

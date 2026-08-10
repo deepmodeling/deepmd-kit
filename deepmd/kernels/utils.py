@@ -165,9 +165,9 @@ def use_amp_infer() -> bool:
     """Return whether bf16 autocast is enabled for inference.
 
     The flag is controlled by the ``DP_AMP_INFER`` environment variable and is
-    read at module construction time. It only affects inference when the
-    descriptor's ``use_amp`` option is also enabled; training follows
-    ``use_amp`` regardless of this environment variable.
+    read at module construction time. It controls inference independently of
+    the descriptor's ``use_amp`` option; training follows ``use_amp`` regardless
+    of this environment variable.
 
     Returns
     -------

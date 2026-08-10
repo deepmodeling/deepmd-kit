@@ -610,7 +610,7 @@ class TestCompiledModelGetattr(unittest.TestCase):
     These tests do not require example data or torch.compile — they use a
     lightweight mock original_model to verify that __getattr__ correctly
     forwards unknown attributes/methods to the wrapped original model.
-    Compilation is lazy, so no compiled_forward_lower is needed for construction.
+    Compilation is lazy, so no compiled graph is needed for construction.
     """
 
     def _make_compiled_model(self):
@@ -653,11 +653,11 @@ class TestCompiledModelGetattr(unittest.TestCase):
         """Attributes owned by _CompiledModel itself are NOT delegated."""
         cm = self._make_compiled_model()
         # original_model is a registered submodule and must not fall through
-        # to delegation.  compiled_forward_lower is None before the first
-        # forward call (lazy compile) — accessing it must return None, not
-        # delegate to original_model.
+        # to delegation.  The compiled-graph cache is empty before the first
+        # forward call (lazy compile) — accessing it must return that empty
+        # dict, not delegate to original_model.
         self.assertIsInstance(cm.original_model, torch.nn.Module)
-        self.assertIsNone(cm.compiled_forward_lower)
+        self.assertEqual(cm._compiled_lower_by_mode, {})
 
     def test_missing_attr_raises(self) -> None:
         """Accessing an attribute missing from both wrapper and original raises."""
@@ -703,8 +703,8 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                 # The wrapper.model should be a _CompiledModel
                 compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
-                # Lazy compile: compiled_forward_lower is None before any forward.
-                self.assertIsNone(compiled_model.compiled_forward_lower)
+                # Lazy compile: no graph exists before any forward.
+                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
 
                 trainer.wrapper.train()
                 for step in range(3):
@@ -715,9 +715,10 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                     loss.backward()
                     trainer.optimizer.step()
 
-                    # After first forward, compiled_forward_lower must be set.
+                    # After the first forward the training graph must exist,
+                    # keyed by the mode it was traced in.
                     if step == 0:
-                        self.assertIsNotNone(compiled_model.compiled_forward_lower)
+                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
 
                     # Loss should be a finite scalar at every step
                     self.assertFalse(torch.isnan(loss))
