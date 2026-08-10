@@ -416,8 +416,7 @@ void Border_backward_t(const paddle::Tensor& sendlist_tensor,
   // receive a zero gradient. With no swaps, forward is the identity and the
   // upstream ghost gradient remains valid.
   if (nswap > 0 && nghost > 0) {
-    FPTYPE* ghost_g1 =
-        d_local_g1_tensor.data<FPTYPE>() + nlocal * tensor_size;
+    FPTYPE* ghost_g1 = d_local_g1_tensor.data<FPTYPE>() + nlocal * tensor_size;
     size_t ghost_size = (size_t)nghost * tensor_size;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (phi::is_gpu_place(d_local_g1_tensor.place())) {
